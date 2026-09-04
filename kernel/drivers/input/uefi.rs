@@ -108,10 +108,10 @@ static mut POINTER: *mut SimplePointer = core::ptr::null_mut();
 static mut ABSOLUTE_POINTER: *mut AbsolutePointer = core::ptr::null_mut();
 static mut POINTERS: *mut FirmwarePointers = core::ptr::null_mut();
 static mut USB_KEYS: [u8; 6] = [0; 6];
-static mut USB_MOUSE_IDLE: [u8; MAX_POINTER_PROTOCOLS] = [0; MAX_POINTER_PROTOCOLS];
 static mut USB_MOUSE_BUTTONS: [u8; MAX_POINTER_PROTOCOLS] = [0; MAX_POINTER_PROTOCOLS];
 static mut USB_MOUSE_ABSOLUTE_X: [u16; MAX_POINTER_PROTOCOLS] = [0; MAX_POINTER_PROTOCOLS];
 static mut USB_MOUSE_ABSOLUTE_Y: [u16; MAX_POINTER_PROTOCOLS] = [0; MAX_POINTER_PROTOCOLS];
+static mut POINTER_BUTTONS: pointer::PointerButtonArbiter = pointer::PointerButtonArbiter::new();
 static mut USB_MOUSE_SEQUENCE: u32 = 0;
 static mut USB_MOUSE_ASYNC_IDLE: u32 = 0;
 static mut USE_DIRECT_USB_MOUSE: bool = false;
@@ -123,6 +123,54 @@ static mut RELATIVE_UPDATED_THIS_POLL: bool = false;
 // protocol but stops producing states after ExitBootServices; raw USB HID
 // motion must remain available as the live fallback in that case.
 static mut ABSOLUTE_UPDATED_THIS_POLL: bool = false;
+
+// ------------------------=
+// FUNC: firmware_absolute_buttons
+// DESC: Updates the absolute-pointer source and returns the composite held-button state.
+// ------------------=
+fn firmware_absolute_buttons(buttons: u8) -> u8 {
+    unsafe {
+        let state = &raw mut POINTER_BUTTONS;
+        (*state).set_firmware_absolute(buttons);
+        (*state).combined()
+    }
+}
+
+// ------------------------=
+// FUNC: firmware_relative_buttons
+// DESC: Updates the relative-pointer source and returns the composite held-button state.
+// ------------------=
+fn firmware_relative_buttons(buttons: u8) -> u8 {
+    unsafe {
+        let state = &raw mut POINTER_BUTTONS;
+        (*state).set_firmware_relative(buttons);
+        (*state).combined()
+    }
+}
+
+// ------------------------=
+// FUNC: asynchronous_usb_buttons
+// DESC: Updates the asynchronous USB source and returns the composite held-button state.
+// ------------------=
+fn asynchronous_usb_buttons(buttons: u8) -> u8 {
+    unsafe {
+        let state = &raw mut POINTER_BUTTONS;
+        (*state).set_asynchronous_usb(buttons);
+        (*state).combined()
+    }
+}
+
+// ------------------------=
+// FUNC: synchronous_usb_buttons
+// DESC: Updates one synchronous USB source and returns the composite held-button state.
+// ------------------=
+fn synchronous_usb_buttons(index: usize, buttons: u8) -> u8 {
+    unsafe {
+        let state = &raw mut POINTER_BUTTONS;
+        (*state).set_usb(index, buttons);
+        (*state).combined()
+    }
+}
 
 // ------------------------=
 // FUNC: block_io
@@ -152,6 +200,10 @@ type SyncInterruptTransfer =
 // DESC: Initializes initialize state.
 // ------------------=
 pub fn initialize(info: &BootInfo) -> InputStatus {
+    unsafe {
+        POINTER_BUTTONS = pointer::PointerButtonArbiter::new();
+        USB_MOUSE_BUTTONS = [0; MAX_POINTER_PROTOCOLS];
+    }
     if info.boot_flags & 16 != 0 && info.firmware_pointer != 0 {
         unsafe {
             POINTERS = info.firmware_pointer as usize as *mut FirmwarePointers;
@@ -302,9 +354,7 @@ pub fn run() -> ! {
                     // effects renderer and made the cursor trail the host.
                     for index in 0..(pointers.usb_mouse_count as usize).min(MAX_POINTER_PROTOCOLS) {
                         if pointers.usb_mouse_absolute[index] != 0
-                            && !unsafe {
-                                USE_ABSOLUTE_MOVEMENT && ABSOLUTE_UPDATED_THIS_POLL
-                            }
+                            && !unsafe { USE_ABSOLUTE_MOVEMENT && ABSOLUTE_UPDATED_THIS_POLL }
                         {
                             poll_usb_mouse(
                                 index,
@@ -379,6 +429,7 @@ fn poll_async_usb_mouse(pointers: &mut FirmwarePointers) {
             unsafe {
                 core::ptr::write_volatile(&raw mut pointers.usb_mouse_async, 0);
             }
+            asynchronous_usb_buttons(0);
         }
         return;
     }
@@ -405,6 +456,7 @@ fn poll_async_usb_mouse(pointers: &mut FirmwarePointers) {
             (USE_ABSOLUTE_MOVEMENT && ABSOLUTE_UPDATED_THIS_POLL) || RELATIVE_UPDATED_THIS_POLL
         };
         if let Some(mut event) = pointer::decode_usb_boot_mouse(&report[..length]) {
+            event.buttons = asynchronous_usb_buttons(event.buttons);
             if firmware_motion {
                 event.delta_x = 0;
                 event.delta_y = 0;
@@ -435,17 +487,18 @@ fn poll_absolute(absolute_pointer: *mut AbsolutePointer) {
             unsafe {
                 ABSOLUTE_UPDATED_THIS_POLL = true;
             }
+            let source_buttons = if state.active_buttons != 0 {
+                pointer::BUTTON_LEFT
+            } else {
+                0
+            };
             dispatch_pointer_absolute(AbsolutePointerEvent {
                 x: normalize_absolute(state.current_x, mode.min_x, mode.max_x),
                 y: normalize_absolute(state.current_y, mode.min_y, mode.max_y),
                 // UEFI Absolute Pointer defines touch and alternate-active
                 // bits rather than USB button numbers. Either active contact
                 // is the primary activation in InfinityOS.
-                buttons: if state.active_buttons != 0 {
-                    pointer::BUTTON_LEFT
-                } else {
-                    0
-                },
+                buttons: firmware_absolute_buttons(source_buttons),
                 wheel_x: 0,
                 wheel_y: 0,
             });
@@ -473,11 +526,12 @@ fn poll_relative(pointer: *mut SimplePointer) {
         unsafe {
             RELATIVE_UPDATED_THIS_POLL = true;
         }
+        let source_buttons = (state.left_button != 0) as u8 * pointer::BUTTON_LEFT
+            | (state.right_button != 0) as u8 * pointer::BUTTON_RIGHT;
         dispatch_pointer(PointerEvent {
             delta_x: pointer_delta(state.relative_x),
             delta_y: -pointer_delta(state.relative_y),
-            buttons: (state.left_button != 0) as u8 * pointer::BUTTON_LEFT
-                | (state.right_button != 0) as u8 * pointer::BUTTON_RIGHT,
+            buttons: firmware_relative_buttons(source_buttons),
             wheel_x: 0,
             wheel_y: pointer_delta(state.relative_z).clamp(i8::MIN as i16, i8::MAX as i16) as i8,
         });
@@ -539,7 +593,7 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
             // padding, X(u16 LE), Y(u16 LE). X and Y have a declared logical
             // range of 0..0x7fff. Reading bytes 1..4 as axes mixed wheel and
             // padding into the coordinates, pinning the cursor near an edge.
-            let Some(event) = pointer::decode_usb_absolute_pointer(&report[..length]) else {
+            let Some(mut event) = pointer::decode_usb_absolute_pointer(&report[..length]) else {
                 continue;
             };
             let x = u16::from_le_bytes([report[4], report[5]]);
@@ -555,6 +609,7 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
                 USB_MOUSE_BUTTONS[index] = event.buttons;
             }
             buttons = event.buttons;
+            event.buttons = synchronous_usb_buttons(index, event.buttons);
             latest_absolute = Some(event);
             continue;
         }
@@ -581,21 +636,20 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
             };
             event.wheel_x = total_wheel_x.clamp(i8::MIN as i16, i8::MAX as i16) as i8;
             event.wheel_y = total_wheel_y.clamp(i8::MIN as i16, i8::MAX as i16) as i8;
+            let source_buttons = event.buttons;
+            event.buttons = synchronous_usb_buttons(index, source_buttons);
             dispatch_pointer(event);
             total_x = 0;
             total_y = 0;
             total_wheel_x = 0;
             total_wheel_y = 0;
-            buttons = event.buttons;
+            buttons = source_buttons;
             unsafe {
                 USB_MOUSE_BUTTONS[index] = buttons;
             }
         }
     }
     if received {
-        unsafe {
-            USB_MOUSE_IDLE[index] = 0;
-        }
         if let Some(event) = latest_absolute {
             if absolute_changed {
                 // VirtualBox exposes one physical tablet through both the
@@ -615,36 +669,18 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
                     dispatch_pointer_absolute(event);
                 }
             }
-        } else if !absolute && !unsafe {
-            (USE_ABSOLUTE_MOVEMENT && ABSOLUTE_UPDATED_THIS_POLL) || RELATIVE_UPDATED_THIS_POLL
-        } && (total_x != 0 || total_y != 0 || total_wheel_x != 0 || total_wheel_y != 0)
+        } else if !absolute
+            && !unsafe {
+                (USE_ABSOLUTE_MOVEMENT && ABSOLUTE_UPDATED_THIS_POLL) || RELATIVE_UPDATED_THIS_POLL
+            }
+            && (total_x != 0 || total_y != 0 || total_wheel_x != 0 || total_wheel_y != 0)
         {
             dispatch_pointer(PointerEvent {
                 delta_x: total_x.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
                 delta_y: total_y.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
-                buttons,
+                buttons: synchronous_usb_buttons(index, buttons),
                 wheel_x: total_wheel_x.clamp(i8::MIN as i16, i8::MAX as i16) as i8,
                 wheel_y: total_wheel_y.clamp(i8::MIN as i16, i8::MAX as i16) as i8,
-            });
-        }
-    } else {
-        // VirtualBox can consume the release that accompanies the click which
-        // captures a relative USB mouse. Synthesize an idle release so a lost
-        // packet cannot leave the UI latched in the pressed state.
-        let idle = unsafe { USB_MOUSE_IDLE[index] }.saturating_add(1);
-        unsafe {
-            USB_MOUSE_IDLE[index] = idle;
-        }
-        if idle == 8 {
-            unsafe {
-                USB_MOUSE_BUTTONS[index] = 0;
-            }
-            dispatch_pointer(PointerEvent {
-                delta_x: 0,
-                delta_y: 0,
-                buttons: 0,
-                wheel_x: 0,
-                wheel_y: 0,
             });
         }
     }
@@ -751,8 +787,7 @@ fn discovered_pointer_capabilities() -> PointerCapabilities {
         }
         if pointers.absolute_count != 0 {
             capabilities.transports |= pointer::TRANSPORT_UEFI_ABSOLUTE;
-            capabilities.features |=
-                pointer::FEATURE_ABSOLUTE | pointer::FEATURE_BUTTONS_STANDARD;
+            capabilities.features |= pointer::FEATURE_ABSOLUTE | pointer::FEATURE_BUTTONS_STANDARD;
             capabilities.interface_count = capabilities
                 .interface_count
                 .saturating_add(pointers.absolute_count.min(MAX_POINTER_PROTOCOLS as u32) as u8);

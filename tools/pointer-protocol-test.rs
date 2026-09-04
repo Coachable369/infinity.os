@@ -4,11 +4,42 @@
 mod pointer;
 
 use pointer::{
-    decode_ps2_packet, decode_usb_absolute_pointer, decode_usb_boot_mouse, PointerCapabilities,
-    BUTTON_BACK, BUTTON_FORWARD, BUTTON_LEFT, BUTTON_MIDDLE, BUTTON_RIGHT,
+    decode_ps2_packet, decode_usb_absolute_pointer, decode_usb_boot_mouse, PointerButtonArbiter,
+    PointerCapabilities, BUTTON_BACK, BUTTON_FORWARD, BUTTON_LEFT, BUTTON_MIDDLE, BUTTON_RIGHT,
     FEATURE_ABSOLUTE, FEATURE_BUTTONS_EXTENDED, FEATURE_RELATIVE, TRANSPORT_PS2,
     TRANSPORT_USB_HID_ABSOLUTE, TRANSPORT_USB_HID_RELATIVE,
 };
+
+// ------------------------=
+// FUNC: composite_button_capture
+// DESC: Verifies motion-only reports cannot release a drag owned by another pointer transport.
+// ------------------=
+fn composite_button_capture() {
+    let mut buttons = PointerButtonArbiter::new();
+
+    buttons.set_usb(0, BUTTON_LEFT);
+    assert_eq!(buttons.combined(), BUTTON_LEFT);
+
+    // VirtualBox commonly sends absolute movement with no button bits while
+    // raw USB HID owns the actual press. The move must preserve capture.
+    buttons.set_firmware_absolute(0);
+    assert_eq!(buttons.combined(), BUTTON_LEFT);
+
+    // An idle interrupt endpoint emits no report at all. Leaving the source
+    // untouched must preserve the held state until a real release arrives.
+    assert_eq!(buttons.combined(), BUTTON_LEFT);
+
+    buttons.set_usb(0, 0);
+    assert_eq!(buttons.combined(), 0);
+
+    // Releasing one of two held sources must not release the composite device.
+    buttons.set_firmware_relative(BUTTON_LEFT);
+    buttons.set_asynchronous_usb(BUTTON_LEFT);
+    buttons.set_firmware_relative(0);
+    assert_eq!(buttons.combined(), BUTTON_LEFT);
+    buttons.set_asynchronous_usb(0);
+    assert_eq!(buttons.combined(), 0);
+}
 
 // ------------------------=
 // FUNC: ps2_protocols
@@ -41,12 +72,15 @@ fn usb_hid_protocols() {
     let relative = decode_usb_boot_mouse(&[0x15, 0xf8, 7, 0xff, 2]).expect("USB mouse");
     assert_eq!(relative.delta_x, -8);
     assert_eq!(relative.delta_y, 7);
-    assert_eq!(relative.buttons, BUTTON_LEFT | BUTTON_MIDDLE | BUTTON_FORWARD);
+    assert_eq!(
+        relative.buttons,
+        BUTTON_LEFT | BUTTON_MIDDLE | BUTTON_FORWARD
+    );
     assert_eq!(relative.wheel_y, 1);
     assert_eq!(relative.wheel_x, 2);
 
-    let absolute = decode_usb_absolute_pointer(&[0x03, 0xff, 1, 0, 0xff, 0x7f, 0, 0x40])
-        .expect("USB tablet");
+    let absolute =
+        decode_usb_absolute_pointer(&[0x03, 0xff, 1, 0, 0xff, 0x7f, 0, 0x40]).expect("USB tablet");
     assert_eq!(absolute.x, 1000);
     assert!((499..=501).contains(&absolute.y));
     assert_eq!(absolute.buttons, BUTTON_LEFT | BUTTON_RIGHT);
@@ -90,5 +124,8 @@ fn main() {
     ps2_protocols();
     usb_hid_protocols();
     discovery_metadata();
-    println!("PASS pointer protocols: PS/2, wheel, five-button, USB HID relative, USB HID absolute");
+    composite_button_capture();
+    println!(
+        "PASS pointer protocols: PS/2, wheel, five-button, USB HID relative, USB HID absolute"
+    );
 }

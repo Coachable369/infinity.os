@@ -17,6 +17,79 @@ pub const FEATURE_WHEEL_HORIZONTAL: u32 = 1 << 3;
 pub const FEATURE_BUTTONS_STANDARD: u32 = 1 << 4;
 pub const FEATURE_BUTTONS_EXTENDED: u32 = 1 << 5;
 
+const MAX_BUTTON_SOURCES: usize = 8;
+
+/// Preserves button ownership while one physical pointer is exposed through
+/// multiple firmware and raw-HID transports. Motion reports from one source
+/// must not release a button that remains held on another source.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PointerButtonArbiter {
+    firmware_absolute: u8,
+    firmware_relative: u8,
+    asynchronous_usb: u8,
+    usb: [u8; MAX_BUTTON_SOURCES],
+}
+
+impl PointerButtonArbiter {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates an empty multi-transport pointer button state.
+    // ------------------=
+    pub const fn new() -> Self {
+        Self {
+            firmware_absolute: 0,
+            firmware_relative: 0,
+            asynchronous_usb: 0,
+            usb: [0; MAX_BUTTON_SOURCES],
+        }
+    }
+
+    // ------------------------=
+    // FUNC: set_firmware_absolute
+    // DESC: Records the latest explicit button state from the firmware absolute pointer.
+    // ------------------=
+    pub fn set_firmware_absolute(&mut self, buttons: u8) {
+        self.firmware_absolute = buttons;
+    }
+
+    // ------------------------=
+    // FUNC: set_firmware_relative
+    // DESC: Records the latest explicit button state from the firmware relative pointer.
+    // ------------------=
+    pub fn set_firmware_relative(&mut self, buttons: u8) {
+        self.firmware_relative = buttons;
+    }
+
+    // ------------------------=
+    // FUNC: set_asynchronous_usb
+    // DESC: Records the latest explicit button state from the asynchronous USB HID path.
+    // ------------------=
+    pub fn set_asynchronous_usb(&mut self, buttons: u8) {
+        self.asynchronous_usb = buttons;
+    }
+
+    // ------------------------=
+    // FUNC: set_usb
+    // DESC: Records the latest explicit button state for one synchronously polled USB interface.
+    // ------------------=
+    pub fn set_usb(&mut self, source: usize, buttons: u8) {
+        if let Some(state) = self.usb.get_mut(source) {
+            *state = buttons;
+        }
+    }
+
+    // ------------------------=
+    // FUNC: combined
+    // DESC: Returns buttons held by any active transport without fabricating release edges.
+    // ------------------=
+    pub fn combined(&self) -> u8 {
+        self.usb.iter().fold(
+            self.firmware_absolute | self.firmware_relative | self.asynchronous_usb,
+            |buttons, source| buttons | *source,
+        )
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PointerEvent {
     pub delta_x: i16,
@@ -111,7 +184,11 @@ impl PointerCapabilities {
 // DESC: Decodes standard, IntelliMouse wheel, and Explorer five-button PS/2 packets.
 // ------------------=
 pub fn decode_ps2_packet(packet: &[u8], device_id: u8) -> Option<PointerEvent> {
-    let required = if device_id == 3 || device_id == 4 { 4 } else { 3 };
+    let required = if device_id == 3 || device_id == 4 {
+        4
+    } else {
+        3
+    };
     if packet.len() < required || packet[0] & 0x08 == 0 || packet[0] & 0xc0 != 0 {
         return None;
     }
