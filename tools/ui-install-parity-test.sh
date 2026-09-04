@@ -28,6 +28,8 @@ test -s assets/fonts/InfinityInstaller-Semibold-32.kern
 test -s assets/boot/infinity-disk-discovery-vision-v1.bmp
 test -s assets/boot/infinity-storage-device-v1.bmp
 test -s assets/boot/infinity-date-time-world-v1.bmp
+test -s assets/boot/infinity-time-zone-map-v1.bmp
+test -s assets/design/infinity-date-time-idesign-kit-v1.png
 test -s assets/fonts/InfinityInstaller-Regular-19.atlas
 test -s assets/fonts/InfinityInstaller-Semibold-19.atlas
 test -s assets/fonts/InfinityInstaller-Regular-19.metrics
@@ -49,6 +51,8 @@ rg -q 'You.re in control\. Always\.' kernel/core/bootstrap.rs
 rg -q 'See how InfinityPool works' kernel/core/bootstrap.rs
 rg -q 'FUNC: clock_tick' kernel/core/console.rs
 rg -q 'BOOT_PARTICLE_Y_OFFSET: i32 = 50' kernel/core/bootstrap.rs
+rg -q 'select_installer_time_zone_from_map' kernel/core/console.rs
+rg -q 'installer_time_zone_map_coordinates' kernel/core/bootstrap.rs
 rg -q 'HomeControl' kernel/core/console.rs kernel/ui/system_layout.rs
 rg -q 'SettingsTarget::WindowControl' kernel/core/console.rs
 rg -q 'HomeSidebar' kernel/core/console.rs kernel/ui/system_layout.rs

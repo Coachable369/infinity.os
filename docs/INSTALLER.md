@@ -87,6 +87,13 @@ that the exact selected value survived before Generation 1 may become ACTIVE.
 System services can read the validated value through the storage service
 boundary; it is not a decorative wizard-only choice.
 
+The time-zone field and interactive world map are two projections of the same
+typed selection. A map click resolves its longitude to the nearest supported
+zone; keyboard Left/Right selection moves the highlighted longitude window and
+representative latitude marker. Ordinary pointer motion updates only the cursor
+damage region, so the map, glass panel, and photographic background do not
+repaint or flash as the pointer travels across the screen.
+
 Every interactive page exposes a visible keyboard focus ring and pointer hover
 state over its Back and primary action controls. Tab moves between controls
 (Shift+Tab reverses on PS/2); Left/Up and Right/Down provide equivalent navigation;

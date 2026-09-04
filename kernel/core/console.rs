@@ -19,21 +19,22 @@ const COMMAND_CAPACITY: usize = 160;
 struct TimeZoneChoice {
     id: u16,
     offset_minutes: i16,
+    longitude_degrees: i16,
     label: &'static [u8],
 }
 
 const TIME_ZONES: [TimeZoneChoice; 11] = [
-    TimeZoneChoice { id: 1, offset_minutes: -480, label: b"UTC-08:00  Pacific" },
-    TimeZoneChoice { id: 2, offset_minutes: -420, label: b"UTC-07:00  Mountain" },
-    TimeZoneChoice { id: 3, offset_minutes: -360, label: b"UTC-06:00  Central" },
-    TimeZoneChoice { id: 4, offset_minutes: -300, label: b"UTC-05:00  Eastern" },
-    TimeZoneChoice { id: 5, offset_minutes: -240, label: b"UTC-04:00  Atlantic" },
-    TimeZoneChoice { id: 6, offset_minutes: 0, label: b"UTC+00:00  Universal" },
-    TimeZoneChoice { id: 7, offset_minutes: 60, label: b"UTC+01:00  Central Europe" },
-    TimeZoneChoice { id: 8, offset_minutes: 330, label: b"UTC+05:30  India" },
-    TimeZoneChoice { id: 9, offset_minutes: 480, label: b"UTC+08:00  Singapore" },
-    TimeZoneChoice { id: 10, offset_minutes: 540, label: b"UTC+09:00  Japan" },
-    TimeZoneChoice { id: 11, offset_minutes: 600, label: b"UTC+10:00  Eastern Australia" },
+    TimeZoneChoice { id: 1, offset_minutes: -480, longitude_degrees: -122, label: b"UTC-08:00  Pacific" },
+    TimeZoneChoice { id: 2, offset_minutes: -420, longitude_degrees: -111, label: b"UTC-07:00  Mountain" },
+    TimeZoneChoice { id: 3, offset_minutes: -360, longitude_degrees: -95, label: b"UTC-06:00  Central" },
+    TimeZoneChoice { id: 4, offset_minutes: -300, longitude_degrees: -74, label: b"UTC-05:00  Eastern" },
+    TimeZoneChoice { id: 5, offset_minutes: -240, longitude_degrees: -63, label: b"UTC-04:00  Atlantic" },
+    TimeZoneChoice { id: 6, offset_minutes: 0, longitude_degrees: 0, label: b"UTC+00:00  Universal" },
+    TimeZoneChoice { id: 7, offset_minutes: 60, longitude_degrees: 10, label: b"UTC+01:00  Central Europe" },
+    TimeZoneChoice { id: 8, offset_minutes: 330, longitude_degrees: 78, label: b"UTC+05:30  India" },
+    TimeZoneChoice { id: 9, offset_minutes: 480, longitude_degrees: 104, label: b"UTC+08:00  Singapore" },
+    TimeZoneChoice { id: 10, offset_minutes: 540, longitude_degrees: 139, label: b"UTC+09:00  Japan" },
+    TimeZoneChoice { id: 11, offset_minutes: 600, longitude_degrees: 151, label: b"UTC+10:00  Eastern Australia" },
 ];
 
 // ------------------------=
@@ -1534,6 +1535,28 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: select_installer_time_zone_from_map
+    // DESC: Resolves a map longitude to the closest supported typed time zone.
+    // ------------------=
+    fn select_installer_time_zone_from_map(&mut self, normalized_x: i32) {
+        let bounded_x = normalized_x.clamp(505, 895);
+        let longitude = -180 + (bounded_x - 505) * 360 / 390;
+        let mut selected = 0usize;
+        let mut distance = i32::MAX;
+        for (index, zone) in TIME_ZONES.iter().enumerate() {
+            let candidate = (zone.longitude_degrees as i32 - longitude).abs();
+            if candidate < distance {
+                selected = index;
+                distance = candidate;
+            }
+        }
+        self.installer_choice = selected;
+        let zone = self.time_zone_choice();
+        self.installer_date_time.time_zone_id = zone.id;
+        self.installer_date_time.utc_offset_minutes = zone.offset_minutes;
+    }
+
+    // ------------------------=
     // FUNC: move_installer_date_time_part
     // DESC: Moves between date or clock components without changing their values.
     // ------------------=
@@ -2001,33 +2024,45 @@ impl ConsoleRuntime {
                 } else {
                     None
                 };
-                if let Some(field) = field {
-                    self.installer_focus = field;
-                    if field == 2 && (170..=405).contains(&self.pointer_x) {
-                        self.installer_date_time_part = if self.pointer_x < 248 {
-                            0
-                        } else if self.pointer_x < 326 {
-                            1
-                        } else {
-                            2
-                        };
-                    } else if field == 3 && (170..=405).contains(&self.pointer_x) {
-                        self.installer_date_time_part = if self.pointer_x < 288 { 3 } else { 4 };
-                    }
-                    if clicked && self.pointer_x <= 155 {
-                        if field == 4 {
-                            self.adjust_installer_time_zone(true);
-                        } else {
-                            self.adjust_installer_date_time(true);
+                if clicked {
+                    if let Some(field) = field {
+                        self.installer_focus = field;
+                        if field == 2 && (170..=405).contains(&self.pointer_x) {
+                            self.installer_date_time_part = if self.pointer_x < 248 {
+                                0
+                            } else if self.pointer_x < 326 {
+                                1
+                            } else {
+                                2
+                            };
+                        } else if field == 3 && (170..=405).contains(&self.pointer_x) {
+                            self.installer_date_time_part =
+                                if self.pointer_x < 288 { 3 } else { 4 };
                         }
-                    } else if clicked && self.pointer_x >= 420 {
-                        if field == 4 {
-                            self.adjust_installer_time_zone(false);
-                        } else {
-                            self.adjust_installer_date_time(false);
+                        if self.pointer_x <= 155 {
+                            if field == 4 {
+                                self.adjust_installer_time_zone(true);
+                            } else {
+                                self.adjust_installer_date_time(true);
+                            }
+                        } else if self.pointer_x >= 420 {
+                            if field == 4 {
+                                self.adjust_installer_time_zone(false);
+                            } else {
+                                self.adjust_installer_date_time(false);
+                            }
                         }
                     }
                 }
+            }
+            if self.installer_step == InstallerStep::DateTime
+                && clicked
+                && (500..=900).contains(&self.pointer_x)
+                && (405..=770).contains(&self.pointer_y)
+            {
+                self.installer_focus = 4;
+                self.select_installer_time_zone_from_map(self.pointer_x);
+                crate::output_text(b"[installer] time-zone selected from map\n");
             }
             let popup = self.installer_step == InstallerStep::Confirm;
             let welcome = self.installer_step == InstallerStep::Welcome;

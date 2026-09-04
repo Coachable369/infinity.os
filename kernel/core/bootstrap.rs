@@ -206,7 +206,7 @@ const STORAGE_DEVICE_BMP: &[u8] = &[];
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 const DATE_TIME_WORLD_BMP: &[u8] =
-    include_bytes!("../../assets/boot/infinity-date-time-world-v1.bmp");
+    include_bytes!("../../assets/boot/infinity-time-zone-map-v1.bmp");
 #[cfg(not(feature = "installer"))]
 const DATE_TIME_WORLD_BMP: &[u8] = &[];
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -216,7 +216,6 @@ const BOOT_EMBLEM_TOP_PERCENT: usize = 23;
 // Installer-only calibration: the ISO reveal pulse follows the visible ribbon
 // centerline in the composited bootstrap artwork, which sits 50 pixels below
 // the original mathematical path origin.
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 const BOOT_PARTICLE_Y_OFFSET: i32 = 50;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 const CONSOLE_EMBLEM_TOP_PERCENT: usize = 18;
@@ -6151,24 +6150,92 @@ impl DisplayDevice {
         let art_width = self.width * 40 / 100;
         let art_height = self.height * 365 / 1000;
         self.fill_rect_alpha(art_left, art_top, art_width, art_height, 1, 9, 18, 226);
-        self.paint_bitmap_fit_rect(DATE_TIME_WORLD_BMP, art_left, art_top, art_width, art_height);
+        let map_width = art_width.saturating_sub(8 * scale);
+        let map_height = (map_width / 2).min(art_height.saturating_sub(8 * scale));
+        let map_left = art_left + (art_width.saturating_sub(map_width)) / 2;
+        let map_top = art_top + (art_height.saturating_sub(map_height)) / 2;
+        self.paint_bitmap_fit_rect(
+            DATE_TIME_WORLD_BMP,
+            map_left,
+            map_top,
+            map_width,
+            map_height,
+        );
+        let (longitude, latitude) = Self::installer_time_zone_map_coordinates(date_time.time_zone_id);
+        let marker_x = map_left as i32 + (longitude as i32 + 180) * map_width as i32 / 360;
+        let marker_y = map_top as i32 + (90 - latitude as i32) * map_height as i32 / 180;
+        let band_width = (map_width / 24).max(4 * scale);
+        let band_left = (marker_x - band_width as i32 / 2)
+            .max(map_left as i32)
+            .min((map_left + map_width.saturating_sub(band_width)) as i32) as usize;
+        self.fill_rect_alpha(
+            band_left,
+            map_top,
+            band_width,
+            map_height,
+            32,
+            173,
+            238,
+            54,
+        );
+        self.fill_rect(band_left, map_top, scale, map_height, 63, 196, 241);
+        self.fill_rect(
+            band_left + band_width.saturating_sub(scale),
+            map_top,
+            scale,
+            map_height,
+            63,
+            196,
+            241,
+        );
+        self.fill_rect(
+            map_left,
+            marker_y.max(map_top as i32) as usize,
+            map_width,
+            scale,
+            45,
+            139,
+            190,
+        );
+        self.star_orb(marker_x, marker_y, 4 * scale as i32, 245, true);
+        self.fill_rect_alpha(map_left, map_top, map_width, 45 * scale, 1, 8, 17, 196);
+        self.fill_rect_alpha(
+            map_left,
+            map_top + map_height.saturating_sub(38 * scale),
+            map_width,
+            38 * scale,
+            1,
+            8,
+            17,
+            208,
+        );
         self.outline_rounded_rect(art_left, art_top, art_width, art_height, 12 * scale, 38, 111, 151);
         self.installer_corner_accents(art_left, art_top, art_width, art_height);
         self.installer_text_strong(
             art_left + 22 * scale,
             art_top + 20 * scale,
-            b"YOUR TIME. IN SYNC.",
+            b"SELECT YOUR TIME ZONE",
             64,
             202,
             247,
         );
         self.installer_text(
             art_left + 22 * scale,
-            art_top + 48 * scale,
-            b"A consistent clock across your system and future mesh.",
+            art_top + art_height.saturating_sub(31 * scale),
+            Self::installer_time_zone_label(date_time.time_zone_id),
             184,
             204,
             221,
+        );
+        let instruction = b"CLICK MAP  |  LEFT / RIGHT";
+        let instruction_width = self.installer_text_width(instruction, false);
+        self.installer_text(
+            art_left + art_width.saturating_sub(22 * scale + instruction_width),
+            art_top + art_height.saturating_sub(31 * scale),
+            instruction,
+            84,
+            187,
+            229,
         );
         self.installer_text(
             left + width.saturating_sub(inset + self.installer_text_width(b"05", false)),
@@ -6206,6 +6273,26 @@ impl DisplayDevice {
             10 => b"UTC+09:00  Japan",
             11 => b"UTC+10:00  Eastern Australia",
             _ => b"UTC+00:00  Universal",
+        }
+    }
+
+    // ------------------------=
+    // FUNC: installer_time_zone_map_coordinates
+    // DESC: Returns a representative longitude and latitude for a typed time-zone marker.
+    // ------------------=
+    fn installer_time_zone_map_coordinates(id: u16) -> (i16, i16) {
+        match id {
+            1 => (-122, 37),
+            2 => (-111, 40),
+            3 => (-95, 40),
+            4 => (-74, 40),
+            5 => (-63, 45),
+            7 => (10, 50),
+            8 => (78, 22),
+            9 => (104, 1),
+            10 => (139, 36),
+            11 => (151, -33),
+            _ => (0, 51),
         }
     }
 
@@ -7085,11 +7172,10 @@ pub fn console_present(
                 let content_redraw = full_redraw
                     || screen_changed
                     || (installer_screen == 5
-                        && (focus_changed
-                            || choice_changed
+                        && (choice_changed
                             || date_time_changed
                             || date_time_part_changed
-                            || pressed_changed));
+                            || (focus_changed && !pointer_changed)));
                 if content_redraw {
                     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
                     console.display.restore_installer_panel(installer_screen);

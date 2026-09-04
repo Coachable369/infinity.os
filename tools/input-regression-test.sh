@@ -34,6 +34,12 @@ rg -Uq 'VirtualBox ARM.*Absolute Pointer[[:space:][:print:]]*stationary firmware
 rg -q 'installer_stationary_pointer_target' kernel/core/console.rs
 rg -Uq 'let defer_for_pointer = unsafe \{[[:space:][:print:]]*POINTER_ACTIVITY_PENDING = false;[[:space:][:print:]]*if POINTER_ACTIVITY_GRACE_TICKS != 0[[:space:][:print:]]*\};[[:space:][:print:]]*if defer_for_pointer \{[[:space:][:print:]]*return;' kernel/core/bootstrap.rs
 
+# The Date & Time step keeps ordinary pointer motion cursor-only. Fields acquire
+# focus on a click, while the map click resolves to the same typed zone model.
+rg -q 'select_installer_time_zone_from_map' kernel/core/console.rs
+rg -Uq 'if clicked \{[[:space:]]*if let Some\(field\) = field' kernel/core/console.rs
+rg -q 'focus_changed && !pointer_changed' kernel/core/bootstrap.rs
+
 # Oracle VirtualBox USBHIDT_REPORT is packed as buttons, dz, dw, padding,
 # X(u16 LE), Y(u16 LE), with both axes declared in the 0..0x7fff range.
 rg -q 'decode_usb_absolute_pointer' "$driver"

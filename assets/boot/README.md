@@ -21,6 +21,7 @@ installation experience.
 - `infinity-disk-discovery-vision-v1.png` — step-three Infinity Pool growth illustration with code-rendered copy safe zone
 - `infinity-storage-device-v1.png` — step-three discovered-device product thumbnail
 - `infinity-date-time-world-v1.png` — date/time step world-clock and synchronized-orbit artwork
+- `infinity-time-zone-map-v1.png` — text-free 2:1 world map used by the live time-zone picker; the selected longitude window, latitude guide, and marker are rendered from typed configuration
 - `infinity-installer-activation-v1.png` — generated system-generation activation artwork for progress and completion
 
 The same-named `.bmp` files are the firmware-ready copies embedded in the

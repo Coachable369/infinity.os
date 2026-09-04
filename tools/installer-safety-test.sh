@@ -19,8 +19,10 @@ rg -Fq 'fn installer_pool_panel(' kernel/core/bootstrap.rs
 rg -Fq 'include_bytes!("../../assets/boot/infinity-disk-discovery-vision-v1.bmp")' kernel/core/bootstrap.rs
 rg -Fq 'include_bytes!("../../assets/boot/infinity-storage-device-v1.bmp")' kernel/core/bootstrap.rs
 rg -Fq 'fn installer_disk_discovery_panel(' kernel/core/bootstrap.rs
-rg -Fq 'include_bytes!("../../assets/boot/infinity-date-time-world-v1.bmp")' kernel/core/bootstrap.rs
+rg -Fq 'include_bytes!("../../assets/boot/infinity-time-zone-map-v1.bmp")' kernel/core/bootstrap.rs
 rg -Fq 'fn installer_date_time_panel(' kernel/core/bootstrap.rs
+rg -Fq 'fn select_installer_time_zone_from_map(' kernel/core/console.rs
+rg -Fq 'focus_changed && !pointer_changed' kernel/core/bootstrap.rs
 rg -Fq 'install_date_time_configuration(plan.date_time)' kernel/storage/format.rs
 rg -Fq 'b"/system/settings/date-time"' kernel/storage/object.rs
 rg -Fq 'StorageProfile::SharedDynamic' kernel/core/console.rs
