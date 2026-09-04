@@ -10,7 +10,8 @@ use ui::platform::{CacheBudget, FrameClock};
 use ui::scene::{linear_layout, AccessibilityRole, Axis, ElementKind, ElementState, SemanticElement};
 use ui::skin::{decode_header, diagnostic_light_skin, encode_header, AppearanceScope, SkinId, SkinRegistry, SkinError};
 use ui::system_layout::{
-    DesktopTarget, OnboardingTarget, SettingsTarget, SystemLayout, SystemMenuTarget,
+    resize_home_window, DesktopTarget, OnboardingTarget, SettingsTarget, SystemLayout,
+    SystemMenuTarget,
 };
 use ui::trusted::{TrustedSurface, TrustedUiError};
 use ui::vector::{semantic_name, validate, IconId, VectorCommand, VectorError, VectorIcon, MAX_VECTOR_COMMANDS};
@@ -57,6 +58,18 @@ fn installed_system_hit_geometry_test() {
     assert_eq!(square.desktop_target(170, 560, 30, 500, true, false), Some(DesktopTarget::HomeItem(0)));
     assert_eq!(square.desktop_target(260, 970, 30, 500, true, false), Some(DesktopTarget::Dock(0)));
     assert_eq!(square.desktop_target(100, 510, 30, 500, false, false), None);
+    assert_eq!(
+        square.desktop_target_sized(629, 699, 30, 200, 600, 500, true, false),
+        Some(DesktopTarget::HomeResize(3))
+    );
+    assert_eq!(
+        resize_home_window(100, 200, 430, 380, 3, 700, 800),
+        (100, 200, 600, 600)
+    );
+    assert_eq!(
+        resize_home_window(100, 200, 430, 380, 0, 350, 450),
+        (230, 320, 300, 260)
+    );
     assert_eq!(square.system_menu_target(0, 50, 50), SystemMenuTarget::Item(0));
     assert_eq!(square.system_menu_target(0, 500, 500), SystemMenuTarget::Dismiss);
     assert_eq!(square.settings_target(200, 335, false), Some(SettingsTarget::Section(0)));
@@ -66,6 +79,10 @@ fn installed_system_hit_geometry_test() {
     let hidpi = SystemLayout::new(2560, 1440);
     assert_eq!(hidpi.onboarding_target(0, 220, 810), Some(OnboardingTarget::Primary));
     assert_eq!(hidpi.onboarding_target(4, 220, 560), Some(OnboardingTarget::Input));
+    assert!(ui::redraw::desktop_menu_change_requires_bounded_redraw(2, 3, 0, 0, true));
+    assert!(ui::redraw::desktop_menu_change_requires_bounded_redraw(3, 3, 0, 0, true));
+    assert!(ui::redraw::desktop_menu_change_requires_bounded_redraw(3, 2, 0, 0, true));
+    assert!(!ui::redraw::desktop_menu_change_requires_bounded_redraw(2, 4, 0, 0, true));
 }
 
 // ------------------------=

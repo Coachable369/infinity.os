@@ -1461,12 +1461,16 @@ impl DisplayDevice {
         validation_error: bool,
         window_x: i32,
         window_y: i32,
+        window_width: i32,
+        window_height: i32,
         window_visible: bool,
         window_maximized: bool,
         home_location: usize,
         selected_item: Option<usize>,
         dragging_item: Option<usize>,
         note_location: usize,
+        desktop_items: u8,
+        desktop_item_positions: &[[i32; 2]; 7],
         clock: crate::storage::DateTimeConfiguration,
         settings_maximized: bool,
         menu_kind: usize,
@@ -1491,7 +1495,7 @@ impl DisplayDevice {
         let top_bar = self.system_top_bar((screen == 3).then_some(menu_kind), clock);
 
         if matches!(screen, 2 | 3) {
-            self.desktop_shell(scale, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location);
+            self.desktop_shell(scale, window_x, window_y, window_width, window_height, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, desktop_items, desktop_item_positions);
         }
 
         if matches!(screen, 1 | 5 | 6) {
@@ -2593,12 +2597,9 @@ impl DisplayDevice {
     // FUNC: desktop_window_rect
     // DESC: Resolves the movable Home window bounds in framebuffer pixels.
     // ------------------=
-    fn desktop_window_rect(&self, window_x: i32, window_y: i32) -> (usize, usize, usize, usize) {
-        let left = self.width * window_x.clamp(10, 540) as usize / 1000;
-        let top = self.height * window_y.clamp(80, 550) as usize / 1000;
-        let width = self.width * 43 / 100;
-        let height = (self.height * 38 / 100).min(430 * self.ui_scale().max(1));
-        (left, top, width.min(self.width.saturating_sub(left)), height.min(self.height.saturating_sub(top)))
+    fn desktop_window_rect(&self, window_x: i32, window_y: i32, window_width: i32, window_height: i32) -> (usize, usize, usize, usize) {
+        crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .home_window_geometry_sized(window_x, window_y, window_width, window_height, false)
     }
 
     // ------------------------=
@@ -2673,9 +2674,9 @@ impl DisplayDevice {
     // FUNC: move_desktop_window
     // DESC: Moves the rendered Home window and repairs only newly exposed wallpaper strips.
     // ------------------=
-    fn move_desktop_window(&mut self, old_x: i32, old_y: i32, new_x: i32, new_y: i32) {
-        let old_rect = self.desktop_window_rect(old_x, old_y);
-        let new_rect = self.desktop_window_rect(new_x, new_y);
+    fn move_desktop_window(&mut self, old_x: i32, old_y: i32, new_x: i32, new_y: i32, window_width: i32, window_height: i32) {
+        let old_rect = self.desktop_window_rect(old_x, old_y, window_width, window_height);
+        let new_rect = self.desktop_window_rect(new_x, new_y, window_width, window_height);
         let width = old_rect.2.min(new_rect.2);
         let height = old_rect.3.min(new_rect.3);
         self.copy_framebuffer_rect(old_rect.0, old_rect.1, new_rect.0, new_rect.1, width, height);
@@ -2686,7 +2687,27 @@ impl DisplayDevice {
     // FUNC: desktop_shell
     // DESC: Renders the screenshot-matched InfinityOS desktop, home browser, status cards, and application dock.
     // ------------------=
-    fn desktop_shell(&mut self, scale: usize, window_x: i32, window_y: i32, window_visible: bool, window_maximized: bool, home_location: usize, selected_item: Option<usize>, dragging_item: Option<usize>, note_location: usize) {
+    fn desktop_shell(&mut self, scale: usize, window_x: i32, window_y: i32, window_width: i32, window_height: i32, window_visible: bool, window_maximized: bool, home_location: usize, selected_item: Option<usize>, dragging_item: Option<usize>, note_location: usize, desktop_items: u8, desktop_item_positions: &[[i32; 2]; 7]) {
+        for (index, (name, kind)) in [
+            (b"Documents".as_slice(), 0),
+            (b"Downloads", 1),
+            (b"Pictures", 0),
+            (b"Music", 0),
+            (b"Videos", 0),
+            (b"Projects", 2),
+            (b"notes.txt", 3),
+        ]
+        .iter()
+        .enumerate()
+        {
+            if desktop_items & (1u8 << index) == 0 {
+                continue;
+            }
+            let [x, y] = desktop_item_positions[index];
+            let pixel_x = self.width * x.clamp(35, 950) as usize / 1000;
+            let pixel_y = self.height * y.clamp(90, 880) as usize / 1000;
+            self.desktop_icon(pixel_x, pixel_y, name, *kind);
+        }
         if window_visible {
         let (browser_left, browser_top, browser_width, browser_height) = if window_maximized {
             let left = 10 * scale;
@@ -2694,7 +2715,8 @@ impl DisplayDevice {
             let bottom = self.height.saturating_sub(90 * scale);
             (left, top, self.width.saturating_sub(left * 2), bottom.saturating_sub(top))
         } else {
-            (self.width * window_x.clamp(10, 540) as usize / 1000, self.height * window_y.clamp(80, 550) as usize / 1000, self.width * 43 / 100, (self.height * 38 / 100).min(430 * scale))
+            crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .home_window_geometry_sized(window_x, window_y, window_width, window_height, false)
         };
         self.glass_panel(
             browser_left,
@@ -2856,6 +2878,21 @@ impl DisplayDevice {
         }
         if dragging_item == Some(6) {
             self.ui_text(browser_left + sidebar_w + 28 * scale, browser_top + browser_height.saturating_sub(28 * scale), b"DROP NOTES.TXT ON A SIDEBAR LOCATION", 91, 211, 250, 1);
+        }
+        if !window_maximized {
+            let right = browser_left + browser_width.saturating_sub(5 * scale);
+            let bottom = browser_top + browser_height.saturating_sub(5 * scale);
+            let left = browser_left + 5 * scale;
+            let top = browser_top + 5 * scale;
+            for (x, y, dx, dy) in [
+                (left, top, 1i32, 1i32),
+                (right, top, -1, 1),
+                (left, bottom, 1, -1),
+                (right, bottom, -1, -1),
+            ] {
+                self.icon_line(x as i32, y as i32, x as i32 + dx * 8 * scale as i32, y as i32, (93, 178, 213), 12 * scale);
+                self.icon_line(x as i32, y as i32, x as i32, y as i32 + dy * 8 * scale as i32, (93, 178, 213), 12 * scale);
+            }
         }
         }
 
@@ -7035,12 +7072,16 @@ struct ConsoleSurface {
     last_system_validation_error: bool,
     last_home_window_x: i32,
     last_home_window_y: i32,
+    last_home_window_width: i32,
+    last_home_window_height: i32,
     last_home_window_visible: bool,
     last_home_window_maximized: bool,
     last_home_location: usize,
     last_home_selected_item: Option<usize>,
     last_home_dragging_item: Option<usize>,
     last_home_note_location: usize,
+    last_desktop_items: u8,
+    last_desktop_item_positions: [[i32; 2]; 7],
     last_system_clock: crate::storage::DateTimeConfiguration,
     last_settings_maximized: bool,
     system_ui_active: bool,
@@ -7050,6 +7091,18 @@ struct ConsoleSurface {
     cursor_width: usize,
     cursor_height: usize,
     cursor_backing: [u32; 128 * 128],
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    menu_saved: bool,
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    menu_left: usize,
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    menu_top: usize,
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    menu_width: usize,
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    menu_height: usize,
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    menu_backing: [u32; 600 * 800],
 }
 
 static mut CONSOLE: Option<ConsoleSurface> = None;
@@ -7106,12 +7159,16 @@ fn activate_console(display: DisplayDevice) {
             last_system_validation_error: false,
             last_home_window_x: i32::MIN,
             last_home_window_y: i32::MIN,
+            last_home_window_width: i32::MIN,
+            last_home_window_height: i32::MIN,
             last_home_window_visible: false,
             last_home_window_maximized: false,
             last_home_location: usize::MAX,
             last_home_selected_item: None,
             last_home_dragging_item: None,
             last_home_note_location: usize::MAX,
+            last_desktop_items: 0,
+            last_desktop_item_positions: [[i32::MIN; 2]; 7],
             last_system_clock: crate::storage::DateTimeConfiguration::utc_default(),
             last_settings_maximized: false,
             system_ui_active: false,
@@ -7121,6 +7178,18 @@ fn activate_console(display: DisplayDevice) {
             cursor_width: 0,
             cursor_height: 0,
             cursor_backing: [0; 128 * 128],
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+            menu_saved: false,
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+            menu_left: 0,
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+            menu_top: 0,
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+            menu_width: 0,
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+            menu_height: 0,
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+            menu_backing: [0; 600 * 800],
         });
     }
 }
@@ -7147,6 +7216,86 @@ impl ConsoleSurface {
             }
         }
         self.cursor_saved = false;
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: restore_menu
+    // DESC: Restores the exact desktop pixels saved beneath the active top-level menu.
+    // ------------------=
+    fn restore_menu(&mut self) {
+        if !self.menu_saved {
+            return;
+        }
+        for y in 0..self.menu_height {
+            for x in 0..self.menu_width {
+                unsafe {
+                    write_volatile(
+                        self.display.buffer.add(
+                            (self.menu_top + y) * self.display.stride + self.menu_left + x,
+                        ),
+                        self.menu_backing[y * self.menu_width + x],
+                    );
+                }
+            }
+        }
+        self.menu_saved = false;
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: save_menu
+    // DESC: Captures the bounded desktop region underneath one translucent top-level menu.
+    // ------------------=
+    fn save_menu(&mut self, menu_kind: usize) {
+        let layout = crate::ui::system_layout::SystemLayout::new(
+            self.display.width,
+            self.display.height,
+        );
+        let (left, top, width, height, _) = layout.system_menu_geometry(menu_kind);
+        let width = width.min(600);
+        let height = height.min(800);
+        for y in 0..height {
+            for x in 0..width {
+                unsafe {
+                    self.menu_backing[y * width + x] = read_volatile(
+                        self.display.buffer.add((top + y) * self.display.stride + left + x),
+                    );
+                }
+            }
+        }
+        self.menu_left = left;
+        self.menu_top = top;
+        self.menu_width = width;
+        self.menu_height = height;
+        self.menu_saved = true;
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: present_desktop_menu
+    // DESC: Opens, updates, switches, or closes a menu using only its saved damage region.
+    // ------------------=
+    fn present_desktop_menu(
+        &mut self,
+        previous_screen: u8,
+        previous_menu: usize,
+        screen: u8,
+        menu_kind: usize,
+        focus: usize,
+        clock: crate::storage::DateTimeConfiguration,
+    ) {
+        if previous_screen == 3 {
+            self.restore_menu();
+        }
+        if screen == 3 {
+            self.save_menu(menu_kind);
+            let scale = self.display.ui_scale().max(1);
+            self.display.system_menu_panel(menu_kind, focus, scale);
+        }
+        if previous_screen != screen || previous_menu != menu_kind {
+            self.display.system_top_bar((screen == 3).then_some(menu_kind), clock);
+        }
     }
 
     // ------------------------=
@@ -7465,12 +7614,16 @@ pub fn system_ui_present(
     validation_error: bool,
     window_x: i32,
     window_y: i32,
+    window_width: i32,
+    window_height: i32,
     window_visible: bool,
     window_maximized: bool,
     home_location: usize,
     selected_item: Option<usize>,
     dragging_item: Option<usize>,
     note_location: usize,
+    desktop_items: u8,
+    desktop_item_positions: &[[i32; 2]; 7],
     clock: crate::storage::DateTimeConfiguration,
     settings_maximized: bool,
     menu_kind: usize,
@@ -7484,14 +7637,22 @@ pub fn system_ui_present(
             let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
             let focus_changed = console.last_system_focus != focus;
             let clock_changed = console.last_system_clock != clock;
-            let structural_change_without_window = console.last_system_screen != screen
-                || console.last_system_step != step
-                || crate::ui::redraw::focus_change_requires_structural_redraw(
+            let bounded_menu_change = crate::ui::redraw::desktop_menu_change_requires_bounded_redraw(
+                console.last_system_screen,
+                screen,
+                console.last_system_menu,
+                menu_kind,
+                focus_changed,
+            );
+            let structural_change_without_window = (!bounded_menu_change
+                && (console.last_system_screen != screen
+                    || crate::ui::redraw::focus_change_requires_structural_redraw(
                     screen,
                     pointer_changed,
                     focus_changed,
                 )
-                || console.last_system_menu != menu_kind
+                    || console.last_system_menu != menu_kind))
+                || console.last_system_step != step
                 || console.last_system_validation_error != validation_error
                 || console.last_home_window_visible != window_visible
                 || console.last_home_window_maximized != window_maximized
@@ -7499,6 +7660,8 @@ pub fn system_ui_present(
                 || console.last_home_selected_item != selected_item
                 || console.last_home_dragging_item != dragging_item
                 || console.last_home_note_location != note_location
+                || console.last_desktop_items != desktop_items
+                || console.last_desktop_item_positions != *desktop_item_positions
                 || crate::ui::redraw::clock_change_requires_structural_redraw(
                     screen,
                     clock_changed,
@@ -7506,6 +7669,8 @@ pub fn system_ui_present(
                 || console.last_settings_maximized != settings_maximized;
             let window_moved = console.last_home_window_x != window_x
                 || console.last_home_window_y != window_y;
+            let window_resized = console.last_home_window_width != window_width
+                || console.last_home_window_height != window_height;
             let window_move_requires_structural_redraw =
                 crate::ui::redraw::desktop_window_move_requires_structural_redraw(
                     screen,
@@ -7515,7 +7680,21 @@ pub fn system_ui_present(
                 );
             let content_changed = console.last_system_content != content;
             let mut full_surface_redrawn = false;
-            if window_moved
+            if bounded_menu_change
+                && !structural_change_without_window
+                && !window_moved
+                && !window_resized
+                && !content_changed
+            {
+                console.present_desktop_menu(
+                    console.last_system_screen,
+                    console.last_system_menu,
+                    screen,
+                    menu_kind,
+                    focus,
+                    clock,
+                );
+            } else if window_moved
                 && !structural_change_without_window
                 && !content_changed
                 && screen == 2
@@ -7530,11 +7709,14 @@ pub fn system_ui_present(
                         console.last_home_window_y,
                         window_x,
                         window_y,
+                        window_width,
+                        window_height,
                     );
-            } else if structural_change_without_window || window_move_requires_structural_redraw {
+            } else if structural_change_without_window || window_move_requires_structural_redraw || window_resized {
+                console.menu_saved = false;
                 console
                     .display
-                    .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, clock, settings_maximized, menu_kind);
+                    .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, window_width, window_height, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, desktop_items, desktop_item_positions, clock, settings_maximized, menu_kind);
                 full_surface_redrawn = true;
             } else if crate::ui::redraw::onboarding_controls_require_repaint(
                 screen,
@@ -7551,9 +7733,10 @@ pub fn system_ui_present(
                     .display
                     .system_ui_input_field(screen, step, input, masked);
             } else if content_changed {
+                console.menu_saved = false;
                 console
                     .display
-                    .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, clock, settings_maximized, menu_kind);
+                    .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, window_width, window_height, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, desktop_items, desktop_item_positions, clock, settings_maximized, menu_kind);
                 full_surface_redrawn = true;
             }
             if !full_surface_redrawn
@@ -7575,12 +7758,16 @@ pub fn system_ui_present(
             console.last_system_validation_error = validation_error;
             console.last_home_window_x = window_x;
             console.last_home_window_y = window_y;
+            console.last_home_window_width = window_width;
+            console.last_home_window_height = window_height;
             console.last_home_window_visible = window_visible;
             console.last_home_window_maximized = window_maximized;
             console.last_home_location = home_location;
             console.last_home_selected_item = selected_item;
             console.last_home_dragging_item = dragging_item;
             console.last_home_note_location = note_location;
+            console.last_desktop_items = desktop_items;
+            console.last_desktop_item_positions = *desktop_item_positions;
             console.last_system_clock = clock;
             console.last_settings_maximized = settings_maximized;
         }
@@ -7603,12 +7790,16 @@ pub fn system_ui_present(
     _validation_error: bool,
     _window_x: i32,
     _window_y: i32,
+    _window_width: i32,
+    _window_height: i32,
     _window_visible: bool,
     _window_maximized: bool,
     _home_location: usize,
     _selected_item: Option<usize>,
     _dragging_item: Option<usize>,
     _note_location: usize,
+    _desktop_items: u8,
+    _desktop_item_positions: &[[i32; 2]; 7],
     _clock: crate::storage::DateTimeConfiguration,
     _settings_maximized: bool,
     _menu_kind: usize,

@@ -89,6 +89,8 @@ fn main(){
     let mut store=ObjectStore::format(disk.clone(),0,80_000,seed).expect("format");
     assert!(store.runtime_bootstrap_valid());
     assert!(store.resolve(b"/home/default/documents").is_ok());
+    let documents=store.resolve(b"/home/default/documents").expect("documents reference");
+    store.attach(b"/home/default/desktop/documents",documents).expect("desktop reference");
     let id=store.create(b"hello",ObjectType::Text,Space::Personal,b"Hello Infinity").expect("create");
     store.attach(b"/home/default/documents/hello",id).expect("attach");
     assert_eq!(store.write(id,b"Version 2").unwrap(),2);assert_eq!(store.write(id,b"Version 3").unwrap(),3);
@@ -127,6 +129,7 @@ fn main(){
     let generation=store.generation();drop(store);
 
     let mut rebooted=ObjectStore::mount(disk.clone(),0).expect("reboot mount");
+    assert_eq!(rebooted.resolve(b"/home/default/desktop/documents").unwrap(),documents);
     assert_eq!(rebooted.generation(),generation);assert_eq!(rebooted.resolve(b"/home/default/archive/hello").unwrap(),id);
     let mut content=[0u8;4096];let n=rebooted.read(id,None,&mut content).unwrap();assert_eq!(&content[..n],b"Version 3");
     assert_eq!(rebooted.restore(id,1).unwrap(),4);drop(rebooted);

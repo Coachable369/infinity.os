@@ -52,3 +52,20 @@ pub const fn onboarding_controls_require_repaint(
 ) -> bool {
     screen == 1 && pointer_changed && focus_changed
 }
+
+// ------------------------=
+// FUNC: desktop_menu_change_requires_bounded_redraw
+// DESC: Selects saved-region composition for desktop menu open, hover, switch, and close transitions.
+// ------------------=
+pub const fn desktop_menu_change_requires_bounded_redraw(
+    previous_screen: u8,
+    screen: u8,
+    previous_menu: usize,
+    menu: usize,
+    focus_changed: bool,
+) -> bool {
+    matches!(previous_screen, 2 | 3)
+        && matches!(screen, 2 | 3)
+        && (previous_screen != screen
+            || (screen == 3 && (previous_menu != menu || focus_changed)))
+}

@@ -612,6 +612,52 @@ pub fn namespace_link(from: &[u8], to: &[u8]) -> Result<object::ObjectId, object
         Err(object::ObjectError::SpaceUnavailable)
     }
 }
+
+// ------------------------=
+// FUNC: namespace_resolve
+// DESC: Resolves a human namespace projection to its stable native Object ID.
+// ------------------=
+pub fn namespace_resolve(path: &[u8]) -> Result<object::ObjectId, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        with_store(|s| s.resolve(path))
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = path;
+        Err(object::ObjectError::SpaceUnavailable)
+    }
+}
+
+// ------------------------=
+// FUNC: namespace_ensure_link
+// DESC: Idempotently persists another human namespace reference to an existing object.
+// ------------------=
+pub fn namespace_ensure_link(
+    from: &[u8],
+    to: &[u8],
+) -> Result<object::ObjectId, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        with_store(|s| {
+            let id = s.resolve(from)?;
+            match s.resolve(to) {
+                Ok(existing) if existing == id => Ok(id),
+                Ok(_) => Err(object::ObjectError::NameConflict),
+                Err(object::ObjectError::NamespaceNotFound) => {
+                    s.attach(to, id)?;
+                    Ok(id)
+                }
+                Err(error) => Err(error),
+            }
+        })
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = (from, to);
+        Err(object::ObjectError::SpaceUnavailable)
+    }
+}
 // ------------------------=
 // FUNC: namespace_move
 // DESC: Implements the namespace move operation.

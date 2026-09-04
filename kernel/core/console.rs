@@ -264,17 +264,28 @@ struct ConsoleRuntime {
     onboarding_validation_error: bool,
     home_window_x: i32,
     home_window_y: i32,
+    home_window_width: i32,
+    home_window_height: i32,
     home_window_visible: bool,
     home_window_maximized: bool,
     home_window_restore_x: i32,
     home_window_restore_y: i32,
+    home_window_restore_width: i32,
+    home_window_restore_height: i32,
     home_window_dragging: bool,
+    home_window_resizing: Option<usize>,
     home_window_drag_offset_x: i32,
     home_window_drag_offset_y: i32,
     home_location: usize,
     home_previous_location: usize,
     home_selected_item: Option<usize>,
     home_dragging_item: Option<usize>,
+    home_drag_from_desktop: bool,
+    home_drag_origin_x: i32,
+    home_drag_origin_y: i32,
+    home_drag_moved: bool,
+    desktop_items: u8,
+    desktop_item_positions: [[i32; 2]; 7],
     home_note_location: usize,
     home_note_previous_location: usize,
     home_clipboard_note: bool,
@@ -328,18 +339,37 @@ impl ConsoleRuntime {
             settings_maximized: false,
             onboarding_validation_error: false,
             home_window_x: 30,
-            home_window_y: 500,
+            home_window_y: 400,
+            home_window_width: 430,
+            home_window_height: 480,
             home_window_visible: true,
             home_window_maximized: false,
             home_window_restore_x: 30,
-            home_window_restore_y: 500,
+            home_window_restore_y: 400,
+            home_window_restore_width: 430,
+            home_window_restore_height: 480,
             home_window_dragging: false,
+            home_window_resizing: None,
             home_window_drag_offset_x: 0,
             home_window_drag_offset_y: 0,
             home_location: 0,
             home_previous_location: 0,
             home_selected_item: None,
             home_dragging_item: None,
+            home_drag_from_desktop: false,
+            home_drag_origin_x: 0,
+            home_drag_origin_y: 0,
+            home_drag_moved: false,
+            desktop_items: 0,
+            desktop_item_positions: [
+                [70, 150],
+                [140, 150],
+                [210, 150],
+                [280, 150],
+                [350, 150],
+                [420, 150],
+                [490, 150],
+            ],
             home_note_location: 0,
             home_note_previous_location: 0,
             home_clipboard_note: false,
@@ -520,12 +550,16 @@ impl ConsoleRuntime {
                 self.onboarding_validation_error,
                 self.home_window_x,
                 self.home_window_y,
+                self.home_window_width,
+                self.home_window_height,
                 self.home_window_visible,
                 self.home_window_maximized,
                 self.home_location,
                 self.home_selected_item,
                 self.home_dragging_item,
                 self.home_note_location,
+                self.desktop_items,
+                &self.desktop_item_positions,
                 self.desktop_clock,
                 self.settings_maximized,
                 self.shell_menu,
@@ -610,9 +644,99 @@ impl ConsoleRuntime {
         self.shell_menu = 0;
         self.settings_editing = false;
         self.home_window_dragging = false;
+        self.home_window_resizing = None;
         self.home_dragging_item = None;
+        self.refresh_desktop_items();
         self.reset_input();
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
+    }
+
+    // ------------------------=
+    // FUNC: desktop_reference_paths
+    // DESC: Maps one Home presentation item to its native source and Desktop namespace projections.
+    // ------------------=
+    fn desktop_reference_paths(item: usize) -> Option<(&'static [u8], &'static [u8])> {
+        match item {
+            0 => Some((b"/home/default/documents", b"/home/default/desktop/documents")),
+            1 => Some((b"/home/default/downloads", b"/home/default/desktop/downloads")),
+            2 => Some((b"/home/default/pictures", b"/home/default/desktop/pictures")),
+            3 => Some((b"/home/default/media", b"/home/default/desktop/music")),
+            4 => Some((b"/home/default/media", b"/home/default/desktop/videos")),
+            5 => Some((b"/home/default/projects", b"/home/default/desktop/projects")),
+            _ => None,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: refresh_desktop_items
+    // DESC: Reconstructs visible Desktop references from the persistent human namespace.
+    // ------------------=
+    fn refresh_desktop_items(&mut self) {
+        let mut items = 0u8;
+        for item in 0..6usize {
+            if let Some((_, target)) = Self::desktop_reference_paths(item) {
+                if crate::storage::namespace_resolve(target).is_ok() {
+                    items |= 1u8 << item;
+                }
+            }
+        }
+        self.desktop_items = items;
+    }
+
+    // ------------------------=
+    // FUNC: place_desktop_reference
+    // DESC: Persists a second namespace reference and records its current Desktop presentation point.
+    // ------------------=
+    fn place_desktop_reference(&mut self, item: usize) {
+        let Some((source, target)) = Self::desktop_reference_paths(item) else {
+            return;
+        };
+        if crate::storage::namespace_ensure_link(source, target).is_ok() {
+            self.desktop_items |= 1u8 << item;
+            self.desktop_item_positions[item] = [
+                self.pointer_x.clamp(35, 950),
+                self.pointer_y.clamp(90, 880),
+            ];
+            crate::output_text(b"[objects] Desktop reference committed\n");
+        } else {
+            crate::output_text(b"[objects] Desktop reference could not be committed\n");
+        }
+    }
+
+    // ------------------------=
+    // FUNC: desktop_item_at_pointer
+    // DESC: Hit-tests persistent Desktop references using their normalized presentation bounds.
+    // ------------------=
+    fn desktop_item_at_pointer(&self) -> Option<usize> {
+        for item in (0..7usize).rev() {
+            if self.desktop_items & (1u8 << item) == 0 {
+                continue;
+            }
+            let [x, y] = self.desktop_item_positions[item];
+            if (x - 34..=x + 34).contains(&self.pointer_x)
+                && (y - 32..=y + 48).contains(&self.pointer_y)
+            {
+                return Some(item);
+            }
+        }
+        None
+    }
+
+    // ------------------------=
+    // FUNC: desktop_target
+    // DESC: Resolves a pointer target from the same live Home bounds used by the renderer.
+    // ------------------=
+    fn desktop_target(&self, layout: SystemLayout) -> Option<DesktopTarget> {
+        layout.desktop_target_sized(
+            self.pointer_x,
+            self.pointer_y,
+            self.home_window_x,
+            self.home_window_y,
+            self.home_window_width,
+            self.home_window_height,
+            self.home_window_visible,
+            self.home_window_maximized,
+        )
     }
 
     // ------------------------=
@@ -703,7 +827,7 @@ impl ConsoleRuntime {
             (1, 0) => self.enter_console(),
             (1, 1) => {
                 self.home_window_x = 30;
-                self.home_window_y = 500;
+                self.home_window_y = 400;
                 self.home_window_visible = true;
                 self.enter_desktop();
             }
@@ -754,7 +878,7 @@ impl ConsoleRuntime {
             }
             (3, 1) => {
                 self.home_window_x = 30;
-                self.home_window_y = 500;
+                self.home_window_y = 400;
                 self.home_window_visible = true;
                 self.home_window_maximized = false;
                 self.enter_desktop();
@@ -780,7 +904,7 @@ impl ConsoleRuntime {
                 self.home_window_visible = true;
                 self.home_window_maximized = false;
                 self.home_window_x = 30;
-                self.home_window_y = 500;
+                self.home_window_y = 400;
                 self.enter_desktop();
             }
             (4, 3) => self.open_settings(0),
@@ -2132,43 +2256,76 @@ impl ConsoleRuntime {
                 }
             }
         } else if self.mode == ConsoleMode::Desktop {
-            if let Some(item) = self.home_dragging_item {
+            if let Some(corner) = self.home_window_resizing {
                 if released {
-                    if let Some(DesktopTarget::HomeSidebar(location)) = layout.desktop_target(
-                        self.pointer_x,
-                        self.pointer_y,
+                    let resized = crate::ui::system_layout::resize_home_window(
                         self.home_window_x,
                         self.home_window_y,
-                        self.home_window_visible,
-                        self.home_window_maximized,
-                    ) {
-                        if item == 6 {
-                            self.home_note_previous_location = self.home_note_location;
-                            self.home_note_location = location;
-                            self.home_previous_location = self.home_location;
-                            self.home_location = location;
-                            crate::output_text(b"[objects] notes.txt moved by drag and drop\n");
+                        self.home_window_width,
+                        self.home_window_height,
+                        corner,
+                        self.pointer_x,
+                        self.pointer_y,
+                    );
+                    self.home_window_x = resized.0;
+                    self.home_window_y = resized.1;
+                    self.home_window_width = resized.2;
+                    self.home_window_height = resized.3;
+                    self.home_window_resizing = None;
+                }
+            } else if let Some(item) = self.home_dragging_item {
+                if left_button
+                    && ((self.pointer_x - self.home_drag_origin_x).abs() > 7
+                        || (self.pointer_y - self.home_drag_origin_y).abs() > 7)
+                {
+                    self.home_drag_moved = true;
+                }
+                if released {
+                    let target = self.desktop_target(layout);
+                    if self.home_drag_from_desktop {
+                        if self.home_drag_moved {
+                            self.desktop_item_positions[item] = [
+                                self.pointer_x.clamp(35, 950),
+                                self.pointer_y.clamp(90, 880),
+                            ];
+                        }
+                    } else if !self.home_drag_moved && item < 6 {
+                        self.home_previous_location = self.home_location;
+                        self.home_location = item + 2;
+                    } else if self.home_drag_moved {
+                        match target {
+                            Some(DesktopTarget::HomeSidebar(location)) if item == 6 => {
+                                self.home_note_previous_location = self.home_note_location;
+                                self.home_note_location = location;
+                                self.home_previous_location = self.home_location;
+                                self.home_location = location;
+                                crate::output_text(b"[objects] notes.txt moved by drag and drop\n");
+                            }
+                            None if self.pointer_y > 55 && self.pointer_y < 900 => {
+                                self.place_desktop_reference(item);
+                            }
+                            _ => {}
                         }
                     }
                     self.home_dragging_item = None;
+                    self.home_drag_from_desktop = false;
+                    self.home_drag_moved = false;
                 }
             } else if self.home_window_dragging {
                 if left_button {
-                    self.home_window_x = (self.pointer_x - self.home_window_drag_offset_x).clamp(10, 540);
-                    self.home_window_y = (self.pointer_y - self.home_window_drag_offset_y).clamp(80, 550);
+                    self.home_window_x = (self.pointer_x - self.home_window_drag_offset_x)
+                        .clamp(0, 1000i32.saturating_sub(self.home_window_width));
+                    self.home_window_y = (self.pointer_y - self.home_window_drag_offset_y)
+                        .clamp(50, 920i32.saturating_sub(self.home_window_height));
                 }
                 if released {
                     self.home_window_dragging = false;
                 }
             } else if clicked {
-                match layout.desktop_target(
-                    self.pointer_x,
-                    self.pointer_y,
-                    self.home_window_x,
-                    self.home_window_y,
-                    self.home_window_visible,
-                    self.home_window_maximized,
-                ) {
+                match self.desktop_target(layout) {
+                    Some(DesktopTarget::HomeResize(corner)) => {
+                        self.home_window_resizing = Some(corner);
+                    }
                     Some(DesktopTarget::HomeTitle) => {
                         if !self.home_window_maximized {
                             self.home_window_dragging = true;
@@ -2176,14 +2333,22 @@ impl ConsoleRuntime {
                             self.home_window_drag_offset_y = self.pointer_y - self.home_window_y;
                         }
                     }
-                    Some(DesktopTarget::HomeControl(0 | 2)) => self.home_window_visible = false,
+                    Some(DesktopTarget::HomeControl(0)) => self.home_window_visible = false,
+                    Some(DesktopTarget::HomeControl(2)) => {
+                        self.home_window_visible = false;
+                        self.home_selected_item = None;
+                    }
                     Some(DesktopTarget::HomeControl(1)) => {
                         if self.home_window_maximized {
                             self.home_window_x = self.home_window_restore_x;
                             self.home_window_y = self.home_window_restore_y;
+                            self.home_window_width = self.home_window_restore_width;
+                            self.home_window_height = self.home_window_restore_height;
                         } else {
                             self.home_window_restore_x = self.home_window_x;
                             self.home_window_restore_y = self.home_window_y;
+                            self.home_window_restore_width = self.home_window_width;
+                            self.home_window_restore_height = self.home_window_height;
                         }
                         self.home_window_maximized = !self.home_window_maximized;
                     }
@@ -2198,12 +2363,11 @@ impl ConsoleRuntime {
                     }
                     Some(DesktopTarget::HomeItem(item)) => {
                         self.home_selected_item = Some(item);
-                        if item < 6 {
-                            self.home_previous_location = self.home_location;
-                            self.home_location = item + 2;
-                        } else if self.home_note_location == self.home_location {
-                            self.home_dragging_item = Some(item);
-                        }
+                        self.home_dragging_item = Some(item);
+                        self.home_drag_from_desktop = false;
+                        self.home_drag_origin_x = self.pointer_x;
+                        self.home_drag_origin_y = self.pointer_y;
+                        self.home_drag_moved = false;
                     }
                     Some(DesktopTarget::InfinityMenu) => {
                         self.open_shell_menu(0);
@@ -2212,10 +2376,7 @@ impl ConsoleRuntime {
                     Some(DesktopTarget::Status(item)) => self.activate_status_item(item),
                     Some(DesktopTarget::Dock(0)) => self.enter_console(),
                     Some(DesktopTarget::Dock(1)) => {
-                        self.home_window_x = 30;
-                        self.home_window_y = 500;
                         self.home_window_visible = true;
-                        self.home_window_maximized = false;
                     }
                     Some(DesktopTarget::Dock(2)) => self.open_settings(5),
                     Some(DesktopTarget::Dock(3 | 4)) => self.open_settings(3),
@@ -2226,20 +2387,21 @@ impl ConsoleRuntime {
                         self.home_location = 8;
                         crate::output_text(b"[objects] recycle collection opened\n")
                     }
-                    None => {}
+                    None => {
+                        if let Some(item) = self.desktop_item_at_pointer() {
+                            self.home_dragging_item = Some(item);
+                            self.home_drag_from_desktop = true;
+                            self.home_drag_origin_x = self.pointer_x;
+                            self.home_drag_origin_y = self.pointer_y;
+                            self.home_drag_moved = false;
+                        }
+                    }
                     _ => {}
                 }
             }
         } else if self.mode == ConsoleMode::SystemMenu {
             if clicked {
-                match layout.desktop_target(
-                    self.pointer_x,
-                    self.pointer_y,
-                    self.home_window_x,
-                    self.home_window_y,
-                    self.home_window_visible,
-                    self.home_window_maximized,
-                ) {
+                match self.desktop_target(layout) {
                     Some(DesktopTarget::InfinityMenu) => {
                         self.open_shell_menu(0);
                         self.redraw();

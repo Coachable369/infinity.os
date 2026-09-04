@@ -21,6 +21,7 @@ pub enum DesktopTarget {
     Status(usize),
     HomeTitle,
     HomeControl(usize),
+    HomeResize(usize),
     HomeToolbar(usize),
     HomeSidebar(usize),
     HomeItem(usize),
@@ -199,6 +200,33 @@ impl SystemLayout {
         window_visible: bool,
         window_maximized: bool,
     ) -> Option<DesktopTarget> {
+        self.desktop_target_sized(
+            normalized_x,
+            normalized_y,
+            window_x,
+            window_y,
+            430,
+            380,
+            window_visible,
+            window_maximized,
+        )
+    }
+
+    // ------------------------=
+    // FUNC: desktop_target_sized
+    // DESC: Resolves desktop controls against the live resizable Home window bounds.
+    // ------------------=
+    pub fn desktop_target_sized(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        window_visible: bool,
+        window_maximized: bool,
+    ) -> Option<DesktopTarget> {
         let point = self.point(normalized_x, normalized_y);
         let top_bar = self.top_bar_height();
         let brand_width = (150 * self.scale).min(self.width / 5);
@@ -230,7 +258,27 @@ impl SystemLayout {
         }
 
         if window_visible {
-            let (browser_left, browser_top, browser_width, _) = self.home_window_geometry(window_x, window_y, window_maximized);
+            let (browser_left, browser_top, browser_width, browser_height) = self.home_window_geometry_sized(
+                window_x,
+                window_y,
+                window_width,
+                window_height,
+                window_maximized,
+            );
+            if !window_maximized {
+                let handle = (12 * self.scale).max(12);
+                let corners = [
+                    rect(browser_left, browser_top, handle, handle),
+                    rect(browser_left + browser_width.saturating_sub(handle), browser_top, handle, handle),
+                    rect(browser_left, browser_top + browser_height.saturating_sub(handle), handle, handle),
+                    rect(browser_left + browser_width.saturating_sub(handle), browser_top + browser_height.saturating_sub(handle), handle, handle),
+                ];
+                for (index, bounds) in corners.iter().enumerate() {
+                    if bounds.contains(point) {
+                        return Some(DesktopTarget::HomeResize(index));
+                    }
+                }
+            }
             let title_height = 34 * self.scale;
             for index in 0..3usize {
                 let control_left = browser_left + browser_width.saturating_sub((28 + (2 - index) * 27) * self.scale);
@@ -284,6 +332,21 @@ impl SystemLayout {
     // DESC: Returns the shared restored or maximized Home window geometry.
     // ------------------=
     pub fn home_window_geometry(self, window_x: i32, window_y: i32, maximized: bool) -> (usize, usize, usize, usize) {
+        self.home_window_geometry_sized(window_x, window_y, 430, 380, maximized)
+    }
+
+    // ------------------------=
+    // FUNC: home_window_geometry_sized
+    // DESC: Converts the live normalized Home window position and dimensions into framebuffer bounds.
+    // ------------------=
+    pub fn home_window_geometry_sized(
+        self,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        maximized: bool,
+    ) -> (usize, usize, usize, usize) {
         if maximized {
             let left = 10 * self.scale;
             let top = self.top_bar_height() + 10 * self.scale;
@@ -291,10 +354,12 @@ impl SystemLayout {
             return (left, top, self.width.saturating_sub(left * 2), bottom.saturating_sub(top));
         }
         (
-            self.width * window_x.clamp(10, 540) as usize / 1000,
-            self.height * window_y.clamp(80, 550) as usize / 1000,
-            self.width * 43 / 100,
-            (self.height * 38 / 100).min(430 * self.scale),
+            self.width * window_x.clamp(0, 900) as usize / 1000,
+            self.height * window_y.clamp(50, 900) as usize / 1000,
+            (self.width * window_width.clamp(300, 900) as usize / 1000)
+                .min(self.width),
+            (self.height * window_height.clamp(260, 820) as usize / 1000)
+                .min(self.height),
         )
     }
 
@@ -391,6 +456,36 @@ impl SystemLayout {
         }
         None
     }
+}
+
+// ------------------------=
+// FUNC: resize_home_window
+// DESC: Applies traditional four-corner resizing while preserving minimum size and the visible work area.
+// ------------------=
+pub fn resize_home_window(
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    corner: usize,
+    pointer_x: i32,
+    pointer_y: i32,
+) -> (i32, i32, i32, i32) {
+    let right = x.saturating_add(width);
+    let bottom = y.saturating_add(height);
+    let (next_x, next_width) = if matches!(corner, 0 | 2) {
+        let next_x = pointer_x.clamp(0, right.saturating_sub(300));
+        (next_x, right.saturating_sub(next_x))
+    } else {
+        (x, pointer_x.saturating_sub(x).clamp(300, 1000i32.saturating_sub(x)))
+    };
+    let (next_y, next_height) = if matches!(corner, 0 | 1) {
+        let next_y = pointer_y.clamp(50, bottom.saturating_sub(260));
+        (next_y, bottom.saturating_sub(next_y))
+    } else {
+        (y, pointer_y.saturating_sub(y).clamp(260, 920i32.saturating_sub(y)))
+    };
+    (next_x, next_y, next_width, next_height)
 }
 
 // ------------------------=
