@@ -17,7 +17,28 @@ pub const fn focus_change_requires_structural_redraw(
 // DESC: Determines whether a clock transition affects visible content on the active system surface.
 // ------------------=
 pub const fn clock_change_requires_structural_redraw(screen: u8, clock_changed: bool) -> bool {
-    clock_changed && screen != 1
+    clock_changed && !matches!(screen, 1 | 2 | 3 | 4)
+}
+
+// ------------------------=
+// FUNC: desktop_clock_requires_bounded_redraw
+// DESC: Selects a top-bar-only repaint when the visible desktop clock advances.
+// ------------------=
+pub const fn desktop_clock_requires_bounded_redraw(screen: u8, clock_changed: bool) -> bool {
+    matches!(screen, 2 | 3 | 4) && clock_changed
+}
+
+// ------------------------=
+// FUNC: desktop_window_move_requires_structural_redraw
+// DESC: Determines whether a window move cannot be satisfied by framebuffer relocation and exposed-region repair.
+// ------------------=
+pub const fn desktop_window_move_requires_structural_redraw(
+    screen: u8,
+    window_moved: bool,
+    window_visible: bool,
+    window_maximized: bool,
+) -> bool {
+    window_moved && !(screen == 2 && window_visible && !window_maximized)
 }
 
 // ------------------------=

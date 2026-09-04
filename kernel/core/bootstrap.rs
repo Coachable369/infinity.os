@@ -1041,6 +1041,38 @@ impl DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: system_top_bar_clock
+    // DESC: Restores and repaints only the desktop clock segment when wall time advances.
+    // ------------------=
+    fn system_top_bar_clock(&mut self, clock: crate::storage::DateTimeConfiguration) {
+        let scale = self.ui_scale().max(1);
+        let height = (46 * scale).min(self.height / 12).max(40);
+        let width = (112 * scale).min(self.width);
+        let left = self.width.saturating_sub(width);
+        self.paint_desktop_background_rect(left, 0, width, height);
+        self.fill_rect_alpha(left, 0, width, height, 0, 4, 10, 218);
+        self.fill_rect_alpha(left, 0, width, height / 2, 14, 26, 39, 58);
+        self.fill_rect_alpha(left, height.saturating_sub(1), width, 1, 50, 70, 87, 170);
+        let mut time = *b"00:00:00";
+        time[0] = b'0' + clock.hour / 10;
+        time[1] = b'0' + clock.hour % 10;
+        time[3] = b'0' + clock.minute / 10;
+        time[4] = b'0' + clock.minute % 10;
+        time[6] = b'0' + clock.second / 10;
+        time[7] = b'0' + clock.second % 10;
+        let time_width = self.ui_text_width(&time, 1);
+        self.ui_text_strong(
+            self.width.saturating_sub(time_width + 16 * scale),
+            height / 2 - 10 * scale,
+            &time,
+            235,
+            242,
+            248,
+            1,
+        );
+    }
+
+    // ------------------------=
     // FUNC: system_identity_bar
     // DESC: Draws the minimal trusted first-boot bar without presenting desktop commands before a session exists.
     // ------------------=
@@ -2558,21 +2590,96 @@ impl DisplayDevice {
     }
 
     // ------------------------=
-    // FUNC: restore_desktop_window
-    // DESC: Restores only the previous Home window rectangle from the cached desktop wallpaper during dragging.
+    // FUNC: desktop_window_rect
+    // DESC: Resolves the movable Home window bounds in framebuffer pixels.
     // ------------------=
-    fn restore_desktop_window(&mut self, window_x: i32, window_y: i32) {
+    fn desktop_window_rect(&self, window_x: i32, window_y: i32) -> (usize, usize, usize, usize) {
         let left = self.width * window_x.clamp(10, 540) as usize / 1000;
         let top = self.height * window_y.clamp(80, 550) as usize / 1000;
         let width = self.width * 43 / 100;
         let height = (self.height * 38 / 100).min(430 * self.ui_scale().max(1));
-        let padding = 8usize;
-        self.paint_desktop_background_rect(
-            left.saturating_sub(padding),
-            top.saturating_sub(padding),
-            width.saturating_add(padding * 2),
-            height.saturating_add(padding * 2),
-        );
+        (left, top, width.min(self.width.saturating_sub(left)), height.min(self.height.saturating_sub(top)))
+    }
+
+    // ------------------------=
+    // FUNC: copy_framebuffer_rect
+    // DESC: Relocates an overlapping framebuffer rectangle using direction-safe row copies.
+    // ------------------=
+    fn copy_framebuffer_rect(
+        &mut self,
+        source_left: usize,
+        source_top: usize,
+        destination_left: usize,
+        destination_top: usize,
+        width: usize,
+        height: usize,
+    ) {
+        if width == 0 || height == 0 || (source_left == destination_left && source_top == destination_top) {
+            return;
+        }
+        if destination_top > source_top {
+            for row in (0..height).rev() {
+                unsafe {
+                    core::ptr::copy(
+                        self.buffer.add((source_top + row) * self.stride + source_left),
+                        self.buffer.add((destination_top + row) * self.stride + destination_left),
+                        width,
+                    );
+                }
+            }
+        } else {
+            for row in 0..height {
+                unsafe {
+                    core::ptr::copy(
+                        self.buffer.add((source_top + row) * self.stride + source_left),
+                        self.buffer.add((destination_top + row) * self.stride + destination_left),
+                        width,
+                    );
+                }
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: restore_desktop_exposure
+    // DESC: Restores only portions of the old window bounds not covered by the relocated window.
+    // ------------------=
+    fn restore_desktop_exposure(
+        &mut self,
+        old_rect: (usize, usize, usize, usize),
+        new_rect: (usize, usize, usize, usize),
+    ) {
+        let (old_left, old_top, old_width, old_height) = old_rect;
+        let (new_left, new_top, new_width, new_height) = new_rect;
+        let old_right = old_left + old_width;
+        let old_bottom = old_top + old_height;
+        let new_right = new_left + new_width;
+        let new_bottom = new_top + new_height;
+        let overlap_left = old_left.max(new_left);
+        let overlap_top = old_top.max(new_top);
+        let overlap_right = old_right.min(new_right);
+        let overlap_bottom = old_bottom.min(new_bottom);
+        if overlap_left >= overlap_right || overlap_top >= overlap_bottom {
+            self.paint_desktop_background_rect(old_left, old_top, old_width, old_height);
+            return;
+        }
+        self.paint_desktop_background_rect(old_left, old_top, old_width, overlap_top.saturating_sub(old_top));
+        self.paint_desktop_background_rect(old_left, overlap_bottom, old_width, old_bottom.saturating_sub(overlap_bottom));
+        self.paint_desktop_background_rect(old_left, overlap_top, overlap_left.saturating_sub(old_left), overlap_bottom - overlap_top);
+        self.paint_desktop_background_rect(overlap_right, overlap_top, old_right.saturating_sub(overlap_right), overlap_bottom - overlap_top);
+    }
+
+    // ------------------------=
+    // FUNC: move_desktop_window
+    // DESC: Moves the rendered Home window and repairs only newly exposed wallpaper strips.
+    // ------------------=
+    fn move_desktop_window(&mut self, old_x: i32, old_y: i32, new_x: i32, new_y: i32) {
+        let old_rect = self.desktop_window_rect(old_x, old_y);
+        let new_rect = self.desktop_window_rect(new_x, new_y);
+        let width = old_rect.2.min(new_rect.2);
+        let height = old_rect.3.min(new_rect.3);
+        self.copy_framebuffer_rect(old_rect.0, old_rect.1, new_rect.0, new_rect.1, width, height);
+        self.restore_desktop_exposure(old_rect, new_rect);
     }
 
     // ------------------------=
@@ -7376,6 +7483,7 @@ pub fn system_ui_present(
             let content = system_content_hash(input, masked);
             let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
             let focus_changed = console.last_system_focus != focus;
+            let clock_changed = console.last_system_clock != clock;
             let structural_change_without_window = console.last_system_screen != screen
                 || console.last_system_step != step
                 || crate::ui::redraw::focus_change_requires_structural_redraw(
@@ -7393,12 +7501,20 @@ pub fn system_ui_present(
                 || console.last_home_note_location != note_location
                 || crate::ui::redraw::clock_change_requires_structural_redraw(
                     screen,
-                    console.last_system_clock != clock,
+                    clock_changed,
                 )
                 || console.last_settings_maximized != settings_maximized;
             let window_moved = console.last_home_window_x != window_x
                 || console.last_home_window_y != window_y;
+            let window_move_requires_structural_redraw =
+                crate::ui::redraw::desktop_window_move_requires_structural_redraw(
+                    screen,
+                    window_moved,
+                    window_visible,
+                    window_maximized,
+                );
             let content_changed = console.last_system_content != content;
+            let mut full_surface_redrawn = false;
             if window_moved
                 && !structural_change_without_window
                 && !content_changed
@@ -7409,13 +7525,17 @@ pub fn system_ui_present(
             {
                 console
                     .display
-                    .restore_desktop_window(console.last_home_window_x, console.last_home_window_y);
-                let scale = console.display.ui_scale().max(1);
-                console.display.desktop_shell(scale, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location);
-            } else if structural_change_without_window || window_moved {
+                    .move_desktop_window(
+                        console.last_home_window_x,
+                        console.last_home_window_y,
+                        window_x,
+                        window_y,
+                    );
+            } else if structural_change_without_window || window_move_requires_structural_redraw {
                 console
                     .display
                     .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, clock, settings_maximized, menu_kind);
+                full_surface_redrawn = true;
             } else if crate::ui::redraw::onboarding_controls_require_repaint(
                 screen,
                 pointer_changed,
@@ -7434,6 +7554,15 @@ pub fn system_ui_present(
                 console
                     .display
                     .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, clock, settings_maximized, menu_kind);
+                full_surface_redrawn = true;
+            }
+            if !full_surface_redrawn
+                && crate::ui::redraw::desktop_clock_requires_bounded_redraw(
+                    screen,
+                    clock_changed,
+                )
+            {
+                console.display.system_top_bar_clock(clock);
             }
             console.cursor_x = cursor_x;
             console.cursor_y = cursor_y;

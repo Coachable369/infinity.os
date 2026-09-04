@@ -2,7 +2,8 @@
 mod redraw;
 
 use redraw::{
-    clock_change_requires_structural_redraw, focus_change_requires_structural_redraw,
+    clock_change_requires_structural_redraw, desktop_clock_requires_bounded_redraw,
+    desktop_window_move_requires_structural_redraw, focus_change_requires_structural_redraw,
     onboarding_controls_require_repaint,
 };
 
@@ -27,13 +28,33 @@ fn non_pointer_focus_remains_structural() {
 }
 
 // ------------------------=
-// FUNC: onboarding_clock_is_not_visible_damage
-// DESC: Verifies clock ticks do not rebuild onboarding while visible desktop clocks still request presentation.
+// FUNC: visible_clock_updates_are_damage_limited
+// DESC: Verifies onboarding ignores clock ticks and the desktop repaints only its clock region.
 // ------------------=
-fn onboarding_clock_is_not_visible_damage() {
+fn visible_clock_updates_are_damage_limited() {
     assert!(!clock_change_requires_structural_redraw(1, true));
-    assert!(clock_change_requires_structural_redraw(2, true));
+    assert!(!desktop_clock_requires_bounded_redraw(1, true));
+    assert!(!clock_change_requires_structural_redraw(2, true));
+    assert!(desktop_clock_requires_bounded_redraw(2, true));
     assert!(!clock_change_requires_structural_redraw(2, false));
+    assert!(!desktop_clock_requires_bounded_redraw(2, false));
+    assert!(!clock_change_requires_structural_redraw(3, true));
+    assert!(desktop_clock_requires_bounded_redraw(3, true));
+    assert!(!clock_change_requires_structural_redraw(4, true));
+    assert!(desktop_clock_requires_bounded_redraw(4, true));
+    assert!(clock_change_requires_structural_redraw(5, true));
+}
+
+// ------------------------=
+// FUNC: desktop_drag_uses_bounded_relocation
+// DESC: Verifies ordinary desktop window motion avoids structural repaint while unsupported surfaces retain it.
+// ------------------=
+fn desktop_drag_uses_bounded_relocation() {
+    assert!(!desktop_window_move_requires_structural_redraw(2, true, true, false));
+    assert!(desktop_window_move_requires_structural_redraw(2, true, false, false));
+    assert!(desktop_window_move_requires_structural_redraw(2, true, true, true));
+    assert!(desktop_window_move_requires_structural_redraw(3, true, true, false));
+    assert!(!desktop_window_move_requires_structural_redraw(2, false, true, false));
 }
 
 // ------------------------=
@@ -43,5 +64,6 @@ fn onboarding_clock_is_not_visible_damage() {
 fn main() {
     onboarding_pointer_focus_is_bounded();
     non_pointer_focus_remains_structural();
-    onboarding_clock_is_not_visible_damage();
+    visible_clock_updates_are_damage_limited();
+    desktop_drag_uses_bounded_relocation();
 }
