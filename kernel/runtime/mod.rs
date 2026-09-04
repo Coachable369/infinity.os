@@ -1,0 +1,1295 @@
+pub mod ai;
+pub mod capability;
+pub mod console_language;
+pub mod event;
+pub mod execution;
+pub mod font;
+pub mod identity;
+pub mod iop;
+pub mod scheduler;
+pub mod service;
+
+use capability::{CapabilityManager, CapabilityType};
+use event::{EventClass, EventFabric, RoutingDomain};
+#[cfg(not(target_os = "none"))]
+use event::{EventFilter, OverflowPolicy};
+use execution::ExecutionManager;
+#[cfg(not(target_os = "none"))]
+use iop::IopMessage;
+use iop::{IopRouter, OperationId};
+use scheduler::Scheduler;
+use service::*;
+
+pub const EVENT_SERVICE_STATE_CHANGED: u32 = 0x10001;
+pub const EVENT_INSTALLER_PLAN_CONFIRMED: u32 = 0x80001;
+pub const EVENT_INSTALLER_COMPLETED: u32 = 0x80002;
+pub const EVENT_AI_PROVIDER_CHANGED: u32 = 0x90001;
+pub const EVENT_AI_MODEL_LOADED: u32 = 0x90002;
+pub const EVENT_AI_MODEL_UNLOADED: u32 = 0x90003;
+pub const EVENT_AI_REMOTE_PROCESSING_REQUESTED: u32 = 0x90004;
+pub const EVENT_AI_INFERENCE_STARTED: u32 = 0x90003;
+pub const EVENT_AI_INFERENCE_COMPLETED: u32 = 0x90004;
+pub const EVENT_AI_INFERENCE_FAILED: u32 = 0x90005;
+pub const EVENT_VOICE_LISTENING_STARTED: u32 = 0x94001;
+pub const EVENT_VOICE_LISTENING_STOPPED: u32 = 0x94002;
+pub const EVENT_VOICE_TRANSCRIPT_READY: u32 = 0x94003;
+pub const EVENT_AGENT_STARTED: u32 = 0x95001;
+pub const EVENT_AGENT_STOPPED: u32 = 0x95002;
+pub const EVENT_AGENT_FAILED: u32 = 0x95003;
+pub const EVENT_IDENTITY_STATE_CHANGED: u32 = 0x96001;
+pub const EVENT_APPEARANCE_CHANGED: u32 = 0x97001;
+pub struct InfinityRuntime {
+    pub execution: ExecutionManager,
+    pub scheduler: Scheduler,
+    pub capabilities: CapabilityManager,
+    pub iop: IopRouter,
+    pub events: EventFabric,
+    pub services: ServiceManager,
+    pub identity: identity::IdentitySystem,
+    pub fonts: font::FontCatalog,
+    pub ui: crate::ui::InfinityUiRuntime,
+    pub live_profile: bool,
+    service_event_cap: Option<u64>,
+    identity_event_cap: Option<u64>,
+    installer_event_caps: [Option<u64>; 2],
+    installer_authority: [Option<u64>; 4],
+    ai_console_capability: Option<u64>,
+    ai_event_capabilities: [Option<u64>; 3],
+}
+impl InfinityRuntime {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates and initializes a new instance.
+    // ------------------=
+    pub const fn new(live_profile: bool) -> Self {
+        Self {
+            execution: ExecutionManager::new(),
+            scheduler: Scheduler::new(),
+            capabilities: CapabilityManager::new(),
+            iop: IopRouter::new(),
+            events: EventFabric::new(),
+            services: ServiceManager::new(),
+            identity: identity::IdentitySystem::new(),
+            fonts: font::FontCatalog::new(),
+            ui: crate::ui::InfinityUiRuntime::new(),
+            live_profile,
+            service_event_cap: None,
+            identity_event_cap: None,
+            installer_event_caps: [None; 2],
+            installer_authority: [None; 4],
+            ai_console_capability: None,
+            ai_event_capabilities: [None; 3],
+        }
+    }
+    // ------------------------=
+    // FUNC: define_bootstrap
+    // DESC: Implements the define bootstrap operation.
+    // ------------------=
+    pub fn define_bootstrap(&mut self) -> Result<(), ServiceError> {
+        let none = [0; MAX_DEPENDENCIES];
+        let noops = [0; MAX_OPERATIONS];
+        self.services.define(manifest(
+            SERVICE_RUNTIME,
+            none,
+            0,
+            [
+                OperationId::RuntimeContexts as u32,
+                OperationId::RuntimeResources as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            2,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Critical,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_DEVICE,
+            [SERVICE_RUNTIME, 0, 0, 0],
+            1,
+            noops,
+            0,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_STORAGE,
+            [SERVICE_DEVICE, 0, 0, 0],
+            1,
+            [
+                OperationId::StorageQuery as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            1,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Critical,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_OBJECT,
+            [SERVICE_STORAGE, 0, 0, 0],
+            1,
+            [
+                OperationId::ObjectCreate as u32,
+                OperationId::ObjectRead as u32,
+                OperationId::ObjectUpdate as u32,
+                OperationId::ObjectQuery as u32,
+                OperationId::ObjectHistory as u32,
+                OperationId::ObjectFilter as u32,
+                OperationId::ObjectDestroy as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            7,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Critical,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_NAMESPACE,
+            [SERVICE_OBJECT, 0, 0, 0],
+            1,
+            [
+                OperationId::NamespaceResolve as u32,
+                OperationId::NamespaceMove as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            2,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_ORGANIZATION,
+            [SERVICE_OBJECT, SERVICE_NAMESPACE, 0, 0],
+            2,
+            [
+                OperationId::ProjectList as u32,
+                OperationId::ProjectInspect as u32,
+                OperationId::ProjectCreate as u32,
+                OperationId::CollectionList as u32,
+                OperationId::CollectionInspect as u32,
+                OperationId::CollectionCreate as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            6,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_EVENT,
+            [SERVICE_RUNTIME, 0, 0, 0],
+            1,
+            [
+                OperationId::EventSubscribe as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            1,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_CONSOLE,
+            [SERVICE_NAMESPACE, SERVICE_ORGANIZATION, SERVICE_EVENT, 0],
+            3,
+            [
+                OperationId::ServiceList as u32,
+                OperationId::ServiceInspect as u32,
+                OperationId::ServiceRestart as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            3,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_LOCAL_ML,
+            [SERVICE_RUNTIME, SERVICE_OBJECT, 0, 0],
+            2,
+            [
+                OperationId::ModelList as u32,
+                OperationId::ModelInspect as u32,
+                OperationId::ModelLoad as u32,
+                OperationId::ModelUnload as u32,
+                OperationId::ModelCapabilities as u32,
+                OperationId::ModelInfer as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            6,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_AI,
+            [SERVICE_LOCAL_ML, SERVICE_NAMESPACE, SERVICE_EVENT, 0],
+            3,
+            [
+                OperationId::IntentResolve as u32,
+                OperationId::ContextRequest as u32,
+                OperationId::ToolInvoke as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            3,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_VOICE,
+            [SERVICE_AI, SERVICE_DEVICE, SERVICE_EVENT, 0],
+            3,
+            [
+                OperationId::VoiceSessionStart as u32,
+                OperationId::VoiceSessionStop as u32,
+                OperationId::SpeechRecognize as u32,
+                OperationId::SpeechSynthesize as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            4,
+            RestartPolicy::OnFailure,
+            Criticality::NonCritical,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_AGENT,
+            [SERVICE_AI, SERVICE_EVENT, 0, 0],
+            2,
+            [
+                OperationId::AgentList as u32,
+                OperationId::AgentInspect as u32,
+                OperationId::AgentRequestTask as u32,
+                OperationId::AgentTaskResult as u32,
+                OperationId::AgentCancelTask as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            5,
+            RestartPolicy::OnFailure,
+            Criticality::NonCritical,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_IDENTITY,
+            [SERVICE_OBJECT, SERVICE_NAMESPACE, SERVICE_EVENT, 0],
+            3,
+            [
+                OperationId::IdentityCreate as u32,
+                OperationId::IdentityRead as u32,
+                OperationId::IdentityList as u32,
+                OperationId::IdentityUpdate as u32,
+                OperationId::IdentityDelete as u32,
+                OperationId::MachineRead as u32,
+                OperationId::MachineUpdate as u32,
+                OperationId::ProfileRead as u32,
+                OperationId::ProfileUpdate as u32,
+                OperationId::PersonalSpaceRead as u32,
+                0,
+                0,
+            ],
+            10,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_AUTHENTICATION,
+            [SERVICE_IDENTITY, SERVICE_EVENT, 0, 0],
+            2,
+            [
+                OperationId::CredentialCreate as u32,
+                OperationId::CredentialList as u32,
+                OperationId::CredentialDelete as u32,
+                OperationId::AuthenticationVerify as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            4,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_SESSION,
+            [SERVICE_AUTHENTICATION, SERVICE_IDENTITY, SERVICE_EVENT, 0],
+            3,
+            [
+                OperationId::SessionCreate as u32,
+                OperationId::SessionRead as u32,
+                OperationId::SessionList as u32,
+                OperationId::SessionLock as u32,
+                OperationId::SessionUnlock as u32,
+                OperationId::SessionEnd as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            6,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_SETTINGS,
+            [SERVICE_IDENTITY, SERVICE_SESSION, SERVICE_AI, SERVICE_VOICE],
+            4,
+            [
+                OperationId::SettingsRead as u32,
+                OperationId::SettingsUpdate as u32,
+                OperationId::AiProfileRead as u32,
+                OperationId::AiProfileUpdate as u32,
+                OperationId::VoiceProfileRead as u32,
+                OperationId::VoiceProfileUpdate as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            6,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_ONBOARDING,
+            [SERVICE_SETTINGS, SERVICE_SESSION, SERVICE_OBJECT, 0],
+            3,
+            [
+                OperationId::OnboardingRead as u32,
+                OperationId::OnboardingAdvance as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            2,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_SHELL,
+            [SERVICE_SESSION, SERVICE_SETTINGS, SERVICE_CONSOLE, 0],
+            3,
+            [
+                OperationId::ShellOpen as u32,
+                OperationId::SystemPowerOff as u32,
+                OperationId::SystemRestart as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            3,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_FONT,
+            [SERVICE_OBJECT, SERVICE_SETTINGS, 0, 0],
+            2,
+            [
+                OperationId::FontList as u32,
+                OperationId::FontOpen as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            2,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_SKIN_REGISTRY,
+            [SERVICE_OBJECT, SERVICE_SETTINGS, 0, 0],
+            2,
+            [
+                OperationId::SkinList as u32,
+                OperationId::SkinInspect as u32,
+                OperationId::SkinValidate as u32,
+                OperationId::AppearanceRead as u32,
+                OperationId::AppearanceSetSkin as u32,
+                OperationId::AppearanceSetScale as u32,
+                OperationId::AppearanceSetAccent as u32,
+                OperationId::AppearanceSetWallpaper as u32,
+                0,
+                0,
+                0,
+                0,
+            ],
+            8,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_WINDOW_SERVER,
+            [SERVICE_RUNTIME, SERVICE_DEVICE, 0, 0],
+            2,
+            [OperationId::WindowList as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            1,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_INFINITY_UI,
+            [SERVICE_WINDOW_SERVER, SERVICE_SKIN_REGISTRY, SERVICE_FONT, SERVICE_SESSION],
+            4,
+            [
+                OperationId::UiInspectTree as u32,
+                OperationId::UiInspectFocus as u32,
+                OperationId::UiInspectDamage as u32,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            3,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_CLIPBOARD,
+            [SERVICE_INFINITY_UI, SERVICE_SESSION, 0, 0],
+            2,
+            [OperationId::ClipboardRead as u32, OperationId::ClipboardWrite as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            2,
+            RestartPolicy::OnFailure,
+            Criticality::NonCritical,
+        ))?;
+        if self.live_profile {
+            self.services.define(manifest(
+                SERVICE_INSTALLER,
+                [SERVICE_STORAGE, SERVICE_OBJECT, SERVICE_EVENT, 0],
+                3,
+                noops,
+                0,
+                RestartPolicy::Never,
+                Criticality::Important,
+            ))?;
+        }
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: start_all
+    // DESC: Initializes start all state.
+    // ------------------=
+    pub fn start_all(&mut self, now: u64) {
+        for _ in 0..MAX_SERVICES {
+            self.services.start_ready(&mut self.execution, now);
+            for id in 1..=SERVICE_CLIPBOARD {
+                if self
+                    .services
+                    .inspect(id)
+                    .map(|s| s.state == ServiceState::Starting)
+                    .unwrap_or(false)
+                {
+                    let _ = self.services.announce_ready(id);
+                }
+            }
+        }
+        self.ensure_runtime_capabilities(now);
+    }
+    // ------------------------=
+    // FUNC: service_identity
+    // DESC: Implements the service identity operation.
+    // ------------------=
+    fn service_identity(&self, id: u32) -> Option<execution::SecurityIdentity> {
+        self.services
+            .inspect(id)
+            .and_then(|s| s.context)
+            .and_then(|h| self.execution.get(h))
+            .map(|c| c.security_identity)
+    }
+    // ------------------------=
+    // FUNC: ensure_runtime_capabilities
+    // DESC: Implements the ensure runtime capabilities operation.
+    // ------------------=
+    fn ensure_runtime_capabilities(&mut self, now: u64) {
+        let Some(runtime) = self.service_identity(SERVICE_RUNTIME) else {
+            return;
+        };
+        if self.service_event_cap.is_none() {
+            self.service_event_cap = self
+                .capabilities
+                .grant(
+                    CapabilityType::EventPublish,
+                    EVENT_SERVICE_STATE_CHANGED as u64,
+                    1,
+                    0,
+                    runtime,
+                    runtime,
+                    None,
+                    0,
+                )
+                .ok();
+        }
+        if self.identity_event_cap.is_none() {
+            if let Some(identity) = self.service_identity(SERVICE_IDENTITY) {
+                self.identity_event_cap = self
+                    .capabilities
+                    .grant(
+                        CapabilityType::EventPublish,
+                        EVENT_IDENTITY_STATE_CHANGED as u64,
+                        1,
+                        0,
+                        runtime,
+                        identity,
+                        None,
+                        0,
+                    )
+                    .ok();
+            }
+        }
+        if self.live_profile && self.installer_authority[0].is_none() {
+            let Some(installer) = self.service_identity(SERVICE_INSTALLER) else {
+                return;
+            };
+            let expiry = Some(now.saturating_add(300_000));
+            self.installer_authority[0] = self
+                .capabilities
+                .grant(
+                    CapabilityType::StorageDiscover,
+                    0,
+                    1,
+                    0,
+                    runtime,
+                    installer,
+                    expiry,
+                    0,
+                )
+                .ok();
+            self.installer_authority[1] = self
+                .capabilities
+                .grant(
+                    CapabilityType::StorageProvision,
+                    0,
+                    1,
+                    0,
+                    runtime,
+                    installer,
+                    expiry,
+                    0,
+                )
+                .ok();
+            self.installer_authority[2] = self
+                .capabilities
+                .grant(
+                    CapabilityType::BootInstall,
+                    0,
+                    1,
+                    0,
+                    runtime,
+                    installer,
+                    expiry,
+                    0,
+                )
+                .ok();
+            self.installer_authority[3] = self
+                .capabilities
+                .grant(
+                    CapabilityType::SystemInstall,
+                    0,
+                    1,
+                    0,
+                    runtime,
+                    installer,
+                    expiry,
+                    0,
+                )
+                .ok();
+            self.installer_event_caps[0] = self
+                .capabilities
+                .grant(
+                    CapabilityType::EventPublish,
+                    EVENT_INSTALLER_PLAN_CONFIRMED as u64,
+                    1,
+                    0,
+                    runtime,
+                    installer,
+                    expiry,
+                    0,
+                )
+                .ok();
+            self.installer_event_caps[1] = self
+                .capabilities
+                .grant(
+                    CapabilityType::EventPublish,
+                    EVENT_INSTALLER_COMPLETED as u64,
+                    1,
+                    0,
+                    runtime,
+                    installer,
+                    expiry,
+                    0,
+                )
+                .ok();
+        }
+        if self.ai_console_capability.is_none() {
+            let Some(ai_service) = self.service_identity(SERVICE_AI) else {
+                return;
+            };
+            let Some(console) = self.service_identity(SERVICE_CONSOLE) else {
+                return;
+            };
+            self.ai_console_capability = self
+                .capabilities
+                .grant(
+                    CapabilityType::AiInfer,
+                    ai::model::LOCAL_INTENT_MODEL_ID as u64,
+                    1,
+                    0,
+                    ai_service,
+                    console,
+                    None,
+                    0,
+                )
+                .ok();
+        }
+        if self.ai_event_capabilities[0].is_none() {
+            let Some(ai_service) = self.service_identity(SERVICE_AI) else {
+                return;
+            };
+            let Some(runtime) = self.service_identity(SERVICE_RUNTIME) else {
+                return;
+            };
+            for (index, event) in [
+                EVENT_AI_INFERENCE_STARTED,
+                EVENT_AI_INFERENCE_COMPLETED,
+                EVENT_AI_INFERENCE_FAILED,
+            ]
+            .iter()
+            .copied()
+            .enumerate()
+            {
+                self.ai_event_capabilities[index] = self
+                    .capabilities
+                    .grant(
+                        CapabilityType::EventPublish,
+                        event as u64,
+                        1,
+                        0,
+                        runtime,
+                        ai_service,
+                        None,
+                        0,
+                    )
+                    .ok();
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: resolve_console_intent
+    // DESC: Validates console AI authority and returns a typed plan without executing it.
+    // ------------------=
+    pub fn resolve_console_intent(
+        &mut self,
+        input: &[u8],
+        now: u64,
+        correlation_id: u64,
+    ) -> Result<ai::intent::IntentPlan, ai::types::AiError> {
+        let caller = self
+            .service_identity(SERVICE_CONSOLE)
+            .ok_or(ai::types::AiError::AccessDenied)?;
+        let capability = self
+            .ai_console_capability
+            .ok_or(ai::types::AiError::AccessDenied)?;
+        self.capabilities
+            .validate(
+                capability,
+                caller,
+                CapabilityType::AiInfer,
+                ai::model::LOCAL_INTENT_MODEL_ID as u64,
+                1,
+                0,
+                now,
+            )
+            .map_err(|_| ai::types::AiError::AccessDenied)?;
+        let source = self
+            .service_identity(SERVICE_AI)
+            .ok_or(ai::types::AiError::AccessDenied)?;
+        if let Some(event_capability) = self.ai_event_capabilities[0] {
+            let _ = self.events.publish(
+                EventClass::StateChange,
+                RoutingDomain::System,
+                EVENT_AI_INFERENCE_STARTED,
+                source,
+                0,
+                correlation_id,
+                correlation_id,
+                &ai::model::LOCAL_INTENT_MODEL_ID.to_le_bytes(),
+                160,
+                now,
+                &self.capabilities,
+                event_capability,
+            );
+        }
+        let result = ai::with_ai_runtime(|runtime| {
+            runtime.resolve_intent(input, caller, capability, now, correlation_id)
+        });
+        let (event_type, event_capability, payload) = match result {
+            Ok(_) => (
+                EVENT_AI_INFERENCE_COMPLETED,
+                self.ai_event_capabilities[1],
+                b"local-success".as_slice(),
+            ),
+            Err(_) => (
+                EVENT_AI_INFERENCE_FAILED,
+                self.ai_event_capabilities[2],
+                b"local-failure".as_slice(),
+            ),
+        };
+        if let Some(event_capability) = event_capability {
+            let _ = self.events.publish(
+                EventClass::StateChange,
+                RoutingDomain::System,
+                event_type,
+                source,
+                0,
+                correlation_id,
+                correlation_id,
+                payload,
+                160,
+                now,
+                &self.capabilities,
+                event_capability,
+            );
+        }
+        result
+    }
+    // ------------------------=
+    // FUNC: installer_authorized
+    // DESC: Handles installer authorized input or state transitions.
+    // ------------------=
+    pub fn installer_authorized(&self, now: u64) -> bool {
+        let Some(holder) = self.service_identity(SERVICE_INSTALLER) else {
+            return false;
+        };
+        let kinds = [
+            CapabilityType::StorageDiscover,
+            CapabilityType::StorageProvision,
+            CapabilityType::BootInstall,
+            CapabilityType::SystemInstall,
+        ];
+        self.installer_authority
+            .iter()
+            .zip(kinds)
+            .all(|(id, kind)| {
+                id.map(|id| {
+                    self.capabilities
+                        .validate(id, holder, kind, 0, 1, 0, now)
+                        .is_ok()
+                })
+                .unwrap_or(false)
+            })
+    }
+    // ------------------------=
+    // FUNC: installer_record
+    // DESC: Handles installer record input or state transitions.
+    // ------------------=
+    pub fn installer_record(&mut self, event_type: u32, now: u64) -> bool {
+        let Some(holder) = self.service_identity(SERVICE_INSTALLER) else {
+            return false;
+        };
+        let cap = if event_type == EVENT_INSTALLER_PLAN_CONFIRMED {
+            self.installer_event_caps[0]
+        } else {
+            self.installer_event_caps[1]
+        };
+        cap.and_then(|cap| {
+            self.events
+                .publish(
+                    EventClass::Record,
+                    RoutingDomain::System,
+                    event_type,
+                    holder,
+                    0,
+                    event_type as u64,
+                    event_type as u64,
+                    b"installer security record",
+                    255,
+                    now,
+                    &self.capabilities,
+                    cap,
+                )
+                .ok()
+        })
+        .is_some()
+    }
+    // ------------------------=
+    // FUNC: revoke_installer_authority
+    // DESC: Removes or invalidates revoke installer authority state.
+    // ------------------=
+    pub fn revoke_installer_authority(&mut self) {
+        for id in self
+            .installer_authority
+            .iter()
+            .chain(self.installer_event_caps.iter())
+            .flatten()
+        {
+            let _ = self.capabilities.revoke(*id);
+        }
+    }
+    // ------------------------=
+    // FUNC: revoke_ai_authority
+    // DESC: Revokes capabilities tied to a failed AI service identity before restart.
+    // ------------------=
+    fn revoke_ai_authority(&mut self) {
+        if let Some(capability) = self.ai_console_capability.take() {
+            let _ = self.capabilities.revoke(capability);
+        }
+        for capability in &mut self.ai_event_capabilities {
+            if let Some(id) = capability.take() {
+                let _ = self.capabilities.revoke(id);
+            }
+        }
+    }
+    // ------------------------=
+    // FUNC: fail_service
+    // DESC: Implements the fail service operation.
+    // ------------------=
+    pub fn fail_service(&mut self, id: u32, now: u64) -> Result<(), ServiceError> {
+        if id == SERVICE_AI {
+            self.revoke_ai_authority();
+        }
+        let result = self.services.fail(id, &mut self.execution, now);
+        let Some(source) = self.service_identity(SERVICE_RUNTIME) else {
+            return result;
+        };
+        if let Some(cap) = self.service_event_cap {
+            let payload = id.to_le_bytes();
+            let _ = self.events.publish(
+                EventClass::StateChange,
+                RoutingDomain::System,
+                EVENT_SERVICE_STATE_CHANGED,
+                source,
+                0,
+                id as u64,
+                id as u64,
+                &payload,
+                220,
+                now,
+                &self.capabilities,
+                cap,
+            );
+        }
+        result
+    }
+}
+
+static mut RUNTIME: InfinityRuntime = InfinityRuntime::new(cfg!(feature = "installer"));
+// ------------------------=
+// FUNC: runtime_mut
+// DESC: Implements the runtime mut operation.
+// ------------------=
+fn runtime_mut() -> &'static mut InfinityRuntime {
+    unsafe { &mut *(&raw mut RUNTIME) }
+}
+// ------------------------=
+// FUNC: runtime_ref
+// DESC: Implements the runtime ref operation.
+// ------------------=
+fn runtime_ref() -> &'static InfinityRuntime {
+    unsafe { &*(&raw const RUNTIME) }
+}
+#[inline(never)]
+// ------------------------=
+// FUNC: initialize
+// DESC: Initializes initialize state.
+// ------------------=
+pub fn initialize() {
+    let runtime = runtime_mut();
+    let _ = runtime.define_bootstrap();
+    // Bootstrap only the dependency roots. Storage/object/namespace readiness
+    // is completed after the storage subsystem has initialized.
+    runtime.services.start_ready(&mut runtime.execution, 0);
+    let _ = runtime.services.announce_ready(SERVICE_RUNTIME);
+    runtime.services.start_ready(&mut runtime.execution, 0);
+    let _ = runtime.services.announce_ready(SERVICE_DEVICE);
+    let _ = runtime.services.announce_ready(SERVICE_EVENT);
+    runtime.services.start_ready(&mut runtime.execution, 0);
+    crate::output_text(b"[runtime] execution manager online\n[runtime] capability manager online\n[iop] router online\n[event] fabric online\n");
+}
+#[inline(never)]
+// ------------------------=
+// FUNC: storage_initialized
+// DESC: Implements the storage initialized operation.
+// ------------------=
+pub fn storage_initialized() {
+    with_runtime(|runtime| {
+        let _ = runtime.services.announce_ready(SERVICE_STORAGE);
+        for _ in 0..MAX_SERVICES {
+            runtime.services.start_ready(&mut runtime.execution, 0);
+            for id in [
+                SERVICE_OBJECT,
+                SERVICE_NAMESPACE,
+                SERVICE_CONSOLE,
+                SERVICE_INSTALLER,
+                SERVICE_LOCAL_ML,
+                SERVICE_AI,
+                SERVICE_VOICE,
+                SERVICE_AGENT,
+                SERVICE_ORGANIZATION,
+                SERVICE_IDENTITY,
+                SERVICE_AUTHENTICATION,
+                SERVICE_SESSION,
+                SERVICE_SETTINGS,
+                SERVICE_ONBOARDING,
+                SERVICE_SHELL,
+                SERVICE_FONT,
+                SERVICE_SKIN_REGISTRY,
+                SERVICE_WINDOW_SERVER,
+                SERVICE_INFINITY_UI,
+                SERVICE_CLIPBOARD,
+            ] {
+                if runtime
+                    .services
+                    .inspect(id)
+                    .map(|s| s.state == ServiceState::Starting)
+                    .unwrap_or(false)
+                {
+                    let _ = runtime.services.announce_ready(id);
+                }
+            }
+        }
+        runtime.ensure_runtime_capabilities(0);
+        if ai::initialize_global() {
+            crate::output_text(b"[ai] local CPU inference online\n[ai] model registry verified\n");
+        } else {
+            crate::output_text(b"[ai] degraded: no verified local model\n");
+        }
+        #[cfg(target_os = "none")]
+        {
+            let mut persisted = [0u8; identity::IDENTITY_STATE_BYTES];
+            if crate::storage::identity_state_load(&mut persisted)
+                .ok()
+                .filter(|length| *length == identity::IDENTITY_STATE_BYTES)
+                .is_some()
+            {
+                match identity::IdentitySystem::decode(&persisted) {
+                    Ok(state) => runtime.identity = state,
+                    Err(_) => crate::output_text(
+                        b"[identity] durable state invalid; onboarding recovery required\n",
+                    ),
+                }
+            }
+        }
+    });
+}
+
+// ------------------------=
+// FUNC: persist_identity_state
+// DESC: Commits authoritative identity state as a versioned native object.
+// ------------------=
+pub fn persist_identity_state() -> bool {
+    #[cfg(target_os = "none")]
+    {
+        let encoded = runtime_ref().identity.encode();
+        if crate::storage::identity_state_commit(&encoded).is_err() {
+            return false;
+        }
+        // State is authoritative and commits before its notification. A missed
+        // event is therefore recoverable through Identity.Read.
+        let runtime = runtime_mut();
+        if let (Some(source), Some(capability)) = (
+            runtime.service_identity(SERVICE_IDENTITY),
+            runtime.identity_event_cap,
+        ) {
+            let generation = runtime.identity.generation();
+            let _ = runtime.events.publish(
+                EventClass::Record,
+                RoutingDomain::Session,
+                EVENT_IDENTITY_STATE_CHANGED,
+                source,
+                0,
+                generation,
+                generation,
+                &generation.to_le_bytes(),
+                220,
+                generation,
+                &runtime.capabilities,
+                capability,
+            );
+        }
+        return true;
+    }
+    #[cfg(not(target_os = "none"))]
+    {
+        true
+    }
+}
+// ------------------------=
+// FUNC: announce_services
+// DESC: Implements the announce services operation.
+// ------------------=
+pub fn announce_services() {
+    let runtime = runtime_ref();
+    for (id, name) in [
+        (SERVICE_STORAGE, b"storage".as_slice()),
+        (SERVICE_OBJECT, b"object".as_slice()),
+        (SERVICE_NAMESPACE, b"namespace".as_slice()),
+        (SERVICE_CONSOLE, b"console".as_slice()),
+        (SERVICE_LOCAL_ML, b"local-ml".as_slice()),
+        (SERVICE_AI, b"infinity-ai".as_slice()),
+        (SERVICE_VOICE, b"voice".as_slice()),
+        (SERVICE_AGENT, b"agent".as_slice()),
+        (SERVICE_ORGANIZATION, b"organization".as_slice()),
+        (SERVICE_IDENTITY, b"identity".as_slice()),
+        (SERVICE_AUTHENTICATION, b"authentication".as_slice()),
+        (SERVICE_SESSION, b"session".as_slice()),
+        (SERVICE_SETTINGS, b"settings".as_slice()),
+        (SERVICE_ONBOARDING, b"onboarding".as_slice()),
+        (SERVICE_SHELL, b"shell".as_slice()),
+        (SERVICE_FONT, b"font".as_slice()),
+        (SERVICE_SKIN_REGISTRY, b"skin-registry".as_slice()),
+        (SERVICE_WINDOW_SERVER, b"window-server".as_slice()),
+        (SERVICE_INFINITY_UI, b"infinity-ui".as_slice()),
+        (SERVICE_CLIPBOARD, b"clipboard".as_slice()),
+    ] {
+        if runtime
+            .services
+            .inspect(id)
+            .map(|s| s.state == ServiceState::Ready)
+            .unwrap_or(false)
+        {
+            crate::output_text(b"[service] ");
+            crate::output_text(name);
+            crate::output_text(b" ready\n")
+        }
+    }
+    crate::output_text(b"Infinity Runtime online.\n")
+}
+// ------------------------=
+// FUNC: with_runtime
+// DESC: Implements the with runtime operation.
+// ------------------=
+pub fn with_runtime<T>(f: impl FnOnce(&mut InfinityRuntime) -> T) -> Option<T> {
+    Some(f(runtime_mut()))
+}
+
+#[cfg(not(target_os = "none"))]
+// ------------------------=
+// FUNC: acceptance_self_test
+// DESC: Verifies acceptance self test behavior.
+// ------------------=
+pub fn acceptance_self_test() -> bool {
+    let mut r = InfinityRuntime::new(true);
+    if r.define_bootstrap().is_err() {
+        return false;
+    }
+    r.start_all(0);
+    let Some(a) = r.execution.nth(0).map(|c| c.security_identity) else {
+        return false;
+    };
+    let Some(b) = r.execution.nth(1).map(|c| c.security_identity) else {
+        return false;
+    };
+    if r.iop.register_endpoint(41, a).is_err() || r.iop.register_endpoint(42, b).is_err() {
+        return false;
+    }
+    let call = match r.capabilities.grant(
+        CapabilityType::ServiceCall,
+        OperationId::TestEcho as u64,
+        1,
+        0,
+        b,
+        a,
+        Some(100),
+        0,
+    ) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let message =
+        match IopMessage::request(OperationId::TestEcho, 0xa81f, a, call, 50, 0xa81f, b"hello") {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+    if r.iop.send(42, message, &r.capabilities, 1).is_err() {
+        return false;
+    }
+    let Ok(received) = r.iop.receive(42, 1) else {
+        return false;
+    };
+    if received.bytes() != b"hello"
+        || r.iop.respond(41, &received, b, b"hello", 1).is_err()
+        || r.iop
+            .receive(41, 1)
+            .map(|m| m.header.message_type != iop::MessageType::Response || m.bytes() != b"hello")
+            .unwrap_or(true)
+    {
+        return false;
+    }
+    if r.capabilities.revoke(call).is_err() {
+        return false;
+    }
+    let denied = IopMessage::request(OperationId::TestEcho, 2, a, call, 50, 2, b"hello")
+        .ok()
+        .and_then(|m| r.iop.send(42, m, &r.capabilities, 2).err())
+        .is_some();
+    let pubcap = r
+        .capabilities
+        .grant(CapabilityType::EventPublish, 77, 1, 9, b, b, Some(100), 0)
+        .ok();
+    let subcap = r
+        .capabilities
+        .grant(CapabilityType::EventSubscribe, 77, 1, 9, b, a, Some(100), 0)
+        .ok();
+    let (Some(pubcap), Some(subcap)) = (pubcap, subcap) else {
+        return false;
+    };
+    let lease = match r.events.subscribe(
+        a,
+        subcap,
+        EventFilter {
+            type_id: 77,
+            scope: Some(9),
+        },
+        100,
+        OverflowPolicy::DropOldest,
+        2,
+        &r.capabilities,
+        1,
+    ) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    if r.events
+        .publish(
+            EventClass::StateChange,
+            RoutingDomain::System,
+            77,
+            b,
+            9,
+            2,
+            2,
+            b"changed",
+            10,
+            2,
+            &r.capabilities,
+            pubcap,
+        )
+        .is_err()
+        || r.events.receive(lease, 2).is_err()
+    {
+        return false;
+    }
+    if r.capabilities.revoke(subcap).is_err() {
+        return false;
+    }
+    let _ = r.events.publish(
+        EventClass::StateChange,
+        RoutingDomain::System,
+        77,
+        b,
+        9,
+        3,
+        3,
+        b"again",
+        10,
+        3,
+        &r.capabilities,
+        pubcap,
+    );
+    let suppressed = r.events.receive(lease, 3).is_err();
+    denied && suppressed
+}

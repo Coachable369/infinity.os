@@ -1,0 +1,14 @@
+format_version=1
+minimum_ui_abi=1
+skin_id=infinity.diagnostic.light
+parent=infinity.default.dark
+display_name=InfinityOS Diagnostic Light
+author=InfinityOS
+trusted=true
+color.canvas=#e8edf3
+color.panel=#f8fbfffa
+color.text_primary=#101821
+color.text_secondary=#526170
+color.accent=#0a74b9
+metric.panel_radius=6
+motion.normal_ms=0

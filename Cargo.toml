@@ -1,0 +1,20 @@
+[package]
+name = "infinity-kernel"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+path = "kernel/core/main.rs"
+crate-type = ["staticlib"]
+
+[features]
+installer = []
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+opt-level = "s"
+panic = "abort"
+lto = true
+codegen-units = 1

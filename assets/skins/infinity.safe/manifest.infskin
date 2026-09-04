@@ -1,0 +1,14 @@
+format_version=1
+minimum_ui_abi=1
+skin_id=infinity.safe
+display_name=InfinityOS SafeSkin
+author=InfinityOS
+trusted=true
+color.canvas=#000000
+color.panel=#080808
+color.text_primary=#ffffff
+color.text_secondary=#d8d8d8
+color.accent=#00d8ff
+color.focus=#ffff00
+metric.panel_radius=0
+motion.normal_ms=0
