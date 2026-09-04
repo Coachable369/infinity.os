@@ -47,6 +47,12 @@ rg -q 'font_pair_adjustment' kernel/core/bootstrap.rs
 rg -q 'InfinityOS is a distributed operating system\.' kernel/core/bootstrap.rs
 rg -q 'You.re in control\. Always\.' kernel/core/bootstrap.rs
 rg -q 'See how InfinityPool works' kernel/core/bootstrap.rs
+rg -q 'FUNC: clock_tick' kernel/core/console.rs
+rg -q 'HomeControl' kernel/core/console.rs kernel/ui/system_layout.rs
+rg -q 'SettingsTarget::WindowControl' kernel/core/console.rs
+rg -q 'HomeSidebar' kernel/core/console.rs kernel/ui/system_layout.rs
+rg -q 'notes.txt moved by drag and drop' kernel/core/console.rs
+rg -q 'last_installer_date_time' kernel/core/bootstrap.rs
 test "$(grep -c '<symbol id=' assets/skins/infinity.default.dark/icons/semantic-icons.svg)" -ge 50
 
 for tree in installed-fat installed-fat-aarch64 fat fat-aarch64 fat-aarch64-qemu; do
@@ -56,4 +62,4 @@ for tree in installed-fat installed-fat-aarch64 fat fat-aarch64 fat-aarch64-qemu
 done
 
 rg -q 'assets/desktop/\*\.png.*iso-x86/System/InfinityUI/Wallpapers' Makefile
-echo "PASS UI install parity: live media and fresh System Generations include skins, vector icons, 46 font families, Roboto UI/installer atlases with kerning, and all wallpapers"
+echo "PASS UI install parity: fresh System Generations include live window controls, menus, drag/drop, clock updates, skins, fonts, and wallpapers"

@@ -48,15 +48,20 @@ fn installed_system_hit_geometry_test() {
     assert_eq!(square.authentication_target(200, 420), Some(0));
     assert_eq!(square.authentication_target(200, 500), Some(1));
     assert_eq!(square.authentication_target(200, 560), Some(2));
-    assert_eq!(square.desktop_target(30, 20, 30, 500), Some(DesktopTarget::InfinityMenu));
-    assert_eq!(square.desktop_target(120, 15, 30, 500), Some(DesktopTarget::TopMenu(1)));
-    assert_eq!(square.desktop_target(860, 15, 30, 500), Some(DesktopTarget::Status(0)));
-    assert_eq!(square.desktop_target(100, 510, 30, 500), Some(DesktopTarget::HomeTitle));
-    assert_eq!(square.desktop_target(260, 970, 30, 500), Some(DesktopTarget::Dock(0)));
+    assert_eq!(square.desktop_target(30, 20, 30, 500, true, false), Some(DesktopTarget::InfinityMenu));
+    assert_eq!(square.desktop_target(120, 15, 30, 500, true, false), Some(DesktopTarget::TopMenu(1)));
+    assert_eq!(square.desktop_target(805, 15, 30, 500, true, false), Some(DesktopTarget::Status(0)));
+    assert_eq!(square.desktop_target(100, 510, 30, 500, true, false), Some(DesktopTarget::HomeTitle));
+    assert_eq!(square.desktop_target(445, 510, 30, 500, true, false), Some(DesktopTarget::HomeControl(2)));
+    assert_eq!(square.desktop_target(60, 570, 30, 500, true, false), Some(DesktopTarget::HomeSidebar(0)));
+    assert_eq!(square.desktop_target(170, 560, 30, 500, true, false), Some(DesktopTarget::HomeItem(0)));
+    assert_eq!(square.desktop_target(260, 970, 30, 500, true, false), Some(DesktopTarget::Dock(0)));
+    assert_eq!(square.desktop_target(100, 510, 30, 500, false, false), None);
     assert_eq!(square.system_menu_target(0, 50, 50), SystemMenuTarget::Item(0));
     assert_eq!(square.system_menu_target(0, 500, 500), SystemMenuTarget::Dismiss);
-    assert_eq!(square.settings_target(200, 335), Some(SettingsTarget::Section(0)));
-    assert_eq!(square.settings_target(500, 390), Some(SettingsTarget::ContentRow(0)));
+    assert_eq!(square.settings_target(200, 335, false), Some(SettingsTarget::Section(0)));
+    assert_eq!(square.settings_target(500, 390, false), Some(SettingsTarget::ContentRow(0)));
+    assert_eq!(square.settings_target(815, 290, false), Some(SettingsTarget::WindowControl(1)));
 
     let hidpi = SystemLayout::new(2560, 1440);
     assert_eq!(hidpi.onboarding_target(0, 220, 810), Some(OnboardingTarget::Primary));

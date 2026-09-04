@@ -259,12 +259,25 @@ struct ConsoleRuntime {
     current_user: crate::runtime::identity::StableId,
     current_session: crate::runtime::identity::StableId,
     settings_editing: bool,
+    settings_maximized: bool,
     onboarding_validation_error: bool,
     home_window_x: i32,
     home_window_y: i32,
+    home_window_visible: bool,
+    home_window_maximized: bool,
+    home_window_restore_x: i32,
+    home_window_restore_y: i32,
     home_window_dragging: bool,
     home_window_drag_offset_x: i32,
     home_window_drag_offset_y: i32,
+    home_location: usize,
+    home_previous_location: usize,
+    home_selected_item: Option<usize>,
+    home_dragging_item: Option<usize>,
+    home_note_location: usize,
+    home_note_previous_location: usize,
+    home_clipboard_note: bool,
+    desktop_clock: DateTimeConfiguration,
 }
 
 impl ConsoleRuntime {
@@ -311,12 +324,25 @@ impl ConsoleRuntime {
             current_user: crate::runtime::identity::StableId::zero(),
             current_session: crate::runtime::identity::StableId::zero(),
             settings_editing: false,
+            settings_maximized: false,
             onboarding_validation_error: false,
             home_window_x: 30,
             home_window_y: 500,
+            home_window_visible: true,
+            home_window_maximized: false,
+            home_window_restore_x: 30,
+            home_window_restore_y: 500,
             home_window_dragging: false,
             home_window_drag_offset_x: 0,
             home_window_drag_offset_y: 0,
+            home_location: 0,
+            home_previous_location: 0,
+            home_selected_item: None,
+            home_dragging_item: None,
+            home_note_location: 0,
+            home_note_previous_location: 0,
+            home_clipboard_note: false,
+            desktop_clock: installer_date_time,
         }
     }
 
@@ -493,6 +519,14 @@ impl ConsoleRuntime {
                 self.onboarding_validation_error,
                 self.home_window_x,
                 self.home_window_y,
+                self.home_window_visible,
+                self.home_window_maximized,
+                self.home_location,
+                self.home_selected_item,
+                self.home_dragging_item,
+                self.home_note_location,
+                self.desktop_clock,
+                self.settings_maximized,
                 self.shell_menu,
             );
             return;
@@ -575,6 +609,7 @@ impl ConsoleRuntime {
         self.shell_menu = 0;
         self.settings_editing = false;
         self.home_window_dragging = false;
+        self.home_dragging_item = None;
         self.reset_input();
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
     }
@@ -668,28 +703,81 @@ impl ConsoleRuntime {
             (1, 1) => {
                 self.home_window_x = 30;
                 self.home_window_y = 500;
+                self.home_window_visible = true;
                 self.enter_desktop();
             }
-            (1, 2) => self.show_shell_notice(b"Create a project with: project create name=YourProject"),
+            (1, 2) => {
+                self.home_window_visible = true;
+                self.home_previous_location = self.home_location;
+                self.home_location = 7;
+                self.home_selected_item = Some(5);
+                self.enter_desktop();
+                crate::output_text(b"[objects] Projects collection opened for new project\n");
+            }
             (1, 3) => self.open_settings(0),
             (1, 4) => {
-                self.home_window_x = 540;
-                self.home_window_y = 550;
+                self.home_window_visible = false;
                 self.enter_desktop();
             }
-            (2, _) => self.show_shell_notice(b"No editable object currently has focus."),
-            (3, 0 | 1 | 2 | 3) => {
+            (2, 0 | 1) => {
+                core::mem::swap(&mut self.home_note_location, &mut self.home_note_previous_location);
+                self.enter_desktop();
+            }
+            (2, 2) => {
+                if self.home_selected_item == Some(6) {
+                    self.home_clipboard_note = true;
+                    self.home_note_previous_location = self.home_note_location;
+                    self.home_note_location = 9;
+                }
+                self.enter_desktop();
+            }
+            (2, 3) => {
+                self.home_clipboard_note = self.home_selected_item == Some(6);
+                self.enter_desktop();
+            }
+            (2, 4) => {
+                if self.home_clipboard_note {
+                    self.home_note_previous_location = self.home_note_location;
+                    self.home_note_location = self.home_location;
+                    self.home_selected_item = Some(6);
+                }
+                self.enter_desktop();
+            }
+            (2, 5) => {
+                self.home_selected_item = (self.home_note_location == self.home_location).then_some(6);
+                self.enter_desktop();
+            }
+            (3, 0) => {
+                self.home_window_visible = true;
+                self.enter_desktop();
+            }
+            (3, 1) => {
                 self.home_window_x = 30;
                 self.home_window_y = 500;
+                self.home_window_visible = true;
+                self.home_window_maximized = false;
+                self.enter_desktop();
+            }
+            (3, 2) => self.enter_desktop(),
+            (3, 3) => {
+                self.desktop_clock = firmware_date_time(self.system.firmware_runtime_services);
                 self.enter_desktop();
             }
             (3, 4) => self.open_settings(1),
             (4, 0) => {
-                self.home_window_x = 540;
-                self.home_window_y = 550;
+                self.home_window_visible = false;
                 self.enter_desktop();
             }
-            (4, 1 | 2) => {
+            (4, 1) => {
+                self.home_window_visible = true;
+                self.home_window_maximized = false;
+                self.home_window_x = self.home_window_restore_x;
+                self.home_window_y = self.home_window_restore_y;
+                self.enter_desktop();
+            }
+            (4, 2) => {
+                self.home_window_visible = true;
+                self.home_window_maximized = false;
                 self.home_window_x = 30;
                 self.home_window_y = 500;
                 self.enter_desktop();
@@ -2009,7 +2097,27 @@ impl ConsoleRuntime {
                 }
             }
         } else if self.mode == ConsoleMode::Desktop {
-            if self.home_window_dragging {
+            if let Some(item) = self.home_dragging_item {
+                if released {
+                    if let Some(DesktopTarget::HomeSidebar(location)) = layout.desktop_target(
+                        self.pointer_x,
+                        self.pointer_y,
+                        self.home_window_x,
+                        self.home_window_y,
+                        self.home_window_visible,
+                        self.home_window_maximized,
+                    ) {
+                        if item == 6 {
+                            self.home_note_previous_location = self.home_note_location;
+                            self.home_note_location = location;
+                            self.home_previous_location = self.home_location;
+                            self.home_location = location;
+                            crate::output_text(b"[objects] notes.txt moved by drag and drop\n");
+                        }
+                    }
+                    self.home_dragging_item = None;
+                }
+            } else if self.home_window_dragging {
                 if left_button {
                     self.home_window_x = (self.pointer_x - self.home_window_drag_offset_x).clamp(10, 540);
                     self.home_window_y = (self.pointer_y - self.home_window_drag_offset_y).clamp(80, 550);
@@ -2023,11 +2131,44 @@ impl ConsoleRuntime {
                     self.pointer_y,
                     self.home_window_x,
                     self.home_window_y,
+                    self.home_window_visible,
+                    self.home_window_maximized,
                 ) {
                     Some(DesktopTarget::HomeTitle) => {
-                        self.home_window_dragging = true;
-                        self.home_window_drag_offset_x = self.pointer_x - self.home_window_x;
-                        self.home_window_drag_offset_y = self.pointer_y - self.home_window_y;
+                        if !self.home_window_maximized {
+                            self.home_window_dragging = true;
+                            self.home_window_drag_offset_x = self.pointer_x - self.home_window_x;
+                            self.home_window_drag_offset_y = self.pointer_y - self.home_window_y;
+                        }
+                    }
+                    Some(DesktopTarget::HomeControl(0 | 2)) => self.home_window_visible = false,
+                    Some(DesktopTarget::HomeControl(1)) => {
+                        if self.home_window_maximized {
+                            self.home_window_x = self.home_window_restore_x;
+                            self.home_window_y = self.home_window_restore_y;
+                        } else {
+                            self.home_window_restore_x = self.home_window_x;
+                            self.home_window_restore_y = self.home_window_y;
+                        }
+                        self.home_window_maximized = !self.home_window_maximized;
+                    }
+                    Some(DesktopTarget::HomeToolbar(_)) => {
+                        core::mem::swap(&mut self.home_location, &mut self.home_previous_location);
+                        self.home_selected_item = None;
+                    }
+                    Some(DesktopTarget::HomeSidebar(location)) => {
+                        self.home_previous_location = self.home_location;
+                        self.home_location = location;
+                        self.home_selected_item = None;
+                    }
+                    Some(DesktopTarget::HomeItem(item)) => {
+                        self.home_selected_item = Some(item);
+                        if item < 6 {
+                            self.home_previous_location = self.home_location;
+                            self.home_location = item + 2;
+                        } else if self.home_note_location == self.home_location {
+                            self.home_dragging_item = Some(item);
+                        }
                     }
                     Some(DesktopTarget::InfinityMenu) => {
                         self.open_shell_menu(0);
@@ -2038,13 +2179,17 @@ impl ConsoleRuntime {
                     Some(DesktopTarget::Dock(1)) => {
                         self.home_window_x = 30;
                         self.home_window_y = 500;
+                        self.home_window_visible = true;
+                        self.home_window_maximized = false;
                     }
                     Some(DesktopTarget::Dock(2)) => self.open_settings(5),
                     Some(DesktopTarget::Dock(3 | 4)) => self.open_settings(3),
                     Some(DesktopTarget::Dock(5)) => self.open_settings(0),
                     Some(DesktopTarget::Dock(6)) => self.open_settings(4),
                     Some(DesktopTarget::Dock(7)) => {
-                        crate::output_text(b"[objects] recycle collection requested\n")
+                        self.home_window_visible = true;
+                        self.home_location = 8;
+                        crate::output_text(b"[objects] recycle collection opened\n")
                     }
                     None => {}
                     _ => {}
@@ -2057,6 +2202,8 @@ impl ConsoleRuntime {
                     self.pointer_y,
                     self.home_window_x,
                     self.home_window_y,
+                    self.home_window_visible,
+                    self.home_window_maximized,
                 ) {
                     Some(DesktopTarget::InfinityMenu) => {
                         self.open_shell_menu(0);
@@ -2087,7 +2234,7 @@ impl ConsoleRuntime {
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
-            if let Some(target) = layout.settings_target(self.pointer_x, self.pointer_y) {
+            if let Some(target) = layout.settings_target(self.pointer_x, self.pointer_y, self.settings_maximized) {
                 match target {
                     SettingsTarget::Section(index) => {
                         self.system_focus = index;
@@ -2097,8 +2244,11 @@ impl ConsoleRuntime {
                     SettingsTarget::ContentRow(0) if clicked => {
                         self.input_shell(ConsoleKey::Enter)
                     }
-                    SettingsTarget::Close if clicked => self.enter_desktop(),
-                    SettingsTarget::ContentRow(_) | SettingsTarget::Close => {}
+                    SettingsTarget::WindowControl(0 | 2) if clicked => self.enter_desktop(),
+                    SettingsTarget::WindowControl(1) if clicked => {
+                        self.settings_maximized = !self.settings_maximized
+                    }
+                    SettingsTarget::ContentRow(_) | SettingsTarget::WindowControl(_) => {}
                 }
             }
         }
@@ -4311,6 +4461,26 @@ pub fn pointer_absolute(x: i32, y: i32, left_button: bool) {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
             runtime.pointer_absolute(x, y, left_button);
+        }
+    }
+}
+
+// ------------------------=
+// FUNC: clock_tick
+// DESC: Refreshes the installed desktop clock from the live firmware wall clock.
+// ------------------=
+pub fn clock_tick() {
+    unsafe {
+        let slot = &raw mut RUNTIME;
+        if let Some(runtime) = (*slot).as_mut() {
+            if !matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::SystemMenu | ConsoleMode::Settings) {
+                return;
+            }
+            let next = firmware_date_time(runtime.system.firmware_runtime_services);
+            if next != runtime.desktop_clock {
+                runtime.desktop_clock = next;
+                runtime.redraw();
+            }
         }
     }
 }

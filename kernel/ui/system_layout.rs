@@ -20,6 +20,10 @@ pub enum DesktopTarget {
     TopMenu(usize),
     Status(usize),
     HomeTitle,
+    HomeControl(usize),
+    HomeToolbar(usize),
+    HomeSidebar(usize),
+    HomeItem(usize),
     Dock(usize),
 }
 
@@ -33,7 +37,7 @@ pub enum SystemMenuTarget {
 pub enum SettingsTarget {
     Section(usize),
     ContentRow(usize),
-    Close,
+    WindowControl(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,6 +196,8 @@ impl SystemLayout {
         normalized_y: i32,
         window_x: i32,
         window_y: i32,
+        window_visible: bool,
+        window_maximized: bool,
     ) -> Option<DesktopTarget> {
         let point = self.point(normalized_x, normalized_y);
         let top_bar = self.top_bar_height();
@@ -212,18 +218,53 @@ impl SystemLayout {
             }
         }
         let status_width = 32 * self.scale;
-        let status_left = self.width.saturating_sub(7 * status_width + 10 * self.scale);
+        let clock_width = 88 * self.scale;
+        let status_left = self.width.saturating_sub(7 * status_width + clock_width + 10 * self.scale);
         for index in 0..7usize {
             if rect(status_left + index * status_width, 4 * self.scale, status_width, top_bar.saturating_sub(8 * self.scale)).contains(point) {
                 return Some(DesktopTarget::Status(index));
             }
         }
+        if rect(self.width.saturating_sub(clock_width + 8 * self.scale), 4 * self.scale, clock_width, top_bar.saturating_sub(8 * self.scale)).contains(point) {
+            return Some(DesktopTarget::Status(6));
+        }
 
-        let browser_left = self.width * window_x.clamp(10, 540) as usize / 1000;
-        let browser_top = self.height * window_y.clamp(80, 550) as usize / 1000;
-        let browser_width = self.width * 43 / 100;
-        if rect(browser_left, browser_top, browser_width, 34 * self.scale).contains(point) {
-            return Some(DesktopTarget::HomeTitle);
+        if window_visible {
+            let (browser_left, browser_top, browser_width, _) = self.home_window_geometry(window_x, window_y, window_maximized);
+            let title_height = 34 * self.scale;
+            for index in 0..3usize {
+                let control_left = browser_left + browser_width.saturating_sub((28 + (2 - index) * 27) * self.scale);
+                if rect(control_left, browser_top + 7 * self.scale, 20 * self.scale, 20 * self.scale).contains(point) {
+                    return Some(DesktopTarget::HomeControl(index));
+                }
+            }
+            if rect(browser_left, browser_top, browser_width, title_height).contains(point) {
+                return Some(DesktopTarget::HomeTitle);
+            }
+            let tool_top = browser_top + title_height;
+            for index in 0..2usize {
+                if rect(browser_left + (7 + index * 28) * self.scale, tool_top + 4 * self.scale, 26 * self.scale, 30 * self.scale).contains(point) {
+                    return Some(DesktopTarget::HomeToolbar(index));
+                }
+            }
+            let sidebar_width = browser_width * 27 / 100;
+            for index in 0..9usize {
+                let item_y = tool_top + (72 + index * 20) * self.scale;
+                if rect(browser_left + 7, item_y.saturating_sub(3), sidebar_width.saturating_sub(14), 20 * self.scale).contains(point) {
+                    return Some(DesktopTarget::HomeSidebar(index));
+                }
+            }
+            let grid_x = browser_left + sidebar_width + 28 * self.scale;
+            let grid_y = tool_top + 58 * self.scale;
+            let gap = (browser_width.saturating_sub(sidebar_width + 55 * self.scale)) / 4;
+            let tile_step = (self.height / 23).max(34) + 40 * self.scale;
+            for index in 0..7usize {
+                let column = index % 4;
+                let row = index / 4;
+                if rect(grid_x + column * gap.saturating_sub(6 * self.scale), grid_y + row * tile_step.saturating_sub(8 * self.scale), gap.max(44 * self.scale), tile_step.max(54 * self.scale)).contains(point) {
+                    return Some(DesktopTarget::HomeItem(index));
+                }
+            }
         }
 
         let dock_width = self.width * 54 / 100;
@@ -236,6 +277,25 @@ impl SystemLayout {
             return Some(DesktopTarget::Dock((relative / icon_gap).min(7)));
         }
         None
+    }
+
+    // ------------------------=
+    // FUNC: home_window_geometry
+    // DESC: Returns the shared restored or maximized Home window geometry.
+    // ------------------=
+    pub fn home_window_geometry(self, window_x: i32, window_y: i32, maximized: bool) -> (usize, usize, usize, usize) {
+        if maximized {
+            let left = 10 * self.scale;
+            let top = self.top_bar_height() + 10 * self.scale;
+            let bottom = self.height.saturating_sub(90 * self.scale);
+            return (left, top, self.width.saturating_sub(left * 2), bottom.saturating_sub(top));
+        }
+        (
+            self.width * window_x.clamp(10, 540) as usize / 1000,
+            self.height * window_y.clamp(80, 550) as usize / 1000,
+            self.width * 43 / 100,
+            (self.height * 38 / 100).min(430 * self.scale),
+        )
     }
 
     // ------------------------=
@@ -290,21 +350,28 @@ impl SystemLayout {
         self,
         normalized_x: i32,
         normalized_y: i32,
+        maximized: bool,
     ) -> Option<SettingsTarget> {
         let point = self.point(normalized_x, normalized_y);
         let top_bar = self.top_bar_height();
-        let width = (self.width * 68 / 100)
+        let restored_width = (self.width * 68 / 100)
             .clamp(900, 1200 * self.scale)
             .min(self.width.saturating_sub(40));
-        let height = (self.height * 62 / 100)
+        let restored_height = (self.height * 62 / 100)
             .clamp(560, 760 * self.scale)
             .min(self.height.saturating_sub(top_bar + 28));
-        let left = self.width.saturating_sub(width) / 2;
-        let top = top_bar + self.height.saturating_sub(top_bar + height) / 2;
+        let (left, top, width, _height) = if maximized {
+            let inset = 10 * self.scale;
+            (inset, top_bar + inset, self.width.saturating_sub(inset * 2), self.height.saturating_sub(top_bar + inset * 2))
+        } else {
+            (self.width.saturating_sub(restored_width) / 2, top_bar + self.height.saturating_sub(top_bar + restored_height) / 2, restored_width, restored_height)
+        };
         let title_height = 54 * self.scale;
-        let close_left = left + width.saturating_sub(28 * self.scale);
-        if rect(close_left, top + 8 * self.scale, 28 * self.scale, 36 * self.scale).contains(point) {
-            return Some(SettingsTarget::Close);
+        for index in 0..3usize {
+            let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * self.scale);
+            if rect(control_left, top + 12 * self.scale, 20 * self.scale, 24 * self.scale).contains(point) {
+                return Some(SettingsTarget::WindowControl(index));
+            }
         }
         let nav_w = width * 28 / 100;
         for index in 0..8usize {

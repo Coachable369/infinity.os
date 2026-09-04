@@ -989,7 +989,7 @@ impl DisplayDevice {
     // FUNC: system_top_bar
     // DESC: Draws the shared quiet glass top bar with interactive menus and honest device status.
     // ------------------=
-    fn system_top_bar(&mut self, active_menu: Option<usize>) -> usize {
+    fn system_top_bar(&mut self, active_menu: Option<usize>, clock: crate::storage::DateTimeConfiguration) -> usize {
         let scale = self.ui_scale().max(1);
         let height = (46 * scale).min(self.height / 12).max(40);
         self.fill_rect_alpha(0, 0, self.width, height, 0, 4, 10, 218);
@@ -1000,8 +1000,8 @@ impl DisplayDevice {
         if active_menu == Some(0) {
             self.fill_rounded_rect_alpha(8 * scale, 5 * scale, brand_width, height.saturating_sub(10 * scale), 9 * scale, 15, 57, 83, 214);
         }
-        self.small_infinity_mark(29 * scale, height / 2, 42 * scale);
-        self.ui_text_strong(56 * scale, height / 2 - 10 * scale, b"InfinityOS", 247, 249, 252, 1);
+        self.small_infinity_mark(22 * scale, height / 2, 24 * scale);
+        self.ui_text_strong(40 * scale, height / 2 - 10 * scale, b"InfinityOS", 247, 249, 252, 1);
 
         let menu_positions = [178usize, 238, 298, 360, 444];
         for (index, label) in [b"File".as_slice(), b"Edit", b"View", b"Window", b"Help"].iter().enumerate() {
@@ -1016,13 +1016,23 @@ impl DisplayDevice {
         let icon_size = 18 * scale;
         let status_y = height / 2;
         let status_width = 32 * scale;
-        let status_left = self.width.saturating_sub(7 * status_width + 10 * scale);
+        let clock_width = 88 * scale;
+        let status_left = self.width.saturating_sub(7 * status_width + clock_width + 10 * scale);
         let private_width = self.ui_text_width(b"LOCAL  |  PRIVATE", 1);
         self.ui_text(status_left.saturating_sub(private_width + 18 * scale), height / 2 - 10 * scale, b"LOCAL  |  PRIVATE", 211, 221, 231, 1);
         for (index, kind) in [0usize, 1, 2, 3, 13, 4, 5].iter().enumerate() {
             let center = status_left + index * status_width + status_width / 2;
             self.system_status_icon(center, status_y, *kind, icon_size);
         }
+        let mut time = *b"00:00:00";
+        time[0] = b'0' + clock.hour / 10;
+        time[1] = b'0' + clock.hour % 10;
+        time[3] = b'0' + clock.minute / 10;
+        time[4] = b'0' + clock.minute % 10;
+        time[6] = b'0' + clock.second / 10;
+        time[7] = b'0' + clock.second % 10;
+        let time_width = self.ui_text_width(&time, 1);
+        self.ui_text_strong(self.width.saturating_sub(time_width + 16 * scale), height / 2 - 10 * scale, &time, 235, 242, 248, 1);
         height
     }
 
@@ -1324,6 +1334,14 @@ impl DisplayDevice {
         validation_error: bool,
         window_x: i32,
         window_y: i32,
+        window_visible: bool,
+        window_maximized: bool,
+        home_location: usize,
+        selected_item: Option<usize>,
+        dragging_item: Option<usize>,
+        note_location: usize,
+        clock: crate::storage::DateTimeConfiguration,
+        settings_maximized: bool,
         menu_kind: usize,
     ) {
         if matches!(screen, 5 | 6) {
@@ -1343,10 +1361,10 @@ impl DisplayDevice {
         }
         let scale = self.ui_scale().max(1);
         let margin = self.width * 4 / 100;
-        let top_bar = self.system_top_bar((screen == 3).then_some(menu_kind));
+        let top_bar = self.system_top_bar((screen == 3).then_some(menu_kind), clock);
 
         if matches!(screen, 2 | 3) {
-            self.desktop_shell(scale, window_x, window_y);
+            self.desktop_shell(scale, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location);
         }
 
         if matches!(screen, 1 | 5 | 6) {
@@ -1613,14 +1631,18 @@ impl DisplayDevice {
         } else if screen == 3 {
             self.system_menu_panel(menu_kind, focus, scale);
         } else if screen == 4 {
-            let width = (self.width * 68 / 100)
+            let restored_width = (self.width * 68 / 100)
                 .clamp(900, 1200 * scale)
                 .min(self.width.saturating_sub(40));
-            let height = (self.height * 62 / 100)
+            let restored_height = (self.height * 62 / 100)
                 .clamp(560, 760 * scale)
                 .min(self.height.saturating_sub(top_bar + 28));
-            let left = self.width.saturating_sub(width) / 2;
-            let top = top_bar + self.height.saturating_sub(top_bar + height) / 2;
+            let (left, top, width, height) = if settings_maximized {
+                let inset = 10 * scale;
+                (inset, top_bar + inset, self.width.saturating_sub(inset * 2), self.height.saturating_sub(top_bar + inset * 2))
+            } else {
+                (self.width.saturating_sub(restored_width) / 2, top_bar + self.height.saturating_sub(top_bar + restored_height) / 2, restored_width, restored_height)
+            };
             self.glass_panel(left, top, width, height, true);
             let title_height = 54 * scale;
             self.fill_rect_alpha(left, top, width, title_height, 6, 17, 29, 222);
@@ -2462,11 +2484,16 @@ impl DisplayDevice {
     // FUNC: desktop_shell
     // DESC: Renders the screenshot-matched InfinityOS desktop, home browser, status cards, and application dock.
     // ------------------=
-    fn desktop_shell(&mut self, scale: usize, window_x: i32, window_y: i32) {
-        let browser_left = self.width * window_x.clamp(10, 540) as usize / 1000;
-        let browser_top = self.height * window_y.clamp(80, 550) as usize / 1000;
-        let browser_width = self.width * 43 / 100;
-        let browser_height = (self.height * 38 / 100).min(430 * scale);
+    fn desktop_shell(&mut self, scale: usize, window_x: i32, window_y: i32, window_visible: bool, window_maximized: bool, home_location: usize, selected_item: Option<usize>, dragging_item: Option<usize>, note_location: usize) {
+        if window_visible {
+        let (browser_left, browser_top, browser_width, browser_height) = if window_maximized {
+            let left = 10 * scale;
+            let top = (46 * scale).min(self.height / 12).max(40) + 10 * scale;
+            let bottom = self.height.saturating_sub(90 * scale);
+            (left, top, self.width.saturating_sub(left * 2), bottom.saturating_sub(top))
+        } else {
+            (self.width * window_x.clamp(10, 540) as usize / 1000, self.height * window_y.clamp(80, 550) as usize / 1000, self.width * 43 / 100, (self.height * 38 / 100).min(430 * scale))
+        };
         self.glass_panel(
             browser_left,
             browser_top,
@@ -2520,7 +2547,8 @@ impl DisplayDevice {
         let location_width = browser_width.saturating_sub(124 * scale);
         self.fill_rounded_rect_alpha(location_left, tool_top + 5 * scale, location_width, 28 * scale, 8 * scale, 4, 15, 27, 238);
         self.outline_rounded_rect(location_left, tool_top + 5 * scale, location_width, 28 * scale, 8 * scale, 38, 62, 81);
-        self.ui_text(location_left + 14 * scale, tool_top + 9 * scale, b"Home", 193, 211, 224, 1);
+        let location_names: [&[u8]; 9] = [b"Home", b"Personal Space", b"Documents", b"Downloads", b"Pictures", b"Music", b"Videos", b"Projects", b"Recycle Bin"];
+        self.ui_text(location_left + 14 * scale, tool_top + 9 * scale, location_names[home_location.min(8)], 193, 211, 224, 1);
         let sidebar_w = browser_width * 27 / 100;
         self.fill_rect_alpha(
             browser_left,
@@ -2560,7 +2588,7 @@ impl DisplayDevice {
         .enumerate()
         {
             let item_y = tool_top + (72 + index * 20) * scale;
-            if index == 0 {
+            if index == home_location {
                 self.fill_rect_alpha(
                     browser_left + 7,
                     item_y - 3,
@@ -2586,7 +2614,7 @@ impl DisplayDevice {
                     11 | 12 => 11,
                     _ => 0,
                 };
-                self.authentication_icon(browser_left + 16 * scale, item_y + 8 * scale, icon_kind, 13 * scale, index == 0);
+                self.authentication_icon(browser_left + 16 * scale, item_y + 8 * scale, icon_kind, 13 * scale, index == home_location);
             }
             self.ui_text(
                 browser_left + (if index == 10 { 16 } else { 30 }) * scale,
@@ -2614,9 +2642,19 @@ impl DisplayDevice {
         .iter()
         .enumerate()
         {
+            if (index < 6 && home_location != 0) || (index == 6 && note_location != home_location) {
+                continue;
+            }
             let column = index % 4;
             let row = index / 4;
+            if selected_item == Some(index) {
+                self.fill_rounded_rect_alpha(grid_x + column * gap.saturating_sub(6 * scale), grid_y + row * tile_step.saturating_sub(8 * scale), gap.max(44 * scale), tile_step.max(54 * scale), 8 * scale, 17, 79, 112, 190);
+            }
             self.desktop_icon(grid_x + column * gap, grid_y + row * tile_step, name, *kind);
+        }
+        if dragging_item == Some(6) {
+            self.ui_text(browser_left + sidebar_w + 28 * scale, browser_top + browser_height.saturating_sub(28 * scale), b"DROP NOTES.TXT ON A SIDEBAR LOCATION", 91, 211, 250, 1);
+        }
         }
 
         let widget_left = self.width * 76 / 100;
@@ -5926,6 +5964,7 @@ impl DisplayDevice {
     // FUNC: installer_date_time_panel
     // DESC: Draws the functional date, time, and typed time-zone installer screen.
     // ------------------=
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     fn installer_date_time_panel(
         &mut self,
         left: usize,
@@ -6706,6 +6745,14 @@ struct ConsoleSurface {
     last_system_validation_error: bool,
     last_home_window_x: i32,
     last_home_window_y: i32,
+    last_home_window_visible: bool,
+    last_home_window_maximized: bool,
+    last_home_location: usize,
+    last_home_selected_item: Option<usize>,
+    last_home_dragging_item: Option<usize>,
+    last_home_note_location: usize,
+    last_system_clock: crate::storage::DateTimeConfiguration,
+    last_settings_maximized: bool,
     system_ui_active: bool,
     cursor_saved: bool,
     cursor_left: usize,
@@ -6718,6 +6765,7 @@ struct ConsoleSurface {
 static mut CONSOLE: Option<ConsoleSurface> = None;
 static mut POINTER_ACTIVITY_PENDING: bool = false;
 static mut POINTER_ACTIVITY_GRACE_TICKS: u8 = 0;
+static mut SYSTEM_CLOCK_TICKS: u8 = 0;
 
 // ------------------------=
 // FUNC: note_pointer_activity
@@ -6768,6 +6816,14 @@ fn activate_console(display: DisplayDevice) {
             last_system_validation_error: false,
             last_home_window_x: i32::MIN,
             last_home_window_y: i32::MIN,
+            last_home_window_visible: false,
+            last_home_window_maximized: false,
+            last_home_location: usize::MAX,
+            last_home_selected_item: None,
+            last_home_dragging_item: None,
+            last_home_note_location: usize::MAX,
+            last_system_clock: crate::storage::DateTimeConfiguration::utc_default(),
+            last_settings_maximized: false,
             system_ui_active: false,
             cursor_saved: false,
             cursor_left: 0,
@@ -7120,6 +7176,14 @@ pub fn system_ui_present(
     validation_error: bool,
     window_x: i32,
     window_y: i32,
+    window_visible: bool,
+    window_maximized: bool,
+    home_location: usize,
+    selected_item: Option<usize>,
+    dragging_item: Option<usize>,
+    note_location: usize,
+    clock: crate::storage::DateTimeConfiguration,
+    settings_maximized: bool,
     menu_kind: usize,
 ) {
     unsafe {
@@ -7132,7 +7196,15 @@ pub fn system_ui_present(
                 || console.last_system_step != step
                 || console.last_system_focus != focus
                 || console.last_system_menu != menu_kind
-                || console.last_system_validation_error != validation_error;
+                || console.last_system_validation_error != validation_error
+                || console.last_home_window_visible != window_visible
+                || console.last_home_window_maximized != window_maximized
+                || console.last_home_location != home_location
+                || console.last_home_selected_item != selected_item
+                || console.last_home_dragging_item != dragging_item
+                || console.last_home_note_location != note_location
+                || console.last_system_clock != clock
+                || console.last_settings_maximized != settings_maximized;
             let window_moved = console.last_home_window_x != window_x
                 || console.last_home_window_y != window_y;
             let content_changed = console.last_system_content != content;
@@ -7141,16 +7213,18 @@ pub fn system_ui_present(
                 && !content_changed
                 && screen == 2
                 && console.last_system_screen == 2
+                && window_visible
+                && !window_maximized
             {
                 console
                     .display
                     .restore_desktop_window(console.last_home_window_x, console.last_home_window_y);
                 let scale = console.display.ui_scale().max(1);
-                console.display.desktop_shell(scale, window_x, window_y);
+                console.display.desktop_shell(scale, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location);
             } else if structural_change_without_window || window_moved {
                 console
                     .display
-                    .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, menu_kind);
+                    .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, clock, settings_maximized, menu_kind);
             } else if content_changed
                 && (matches!(screen, 5 | 6) || (screen == 1 && (1..=4).contains(&step)))
             {
@@ -7160,7 +7234,7 @@ pub fn system_ui_present(
             } else if content_changed {
                 console
                     .display
-                    .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, menu_kind);
+                    .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, clock, settings_maximized, menu_kind);
             }
             console.cursor_x = cursor_x;
             console.cursor_y = cursor_y;
@@ -7173,6 +7247,14 @@ pub fn system_ui_present(
             console.last_system_validation_error = validation_error;
             console.last_home_window_x = window_x;
             console.last_home_window_y = window_y;
+            console.last_home_window_visible = window_visible;
+            console.last_home_window_maximized = window_maximized;
+            console.last_home_location = home_location;
+            console.last_home_selected_item = selected_item;
+            console.last_home_dragging_item = dragging_item;
+            console.last_home_note_location = note_location;
+            console.last_system_clock = clock;
+            console.last_settings_maximized = settings_maximized;
         }
     }
 }
@@ -7193,6 +7275,14 @@ pub fn system_ui_present(
     _validation_error: bool,
     _window_x: i32,
     _window_y: i32,
+    _window_visible: bool,
+    _window_maximized: bool,
+    _home_location: usize,
+    _selected_item: Option<usize>,
+    _dragging_item: Option<usize>,
+    _note_location: usize,
+    _clock: crate::storage::DateTimeConfiguration,
+    _settings_maximized: bool,
     _menu_kind: usize,
 ) {
 }
@@ -7292,6 +7382,13 @@ pub fn installer_reboot_countdown() {}
 pub fn animation_tick() {
     if !animation_due() {
         return;
+    }
+    unsafe {
+        SYSTEM_CLOCK_TICKS = SYSTEM_CLOCK_TICKS.saturating_add(1);
+        if SYSTEM_CLOCK_TICKS >= 60 {
+            SYSTEM_CLOCK_TICKS = 0;
+            crate::console::clock_tick();
+        }
     }
     // Keep the full-quality 60 Hz particle path while idle. A pointer update
     // owns its current presentation deadline completely; effects resume at the
