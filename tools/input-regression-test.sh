@@ -39,6 +39,13 @@ rg -Uq 'let defer_for_pointer = unsafe \{[[:space:][:print:]]*POINTER_ACTIVITY_P
 rg -q 'select_installer_time_zone_from_map' kernel/core/console.rs
 rg -Uq 'if clicked \{[[:space:]]*if let Some\(field\) = field' kernel/core/console.rs
 rg -q 'focus_changed && !pointer_changed' kernel/core/bootstrap.rs
+rg -q 'fn onboarding_actions' kernel/core/bootstrap.rs
+rg -q 'fn onboarding_focus_controls' kernel/core/bootstrap.rs
+rg -Fq 'focus_changed && !(screen == 1 && pointer_changed)' kernel/core/bootstrap.rs
+rg -Fq 'screen == 1 && pointer_changed && focus_changed' kernel/core/bootstrap.rs
+rg -Fq 'console.last_system_clock != clock && screen != 1' kernel/core/bootstrap.rs
+rg -Fq 'radius, 8, 54, 84, 255' kernel/core/bootstrap.rs
+rg -Fq 'radius, 2, 10, 20, 255' kernel/core/bootstrap.rs
 
 # Oracle VirtualBox USBHIDT_REPORT is packed as buttons, dz, dw, padding,
 # X(u16 LE), Y(u16 LE), with both axes declared in the 0..0x7fff range.

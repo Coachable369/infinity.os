@@ -1178,11 +1178,14 @@ impl DisplayDevice {
     fn polished_button(&mut self, left: usize, top: usize, width: usize, height: usize, label: &[u8], primary: bool, focused: bool) {
         let radius = (height / 4).clamp(8, 14);
         if primary {
-            self.fill_rounded_rect_alpha(left, top, width, height, radius, 8, 54, 84, if focused { 252 } else { 232 });
+            // The base is intentionally opaque. Onboarding hover updates repaint
+            // only this bounded control, so alpha accumulation must not alter the
+            // button each time the pointer crosses its hit target.
+            self.fill_rounded_rect_alpha(left, top, width, height, radius, 8, 54, 84, 255);
             self.fill_rounded_rect_alpha(left + 2, top + 2, width.saturating_sub(4), height / 2, radius.saturating_sub(2), 25, 111, 159, if focused { 116 } else { 72 });
             self.outline_rounded_rect(left, top, width, height, radius, if focused { 151 } else { 40 }, if focused { 229 } else { 181 }, if focused { 255 } else { 231 });
         } else {
-            self.fill_rounded_rect_alpha(left, top, width, height, radius, 5, 15, 27, if focused { 246 } else { 218 });
+            self.fill_rounded_rect_alpha(left, top, width, height, radius, 5, 15, 27, 255);
             self.outline_rounded_rect(left, top, width, height, radius, if focused { 105 } else { 42 }, if focused { 197 } else { 69 }, if focused { 236 } else { 91 });
         }
         self.ui_text_centered_strong(left, width, top + height / 2 - 10, label, 242, 248, 252, 1);
@@ -1197,7 +1200,9 @@ impl DisplayDevice {
     // ------------------=
     fn onboarding_input_field(&mut self, left: usize, top: usize, width: usize, height: usize, input: &[u8], masked: bool, focused: bool, placeholder: &[u8]) {
         let radius = (height / 4).clamp(8, 14);
-        self.fill_rounded_rect_alpha(left, top, width, height, radius, 2, 10, 20, 245);
+        // Focus changes can repaint this field independently of the glass card.
+        // Use an opaque base so repeated bounded updates remain color-stable.
+        self.fill_rounded_rect_alpha(left, top, width, height, radius, 2, 10, 20, 255);
         self.outline_rounded_rect(left, top, width, height, radius, if focused { 67 } else { 40 }, if focused { 192 } else { 72 }, if focused { 241 } else { 95 });
         let mut shown = [0u8; 64];
         let shown_len = input.len().min(shown.len());
@@ -1312,16 +1317,102 @@ impl DisplayDevice {
             self.ui_text_centered(inner_left, inner_width, body_top + 110 * scale, b"Enter a secure, local-first InfinityOS session.", 151, 166, 181, 1);
         }
 
+        self.onboarding_actions(step, focus);
+    }
+
+    // ------------------------=
+    // FUNC: onboarding_actions
+    // DESC: Repaints only the first-boot navigation controls for flicker-free pointer hover changes.
+    // ------------------=
+    fn onboarding_actions(&mut self, step: usize, focus: usize) {
+        let scale = self.ui_scale().max(1);
+        let top_bar = (46 * scale).min(self.height / 12).max(40);
+        let card_width = (self.width * 34 / 100).clamp(500, 600 * scale);
+        let card_height = (self.height * 68 / 100)
+            .clamp(560, 680 * scale)
+            .min(self.height.saturating_sub(top_bar + 24));
+        let card_left = self.width * 4 / 100;
+        let card_top = top_bar + self.height.saturating_sub(top_bar + card_height) / 2;
+        let inner_left = card_left + 32 * scale;
+        let inner_width = card_width.saturating_sub(64 * scale);
         let button_height = 48 * scale;
         let button_top = card_top + card_height.saturating_sub(72 * scale);
         if step > 0 {
             let back_width = inner_width * 30 / 100;
-            self.polished_button(inner_left, button_top, back_width, button_height, b"Back", false, focus == 0);
+            self.polished_button(
+                inner_left,
+                button_top,
+                back_width,
+                button_height,
+                b"Back",
+                false,
+                focus == 0,
+            );
             let primary_left = inner_left + back_width + 12 * scale;
-            self.polished_button(primary_left, button_top, inner_width.saturating_sub(back_width + 12 * scale), button_height, if step >= 6 { b"Enter InfinityOS" } else { b"Continue" }, true, focus == 1);
+            self.polished_button(
+                primary_left,
+                button_top,
+                inner_width.saturating_sub(back_width + 12 * scale),
+                button_height,
+                if step >= 6 { b"Enter InfinityOS" } else { b"Continue" },
+                true,
+                focus == 1,
+            );
         } else {
-            self.polished_button(inner_left, button_top, inner_width, button_height, b"Continue", true, true);
+            self.polished_button(
+                inner_left,
+                button_top,
+                inner_width,
+                button_height,
+                b"Continue",
+                true,
+                true,
+            );
         }
+    }
+
+    // ------------------------=
+    // FUNC: onboarding_focus_controls
+    // DESC: Updates the bounded first-boot field and actions when pointer hover changes focus.
+    // ------------------=
+    fn onboarding_focus_controls(
+        &mut self,
+        step: usize,
+        input: &[u8],
+        masked: bool,
+        focus: usize,
+    ) {
+        if (1..=4).contains(&step) {
+            let scale = self.ui_scale().max(1);
+            let top_bar = (46 * scale).min(self.height / 12).max(40);
+            let card_width = (self.width * 34 / 100).clamp(500, 600 * scale);
+            let card_height = (self.height * 68 / 100)
+                .clamp(560, 680 * scale)
+                .min(self.height.saturating_sub(top_bar + 24));
+            let card_left = self.width * 4 / 100;
+            let card_top = top_bar + self.height.saturating_sub(top_bar + card_height) / 2;
+            let inner_left = card_left + 32 * scale;
+            let inner_width = card_width.saturating_sub(64 * scale);
+            let body_top = card_top + (94 + 132) * scale;
+            let placeholder: &[u8] = match step {
+                1 => b"InfinityNode",
+                2 => b"your-handle",
+                3 => b"Display name",
+                4 => b"Create a password",
+                _ => b"",
+            };
+            self.onboarding_input_field(
+                inner_left,
+                body_top + 28 * scale,
+                inner_width,
+                50 * scale,
+                input,
+                masked,
+                focus == 1,
+                placeholder,
+            );
+        }
+        self.onboarding_actions(step, focus);
     }
 
     // ------------------------=
@@ -7283,9 +7374,11 @@ pub fn system_ui_present(
             console.system_ui_active = true;
             console.restore_cursor();
             let content = system_content_hash(input, masked);
+            let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
+            let focus_changed = console.last_system_focus != focus;
             let structural_change_without_window = console.last_system_screen != screen
                 || console.last_system_step != step
-                || console.last_system_focus != focus
+                || (focus_changed && !(screen == 1 && pointer_changed))
                 || console.last_system_menu != menu_kind
                 || console.last_system_validation_error != validation_error
                 || console.last_home_window_visible != window_visible
@@ -7294,7 +7387,7 @@ pub fn system_ui_present(
                 || console.last_home_selected_item != selected_item
                 || console.last_home_dragging_item != dragging_item
                 || console.last_home_note_location != note_location
-                || console.last_system_clock != clock
+                || (console.last_system_clock != clock && screen != 1)
                 || console.last_settings_maximized != settings_maximized;
             let window_moved = console.last_home_window_x != window_x
                 || console.last_home_window_y != window_y;
@@ -7316,6 +7409,10 @@ pub fn system_ui_present(
                 console
                     .display
                     .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, clock, settings_maximized, menu_kind);
+            } else if screen == 1 && pointer_changed && focus_changed {
+                console
+                    .display
+                    .onboarding_focus_controls(step, input, masked, focus);
             } else if content_changed
                 && (matches!(screen, 5 | 6) || (screen == 1 && (1..=4).contains(&step)))
             {
