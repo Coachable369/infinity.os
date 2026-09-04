@@ -52,7 +52,7 @@ rg -q 'HomeControl' kernel/core/console.rs kernel/ui/system_layout.rs
 rg -q 'SettingsTarget::WindowControl' kernel/core/console.rs
 rg -q 'HomeSidebar' kernel/core/console.rs kernel/ui/system_layout.rs
 rg -q 'notes.txt moved by drag and drop' kernel/core/console.rs
-rg -q 'last_installer_date_time' kernel/core/bootstrap.rs
+rg -q 'last_system_clock' kernel/core/bootstrap.rs
 test "$(grep -c '<symbol id=' assets/skins/infinity.default.dark/icons/semantic-icons.svg)" -ge 50
 
 for tree in installed-fat installed-fat-aarch64 fat fat-aarch64 fat-aarch64-qemu; do
