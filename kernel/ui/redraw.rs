@@ -5,7 +5,7 @@
 // DESC: Determines whether a focus transition requires rebuilding the complete system surface.
 // ------------------=
 pub const fn focus_change_requires_structural_redraw(
-    screen: usize,
+    screen: u8,
     pointer_changed: bool,
     focus_changed: bool,
 ) -> bool {
@@ -16,7 +16,7 @@ pub const fn focus_change_requires_structural_redraw(
 // FUNC: clock_change_requires_structural_redraw
 // DESC: Determines whether a clock transition affects visible content on the active system surface.
 // ------------------=
-pub const fn clock_change_requires_structural_redraw(screen: usize, clock_changed: bool) -> bool {
+pub const fn clock_change_requires_structural_redraw(screen: u8, clock_changed: bool) -> bool {
     clock_changed && screen != 1
 }
 
@@ -25,7 +25,7 @@ pub const fn clock_change_requires_structural_redraw(screen: usize, clock_change
 // DESC: Selects a bounded onboarding-control repaint for pointer-driven focus transitions.
 // ------------------=
 pub const fn onboarding_controls_require_repaint(
-    screen: usize,
+    screen: u8,
     pointer_changed: bool,
     focus_changed: bool,
 ) -> bool {
