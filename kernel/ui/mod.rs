@@ -10,6 +10,7 @@ pub mod geometry;
 pub mod input;
 pub mod localization;
 pub mod platform;
+pub mod redraw;
 pub mod scene;
 pub mod skin;
 pub mod system_layout;

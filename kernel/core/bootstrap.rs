@@ -7378,7 +7378,11 @@ pub fn system_ui_present(
             let focus_changed = console.last_system_focus != focus;
             let structural_change_without_window = console.last_system_screen != screen
                 || console.last_system_step != step
-                || (focus_changed && !(screen == 1 && pointer_changed))
+                || crate::ui::redraw::focus_change_requires_structural_redraw(
+                    screen,
+                    pointer_changed,
+                    focus_changed,
+                )
                 || console.last_system_menu != menu_kind
                 || console.last_system_validation_error != validation_error
                 || console.last_home_window_visible != window_visible
@@ -7387,7 +7391,10 @@ pub fn system_ui_present(
                 || console.last_home_selected_item != selected_item
                 || console.last_home_dragging_item != dragging_item
                 || console.last_home_note_location != note_location
-                || (console.last_system_clock != clock && screen != 1)
+                || crate::ui::redraw::clock_change_requires_structural_redraw(
+                    screen,
+                    console.last_system_clock != clock,
+                )
                 || console.last_settings_maximized != settings_maximized;
             let window_moved = console.last_home_window_x != window_x
                 || console.last_home_window_y != window_y;
@@ -7409,7 +7416,11 @@ pub fn system_ui_present(
                 console
                     .display
                     .system_ui_frame(screen, step, input, masked, focus, validation_error, window_x, window_y, window_visible, window_maximized, home_location, selected_item, dragging_item, note_location, clock, settings_maximized, menu_kind);
-            } else if screen == 1 && pointer_changed && focus_changed {
+            } else if crate::ui::redraw::onboarding_controls_require_repaint(
+                screen,
+                pointer_changed,
+                focus_changed,
+            ) {
                 console
                     .display
                     .onboarding_focus_controls(step, input, masked, focus);

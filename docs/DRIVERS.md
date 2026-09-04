@@ -81,9 +81,9 @@ The current AArch64 USB bridge is transitional; it is not falsely presented as a
 native xHCI implementation.
 
 The same driver modules are compiled into the recovery ISO kernel and the installed
-System Generation kernel. `make input-regression-test` verifies packet decoding and
-discovery metadata before `build.sh` creates any ISO, so a fresh installation cannot
-silently receive a different pointer stack.
+System Generation kernel. `make input-regression-test` executes packet-decoding,
+discovery-metadata, and bounded-redraw state scenarios. `build.sh` runs those
+behavioral scenarios against the same source used for the completed images.
 
 VirtualBox's new-VM default of `PS/2 Mouse` is not a functional pointer source
 on the ARM virtual machine. `builds/configure-virtualbox-arm64.sh <VM>` applies

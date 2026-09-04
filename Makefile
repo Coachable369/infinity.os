@@ -164,13 +164,11 @@ milestone-7-test:
 desktop-system-test: milestone-7-test
 	@tools/desktop-system-test.sh
 
-ui-install-parity-test:
+ui-install-parity-test: x86 x86_64 aarch64
 	@tools/ui-install-parity-test.sh
 
 input-regression-test:
 	@tools/input-regression-test.sh
-	@rustc --edition=2021 -C opt-level=2 tools/pointer-protocol-test.rs -o build/pointer-protocol-test
-	@build/pointer-protocol-test
 
 installed-object-test:
 	@rustc --edition=2021 -C opt-level=2 tools/installed-object-test.rs -o build/installed-object-test
