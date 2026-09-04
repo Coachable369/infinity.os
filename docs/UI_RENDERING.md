@@ -18,6 +18,11 @@ queues collapse to their newest coordinate, and an active UEFI Absolute Pointer
 source suppresses duplicate raw-tablet axes. This keeps animation state
 independent from cursor state and prevents stale movement replay.
 
+The ISO-only reveal pulse is vertically calibrated 50 framebuffer pixels below
+its original mathematical origin so its particles follow the visible Infinity
+ribbon. This calibration affects only the installer boot reveal; installed-boot
+and desktop particle geometry retain their independent layout paths.
+
 Damage calculation and bounded cache behavior are TESTED at the native unit
 boundary. The current platform presenter still writes damaged regions to the
 firmware framebuffer; a hardware-accelerated compositor and full per-window

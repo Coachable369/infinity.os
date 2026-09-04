@@ -48,6 +48,7 @@ rg -q 'InfinityOS is a distributed operating system\.' kernel/core/bootstrap.rs
 rg -q 'You.re in control\. Always\.' kernel/core/bootstrap.rs
 rg -q 'See how InfinityPool works' kernel/core/bootstrap.rs
 rg -q 'FUNC: clock_tick' kernel/core/console.rs
+rg -q 'BOOT_PARTICLE_Y_OFFSET: i32 = 50' kernel/core/bootstrap.rs
 rg -q 'HomeControl' kernel/core/console.rs kernel/ui/system_layout.rs
 rg -q 'SettingsTarget::WindowControl' kernel/core/console.rs
 rg -q 'HomeSidebar' kernel/core/console.rs kernel/ui/system_layout.rs

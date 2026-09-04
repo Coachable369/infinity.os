@@ -213,6 +213,11 @@ const DATE_TIME_WORLD_BMP: &[u8] = &[];
 const CURSOR_BMP: &[u8] = include_bytes!("../../assets/boot/infinity-cursor-v1.bmp");
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 const BOOT_EMBLEM_TOP_PERCENT: usize = 23;
+// Installer-only calibration: the ISO reveal pulse follows the visible ribbon
+// centerline in the composited bootstrap artwork, which sits 50 pixels below
+// the original mathematical path origin.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+const BOOT_PARTICLE_Y_OFFSET: i32 = 50;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 const CONSOLE_EMBLEM_TOP_PERCENT: usize = 18;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -3326,7 +3331,7 @@ impl DisplayDevice {
         let scale_x = (self.width.min(self.height * 16 / 9) as i32 / 400).max(1);
         let scale_y = (scale_x * 2 / 3).max(1);
         let center_x = self.width as i32 / 2;
-        let center_y = self.height as i32 * 37 / 100;
+        let center_y = self.height as i32 * 37 / 100 + BOOT_PARTICLE_Y_OFFSET;
         let (head_x, head_y) = infinity_point(head);
         self.glow(
             center_x + head_x * scale_x,
