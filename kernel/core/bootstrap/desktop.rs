@@ -1847,7 +1847,7 @@ impl super::DisplayDevice {
             .min(self.height.saturating_sub(top_bar + 24));
         let card_left = self.width * 4 / 100;
         let card_top = top_bar + self.height.saturating_sub(top_bar + card_height) / 2;
-        self.glass_panel(card_left, card_top, card_width, card_height, true);
+        self.onboarding_glass_panel(card_left, card_top, card_width, card_height);
 
         let inner_left = card_left + 32 * scale;
         let inner_width = card_width.saturating_sub(64 * scale);
@@ -3252,8 +3252,8 @@ impl super::DisplayDevice {
             255,
             255,
         );
-        let hue_marker_y = geometry.hue.y.max(0) as usize
-            + hue as usize * geometry.hue.height as usize / 359;
+        let hue_marker_y =
+            geometry.hue.y.max(0) as usize + hue as usize * geometry.hue.height as usize / 359;
         self.fill_rect(
             (geometry.hue.x.max(0) as usize).saturating_sub(3 * scale),
             hue_marker_y.saturating_sub(scale),
@@ -3263,6 +3263,20 @@ impl super::DisplayDevice {
             255,
             255,
         );
+    }
+
+    // ------------------------=
+    // FUNC: onboarding_glass_panel
+    // DESC: Restores the fixed neutral navy glass used by first-boot configuration before user appearance preferences exist.
+    // ------------------=
+    pub(super) fn onboarding_glass_panel(
+        &mut self,
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+    ) {
+        self.glass_panel_with_palette(left, top, width, height, true, (2, 12, 24), (34, 83, 112));
     }
 
     // ------------------------=
@@ -3276,6 +3290,35 @@ impl super::DisplayDevice {
         width: usize,
         height: usize,
         strong: bool,
+    ) {
+        let (panel_r, panel_g, panel_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Widget);
+        let (outline_r, outline_g, outline_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        self.glass_panel_with_palette(
+            left,
+            top,
+            width,
+            height,
+            strong,
+            (panel_r, panel_g, panel_b),
+            (outline_r, outline_g, outline_b),
+        );
+    }
+
+    // ------------------------=
+    // FUNC: glass_panel_with_palette
+    // DESC: Draws the shared layered glass recipe using one caller-selected surface and edge palette.
+    // ------------------=
+    fn glass_panel_with_palette(
+        &mut self,
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+        strong: bool,
+        panel: (u8, u8, u8),
+        outline: (u8, u8, u8),
     ) {
         let radius = (width.min(height) / 12).clamp(8, 18);
         if self.skin_visual_mode() == 1 {
@@ -3298,10 +3341,6 @@ impl super::DisplayDevice {
             self.outline_rounded_rect(left, top, width, height, radius, 255, 255, 255);
             return;
         }
-        let (panel_r, panel_g, panel_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::Widget);
-        let (outline_r, outline_g, outline_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         for inset in (1..=5usize).rev() {
             let (shadow_red, shadow_green, shadow_blue, shadow_alpha) = if strong {
                 (5, 29, 42, 12)
@@ -3326,27 +3365,20 @@ impl super::DisplayDevice {
             width,
             height,
             radius,
-            panel_r,
-            panel_g,
-            panel_b,
+            panel.0,
+            panel.1,
+            panel.2,
             if strong { 232 } else { 204 },
         );
         self.outline_rounded_rect(
-            left,
-            top,
-            width,
-            height,
-            radius,
-            outline_r,
-            outline_g,
-            outline_b,
+            left, top, width, height, radius, outline.0, outline.1, outline.2,
         );
         if width > 4 && height > 4 {
             let divisor = if strong { 3 } else { 5 };
             let inner_edge = (
-                outline_r / divisor,
-                outline_g / divisor,
-                outline_b / divisor,
+                outline.0 / divisor,
+                outline.1 / divisor,
+                outline.2 / divisor,
             );
             self.outline_rounded_rect(
                 left + 2,
