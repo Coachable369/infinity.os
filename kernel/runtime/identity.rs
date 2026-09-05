@@ -9,7 +9,8 @@ pub const IDENTITY_FORMAT_VERSION: u16 = 1;
 pub const PASSWORD_ITERATIONS: u32 = 4096;
 pub const USER_ICON_THEME_OFFSET: usize = 4056;
 pub const USER_ACCENT_OFFSET: usize = 4064;
-pub const DEFAULT_ACCENT_RGB: u32 = 0x20bfff;
+pub const DEFAULT_ACCENT_RGB: u32 = 0x4da3ff;
+const LEGACY_DEFAULT_ACCENT_RGB: u32 = 0x20bfff;
 
 pub const SESSION_PERSONAL_READ: u64 = 1 << 0;
 pub const SESSION_PERSONAL_WRITE: u64 = 1 << 1;
@@ -1107,11 +1108,12 @@ impl IdentitySystem {
                     let stored_accent = ((bytes[accent_at] as u32) << 16)
                         | ((bytes[accent_at + 1] as u32) << 8)
                         | bytes[accent_at + 2] as u32;
-                    profile.accent_rgb = if stored_accent == 0 {
-                        DEFAULT_ACCENT_RGB
-                    } else {
-                        stored_accent
-                    };
+                    profile.accent_rgb =
+                        if stored_accent == 0 || stored_accent == LEGACY_DEFAULT_ACCENT_RGB {
+                            DEFAULT_ACCENT_RGB
+                        } else {
+                            stored_accent
+                        };
                 }
                 state.ai_profiles[index] = Some(user.2);
                 state.voice_profiles[index] = Some(user.3);

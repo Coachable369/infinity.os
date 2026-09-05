@@ -5569,6 +5569,11 @@ pub fn system_ui_present(
             let clock_changed = console.last_system_clock != clock;
             let icon_theme = console.display.active_icon_theme();
             let icon_theme_changed = console.last_icon_theme != icon_theme;
+            let accent_rgb = console.display.active_accent_rgb();
+            let accent_changed = crate::ui::redraw::appearance_change_requires_structural_redraw(
+                console.last_accent_rgb,
+                accent_rgb,
+            );
             let bounded_menu_change =
                 crate::ui::redraw::desktop_menu_change_requires_bounded_redraw(
                     console.last_system_screen,
@@ -5587,6 +5592,7 @@ pub fn system_ui_present(
                     || console.last_system_menu != menu_kind))
                 || console.last_system_step != step
                 || icon_theme_changed
+                || accent_changed
                 || console.last_system_validation_error != validation_error
                 || console.last_home_window_visible != window_visible
                 || console.last_home_window_maximized != window_maximized
@@ -5799,6 +5805,7 @@ pub fn system_ui_present(
             console.last_system_focus = focus;
             console.last_system_menu = menu_kind;
             console.last_icon_theme = icon_theme;
+            console.last_accent_rgb = accent_rgb;
             console.last_system_content = content;
             console.last_system_validation_error = validation_error;
             console.last_home_window_x = window_x;

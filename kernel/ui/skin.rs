@@ -326,13 +326,13 @@ impl SkinRegistry {
     pub fn accent_surface(&self, surface: AccentSurface) -> Color {
         let accent = self.color(ColorRole::Accent);
         match surface {
-            AccentSurface::WindowOutline => mix_color(accent, Color::rgb(0x00ff_ffff), 34),
-            AccentSurface::Header => mix_color(accent, Color::rgb(0x0002_0c18), 184),
-            AccentSurface::TopBar => mix_color(accent, Color::rgb(0x0000_0710), 208),
-            AccentSurface::Dock => mix_color(accent, Color::rgb(0x0002_0c18), 194),
-            AccentSurface::Widget => mix_color(accent, Color::rgb(0x0005_1524), 166),
-            AccentSurface::Focus => mix_color(accent, Color::rgb(0x00ff_ffff), 92),
-            AccentSurface::Selection => mix_color(accent, Color::rgb(0x0005_1b2a), 132),
+            AccentSurface::WindowOutline => mix_color(accent, Color::rgb(0x00ef_f8ff), 112),
+            AccentSurface::Header => Color::rgb(0x000a_1b30),
+            AccentSurface::TopBar => Color::rgb(0x0006_1629),
+            AccentSurface::Dock => Color::rgb(0x000a_1d32),
+            AccentSurface::Widget => Color::rgb(0x000d_2238),
+            AccentSurface::Focus => mix_color(accent, Color::rgb(0x00ff_ffff), 88),
+            AccentSurface::Selection => mix_color(accent, Color::rgb(0x0008_2138), 208),
         }
     }
 }
@@ -522,7 +522,7 @@ pub const fn default_dark_skin() -> SkinPackage {
                 Color(0xff33475b),
                 Color(0xfff1f5fa),
                 Color(0xffaeb8c6),
-                Color(0xff20bfff),
+                Color(0xff4da3ff),
                 Color(0xff9ce8ff),
                 Color(0xffffffff),
                 Color(0xff50d890),

@@ -1142,7 +1142,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn cycle_accent(&mut self) {
         const PRESETS: [u32; 8] = [
-            0x20bfff, 0x6f8cff, 0xa56dff, 0xe65cc8, 0xff6b78, 0xffa62b, 0x33d69f, 0x38d8ff,
+            0x4da3ff, 0x6f8cff, 0xa56dff, 0xe65cc8, 0xff6b78, 0xffa62b, 0x33d69f, 0x38d8ff,
         ];
         let current = crate::runtime::with_runtime(|runtime| runtime.ui.skins.accent_rgb())
             .unwrap_or(PRESETS[0]);

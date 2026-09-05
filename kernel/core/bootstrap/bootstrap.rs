@@ -820,6 +820,7 @@ fn activate_console(display: DisplayDevice) {
             last_system_focus: usize::MAX,
             last_system_menu: usize::MAX,
             last_icon_theme: u8::MAX,
+            last_accent_rgb: u32::MAX,
             last_system_content: 0,
             last_system_validation_error: false,
             last_home_window_x: i32::MIN,

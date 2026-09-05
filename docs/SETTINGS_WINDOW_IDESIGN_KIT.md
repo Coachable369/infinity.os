@@ -3,6 +3,7 @@
 ## Measurable target
 
 - Preserve the screenshot's centered navy window, compact title chrome, left navigation rail, and generous content column.
+- Use frosted translucent navy for window, header, navigation, dock, and widget fills. The default accent is clean Infinity Blue (`#4DA3FF`), mixed toward white for borders and focus lines; never wash a complete panel with the accent color.
 - Replace detached configuration controls with one accordion: each 46-unit summary row owns a 12-unit disclosure twiddle and, when open, a rounded detail well directly beneath it.
 - Rotate the twiddle from right-facing to down-facing. Use the active accent only for the open row edge, focus ring, selected option, and scrollbar thumb.
 - Keep a 12-unit gap between rows. Only one row may be open, so hierarchy remains calm and scannable.

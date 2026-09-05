@@ -40,6 +40,17 @@ pub const fn desktop_app_content_requires_bounded_redraw(
 }
 
 // ------------------------=
+// FUNC: appearance_change_requires_structural_redraw
+// DESC: Invalidates the complete composed surface when the active semantic accent changes.
+// ------------------=
+pub const fn appearance_change_requires_structural_redraw(
+    previous_accent_rgb: u32,
+    accent_rgb: u32,
+) -> bool {
+    previous_accent_rgb != accent_rgb
+}
+
+// ------------------------=
 // FUNC: desktop_window_move_requires_structural_redraw
 // DESC: Determines whether a window move cannot be satisfied by framebuffer relocation and exposed-region repair.
 // ------------------=

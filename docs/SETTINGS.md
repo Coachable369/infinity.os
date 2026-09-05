@@ -28,8 +28,10 @@ appearance, local-AI policy, and opt-in voice state.
 `Settings > Themes & Skins > Accent` expands to an inline HSV color picker. Pointer
 movement previews the selected color immediately; release commits it once to
 the authenticated user's profile. The selected RGB value is restored when that
-user next enters the installed desktop. Older profiles with no stored color
-resolve to Infinity Blue (`#20BFFF`).
+user next enters the installed desktop. Older profiles with no stored color or
+the retired teal default resolve to Infinity Blue (`#4DA3FF`). Window, top-bar,
+dock, and widget fills remain frosted translucent navy; the chosen accent is
+reserved for white-blue outlines, focus indicators, and selection details.
 
 The picker changes one semantic accent token rather than recoloring individual
 widgets. Derived roles cover window outlines, title/header surfaces, the system

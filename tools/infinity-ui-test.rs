@@ -19,7 +19,7 @@ use ui::scene::{
 };
 use ui::skin::{
     decode_header, diagnostic_light_skin, encode_header, hsv_to_rgb, rgb_to_hsv, AccentSurface,
-    AppearanceScope, SkinError, SkinId, SkinRegistry,
+    AppearanceScope, ColorRole, SkinError, SkinId, SkinRegistry,
 };
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
@@ -940,6 +940,12 @@ fn installed_system_hit_geometry_test() {
     assert!(!ui::redraw::desktop_app_content_requires_bounded_redraw(
         2, true
     ));
+    assert!(ui::redraw::appearance_change_requires_structural_redraw(
+        0x20bfff, 0x4da3ff
+    ));
+    assert!(!ui::redraw::appearance_change_requires_structural_redraw(
+        0x4da3ff, 0x4da3ff
+    ));
 }
 
 // ------------------------=
@@ -991,6 +997,7 @@ fn geometry_test() {
 // ------------------=
 fn skin_test() {
     let dark = ui::skin::default_dark_skin();
+    assert_eq!(dark.tokens.color(ColorRole::Accent).rgb24(), 0x4da3ff);
     let mut header = [0u8; ui::skin::SKIN_HEADER_BYTES];
     encode_header(&dark, &mut header);
     assert_eq!(
@@ -1046,10 +1053,15 @@ fn skin_test() {
         registry.accent_surface(AccentSurface::Focus),
         registry.accent_surface(AccentSurface::Selection),
     ];
-    assert!(before
-        .iter()
-        .zip(after.iter())
-        .all(|(left, right)| left != right));
+    for index in [0usize, 5, 6] {
+        assert_ne!(before[index], after[index]);
+    }
+    for index in 1..=4usize {
+        assert_eq!(
+            before[index], after[index],
+            "frosted chrome must not be flooded by the selected accent"
+        );
+    }
     assert_eq!(hsv_to_rgb(0, 255, 255), 0xff0000);
     assert_eq!(hsv_to_rgb(120, 255, 255), 0x00ff00);
     assert_eq!(hsv_to_rgb(240, 255, 255), 0x0000ff);

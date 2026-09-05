@@ -150,6 +150,14 @@ fn identity_lifecycle() {
         restored.session_nth(0).is_none(),
         "sessions must not survive reboot"
     );
+    identities
+        .update_user_accent(owner.id, owner.id, 0x20bfff)
+        .unwrap();
+    let migrated = IdentitySystem::decode(&identities.encode()).unwrap();
+    assert_eq!(
+        migrated.user_profile(owner.id).unwrap().accent_rgb,
+        DEFAULT_ACCENT_RGB
+    );
     let mut corrupt = encoded;
     corrupt[240] ^= 0x5a;
     assert!(matches!(
