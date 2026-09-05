@@ -112,6 +112,13 @@ fn identity_lifecycle() {
     identities
         .update_user_icon_theme(owner.id, owner.id, 2)
         .unwrap();
+    identities
+        .update_user_accent(owner.id, owner.id, 0xd45cff)
+        .unwrap();
+    assert_eq!(
+        identities.update_user_accent(second.id, owner.id, 0x33d69f),
+        Err(IdentityError::AccessDenied)
+    );
     assert_eq!(
         identities.update_user_icon_theme(owner.id, owner.id, 3),
         Err(IdentityError::InvalidInput)
@@ -133,6 +140,7 @@ fn identity_lifecycle() {
         b"nebula-high-contrast"
     );
     assert_eq!(restored.user_profile(owner.id).unwrap().icon_theme, 2);
+    assert_eq!(restored.user_profile(owner.id).unwrap().accent_rgb, 0xd45cff);
     assert_eq!(
         restored.ai_profile(owner.id).unwrap().provider_policy,
         AiProviderPolicy::AskBeforeRemote

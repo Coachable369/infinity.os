@@ -53,6 +53,27 @@ pub(super) const FROSTED_QUARTZ_ACTIONS_BMP: &[u8] =
 
 impl super::DisplayDevice {
     // ------------------------=
+    // FUNC: active_accent_surface
+    // DESC: Resolves one user-selected semantic accent surface into framebuffer channels.
+    // ------------------=
+    pub(super) fn active_accent_surface(
+        &self,
+        surface: crate::ui::skin::AccentSurface,
+    ) -> (u8, u8, u8) {
+        crate::runtime::with_runtime(|runtime| runtime.ui.skins.accent_surface(surface).channels())
+            .unwrap_or((32, 191, 255))
+    }
+
+    // ------------------------=
+    // FUNC: active_accent_rgb
+    // DESC: Returns the authenticated user's current portable RGB accent.
+    // ------------------=
+    pub(super) fn active_accent_rgb(&self) -> u32 {
+        crate::runtime::with_runtime(|runtime| runtime.ui.skins.accent_rgb())
+            .unwrap_or(crate::runtime::identity::DEFAULT_ACCENT_RGB)
+    }
+
+    // ------------------------=
     // FUNC: active_icon_theme
     // DESC: Reads the current user-scoped icon family for surface-independent semantic rendering.
     // ------------------=
@@ -1080,6 +1101,12 @@ impl super::DisplayDevice {
         let rail_height = height.saturating_sub(rail_inset * 2);
         let content_y = height / 2;
         let text_y = content_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2);
+        let (top_r, top_g, top_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::TopBar);
+        let (outline_r, outline_g, outline_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        let (selection_r, selection_g, selection_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
         self.fill_rect_alpha(0, 0, self.width, height, 0, 2, 7, 176);
         self.fill_rounded_rect_alpha(
             rail_inset,
@@ -1087,9 +1114,9 @@ impl super::DisplayDevice {
             rail_width,
             rail_height,
             7 * scale,
-            0,
-            8,
-            18,
+            top_r,
+            top_g,
+            top_b,
             238,
         );
         self.fill_rounded_rect_alpha(
@@ -1109,9 +1136,9 @@ impl super::DisplayDevice {
             self.width / 2,
             rail_height,
             7 * scale,
-            20,
-            75,
-            112,
+            selection_r,
+            selection_g,
+            selection_b,
             42,
         );
         self.outline_rounded_rect(
@@ -1120,18 +1147,18 @@ impl super::DisplayDevice {
             rail_width,
             rail_height,
             7 * scale,
-            64,
-            100,
-            128,
+            outline_r,
+            outline_g,
+            outline_b,
         );
         self.fill_rect_alpha(
             9 * scale,
             height.saturating_sub(2 * scale),
             self.width.saturating_sub(18 * scale),
             1,
-            35,
-            113,
-            153,
+            outline_r,
+            outline_g,
+            outline_b,
             150,
         );
 
@@ -1143,9 +1170,9 @@ impl super::DisplayDevice {
                 brand_width,
                 height.saturating_sub(8 * scale),
                 7 * scale,
-                17,
-                69,
-                101,
+                selection_r,
+                selection_g,
+                selection_b,
                 188,
             );
         }
@@ -1166,9 +1193,9 @@ impl super::DisplayDevice {
                     active_width,
                     height.saturating_sub(8 * scale),
                     7 * scale,
-                    18,
-                    55,
-                    78,
+                    selection_r,
+                    selection_g,
+                    selection_b,
                     210,
                 );
             }
@@ -1441,6 +1468,8 @@ impl super::DisplayDevice {
         let menu_y = (38 * scale).min(self.height / 14).max(34 * scale) + 6 * scale;
         let menu_w = (width * scale).min(self.width.saturating_sub(menu_x + 8));
         let menu_h = (22 + items.len() * 34) * scale;
+        let (selection_r, selection_g, selection_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
         self.glass_panel(menu_x, menu_y, menu_w, menu_h, true);
         self.fill_rounded_rect_alpha(
             menu_x + 2 * scale,
@@ -1462,9 +1491,9 @@ impl super::DisplayDevice {
                     menu_w.saturating_sub(14 * scale),
                     30 * scale,
                     7 * scale,
-                    20,
-                    87,
-                    125,
+                    selection_r,
+                    selection_g,
+                    selection_b,
                     224,
                 );
             }
@@ -2200,6 +2229,8 @@ impl super::DisplayDevice {
         let toolbar_left = geometry.toolbar.x.max(0) as usize;
         let toolbar_top = geometry.toolbar.y.max(0) as usize;
         if !content_only {
+            let (header_r, header_g, header_b) =
+                self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
             self.fill_rounded_rect_alpha(
                 left.saturating_sub(8 * scale),
                 top + 8 * scale,
@@ -2212,7 +2243,16 @@ impl super::DisplayDevice {
                 120,
             );
             self.glass_panel(left, top, width, height, true);
-            self.fill_rect_alpha(left, top, width, 48 * scale, 4, 16, 29, 238);
+            self.fill_rect_alpha(
+                left,
+                top,
+                width,
+                48 * scale,
+                header_r,
+                header_g,
+                header_b,
+                238,
+            );
             let icon_role = if screen == 9 { 49 } else { 25 };
             let _ = self.themed_icon(left + 30 * scale, top + 24 * scale, icon_role, 32 * scale);
             self.ui_text_strong(
@@ -2866,9 +2906,24 @@ impl super::DisplayDevice {
                     restored_height,
                 )
             };
+            let (header_r, header_g, header_b) =
+                self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
+            let (selection_r, selection_g, selection_b) =
+                self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
+            let (outline_r, outline_g, outline_b) =
+                self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
             self.glass_panel(left, top, width, height, true);
             let title_height = 54 * scale;
-            self.fill_rect_alpha(left, top, width, title_height, 6, 17, 29, 222);
+            self.fill_rect_alpha(
+                left,
+                top,
+                width,
+                title_height,
+                header_r,
+                header_g,
+                header_b,
+                222,
+            );
             let title_center_y = top + title_height / 2;
             self.small_infinity_mark(left + 25 * scale, title_center_y, 31 * scale);
             self.ui_text_strong(
@@ -2945,9 +3000,9 @@ impl super::DisplayDevice {
                         nav_w.saturating_sub(20 * scale),
                         36 * scale,
                         9 * scale,
-                        15,
-                        66,
-                        100,
+                        selection_r,
+                        selection_g,
+                        selection_b,
                         226,
                     );
                 }
@@ -3003,7 +3058,7 @@ impl super::DisplayDevice {
                     (b"Skin", b"InfinityOS Default Dark"),
                     (b"Icon Set", icon_theme.name()),
                     (b"UI Scale", b"Automatic"),
-                    (b"Accent", b"Infinity Blue"),
+                    (b"Accent", b"Custom color"),
                     (b"Wallpaper", b"Cosmic Horizon"),
                 ],
                 2 => [
@@ -3068,9 +3123,9 @@ impl super::DisplayDevice {
                     content_width,
                     46 * scale,
                     10 * scale,
-                    35,
-                    57,
-                    74,
+                    outline_r / 2,
+                    outline_g / 2,
+                    outline_b / 2,
                 );
                 self.ui_text_strong(
                     content_x + 16 * scale,
@@ -3100,54 +3155,114 @@ impl super::DisplayDevice {
                 );
             }
             if focus == 1 {
-                let preview_top = content_y + 380 * scale;
-                let preview_gap = content_width / 3;
-                for theme in 0..3u8 {
-                    let preview_left = content_x + theme as usize * preview_gap;
-                    let selected = theme == icon_theme as u8;
-                    self.fill_rounded_rect_alpha(
-                        preview_left + 4 * scale,
-                        preview_top,
-                        preview_gap.saturating_sub(8 * scale),
-                        78 * scale,
-                        12 * scale,
-                        if selected { 18 } else { 6 },
-                        if selected { 75 } else { 24 },
-                        if selected { 108 } else { 38 },
-                        220,
-                    );
-                    self.outline_rounded_rect(
-                        preview_left + 4 * scale,
-                        preview_top,
-                        preview_gap.saturating_sub(8 * scale),
-                        78 * scale,
-                        12 * scale,
-                        if selected { 81 } else { 39 },
-                        if selected { 210 } else { 64 },
-                        if selected { 250 } else { 83 },
-                    );
-                    self.icon_theme_preview(
-                        theme,
-                        preview_left + preview_gap / 2,
-                        preview_top + 28 * scale,
-                        44 * scale,
-                    );
-                    let name = crate::ui::icon_theme::IconThemeId::from_u8(theme)
-                        .unwrap_or(crate::ui::icon_theme::IconThemeId::CrystalBlueGlass)
-                        .name();
-                    self.ui_text_centered_strong(
-                        preview_left,
-                        preview_gap,
-                        preview_top + 54 * scale,
-                        name,
-                        if selected { 224 } else { 160 },
-                        if selected { 244 } else { 181 },
-                        if selected { 252 } else { 194 },
-                        1,
-                    );
-                }
+                self.settings_accent_picker(settings_maximized, scale);
             }
         }
+    }
+
+    // ------------------------=
+    // FUNC: settings_accent_picker
+    // DESC: Renders the live HSV color picker from the same geometry used for pointer hit testing.
+    // ------------------=
+    fn settings_accent_picker(&mut self, maximized: bool, scale: usize) {
+        let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .settings_accent_geometry(maximized);
+        let current = self.active_accent_rgb();
+        let (hue, saturation, value) = crate::ui::skin::rgb_to_hsv(current);
+        let columns = 32usize;
+        let rows = 12usize;
+        let cell_width = (geometry.spectrum.width as usize / columns).max(1);
+        let cell_height = (geometry.spectrum.height as usize / rows).max(1);
+        for row in 0..rows {
+            for column in 0..columns {
+                let sample_saturation = (column * 255 / (columns - 1)) as u8;
+                let sample_value = 255u8.saturating_sub((row * 255 / (rows - 1)) as u8);
+                let rgb = crate::ui::skin::hsv_to_rgb(hue, sample_saturation, sample_value);
+                self.fill_rect(
+                    geometry.spectrum.x.max(0) as usize + column * cell_width,
+                    geometry.spectrum.y.max(0) as usize + row * cell_height,
+                    if column + 1 == columns {
+                        geometry.spectrum.width as usize - column * cell_width
+                    } else {
+                        cell_width
+                    },
+                    if row + 1 == rows {
+                        geometry.spectrum.height as usize - row * cell_height
+                    } else {
+                        cell_height
+                    },
+                    ((rgb >> 16) & 0xff) as u8,
+                    ((rgb >> 8) & 0xff) as u8,
+                    (rgb & 0xff) as u8,
+                );
+            }
+        }
+        let hue_steps = 18usize;
+        let hue_height = (geometry.hue.height as usize / hue_steps).max(1);
+        for step in 0..hue_steps {
+            let sample_hue = (step * 359 / (hue_steps - 1)) as u16;
+            let rgb = crate::ui::skin::hsv_to_rgb(sample_hue, 255, 255);
+            self.fill_rect(
+                geometry.hue.x.max(0) as usize,
+                geometry.hue.y.max(0) as usize + step * hue_height,
+                geometry.hue.width as usize,
+                if step + 1 == hue_steps {
+                    geometry.hue.height as usize - step * hue_height
+                } else {
+                    hue_height
+                },
+                ((rgb >> 16) & 0xff) as u8,
+                ((rgb >> 8) & 0xff) as u8,
+                (rgb & 0xff) as u8,
+            );
+        }
+        let (outline_r, outline_g, outline_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        self.outline_rounded_rect(
+            geometry.spectrum.x.max(0) as usize,
+            geometry.spectrum.y.max(0) as usize,
+            geometry.spectrum.width as usize,
+            geometry.spectrum.height as usize,
+            8 * scale,
+            outline_r,
+            outline_g,
+            outline_b,
+        );
+        self.outline_rounded_rect(
+            geometry.hue.x.max(0) as usize,
+            geometry.hue.y.max(0) as usize,
+            geometry.hue.width as usize,
+            geometry.hue.height as usize,
+            7 * scale,
+            outline_r,
+            outline_g,
+            outline_b,
+        );
+        let marker_x = geometry.spectrum.x.max(0) as usize
+            + saturation as usize * geometry.spectrum.width as usize / 255;
+        let marker_y = geometry.spectrum.y.max(0) as usize
+            + (255usize.saturating_sub(value as usize)) * geometry.spectrum.height as usize / 255;
+        self.outline_rounded_rect(
+            marker_x.saturating_sub(5 * scale),
+            marker_y.saturating_sub(5 * scale),
+            10 * scale,
+            10 * scale,
+            5 * scale,
+            255,
+            255,
+            255,
+        );
+        let hue_marker_y = geometry.hue.y.max(0) as usize
+            + hue as usize * geometry.hue.height as usize / 359;
+        self.fill_rect(
+            (geometry.hue.x.max(0) as usize).saturating_sub(3 * scale),
+            hue_marker_y.saturating_sub(scale),
+            geometry.hue.width as usize + 6 * scale,
+            2 * scale,
+            255,
+            255,
+            255,
+        );
     }
 
     // ------------------------=
@@ -3183,6 +3298,10 @@ impl super::DisplayDevice {
             self.outline_rounded_rect(left, top, width, height, radius, 255, 255, 255);
             return;
         }
+        let (panel_r, panel_g, panel_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Widget);
+        let (outline_r, outline_g, outline_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         for inset in (1..=5usize).rev() {
             let (shadow_red, shadow_green, shadow_blue, shadow_alpha) = if strong {
                 (5, 29, 42, 12)
@@ -3207,14 +3326,28 @@ impl super::DisplayDevice {
             width,
             height,
             radius,
-            2,
-            12,
-            24,
+            panel_r,
+            panel_g,
+            panel_b,
             if strong { 232 } else { 204 },
         );
-        self.outline_rounded_rect(left, top, width, height, radius, 34, 83, 112);
+        self.outline_rounded_rect(
+            left,
+            top,
+            width,
+            height,
+            radius,
+            outline_r,
+            outline_g,
+            outline_b,
+        );
         if width > 4 && height > 4 {
-            let inner_edge = if strong { (20, 61, 82) } else { (9, 35, 54) };
+            let divisor = if strong { 3 } else { 5 };
+            let inner_edge = (
+                outline_r / divisor,
+                outline_g / divisor,
+                outline_b / divisor,
+            );
             self.outline_rounded_rect(
                 left + 2,
                 top + 2,
@@ -4306,15 +4439,19 @@ impl super::DisplayDevice {
                 browser_height,
                 false,
             );
+            let (header_r, header_g, header_b) =
+                self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
+            let (selection_r, selection_g, selection_b) =
+                self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
             let title_h = 34 * scale;
             self.fill_rect_alpha(
                 browser_left,
                 browser_top,
                 browser_width,
                 title_h,
-                7,
-                18,
-                31,
+                header_r,
+                header_g,
+                header_b,
                 225,
             );
             let title_center_y = browser_top + title_h / 2;
@@ -4507,9 +4644,9 @@ impl super::DisplayDevice {
                         item_y - 3,
                         sidebar_w - 14,
                         20 * scale,
-                        13,
-                        66,
-                        105,
+                        selection_r,
+                        selection_g,
+                        selection_b,
                         218,
                     );
                 }
@@ -4575,9 +4712,9 @@ impl super::DisplayDevice {
                         gap.max(44 * scale),
                         tile_step.max(54 * scale),
                         8 * scale,
-                        17,
-                        79,
-                        112,
+                        selection_r,
+                        selection_g,
+                        selection_b,
                         190,
                     );
                 }
@@ -4605,6 +4742,8 @@ impl super::DisplayDevice {
     // DESC: Renders the persistent right-side system overview and AI status foreground layer.
     // ------------------=
     fn desktop_widgets(&mut self, scale: usize) {
+        let (accent_r, accent_g, accent_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Focus);
         let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
             .desktop_foreground_geometry();
         let widget_left = geometry.widgets.x.max(0) as usize;
@@ -4622,9 +4761,9 @@ impl super::DisplayDevice {
             widget_left + 18 * scale,
             overview_top + 16 * scale,
             b"SYSTEM OVERVIEW",
-            77,
-            208,
-            250,
+            accent_r,
+            accent_g,
+            accent_b,
             1,
         );
         let machine = crate::runtime::with_runtime(|runtime| runtime.identity.machine()).flatten();
@@ -4675,9 +4814,9 @@ impl super::DisplayDevice {
             widget_left + 18 * scale,
             ai_top + 16 * scale,
             b"AI STATUS",
-            77,
-            208,
-            250,
+            accent_r,
+            accent_g,
+            accent_b,
             1,
         );
         for (index, (label, value)) in [
@@ -4716,6 +4855,19 @@ impl super::DisplayDevice {
         let dock_left = geometry.dock.x.max(0) as usize;
         let dock_top = geometry.dock.y.max(0) as usize;
         self.glass_panel(dock_left, dock_top, dock_width, dock_height, false);
+        let (dock_r, dock_g, dock_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Dock);
+        self.fill_rounded_rect_alpha(
+            dock_left + 2 * scale,
+            dock_top + 2 * scale,
+            dock_width.saturating_sub(4 * scale),
+            dock_height.saturating_sub(4 * scale),
+            14 * scale,
+            dock_r,
+            dock_g,
+            dock_b,
+            104,
+        );
         let entries = &crate::ui::app_launcher::DESKTOP_DOCK_ENTRIES;
         let icon_gap = dock_width / entries.len();
         for (index, entry) in entries.iter().enumerate() {

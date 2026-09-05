@@ -13,7 +13,7 @@ use crate::ui::app_launcher::{
 };
 use crate::ui::system_layout::{
     AppLauncherTarget, DesktopAppWindowTarget, DesktopTarget, OnboardingTarget, SettingsTarget,
-    SystemLayout, SystemMenuTarget,
+    SettingsAccentTarget, SystemLayout, SystemMenuTarget,
 };
 use crate::ui::text_editor::TextDocument;
 
@@ -333,6 +333,7 @@ struct ConsoleRuntime {
     current_session: crate::runtime::identity::StableId,
     settings_editing: bool,
     settings_maximized: bool,
+    settings_accent_dirty: bool,
     onboarding_validation_error: bool,
     home_window_x: i32,
     home_window_y: i32,
@@ -423,6 +424,7 @@ impl ConsoleRuntime {
             current_session: crate::runtime::identity::StableId::zero(),
             settings_editing: false,
             settings_maximized: false,
+            settings_accent_dirty: false,
             onboarding_validation_error: false,
             home_window_x: 30,
             home_window_y: 400,
@@ -802,10 +804,12 @@ impl ConsoleRuntime {
         self.system_focus = 0;
         self.shell_menu = 0;
         self.settings_editing = false;
+        self.settings_accent_dirty = false;
         self.home_window_dragging = false;
         self.home_window_resizing = None;
         self.home_dragging_item = None;
         self.sync_icon_theme();
+        self.sync_accent();
         self.refresh_desktop_items();
         self.reset_input();
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
@@ -947,6 +951,7 @@ impl ConsoleRuntime {
         self.mode = ConsoleMode::Settings;
         self.system_focus = section.min(7);
         self.settings_editing = false;
+        self.settings_accent_dirty = false;
         self.reset_input();
     }
 
@@ -964,6 +969,104 @@ impl ConsoleRuntime {
                 .unwrap_or(0);
             runtime.ui.icons.activate(selection)
         });
+    }
+
+    // ------------------------=
+    // FUNC: sync_accent
+    // DESC: Applies the authenticated user's durable accent to every live semantic UI surface.
+    // ------------------=
+    fn sync_accent(&mut self) {
+        let user = self.current_user;
+        let _ = crate::runtime::with_runtime(|runtime| {
+            let accent = runtime
+                .identity
+                .user_profile(user)
+                .map(|profile| profile.accent_rgb)
+                .unwrap_or(crate::runtime::identity::DEFAULT_ACCENT_RGB);
+            runtime
+                .ui
+                .skins
+                .set_accent(accent, crate::ui::skin::AppearanceScope::User)
+        });
+    }
+
+    // ------------------------=
+    // FUNC: preview_accent
+    // DESC: Applies one picker color immediately without performing a durable write for every mouse sample.
+    // ------------------=
+    fn preview_accent(&mut self, accent_rgb: u32) {
+        let changed = crate::runtime::with_runtime(|runtime| {
+            runtime
+                .ui
+                .skins
+                .set_accent(accent_rgb, crate::ui::skin::AppearanceScope::User)
+        })
+        .transpose()
+        .is_ok();
+        if changed {
+            self.settings_accent_dirty = true;
+        }
+    }
+
+    // ------------------------=
+    // FUNC: commit_accent
+    // DESC: Commits the previewed accent once to the authenticated user profile and durable identity state.
+    // ------------------=
+    fn commit_accent(&mut self) {
+        if !self.settings_accent_dirty {
+            return;
+        }
+        let user = self.current_user;
+        let changed = crate::runtime::with_runtime(|runtime| {
+            let accent = runtime.ui.skins.accent_rgb();
+            runtime.identity.update_user_accent(user, user, accent)
+        })
+        .transpose()
+        .is_ok();
+        if changed {
+            let _ = crate::runtime::persist_identity_state();
+        }
+        self.settings_accent_dirty = false;
+    }
+
+    // ------------------------=
+    // FUNC: adjust_accent
+    // DESC: Adjusts the active accent from a typed picker coordinate and previews it live.
+    // ------------------=
+    fn adjust_accent(&mut self, target: SettingsAccentTarget) {
+        let current = crate::runtime::with_runtime(|runtime| runtime.ui.skins.accent_rgb())
+            .unwrap_or(crate::runtime::identity::DEFAULT_ACCENT_RGB);
+        let (mut hue, mut saturation, mut value) = crate::ui::skin::rgb_to_hsv(current);
+        match target {
+            SettingsAccentTarget::Spectrum {
+                saturation: next_saturation,
+                value: next_value,
+            } => {
+                saturation = next_saturation;
+                value = next_value.max(32);
+            }
+            SettingsAccentTarget::Hue(next_hue) => hue = next_hue,
+        }
+        self.preview_accent(crate::ui::skin::hsv_to_rgb(hue, saturation, value));
+    }
+
+    // ------------------------=
+    // FUNC: cycle_accent
+    // DESC: Provides keyboard-only accent selection by advancing through a polished preset palette.
+    // ------------------=
+    fn cycle_accent(&mut self) {
+        const PRESETS: [u32; 8] = [
+            0x20bfff, 0x6f8cff, 0xa56dff, 0xe65cc8, 0xff6b78, 0xffa62b, 0x33d69f, 0x38d8ff,
+        ];
+        let current = crate::runtime::with_runtime(|runtime| runtime.ui.skins.accent_rgb())
+            .unwrap_or(PRESETS[0]);
+        let next = PRESETS
+            .iter()
+            .position(|value| *value == current)
+            .map(|index| PRESETS[(index + 1) % PRESETS.len()])
+            .unwrap_or(PRESETS[0]);
+        self.preview_accent(next);
+        self.commit_accent();
     }
 
     // ------------------------=
@@ -1037,6 +1140,7 @@ impl ConsoleRuntime {
                 });
             }
             (1, 1) => self.cycle_icon_theme(),
+            (1, 3) => self.cycle_accent(),
             (3, 0) => {
                 let current = crate::runtime::with_runtime(|runtime| {
                     runtime.identity.ai_profile(self.current_user)
@@ -2908,6 +3012,22 @@ impl ConsoleRuntime {
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
+            if self.system_focus == 1 && left_button {
+                if let Some(target) = layout.settings_accent_target(
+                    self.pointer_x,
+                    self.pointer_y,
+                    self.settings_maximized,
+                ) {
+                    self.adjust_accent(target);
+                    self.redraw();
+                    return;
+                }
+            }
+            if released && self.settings_accent_dirty {
+                self.commit_accent();
+                self.redraw();
+                return;
+            }
             if clicked && self.system_focus == 1 {
                 if let Some(theme) = layout.settings_icon_theme_target(
                     self.pointer_x,

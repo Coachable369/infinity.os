@@ -30,6 +30,47 @@ pub const COLOR_ROLE_COUNT: usize = 13;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Color(pub u32);
 
+impl Color {
+    // ------------------------=
+    // FUNC: rgb
+    // DESC: Creates one opaque semantic color from a bounded 24-bit RGB value.
+    // ------------------=
+    pub const fn rgb(value: u32) -> Self {
+        Self(0xff00_0000 | (value & 0x00ff_ffff))
+    }
+
+    // ------------------------=
+    // FUNC: channels
+    // DESC: Returns the red, green, and blue channels used by framebuffer renderers.
+    // ------------------=
+    pub const fn channels(self) -> (u8, u8, u8) {
+        (
+            ((self.0 >> 16) & 0xff) as u8,
+            ((self.0 >> 8) & 0xff) as u8,
+            (self.0 & 0xff) as u8,
+        )
+    }
+
+    // ------------------------=
+    // FUNC: rgb24
+    // DESC: Returns the portable 24-bit representation stored in a user profile.
+    // ------------------=
+    pub const fn rgb24(self) -> u32 {
+        self.0 & 0x00ff_ffff
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AccentSurface {
+    WindowOutline,
+    Header,
+    TopBar,
+    Dock,
+    Widget,
+    Focus,
+    Selection,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SkinId {
     bytes: [u8; SKIN_ID_BYTES],
@@ -106,6 +147,7 @@ pub enum SkinError {
     MissingParent,
     InheritanceCycle,
     ActivationFailed,
+    InvalidAccent,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -122,6 +164,7 @@ pub struct SkinRegistry {
     last_known_good: SkinId,
     safe: SkinId,
     generation: u32,
+    accent_override: Option<Color>,
 }
 
 impl SkinRegistry {
@@ -140,6 +183,7 @@ impl SkinRegistry {
             last_known_good: dark.id,
             safe: safe.id,
             generation: 1,
+            accent_override: None,
         }
     }
 
@@ -235,6 +279,138 @@ impl SkinRegistry {
     pub const fn generation(&self) -> u32 {
         self.generation
     }
+
+    // ------------------------=
+    // FUNC: color
+    // DESC: Resolves a semantic role while honoring the current user accent override.
+    // ------------------=
+    pub fn color(&self, role: ColorRole) -> Color {
+        match (role, self.accent_override) {
+            (ColorRole::Accent, Some(accent)) => accent,
+            (ColorRole::AccentBright | ColorRole::Focus, Some(accent)) => {
+                mix_color(accent, Color::rgb(0x00ff_ffff), 112)
+            }
+            _ => self.active().tokens.color(role),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: set_accent
+    // DESC: Applies one user-scoped accent and invalidates every semantic appearance surface.
+    // ------------------=
+    pub fn set_accent(
+        &mut self,
+        accent_rgb: u32,
+        _scope: AppearanceScope,
+    ) -> Result<u32, SkinError> {
+        if accent_rgb == 0 || accent_rgb > 0x00ff_ffff {
+            return Err(SkinError::InvalidAccent);
+        }
+        self.accent_override = Some(Color::rgb(accent_rgb));
+        self.generation = self.generation.wrapping_add(1);
+        Ok(self.generation)
+    }
+
+    // ------------------------=
+    // FUNC: accent_rgb
+    // DESC: Returns the active user accent as a portable 24-bit RGB value.
+    // ------------------=
+    pub fn accent_rgb(&self) -> u32 {
+        self.color(ColorRole::Accent).rgb24()
+    }
+
+    // ------------------------=
+    // FUNC: accent_surface
+    // DESC: Derives consistent window, navigation, dock, widget, focus, and selection colors.
+    // ------------------=
+    pub fn accent_surface(&self, surface: AccentSurface) -> Color {
+        let accent = self.color(ColorRole::Accent);
+        match surface {
+            AccentSurface::WindowOutline => mix_color(accent, Color::rgb(0x00ff_ffff), 34),
+            AccentSurface::Header => mix_color(accent, Color::rgb(0x0002_0c18), 184),
+            AccentSurface::TopBar => mix_color(accent, Color::rgb(0x0000_0710), 208),
+            AccentSurface::Dock => mix_color(accent, Color::rgb(0x0002_0c18), 194),
+            AccentSurface::Widget => mix_color(accent, Color::rgb(0x0005_1524), 166),
+            AccentSurface::Focus => mix_color(accent, Color::rgb(0x00ff_ffff), 92),
+            AccentSurface::Selection => mix_color(accent, Color::rgb(0x0005_1b2a), 132),
+        }
+    }
+}
+
+// ------------------------=
+// FUNC: mix_color
+// DESC: Blends two opaque colors with an integer amount suitable for no-std rendering.
+// ------------------=
+fn mix_color(source: Color, target: Color, target_amount: u8) -> Color {
+    let (source_r, source_g, source_b) = source.channels();
+    let (target_r, target_g, target_b) = target.channels();
+    let amount = target_amount as u32;
+    let inverse = 255u32.saturating_sub(amount);
+    Color::rgb(
+        (((source_r as u32 * inverse + target_r as u32 * amount) / 255) << 16)
+            | (((source_g as u32 * inverse + target_g as u32 * amount) / 255) << 8)
+            | ((source_b as u32 * inverse + target_b as u32 * amount) / 255),
+    )
+}
+
+// ------------------------=
+// FUNC: hsv_to_rgb
+// DESC: Converts picker hue, saturation, and value coordinates into a portable RGB accent.
+// ------------------=
+pub fn hsv_to_rgb(hue: u16, saturation: u8, value: u8) -> u32 {
+    let hue = hue.min(359) as u32;
+    let saturation = saturation as u32;
+    let value = value as u32;
+    if saturation == 0 {
+        return (value << 16) | (value << 8) | value;
+    }
+    let region = hue / 60;
+    let remainder = (hue % 60) * 255 / 60;
+    let p = value * (255 - saturation) / 255;
+    let q = value * (255 - saturation * remainder / 255) / 255;
+    let t = value * (255 - saturation * (255 - remainder) / 255) / 255;
+    let (red, green, blue) = match region {
+        0 => (value, t, p),
+        1 => (q, value, p),
+        2 => (p, value, t),
+        3 => (p, q, value),
+        4 => (t, p, value),
+        _ => (value, p, q),
+    };
+    (red << 16) | (green << 8) | blue
+}
+
+// ------------------------=
+// FUNC: rgb_to_hsv
+// DESC: Converts a persisted RGB accent into stable picker coordinates.
+// ------------------=
+pub fn rgb_to_hsv(rgb: u32) -> (u16, u8, u8) {
+    let red = ((rgb >> 16) & 0xff) as i32;
+    let green = ((rgb >> 8) & 0xff) as i32;
+    let blue = (rgb & 0xff) as i32;
+    let maximum = red.max(green).max(blue);
+    let minimum = red.min(green).min(blue);
+    let delta = maximum - minimum;
+    let value = maximum as u8;
+    let saturation = if maximum == 0 {
+        0
+    } else {
+        (delta * 255 / maximum) as u8
+    };
+    if delta == 0 {
+        return (0, saturation, value);
+    }
+    let mut hue = if maximum == red {
+        60 * (green - blue) / delta
+    } else if maximum == green {
+        120 + 60 * (blue - red) / delta
+    } else {
+        240 + 60 * (red - green) / delta
+    };
+    if hue < 0 {
+        hue += 360;
+    }
+    (hue as u16, saturation, value)
 }
 
 // ------------------------=

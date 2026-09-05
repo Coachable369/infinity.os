@@ -100,6 +100,18 @@ pub enum SettingsTarget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettingsAccentTarget {
+    Spectrum { saturation: u8, value: u8 },
+    Hue(u16),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SettingsAccentGeometry {
+    pub spectrum: Rect,
+    pub hue: Rect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SystemLayout {
     width: usize,
     height: usize,
@@ -997,6 +1009,84 @@ impl SystemLayout {
             {
                 return Some(theme as u8);
             }
+        }
+        None
+    }
+
+    // ------------------------=
+    // FUNC: settings_accent_geometry
+    // DESC: Returns the shared pixel geometry for the installed appearance color picker.
+    // ------------------=
+    pub fn settings_accent_geometry(self, maximized: bool) -> SettingsAccentGeometry {
+        let top_bar = self.top_bar_height();
+        let restored_width = (self.width * 68 / 100)
+            .clamp(900, 1200 * self.scale)
+            .min(self.width.saturating_sub(40));
+        let restored_height = (self.height * 62 / 100)
+            .clamp(560, 760 * self.scale)
+            .min(self.height.saturating_sub(top_bar + 28));
+        let (left, top, width) = if maximized {
+            let inset = 10 * self.scale;
+            (inset, top_bar + inset, self.width.saturating_sub(inset * 2))
+        } else {
+            (
+                self.width.saturating_sub(restored_width) / 2,
+                top_bar + self.height.saturating_sub(top_bar + restored_height) / 2,
+                restored_width,
+            )
+        };
+        let title_height = 54 * self.scale;
+        let nav_width = width * 28 / 100;
+        let content_x = left + nav_width + 34 * self.scale;
+        let content_width = width.saturating_sub(nav_width + 68 * self.scale);
+        let content_y = top + title_height + 29 * self.scale;
+        let picker_top = content_y + 380 * self.scale;
+        let hue_width = 24 * self.scale;
+        let gap = 14 * self.scale;
+        SettingsAccentGeometry {
+            spectrum: rect(
+                content_x + 4 * self.scale,
+                picker_top,
+                content_width.saturating_sub(hue_width + gap + 8 * self.scale),
+                78 * self.scale,
+            ),
+            hue: rect(
+                content_x + content_width.saturating_sub(hue_width + 4 * self.scale),
+                picker_top,
+                hue_width,
+                78 * self.scale,
+            ),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: settings_accent_target
+    // DESC: Maps a pointer position to typed HSV picker coordinates without using rendered text.
+    // ------------------=
+    pub fn settings_accent_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        maximized: bool,
+    ) -> Option<SettingsAccentTarget> {
+        let point = self.point(normalized_x, normalized_y);
+        let geometry = self.settings_accent_geometry(maximized);
+        if geometry.spectrum.contains(point) {
+            let x = point.x.saturating_sub(geometry.spectrum.x) as u32;
+            let y = point.y.saturating_sub(geometry.spectrum.y) as u32;
+            let width = geometry.spectrum.width.saturating_sub(1).max(1);
+            let height = geometry.spectrum.height.saturating_sub(1).max(1);
+            return Some(SettingsAccentTarget::Spectrum {
+                saturation: (x.saturating_mul(255) / width).min(255) as u8,
+                value: 255u8.saturating_sub((y.saturating_mul(255) / height).min(255) as u8),
+            });
+        }
+        if geometry.hue.contains(point) {
+            let y = point.y.saturating_sub(geometry.hue.y) as u32;
+            let height = geometry.hue.height.saturating_sub(1).max(1);
+            return Some(SettingsAccentTarget::Hue(
+                (y.saturating_mul(359) / height).min(359) as u16,
+            ));
         }
         None
     }

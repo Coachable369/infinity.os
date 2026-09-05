@@ -18,13 +18,14 @@ use ui::scene::{
     ElementState, SemanticElement, MAX_DAMAGE_REGIONS,
 };
 use ui::skin::{
-    decode_header, diagnostic_light_skin, encode_header, AppearanceScope, SkinError, SkinId,
-    SkinRegistry,
+    decode_header, diagnostic_light_skin, encode_header, hsv_to_rgb, rgb_to_hsv, AccentSurface,
+    AppearanceScope, SkinError, SkinId, SkinRegistry,
 };
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
     resize_home_window, AppLauncherTarget, DesktopAppWindowTarget, DesktopTarget, OnboardingTarget,
-    SettingsTarget, SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK,
+    SettingsAccentTarget, SettingsTarget, SystemLayout, SystemMenuTarget,
+    DESKTOP_FOREGROUND_DOCK,
     DESKTOP_FOREGROUND_WIDGETS,
 };
 use ui::text_editor::TextDocument;
@@ -825,6 +826,24 @@ fn installed_system_hit_geometry_test() {
         square.settings_target(815, 290, false),
         Some(SettingsTarget::WindowControl(1))
     );
+    let picker = square.settings_accent_geometry(false);
+    let picker_point = |rect: Rect| {
+        (
+            (rect.x + rect.width as i32 / 2) * 1000 / 1600,
+            (rect.y + rect.height as i32 / 2) * 1000 / 1600,
+        )
+    };
+    let (spectrum_x, spectrum_y) = picker_point(picker.spectrum);
+    assert!(matches!(
+        square.settings_accent_target(spectrum_x, spectrum_y, false),
+        Some(SettingsAccentTarget::Spectrum { saturation, value })
+            if (120..=135).contains(&saturation) && (120..=135).contains(&value)
+    ));
+    let (hue_x, hue_y) = picker_point(picker.hue);
+    assert!(matches!(
+        square.settings_accent_target(hue_x, hue_y, false),
+        Some(SettingsAccentTarget::Hue(hue)) if (175..=185).contains(&hue)
+    ));
 
     let hidpi = SystemLayout::new(2560, 1440);
     assert_eq!(hidpi.top_bar_height(), 76);
@@ -944,6 +963,39 @@ fn skin_test() {
     assert_eq!(
         registry.register(diagnostic_light_skin()),
         Err(SkinError::Duplicate)
+    );
+    let before = [
+        registry.accent_surface(AccentSurface::WindowOutline),
+        registry.accent_surface(AccentSurface::Header),
+        registry.accent_surface(AccentSurface::TopBar),
+        registry.accent_surface(AccentSurface::Dock),
+        registry.accent_surface(AccentSurface::Widget),
+        registry.accent_surface(AccentSurface::Focus),
+        registry.accent_surface(AccentSurface::Selection),
+    ];
+    let generation = registry.generation();
+    registry
+        .set_accent(0xd45cff, AppearanceScope::User)
+        .unwrap();
+    assert!(registry.generation() > generation);
+    assert_eq!(registry.accent_rgb(), 0xd45cff);
+    let after = [
+        registry.accent_surface(AccentSurface::WindowOutline),
+        registry.accent_surface(AccentSurface::Header),
+        registry.accent_surface(AccentSurface::TopBar),
+        registry.accent_surface(AccentSurface::Dock),
+        registry.accent_surface(AccentSurface::Widget),
+        registry.accent_surface(AccentSurface::Focus),
+        registry.accent_surface(AccentSurface::Selection),
+    ];
+    assert!(before.iter().zip(after.iter()).all(|(left, right)| left != right));
+    assert_eq!(hsv_to_rgb(0, 255, 255), 0xff0000);
+    assert_eq!(hsv_to_rgb(120, 255, 255), 0x00ff00);
+    assert_eq!(hsv_to_rgb(240, 255, 255), 0x0000ff);
+    assert_eq!(rgb_to_hsv(0x00ff00), (120, 255, 255));
+    assert_eq!(
+        registry.set_accent(0, AppearanceScope::User),
+        Err(SkinError::InvalidAccent)
     );
 }
 

@@ -8,6 +8,8 @@ pub const IDENTITY_STATE_BYTES: usize = 4096;
 pub const IDENTITY_FORMAT_VERSION: u16 = 1;
 pub const PASSWORD_ITERATIONS: u32 = 4096;
 pub const USER_ICON_THEME_OFFSET: usize = 4056;
+pub const USER_ACCENT_OFFSET: usize = 4064;
+pub const DEFAULT_ACCENT_RGB: u32 = 0x20bfff;
 
 pub const SESSION_PERSONAL_READ: u64 = 1 << 0;
 pub const SESSION_PERSONAL_WRITE: u64 = 1 << 1;
@@ -212,6 +214,7 @@ pub struct UserProfile {
     pub region: ShortText,
     pub theme: ShortText,
     pub icon_theme: u8,
+    pub accent_rgb: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -412,6 +415,7 @@ impl IdentitySystem {
             region: ShortText::new(b"United States")?,
             theme: ShortText::new(b"Cosmic Dark")?,
             icon_theme: 0,
+            accent_rgb: DEFAULT_ACCENT_RGB,
         });
         self.ai_profiles[slot] = Some(AiProfile {
             user: user_id,
@@ -802,6 +806,34 @@ impl IdentitySystem {
     }
 
     // ------------------------=
+    // FUNC: update_user_accent
+    // DESC: Persists one validated user-scoped RGB accent for every semantic UI surface.
+    // ------------------=
+    pub fn update_user_accent(
+        &mut self,
+        actor: StableId,
+        user: StableId,
+        accent_rgb: u32,
+    ) -> Result<UserProfile, IdentityError> {
+        if actor != user {
+            return Err(IdentityError::AccessDenied);
+        }
+        if accent_rgb == 0 || accent_rgb > 0x00ff_ffff {
+            return Err(IdentityError::InvalidInput);
+        }
+        let profile = self
+            .profiles
+            .iter_mut()
+            .flatten()
+            .find(|profile| profile.user == user)
+            .ok_or(IdentityError::NotFound)?;
+        profile.accent_rgb = accent_rgb;
+        let result = *profile;
+        self.commit();
+        Ok(result)
+    }
+
+    // ------------------------=
     // FUNC: lock_session
     // DESC: Locks an active session and makes its UI inaccessible without ending it.
     // ------------------=
@@ -1015,6 +1047,10 @@ impl IdentitySystem {
             if let Some(value) = profile {
                 write_profile(&mut out, 2880 + index * 147, *value);
                 out[USER_ICON_THEME_OFFSET + index] = value.icon_theme;
+                let accent_at = USER_ACCENT_OFFSET + index * 3;
+                out[accent_at] = ((value.accent_rgb >> 16) & 0xff) as u8;
+                out[accent_at + 1] = ((value.accent_rgb >> 8) & 0xff) as u8;
+                out[accent_at + 2] = (value.accent_rgb & 0xff) as u8;
             }
         }
         let checksum = checksum32(&out[..IDENTITY_STATE_BYTES - 4]);
@@ -1067,6 +1103,15 @@ impl IdentitySystem {
                 }
                 if let Some(profile) = state.profiles[index].as_mut() {
                     profile.icon_theme = icon_theme;
+                    let accent_at = USER_ACCENT_OFFSET + index * 3;
+                    let stored_accent = ((bytes[accent_at] as u32) << 16)
+                        | ((bytes[accent_at + 1] as u32) << 8)
+                        | bytes[accent_at + 2] as u32;
+                    profile.accent_rgb = if stored_accent == 0 {
+                        DEFAULT_ACCENT_RGB
+                    } else {
+                        stored_accent
+                    };
                 }
                 state.ai_profiles[index] = Some(user.2);
                 state.voice_profiles[index] = Some(user.3);
@@ -1426,6 +1471,7 @@ fn read_profile(input: &[u8], at: usize, user: StableId) -> Result<UserProfile, 
         region: read_text(input, at + 49)?,
         theme: read_text(input, at + 98)?,
         icon_theme: 0,
+        accent_rgb: DEFAULT_ACCENT_RGB,
     })
 }
 
@@ -1482,6 +1528,7 @@ fn read_user(
         region: ShortText::new(b"United States")?,
         theme: ShortText::new(b"Cosmic Dark")?,
         icon_theme: 0,
+        accent_rgb: DEFAULT_ACCENT_RGB,
     };
     let ai = AiProfile {
         user: id,
