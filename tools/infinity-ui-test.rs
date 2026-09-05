@@ -21,7 +21,7 @@ use ui::skin::{
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
     resize_home_window, AppLauncherTarget, DesktopTarget, OnboardingTarget, SettingsTarget,
-    SystemLayout, SystemMenuTarget,
+    SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK, DESKTOP_FOREGROUND_WIDGETS,
 };
 use ui::trusted::{TrustedSurface, TrustedUiError};
 use ui::vector::{
@@ -42,6 +42,7 @@ fn main() {
     focus_and_pointer_test();
     installed_system_hit_geometry_test();
     app_launcher_behavior_test();
+    desktop_foreground_damage_test();
     scene_and_damage_test();
     surface_and_compositor_test();
     semantic_damage_storm_test();
@@ -51,6 +52,51 @@ fn main() {
     drag_path_test();
     service_foundation_test();
     println!("InfinityUI native runtime: PASS");
+}
+
+// ------------------------=
+// FUNC: desktop_foreground_damage_test
+// DESC: Verifies moved-window damage identifies the dock and right widgets as persistent foreground layers.
+// ------------------=
+fn desktop_foreground_damage_test() {
+    let layout = SystemLayout::new(1920, 1080);
+    let foreground = layout.desktop_foreground_geometry();
+    assert_eq!(
+        layout.desktop_foreground_layers_for_rect(Rect {
+            x: 200,
+            y: 200,
+            width: 300,
+            height: 300,
+        }),
+        0
+    );
+    assert_eq!(
+        layout.desktop_foreground_layers_for_rect(Rect {
+            x: foreground.widgets.x - 10,
+            y: foreground.widgets.y + 20,
+            width: 40,
+            height: 40,
+        }),
+        DESKTOP_FOREGROUND_WIDGETS
+    );
+    assert_eq!(
+        layout.desktop_foreground_layers_for_rect(Rect {
+            x: foreground.dock.x + 20,
+            y: foreground.dock.y - 10,
+            width: 40,
+            height: 40,
+        }),
+        DESKTOP_FOREGROUND_DOCK
+    );
+    assert_eq!(
+        layout.desktop_foreground_layers_for_rect(Rect {
+            x: foreground.widgets.x,
+            y: foreground.widgets.y,
+            width: foreground.widgets.width,
+            height: (foreground.dock.bottom() - foreground.widgets.y) as u32,
+        }),
+        DESKTOP_FOREGROUND_WIDGETS | DESKTOP_FOREGROUND_DOCK
+    );
 }
 
 // ------------------------=

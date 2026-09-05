@@ -53,6 +53,15 @@ pub struct AppLauncherGeometry {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct DesktopForegroundGeometry {
+    pub widgets: Rect,
+    pub dock: Rect,
+}
+
+pub(crate) const DESKTOP_FOREGROUND_WIDGETS: u8 = 1;
+pub(crate) const DESKTOP_FOREGROUND_DOCK: u8 = 2;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SystemMenuTarget {
     Item(usize),
     Dismiss,
@@ -106,6 +115,51 @@ impl SystemLayout {
     // ------------------=
     pub fn top_bar_height(self) -> usize {
         (38 * self.scale).min(self.height / 14).max(34 * self.scale)
+    }
+
+    // ------------------------=
+    // FUNC: desktop_foreground_geometry
+    // DESC: Returns the shared right-widget and dock bounds used to preserve desktop chrome during window motion.
+    // ------------------=
+    pub(crate) fn desktop_foreground_geometry(self) -> DesktopForegroundGeometry {
+        let widget_left = self.width * 76 / 100;
+        let widget_width = self.width * 22 / 100;
+        let overview_top = self.height * 7 / 100;
+        let overview_height = (330 * self.scale).min(self.height * 30 / 100);
+        let ai_top = overview_top + overview_height + 20 * self.scale;
+        let ai_height = (250 * self.scale).min(self.height * 24 / 100);
+        let dock_width = self.width * 54 / 100;
+        let dock_height = 72 * self.scale;
+        DesktopForegroundGeometry {
+            widgets: rect(
+                widget_left,
+                overview_top,
+                widget_width,
+                ai_top + ai_height - overview_top,
+            ),
+            dock: rect(
+                self.width.saturating_sub(dock_width) / 2,
+                self.height.saturating_sub(dock_height + 10 * self.scale),
+                dock_width,
+                dock_height,
+            ),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: desktop_foreground_layers_for_rect
+    // DESC: Reports which persistent desktop chrome layers intersect a damaged framebuffer region.
+    // ------------------=
+    pub(crate) fn desktop_foreground_layers_for_rect(self, damage: Rect) -> u8 {
+        let geometry = self.desktop_foreground_geometry();
+        let mut layers = 0;
+        if geometry.widgets.intersects(damage) {
+            layers |= DESKTOP_FOREGROUND_WIDGETS;
+        }
+        if geometry.dock.intersects(damage) {
+            layers |= DESKTOP_FOREGROUND_DOCK;
+        }
+        layers
     }
 
     // ------------------------=

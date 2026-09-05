@@ -3807,6 +3807,48 @@ impl super::DisplayDevice {
             old_rect.0, old_rect.1, new_rect.0, new_rect.1, width, height,
         );
         self.restore_desktop_exposure(old_rect, new_rect);
+        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let damaged_layers =
+            layout.desktop_foreground_layers_for_rect(crate::ui::geometry::Rect {
+                x: old_rect.0 as i32,
+                y: old_rect.1 as i32,
+                width: old_rect.2 as u32,
+                height: old_rect.3 as u32,
+            }) | layout.desktop_foreground_layers_for_rect(crate::ui::geometry::Rect {
+                x: new_rect.0 as i32,
+                y: new_rect.1 as i32,
+                width: new_rect.2 as u32,
+                height: new_rect.3 as u32,
+            });
+        self.repair_desktop_foreground(damaged_layers);
+    }
+
+    // ------------------------=
+    // FUNC: repair_desktop_foreground
+    // DESC: Rebuilds only system chrome touched by a moved window so its glass backing and contents remain intact.
+    // ------------------=
+    fn repair_desktop_foreground(&mut self, damaged_layers: u8) {
+        let scale = self.ui_scale().max(1);
+        let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .desktop_foreground_geometry();
+        if damaged_layers & crate::ui::system_layout::DESKTOP_FOREGROUND_WIDGETS != 0 {
+            self.paint_desktop_background_rect(
+                geometry.widgets.x.max(0) as usize,
+                geometry.widgets.y.max(0) as usize,
+                geometry.widgets.width as usize,
+                geometry.widgets.height as usize,
+            );
+            self.desktop_widgets(scale);
+        }
+        if damaged_layers & crate::ui::system_layout::DESKTOP_FOREGROUND_DOCK != 0 {
+            self.paint_desktop_background_rect(
+                geometry.dock.x.max(0) as usize,
+                geometry.dock.y.max(0) as usize,
+                geometry.dock.width as usize,
+                geometry.dock.height as usize,
+            );
+            self.desktop_dock(scale, false);
+        }
     }
 
     // ------------------------=
@@ -4168,9 +4210,20 @@ impl super::DisplayDevice {
             }
         }
 
-        let widget_left = self.width * 76 / 100;
-        let widget_width = self.width * 22 / 100;
-        let overview_top = self.height * 7 / 100;
+        self.desktop_widgets(scale);
+        self.desktop_dock(scale, launcher_open);
+    }
+
+    // ------------------------=
+    // FUNC: desktop_widgets
+    // DESC: Renders the persistent right-side system overview and AI status foreground layer.
+    // ------------------=
+    fn desktop_widgets(&mut self, scale: usize) {
+        let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .desktop_foreground_geometry();
+        let widget_left = geometry.widgets.x.max(0) as usize;
+        let widget_width = geometry.widgets.width as usize;
+        let overview_top = geometry.widgets.y.max(0) as usize;
         let overview_height = (330 * scale).min(self.height * 30 / 100);
         self.glass_panel(
             widget_left,
@@ -4263,11 +4316,19 @@ impl super::DisplayDevice {
                 1,
             );
         }
+    }
 
-        let dock_width = self.width * 54 / 100;
-        let dock_height = 72 * scale;
-        let dock_left = self.width.saturating_sub(dock_width) / 2;
-        let dock_top = self.height.saturating_sub(dock_height + 10 * scale);
+    // ------------------------=
+    // FUNC: desktop_dock
+    // DESC: Renders the persistent foreground application dock and launcher state.
+    // ------------------=
+    fn desktop_dock(&mut self, scale: usize, launcher_open: bool) {
+        let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .desktop_foreground_geometry();
+        let dock_width = geometry.dock.width as usize;
+        let dock_height = geometry.dock.height as usize;
+        let dock_left = geometry.dock.x.max(0) as usize;
+        let dock_top = geometry.dock.y.max(0) as usize;
         self.glass_panel(dock_left, dock_top, dock_width, dock_height, false);
         let icon_gap = dock_width / 9;
         for index in 0..9usize {
@@ -4485,13 +4546,29 @@ pub fn system_ui_present(
                 console.last_home_window_x != window_x || console.last_home_window_y != window_y;
             let window_resized = console.last_home_window_width != window_width
                 || console.last_home_window_height != window_height;
+            let previous_window_rect = console.display.desktop_window_rect(
+                console.last_home_window_x,
+                console.last_home_window_y,
+                window_width,
+                window_height,
+            );
+            let previous_window_touched_foreground = crate::ui::system_layout::SystemLayout::new(
+                console.display.width,
+                console.display.height,
+            )
+            .desktop_foreground_layers_for_rect(crate::ui::geometry::Rect {
+                x: previous_window_rect.0 as i32,
+                y: previous_window_rect.1 as i32,
+                width: previous_window_rect.2 as u32,
+                height: previous_window_rect.3 as u32,
+            }) != 0;
             let window_move_requires_structural_redraw =
                 crate::ui::redraw::desktop_window_move_requires_structural_redraw(
                     screen,
                     window_moved,
                     window_visible,
                     window_maximized,
-                );
+                ) || (window_moved && previous_window_touched_foreground);
             let content_changed = console.last_system_content != content;
             let mut full_surface_redrawn = false;
             if bounded_menu_change

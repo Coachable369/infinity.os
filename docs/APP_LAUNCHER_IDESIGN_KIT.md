@@ -5,6 +5,7 @@ Reference target: the supplied full-screen InfinityOS launcher composition.
 ## Composition
 
 - The launcher rises above the centered bottom dock and remains inside the desktop work area.
+- The dock and right-side widgets are persistent foreground glass. Window movement recomposes an intersected foreground layer after repairing its backing, so dragging can never punch holes through system chrome.
 - At standard density the panel occupies roughly 78% of the framebuffer width and 72% of the usable height, with a 24 px corner radius.
 - The wallpaper remains visible through a deep navy glass surface; a soft blue edge and restrained top highlight establish depth without a black outline.
 - The search well is centered at the top, followed by a two-row application grid, pagination, a divider, and one row of category actions.
