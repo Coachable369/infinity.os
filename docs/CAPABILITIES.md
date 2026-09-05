@@ -17,6 +17,15 @@ use. These boundaries and live revocation are HOST-TESTED.
 
 Capability authenticity currently uses the trusted in-memory manager. Cryptographic tokens at an MMU boundary are SCAFFOLDED. There is no permanent unrestricted root equivalent.
 
+## Network authority
+
+Milestone 8 adds separate interface-inspect, address-configure, route-inspect,
+route-modify, resolve, connect, listen, accept, send, receive, policy-inspect,
+policy-modify, profile-activate, service-discover, and raw-frame capability
+types. Connect/send/receive revalidation, scoped target checks, live revocation,
+and lease expiry are **TESTED**. Raw-frame grants are never issued by bootstrap.
+Physical adapter enforcement remains **UNSUPPORTED** with physical networking.
+
 # Milestone 7C UI authority
 
 Surface.Create, Surface.Publish, Surface.Resize, Surface.Destroy,

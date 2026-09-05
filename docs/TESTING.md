@@ -1,5 +1,20 @@
 # InfinityOS testing
 
+## Milestone 8 native networking
+
+Run `make network-test` for behavior-only IPv4/IPv6 type behavior, route
+selection, profile transaction/rollback/persistence, per-identity policy,
+capability revocation and leases, bounded connection queues, resolver
+deadlines/cache expiry, discovery saturation/expiry, network IOP codecs,
+Console operation mapping, Network-domain IEF delivery, metadata isolation, and
+service restart. The test does not use rendered text or source searches as an
+oracle.
+
+Run `./build.sh` for all architecture ISOs and packaged System Generation
+validation. Physical NIC, DNS, secure wire connection, and detached-media
+clean-install acceptance cannot pass until a supported adapter exists and must
+remain reported as unsupported.
+
 ## Milestone 7C compositor and Window Server
 
 Run `make milestone-7c-test` for behavioral surface ownership and allocation

@@ -145,6 +145,40 @@ pub enum OperationId {
     ClipboardWrite = 0xbf02,
     SystemPowerOff = 0xbb02,
     SystemRestart = 0xbb03,
+    NetworkInterfaceList = 0xc001,
+    NetworkInterfaceInspect = 0xc002,
+    NetworkInterfaceSetState = 0xc003,
+    NetworkAddressList = 0xc011,
+    NetworkAddressConfigure = 0xc012,
+    NetworkAddressRemove = 0xc013,
+    NetworkRouteList = 0xc021,
+    NetworkRouteInspect = 0xc022,
+    NetworkRouteAdd = 0xc023,
+    NetworkRouteRemove = 0xc024,
+    NetworkResolve = 0xc031,
+    NetworkConnect = 0xc041,
+    NetworkListen = 0xc042,
+    NetworkAccept = 0xc043,
+    NetworkSend = 0xc044,
+    NetworkReceive = 0xc045,
+    NetworkClose = 0xc046,
+    NetworkConnectionInspect = 0xc047,
+    NetworkConnectionList = 0xc048,
+    NetworkPolicyList = 0xc051,
+    NetworkPolicyInspect = 0xc052,
+    NetworkPolicyCreate = 0xc053,
+    NetworkPolicyUpdate = 0xc054,
+    NetworkPolicyDelete = 0xc055,
+    NetworkProfileList = 0xc061,
+    NetworkProfileInspect = 0xc062,
+    NetworkProfileActivate = 0xc063,
+    NetworkProfileCreate = 0xc064,
+    NetworkProfileUpdate = 0xc065,
+    NetworkProfileDelete = 0xc066,
+    NetworkStatus = 0xc071,
+    NetworkDiagnostics = 0xc072,
+    ServiceDiscoverLocal = 0xc081,
+    ServiceAdvertiseLocal = 0xc082,
 }
 impl OperationId {
     // ------------------------=
@@ -237,6 +271,62 @@ impl SurfaceCommitV1 {
             surface_id: get_u32(input, 0),
             generation: get_u64(input, 4),
             damage_count: get_u16(input, 12),
+        })
+    }
+}
+
+pub const NETWORK_CONNECT_V1_BYTES: usize = 32;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct NetworkConnectV1 {
+    pub address_family: u8,
+    pub remote_address: [u8; 16],
+    pub remote_port: u16,
+    pub protocol: u8,
+    pub secure: bool,
+    pub queue_limit: u16,
+    pub expected_identity: u64,
+}
+
+impl NetworkConnectV1 {
+    // ------------------------=
+    // FUNC: encode
+    // DESC: Encodes the version-one typed Network.Connect request without native-structure layout dependencies.
+    // ------------------=
+    pub fn encode(&self, out: &mut [u8; NETWORK_CONNECT_V1_BYTES]) {
+        out.fill(0);
+        out[0] = self.address_family;
+        out[1] = self.protocol;
+        out[2] = self.secure as u8;
+        out[4..20].copy_from_slice(&self.remote_address);
+        put_u16(out, 20, self.remote_port);
+        put_u16(out, 22, self.queue_limit);
+        put_u64(out, 24, self.expected_identity);
+    }
+
+    // ------------------------=
+    // FUNC: decode
+    // DESC: Decodes and validates one exact-length version-one Network.Connect request.
+    // ------------------=
+    pub fn decode(input: &[u8]) -> Result<Self, IopError> {
+        if input.len() != NETWORK_CONNECT_V1_BYTES
+            || !matches!(input[0], 4 | 6)
+            || !matches!(input[1], 1 | 2)
+            || input[2] > 1
+            || get_u16(input, 22) == 0
+        {
+            return Err(IopError::InvalidPayload);
+        }
+        let mut remote_address = [0u8; 16];
+        remote_address.copy_from_slice(&input[4..20]);
+        Ok(Self {
+            address_family: input[0],
+            remote_address,
+            remote_port: get_u16(input, 20),
+            protocol: input[1],
+            secure: input[2] == 1,
+            queue_limit: get_u16(input, 22),
+            expected_identity: get_u64(input, 24),
         })
     }
 }

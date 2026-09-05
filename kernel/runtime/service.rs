@@ -2,7 +2,7 @@ use super::execution::{
     ContextHandle, ExecutionManager, MemoryRegion, PriorityClass, ResourceBudget,
 };
 
-pub const MAX_SERVICES: usize = 24;
+pub const MAX_SERVICES: usize = 28;
 pub const MAX_DEPENDENCIES: usize = 4;
 pub const MAX_OPERATIONS: usize = 12;
 pub const SERVICE_RUNTIME: u32 = 1;
@@ -29,6 +29,10 @@ pub const SERVICE_INFINITY_UI: u32 = 21;
 pub const SERVICE_SKIN_REGISTRY: u32 = 22;
 pub const SERVICE_WINDOW_SERVER: u32 = 23;
 pub const SERVICE_CLIPBOARD: u32 = 24;
+pub const SERVICE_NETWORK: u32 = 25;
+pub const SERVICE_NETWORK_POLICY: u32 = 26;
+pub const SERVICE_NETWORK_TRANSPORT: u32 = 27;
+pub const SERVICE_NETWORK_DISCOVERY: u32 = 28;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ServiceState {
     Defined,

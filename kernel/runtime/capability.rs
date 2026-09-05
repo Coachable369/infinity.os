@@ -52,6 +52,21 @@ pub enum CapabilityType {
     WindowInspectMetadata,
     DisplayCapture,
     TrustedUiPresent,
+    NetworkInterfaceInspect,
+    NetworkAddressConfigure,
+    NetworkRouteInspect,
+    NetworkRouteModify,
+    NetworkResolve,
+    NetworkConnect,
+    NetworkListen,
+    NetworkAccept,
+    NetworkSend,
+    NetworkReceive,
+    NetworkPolicyInspect,
+    NetworkPolicyModify,
+    NetworkProfileActivate,
+    NetworkServiceDiscover,
+    NetworkRawFrame,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

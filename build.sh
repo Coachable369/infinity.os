@@ -15,6 +15,7 @@ make crash-screen-test
 make settings-color-test
 make milestone-7x-test
 make object-test
+make network-test
 make ui-install-parity-test
 make input-regression-test
 

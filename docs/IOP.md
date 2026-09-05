@@ -22,6 +22,16 @@ The local inference path uses the same bounded deadline/cancellation semantics.
 Console text and model output are never transported as executable commands;
 intent output is a closed typed plan. Full generated codecs for every AI schema
 remain SCAFFOLDED.
+
+## Milestone 8 network operations
+
+Stable IDs cover Interface, Address, Route, Resolve, Connection, Policy,
+Profile, Status, Diagnostics, and local Service Discovery operations. The
+version-one `Network.Connect` payload is an exact 32-byte little-endian schema
+with family, protocol, secure intent, 128-bit address storage, port, bounded
+queue limit, and expected identity. Valid/invalid codec behavior and Console
+mapping are **TESTED**. Complete generated codecs and dispatch handlers for all
+network mutations are **SCAFFOLDED**.
 # Milestone 7 operations
 
 The operation registry now reserves stable IDs for Identity, Machine,

@@ -40,3 +40,12 @@ announcement and increments structured diagnostics; authoritative state remains
 queryable. Capability-checked post-commit publication of creation, movement,
 and surface commits, including correlation and causation, is **TESTED**. The
 remaining reserved lifecycle publishers are **SCAFFOLDED**.
+
+## Network routing domain
+
+The Network domain defines interface, address, route, connectivity, connection,
+policy, profile, resolver, discovery, degraded, and recovered types. Profile
+activation is Record-class and is emitted after the native profile object
+commits. Capability-filtered delivery, Record ordering, correlation/causation,
+and delivery-time revocation are **TESTED**. Packet counters remain sampled
+diagnostics rather than durable event spam.

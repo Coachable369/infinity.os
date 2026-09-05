@@ -16,6 +16,7 @@ pub enum RoutingDomain {
     System,
     Storage,
     Device,
+    Network,
     Session,
     Application,
     FutureAi,

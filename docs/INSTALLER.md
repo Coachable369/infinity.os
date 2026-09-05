@@ -168,6 +168,15 @@ The tested ARM path is whole-disk planning on a disposable 2 GiB VDI. 32-bit x86
 still builds and boots without a supported storage device. Native AHCI, NVMe,
 virtio-block, multiple-disk selection, unallocated-space installation,
 coexistence, and advanced planning are not yet implemented.
+
+## Milestone 8 payload
+
+The installed kernel contains Network, Network Policy, Network Transport, and
+Network Discovery service implementations and manifests; network capability,
+IOP, and IEF schema IDs; the Settings inspector; and native network bootstrap
+and profile-state objects. These are CORE generation content, not live-media
+helpers. Host artifact validation is **IMPLEMENTED**; full clean-install NIC
+acceptance is **UNSUPPORTED** until a wire driver exists.
 # Milestone 7 payload
 
 The System Space bootstrap now includes the versioned identity-state object and

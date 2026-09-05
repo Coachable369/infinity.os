@@ -557,11 +557,11 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.attach_record(b"/system/runtime", runtime)?;
         let registry =
             self.create_record(b"service-registry", ObjectType::Metadata, Space::System)?;
-        let mut service_registry = [0u8; 96];
+        let mut service_registry = [0u8; 128];
         service_registry[..8].copy_from_slice(b"INFSVC1\0");
         service_registry[8..10].copy_from_slice(&1u16.to_le_bytes());
-        service_registry[10..12].copy_from_slice(&19u16.to_le_bytes());
-        for id in 1..=19u32 {
+        service_registry[10..12].copy_from_slice(&28u16.to_le_bytes());
+        for id in 1..=28u32 {
             let at = 12 + (id as usize - 1) * 4;
             service_registry[at..at + 4].copy_from_slice(&id.to_le_bytes());
         }
@@ -624,6 +624,15 @@ impl<D: BlockDevice> ObjectStore<D> {
             self.create_record(b"identity-state", ObjectType::IdentityData, Space::System)?;
         self.write_record(identity, b"INFIDN1\0FIRST-BOOT-REQUIRED")?;
         self.attach_record(b"/system/identity/state", identity)?;
+        let network_state =
+            self.create_record(b"network-state", ObjectType::Metadata, Space::System)?;
+        let mut state = [0u8; 32];
+        state[..8].copy_from_slice(b"INFNET01");
+        state[8..10].copy_from_slice(&1u16.to_le_bytes());
+        state[12..16].copy_from_slice(&1u32.to_le_bytes());
+        state[16..24].copy_from_slice(&1u64.to_le_bytes());
+        self.write_record(network_state, &state)?;
+        self.attach_record(b"/system/network/state", network_state)?;
         Ok(())
     }
 
@@ -654,11 +663,20 @@ impl<D: BlockDevice> ObjectStore<D> {
                 b"INFOORG1".as_slice(),
             ),
             (b"/system/identity/state".as_slice(), b"INFIDN1".as_slice()),
+            (
+                b"/system/network/state".as_slice(),
+                b"INFNET01".as_slice(),
+            ),
         ] {
             let Ok(id) = self.resolve(path) else {
                 return false;
             };
-            let mut content = [0u8; ai_model_asset::MODEL_OBJECT_BYTES];
+            // Bootstrap System objects evolve after first boot. In particular, the
+            // native identity-state object grows beyond the compact model image
+            // size once onboarding commits the machine and user identities.
+            // Validate against the Object Store's real content ceiling so a valid
+            // installed generation is not rejected after that transition.
+            let mut content = [0u8; MAX_CONTENT];
             let Ok(length) = self.read(id, None, &mut content) else {
                 return false;
             };

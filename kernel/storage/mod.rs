@@ -579,6 +579,22 @@ pub fn identity_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError>
 pub fn identity_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
     object_write_path(b"/system/identity/state", content)
 }
+
+// ------------------------=
+// FUNC: network_state_load
+// DESC: Loads authoritative typed networking state from System Space.
+// ------------------=
+pub fn network_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError> {
+    object_read_path(b"/system/network/state", None, out).map(|(_, length)| length)
+}
+
+// ------------------------=
+// FUNC: network_state_commit
+// DESC: Transactionally commits a new native networking-state object version.
+// ------------------=
+pub fn network_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
+    object_write_path(b"/system/network/state", content)
+}
 // ------------------------=
 // FUNC: namespace_attach
 // DESC: Implements the namespace attach operation.

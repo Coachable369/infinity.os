@@ -6,6 +6,7 @@ pub mod execution;
 pub mod font;
 pub mod identity;
 pub mod iop;
+pub mod network;
 pub mod scheduler;
 pub mod service;
 
@@ -50,6 +51,31 @@ pub const EVENT_COMPOSITOR_DEGRADED: u32 = 0x98009;
 pub const EVENT_COMPOSITOR_RECOVERED: u32 = 0x9800a;
 pub const EVENT_SECURE_INPUT_STARTED: u32 = 0x9800b;
 pub const EVENT_SECURE_INPUT_STOPPED: u32 = 0x9800c;
+pub const EVENT_NETWORK_INTERFACE_STATE_CHANGED: u32 = 0x99001;
+pub const EVENT_NETWORK_ADDRESS_CHANGED: u32 = 0x99002;
+pub const EVENT_NETWORK_ROUTE_CHANGED: u32 = 0x99003;
+pub const EVENT_NETWORK_CONNECTIVITY_CHANGED: u32 = 0x99004;
+pub const EVENT_NETWORK_CONNECTION_OPENED: u32 = 0x99005;
+pub const EVENT_NETWORK_CONNECTION_CLOSED: u32 = 0x99006;
+pub const EVENT_NETWORK_CONNECTION_FAILED: u32 = 0x99007;
+pub const EVENT_NETWORK_POLICY_CHANGED: u32 = 0x99008;
+pub const EVENT_NETWORK_PROFILE_ACTIVATED: u32 = 0x99009;
+pub const EVENT_NETWORK_PROFILE_CHANGED: u32 = 0x9900a;
+pub const EVENT_NETWORK_RESOLVER_STATE_CHANGED: u32 = 0x9900b;
+pub const EVENT_NETWORK_SERVICE_DISCOVERED: u32 = 0x9900c;
+pub const EVENT_NETWORK_SERVICE_LOST: u32 = 0x9900d;
+pub const EVENT_NETWORK_DEGRADED: u32 = 0x9900e;
+pub const EVENT_NETWORK_RECOVERED: u32 = 0x9900f;
+
+const NETWORK_EVENT_TYPES: [u32; 15] = [
+    EVENT_NETWORK_INTERFACE_STATE_CHANGED, EVENT_NETWORK_ADDRESS_CHANGED,
+    EVENT_NETWORK_ROUTE_CHANGED, EVENT_NETWORK_CONNECTIVITY_CHANGED,
+    EVENT_NETWORK_CONNECTION_OPENED, EVENT_NETWORK_CONNECTION_CLOSED,
+    EVENT_NETWORK_CONNECTION_FAILED, EVENT_NETWORK_POLICY_CHANGED,
+    EVENT_NETWORK_PROFILE_ACTIVATED, EVENT_NETWORK_PROFILE_CHANGED,
+    EVENT_NETWORK_RESOLVER_STATE_CHANGED, EVENT_NETWORK_SERVICE_DISCOVERED,
+    EVENT_NETWORK_SERVICE_LOST, EVENT_NETWORK_DEGRADED, EVENT_NETWORK_RECOVERED,
+];
 
 const UI_EVENT_TYPES: [u32; 12] = [
     EVENT_WINDOW_CREATED,
@@ -82,6 +108,7 @@ pub struct InfinityRuntime {
     pub identity: identity::IdentitySystem,
     pub fonts: font::FontCatalog,
     pub ui: crate::ui::InfinityUiRuntime,
+    pub network: network::NetworkRuntime,
     pub live_profile: bool,
     service_event_cap: Option<u64>,
     identity_event_cap: Option<u64>,
@@ -90,6 +117,8 @@ pub struct InfinityRuntime {
     ai_console_capability: Option<u64>,
     ai_event_capabilities: [Option<u64>; 3],
     ui_event_capabilities: [Option<u64>; UI_EVENT_TYPES.len()],
+    network_event_capabilities: [Option<u64>; NETWORK_EVENT_TYPES.len()],
+    settings_network_profile_capability: Option<u64>,
 }
 impl InfinityRuntime {
     // ------------------------=
@@ -107,6 +136,7 @@ impl InfinityRuntime {
             identity: identity::IdentitySystem::new(),
             fonts: font::FontCatalog::new(),
             ui: crate::ui::InfinityUiRuntime::new(),
+            network: network::NetworkRuntime::new(),
             live_profile,
             service_event_cap: None,
             identity_event_cap: None,
@@ -115,6 +145,8 @@ impl InfinityRuntime {
             ai_console_capability: None,
             ai_event_capabilities: [None; 3],
             ui_event_capabilities: [None; UI_EVENT_TYPES.len()],
+            network_event_capabilities: [None; NETWORK_EVENT_TYPES.len()],
+            settings_network_profile_capability: None,
         }
     }
 
@@ -978,6 +1010,85 @@ impl InfinityRuntime {
             RestartPolicy::OnFailure,
             Criticality::NonCritical,
         ))?;
+        self.services.define(manifest(
+            SERVICE_NETWORK,
+            [SERVICE_DEVICE, SERVICE_EVENT, 0, 0],
+            2,
+            [
+                OperationId::NetworkInterfaceList as u32,
+                OperationId::NetworkInterfaceInspect as u32,
+                OperationId::NetworkInterfaceSetState as u32,
+                OperationId::NetworkAddressList as u32,
+                OperationId::NetworkAddressConfigure as u32,
+                OperationId::NetworkAddressRemove as u32,
+                OperationId::NetworkRouteList as u32,
+                OperationId::NetworkRouteInspect as u32,
+                OperationId::NetworkRouteAdd as u32,
+                OperationId::NetworkRouteRemove as u32,
+                OperationId::NetworkStatus as u32,
+                OperationId::NetworkDiagnostics as u32,
+            ],
+            12,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_NETWORK_POLICY,
+            [SERVICE_NETWORK, SERVICE_EVENT, 0, 0],
+            2,
+            [
+                OperationId::NetworkPolicyList as u32,
+                OperationId::NetworkPolicyInspect as u32,
+                OperationId::NetworkPolicyCreate as u32,
+                OperationId::NetworkPolicyUpdate as u32,
+                OperationId::NetworkPolicyDelete as u32,
+                OperationId::NetworkProfileList as u32,
+                OperationId::NetworkProfileInspect as u32,
+                OperationId::NetworkProfileActivate as u32,
+                OperationId::NetworkProfileCreate as u32,
+                OperationId::NetworkProfileUpdate as u32,
+                OperationId::NetworkProfileDelete as u32,
+                0,
+            ],
+            11,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_NETWORK_TRANSPORT,
+            [SERVICE_NETWORK, SERVICE_NETWORK_POLICY, SERVICE_EVENT, 0],
+            3,
+            [
+                OperationId::NetworkResolve as u32,
+                OperationId::NetworkConnect as u32,
+                OperationId::NetworkListen as u32,
+                OperationId::NetworkAccept as u32,
+                OperationId::NetworkSend as u32,
+                OperationId::NetworkReceive as u32,
+                OperationId::NetworkClose as u32,
+                OperationId::NetworkConnectionInspect as u32,
+                OperationId::NetworkConnectionList as u32,
+                0,
+                0,
+                0,
+            ],
+            9,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_NETWORK_DISCOVERY,
+            [SERVICE_NETWORK_TRANSPORT, SERVICE_EVENT, 0, 0],
+            2,
+            [
+                OperationId::ServiceDiscoverLocal as u32,
+                OperationId::ServiceAdvertiseLocal as u32,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ],
+            2,
+            RestartPolicy::OnFailure,
+            Criticality::NonCritical,
+        ))?;
         if self.live_profile {
             self.services.define(manifest(
                 SERVICE_INSTALLER,
@@ -998,7 +1109,7 @@ impl InfinityRuntime {
     pub fn start_all(&mut self, now: u64) {
         for _ in 0..MAX_SERVICES {
             self.services.start_ready(&mut self.execution, now);
-            for id in 1..=SERVICE_CLIPBOARD {
+            for id in 1..=SERVICE_NETWORK_DISCOVERY {
                 if self
                     .services
                     .inspect(id)
@@ -1079,6 +1190,39 @@ impl InfinityRuntime {
                         )
                         .ok();
                 }
+            }
+        }
+        if self.network_event_capabilities[0].is_none() {
+            if let Some(network) = self.service_identity(SERVICE_NETWORK) {
+                for (index, event_type) in NETWORK_EVENT_TYPES.iter().copied().enumerate() {
+                    self.network_event_capabilities[index] = self
+                        .capabilities
+                        .grant(
+                            CapabilityType::EventPublish,
+                            event_type as u64,
+                            1,
+                            0,
+                            runtime,
+                            network,
+                            None,
+                            0,
+                        )
+                        .ok();
+                }
+            }
+        }
+        if self.settings_network_profile_capability.is_none() {
+            if let Some(settings) = self.service_identity(SERVICE_SETTINGS) {
+                self.settings_network_profile_capability = self.capabilities.grant(
+                    CapabilityType::NetworkProfileActivate,
+                    0,
+                    1,
+                    0,
+                    runtime,
+                    settings,
+                    None,
+                    0,
+                ).ok();
             }
         }
         if self.live_profile && self.installer_authority[0].is_none() {
@@ -1449,6 +1593,9 @@ pub fn initialize() {
     let _ = runtime.services.announce_ready(SERVICE_DEVICE);
     let _ = runtime.services.announce_ready(SERVICE_EVENT);
     runtime.services.start_ready(&mut runtime.execution, 0);
+    if runtime.network.initialize().is_err() {
+        crate::output_text(b"[network] degraded: native network bootstrap failed\n");
+    }
     crate::output_text(b"[runtime] execution manager online\n[runtime] capability manager online\n[iop] router online\n[event] fabric online\n");
 }
 #[inline(never)]
@@ -1482,6 +1629,10 @@ pub fn storage_initialized() {
                 SERVICE_WINDOW_SERVER,
                 SERVICE_INFINITY_UI,
                 SERVICE_CLIPBOARD,
+                SERVICE_NETWORK,
+                SERVICE_NETWORK_POLICY,
+                SERVICE_NETWORK_TRANSPORT,
+                SERVICE_NETWORK_DISCOVERY,
             ] {
                 if runtime
                     .services
@@ -1494,6 +1645,17 @@ pub fn storage_initialized() {
             }
         }
         runtime.ensure_runtime_capabilities(0);
+        #[cfg(target_os = "none")]
+        {
+            let mut persisted = [0u8; network::NETWORK_STATE_BYTES];
+            if crate::storage::network_state_load(&mut persisted)
+                .ok()
+                .filter(|length| *length == network::NETWORK_STATE_BYTES)
+                .is_some()
+            {
+                let _ = runtime.network.restore_state(&persisted);
+            }
+        }
         if ai::initialize_global() {
             crate::output_text(b"[ai] local CPU inference online\n[ai] model registry verified\n");
         } else {
@@ -1559,6 +1721,30 @@ pub fn persist_identity_state() -> bool {
         true
     }
 }
+
+// ------------------------=
+// FUNC: activate_network_profile_from_settings
+// DESC: Performs trusted Settings profile activation, durable commit, and post-commit event publication.
+// ------------------=
+pub fn activate_network_profile_from_settings(profile_id: u32, now: u64, correlation_id: u64) -> bool {
+    let runtime = runtime_mut();
+    let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else { return false; };
+    let Some(authority) = runtime.settings_network_profile_capability else { return false; };
+    let _previous = runtime.network.profiles.active_id();
+    let Ok(generation) = runtime.network.activate_profile_authorized(profile_id, settings, authority, now, &runtime.capabilities) else { return false; };
+    #[cfg(target_os = "none")]
+    if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
+        let _ = runtime.network.activate_profile(_previous);
+        return false;
+    }
+    if let Some(index) = NETWORK_EVENT_TYPES.iter().position(|event| *event == EVENT_NETWORK_PROFILE_ACTIVATED) {
+        if let (Some(capability), Some(source)) = (runtime.network_event_capabilities[index], runtime.service_identity(SERVICE_NETWORK)) {
+            let mut payload = [0u8; 16]; payload[..4].copy_from_slice(&profile_id.to_le_bytes()); payload[8..16].copy_from_slice(&generation.to_le_bytes());
+            let _ = runtime.events.publish(EventClass::Record, RoutingDomain::Network, EVENT_NETWORK_PROFILE_ACTIVATED, source, profile_id as u64, correlation_id, correlation_id, &payload, 220, now, &runtime.capabilities, capability);
+        }
+    }
+    true
+}
 // ------------------------=
 // FUNC: announce_services
 // DESC: Implements the announce services operation.
@@ -1586,6 +1772,10 @@ pub fn announce_services() {
         (SERVICE_WINDOW_SERVER, b"window-server".as_slice()),
         (SERVICE_INFINITY_UI, b"infinity-ui".as_slice()),
         (SERVICE_CLIPBOARD, b"clipboard".as_slice()),
+        (SERVICE_NETWORK, b"network".as_slice()),
+        (SERVICE_NETWORK_POLICY, b"network-policy".as_slice()),
+        (SERVICE_NETWORK_TRANSPORT, b"network-transport".as_slice()),
+        (SERVICE_NETWORK_DISCOVERY, b"network-discovery".as_slice()),
     ] {
         if runtime
             .services

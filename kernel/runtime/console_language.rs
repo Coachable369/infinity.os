@@ -42,6 +42,15 @@ pub enum ValueType {
     UiTree,
     WindowSet,
     ClipboardData,
+    NetworkStatus,
+    NetworkInterfaceSet,
+    NetworkAddressSet,
+    NetworkRouteSet,
+    NetworkConnectionSet,
+    NetworkPolicySet,
+    NetworkProfileSet,
+    NetworkDiagnostics,
+    ServiceDiscoverySet,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -68,6 +77,7 @@ pub enum ArgumentType {
     UserRef,
     SessionRef,
     MachineRef,
+    NetworkRef,
 }
 
 #[derive(Clone, Copy)]
@@ -109,6 +119,7 @@ pub enum ReferenceKind {
     Namespace,
     User,
     Machine,
+    Network,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -396,6 +407,16 @@ const SETTING_ARGS: &[ArgumentSchema] = &[
         required: true,
     },
 ];
+const NETWORK_CONFIG_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"address", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"prefix", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"gateway", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"interface", value_type: ArgumentType::NetworkRef, required: false },
+    ArgumentSchema { name: b"metric", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"subject", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"destination", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"duration", value_type: ArgumentType::Text, required: false },
+];
 
 pub static DOMAINS: &[DomainSchema] = &[
     DomainSchema {
@@ -517,6 +538,10 @@ pub static DOMAINS: &[DomainSchema] = &[
     DomainSchema {
         name: b"clipboard",
         description: b"Capability-gated typed clipboard content",
+    },
+    DomainSchema {
+        name: b"network",
+        description: b"Native connectivity, interfaces, routes, policy, profiles, and diagnostics",
     },
 ];
 
@@ -1301,6 +1326,27 @@ pub static OPERATIONS: &[OperationSchema] = &[
         SideEffectClass::ReversibleChange,
         b"clipboard write name=text value=hello",
     ),
+    op(b"network", b"status", b"Inspect authoritative connectivity state", OperationId::NetworkStatus, ValueType::Unit, ValueType::NetworkStatus, None, NO_ARGS, 1, SideEffectClass::Query, b"network status"),
+    op(b"network", b"interface-list", b"List typed network interfaces", OperationId::NetworkInterfaceList, ValueType::Unit, ValueType::NetworkInterfaceSet, None, NO_ARGS, 1, SideEffectClass::Query, b"network interface-list"),
+    op(b"network", b"interface-read", b"Inspect one network interface", OperationId::NetworkInterfaceInspect, ValueType::Unit, ValueType::NetworkInterfaceSet, Some(ArgumentType::NetworkRef), NO_ARGS, 1, SideEffectClass::Query, b"network interface-read interface:1"),
+    op(b"network", b"address-list", b"List interface-scoped addresses", OperationId::NetworkAddressList, ValueType::Unit, ValueType::NetworkAddressSet, None, NO_ARGS, 1, SideEffectClass::Query, b"network address-list"),
+    op(b"network", b"address-create", b"Configure a typed network address", OperationId::NetworkAddressConfigure, ValueType::Unit, ValueType::NetworkAddressSet, None, NETWORK_CONFIG_ARGS, 3, SideEffectClass::SecurityChange, b"network address-create address=10.42.0.2 prefix=16 interface=interface:2"),
+    op(b"network", b"address-delete", b"Remove one configured address", OperationId::NetworkAddressRemove, ValueType::Unit, ValueType::NetworkAddressSet, Some(ArgumentType::NetworkRef), NO_ARGS, 3, SideEffectClass::SecurityChange, b"network address-delete address:4"),
+    op(b"network", b"route-list", b"List deterministic route state", OperationId::NetworkRouteList, ValueType::Unit, ValueType::NetworkRouteSet, None, NO_ARGS, 1, SideEffectClass::Query, b"network route-list"),
+    op(b"network", b"route-create", b"Create a typed route", OperationId::NetworkRouteAdd, ValueType::Unit, ValueType::NetworkRouteSet, None, NETWORK_CONFIG_ARGS, 3, SideEffectClass::SecurityChange, b"network route-create destination=10.42.0.0 prefix=16 interface=interface:2 metric=100"),
+    op(b"network", b"route-delete", b"Remove one route", OperationId::NetworkRouteRemove, ValueType::Unit, ValueType::NetworkRouteSet, Some(ArgumentType::NetworkRef), NO_ARGS, 3, SideEffectClass::SecurityChange, b"network route-delete route:2"),
+    op(b"network", b"resolve", b"Resolve a name under deadline and policy", OperationId::NetworkResolve, ValueType::Unit, ValueType::NetworkAddressSet, Some(ArgumentType::NetworkRef), NO_ARGS, 1, SideEffectClass::ExternalEffect, b"network resolve name:infinity.local"),
+    op(b"network", b"connection-list", b"List authorized typed connections", OperationId::NetworkConnectionList, ValueType::Unit, ValueType::NetworkConnectionSet, None, NO_ARGS, 1, SideEffectClass::Query, b"network connection-list"),
+    op(b"network", b"connection-read", b"Inspect an authorized connection", OperationId::NetworkConnectionInspect, ValueType::Unit, ValueType::NetworkConnectionSet, Some(ArgumentType::NetworkRef), NO_ARGS, 1, SideEffectClass::Query, b"network connection-read connection:1"),
+    op(b"network", b"policy-list", b"List authorized network policy", OperationId::NetworkPolicyList, ValueType::Unit, ValueType::NetworkPolicySet, None, NO_ARGS, 1, SideEffectClass::Query, b"network policy-list"),
+    op(b"network", b"policy-read", b"Inspect one policy rule", OperationId::NetworkPolicyInspect, ValueType::Unit, ValueType::NetworkPolicySet, Some(ArgumentType::NetworkRef), NO_ARGS, 1, SideEffectClass::Query, b"network policy-read policy:1"),
+    op(b"network", b"policy-create", b"Create identity-scoped network authority", OperationId::NetworkPolicyCreate, ValueType::Unit, ValueType::NetworkPolicySet, None, NETWORK_CONFIG_ARGS, 4, SideEffectClass::SecurityChange, b"network policy-create subject=application:browser destination=public duration=persistent"),
+    op(b"network", b"policy-delete", b"Delete one network policy rule", OperationId::NetworkPolicyDelete, ValueType::Unit, ValueType::NetworkPolicySet, Some(ArgumentType::NetworkRef), NO_ARGS, 4, SideEffectClass::SecurityChange, b"network policy-delete policy:1"),
+    op(b"network", b"profile-list", b"List operational connectivity profiles", OperationId::NetworkProfileList, ValueType::Unit, ValueType::NetworkProfileSet, None, NO_ARGS, 1, SideEffectClass::Query, b"network profile-list"),
+    op(b"network", b"profile-read", b"Inspect one connectivity profile", OperationId::NetworkProfileInspect, ValueType::Unit, ValueType::NetworkProfileSet, Some(ArgumentType::NetworkRef), NO_ARGS, 1, SideEffectClass::Query, b"network profile-read network-profile:1"),
+    op(b"network", b"profile-activate", b"Transactionally activate a connectivity posture", OperationId::NetworkProfileActivate, ValueType::Unit, ValueType::NetworkStatus, Some(ArgumentType::NetworkRef), NO_ARGS, 4, SideEffectClass::SecurityChange, b"network profile-activate network-profile:3"),
+    op(b"network", b"diagnostics", b"Inspect observed network counters and pressure", OperationId::NetworkDiagnostics, ValueType::Unit, ValueType::NetworkDiagnostics, None, NO_ARGS, 1, SideEffectClass::Query, b"network diagnostics"),
+    op(b"network", b"service-discover", b"Discover untrusted local service advertisements", OperationId::ServiceDiscoverLocal, ValueType::Unit, ValueType::ServiceDiscoverySet, None, NO_ARGS, 1, SideEffectClass::Query, b"network service-discover"),
 ];
 
 // ------------------------=
@@ -1557,6 +1603,20 @@ pub fn parse_reference(
         (ReferenceKind::Session, &value[8..])
     } else if value.starts_with(b"machine:") {
         (ReferenceKind::Machine, &value[8..])
+    } else if value.starts_with(b"interface:") {
+        (ReferenceKind::Network, &value[10..])
+    } else if value.starts_with(b"address:") {
+        (ReferenceKind::Network, &value[8..])
+    } else if value.starts_with(b"route:") {
+        (ReferenceKind::Network, &value[6..])
+    } else if value.starts_with(b"connection:") {
+        (ReferenceKind::Network, &value[11..])
+    } else if value.starts_with(b"policy:") {
+        (ReferenceKind::Network, &value[7..])
+    } else if value.starts_with(b"network-profile:") {
+        (ReferenceKind::Network, &value[16..])
+    } else if value.starts_with(b"name:") {
+        (ReferenceKind::Network, &value[5..])
     } else if value.starts_with(b"@") {
         (ReferenceKind::Session, &value[1..])
     } else if value.starts_with(b"/") {
@@ -1571,6 +1631,8 @@ pub fn parse_reference(
         (ReferenceKind::Session, value)
     } else if matches!(expected, ArgumentType::MachineRef) {
         (ReferenceKind::Machine, value)
+    } else if matches!(expected, ArgumentType::NetworkRef) {
+        (ReferenceKind::Network, value)
     } else {
         return Err(ConsoleLanguageError::InvalidArgumentType);
     };
@@ -1596,6 +1658,7 @@ pub fn parse_reference(
         ArgumentType::UserRef => kind == ReferenceKind::User,
         ArgumentType::SessionRef => kind == ReferenceKind::Session,
         ArgumentType::MachineRef => kind == ReferenceKind::Machine,
+        ArgumentType::NetworkRef => kind == ReferenceKind::Network,
         _ => true,
     };
     if !valid {
@@ -1628,6 +1691,7 @@ fn validate_value(kind: ArgumentType, value: &[u8]) -> Result<(), ConsoleLanguag
         | ArgumentType::UserRef
         | ArgumentType::SessionRef
         | ArgumentType::MachineRef
+        | ArgumentType::NetworkRef
         | ArgumentType::NamespacePath => parse_reference(value, kind).map(|_| ()),
         _ => Ok(()),
     }

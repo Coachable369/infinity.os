@@ -68,7 +68,7 @@ fn read_u64(bytes: &[u8], offset: usize) -> u64 {
 
 // ------------------------=
 // FUNC: main
-// DESC: Verifies native runtime and AI System objects on the installed raw disk.
+// DESC: Verifies installed native runtime, networking, AI, organization, and date/time System objects.
 // ------------------=
 fn main() {
     let path = std::env::args().nth(1).expect("raw disk path");

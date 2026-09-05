@@ -3262,13 +3262,14 @@ impl super::DisplayDevice {
                 76,
                 180,
             );
-            let sections: [&[u8]; 8] = [
+            let sections: [&[u8]; 9] = [
                 b"General",
                 b"Themes & Skins",
                 b"Users & Accounts",
                 b"AI & Voice",
                 b"Privacy & Security",
                 b"Devices",
+                b"Network",
                 b"Storage",
                 b"About",
             ];
@@ -3290,7 +3291,7 @@ impl super::DisplayDevice {
                 self.authentication_icon(
                     left + 27 * scale,
                     y + 8 * scale,
-                    [8usize, 13, 6, 7, 8, 11, 11, 12][index],
+                    [8usize, 13, 6, 7, 8, 11, 14, 11, 12][index],
                     17 * scale,
                     focus == index,
                 );
@@ -3310,7 +3311,7 @@ impl super::DisplayDevice {
             self.ui_text_strong(
                 content_x,
                 content_y,
-                sections[focus.min(7)],
+                sections[focus.min(8)],
                 238,
                 244,
                 249,
@@ -3327,7 +3328,17 @@ impl super::DisplayDevice {
             );
             let icon_theme = crate::ui::icon_theme::IconThemeId::from_u8(self.active_icon_theme())
                 .unwrap_or(crate::ui::icon_theme::IconThemeId::CrystalBlueGlass);
-            let rows: [(&[u8], &[u8]); 5] = match focus.min(7) {
+            let network_status = crate::runtime::with_runtime(|runtime| runtime.network.status());
+            let connectivity: &[u8] = match network_status.map(|value| value.connectivity) {
+                Some(crate::runtime::network::types::ConnectivityClass::Offline) => b"Offline",
+                Some(crate::runtime::network::types::ConnectivityClass::LinkOnly) => b"Link only",
+                Some(crate::runtime::network::types::ConnectivityClass::LocalNetwork) => b"Local network",
+                Some(crate::runtime::network::types::ConnectivityClass::Routed) => b"Routed",
+                Some(crate::runtime::network::types::ConnectivityClass::LimitedConnectivity) => b"Limited",
+                Some(crate::runtime::network::types::ConnectivityClass::InternetReachableOptional) => b"Reachable",
+                _ => b"Degraded",
+            };
+            let rows: [(&[u8], &[u8]); 5] = match focus.min(8) {
                 0 => [
                     (b"Machine Name", input),
                     (b"Language", b"English (US)"),
@@ -3368,9 +3379,16 @@ impl super::DisplayDevice {
                     (b"Keyboard", b"Ready"),
                     (b"Pointer", b"Ready"),
                     (b"Audio Input", b"Unavailable"),
-                    (b"Network", b"Ready"),
+                    (b"Audio Output", b"Unavailable"),
                 ],
                 6 => [
+                    (b"Connectivity", connectivity),
+                    (b"Profiles", b"5 operational modes"),
+                    (b"Interfaces & Topology", b"Inspect"),
+                    (b"Application & Service Access", b"Deny by default"),
+                    (b"Diagnostics", b"Observed counters"),
+                ],
+                7 => [
                     (b"Infinity Pool", b"Online"),
                     (b"System Space", b"Ready"),
                     (b"Personal Space", b"Owned"),
@@ -3537,13 +3555,14 @@ impl super::DisplayDevice {
             76,
             180,
         );
-        let sections: [&[u8]; 8] = [
+        let sections: [&[u8]; 9] = [
             b"General",
             b"Themes & Skins",
             b"Users & Accounts",
             b"AI & Voice",
             b"Privacy & Security",
             b"Devices",
+            b"Network",
             b"Storage",
             b"About",
         ];
@@ -3565,7 +3584,7 @@ impl super::DisplayDevice {
             self.authentication_icon(
                 left + 27 * scale,
                 y + 8 * scale,
-                [8usize, 13, 6, 7, 8, 11, 11, 12][index],
+                [8usize, 13, 6, 7, 8, 11, 14, 11, 12][index],
                 17 * scale,
                 focus == index,
             );
@@ -3584,7 +3603,7 @@ impl super::DisplayDevice {
         self.ui_text_strong(
             content_x,
             content_y,
-            sections[focus.min(7)],
+            sections[focus.min(8)],
             238,
             244,
             249,
@@ -3614,7 +3633,17 @@ impl super::DisplayDevice {
             &opacity_value[..3]
         };
         let blur_value = [b'0' + blur.min(8), b' ', b'p', b'x'];
-        let rows: [(&[u8], &[u8]); 8] = match focus.min(7) {
+        let network_status = crate::runtime::with_runtime(|runtime| runtime.network.status());
+        let connectivity: &[u8] = match network_status.map(|value| value.connectivity) {
+            Some(crate::runtime::network::types::ConnectivityClass::Offline) => b"Offline",
+            Some(crate::runtime::network::types::ConnectivityClass::LinkOnly) => b"Link only",
+            Some(crate::runtime::network::types::ConnectivityClass::LocalNetwork) => b"Local network",
+            Some(crate::runtime::network::types::ConnectivityClass::Routed) => b"Routed",
+            Some(crate::runtime::network::types::ConnectivityClass::LimitedConnectivity) => b"Limited",
+            Some(crate::runtime::network::types::ConnectivityClass::InternetReachableOptional) => b"Reachable",
+            _ => b"Degraded",
+        };
+        let rows: [(&[u8], &[u8]); 8] = match focus.min(8) {
             0 => [
                 (b"Machine Name", input),
                 (b"Language", b"English (US)"),
@@ -3670,12 +3699,22 @@ impl super::DisplayDevice {
                 (b"Keyboard", b"Ready"),
                 (b"Pointer", b"Ready"),
                 (b"Audio Input", b"Unavailable"),
-                (b"Network", b"Ready"),
+                (b"Audio Output", b"Unavailable"),
                 (b"", b""),
                 (b"", b""),
                 (b"", b""),
             ],
             6 => [
+                (b"Connectivity", connectivity),
+                (b"Profiles", b"5 operational modes"),
+                (b"Interfaces & Topology", b"Inspect"),
+                (b"Application & Service Access", b"Deny by default"),
+                (b"DNS / Resolution", b"Bounded cache"),
+                (b"Routes", b"Deterministic"),
+                (b"Connections", b"Owner protected"),
+                (b"Diagnostics", b"Observed counters"),
+            ],
+            7 => [
                 (b"Infinity Pool", b"Online"),
                 (b"System Space", b"Ready"),
                 (b"Personal Space", b"Owned"),

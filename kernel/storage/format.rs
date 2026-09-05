@@ -22,7 +22,7 @@ const GENERATION_ID: u64 = 1;
 const GENERATION_INSTALLING: u32 = 1;
 const GENERATION_READY: u32 = 2;
 const GENERATION_ACTIVE: u32 = 3;
-const COMPONENT_COUNT: u32 = 10;
+const COMPONENT_COUNT: u32 = 11;
 const INSTALL_CLASS_CORE: u32 = 1;
 const INSTALL_CLASS_SYSTEM_OPTIONAL: u32 = 2;
 const INSTALL_CLASS_POST_INSTALL: u32 = 3;
@@ -35,7 +35,7 @@ struct ComponentRegistration {
 }
 // The installer consumes this single registry. Future milestones add entries here and
 // select CORE, SYSTEM OPTIONAL, or POST-INSTALL without adding UI copy operations.
-const SYSTEM_COMPONENT_REGISTRY: [ComponentRegistration; 10] = [
+const SYSTEM_COMPONENT_REGISTRY: [ComponentRegistration; 11] = [
     ComponentRegistration {
         id: 1,
         kind: 1,
@@ -95,7 +95,13 @@ const SYSTEM_COMPONENT_REGISTRY: [ComponentRegistration; 10] = [
         kind: 10,
         architecture_specific: false,
         reference_kind: 1,
-    }, // identity, sessions, settings, shell, InfinityUI, Skin Registry, and Window Server
+    }, // identity, sessions, settings, shell, InfinityUI, compositor, retained surfaces, present backend, trusted UI, diagnostics, Skin Registry, and Window Server
+    ComponentRegistration {
+        id: 11,
+        kind: 11,
+        architecture_specific: false,
+        reference_kind: 1,
+    }, // native network runtime, address/route/resolver/transport, policy, profiles, discovery, inspector, schemas, and capability bootstrap
 ];
 const MINIMUM_BLOCKS: u64 = 262_144;
 const INFINITY_TYPE: [u8; 16] = [

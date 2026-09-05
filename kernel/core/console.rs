@@ -1363,8 +1363,8 @@ impl ConsoleRuntime {
     fn open_settings(&mut self, section: usize) {
         self.store_active_app_window();
         self.mode = ConsoleMode::Settings;
-        self.system_focus = section.min(7);
-        self.settings_window.row_count = if self.system_focus == 1 { 8 } else { 5 };
+        self.system_focus = section.min(8);
+        self.settings_window.row_count = if matches!(self.system_focus, 1 | 6) { 8 } else { 5 };
         self.settings_editing = false;
         self.settings_window.expanded_row = None;
         self.settings_window.scroll_offset = 0;
@@ -1863,6 +1863,11 @@ impl ConsoleRuntime {
                     let _ = crate::runtime::persist_identity_state();
                 }
             }
+            (6, 1) => {
+                let active = crate::runtime::with_runtime(|runtime| runtime.network.profiles.active_id()).unwrap_or(1);
+                let next = if active >= 5 { 1 } else { active + 1 };
+                let _ = crate::runtime::activate_network_profile_from_settings(next, 0, next as u64);
+            }
             _ => {}
         }
     }
@@ -1955,11 +1960,11 @@ impl ConsoleRuntime {
     // ------------------=
     fn activate_shell_menu_item(&mut self) {
         match (self.shell_menu, self.system_focus) {
-            (0, 0) => self.open_settings(7),
+            (0, 0) => self.open_settings(8),
             (0, 1) => self.open_settings(0),
             (0, 2) => self.open_settings(2),
             (0, 3) => self.open_settings(3),
-            (0, 4) => self.open_settings(5),
+            (0, 4) => self.open_settings(6),
             (0, 5) => self.open_settings(4),
             (0, 6) => {
                 let _ = crate::runtime::with_runtime(|runtime| {
@@ -2078,7 +2083,7 @@ impl ConsoleRuntime {
                 self.enter_desktop();
             }
             (4, 3) => self.open_settings(0),
-            (5, 0 | 3) => self.open_settings(7),
+            (5, 0 | 3) => self.open_settings(8),
             (5, 1) => self.show_shell_notice(
                 b"Keyboard: Tab and arrows move focus. Enter selects. Escape closes.",
             ),
@@ -2097,7 +2102,7 @@ impl ConsoleRuntime {
     fn activate_status_item(&mut self, item: usize) {
         match item {
             0..=2 => self.open_settings(5),
-            3 | 4 => self.open_settings(7),
+            3 | 4 => self.open_settings(8),
             5 => self.show_shell_notice(b"Search objects with: object find name=..."),
             _ => self.open_shell_menu(0),
         }
@@ -2534,11 +2539,11 @@ impl ConsoleRuntime {
             let count = if self.mode == ConsoleMode::SystemMenu {
                 self.shell_menu_item_count()
             } else {
-                8
+                9
             };
             self.system_focus = (self.system_focus + count - 1) % count;
             if self.mode == ConsoleMode::Settings {
-                self.settings_window.row_count = if self.system_focus == 1 { 8 } else { 5 };
+                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6) { 8 } else { 5 };
                 self.settings_window.expanded_row = None;
                 self.settings_window.scroll_offset = 0;
             }
@@ -2551,11 +2556,11 @@ impl ConsoleRuntime {
             let count = if self.mode == ConsoleMode::SystemMenu {
                 self.shell_menu_item_count()
             } else {
-                8
+                9
             };
             self.system_focus = (self.system_focus + 1) % count;
             if self.mode == ConsoleMode::Settings {
-                self.settings_window.row_count = if self.system_focus == 1 { 8 } else { 5 };
+                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6) { 8 } else { 5 };
                 self.settings_window.expanded_row = None;
                 self.settings_window.scroll_offset = 0;
             }
@@ -3790,10 +3795,10 @@ impl ConsoleRuntime {
                             Some(DockAction::Launcher) => self.open_app_launcher(),
                             Some(DockAction::Files) => self.home_window_visible = true,
                             Some(DockAction::Settings) => self.open_settings(0),
-                            Some(DockAction::About) => self.open_settings(7),
+                            Some(DockAction::About) => self.open_settings(8),
                             Some(DockAction::AiVoice) => self.open_settings(3),
                             Some(DockAction::Appearance) => self.open_settings(1),
-                            Some(DockAction::Network) => self.open_settings(5),
+                            Some(DockAction::Network) => self.open_settings(6),
                             Some(DockAction::Trash) => {
                                 self.home_window_visible = true;
                                 self.home_location = 8;
@@ -4013,7 +4018,7 @@ impl ConsoleRuntime {
                 match target {
                     SettingsTarget::Section(index) if clicked => {
                         self.system_focus = index;
-                        self.settings_window.row_count = if index == 1 { 8 } else { 5 };
+                        self.settings_window.row_count = if matches!(index, 1 | 6) { 8 } else { 5 };
                         self.settings_editing = false;
                         self.settings_window.expanded_row = None;
                         self.settings_window.scroll_offset = 0;
@@ -4371,6 +4376,19 @@ impl ConsoleRuntime {
                     .write_line(b"Organization: objects + relationships + namespace views");
             }
             OperationId::ObjectQuery => self.render_object_query(node),
+            OperationId::NetworkStatus
+            | OperationId::NetworkInterfaceList
+            | OperationId::NetworkInterfaceInspect
+            | OperationId::NetworkAddressList
+            | OperationId::NetworkRouteList
+            | OperationId::NetworkConnectionList
+            | OperationId::NetworkConnectionInspect
+            | OperationId::NetworkPolicyList
+            | OperationId::NetworkPolicyInspect
+            | OperationId::NetworkProfileList
+            | OperationId::NetworkProfileInspect
+            | OperationId::NetworkDiagnostics
+            | OperationId::ServiceDiscoverLocal => return self.execute_network_node(node),
             OperationId::ProjectList => self.render_typed_object_list(
                 crate::storage::object::ObjectType::Project,
                 b"ProjectSet",
@@ -4419,6 +4437,71 @@ impl ConsoleRuntime {
                 // until all services accept native IOP payloads directly.
                 return self.execute_runtime_command_for_operation(node.schema.operation);
             }
+        }
+        true
+    }
+
+    // ------------------------=
+    // FUNC: execute_network_node
+    // DESC: Renders authorized typed Network Service results without parsing shell output.
+    // ------------------=
+    fn execute_network_node(
+        &mut self,
+        node: &crate::runtime::console_language::OperationNode<'_>,
+    ) -> bool {
+        use crate::runtime::iop::OperationId;
+        use crate::runtime::network::types::ConnectivityClass;
+        match node.schema.operation {
+            OperationId::NetworkStatus => {
+                let status = crate::runtime::with_runtime(|runtime| runtime.network.status()).unwrap();
+                let class = match status.connectivity {
+                    ConnectivityClass::Offline => b"Offline".as_slice(),
+                    ConnectivityClass::LinkOnly => b"LinkOnly".as_slice(),
+                    ConnectivityClass::LocalNetwork => b"LocalNetwork".as_slice(),
+                    ConnectivityClass::LimitedConnectivity => b"LimitedConnectivity".as_slice(),
+                    ConnectivityClass::Routed => b"Routed".as_slice(),
+                    ConnectivityClass::InternetReachableOptional => b"InternetReachableOptional".as_slice(),
+                    ConnectivityClass::Degraded => b"Degraded".as_slice(),
+                };
+                self.output.write_segments(&[b"connectivity: ", class]);
+                self.output.write_number(b"active profile: network-profile:", status.active_profile as u64);
+                self.output.write_number(b"interfaces: ", status.interfaces as u64);
+                self.output.write_number(b"connections: ", status.active_connections as u64);
+            }
+            OperationId::NetworkInterfaceList | OperationId::NetworkInterfaceInspect => {
+                let count = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.interface_count()).unwrap_or(0);
+                for index in 0..count { if let Some(interface) = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.interface_nth(index).copied()).flatten() { self.output.write_number(b"interface:", interface.id as u64); self.output.write_number(b"  device identity: ", interface.device.device_id); self.output.write_number(b"  rx packets: ", interface.rx_packets); self.output.write_number(b"  tx packets: ", interface.tx_packets); } }
+            }
+            OperationId::NetworkAddressList => {
+                let count = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.address_count()).unwrap_or(0);
+                for index in 0..count { if let Some(address) = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.address_nth(index).copied()).flatten() { self.output.write_number(b"address:", address.id as u64); self.output.write_number(b"  interface: ", address.interface_id as u64); self.output.write_number(b"  prefix: ", address.prefix_length as u64); } }
+            }
+            OperationId::NetworkRouteList => {
+                let count = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.route_count()).unwrap_or(0);
+                for index in 0..count { if let Some(route) = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.route_nth(index).copied()).flatten() { self.output.write_number(b"route:", route.id as u64); self.output.write_number(b"  interface: ", route.interface_id as u64); self.output.write_number(b"  prefix: ", route.prefix_length as u64); self.output.write_number(b"  metric: ", route.metric as u64); } }
+            }
+            OperationId::NetworkConnectionList | OperationId::NetworkConnectionInspect => {
+                let count = crate::runtime::with_runtime(|runtime| runtime.network.connections.count()).unwrap_or(0);
+                self.output.write_number(b"authorized connections: ", count as u64);
+            }
+            OperationId::NetworkPolicyList | OperationId::NetworkPolicyInspect => {
+                let count = crate::runtime::with_runtime(|runtime| runtime.network.policy.count()).unwrap_or(0);
+                self.output.write_number(b"effective policy rules: ", count as u64);
+            }
+            OperationId::NetworkProfileList | OperationId::NetworkProfileInspect => {
+                let count = crate::runtime::with_runtime(|runtime| runtime.network.profiles.count()).unwrap_or(0);
+                let active = crate::runtime::with_runtime(|runtime| runtime.network.profiles.active_id()).unwrap_or(0);
+                for index in 0..count { if let Some(profile) = crate::runtime::with_runtime(|runtime| runtime.network.profiles.nth(index).copied()).flatten() { self.output.write_number(if profile.id == active { b"active network-profile:" } else { b"network-profile:" }, profile.id as u64); } }
+            }
+            OperationId::NetworkDiagnostics => {
+                let diagnostics = crate::runtime::with_runtime(|runtime| runtime.network.diagnostics()).unwrap();
+                self.output.write_number(b"rx packets: ", diagnostics.rx_packets); self.output.write_number(b"tx packets: ", diagnostics.tx_packets); self.output.write_number(b"drops: ", diagnostics.drops); self.output.write_number(b"queue pressure: ", diagnostics.queue_pressure); self.output.write_number(b"policy denials: ", diagnostics.policy_denials);
+            }
+            OperationId::ServiceDiscoverLocal => {
+                let count = crate::runtime::with_runtime(|runtime| runtime.network.discovery.count()).unwrap_or(0);
+                self.output.write_number(b"discovered untrusted services: ", count as u64);
+            }
+            _ => return false,
         }
         true
     }
@@ -6047,6 +6130,15 @@ fn value_type_text(value: crate::runtime::console_language::ValueType) -> &'stat
         UiTree => b"UiTree",
         WindowSet => b"WindowSet",
         ClipboardData => b"ClipboardData",
+        NetworkStatus => b"NetworkStatus",
+        NetworkInterfaceSet => b"NetworkInterfaceSet",
+        NetworkAddressSet => b"NetworkAddressSet",
+        NetworkRouteSet => b"NetworkRouteSet",
+        NetworkConnectionSet => b"NetworkConnectionSet",
+        NetworkPolicySet => b"NetworkPolicySet",
+        NetworkProfileSet => b"NetworkProfileSet",
+        NetworkDiagnostics => b"NetworkDiagnostics",
+        ServiceDiscoverySet => b"ServiceDiscoverySet",
     }
 }
 

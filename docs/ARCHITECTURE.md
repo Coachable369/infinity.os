@@ -176,3 +176,14 @@ dependency-ordered services above kernel mechanism. The first shell consumes
 typed service state and explicit session capabilities; it does not introduce
 users, home directories, root, PIDs, or ambient filesystem authority. See
 `IDENTITY.md`, `SESSIONS.md`, and `GUI_CLI_PARITY.md`.
+
+## Milestone 8 network boundary
+
+The kernel owns only future privileged adapter, interrupt, DMA, packet-buffer,
+and accounting mechanisms. Interface/address/route policy, resolution,
+connections, profiles, discovery, and diagnostics live in separable runtime
+services. Applications see typed IOP operations and capabilities, never native
+POSIX sockets. IEF announces committed state through the Network routing
+domain. The current implementation proves fixed-capacity host-local behavior;
+physical/wire networking is explicitly unsupported until the kernel gains a
+real adapter path. See `NETWORKING.md`.

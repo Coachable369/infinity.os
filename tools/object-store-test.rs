@@ -294,6 +294,10 @@ fn main() {
         disposable
     );
     assert!(!store.object_exists(disposable));
+    // Reclaim the deleted fixture before creating the later garbage-collection
+    // case. CORE System Generation components intentionally consume most of the
+    // compact bootstrap catalog, so tests must respect the same bounded capacity.
+    assert!(store.collect().unwrap() >= 1);
     let generation = store.generation();
     drop(store);
 
@@ -379,10 +383,11 @@ fn main() {
             b"verified bytes",
         )
         .unwrap();
-    // Eleven bootstrap contents precede this object: kernel, recovery, runtime,
+    // Twelve bootstrap contents precede this object: kernel, recovery, runtime,
     // service registry, capability policy, local model, AI bootstrap, voice
-    // framework, agent policy, organization schema, and identity state.
-    content_disk.flip((STORE_RELATIVE_LBA + 80 + 11 * 8) as usize, 0);
+    // framework, agent policy, organization schema, identity state, and native
+    // network state.
+    content_disk.flip((STORE_RELATIVE_LBA + 80 + 12 * 8) as usize, 0);
     let mut out = [0u8; 4096];
     assert_eq!(
         content_store.read(content_id, None, &mut out),

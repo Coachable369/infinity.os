@@ -15,3 +15,9 @@ and keyboard routing bypasses ordinary windows entirely.
 - Exclusive lease, expiry, token derivation, input precedence, and trusted
   z-order denial: **TESTED**.
 - Hardware-backed secure attention key: **PLANNED**.
+
+Persistent network authority, privileged listeners, protected profile changes,
+and future trust exceptions are reserved CapabilityConsent surfaces. The prompt
+contract includes requester identity, scope/destination, duration, consequence,
+and policy source. The capability boundary exists; complete Network consent
+rendering is **SCAFFOLDED**.

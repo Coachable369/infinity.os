@@ -42,6 +42,15 @@ resolution; and Settings owns input/preview. This separation keeps the setting
 available to the installed System Generation without making the live ISO a
 runtime dependency.
 
+## Network
+
+The Network section projects authoritative typed runtime state into Overview,
+Profiles, Interfaces & Topology, Application & Service Access, DNS/Resolution,
+Routes, Connections, and Diagnostics. Profile selection calls the capability-
+checked transactional runtime path and persists before publishing its event.
+The GUI does not parse Console output. Implementation is **HOST-COMPILED** and
+awaits direct installed-VM interaction acceptance.
+
 Unknown settings are rejected. Enabling voice changes preference only and does
 not grant microphone authority. Remote AI remains denied unless the explicit
 provider policy allows it.

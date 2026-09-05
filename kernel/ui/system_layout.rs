@@ -1435,7 +1435,7 @@ impl SystemLayout {
         if geometry.title.contains(point) {
             return Some(SettingsTarget::Title);
         }
-        for index in 0..8usize {
+        for index in 0..9usize {
             let y = top + 54 * self.scale + (25 + index * 43) * self.scale;
             if rect(
                 left + 10 * self.scale,

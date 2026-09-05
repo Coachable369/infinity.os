@@ -25,6 +25,7 @@ WALLPAPER_ASSETS := assets/desktop/infinity-default-dark-wallpaper-v2.png \
 UI_ASSETS := $(shell find assets/skins -type f) $(WALLPAPER_ASSETS)
 INSTALLER_UI_ASSETS := assets/boot/infinity-installer-mesh-diagram-v1.png
 CRASH_ASSETS := $(shell find assets/crash -type f)
+X86_PAYLOAD_MAX_SECTORS := 1056
 ICON_THEME_SOURCES := $(shell find assets/icons -maxdepth 2 -type f -name 'master-*.png') tools/build-icon-themes.sh tools/slice-icon-atlas.py
 SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-console-background-v1.bmp \
 	assets/boot/infinity-emblem-v2.bmp \
@@ -54,7 +55,7 @@ SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-
 	assets/boot/infinity-storage-device-v1.bmp assets/boot/infinity-time-zone-map-v1.bmp \
 	$(CRASH_ASSETS)
 
-.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test object-test namespace-test crash-recovery-test crash-screen-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test milestone-7c-test icon-theme-test settings-color-test desktop-system-test ui-install-parity-test input-regression-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
+.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test object-test namespace-test crash-recovery-test crash-screen-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test milestone-7c-test milestone-8-test network-test icon-theme-test settings-color-test desktop-system-test ui-install-parity-test input-regression-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
 
 crash-screen-test:
 	@tools/crash-screen-test.sh
@@ -190,6 +191,11 @@ milestone-3b-test: object-test install-test object-vm-test
 runtime-test iop-test event-test capability-test service-crash-test:
 	@tools/runtime-test.sh
 
+network-test:
+	@tools/network-test.sh
+
+milestone-8-test: network-test runtime-test
+
 ai-test:
 	@tools/ai-test.sh
 
@@ -267,7 +273,7 @@ $(BUILD)/x86/bootstrap.bin: boot/x86/bootstrap.asm $(BUILD)/x86/kernel.elf
 $(BUILD)/x86/boot-sector.bin: boot/x86/boot_sector.asm $(BUILD)/x86/bootstrap.bin
 	@mkdir -p $(@D)
 	@bytes=$$(wc -c < $(BUILD)/x86/bootstrap.bin); sectors=$$((($$bytes + 511) / 512)); \
-	if test $$sectors -gt 1024; then echo "ERROR: x86 bootstrap exceeds bounded region below the kernel stack"; exit 1; fi; \
+	if test $$sectors -gt $(X86_PAYLOAD_MAX_SECTORS); then echo "ERROR: x86 bootstrap exceeds bounded region below the kernel stack"; exit 1; fi; \
 	nasm -f bin -DPAYLOAD_SECTORS=$$sectors $< -o $@
 
 $(BUILD)/infinity-x86.img: $(BUILD)/x86/boot-sector.bin $(BUILD)/x86/bootstrap.bin

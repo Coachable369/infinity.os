@@ -26,3 +26,11 @@ component covers compositor, Window Server, scene/surface runtime,
 display-present adapter, Trusted UI integration, diagnostics, and policy
 metadata. Installer-only artwork remains separately classified; no Milestone
 7C runtime code is ISO-only.
+
+## Network component
+
+Generation manifests declare the CORE Network Runtime component in the service
+registry and bootstrap the native `/system/network/state` object. Runtime
+bootstrap validation rejects missing or invalid network state. Installed
+object validation is **IMPLEMENTED**; detached-media VM acceptance is still
+**UNTESTED** for Milestone 8.
