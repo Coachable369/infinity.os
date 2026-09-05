@@ -143,14 +143,6 @@ pub(super) const INSTALLER_ACTIVATION_BMP: &[u8] = &[];
     feature = "installer",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
-pub(super) const INSTALLER_PROGRESS_BMP: &[u8] =
-    include_bytes!("../../../assets/boot/infinity-installer-progress-v1.bmp");
-#[cfg(not(feature = "installer"))]
-pub(super) const INSTALLER_PROGRESS_BMP: &[u8] = &[];
-#[cfg(all(
-    feature = "installer",
-    any(target_arch = "x86_64", target_arch = "aarch64")
-))]
 pub(super) const STORAGE_HIERARCHY_BMP: &[u8] =
     include_bytes!("../../../assets/boot/infinity-storage-hierarchy-v3.bmp");
 #[cfg(not(feature = "installer"))]
@@ -188,15 +180,6 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn paint_installer_background(&mut self) {
         self.paint_bitmap_cover_rect(INSTALLER_BMP, 0, 0, self.width, self.height);
-    }
-
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    // ------------------------=
-    // FUNC: paint_installer_progress_background
-    // DESC: Paints the screenshot-matched installation HUD without baked dynamic progress content.
-    // ------------------=
-    pub(super) fn paint_installer_progress_background(&mut self) {
-        self.paint_bitmap_fit_rect(INSTALLER_PROGRESS_BMP, 0, 0, self.width, self.height);
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -245,10 +228,6 @@ impl super::DisplayDevice {
     // DESC: Restores a clean installer scene before drawing the active wizard step.
     // ------------------=
     pub(super) fn restore_installer_panel(&mut self, screen: u8) {
-        if screen == 8 {
-            self.paint_installer_progress_background();
-            return;
-        }
         // Wizard panels intentionally vary slightly by content, so repainting
         // only the next panel rectangle can leave the wider previous panel's
         // edges behind. A step transition is infrequent; restore the complete
@@ -1059,10 +1038,30 @@ impl super::DisplayDevice {
         let width = self.width * 78 / 100;
         let top = self.height * 67 / 100;
         let height = self.height * 19 / 100;
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-        self.paint_bitmap_stretch_rect(INSTALLER_PROGRESS_BMP, left, top, width, height);
-        #[cfg(target_arch = "x86")]
-        self.fill_rect(left, top, width, height, 8, 17, 27);
+        self.fill_rounded_rect_alpha(
+            left + 6 * scale,
+            top + 7 * scale,
+            width,
+            height,
+            15 * scale,
+            0,
+            3,
+            9,
+            150,
+        );
+        self.fill_rounded_rect_alpha(left, top, width, height, 15 * scale, 2, 13, 25, 246);
+        self.fill_rounded_rect_alpha(
+            left + 2 * scale,
+            top + 2 * scale,
+            width.saturating_sub(4 * scale),
+            height / 2,
+            13 * scale,
+            18,
+            56,
+            88,
+            105,
+        );
+        self.outline_rounded_rect(left, top, width, height, 15 * scale, 53, 165, 220);
 
         self.ui_text_centered_strong(
             left,
@@ -1129,7 +1128,7 @@ impl super::DisplayDevice {
 
         let (path_x, path_y) = infinity_point(phase);
         let orb_x = self.width as i32 / 2 + path_x * (self.width as i32 / 820).max(1);
-        let orb_y = self.height as i32 * 35 / 100 + path_y * (self.height as i32 / 900).max(1);
+        let orb_y = self.height as i32 * 55 / 100 + path_y * (self.height as i32 / 900).max(1);
         self.star_orb(orb_x, orb_y, 4 * scale as i32, 244, true);
 
         let mut percent_text = [b'0'; 4];

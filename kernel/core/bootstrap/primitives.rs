@@ -1122,54 +1122,6 @@ impl super::DisplayDevice {
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
-    // FUNC: paint_bitmap_stretch_rect
-    // DESC: Restores a clipped rectangle from a bitmap stretched across the complete framebuffer.
-    // ------------------=
-    pub(super) fn paint_bitmap_stretch_rect(
-        &mut self,
-        bitmap: &[u8],
-        left: usize,
-        top: usize,
-        width: usize,
-        height: usize,
-    ) {
-        if bitmap.len() < 54 || &bitmap[0..2] != b"BM" || le16(bitmap, 28) != 24 {
-            return;
-        }
-        let offset = le32(bitmap, 10) as usize;
-        let source_width = le32(bitmap, 18) as usize;
-        let signed_height = le32(bitmap, 22) as i32;
-        let source_height = signed_height.unsigned_abs() as usize;
-        if source_width == 0 || source_height == 0 || self.width == 0 || self.height == 0 {
-            return;
-        }
-        let row_bytes = (source_width * 3 + 3) & !3;
-        for y in top..(top + height).min(self.height) {
-            let logical_y = y * source_height / self.height;
-            let source_y = if signed_height < 0 {
-                logical_y
-            } else {
-                source_height - 1 - logical_y
-            };
-            for x in left..(left + width).min(self.width) {
-                let source_x = x * source_width / self.width;
-                let index = offset + source_y * row_bytes + source_x * 3;
-                if index + 2 >= bitmap.len() {
-                    return;
-                }
-                self.pixel(
-                    x as i32,
-                    y as i32,
-                    bitmap[index + 2],
-                    bitmap[index + 1],
-                    bitmap[index],
-                );
-            }
-        }
-    }
-
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    // ------------------------=
     // FUNC: paint_bitmap_fit_rect
     // DESC: Samples a bitmap with aspect-fit scaling inside the requested rectangle.
     // ------------------=

@@ -48,7 +48,7 @@ mkdir -p builds
 dd if=/dev/zero of="$disk" bs=1M count=512 status=none
 : > "$log"
 
-qemu-system-x86_64 -machine pc -m 512M \
+qemu-system-x86_64 -machine pc -m 1024M \
     -drive if=pflash,format=raw,readonly=on,file="$firmware" \
     -drive if=ide,index=0,format=raw,file="$disk" \
     -drive if=ide,index=2,media=cdrom,readonly=on,file=build/infinity-x86_64.iso \
@@ -70,6 +70,7 @@ monitor_command 'sendkey ret' 0.5
 monitor_command 'sendkey ret' 0.5
 monitor_command 'sendkey ret' 0.5
 monitor_command 'sendkey right' 0.3
+monitor_command 'sendkey tab' 0.3
 monitor_command 'sendkey tab' 0.3
 monitor_command 'sendkey tab' 0.3
 monitor_command 'sendkey ret' 0.6
