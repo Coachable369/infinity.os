@@ -15,33 +15,33 @@ rg -Fq 'firmware_runtime_services' kernel/core/boot_info.rs
 rg -Fq 'reset_system' kernel/core/console.rs
 rg -Fq 'include_bytes!("../../assets/boot/infinity-installer-activation-v2.bmp")' kernel/core/bootstrap.rs
 rg -Fq 'include_bytes!("../../assets/boot/infinity-storage-hierarchy-v3.bmp")' kernel/core/bootstrap.rs
-rg -Fq 'fn installer_pool_panel(' kernel/core/bootstrap.rs
+rg -Fq 'fn installer_pool_panel(' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
 rg -Fq 'include_bytes!("../../assets/boot/infinity-disk-discovery-vision-v1.bmp")' kernel/core/bootstrap.rs
 rg -Fq 'include_bytes!("../../assets/boot/infinity-storage-device-v1.bmp")' kernel/core/bootstrap.rs
-rg -Fq 'fn installer_disk_discovery_panel(' kernel/core/bootstrap.rs
+rg -Fq 'fn installer_disk_discovery_panel(' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
 rg -Fq 'include_bytes!("../../assets/boot/infinity-time-zone-map-v1.bmp")' kernel/core/bootstrap.rs
-rg -Fq 'fn installer_date_time_panel(' kernel/core/bootstrap.rs
+rg -Fq 'fn installer_date_time_panel(' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
 rg -Fq 'fn select_installer_time_zone_from_map(' kernel/core/console.rs
 rg -Fq 'focus_changed && !pointer_changed' kernel/core/bootstrap.rs
 rg -Fq 'install_date_time_configuration(plan.date_time)' kernel/storage/format.rs
 rg -Fq 'b"/system/settings/date-time"' kernel/storage/object.rs
 rg -Fq 'StorageProfile::SharedDynamic' kernel/core/console.rs
-if rg -Fq 'CHOOSE SPACE PRIORITY' kernel/core/bootstrap.rs; then
+if rg -Fq 'CHOOSE SPACE PRIORITY' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs; then
     echo 'FAIL: obsolete storage-priority screen remains in the installer' >&2
     exit 1
 fi
-rg -Fq 'b"DISKS DISCOVERED"' kernel/core/bootstrap.rs
-rg -Fq 'b"MORE THAN STORAGE"' kernel/core/bootstrap.rs
-rg -Fq 'storage_device: Option<crate::storage::StorageDevice>' kernel/core/bootstrap.rs
-rg -Fq 'b"ONE DISK BECOMES"' kernel/core/bootstrap.rs
-rg -Fq 'b"PART OF THE "' kernel/core/bootstrap.rs
-rg -Fq 'b"INFINITY POOL."' kernel/core/bootstrap.rs
-rg -Fq 'b"SYSTEM | PERSONAL | APPLICATIONS | RECOVERY"' kernel/core/bootstrap.rs
-rg -Fq '2 => (135, 350)' kernel/core/bootstrap.rs
-rg -Fq '2 => (510, 350)' kernel/core/bootstrap.rs
+rg -Fq 'b"DISKS DISCOVERED"' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
+rg -Fq 'b"MORE THAN STORAGE"' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
+rg -Fq 'storage_device: Option<crate::storage::StorageDevice>' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
+rg -Fq 'b"ONE DISK BECOMES"' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
+rg -Fq 'b"PART OF THE "' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
+rg -Fq 'b"INFINITY POOL."' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
+rg -Fq 'b"SYSTEM | PERSONAL | APPLICATIONS | RECOVERY"' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
+rg -Fq '2 => (135, 350)' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
+rg -Fq '2 => (510, 350)' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
 rg -Fq 'self.installer_step == InstallerStep::Hierarchy' kernel/core/console.rs
-rg -Fq 'installer_screen == 7 && (content_redraw || focus_changed || pressed_changed)' kernel/core/bootstrap.rs
-if rg -Fq 'installer_screen == 7 && (content_redraw || focus_changed || pointer_changed)' kernel/core/bootstrap.rs; then
+rg -Fq 'installer_screen == 7 && (content_redraw || focus_changed || pressed_changed)' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs
+if rg -Fq 'installer_screen == 7 && (content_redraw || focus_changed || pointer_changed)' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs; then
     echo 'FAIL: destructive confirmation still repaints on every pointer motion report' >&2
     exit 1
 fi
