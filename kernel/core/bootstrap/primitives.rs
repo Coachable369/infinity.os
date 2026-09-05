@@ -1259,6 +1259,60 @@ impl super::DisplayDevice {
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
+    // FUNC: paint_bitmap_fit_rect_inset
+    // DESC: Paints a bitmap while excluding an equal source-edge inset from all four sides.
+    // ------------------=
+    pub(super) fn paint_bitmap_fit_rect_inset(
+        &mut self,
+        bitmap: &[u8],
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+        source_inset: usize,
+    ) {
+        if bitmap.len() < 54 || &bitmap[0..2] != b"BM" || le16(bitmap, 28) != 24 {
+            return;
+        }
+        let offset = le32(bitmap, 10) as usize;
+        let source_width = le32(bitmap, 18) as usize;
+        let signed_height = le32(bitmap, 22) as i32;
+        let source_height = signed_height.unsigned_abs() as usize;
+        let inset = source_inset
+            .min(source_width.saturating_sub(1) / 2)
+            .min(source_height.saturating_sub(1) / 2);
+        let sampled_width = source_width.saturating_sub(inset * 2);
+        let sampled_height = source_height.saturating_sub(inset * 2);
+        if sampled_width == 0 || sampled_height == 0 || width == 0 || height == 0 {
+            return;
+        }
+        let row_bytes = (source_width * 3 + 3) & !3;
+        for y in 0..height.min(self.height.saturating_sub(top)) {
+            let sy = inset + y * sampled_height / height;
+            let source_y = if signed_height < 0 {
+                sy
+            } else {
+                source_height - 1 - sy
+            };
+            for x in 0..width.min(self.width.saturating_sub(left)) {
+                let sx = inset + x * sampled_width / width;
+                let index = offset + source_y * row_bytes + sx * 3;
+                if index + 2 >= bitmap.len() {
+                    return;
+                }
+                self.pixel(
+                    (left + x) as i32,
+                    (top + y) as i32,
+                    bitmap[index + 2],
+                    bitmap[index + 1],
+                    bitmap[index],
+                );
+            }
+        }
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
     // FUNC: paint_bitmap_alpha_fit_rect
     // DESC: Aspect-fits a 32-bit BGRA bitmap and alpha-blends it over the existing framebuffer.
     // ------------------=

@@ -1039,7 +1039,14 @@ impl super::DisplayDevice {
                 let top = self.height * 38 / 100;
                 let width = self.width * 66 / 100;
                 let height = self.height * 26 / 100;
-                self.paint_bitmap_fit_rect(INSTALLER_PROGRESS_HERO_BMP, left, top, width, height);
+                self.paint_bitmap_fit_rect_inset(
+                    INSTALLER_PROGRESS_HERO_BMP,
+                    left,
+                    top,
+                    width,
+                    height,
+                    3,
+                );
             }
         }
     }
