@@ -9,6 +9,9 @@ Reference target: the supplied 2258 x 80 desktop navigation screenshot.
 - Brand mark: 36 x 17 px at standard density with transparent breathing room.
 - Wordmark: `I N F I N I T Y O S`, regular UI face, cool white, vertically centered.
 - Menu and status hit regions use the same shared height as their rendered controls.
+- All text, symbols, and status controls share the rail's exact vertical centerline.
+- The clock sits inside a recessed glass well with a dark upper inner edge and
+  a restrained blue lower reflection; it must read as carved into the rail.
 
 ## Surface recipe
 
@@ -16,6 +19,7 @@ Reference target: the supplied 2258 x 80 desktop navigation screenshot.
 - Highlight: restrained blue upper wash and a soft center-right blue bloom.
 - Edge: one-pixel steel-blue outline with a quiet cyan lower separator.
 - Active state: compact translucent blue capsule contained within the rail.
+- Clock state: inset navy glass without a bright external rim or attached plate.
 
 ## Live layers
 

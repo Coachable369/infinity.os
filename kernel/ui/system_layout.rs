@@ -260,7 +260,7 @@ impl SystemLayout {
             }
         }
         let status_width = 32 * self.scale;
-        let clock_width = 88 * self.scale;
+        let clock_width = 104 * self.scale;
         let status_left = self
             .width
             .saturating_sub(7 * status_width + clock_width + 10 * self.scale);

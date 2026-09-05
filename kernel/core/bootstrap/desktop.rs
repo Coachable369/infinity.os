@@ -1078,6 +1078,8 @@ impl super::DisplayDevice {
         let rail_inset = 2 * scale;
         let rail_width = self.width.saturating_sub(rail_inset * 2);
         let rail_height = height.saturating_sub(rail_inset * 2);
+        let content_y = height / 2;
+        let text_y = content_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2);
         self.fill_rect_alpha(0, 0, self.width, height, 0, 2, 7, 176);
         self.fill_rounded_rect_alpha(
             rail_inset,
@@ -1147,16 +1149,8 @@ impl super::DisplayDevice {
                 188,
             );
         }
-        self.top_bar_infinity_icon(36 * scale, height / 2, 68 * scale);
-        self.ui_text(
-            76 * scale,
-            height / 2 - 10 * scale,
-            b"I N F I N I T Y O S",
-            221,
-            229,
-            239,
-            1,
-        );
+        self.top_bar_infinity_icon(36 * scale, content_y, 68 * scale);
+        self.ui_text(76 * scale, text_y, b"I N F I N I T Y O S", 221, 229, 239, 1);
 
         let menu_positions = [300usize, 360, 420, 482, 610];
         for (index, label) in [b"File".as_slice(), b"Edit", b"View", b"Window", b"Help"]
@@ -1178,20 +1172,20 @@ impl super::DisplayDevice {
                     210,
                 );
             }
-            self.ui_text(menu_x, height / 2 - 10 * scale, label, 213, 222, 231, 1);
+            self.ui_text(menu_x, text_y, label, 213, 222, 231, 1);
         }
 
         let icon_size = 18 * scale;
-        let status_y = height / 2;
+        let status_y = content_y;
         let status_width = 32 * scale;
-        let clock_width = 88 * scale;
+        let clock_width = 104 * scale;
         let status_left = self
             .width
             .saturating_sub(7 * status_width + clock_width + 10 * scale);
         let private_width = self.ui_text_width(b"LOCAL  |  PRIVATE", 1);
         self.ui_text(
             status_left.saturating_sub(private_width + 18 * scale),
-            height / 2 - 10 * scale,
+            text_y,
             b"LOCAL  |  PRIVATE",
             211,
             221,
@@ -1202,6 +1196,78 @@ impl super::DisplayDevice {
             let center = status_left + index * status_width + status_width / 2;
             self.system_status_icon(center, status_y, *kind, icon_size);
         }
+        self.paint_system_top_bar_clock_well(clock, height, scale);
+        height
+    }
+
+    // ------------------------=
+    // FUNC: paint_system_top_bar_clock_well
+    // DESC: Draws the live clock inside a recessed glass well aligned to the shared top-bar centerline.
+    // ------------------=
+    pub(super) fn paint_system_top_bar_clock_well(
+        &mut self,
+        clock: crate::storage::DateTimeConfiguration,
+        height: usize,
+        scale: usize,
+    ) {
+        let well_width = (104 * scale).min(self.width);
+        let well_left = self.width.saturating_sub(well_width + 4 * scale);
+        let well_top = 4 * scale;
+        let well_height = height.saturating_sub(8 * scale);
+        let radius = 6 * scale;
+        self.fill_rounded_rect_alpha(
+            well_left.saturating_sub(scale),
+            well_top.saturating_sub(scale),
+            well_width.saturating_add(2 * scale),
+            well_height.saturating_add(2 * scale),
+            radius.saturating_add(scale),
+            0,
+            1,
+            5,
+            168,
+        );
+        self.fill_rounded_rect_alpha(
+            well_left,
+            well_top,
+            well_width,
+            well_height,
+            radius,
+            0,
+            7,
+            16,
+            178,
+        );
+        self.outline_rounded_rect(
+            well_left,
+            well_top,
+            well_width,
+            well_height,
+            radius,
+            24,
+            59,
+            82,
+        );
+        self.fill_rect_alpha(
+            well_left + radius,
+            well_top + scale,
+            well_width.saturating_sub(radius * 2),
+            scale,
+            0,
+            0,
+            2,
+            190,
+        );
+        self.fill_rect_alpha(
+            well_left + radius,
+            well_top + well_height.saturating_sub(2 * scale),
+            well_width.saturating_sub(radius * 2),
+            scale,
+            54,
+            121,
+            157,
+            105,
+        );
+
         let mut time = *b"00:00:00";
         time[0] = b'0' + clock.hour / 10;
         time[1] = b'0' + clock.hour % 10;
@@ -1211,15 +1277,14 @@ impl super::DisplayDevice {
         time[7] = b'0' + clock.second % 10;
         let time_width = self.ui_text_width(&time, 1);
         self.ui_text_strong(
-            self.width.saturating_sub(time_width + 16 * scale),
-            height / 2 - 10 * scale,
+            well_left + well_width.saturating_sub(time_width) / 2,
+            height / 2 - UI_FONT_CELL_HEIGHT / 2,
             &time,
-            235,
-            242,
-            248,
+            226,
+            237,
+            246,
             1,
         );
-        height
     }
 
     // ------------------------=
@@ -1263,23 +1328,7 @@ impl super::DisplayDevice {
             153,
             150,
         );
-        let mut time = *b"00:00:00";
-        time[0] = b'0' + clock.hour / 10;
-        time[1] = b'0' + clock.hour % 10;
-        time[3] = b'0' + clock.minute / 10;
-        time[4] = b'0' + clock.minute % 10;
-        time[6] = b'0' + clock.second / 10;
-        time[7] = b'0' + clock.second % 10;
-        let time_width = self.ui_text_width(&time, 1);
-        self.ui_text_strong(
-            self.width.saturating_sub(time_width + 16 * scale),
-            height / 2 - 10 * scale,
-            &time,
-            235,
-            242,
-            248,
-            1,
-        );
+        self.paint_system_top_bar_clock_well(clock, height, scale);
     }
 
     // ------------------------=
@@ -2471,10 +2520,11 @@ impl super::DisplayDevice {
             self.glass_panel(left, top, width, height, true);
             let title_height = 54 * scale;
             self.fill_rect_alpha(left, top, width, title_height, 6, 17, 29, 222);
-            self.small_infinity_mark(left + 25 * scale, top + title_height / 2, 31 * scale);
+            let title_center_y = top + title_height / 2;
+            self.small_infinity_mark(left + 25 * scale, title_center_y, 31 * scale);
             self.ui_text_strong(
                 left + 50 * scale,
-                top + 15 * scale,
+                title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
                 b"System Settings",
                 241,
                 246,
@@ -2482,12 +2532,13 @@ impl super::DisplayDevice {
                 1,
             );
             for index in 0..3usize {
+                let control_size = 18 * scale;
                 let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * scale);
                 self.fill_rounded_rect_alpha(
                     control_left,
-                    top + 15 * scale,
-                    18 * scale,
-                    18 * scale,
+                    title_center_y.saturating_sub(control_size / 2),
+                    control_size,
+                    control_size,
                     5 * scale,
                     14,
                     28,
@@ -2496,9 +2547,9 @@ impl super::DisplayDevice {
                 );
                 self.outline_rounded_rect(
                     control_left,
-                    top + 15 * scale,
-                    18 * scale,
-                    18 * scale,
+                    title_center_y.saturating_sub(control_size / 2),
+                    control_size,
+                    control_size,
                     5 * scale,
                     56,
                     78,
@@ -3493,14 +3544,11 @@ impl super::DisplayDevice {
                 31,
                 225,
             );
-            self.small_infinity_mark(
-                browser_left + 20 * scale,
-                browser_top + title_h / 2,
-                24 * scale,
-            );
+            let title_center_y = browser_top + title_h / 2;
+            self.small_infinity_mark(browser_left + 20 * scale, title_center_y, 24 * scale);
             self.ui_text_strong(
                 browser_left + 38 * scale,
-                browser_top + 7 * scale,
+                title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
                 b"Home",
                 226,
                 237,
@@ -3513,7 +3561,7 @@ impl super::DisplayDevice {
                     browser_left + browser_width.saturating_sub((28 + (2 - index) * 27) * scale);
                 self.fill_rounded_rect_alpha(
                     control_left,
-                    browser_top + 7 * scale,
+                    title_center_y.saturating_sub(control_size / 2),
                     control_size,
                     control_size,
                     6 * scale,
@@ -3524,7 +3572,7 @@ impl super::DisplayDevice {
                 );
                 self.outline_rounded_rect(
                     control_left,
-                    browser_top + 7 * scale,
+                    title_center_y.saturating_sub(control_size / 2),
                     control_size,
                     control_size,
                     6 * scale,
@@ -3533,7 +3581,7 @@ impl super::DisplayDevice {
                     101,
                 );
                 let center_x = control_left + control_size / 2;
-                let center_y = browser_top + 17 * scale;
+                let center_y = title_center_y;
                 if index == 0 {
                     self.icon_line(
                         (center_x - 5 * scale) as i32,
