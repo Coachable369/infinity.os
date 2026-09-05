@@ -45,6 +45,7 @@ SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-
 	assets/boot/infinity-installer-mesh-hero-v1.bmp assets/boot/infinity-installer-mesh-overview-v1.bmp \
 	assets/boot/infinity-installer-mesh-diagram-v1.bmp \
 	assets/boot/infinity-installer-activation-v2.bmp \
+	assets/boot/infinity-installer-progress-v1.bmp \
 	assets/boot/infinity-storage-hierarchy-v3.bmp \
 	assets/boot/infinity-disk-discovery-vision-v1.bmp \
 	assets/boot/infinity-storage-device-v1.bmp \
