@@ -2204,7 +2204,7 @@ impl super::DisplayDevice {
             self.onboarding_frame(step, input, masked, focus, validation_error);
             return;
         }
-        if matches!(screen, 2 | 3 | 4) {
+        if matches!(screen, 2 | 3 | 4 | 7) {
             self.paint_desktop_background();
         } else {
             self.paint_first_boot_background();
@@ -2213,7 +2213,7 @@ impl super::DisplayDevice {
         let margin = self.width * 4 / 100;
         let top_bar = self.system_top_bar((screen == 3).then_some(menu_kind), clock);
 
-        if matches!(screen, 2 | 3) {
+        if matches!(screen, 2 | 3 | 7) {
             self.desktop_shell(
                 scale,
                 window_x,
@@ -2228,7 +2228,12 @@ impl super::DisplayDevice {
                 note_location,
                 desktop_items,
                 desktop_item_positions,
+                screen == 7,
             );
+        }
+
+        if screen == 7 {
+            self.app_launcher(scale, input, focus);
         }
 
         if matches!(screen, 1 | 5 | 6) {
@@ -3332,6 +3337,345 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: launcher_dock_icon
+    // DESC: Draws the dedicated Infinity launcher control and its live open-state indicator.
+    // ------------------=
+    pub(super) fn launcher_dock_icon(
+        &mut self,
+        left: usize,
+        top: usize,
+        size: usize,
+        active: bool,
+    ) {
+        let radius = (size / 5).max(7);
+        self.fill_rounded_rect_alpha(left + 3, top + 5, size, size, radius, 0, 3, 10, 185);
+        self.fill_rounded_rect_alpha(
+            left,
+            top,
+            size,
+            size,
+            radius,
+            if active { 7 } else { 4 },
+            if active { 64 } else { 28 },
+            if active { 103 } else { 52 },
+            244,
+        );
+        self.outline_rounded_rect(
+            left,
+            top,
+            size,
+            size,
+            radius,
+            if active { 115 } else { 55 },
+            if active { 217 } else { 137 },
+            if active { 255 } else { 184 },
+        );
+        self.small_infinity_mark(left + size / 2, top + size / 2, size * 3 / 4);
+        if active {
+            self.fill_rounded_rect_alpha(
+                left + size / 2 - 5,
+                top + size + 5,
+                10,
+                3,
+                2,
+                126,
+                222,
+                255,
+                255,
+            );
+        }
+    }
+
+    // ------------------------=
+    // FUNC: app_launcher
+    // DESC: Renders the searchable native application and category panel above the installed desktop dock.
+    // ------------------=
+    pub(super) fn app_launcher(&mut self, scale: usize, query: &[u8], focus: usize) {
+        self.paint_app_launcher(scale, query, focus, false);
+    }
+
+    // ------------------------=
+    // FUNC: app_launcher_content_update
+    // DESC: Repaints only the launcher content layers changed by live search or focus movement.
+    // ------------------=
+    pub(super) fn app_launcher_content_update(&mut self, scale: usize, query: &[u8], focus: usize) {
+        self.paint_app_launcher(scale, query, focus, true);
+    }
+
+    // ------------------------=
+    // FUNC: paint_app_launcher
+    // DESC: Composes the full launcher or its bounded mutable content using one shared rendering path.
+    // ------------------=
+    fn paint_app_launcher(&mut self, scale: usize, query: &[u8], focus: usize, content_only: bool) {
+        let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .app_launcher_geometry();
+        let panel_left = geometry.panel.x.max(0) as usize;
+        let panel_top = geometry.panel.y.max(0) as usize;
+        let panel_width = geometry.panel.width as usize;
+        let panel_height = geometry.panel.height as usize;
+        if content_only {
+            let content_left = panel_left + 18 * scale;
+            let content_width = panel_width.saturating_sub(36 * scale);
+            let mutable_top = (geometry.search.y.max(0) as usize).saturating_sub(3 * scale);
+            self.fill_rect_alpha(
+                content_left,
+                mutable_top,
+                content_width,
+                (panel_top + panel_height * 70 / 100).saturating_sub(mutable_top),
+                2,
+                13,
+                29,
+                255,
+            );
+            self.fill_rect_alpha(
+                content_left,
+                geometry.category_top.saturating_sub(5 * scale),
+                content_width,
+                panel_top
+                    .saturating_add(panel_height)
+                    .saturating_sub(geometry.category_top + 12 * scale),
+                1,
+                11,
+                25,
+                255,
+            );
+        } else {
+            self.fill_rounded_rect_alpha(
+                panel_left.saturating_sub(8 * scale),
+                panel_top + 10 * scale,
+                panel_width.saturating_add(16 * scale),
+                panel_height,
+                26 * scale,
+                0,
+                2,
+                10,
+                132,
+            );
+            self.glass_panel(panel_left, panel_top, panel_width, panel_height, true);
+            self.fill_rounded_rect_alpha(
+                panel_left + 2 * scale,
+                panel_top + 2 * scale,
+                panel_width.saturating_sub(4 * scale),
+                panel_height / 3,
+                22 * scale,
+                14,
+                40,
+                68,
+                74,
+            );
+        }
+
+        let search_left = geometry.search.x.max(0) as usize;
+        let search_top = geometry.search.y.max(0) as usize;
+        let search_width = geometry.search.width as usize;
+        let search_height = geometry.search.height as usize;
+        self.fill_rounded_rect_alpha(
+            search_left,
+            search_top,
+            search_width,
+            search_height,
+            search_height / 2,
+            5,
+            18,
+            34,
+            232,
+        );
+        self.outline_rounded_rect(
+            search_left,
+            search_top,
+            search_width,
+            search_height,
+            search_height / 2,
+            if focus == 0 { 101 } else { 50 },
+            if focus == 0 { 205 } else { 121 },
+            if focus == 0 { 255 } else { 168 },
+        );
+        let search_icon_size = (24 * scale).min(search_height.saturating_sub(10));
+        let _ = self.themed_icon(
+            search_left + 27 * scale,
+            search_top + search_height / 2,
+            27,
+            search_icon_size,
+        );
+        let search_text = if query.is_empty() {
+            b"Search apps, files, settings and more...".as_slice()
+        } else {
+            query
+        };
+        self.ui_text(
+            search_left + 50 * scale,
+            search_top + search_height / 2 - UI_FONT_CELL_HEIGHT / 2,
+            search_text,
+            if query.is_empty() { 126 } else { 224 },
+            if query.is_empty() { 151 } else { 236 },
+            if query.is_empty() { 177 } else { 247 },
+            1,
+        );
+        let shortcut = b"/ SEARCH";
+        let shortcut_width = self.ui_text_width(shortcut, 1);
+        self.fill_rounded_rect_alpha(
+            search_left + search_width.saturating_sub(shortcut_width + 25 * scale),
+            search_top + 10 * scale,
+            shortcut_width + 14 * scale,
+            search_height.saturating_sub(20 * scale),
+            6 * scale,
+            16,
+            37,
+            58,
+            215,
+        );
+        self.ui_text(
+            search_left + search_width.saturating_sub(shortcut_width + 18 * scale),
+            search_top + search_height / 2 - UI_FONT_CELL_HEIGHT / 2,
+            shortcut,
+            138,
+            166,
+            192,
+            1,
+        );
+
+        let visible = crate::ui::app_launcher::launcher_visible_count(query);
+        for visible_index in 0..visible {
+            let Some(entry) = crate::ui::app_launcher::launcher_visible_entry(query, visible_index)
+            else {
+                continue;
+            };
+            let column = visible_index % 6;
+            let row = visible_index / 6;
+            let cell_left = geometry.grid_left + column * geometry.grid_cell_width;
+            let cell_top = geometry.grid_top + row * geometry.grid_row_height;
+            let selected = focus == visible_index + 1;
+            let well_size = geometry
+                .grid_cell_width
+                .min(geometry.grid_row_height)
+                .saturating_mul(58)
+                / 100;
+            let well_left = cell_left + geometry.grid_cell_width.saturating_sub(well_size) / 2;
+            let well_top = cell_top + 3 * scale;
+            self.fill_rounded_rect_alpha(
+                well_left,
+                well_top,
+                well_size,
+                well_size,
+                13 * scale,
+                if selected { 17 } else { 7 },
+                if selected { 67 } else { 28 },
+                if selected { 105 } else { 49 },
+                if selected { 232 } else { 186 },
+            );
+            self.outline_rounded_rect(
+                well_left,
+                well_top,
+                well_size,
+                well_size,
+                13 * scale,
+                if selected { 100 } else { 48 },
+                if selected { 211 } else { 105 },
+                if selected { 255 } else { 146 },
+            );
+            let _ = self.themed_icon(
+                well_left + well_size / 2,
+                well_top + well_size / 2,
+                entry.icon_role,
+                well_size * 68 / 100,
+            );
+            self.ui_text_centered_strong(
+                cell_left,
+                geometry.grid_cell_width,
+                well_top + well_size + 8 * scale,
+                entry.label,
+                if selected { 239 } else { 211 },
+                if selected { 248 } else { 227 },
+                if selected { 255 } else { 239 },
+                1,
+            );
+        }
+        if visible == 0 {
+            self.ui_text_centered_strong(
+                geometry.grid_left,
+                geometry.grid_cell_width * 6,
+                geometry.grid_top + geometry.grid_row_height - UI_FONT_CELL_HEIGHT / 2,
+                b"No matching applications",
+                149,
+                178,
+                201,
+                1,
+            );
+        }
+
+        let divider_y = panel_top + panel_height * 70 / 100;
+        self.fill_rect_alpha(
+            geometry.category_left,
+            divider_y,
+            geometry.category_width * 5,
+            scale,
+            55,
+            109,
+            143,
+            150,
+        );
+        for (index, entry) in crate::ui::app_launcher::LAUNCHER_CATEGORIES
+            .iter()
+            .enumerate()
+        {
+            let left = geometry.category_left + index * geometry.category_width + 6 * scale;
+            let width = geometry.category_width.saturating_sub(12 * scale);
+            let selected = focus == visible + index + 1;
+            self.fill_rounded_rect_alpha(
+                left,
+                geometry.category_top,
+                width,
+                geometry.category_height,
+                12 * scale,
+                if selected { 17 } else { 7 },
+                if selected { 67 } else { 29 },
+                if selected { 105 } else { 50 },
+                220,
+            );
+            self.outline_rounded_rect(
+                left,
+                geometry.category_top,
+                width,
+                geometry.category_height,
+                12 * scale,
+                if selected { 98 } else { 45 },
+                if selected { 212 } else { 99 },
+                if selected { 255 } else { 139 },
+            );
+            let icon_size = geometry.category_height * 36 / 100;
+            let _ = self.themed_icon(
+                left + width / 2,
+                geometry.category_top + geometry.category_height * 37 / 100,
+                entry.icon_role,
+                icon_size,
+            );
+            self.ui_text_centered(
+                left,
+                width,
+                geometry.category_top + geometry.category_height * 68 / 100,
+                entry.label,
+                197,
+                220,
+                237,
+                1,
+            );
+            if selected {
+                self.fill_rounded_rect_alpha(
+                    left + width / 2 - 5 * scale,
+                    geometry.category_top + geometry.category_height.saturating_sub(4 * scale),
+                    10 * scale,
+                    3 * scale,
+                    2 * scale,
+                    116,
+                    220,
+                    255,
+                    255,
+                );
+            }
+        }
+    }
+
+    // ------------------------=
     // FUNC: desktop_window_rect
     // DESC: Resolves the movable Home window bounds in framebuffer pixels.
     // ------------------=
@@ -3484,6 +3828,7 @@ impl super::DisplayDevice {
         note_location: usize,
         desktop_items: u8,
         desktop_item_positions: &[[i32; 2]; 7],
+        launcher_open: bool,
     ) {
         for (index, (name, kind)) in [
             (b"Documents".as_slice(), 0),
@@ -3925,17 +4270,21 @@ impl super::DisplayDevice {
         let dock_top = self.height.saturating_sub(dock_height + 10 * scale);
         self.glass_panel(dock_left, dock_top, dock_width, dock_height, false);
         let icon_gap = dock_width / 9;
-        for index in 0..8usize {
+        for index in 0..9usize {
             let size = 46 * scale;
             let x = dock_left + icon_gap / 2 + index * icon_gap;
-            self.desktop_app_icon(
-                x,
-                dock_top + 10 * scale,
-                size,
-                index,
-                matches!(index, 0 | 1),
-            );
-            if index == 6 {
+            if index == 0 {
+                self.launcher_dock_icon(x, dock_top + 10 * scale, size, launcher_open);
+            } else {
+                self.desktop_app_icon(
+                    x,
+                    dock_top + 10 * scale,
+                    size,
+                    index - 1,
+                    matches!(index, 1 | 2),
+                );
+            }
+            if index == 7 {
                 self.fill_rect_alpha(
                     x.saturating_sub(icon_gap / 3),
                     dock_top + 10 * scale,
@@ -4221,6 +4570,12 @@ pub fn system_ui_present(
                 console
                     .display
                     .authentication_focus_controls(screen == 6, step, input, focus);
+            } else if screen == 7 && (content_changed || focus_changed) {
+                console.display.app_launcher_content_update(
+                    console.display.ui_scale().max(1),
+                    input,
+                    focus,
+                );
             } else if content_changed
                 && (matches!(screen, 5 | 6) || (screen == 1 && (1..=4).contains(&step)))
             {

@@ -9,7 +9,7 @@ pub const fn focus_change_requires_structural_redraw(
     pointer_changed: bool,
     focus_changed: bool,
 ) -> bool {
-    focus_changed && !(matches!(screen, 1 | 5 | 6) && pointer_changed)
+    focus_changed && !((matches!(screen, 1 | 5 | 6) && pointer_changed) || screen == 7)
 }
 
 // ------------------------=
@@ -17,7 +17,7 @@ pub const fn focus_change_requires_structural_redraw(
 // DESC: Determines whether a clock transition affects visible content on the active system surface.
 // ------------------=
 pub const fn clock_change_requires_structural_redraw(screen: u8, clock_changed: bool) -> bool {
-    clock_changed && !matches!(screen, 1 | 2 | 3 | 4)
+    clock_changed && !matches!(screen, 1 | 2 | 3 | 4 | 7)
 }
 
 // ------------------------=
@@ -25,7 +25,7 @@ pub const fn clock_change_requires_structural_redraw(screen: u8, clock_changed: 
 // DESC: Selects a top-bar-only repaint when the visible desktop clock advances.
 // ------------------=
 pub const fn desktop_clock_requires_bounded_redraw(screen: u8, clock_changed: bool) -> bool {
-    matches!(screen, 2 | 3 | 4) && clock_changed
+    matches!(screen, 2 | 3 | 4 | 7) && clock_changed
 }
 
 // ------------------------=

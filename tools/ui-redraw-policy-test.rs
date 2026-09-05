@@ -2,10 +2,9 @@
 mod redraw;
 
 use redraw::{
-    authentication_controls_require_repaint,
-    clock_change_requires_structural_redraw, desktop_clock_requires_bounded_redraw,
-    desktop_window_move_requires_structural_redraw, focus_change_requires_structural_redraw,
-    onboarding_controls_require_repaint,
+    authentication_controls_require_repaint, clock_change_requires_structural_redraw,
+    desktop_clock_requires_bounded_redraw, desktop_window_move_requires_structural_redraw,
+    focus_change_requires_structural_redraw, onboarding_controls_require_repaint,
 };
 
 // ------------------------=
@@ -54,15 +53,36 @@ fn visible_clock_updates_are_damage_limited() {
 }
 
 // ------------------------=
+// FUNC: launcher_updates_are_damage_limited
+// DESC: Verifies launcher search, focus, and clock changes remain bounded to mutable overlay regions.
+// ------------------=
+fn launcher_updates_are_damage_limited() {
+    assert!(!focus_change_requires_structural_redraw(7, true, true));
+    assert!(!focus_change_requires_structural_redraw(7, false, true));
+    assert!(!clock_change_requires_structural_redraw(7, true));
+    assert!(desktop_clock_requires_bounded_redraw(7, true));
+}
+
+// ------------------------=
 // FUNC: desktop_drag_uses_bounded_damage
 // DESC: Verifies ordinary visible-window motion avoids a structural redraw while unsupported states retain the safe fallback.
 // ------------------=
 fn desktop_drag_uses_bounded_damage() {
-    assert!(!desktop_window_move_requires_structural_redraw(2, true, true, false));
-    assert!(desktop_window_move_requires_structural_redraw(2, true, false, false));
-    assert!(desktop_window_move_requires_structural_redraw(2, true, true, true));
-    assert!(desktop_window_move_requires_structural_redraw(3, true, true, false));
-    assert!(!desktop_window_move_requires_structural_redraw(2, false, true, false));
+    assert!(!desktop_window_move_requires_structural_redraw(
+        2, true, true, false
+    ));
+    assert!(desktop_window_move_requires_structural_redraw(
+        2, true, false, false
+    ));
+    assert!(desktop_window_move_requires_structural_redraw(
+        2, true, true, true
+    ));
+    assert!(desktop_window_move_requires_structural_redraw(
+        3, true, true, false
+    ));
+    assert!(!desktop_window_move_requires_structural_redraw(
+        2, false, true, false
+    ));
 }
 
 // ------------------------=
@@ -73,5 +93,6 @@ fn main() {
     onboarding_pointer_focus_is_bounded();
     non_pointer_focus_remains_structural();
     visible_clock_updates_are_damage_limited();
+    launcher_updates_are_damage_limited();
     desktop_drag_uses_bounded_damage();
 }

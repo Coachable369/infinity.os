@@ -7,8 +7,12 @@ use crate::storage::{
     StorageProvisioningPlan,
 };
 use crate::system::SystemSnapshot;
+use crate::ui::app_launcher::{
+    launcher_visible_count, launcher_visible_entry, LauncherAction, LAUNCHER_CATEGORIES,
+};
 use crate::ui::system_layout::{
-    DesktopTarget, OnboardingTarget, SettingsTarget, SystemLayout, SystemMenuTarget,
+    AppLauncherTarget, DesktopTarget, OnboardingTarget, SettingsTarget, SystemLayout,
+    SystemMenuTarget,
 };
 
 const OUTPUT_ROWS: usize = 6;
@@ -550,6 +554,7 @@ impl ConsoleRuntime {
             ConsoleMode::Installer => b"",
             ConsoleMode::Onboarding
             | ConsoleMode::Desktop
+            | ConsoleMode::AppLauncher
             | ConsoleMode::SystemMenu
             | ConsoleMode::Settings
             | ConsoleMode::Authentication
@@ -566,6 +571,7 @@ impl ConsoleRuntime {
             self.mode,
             ConsoleMode::Onboarding
                 | ConsoleMode::Desktop
+                | ConsoleMode::AppLauncher
                 | ConsoleMode::SystemMenu
                 | ConsoleMode::Settings
                 | ConsoleMode::Authentication
@@ -574,6 +580,7 @@ impl ConsoleRuntime {
             let screen = match self.mode {
                 ConsoleMode::Onboarding => 1,
                 ConsoleMode::Desktop => 2,
+                ConsoleMode::AppLauncher => 7,
                 ConsoleMode::SystemMenu => 3,
                 ConsoleMode::Settings => 4,
                 ConsoleMode::Authentication => 5,
@@ -659,9 +666,10 @@ impl ConsoleRuntime {
             ConsoleMode::Startup => self.input_startup(key),
             ConsoleMode::Console | ConsoleMode::Repair => self.input_console(key),
             ConsoleMode::Onboarding => self.input_onboarding(key),
-            ConsoleMode::Desktop | ConsoleMode::SystemMenu | ConsoleMode::Settings => {
-                self.input_shell(key)
-            }
+            ConsoleMode::Desktop
+            | ConsoleMode::AppLauncher
+            | ConsoleMode::SystemMenu
+            | ConsoleMode::Settings => self.input_shell(key),
             ConsoleMode::Authentication | ConsoleMode::Locked => self.input_authentication(key),
         }
         self.redraw();
@@ -936,6 +944,53 @@ impl ConsoleRuntime {
         self.mode = ConsoleMode::SystemMenu;
         self.shell_menu = menu.min(5);
         self.system_focus = 0;
+    }
+
+    // ------------------------=
+    // FUNC: open_app_launcher
+    // DESC: Opens the native installed application launcher with an empty live search query.
+    // ------------------=
+    fn open_app_launcher(&mut self) {
+        self.mode = ConsoleMode::AppLauncher;
+        self.system_focus = 0;
+        self.reset_input();
+    }
+
+    // ------------------------=
+    // FUNC: activate_launcher_action
+    // DESC: Routes one typed launcher entry into a real Home, Settings, or Console surface.
+    // ------------------=
+    fn activate_launcher_action(&mut self, action: LauncherAction) {
+        match action {
+            LauncherAction::Home(location) => {
+                self.home_window_visible = true;
+                self.home_previous_location = self.home_location;
+                self.home_location = location.min(8);
+                self.home_selected_item = None;
+                self.enter_desktop();
+            }
+            LauncherAction::Settings(section) => self.open_settings(section),
+            LauncherAction::Console => self.enter_console(),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: activate_launcher_focus
+    // DESC: Activates the currently focused filtered application or persistent category card.
+    // ------------------=
+    fn activate_launcher_focus(&mut self) {
+        let query = &self.command[..self.command_length];
+        let visible = launcher_visible_count(query);
+        if (1..=visible).contains(&self.system_focus) {
+            if let Some(entry) = launcher_visible_entry(query, self.system_focus - 1) {
+                self.activate_launcher_action(entry.action);
+            }
+            return;
+        }
+        let category = self.system_focus.saturating_sub(visible + 1);
+        if let Some(entry) = LAUNCHER_CATEGORIES.get(category) {
+            self.activate_launcher_action(entry.action);
+        }
     }
 
     // ------------------------=
@@ -1465,8 +1520,51 @@ impl ConsoleRuntime {
     // DESC: Navigates the top-bar menu and functional Settings pages using shared typed services.
     // ------------------=
     fn input_shell(&mut self, key: ConsoleKey) {
+        if self.mode == ConsoleMode::AppLauncher {
+            if matches!(key, ConsoleKey::Escape) {
+                self.enter_desktop();
+                return;
+            }
+            if matches!(key, ConsoleKey::Character(b'/')) && self.command_length == 0 {
+                self.system_focus = 0;
+                return;
+            }
+            if matches!(key, ConsoleKey::Character(_) | ConsoleKey::Backspace) {
+                if self.edit_system_text(key) {
+                    self.system_focus =
+                        if launcher_visible_count(&self.command[..self.command_length]) > 0 {
+                            1
+                        } else {
+                            0
+                        };
+                }
+                return;
+            }
+            let visible = launcher_visible_count(&self.command[..self.command_length]);
+            let focus_count = visible + LAUNCHER_CATEGORIES.len() + 1;
+            if matches!(
+                key,
+                ConsoleKey::Up | ConsoleKey::Left | ConsoleKey::Tab(true)
+            ) {
+                self.system_focus = (self.system_focus + focus_count - 1) % focus_count;
+                return;
+            }
+            if matches!(
+                key,
+                ConsoleKey::Down | ConsoleKey::Right | ConsoleKey::Tab(false)
+            ) {
+                self.system_focus = (self.system_focus + 1) % focus_count;
+                return;
+            }
+            if matches!(key, ConsoleKey::Enter) {
+                self.activate_launcher_focus();
+            }
+            return;
+        }
         if self.mode == ConsoleMode::Desktop {
-            if matches!(key, ConsoleKey::Enter | ConsoleKey::Tab(_)) {
+            if matches!(key, ConsoleKey::Character(b'/')) {
+                self.open_app_launcher();
+            } else if matches!(key, ConsoleKey::Enter | ConsoleKey::Tab(_)) {
                 self.open_shell_menu(0);
             }
             return;
@@ -2531,15 +2629,16 @@ impl ConsoleRuntime {
                     }
                     Some(DesktopTarget::TopMenu(menu)) => self.open_shell_menu(menu),
                     Some(DesktopTarget::Status(item)) => self.activate_status_item(item),
-                    Some(DesktopTarget::Dock(0)) => self.enter_console(),
-                    Some(DesktopTarget::Dock(1)) => {
+                    Some(DesktopTarget::Dock(0)) => self.open_app_launcher(),
+                    Some(DesktopTarget::Dock(1)) => self.enter_console(),
+                    Some(DesktopTarget::Dock(2)) => {
                         self.home_window_visible = true;
                     }
-                    Some(DesktopTarget::Dock(2)) => self.open_settings(5),
-                    Some(DesktopTarget::Dock(3 | 4)) => self.open_settings(3),
-                    Some(DesktopTarget::Dock(5)) => self.open_settings(0),
-                    Some(DesktopTarget::Dock(6)) => self.open_settings(4),
-                    Some(DesktopTarget::Dock(7)) => {
+                    Some(DesktopTarget::Dock(3)) => self.open_settings(5),
+                    Some(DesktopTarget::Dock(4 | 5)) => self.open_settings(3),
+                    Some(DesktopTarget::Dock(6)) => self.open_settings(0),
+                    Some(DesktopTarget::Dock(7)) => self.open_settings(4),
+                    Some(DesktopTarget::Dock(8)) => {
                         self.home_window_visible = true;
                         self.home_location = 8;
                         crate::output_text(b"[objects] recycle collection opened\n")
@@ -2555,6 +2654,29 @@ impl ConsoleRuntime {
                     }
                     _ => {}
                 }
+            }
+        } else if self.mode == ConsoleMode::AppLauncher {
+            let visible = launcher_visible_count(&self.command[..self.command_length]);
+            match layout.app_launcher_target(self.pointer_x, self.pointer_y, visible) {
+                AppLauncherTarget::Search => self.system_focus = 0,
+                AppLauncherTarget::App(index) => {
+                    self.system_focus = index + 1;
+                    if clicked {
+                        self.activate_launcher_focus();
+                    }
+                }
+                AppLauncherTarget::Category(index) => {
+                    self.system_focus = visible + index + 1;
+                    if clicked {
+                        self.activate_launcher_focus();
+                    }
+                }
+                AppLauncherTarget::DockToggle | AppLauncherTarget::Dismiss if clicked => {
+                    self.enter_desktop();
+                }
+                AppLauncherTarget::Panel
+                | AppLauncherTarget::DockToggle
+                | AppLauncherTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::SystemMenu {
             if clicked {
@@ -4842,7 +4964,10 @@ pub fn clock_tick() {
         if let Some(runtime) = (*slot).as_mut() {
             if !matches!(
                 runtime.mode,
-                ConsoleMode::Desktop | ConsoleMode::SystemMenu | ConsoleMode::Settings
+                ConsoleMode::Desktop
+                    | ConsoleMode::AppLauncher
+                    | ConsoleMode::SystemMenu
+                    | ConsoleMode::Settings
             ) {
                 return;
             }

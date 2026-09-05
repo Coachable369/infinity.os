@@ -29,6 +29,30 @@ pub enum DesktopTarget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppLauncherTarget {
+    Search,
+    App(usize),
+    Category(usize),
+    DockToggle,
+    Panel,
+    Dismiss,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AppLauncherGeometry {
+    pub panel: Rect,
+    pub search: Rect,
+    pub grid_left: usize,
+    pub grid_top: usize,
+    pub grid_cell_width: usize,
+    pub grid_row_height: usize,
+    pub category_left: usize,
+    pub category_top: usize,
+    pub category_width: usize,
+    pub category_height: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SystemMenuTarget {
     Item(usize),
     Dismiss,
@@ -397,9 +421,118 @@ impl SystemLayout {
         if rect(dock_left, dock_top, dock_width, dock_height).contains(point) {
             let icon_gap = dock_width / 9;
             let relative = point.x.saturating_sub(dock_left as i32) as usize;
-            return Some(DesktopTarget::Dock((relative / icon_gap).min(7)));
+            return Some(DesktopTarget::Dock((relative / icon_gap).min(8)));
         }
         None
+    }
+
+    // ------------------------=
+    // FUNC: app_launcher_geometry
+    // DESC: Derives the adaptive launcher panel, search, grid, and category geometry above the live dock.
+    // ------------------=
+    pub fn app_launcher_geometry(self) -> AppLauncherGeometry {
+        let top_bar = self.top_bar_height();
+        let dock_top = self.height.saturating_sub(82 * self.scale);
+        let panel_width = (self.width * 86 / 100)
+            .min(self.width.saturating_sub(32 * self.scale))
+            .max(1);
+        let available_height = dock_top.saturating_sub(top_bar + 24 * self.scale).max(1);
+        let height_percent = if self.height.saturating_mul(4) >= self.width.saturating_mul(3) {
+            84
+        } else {
+            72
+        };
+        let panel_height = (self.height * height_percent / 100)
+            .min(available_height)
+            .max(1);
+        let panel_left = self.width.saturating_sub(panel_width) / 2;
+        let panel_top = dock_top
+            .saturating_sub(14 * self.scale)
+            .saturating_sub(panel_height);
+        let panel = rect(panel_left, panel_top, panel_width, panel_height);
+        let search_width = panel_width * 62 / 100;
+        let search_height = (50 * self.scale)
+            .min(panel_height / 10)
+            .max(30 * self.scale);
+        let search = rect(
+            panel_left + panel_width.saturating_sub(search_width) / 2,
+            panel_top + panel_height * 6 / 100,
+            search_width,
+            search_height,
+        );
+        let inset = (42 * self.scale).min(panel_width / 16);
+        let inner_width = panel_width.saturating_sub(inset * 2);
+        let grid_top = panel_top + panel_height * 21 / 100;
+        let grid_row_height = panel_height * 22 / 100;
+        let category_left = panel_left + inset;
+        let category_width = inner_width / 5;
+        AppLauncherGeometry {
+            panel,
+            search,
+            grid_left: panel_left + inset,
+            grid_top,
+            grid_cell_width: inner_width / 6,
+            grid_row_height,
+            category_left,
+            category_top: panel_top + panel_height * 76 / 100,
+            category_width,
+            category_height: panel_height * 16 / 100,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: app_launcher_target
+    // DESC: Hit-tests the live launcher surface and dedicated dock toggle against shared rendered geometry.
+    // ------------------=
+    pub fn app_launcher_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        visible_apps: usize,
+    ) -> AppLauncherTarget {
+        let point = self.point(normalized_x, normalized_y);
+        let dock_width = self.width * 54 / 100;
+        let dock_height = 72 * self.scale;
+        let dock_left = self.width.saturating_sub(dock_width) / 2;
+        let dock_top = self.height.saturating_sub(dock_height + 10 * self.scale);
+        let icon_gap = dock_width / 9;
+        if rect(dock_left, dock_top, icon_gap, dock_height).contains(point) {
+            return AppLauncherTarget::DockToggle;
+        }
+        let geometry = self.app_launcher_geometry();
+        if !geometry.panel.contains(point) {
+            return AppLauncherTarget::Dismiss;
+        }
+        if geometry.search.contains(point) {
+            return AppLauncherTarget::Search;
+        }
+        for index in 0..visible_apps.min(12) {
+            let column = index % 6;
+            let row = index / 6;
+            if rect(
+                geometry.grid_left + column * geometry.grid_cell_width,
+                geometry.grid_top + row * geometry.grid_row_height,
+                geometry.grid_cell_width,
+                geometry.grid_row_height,
+            )
+            .contains(point)
+            {
+                return AppLauncherTarget::App(index);
+            }
+        }
+        for index in 0..5usize {
+            if rect(
+                geometry.category_left + index * geometry.category_width,
+                geometry.category_top,
+                geometry.category_width,
+                geometry.category_height,
+            )
+            .contains(point)
+            {
+                return AppLauncherTarget::Category(index);
+            }
+        }
+        AppLauncherTarget::Panel
     }
 
     // ------------------------=

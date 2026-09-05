@@ -1,6 +1,7 @@
 #[path = "../kernel/ui/mod.rs"]
 mod ui;
 
+use ui::app_launcher::{launcher_visible_count, launcher_visible_entry, LauncherAction};
 use ui::async_model::{AsyncError, AsyncState};
 use ui::clipboard::{ClipboardError, ClipboardKind};
 use ui::compositor::{CompositorError, SoftwareCompositor, SurfaceFrame};
@@ -19,8 +20,8 @@ use ui::skin::{
 };
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
-    resize_home_window, DesktopTarget, OnboardingTarget, SettingsTarget, SystemLayout,
-    SystemMenuTarget,
+    resize_home_window, AppLauncherTarget, DesktopTarget, OnboardingTarget, SettingsTarget,
+    SystemLayout, SystemMenuTarget,
 };
 use ui::trusted::{TrustedSurface, TrustedUiError};
 use ui::vector::{
@@ -40,6 +41,7 @@ fn main() {
     skin_test();
     focus_and_pointer_test();
     installed_system_hit_geometry_test();
+    app_launcher_behavior_test();
     scene_and_damage_test();
     surface_and_compositor_test();
     semantic_damage_storm_test();
@@ -49,6 +51,55 @@ fn main() {
     drag_path_test();
     service_foundation_test();
     println!("InfinityUI native runtime: PASS");
+}
+
+// ------------------------=
+// FUNC: app_launcher_behavior_test
+// DESC: Verifies typed search filtering and shared pointer geometry for the installed native launcher.
+// ------------------=
+fn app_launcher_behavior_test() {
+    assert_eq!(launcher_visible_count(b"sett"), 1);
+    assert_eq!(
+        launcher_visible_entry(b"SETT", 0).map(|entry| entry.action),
+        Some(LauncherAction::Settings(0))
+    );
+    assert_eq!(launcher_visible_count(b"not-an-installed-app"), 0);
+
+    let layout = SystemLayout::new(1920, 1080);
+    let geometry = layout.app_launcher_geometry();
+    let normalized = |x: i32, y: i32| (x * 1000 / 1920, y * 1000 / 1080);
+    let (search_x, search_y) = normalized(
+        geometry.search.x + geometry.search.width as i32 / 2,
+        geometry.search.y + geometry.search.height as i32 / 2,
+    );
+    assert_eq!(
+        layout.app_launcher_target(search_x, search_y, 12),
+        AppLauncherTarget::Search
+    );
+    let (app_x, app_y) = normalized(
+        geometry.grid_left as i32 + geometry.grid_cell_width as i32 / 2,
+        geometry.grid_top as i32 + geometry.grid_row_height as i32 / 2,
+    );
+    assert_eq!(
+        layout.app_launcher_target(app_x, app_y, 12),
+        AppLauncherTarget::App(0)
+    );
+    let (category_x, category_y) = normalized(
+        geometry.category_left as i32 + geometry.category_width as i32 / 2,
+        geometry.category_top as i32 + geometry.category_height as i32 / 2,
+    );
+    assert_eq!(
+        layout.app_launcher_target(category_x, category_y, 12),
+        AppLauncherTarget::Category(0)
+    );
+    assert_eq!(
+        layout.app_launcher_target(1, 500, 12),
+        AppLauncherTarget::Dismiss
+    );
+    assert_eq!(
+        layout.app_launcher_target(240, 960, 12),
+        AppLauncherTarget::DockToggle
+    );
 }
 
 // ------------------------=

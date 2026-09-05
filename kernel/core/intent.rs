@@ -6,6 +6,7 @@ pub enum ConsoleMode {
     Installer,
     Onboarding,
     Desktop,
+    AppLauncher,
     SystemMenu,
     Settings,
     Authentication,
