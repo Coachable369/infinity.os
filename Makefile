@@ -15,11 +15,12 @@ OVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-x86_64-code.fd
 AAVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-aarch64-code.fd))
 KERNEL_SOURCES := $(shell find kernel -type f)
 FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt)
-UI_ASSETS := $(shell find assets/skins -type f) assets/desktop/infinity-default-dark-wallpaper-v2.png assets/desktop/infinity-shell-wallpaper-v3.png assets/desktop/infinity-onboarding-wallpaper-v1.png
+UI_ASSETS := $(shell find assets/skins -type f) assets/desktop/infinity-default-dark-wallpaper-v2.png assets/desktop/infinity-shell-wallpaper-v3.png assets/desktop/infinity-onboarding-wallpaper-v1.png assets/desktop/infinity-topbar-icon-v1.png
 SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-console-background-v1.bmp \
 	assets/boot/infinity-emblem-v2.bmp \
 	assets/desktop/infinity-default-dark-wallpaper-v2.bmp assets/desktop/infinity-shell-wallpaper-v3.bmp \
-	assets/desktop/infinity-onboarding-wallpaper-v1.bmp assets/fonts/InfinityUI-Regular-24.atlas \
+	assets/desktop/infinity-onboarding-wallpaper-v1.bmp assets/desktop/infinity-topbar-icon-v1.bmp \
+	assets/fonts/InfinityUI-Regular-24.atlas \
 	assets/fonts/InfinityUI-Semibold-24.atlas assets/fonts/InfinityUI-Regular-24.metrics \
 	assets/fonts/InfinityUI-Semibold-24.metrics assets/fonts/InfinityUI-Regular-24.kern \
 	assets/fonts/InfinityUI-Semibold-24.kern assets/fonts/InfinityInstaller-Regular-24.atlas \

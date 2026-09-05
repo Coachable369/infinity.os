@@ -38,7 +38,8 @@ pub const fn desktop_window_move_requires_structural_redraw(
     window_visible: bool,
     window_maximized: bool,
 ) -> bool {
-    window_moved && !(screen == 2 && window_visible && !window_maximized)
+    let _ = (screen, window_visible, window_maximized);
+    window_moved
 }
 
 // ------------------------=

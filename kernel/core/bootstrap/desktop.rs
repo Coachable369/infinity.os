@@ -11,6 +11,9 @@ pub(super) const DESKTOP_BMP: &[u8] =
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const ONBOARDING_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-onboarding-wallpaper-v1.bmp");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const TOP_BAR_INFINITY_BMP: &[u8] =
+    include_bytes!("../../../assets/desktop/infinity-topbar-icon-v1.bmp");
 
 impl super::DisplayDevice {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -174,6 +177,26 @@ impl super::DisplayDevice {
             self.blend_color(x, y, 225, 247, 255, 220);
             self.blend_color(x + 1, y, 78, 200, 255, 140);
         }
+    }
+
+    // ------------------------=
+    // FUNC: top_bar_infinity_icon
+    // DESC: Draws the compact generated illuminated InfinityOS mark used by the desktop top bar.
+    // ------------------=
+    pub(super) fn top_bar_infinity_icon(&mut self, center_x: usize, center_y: usize, width: usize) {
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        {
+            let height = width * 3 / 4;
+            self.paint_bitmap_alpha_fit_rect(
+                TOP_BAR_INFINITY_BMP,
+                center_x.saturating_sub(width / 2),
+                center_y.saturating_sub(height / 2),
+                width,
+                height,
+            );
+        }
+        #[cfg(target_arch = "x86")]
+        self.small_infinity_mark(center_x, center_y, width);
     }
 }
 
@@ -867,7 +890,7 @@ impl super::DisplayDevice {
                 214,
             );
         }
-        self.small_infinity_mark(22 * scale, height / 2, 24 * scale);
+        self.top_bar_infinity_icon(21 * scale, height / 2, 17 * scale);
         self.ui_text_strong(
             40 * scale,
             height / 2 - 10 * scale,
@@ -2406,16 +2429,21 @@ impl super::DisplayDevice {
             return;
         }
         for inset in (1..=5usize).rev() {
+            let (shadow_red, shadow_green, shadow_blue, shadow_alpha) = if strong {
+                (5, 29, 42, 12)
+            } else {
+                (0, 4, 10, 18)
+            };
             self.fill_rounded_rect_alpha(
                 left.saturating_add(inset * 2),
                 top.saturating_add(inset * 2),
                 width,
                 height,
                 radius,
-                0,
-                4,
-                10,
-                18,
+                shadow_red,
+                shadow_green,
+                shadow_blue,
+                shadow_alpha,
             );
         }
         self.fill_rounded_rect_alpha(
@@ -2431,15 +2459,16 @@ impl super::DisplayDevice {
         );
         self.outline_rounded_rect(left, top, width, height, radius, 34, 83, 112);
         if width > 4 && height > 4 {
+            let inner_edge = if strong { (20, 61, 82) } else { (9, 35, 54) };
             self.outline_rounded_rect(
                 left + 2,
                 top + 2,
                 width - 4,
                 height - 4,
                 radius.saturating_sub(2),
-                9,
-                35,
-                54,
+                inner_edge.0,
+                inner_edge.1,
+                inner_edge.2,
             );
         }
     }
@@ -3683,6 +3712,7 @@ pub fn system_ui_present(
             } else if window_moved
                 && !structural_change_without_window
                 && !content_changed
+                && !window_move_requires_structural_redraw
                 && screen == 2
                 && console.last_system_screen == 2
                 && window_visible

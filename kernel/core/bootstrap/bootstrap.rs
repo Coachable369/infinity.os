@@ -902,7 +902,7 @@ impl ConsoleSurface {
     pub(super) fn save_menu(&mut self, menu_kind: usize) {
         let layout =
             crate::ui::system_layout::SystemLayout::new(self.display.width, self.display.height);
-        let (left, top, width, height, _) = layout.system_menu_geometry(menu_kind);
+        let (left, top, width, height) = layout.system_menu_damage_geometry(menu_kind);
         let width = width.min(600);
         let height = height.min(800);
         for y in 0..height {

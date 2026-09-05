@@ -384,6 +384,21 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: system_menu_damage_geometry
+    // DESC: Returns the complete saved region for a menu including its bounded glass shadow.
+    // ------------------=
+    pub fn system_menu_damage_geometry(self, menu_kind: usize) -> (usize, usize, usize, usize) {
+        let (x, y, width, height, _) = self.system_menu_geometry(menu_kind);
+        let shadow = 10 * self.scale;
+        (
+            x,
+            y,
+            width.saturating_add(shadow).min(self.width.saturating_sub(x)),
+            height.saturating_add(shadow).min(self.height.saturating_sub(y)),
+        )
+    }
+
+    // ------------------------=
     // FUNC: system_menu_target
     // DESC: Resolves menu rows from the active native menu geometry and identifies outside dismissal.
     // ------------------=

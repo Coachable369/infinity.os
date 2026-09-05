@@ -72,6 +72,10 @@ fn installed_system_hit_geometry_test() {
     );
     assert_eq!(square.system_menu_target(0, 50, 50), SystemMenuTarget::Item(0));
     assert_eq!(square.system_menu_target(0, 500, 500), SystemMenuTarget::Dismiss);
+    let (menu_x, menu_y, menu_w, menu_h, _) = square.system_menu_geometry(0);
+    let (damage_x, damage_y, damage_w, damage_h) = square.system_menu_damage_geometry(0);
+    assert_eq!((damage_x, damage_y), (menu_x, menu_y));
+    assert!(damage_w > menu_w && damage_h > menu_h);
     assert_eq!(square.settings_target(200, 335, false), Some(SettingsTarget::Section(0)));
     assert_eq!(square.settings_target(500, 390, false), Some(SettingsTarget::ContentRow(0)));
     assert_eq!(square.settings_target(815, 290, false), Some(SettingsTarget::WindowControl(1)));

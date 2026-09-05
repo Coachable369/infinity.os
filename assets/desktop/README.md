@@ -13,3 +13,8 @@ keeps low-detail negative space behind the onboarding card and moves the branded
 infinity light sculpture to the right side of the composition. Its preserved
 ImageGen source is in `../source-artwork/`; the 24-bit BMP is the deterministic
 framebuffer form embedded in both live and freshly installed kernels.
+
+`infinity-topbar-icon-v1.png` is the generated transparent master for the
+compact desktop brand mark. `infinity-topbar-icon-v1.bmp` preserves the alpha
+channel in a deterministic 32-bit framebuffer asset so the illuminated ribbon
+composites cleanly over every top-bar state without a baked backdrop.
