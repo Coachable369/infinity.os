@@ -354,6 +354,7 @@ impl super::DisplayDevice {
         selected_user: usize,
         input: &[u8],
         focus: usize,
+        paint_header: bool,
     ) {
         let fit = (self.width.saturating_mul(1000) / 1536)
             .min(self.height.saturating_mul(1000) / 1024)
@@ -366,29 +367,31 @@ impl super::DisplayDevice {
         let sy = |value: usize| offset_y + value.saturating_mul(fit) / 1000;
         let sw = |value: usize| value.saturating_mul(fit) / 1000;
 
-        let top_height = sw(64).max(38);
-        self.fill_rect_alpha(0, 0, self.width, top_height, 1, 6, 13, 238);
-        self.outline_rect(0, top_height.saturating_sub(1), self.width, 1, 15, 31, 48);
-        self.small_infinity_mark(sx(57), top_height / 2, sw(48));
-        self.ui_text(
-            sx(92),
-            top_height / 2 - UI_FONT_CELL_HEIGHT / 2,
-            b"WELCOME TO I N F I N I T Y O S",
-            239,
-            244,
-            249,
-            1,
-        );
-        self.ui_text(
-            sx(1302),
-            top_height / 2 - UI_FONT_CELL_HEIGHT / 2,
-            b"MACHINE NAME",
-            229,
-            235,
-            241,
-            1,
-        );
-        self.authentication_icon(sx(1497), top_height / 2, 1, sw(21), false);
+        if paint_header {
+            let top_height = sw(64).max(38);
+            self.fill_rect_alpha(0, 0, self.width, top_height, 1, 6, 13, 238);
+            self.outline_rect(0, top_height.saturating_sub(1), self.width, 1, 15, 31, 48);
+            self.small_infinity_mark(sx(57), top_height / 2, sw(48));
+            self.ui_text(
+                sx(92),
+                top_height / 2 - UI_FONT_CELL_HEIGHT / 2,
+                b"WELCOME TO I N F I N I T Y O S",
+                239,
+                244,
+                249,
+                1,
+            );
+            self.ui_text(
+                sx(1302),
+                top_height / 2 - UI_FONT_CELL_HEIGHT / 2,
+                b"MACHINE NAME",
+                229,
+                235,
+                241,
+                1,
+            );
+            self.authentication_icon(sx(1497), top_height / 2, 1, sw(21), false);
+        }
 
         let card_x = sx(54);
         let card_y = sy(123);
@@ -628,6 +631,41 @@ impl super::DisplayDevice {
                 1,
             );
         }
+    }
+
+    // ------------------------=
+    // FUNC: authentication_focus_controls
+    // DESC: Rebuilds only the login card and utility tray after pointer hover changes focus.
+    // ------------------=
+    pub(super) fn authentication_focus_controls(
+        &mut self,
+        locked: bool,
+        selected_user: usize,
+        input: &[u8],
+        focus: usize,
+    ) {
+        let fit = (self.width.saturating_mul(1000) / 1536)
+            .min(self.height.saturating_mul(1000) / 1024)
+            .max(1);
+        let content_width = 1536usize.saturating_mul(fit) / 1000;
+        let content_height = 1024usize.saturating_mul(fit) / 1000;
+        let offset_x = self.width.saturating_sub(content_width) / 2;
+        let offset_y = self.height.saturating_sub(content_height) / 2;
+        let sx = |value: usize| offset_x + value.saturating_mul(fit) / 1000;
+        let sy = |value: usize| offset_y + value.saturating_mul(fit) / 1000;
+        let sw = |value: usize| value.saturating_mul(fit) / 1000;
+        let card_x = sx(54);
+        let card_y = sy(123);
+        let card_w = sw(521);
+        let card_h = sw(754);
+        let tray_x = sx(529);
+        let tray_y = sy(914);
+        let tray_w = sw(478);
+        let tray_h = sw(90);
+
+        self.paint_authentication_background_rect(card_x, card_y, card_w, card_h);
+        self.paint_authentication_background_rect(tray_x, tray_y, tray_w, tray_h);
+        self.authentication_frame(locked, selected_user, input, focus, false);
     }
 
     // ------------------------=
@@ -2109,7 +2147,7 @@ impl super::DisplayDevice {
         self.mark_dirty_rect(0, 0, self.width, self.height);
         if matches!(screen, 5 | 6) {
             self.paint_authentication_background();
-            self.authentication_frame(screen == 6, step, input, focus);
+            self.authentication_frame(screen == 6, step, input, focus, true);
             return;
         }
         if screen == 1 {
@@ -4127,6 +4165,14 @@ pub fn system_ui_present(
                 console
                     .display
                     .onboarding_focus_controls(step, input, masked, focus);
+            } else if crate::ui::redraw::authentication_controls_require_repaint(
+                screen,
+                pointer_changed,
+                focus_changed,
+            ) {
+                console
+                    .display
+                    .authentication_focus_controls(screen == 6, step, input, focus);
             } else if content_changed
                 && (matches!(screen, 5 | 6) || (screen == 1 && (1..=4).contains(&step)))
             {

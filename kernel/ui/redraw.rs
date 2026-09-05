@@ -9,7 +9,7 @@ pub const fn focus_change_requires_structural_redraw(
     pointer_changed: bool,
     focus_changed: bool,
 ) -> bool {
-    focus_changed && !(screen == 1 && pointer_changed)
+    focus_changed && !(matches!(screen, 1 | 5 | 6) && pointer_changed)
 }
 
 // ------------------------=
@@ -51,6 +51,18 @@ pub const fn onboarding_controls_require_repaint(
     focus_changed: bool,
 ) -> bool {
     screen == 1 && pointer_changed && focus_changed
+}
+
+// ------------------------=
+// FUNC: authentication_controls_require_repaint
+// DESC: Selects bounded login-card and utility-tray repainting for pointer-driven focus transitions.
+// ------------------=
+pub const fn authentication_controls_require_repaint(
+    screen: u8,
+    pointer_changed: bool,
+    focus_changed: bool,
+) -> bool {
+    matches!(screen, 5 | 6) && pointer_changed && focus_changed
 }
 
 // ------------------------=

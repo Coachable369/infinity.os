@@ -2,6 +2,7 @@
 mod redraw;
 
 use redraw::{
+    authentication_controls_require_repaint,
     clock_change_requires_structural_redraw, desktop_clock_requires_bounded_redraw,
     desktop_window_move_requires_structural_redraw, focus_change_requires_structural_redraw,
     onboarding_controls_require_repaint,
@@ -14,6 +15,10 @@ use redraw::{
 fn onboarding_pointer_focus_is_bounded() {
     assert!(!focus_change_requires_structural_redraw(1, true, true));
     assert!(onboarding_controls_require_repaint(1, true, true));
+    assert!(!focus_change_requires_structural_redraw(5, true, true));
+    assert!(authentication_controls_require_repaint(5, true, true));
+    assert!(!focus_change_requires_structural_redraw(6, true, true));
+    assert!(authentication_controls_require_repaint(6, true, true));
 }
 
 // ------------------------=
@@ -23,8 +28,11 @@ fn onboarding_pointer_focus_is_bounded() {
 fn non_pointer_focus_remains_structural() {
     assert!(focus_change_requires_structural_redraw(1, false, true));
     assert!(focus_change_requires_structural_redraw(2, true, true));
+    assert!(focus_change_requires_structural_redraw(5, false, true));
     assert!(!onboarding_controls_require_repaint(1, false, true));
     assert!(!onboarding_controls_require_repaint(2, true, true));
+    assert!(!authentication_controls_require_repaint(5, false, true));
+    assert!(!authentication_controls_require_repaint(2, true, true));
 }
 
 // ------------------------=
