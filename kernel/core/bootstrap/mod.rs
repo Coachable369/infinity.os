@@ -58,10 +58,26 @@ impl PresentRegion {
     // ------------------=
     const fn union(self, other: Self) -> Self {
         Self {
-            left: if self.left < other.left { self.left } else { other.left },
-            top: if self.top < other.top { self.top } else { other.top },
-            right: if self.right > other.right { self.right } else { other.right },
-            bottom: if self.bottom > other.bottom { self.bottom } else { other.bottom },
+            left: if self.left < other.left {
+                self.left
+            } else {
+                other.left
+            },
+            top: if self.top < other.top {
+                self.top
+            } else {
+                other.top
+            },
+            right: if self.right > other.right {
+                self.right
+            } else {
+                other.right
+            },
+            bottom: if self.bottom > other.bottom {
+                self.bottom
+            } else {
+                other.bottom
+            },
         }
     }
 
@@ -290,6 +306,12 @@ struct ConsoleSurface {
     last_desktop_item_positions: [[i32; 2]; 7],
     last_system_clock: crate::storage::DateTimeConfiguration,
     last_settings_maximized: bool,
+    last_app_window_x: i32,
+    last_app_window_y: i32,
+    last_app_window_width: i32,
+    last_app_window_height: i32,
+    last_app_window_maximized: bool,
+    last_editor_saved: bool,
     system_ui_active: bool,
     cursor_saved: bool,
     cursor_left: usize,

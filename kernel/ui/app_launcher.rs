@@ -4,7 +4,8 @@
 pub enum LauncherAction {
     Home(usize),
     Settings(usize),
-    Console,
+    TextEditor,
+    CommandWindow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,6 +14,59 @@ pub struct LauncherEntry {
     pub icon_role: usize,
     pub action: LauncherAction,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DockAction {
+    Launcher,
+    Files,
+    Settings,
+    About,
+    AiVoice,
+    Appearance,
+    Network,
+    Trash,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DockEntry {
+    pub icon_kind: usize,
+    pub action: DockAction,
+}
+
+pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
+    DockEntry {
+        icon_kind: usize::MAX,
+        action: DockAction::Launcher,
+    },
+    DockEntry {
+        icon_kind: 1,
+        action: DockAction::Files,
+    },
+    DockEntry {
+        icon_kind: 2,
+        action: DockAction::Settings,
+    },
+    DockEntry {
+        icon_kind: 3,
+        action: DockAction::About,
+    },
+    DockEntry {
+        icon_kind: 4,
+        action: DockAction::AiVoice,
+    },
+    DockEntry {
+        icon_kind: 5,
+        action: DockAction::Appearance,
+    },
+    DockEntry {
+        icon_kind: 6,
+        action: DockAction::Network,
+    },
+    DockEntry {
+        icon_kind: 7,
+        action: DockAction::Trash,
+    },
+];
 
 pub const LAUNCHER_APPS: [LauncherEntry; 12] = [
     LauncherEntry {
@@ -46,9 +100,9 @@ pub const LAUNCHER_APPS: [LauncherEntry; 12] = [
         action: LauncherAction::Settings(0),
     },
     LauncherEntry {
-        label: b"Appearance",
-        icon_role: 27,
-        action: LauncherAction::Settings(1),
+        label: b"Text Editor",
+        icon_role: 49,
+        action: LauncherAction::TextEditor,
     },
     LauncherEntry {
         label: b"AI & Voice",
@@ -71,9 +125,9 @@ pub const LAUNCHER_APPS: [LauncherEntry; 12] = [
         action: LauncherAction::Settings(7),
     },
     LauncherEntry {
-        label: b"Console",
+        label: b"Command Window",
         icon_role: 25,
-        action: LauncherAction::Console,
+        action: LauncherAction::CommandWindow,
     },
 ];
 
@@ -96,7 +150,7 @@ pub const LAUNCHER_CATEGORIES: [LauncherEntry; 5] = [
     LauncherEntry {
         label: b"Utilities",
         icon_role: 25,
-        action: LauncherAction::Console,
+        action: LauncherAction::CommandWindow,
     },
     LauncherEntry {
         label: b"Personal Space",

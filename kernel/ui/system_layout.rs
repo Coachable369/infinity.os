@@ -40,6 +40,29 @@ pub enum AppLauncherTarget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DesktopAppWindowTarget {
+    Title,
+    Minimize,
+    Maximize,
+    Close,
+    NewDocument,
+    SaveDocument,
+    Content,
+    None,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DesktopAppWindowGeometry {
+    pub window: Rect,
+    pub title: Rect,
+    pub minimize: Rect,
+    pub maximize: Rect,
+    pub close: Rect,
+    pub toolbar: Rect,
+    pub content: Rect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AppLauncherGeometry {
     pub panel: Rect,
     pub search: Rect,
@@ -475,9 +498,11 @@ impl SystemLayout {
         let dock_left = self.width.saturating_sub(dock_width) / 2;
         let dock_top = self.height.saturating_sub(dock_height + 10 * self.scale);
         if rect(dock_left, dock_top, dock_width, dock_height).contains(point) {
-            let icon_gap = dock_width / 9;
+            let icon_gap = dock_width / super::app_launcher::DESKTOP_DOCK_ENTRIES.len();
             let relative = point.x.saturating_sub(dock_left as i32) as usize;
-            return Some(DesktopTarget::Dock((relative / icon_gap).min(8)));
+            return Some(DesktopTarget::Dock(
+                (relative / icon_gap).min(super::app_launcher::DESKTOP_DOCK_ENTRIES.len() - 1),
+            ));
         }
         None
     }
@@ -557,7 +582,7 @@ impl SystemLayout {
         let dock_height = 72 * self.scale;
         let dock_left = self.width.saturating_sub(dock_width) / 2;
         let dock_top = self.height.saturating_sub(dock_height + 10 * self.scale);
-        let icon_gap = dock_width / 9;
+        let icon_gap = dock_width / super::app_launcher::DESKTOP_DOCK_ENTRIES.len();
         if rect(dock_left, dock_top, icon_gap, dock_height).contains(point) {
             return AppLauncherTarget::DockToggle;
         }
@@ -605,6 +630,137 @@ impl SystemLayout {
             }
         }
         AppLauncherTarget::Panel
+    }
+
+    // ------------------------=
+    // FUNC: desktop_app_window_geometry
+    // DESC: Derives shared native Text Editor and Command Window bounds from normalized window state.
+    // ------------------=
+    pub fn desktop_app_window_geometry(
+        self,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        maximized: bool,
+    ) -> DesktopAppWindowGeometry {
+        let (left, top, width, height) = if maximized {
+            let inset = 10 * self.scale;
+            let top = self.top_bar_height() + inset;
+            (
+                inset,
+                top,
+                self.width.saturating_sub(inset * 2),
+                self.height.saturating_sub(top + 92 * self.scale),
+            )
+        } else {
+            (
+                self.width * window_x.clamp(0, 900) as usize / 1000,
+                self.height * window_y.clamp(50, 850) as usize / 1000,
+                (self.width * window_width.clamp(420, 900) as usize / 1000).min(self.width),
+                (self.height * window_height.clamp(360, 820) as usize / 1000).min(self.height),
+            )
+        };
+        let title_height = 48 * self.scale;
+        let control_size = 26 * self.scale;
+        let control_gap = 8 * self.scale;
+        let close_left = left + width.saturating_sub(control_size + 12 * self.scale);
+        let maximize_left = close_left.saturating_sub(control_size + control_gap);
+        let minimize_left = maximize_left.saturating_sub(control_size + control_gap);
+        let toolbar_top = top + title_height;
+        let toolbar_height = 42 * self.scale;
+        DesktopAppWindowGeometry {
+            window: rect(left, top, width, height),
+            title: rect(
+                left + 12 * self.scale,
+                top,
+                minimize_left.saturating_sub(left + 20 * self.scale),
+                title_height,
+            ),
+            minimize: rect(
+                minimize_left,
+                top + 11 * self.scale,
+                control_size,
+                control_size,
+            ),
+            maximize: rect(
+                maximize_left,
+                top + 11 * self.scale,
+                control_size,
+                control_size,
+            ),
+            close: rect(
+                close_left,
+                top + 11 * self.scale,
+                control_size,
+                control_size,
+            ),
+            toolbar: rect(left, toolbar_top, width, toolbar_height),
+            content: rect(
+                left + 16 * self.scale,
+                toolbar_top + toolbar_height + 12 * self.scale,
+                width.saturating_sub(32 * self.scale),
+                height.saturating_sub(title_height + toolbar_height + 28 * self.scale),
+            ),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: desktop_app_window_target
+    // DESC: Resolves native app title, controls, toolbar actions, and content using rendered geometry.
+    // ------------------=
+    pub fn desktop_app_window_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        maximized: bool,
+        text_editor: bool,
+    ) -> DesktopAppWindowTarget {
+        let point = self.point(normalized_x, normalized_y);
+        let geometry = self.desktop_app_window_geometry(
+            window_x,
+            window_y,
+            window_width,
+            window_height,
+            maximized,
+        );
+        let padding = 6 * self.scale;
+        for (target, control) in [
+            (DesktopAppWindowTarget::Close, geometry.close),
+            (DesktopAppWindowTarget::Maximize, geometry.maximize),
+            (DesktopAppWindowTarget::Minimize, geometry.minimize),
+        ] {
+            if rect(
+                (control.x.max(0) as usize).saturating_sub(padding),
+                (control.y.max(0) as usize).saturating_sub(padding),
+                control.width as usize + padding * 2,
+                control.height as usize + padding * 2,
+            )
+            .contains(point)
+            {
+                return target;
+            }
+        }
+        if geometry.title.contains(point) {
+            return DesktopAppWindowTarget::Title;
+        }
+        if text_editor && geometry.toolbar.contains(point) {
+            let relative = point.x.saturating_sub(geometry.toolbar.x) as usize;
+            if relative < 108 * self.scale {
+                return DesktopAppWindowTarget::NewDocument;
+            }
+            if relative < 216 * self.scale {
+                return DesktopAppWindowTarget::SaveDocument;
+            }
+        }
+        if geometry.content.contains(point) {
+            return DesktopAppWindowTarget::Content;
+        }
+        DesktopAppWindowTarget::None
     }
 
     // ------------------------=

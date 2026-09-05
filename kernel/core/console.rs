@@ -8,16 +8,25 @@ use crate::storage::{
 };
 use crate::system::SystemSnapshot;
 use crate::ui::app_launcher::{
-    launcher_visible_count, launcher_visible_entry, LauncherAction, LAUNCHER_CATEGORIES,
+    launcher_visible_count, launcher_visible_entry, DockAction, LauncherAction,
+    DESKTOP_DOCK_ENTRIES, LAUNCHER_CATEGORIES,
 };
 use crate::ui::system_layout::{
-    AppLauncherTarget, DesktopTarget, OnboardingTarget, SettingsTarget, SystemLayout,
-    SystemMenuTarget,
+    AppLauncherTarget, DesktopAppWindowTarget, DesktopTarget, OnboardingTarget, SettingsTarget,
+    SystemLayout, SystemMenuTarget,
 };
+use crate::ui::text_editor::TextDocument;
 
 const OUTPUT_ROWS: usize = 6;
 const LINE_CAPACITY: usize = 96;
 const COMMAND_CAPACITY: usize = 160;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DesktopAppKind {
+    None,
+    TextEditor,
+    CommandWindow,
+}
 
 #[derive(Clone, Copy)]
 struct TimeZoneChoice {
@@ -353,6 +362,20 @@ struct ConsoleRuntime {
     home_note_previous_location: usize,
     home_clipboard_note: bool,
     desktop_clock: DateTimeConfiguration,
+    desktop_app: DesktopAppKind,
+    app_window_x: i32,
+    app_window_y: i32,
+    app_window_width: i32,
+    app_window_height: i32,
+    app_window_maximized: bool,
+    app_window_restore_x: i32,
+    app_window_restore_y: i32,
+    app_window_restore_width: i32,
+    app_window_restore_height: i32,
+    app_window_dragging: bool,
+    app_window_drag_offset_x: i32,
+    app_window_drag_offset_y: i32,
+    editor_document: TextDocument,
 }
 
 impl ConsoleRuntime {
@@ -437,6 +460,20 @@ impl ConsoleRuntime {
             home_note_previous_location: 0,
             home_clipboard_note: false,
             desktop_clock: installer_date_time,
+            desktop_app: DesktopAppKind::None,
+            app_window_x: 190,
+            app_window_y: 160,
+            app_window_width: 600,
+            app_window_height: 620,
+            app_window_maximized: false,
+            app_window_restore_x: 190,
+            app_window_restore_y: 160,
+            app_window_restore_width: 600,
+            app_window_restore_height: 620,
+            app_window_dragging: false,
+            app_window_drag_offset_x: 0,
+            app_window_drag_offset_y: 0,
+            editor_document: TextDocument::new(),
         }
     }
 
@@ -495,6 +532,10 @@ impl ConsoleRuntime {
     // DESC: Implements the enter console operation.
     // ------------------=
     fn enter_console(&mut self) {
+        if !self.current_session.is_zero() {
+            self.open_command_window();
+            return;
+        }
         self.mode = ConsoleMode::Console;
         self.reset_input();
         self.output.clear();
@@ -545,6 +586,9 @@ impl ConsoleRuntime {
     // DESC: Implements the prompt operation.
     // ------------------=
     fn prompt(&self) -> &'static [u8] {
+        if self.mode == ConsoleMode::Desktop && self.desktop_app == DesktopAppKind::CommandWindow {
+            return b"inf > ";
+        }
         match self.mode {
             // The startup surface draws its infinity mark directly because
             // the compact bitmap font is intentionally ASCII-only.
@@ -579,7 +623,11 @@ impl ConsoleRuntime {
         ) {
             let screen = match self.mode {
                 ConsoleMode::Onboarding => 1,
-                ConsoleMode::Desktop => 2,
+                ConsoleMode::Desktop => match self.desktop_app {
+                    DesktopAppKind::CommandWindow => 8,
+                    DesktopAppKind::TextEditor => 9,
+                    DesktopAppKind::None => 2,
+                },
                 ConsoleMode::AppLauncher => 7,
                 ConsoleMode::SystemMenu => 3,
                 ConsoleMode::Settings => 4,
@@ -598,7 +646,9 @@ impl ConsoleRuntime {
                         .copy_from_slice(machine.display_name.as_bytes());
                 }
             }
-            let displayed_input = if self.mode == ConsoleMode::Settings && !self.settings_editing {
+            let displayed_input = if self.desktop_app == DesktopAppKind::TextEditor {
+                self.editor_document.bytes()
+            } else if self.mode == ConsoleMode::Settings && !self.settings_editing {
                 &settings_value[..settings_value_length]
             } else {
                 &self.command[..self.command_length]
@@ -629,6 +679,15 @@ impl ConsoleRuntime {
                 self.desktop_clock,
                 self.settings_maximized,
                 self.shell_menu,
+                &self.output.lines,
+                &self.output.lengths,
+                self.output.count,
+                self.app_window_x,
+                self.app_window_y,
+                self.app_window_width,
+                self.app_window_height,
+                self.app_window_maximized,
+                self.editor_document.is_saved(),
             );
             return;
         }
@@ -661,6 +720,18 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        if self.mode == ConsoleMode::Desktop {
+            if self.desktop_app == DesktopAppKind::CommandWindow {
+                self.input_console(key);
+                self.redraw();
+                return;
+            }
+            if self.desktop_app == DesktopAppKind::TextEditor {
+                self.input_text_editor(key);
+                self.redraw();
+                return;
+            }
+        }
         match self.mode {
             ConsoleMode::Installer => self.input_installer(key),
             ConsoleMode::Startup => self.input_startup(key),
@@ -673,6 +744,26 @@ impl ConsoleRuntime {
             ConsoleMode::Authentication | ConsoleMode::Locked => self.input_authentication(key),
         }
         self.redraw();
+    }
+
+    // ------------------------=
+    // FUNC: input_text_editor
+    // DESC: Applies bounded multiline editing and native close keyboard behavior.
+    // ------------------=
+    fn input_text_editor(&mut self, key: ConsoleKey) {
+        match key {
+            ConsoleKey::Character(character) if (32..=126).contains(&character) => {
+                let _ = self.editor_document.insert(character);
+            }
+            ConsoleKey::Enter => {
+                let _ = self.editor_document.insert(b'\n');
+            }
+            ConsoleKey::Backspace => {
+                let _ = self.editor_document.backspace();
+            }
+            ConsoleKey::Escape => self.enter_desktop(),
+            _ => {}
+        }
     }
 
     // ------------------------=
@@ -707,6 +798,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn enter_desktop(&mut self) {
         self.mode = ConsoleMode::Desktop;
+        self.desktop_app = DesktopAppKind::None;
         self.system_focus = 0;
         self.shell_menu = 0;
         self.settings_editing = false;
@@ -717,6 +809,42 @@ impl ConsoleRuntime {
         self.refresh_desktop_items();
         self.reset_input();
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
+    }
+
+    // ------------------------=
+    // FUNC: open_text_editor
+    // DESC: Opens the native multiline Text Editor as an authenticated desktop window.
+    // ------------------=
+    fn open_text_editor(&mut self) {
+        self.enter_desktop();
+        self.desktop_app = DesktopAppKind::TextEditor;
+        self.app_window_dragging = false;
+    }
+
+    // ------------------------=
+    // FUNC: open_command_window
+    // DESC: Opens the native Infinity Console language inside a desktop command window.
+    // ------------------=
+    fn open_command_window(&mut self) {
+        self.enter_desktop();
+        self.desktop_app = DesktopAppKind::CommandWindow;
+        self.app_window_dragging = false;
+        self.reset_input();
+        self.output.clear();
+        self.output.write_line(b"Infinity Command Window");
+        self.output
+            .write_line(b"Type help or describe what you want.");
+        crate::output_text(b"[ui] desktop command window opened\n");
+    }
+
+    // ------------------------=
+    // FUNC: close_desktop_app
+    // DESC: Dismisses the active desktop application without changing session or desktop state.
+    // ------------------=
+    fn close_desktop_app(&mut self) {
+        self.desktop_app = DesktopAppKind::None;
+        self.app_window_dragging = false;
+        self.reset_input();
     }
 
     // ------------------------=
@@ -958,7 +1086,7 @@ impl ConsoleRuntime {
 
     // ------------------------=
     // FUNC: activate_launcher_action
-    // DESC: Routes one typed launcher entry into a real Home, Settings, or Console surface.
+    // DESC: Routes one typed launcher entry into a real Home, Settings, Text Editor, or Command surface.
     // ------------------=
     fn activate_launcher_action(&mut self, action: LauncherAction) {
         match action {
@@ -970,7 +1098,8 @@ impl ConsoleRuntime {
                 self.enter_desktop();
             }
             LauncherAction::Settings(section) => self.open_settings(section),
-            LauncherAction::Console => self.enter_console(),
+            LauncherAction::TextEditor => self.open_text_editor(),
+            LauncherAction::CommandWindow => self.open_command_window(),
         }
     }
 
@@ -2513,7 +2642,68 @@ impl ConsoleRuntime {
                 }
             }
         } else if self.mode == ConsoleMode::Desktop {
-            if let Some(corner) = self.home_window_resizing {
+            if self.app_window_dragging {
+                if left_button {
+                    self.app_window_x = (self.pointer_x - self.app_window_drag_offset_x)
+                        .clamp(0, 1000i32.saturating_sub(self.app_window_width));
+                    self.app_window_y = (self.pointer_y - self.app_window_drag_offset_y)
+                        .clamp(50, 900i32.saturating_sub(self.app_window_height));
+                }
+                if released {
+                    self.app_window_dragging = false;
+                }
+            } else if self.desktop_app != DesktopAppKind::None {
+                if clicked {
+                    match layout.desktop_app_window_target(
+                        self.pointer_x,
+                        self.pointer_y,
+                        self.app_window_x,
+                        self.app_window_y,
+                        self.app_window_width,
+                        self.app_window_height,
+                        self.app_window_maximized,
+                        self.desktop_app == DesktopAppKind::TextEditor,
+                    ) {
+                        DesktopAppWindowTarget::Title if !self.app_window_maximized => {
+                            self.app_window_dragging = true;
+                            self.app_window_drag_offset_x = self.pointer_x - self.app_window_x;
+                            self.app_window_drag_offset_y = self.pointer_y - self.app_window_y;
+                        }
+                        DesktopAppWindowTarget::Minimize | DesktopAppWindowTarget::Close => {
+                            self.close_desktop_app();
+                        }
+                        DesktopAppWindowTarget::Maximize => {
+                            if self.app_window_maximized {
+                                self.app_window_x = self.app_window_restore_x;
+                                self.app_window_y = self.app_window_restore_y;
+                                self.app_window_width = self.app_window_restore_width;
+                                self.app_window_height = self.app_window_restore_height;
+                            } else {
+                                self.app_window_restore_x = self.app_window_x;
+                                self.app_window_restore_y = self.app_window_y;
+                                self.app_window_restore_width = self.app_window_width;
+                                self.app_window_restore_height = self.app_window_height;
+                            }
+                            self.app_window_maximized = !self.app_window_maximized;
+                        }
+                        DesktopAppWindowTarget::NewDocument => {
+                            self.editor_document.clear();
+                        }
+                        DesktopAppWindowTarget::SaveDocument => {
+                            self.editor_document.save();
+                            crate::output_text(b"[editor] document saved\n");
+                        }
+                        DesktopAppWindowTarget::None => match self.desktop_target(layout) {
+                            Some(DesktopTarget::InfinityMenu) => self.open_shell_menu(0),
+                            Some(DesktopTarget::TopMenu(menu)) => self.open_shell_menu(menu),
+                            Some(DesktopTarget::Status(item)) => self.activate_status_item(item),
+                            Some(DesktopTarget::Dock(0)) => self.open_app_launcher(),
+                            _ => {}
+                        },
+                        DesktopAppWindowTarget::Content | DesktopAppWindowTarget::Title => {}
+                    }
+                }
+            } else if let Some(corner) = self.home_window_resizing {
                 if released {
                     let resized = crate::ui::system_layout::resize_home_window(
                         self.home_window_x,
@@ -2629,19 +2819,22 @@ impl ConsoleRuntime {
                     }
                     Some(DesktopTarget::TopMenu(menu)) => self.open_shell_menu(menu),
                     Some(DesktopTarget::Status(item)) => self.activate_status_item(item),
-                    Some(DesktopTarget::Dock(0)) => self.open_app_launcher(),
-                    Some(DesktopTarget::Dock(1)) => self.enter_console(),
-                    Some(DesktopTarget::Dock(2)) => {
-                        self.home_window_visible = true;
-                    }
-                    Some(DesktopTarget::Dock(3)) => self.open_settings(5),
-                    Some(DesktopTarget::Dock(4 | 5)) => self.open_settings(3),
-                    Some(DesktopTarget::Dock(6)) => self.open_settings(0),
-                    Some(DesktopTarget::Dock(7)) => self.open_settings(4),
-                    Some(DesktopTarget::Dock(8)) => {
-                        self.home_window_visible = true;
-                        self.home_location = 8;
-                        crate::output_text(b"[objects] recycle collection opened\n")
+                    Some(DesktopTarget::Dock(index)) => {
+                        match DESKTOP_DOCK_ENTRIES.get(index).map(|entry| entry.action) {
+                            Some(DockAction::Launcher) => self.open_app_launcher(),
+                            Some(DockAction::Files) => self.home_window_visible = true,
+                            Some(DockAction::Settings) => self.open_settings(0),
+                            Some(DockAction::About) => self.open_settings(7),
+                            Some(DockAction::AiVoice) => self.open_settings(3),
+                            Some(DockAction::Appearance) => self.open_settings(1),
+                            Some(DockAction::Network) => self.open_settings(5),
+                            Some(DockAction::Trash) => {
+                                self.home_window_visible = true;
+                                self.home_location = 8;
+                                crate::output_text(b"[objects] recycle collection opened\n")
+                            }
+                            None => {}
+                        }
                     }
                     None => {
                         if let Some(item) = self.desktop_item_at_pointer() {
@@ -3699,6 +3892,12 @@ impl ConsoleRuntime {
             SystemOperation::SystemBootStatus => self.system_boot(),
             SystemOperation::MemoryStatus => self.memory_status(),
             SystemOperation::ExitConsole => {
+                if self.mode == ConsoleMode::Desktop
+                    && self.desktop_app == DesktopAppKind::CommandWindow
+                {
+                    self.enter_desktop();
+                    return;
+                }
                 #[cfg(any(feature = "installer", target_arch = "x86"))]
                 self.show_startup();
                 #[cfg(all(not(feature = "installer"), not(target_arch = "x86")))]

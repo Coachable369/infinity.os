@@ -2166,8 +2166,325 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: desktop_native_app_window
+    // DESC: Renders the live Text Editor or Command Window over the intact authenticated desktop.
+    // ------------------=
+    fn desktop_native_app_window(
+        &mut self,
+        screen: u8,
+        input: &[u8],
+        output_lines: &[[u8; 96]; 6],
+        output_lengths: &[usize; 6],
+        output_count: usize,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        maximized: bool,
+        editor_saved: bool,
+        content_only: bool,
+    ) {
+        let scale = self.ui_scale().max(1);
+        let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .desktop_app_window_geometry(
+                window_x,
+                window_y,
+                window_width,
+                window_height,
+                maximized,
+            );
+        let left = geometry.window.x.max(0) as usize;
+        let top = geometry.window.y.max(0) as usize;
+        let width = geometry.window.width as usize;
+        let height = geometry.window.height as usize;
+        let toolbar_left = geometry.toolbar.x.max(0) as usize;
+        let toolbar_top = geometry.toolbar.y.max(0) as usize;
+        if !content_only {
+            self.fill_rounded_rect_alpha(
+                left.saturating_sub(8 * scale),
+                top + 8 * scale,
+                width.saturating_add(16 * scale),
+                height,
+                20 * scale,
+                0,
+                2,
+                10,
+                120,
+            );
+            self.glass_panel(left, top, width, height, true);
+            self.fill_rect_alpha(left, top, width, 48 * scale, 4, 16, 29, 238);
+            let icon_role = if screen == 9 { 49 } else { 25 };
+            let _ = self.themed_icon(left + 30 * scale, top + 24 * scale, icon_role, 32 * scale);
+            self.ui_text_strong(
+                left + 54 * scale,
+                top + 16 * scale,
+                if screen == 9 {
+                    b"Text Editor"
+                } else {
+                    b"Command Window"
+                },
+                231,
+                243,
+                250,
+                1,
+            );
+            for (index, control) in [geometry.minimize, geometry.maximize, geometry.close]
+                .iter()
+                .enumerate()
+            {
+                let control_left = control.x.max(0) as usize;
+                let control_top = control.y.max(0) as usize;
+                let control_size = control.width as usize;
+                self.fill_rounded_rect_alpha(
+                    control_left,
+                    control_top,
+                    control_size,
+                    control.height as usize,
+                    7 * scale,
+                    11,
+                    31,
+                    48,
+                    244,
+                );
+                self.outline_rounded_rect(
+                    control_left,
+                    control_top,
+                    control_size,
+                    control.height as usize,
+                    7 * scale,
+                    65,
+                    111,
+                    139,
+                );
+                let center_x = control_left + control_size / 2;
+                let center_y = control_top + control.height as usize / 2;
+                if index == 0 {
+                    self.icon_line(
+                        (center_x - 5 * scale) as i32,
+                        center_y as i32,
+                        (center_x + 5 * scale) as i32,
+                        center_y as i32,
+                        (194, 222, 238),
+                        control_size,
+                    );
+                } else if index == 1 {
+                    self.outline_rect(
+                        center_x - 5 * scale,
+                        center_y - 5 * scale,
+                        10 * scale,
+                        10 * scale,
+                        194,
+                        222,
+                        238,
+                    );
+                } else {
+                    self.icon_line(
+                        (center_x - 5 * scale) as i32,
+                        (center_y - 5 * scale) as i32,
+                        (center_x + 5 * scale) as i32,
+                        (center_y + 5 * scale) as i32,
+                        (194, 222, 238),
+                        control_size,
+                    );
+                    self.icon_line(
+                        (center_x + 5 * scale) as i32,
+                        (center_y - 5 * scale) as i32,
+                        (center_x - 5 * scale) as i32,
+                        (center_y + 5 * scale) as i32,
+                        (194, 222, 238),
+                        control_size,
+                    );
+                }
+            }
+            self.fill_rect_alpha(
+                toolbar_left,
+                toolbar_top,
+                geometry.toolbar.width as usize,
+                geometry.toolbar.height as usize,
+                5,
+                22,
+                38,
+                224,
+            );
+            if screen == 9 {
+                for (index, (label, role)) in [(b"New".as_slice(), 49usize), (b"Save", 51)]
+                    .iter()
+                    .enumerate()
+                {
+                    let button_left = toolbar_left + 14 * scale + index * 108 * scale;
+                    let _ = self.themed_icon(
+                        button_left + 13 * scale,
+                        toolbar_top + 21 * scale,
+                        *role,
+                        24 * scale,
+                    );
+                    self.ui_text(
+                        button_left + 31 * scale,
+                        toolbar_top + 13 * scale,
+                        label,
+                        202,
+                        225,
+                        239,
+                        1,
+                    );
+                }
+                let status: &[u8] = if editor_saved { b"Saved" } else { b"Modified" };
+                let status_width = self.ui_text_width(status, 1);
+                self.ui_text(
+                    left + width.saturating_sub(status_width + 18 * scale),
+                    toolbar_top + 13 * scale,
+                    status,
+                    if editor_saved { 108 } else { 102 },
+                    if editor_saved { 221 } else { 195 },
+                    if editor_saved { 176 } else { 255 },
+                    1,
+                );
+            } else {
+                self.ui_text(
+                    toolbar_left + 16 * scale,
+                    toolbar_top + 13 * scale,
+                    b"INFINITY CONSOLE  /  LOCAL SESSION",
+                    103,
+                    193,
+                    235,
+                    1,
+                );
+            }
+        } else if screen == 9 {
+            let status: &[u8] = if editor_saved { b"Saved" } else { b"Modified" };
+            let status_width = self.ui_text_width(status, 1);
+            let status_left = left + width.saturating_sub(150 * scale);
+            self.fill_rect(
+                status_left,
+                toolbar_top,
+                150 * scale,
+                geometry.toolbar.height as usize,
+                5,
+                22,
+                38,
+            );
+            self.ui_text(
+                left + width.saturating_sub(status_width + 18 * scale),
+                toolbar_top + 13 * scale,
+                status,
+                if editor_saved { 108 } else { 102 },
+                if editor_saved { 221 } else { 195 },
+                if editor_saved { 176 } else { 255 },
+                1,
+            );
+        }
+        let content_left = geometry.content.x.max(0) as usize;
+        let content_top = geometry.content.y.max(0) as usize;
+        let content_width = geometry.content.width as usize;
+        let content_height = geometry.content.height as usize;
+        if content_only {
+            self.fill_rect(
+                content_left + scale,
+                content_top + scale,
+                content_width.saturating_sub(2 * scale),
+                content_height.saturating_sub(2 * scale),
+                1,
+                10,
+                20,
+            );
+        } else {
+            self.fill_rounded_rect_alpha(
+                content_left,
+                content_top,
+                content_width,
+                content_height,
+                10 * scale,
+                1,
+                10,
+                20,
+                246,
+            );
+            self.outline_rounded_rect(
+                content_left,
+                content_top,
+                content_width,
+                content_height,
+                10 * scale,
+                22,
+                83,
+                116,
+            );
+        }
+        let line_height = 24 * scale;
+        if screen == 9 {
+            let mut row = 0usize;
+            let mut start = 0usize;
+            let mut caret_width = 0usize;
+            let columns = content_width.saturating_sub(40 * scale) / (9 * scale).max(1);
+            while start < input.len() && row * line_height + 36 * scale < content_height {
+                let remaining = &input[start..];
+                let explicit_end = remaining
+                    .iter()
+                    .position(|byte| *byte == b'\n')
+                    .unwrap_or(remaining.len());
+                let take = explicit_end.min(columns.max(1));
+                self.ui_text(
+                    content_left + 20 * scale,
+                    content_top + 18 * scale + row * line_height,
+                    &remaining[..take],
+                    218,
+                    232,
+                    241,
+                    1,
+                );
+                caret_width = self.ui_text_width(&remaining[..take], 1);
+                start += take;
+                if take == explicit_end && start < input.len() && input[start] == b'\n' {
+                    start += 1;
+                    caret_width = 0;
+                    row += 1;
+                }
+                if take < explicit_end {
+                    row += 1;
+                }
+            }
+            let caret_x = content_left + 20 * scale + caret_width;
+            let caret_y = content_top + 18 * scale + row * line_height;
+            self.fill_rect(caret_x, caret_y, 2 * scale, 18 * scale, 111, 220, 255);
+        } else {
+            for row in 0..output_count.min(6) {
+                self.ui_text(
+                    content_left + 18 * scale,
+                    content_top + 18 * scale + row * line_height,
+                    &output_lines[row][..output_lengths[row].min(96)],
+                    183,
+                    218,
+                    235,
+                    1,
+                );
+            }
+            let prompt_y = content_top + content_height.saturating_sub(42 * scale);
+            self.fill_rect_alpha(
+                content_left + 10 * scale,
+                prompt_y.saturating_sub(8 * scale),
+                content_width.saturating_sub(20 * scale),
+                34 * scale,
+                5,
+                28,
+                45,
+                245,
+            );
+            self.ui_text_strong(
+                content_left + 18 * scale,
+                prompt_y,
+                b"inf >",
+                93,
+                218,
+                255,
+                1,
+            );
+            self.ui_text(content_left + 74 * scale, prompt_y, input, 232, 242, 248, 1);
+        }
+    }
+
+    // ------------------------=
     // FUNC: system_ui_frame
-    // DESC: Renders onboarding, authentication, desktop, menu, lock, and Settings from shared state.
+    // DESC: Renders onboarding, authentication, desktop, native apps, menu, lock, and Settings from shared state.
     // ------------------=
     pub(super) fn system_ui_frame(
         &mut self,
@@ -2192,6 +2509,15 @@ impl super::DisplayDevice {
         clock: crate::storage::DateTimeConfiguration,
         settings_maximized: bool,
         menu_kind: usize,
+        output_lines: &[[u8; 96]; 6],
+        output_lengths: &[usize; 6],
+        output_count: usize,
+        app_window_x: i32,
+        app_window_y: i32,
+        app_window_width: i32,
+        app_window_height: i32,
+        app_window_maximized: bool,
+        editor_saved: bool,
     ) {
         self.mark_dirty_rect(0, 0, self.width, self.height);
         if matches!(screen, 5 | 6) {
@@ -2204,7 +2530,7 @@ impl super::DisplayDevice {
             self.onboarding_frame(step, input, masked, focus, validation_error);
             return;
         }
-        if matches!(screen, 2 | 3 | 4 | 7) {
+        if matches!(screen, 2 | 3 | 4 | 7 | 8 | 9) {
             self.paint_desktop_background();
         } else {
             self.paint_first_boot_background();
@@ -2213,7 +2539,7 @@ impl super::DisplayDevice {
         let margin = self.width * 4 / 100;
         let top_bar = self.system_top_bar((screen == 3).then_some(menu_kind), clock);
 
-        if matches!(screen, 2 | 3 | 7) {
+        if matches!(screen, 2 | 3 | 7 | 8 | 9) {
             self.desktop_shell(
                 scale,
                 window_x,
@@ -2235,6 +2561,23 @@ impl super::DisplayDevice {
         if screen == 7 {
             self.blur_framebuffer(4);
             self.app_launcher(scale, input, focus);
+        }
+
+        if matches!(screen, 8 | 9) {
+            self.desktop_native_app_window(
+                screen,
+                input,
+                output_lines,
+                output_lengths,
+                output_count,
+                app_window_x,
+                app_window_y,
+                app_window_width,
+                app_window_height,
+                app_window_maximized,
+                editor_saved,
+                false,
+            );
         }
 
         if matches!(screen, 1 | 5 | 6) {
@@ -4373,8 +4716,9 @@ impl super::DisplayDevice {
         let dock_left = geometry.dock.x.max(0) as usize;
         let dock_top = geometry.dock.y.max(0) as usize;
         self.glass_panel(dock_left, dock_top, dock_width, dock_height, false);
-        let icon_gap = dock_width / 9;
-        for index in 0..9usize {
+        let entries = &crate::ui::app_launcher::DESKTOP_DOCK_ENTRIES;
+        let icon_gap = dock_width / entries.len();
+        for (index, entry) in entries.iter().enumerate() {
             let size = 46 * scale;
             let x = dock_left + icon_gap / 2 + index * icon_gap;
             if index == 0 {
@@ -4384,11 +4728,11 @@ impl super::DisplayDevice {
                     x,
                     dock_top + 10 * scale,
                     size,
-                    index - 1,
+                    entry.icon_kind,
                     matches!(index, 1 | 2),
                 );
             }
-            if index == 7 {
+            if index == 6 {
                 self.fill_rect_alpha(
                     x.saturating_sub(icon_gap / 3),
                     dock_top + 10 * scale,
@@ -4541,13 +4885,29 @@ pub fn system_ui_present(
     clock: crate::storage::DateTimeConfiguration,
     settings_maximized: bool,
     menu_kind: usize,
+    output_lines: &[[u8; 96]; 6],
+    output_lengths: &[usize; 6],
+    output_count: usize,
+    app_window_x: i32,
+    app_window_y: i32,
+    app_window_width: i32,
+    app_window_height: i32,
+    app_window_maximized: bool,
+    editor_saved: bool,
 ) {
     unsafe {
         let slot = &raw mut CONSOLE;
         if let Some(console) = (*slot).as_mut() {
             console.system_ui_active = true;
             console.restore_cursor();
-            let content = system_content_hash(input, masked);
+            let content = system_content_hash(
+                input,
+                masked,
+                output_lines,
+                output_lengths,
+                output_count,
+                editor_saved,
+            );
             let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
             let focus_changed = console.last_system_focus != focus;
             let clock_changed = console.last_system_clock != clock;
@@ -4584,7 +4944,12 @@ pub fn system_ui_present(
                     screen,
                     clock_changed,
                 )
-                || console.last_settings_maximized != settings_maximized;
+                || console.last_settings_maximized != settings_maximized
+                || console.last_app_window_x != app_window_x
+                || console.last_app_window_y != app_window_y
+                || console.last_app_window_width != app_window_width
+                || console.last_app_window_height != app_window_height
+                || console.last_app_window_maximized != app_window_maximized;
             let window_moved =
                 console.last_home_window_x != window_x || console.last_home_window_y != window_y;
             let window_resized = console.last_home_window_width != window_width
@@ -4672,6 +5037,15 @@ pub fn system_ui_present(
                     clock,
                     settings_maximized,
                     menu_kind,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    app_window_x,
+                    app_window_y,
+                    app_window_width,
+                    app_window_height,
+                    app_window_maximized,
+                    editor_saved,
                 );
                 full_surface_redrawn = true;
             } else if crate::ui::redraw::onboarding_controls_require_repaint(
@@ -4695,6 +5069,24 @@ pub fn system_ui_present(
                     console.display.ui_scale().max(1),
                     input,
                     focus,
+                );
+            } else if crate::ui::redraw::desktop_app_content_requires_bounded_redraw(
+                screen,
+                content_changed,
+            ) {
+                console.display.desktop_native_app_window(
+                    screen,
+                    input,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    app_window_x,
+                    app_window_y,
+                    app_window_width,
+                    app_window_height,
+                    app_window_maximized,
+                    editor_saved,
+                    true,
                 );
             } else if content_changed
                 && (matches!(screen, 5 | 6) || (screen == 1 && (1..=4).contains(&step)))
@@ -4726,6 +5118,15 @@ pub fn system_ui_present(
                     clock,
                     settings_maximized,
                     menu_kind,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    app_window_x,
+                    app_window_y,
+                    app_window_width,
+                    app_window_height,
+                    app_window_maximized,
+                    editor_saved,
                 );
                 full_surface_redrawn = true;
             }
@@ -4758,6 +5159,12 @@ pub fn system_ui_present(
             console.last_desktop_item_positions = *desktop_item_positions;
             console.last_system_clock = clock;
             console.last_settings_maximized = settings_maximized;
+            console.last_app_window_x = app_window_x;
+            console.last_app_window_y = app_window_y;
+            console.last_app_window_width = app_window_width;
+            console.last_app_window_height = app_window_height;
+            console.last_app_window_maximized = app_window_maximized;
+            console.last_editor_saved = editor_saved;
             console.display.present_damage();
         }
     }
@@ -4792,6 +5199,15 @@ pub fn system_ui_present(
     _clock: crate::storage::DateTimeConfiguration,
     _settings_maximized: bool,
     _menu_kind: usize,
+    _output_lines: &[[u8; 96]; 6],
+    _output_lengths: &[usize; 6],
+    _output_count: usize,
+    _app_window_x: i32,
+    _app_window_y: i32,
+    _app_window_width: i32,
+    _app_window_height: i32,
+    _app_window_maximized: bool,
+    _editor_saved: bool,
 ) {
 }
 
@@ -4799,7 +5215,14 @@ pub fn system_ui_present(
 // FUNC: system_content_hash
 // DESC: Detects changed GUI content without allocating or storing secret input bytes.
 // ------------------=
-fn system_content_hash(input: &[u8], masked: bool) -> u32 {
+fn system_content_hash(
+    input: &[u8],
+    masked: bool,
+    output_lines: &[[u8; 96]; 6],
+    output_lengths: &[usize; 6],
+    output_count: usize,
+    editor_saved: bool,
+) -> u32 {
     let mut hash = if masked {
         0x51ed_271bu32
     } else {
@@ -4809,5 +5232,12 @@ fn system_content_hash(input: &[u8], masked: bool) -> u32 {
         hash ^= if masked { b'*' } else { *byte } as u32;
         hash = hash.wrapping_mul(0x0100_0193);
     }
+    for row in 0..output_count.min(6) {
+        for byte in &output_lines[row][..output_lengths[row].min(96)] {
+            hash ^= *byte as u32;
+            hash = hash.wrapping_mul(0x0100_0193);
+        }
+    }
+    hash ^= editor_saved as u32;
     hash
 }

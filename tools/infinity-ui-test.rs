@@ -1,7 +1,10 @@
 #[path = "../kernel/ui/mod.rs"]
 mod ui;
 
-use ui::app_launcher::{launcher_visible_count, launcher_visible_entry, LauncherAction};
+use ui::app_launcher::{
+    launcher_visible_count, launcher_visible_entry, DockAction, LauncherAction,
+    DESKTOP_DOCK_ENTRIES, LAUNCHER_APPS,
+};
 use ui::async_model::{AsyncError, AsyncState};
 use ui::clipboard::{ClipboardError, ClipboardKind};
 use ui::compositor::{CompositorError, SoftwareCompositor, SurfaceFrame};
@@ -20,9 +23,11 @@ use ui::skin::{
 };
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
-    resize_home_window, AppLauncherTarget, DesktopTarget, OnboardingTarget, SettingsTarget,
-    SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK, DESKTOP_FOREGROUND_WIDGETS,
+    resize_home_window, AppLauncherTarget, DesktopAppWindowTarget, DesktopTarget, OnboardingTarget,
+    SettingsTarget, SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK,
+    DESKTOP_FOREGROUND_WIDGETS,
 };
+use ui::text_editor::TextDocument;
 use ui::trusted::{TrustedSurface, TrustedUiError};
 use ui::vector::{
     semantic_name, validate, IconId, VectorCommand, VectorError, VectorIcon, MAX_VECTOR_COMMANDS,
@@ -110,6 +115,24 @@ fn app_launcher_behavior_test() {
         Some(LauncherAction::Settings(0))
     );
     assert_eq!(launcher_visible_count(b"not-an-installed-app"), 0);
+    assert_eq!(
+        LAUNCHER_APPS
+            .iter()
+            .filter(|entry| entry.action == LauncherAction::TextEditor)
+            .count(),
+        1
+    );
+    assert_eq!(DESKTOP_DOCK_ENTRIES.len(), 8);
+    assert_eq!(DESKTOP_DOCK_ENTRIES[0].action, DockAction::Launcher);
+    assert_eq!(DESKTOP_DOCK_ENTRIES[1].action, DockAction::Files);
+    assert_eq!(DESKTOP_DOCK_ENTRIES[7].action, DockAction::Trash);
+    assert_eq!(
+        LAUNCHER_APPS
+            .iter()
+            .filter(|entry| entry.action == LauncherAction::CommandWindow)
+            .count(),
+        1
+    );
 
     let layout = SystemLayout::new(1920, 1080);
     let geometry = layout.app_launcher_geometry();
@@ -160,6 +183,53 @@ fn app_launcher_behavior_test() {
         layout.app_launcher_target(close_margin_x, close_margin_y, 12),
         AppLauncherTarget::Close
     );
+
+    let app_window = layout.desktop_app_window_geometry(190, 160, 600, 620, false);
+    for (target, control) in [
+        (DesktopAppWindowTarget::Minimize, app_window.minimize),
+        (DesktopAppWindowTarget::Maximize, app_window.maximize),
+        (DesktopAppWindowTarget::Close, app_window.close),
+    ] {
+        let (control_x, control_y) = normalized(
+            control.x + control.width as i32 / 2,
+            control.y + control.height as i32 / 2,
+        );
+        assert_eq!(
+            layout
+                .desktop_app_window_target(control_x, control_y, 190, 160, 600, 620, false, true,),
+            target
+        );
+    }
+    let (new_x, toolbar_y) = normalized(
+        app_window.toolbar.x + 40,
+        app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
+    );
+    let (save_x, _) = normalized(
+        app_window.toolbar.x + 150,
+        app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
+    );
+    assert_eq!(
+        layout.desktop_app_window_target(new_x, toolbar_y, 190, 160, 600, 620, false, true),
+        DesktopAppWindowTarget::NewDocument
+    );
+    assert_eq!(
+        layout.desktop_app_window_target(save_x, toolbar_y, 190, 160, 600, 620, false, true),
+        DesktopAppWindowTarget::SaveDocument
+    );
+
+    let mut document = TextDocument::new();
+    assert!(document.is_saved());
+    assert!(document.insert(b'I'));
+    assert!(document.insert(b'\n'));
+    assert!(!document.is_saved());
+    assert_eq!(document.bytes(), b"I\n");
+    document.save();
+    assert!(document.is_saved());
+    assert!(document.backspace());
+    assert!(!document.is_saved());
+    document.clear();
+    assert!(document.is_saved());
+    assert!(document.bytes().is_empty());
 }
 
 // ------------------------=
@@ -783,6 +853,15 @@ fn installed_system_hit_geometry_test() {
     ));
     assert!(ui::redraw::desktop_window_move_requires_structural_redraw(
         2, true, true, true
+    ));
+    assert!(ui::redraw::desktop_app_content_requires_bounded_redraw(
+        8, true
+    ));
+    assert!(ui::redraw::desktop_app_content_requires_bounded_redraw(
+        9, true
+    ));
+    assert!(!ui::redraw::desktop_app_content_requires_bounded_redraw(
+        2, true
     ));
 }
 
