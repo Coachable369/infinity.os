@@ -40,6 +40,8 @@ mod bootstrap {
 
 #[path = "../kernel/core/crash.rs"]
 mod crash;
+#[path = "../kernel/ui/crash_layout.rs"]
+mod crash_layout;
 
 // ------------------------=
 // FUNC: le16
@@ -67,6 +69,19 @@ fn le32(bytes: &[u8], offset: usize) -> u32 {
 // DESC: Exercises first-failure capture and validates the rendered emblem's pixel behavior.
 // ------------------=
 fn main() {
+    for (width, height, title_scale) in [
+        (1024usize, 768usize, 1usize),
+        (1920, 1080, 2),
+        (2560, 1440, 2),
+    ] {
+        let layout = crash_layout::CrashLayout::new(width, height, title_scale);
+        assert!(layout.flag_top + layout.flag_size < layout.title_y);
+        assert!(layout.title_y < layout.panel_top);
+        assert!(layout.panel_top + layout.panel_height <= height);
+        assert!(layout.content_width + layout.gutter * 2 <= width);
+        assert!(layout.panel_height >= 360);
+    }
+
     let oversized_summary = [0x5au8; 400];
     let first = crash::CrashReport::new(
         crash::CrashReason::KernelPanic,
@@ -92,7 +107,9 @@ fn main() {
     let mut capture = crash::CrashCapture::new();
     assert!(capture.capture(first));
     assert!(!capture.capture(second));
-    let retained = capture.report().expect("first failure must remain available");
+    let retained = capture
+        .report()
+        .expect("first failure must remain available");
     assert_eq!(retained.code, 0x1001);
     assert_eq!(retained.fingerprint, first.fingerprint);
 

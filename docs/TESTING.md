@@ -12,6 +12,14 @@ Console operation mapping, Network-domain IEF delivery, metadata isolation, and
 service restart. The test does not use rendered text or source searches as an
 oracle.
 
+## Installed component manifest boundary
+
+Run `make component-manifest-test` to encode the complete current System
+Generation registry into its production two-sector record, validate the final
+component beyond the first-sector boundary, verify the native checksum, and
+prove corruption in the second sector is rejected. The test asserts structured
+binary state and does not use rendered text as an oracle.
+
 Run `./build.sh` for all architecture ISOs and packaged System Generation
 validation. Physical NIC, DNS, secure wire connection, and detached-media
 clean-install acceptance cannot pass until a supported adapter exists and must

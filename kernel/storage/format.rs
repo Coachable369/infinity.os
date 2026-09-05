@@ -2,6 +2,7 @@ use super::{
     BlockDevice, CurrentLayout, DateTimeConfiguration, DestructiveConsequence, PoolPlan, SpacePlan,
     StorageDevice, StorageError, StorageProfile, StorageProvisioningPlan, StorageStrategy,
 };
+use super::component_manifest;
 
 #[cfg(target_arch = "x86_64")]
 const ESP_IMAGE: &[u8] = include_bytes!("../../build/x86_64/installed-esp.img");
@@ -22,87 +23,10 @@ const GENERATION_ID: u64 = 1;
 const GENERATION_INSTALLING: u32 = 1;
 const GENERATION_READY: u32 = 2;
 const GENERATION_ACTIVE: u32 = 3;
-const COMPONENT_COUNT: u32 = 11;
 const INSTALL_CLASS_CORE: u32 = 1;
 const INSTALL_CLASS_SYSTEM_OPTIONAL: u32 = 2;
 const INSTALL_CLASS_POST_INSTALL: u32 = 3;
 
-struct ComponentRegistration {
-    id: u32,
-    kind: u32,
-    architecture_specific: bool,
-    reference_kind: u32,
-}
-// The installer consumes this single registry. Future milestones add entries here and
-// select CORE, SYSTEM OPTIONAL, or POST-INSTALL without adding UI copy operations.
-const SYSTEM_COMPONENT_REGISTRY: [ComponentRegistration; 11] = [
-    ComponentRegistration {
-        id: 1,
-        kind: 1,
-        architecture_specific: true,
-        reference_kind: 1,
-    }, // kernel
-    ComponentRegistration {
-        id: 2,
-        kind: 2,
-        architecture_specific: true,
-        reference_kind: 2,
-    }, // EFI/bootstrap
-    ComponentRegistration {
-        id: 3,
-        kind: 3,
-        architecture_specific: false,
-        reference_kind: 1,
-    }, // drivers
-    ComponentRegistration {
-        id: 4,
-        kind: 4,
-        architecture_specific: false,
-        reference_kind: 1,
-    }, // runtime
-    ComponentRegistration {
-        id: 5,
-        kind: 5,
-        architecture_specific: false,
-        reference_kind: 1,
-    }, // console
-    ComponentRegistration {
-        id: 6,
-        kind: 6,
-        architecture_specific: false,
-        reference_kind: 1,
-    }, // intent runtime
-    ComponentRegistration {
-        id: 7,
-        kind: 7,
-        architecture_specific: false,
-        reference_kind: 1,
-    }, // storage runtime
-    ComponentRegistration {
-        id: 8,
-        kind: 8,
-        architecture_specific: false,
-        reference_kind: 1,
-    }, // recovery metadata
-    ComponentRegistration {
-        id: 9,
-        kind: 9,
-        architecture_specific: false,
-        reference_kind: 1,
-    }, // AI, local ML, provider, context/tool, voice, and agent runtime suite
-    ComponentRegistration {
-        id: 10,
-        kind: 10,
-        architecture_specific: false,
-        reference_kind: 1,
-    }, // identity, sessions, settings, shell, InfinityUI, compositor, retained surfaces, present backend, trusted UI, diagnostics, Skin Registry, and Window Server
-    ComponentRegistration {
-        id: 11,
-        kind: 11,
-        architecture_specific: false,
-        reference_kind: 1,
-    }, // native network runtime, address/route/resolver/transport, policy, profiles, discovery, inspector, schemas, and capability bootstrap
-];
 const MINIMUM_BLOCKS: u64 = 262_144;
 const INFINITY_TYPE: [u8; 16] = [
     0x69, 0x66, 0x6e, 0x49, 0x69, 0x6e, 0x79, 0x74, 0x53, 0x54, 0x4f, 0x52, 0x41, 0x47, 0x45, 0x31,
@@ -569,46 +493,25 @@ fn write_system_generation<D: BlockDevice>(
 ) -> Result<(), ()> {
     let kernel_crc = crc32(KERNEL_IMAGE);
     let esp_crc = crc32(ESP_IMAGE);
-    let mut components = [0u8; 512];
-    components[..8].copy_from_slice(b"INFCOMP1");
-    put_u32(&mut components, 8, 1);
-    put_u32(&mut components, 12, 512);
-    put_u32(&mut components, 16, COMPONENT_COUNT);
-    put_u32(&mut components, 20, 48);
-    // id, type, version, architecture, install class, flags, checksum, reference kind, lba, bytes.
-    for (index, entry) in SYSTEM_COMPONENT_REGISTRY.iter().enumerate() {
-        let esp = entry.reference_kind == 2;
-        write_component(
-            &mut components,
-            index,
-            entry.id,
-            entry.kind,
-            if entry.architecture_specific {
-                architecture()
-            } else {
-                0
-            },
-            INSTALL_CLASS_CORE,
-            if esp { esp_crc } else { kernel_crc },
-            entry.reference_kind,
-            if esp {
-                plan.esp_first_lba
-            } else {
-                KERNEL_RELATIVE_LBA
-            },
-            if esp {
-                ESP_IMAGE.len() as u64
-            } else {
-                KERNEL_IMAGE.len() as u64
-            },
-        );
-    }
-    finalize(&mut components);
-    if !device.write_sector(
-        plan.container_first_lba + COMPONENT_MANIFEST_RELATIVE_LBA,
-        &components,
-    ) {
-        return Err(());
+    let components = component_manifest::encode(
+        architecture(),
+        kernel_crc,
+        esp_crc,
+        KERNEL_RELATIVE_LBA,
+        KERNEL_IMAGE.len() as u64,
+        plan.esp_first_lba,
+        ESP_IMAGE.len() as u64,
+    );
+    for sector_index in 0..component_manifest::MANIFEST_SECTORS {
+        let mut sector = [0u8; 512];
+        let start = sector_index * 512;
+        sector.copy_from_slice(&components[start..start + 512]);
+        if !device.write_sector(
+            plan.container_first_lba + COMPONENT_MANIFEST_RELATIVE_LBA + sector_index as u64,
+            &sector,
+        ) {
+            return Err(());
+        }
     }
 
     let mut manifest = [0u8; 512];
@@ -622,7 +525,7 @@ fn write_system_generation<D: BlockDevice>(
     put_u64(&mut manifest, 40, KERNEL_RELATIVE_LBA);
     put_u64(&mut manifest, 48, KERNEL_IMAGE.len() as u64);
     put_u32(&mut manifest, 56, kernel_crc);
-    put_u32(&mut manifest, 60, COMPONENT_COUNT);
+    put_u32(&mut manifest, 60, component_manifest::COMPONENT_COUNT);
     put_u64(&mut manifest, 64, COMPONENT_MANIFEST_RELATIVE_LBA);
     put_u32(&mut manifest, 72, 1);
     manifest[80..96].copy_from_slice(&plan.container_uuid);
@@ -656,35 +559,6 @@ fn write_system_generation<D: BlockDevice>(
     }
     device.flush();
     Ok(())
-}
-
-// ------------------------=
-// FUNC: write_component
-// DESC: Writes or updates write component data.
-// ------------------=
-fn write_component(
-    out: &mut [u8; 512],
-    index: usize,
-    id: u32,
-    kind: u32,
-    arch: u32,
-    class: u32,
-    checksum: u32,
-    reference: u32,
-    lba: u64,
-    bytes: u64,
-) {
-    let at = 32 + index * 48;
-    put_u32(out, at, id);
-    put_u32(out, at + 4, kind);
-    put_u32(out, at + 8, 1);
-    put_u32(out, at + 12, arch);
-    put_u32(out, at + 16, class);
-    put_u32(out, at + 20, 1);
-    put_u32(out, at + 24, checksum);
-    put_u32(out, at + 28, reference);
-    put_u64(out, at + 32, lba);
-    put_u64(out, at + 40, bytes);
 }
 
 #[allow(dead_code)]
@@ -725,27 +599,31 @@ fn verify_system_generation<D: BlockDevice>(
         || get_u32(&s, 20) != architecture()
         || get_u64(&s, 24) != GENERATION_ID
         || get_u32(&s, 56) != crc32(KERNEL_IMAGE)
-        || get_u32(&s, 60) != COMPONENT_COUNT
+        || get_u32(&s, 60) != component_manifest::COMPONENT_COUNT
         || get_u64(&s, 64) != COMPONENT_MANIFEST_RELATIVE_LBA
         || !valid_record(&s, 512, 508)
     {
         return Err(StorageError::VerifySystemManifest);
     }
-    if !device.read_sector(
-        plan.container_first_lba + COMPONENT_MANIFEST_RELATIVE_LBA,
-        &mut s,
-    ) || &s[..8] != b"INFCOMP1"
-        || get_u32(&s, 16) != COMPONENT_COUNT
-        || get_u32(&s, 20) != 48
-        || !valid_record(&s, 512, 508)
-    {
-        return Err(StorageError::VerifySystemComponents);
-    }
-    for index in 0..COMPONENT_COUNT as usize {
-        let at = 32 + index * 48;
-        if get_u32(&s, at + 16) != 1 || get_u32(&s, at + 20) & 1 == 0 {
+    let mut components = [0u8; component_manifest::MANIFEST_BYTES];
+    for sector_index in 0..component_manifest::MANIFEST_SECTORS {
+        if !device.read_sector(
+            plan.container_first_lba + COMPONENT_MANIFEST_RELATIVE_LBA + sector_index as u64,
+            &mut s,
+        ) {
             return Err(StorageError::VerifySystemComponents);
         }
+        let start = sector_index * 512;
+        components[start..start + 512].copy_from_slice(&s);
+    }
+    if !component_manifest::validate(
+        &components,
+        architecture(),
+        crc32(KERNEL_IMAGE),
+        KERNEL_RELATIVE_LBA,
+        KERNEL_IMAGE.len() as u64,
+    ) {
+        return Err(StorageError::VerifySystemComponents);
     }
     Ok(())
 }

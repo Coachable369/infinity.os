@@ -532,14 +532,19 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
         uint64_t kernel_relative_lba = read_u64(sector + 40), kernel_bytes = read_u64(sector + 48);
         uint32_t kernel_crc = read_u32(sector + 56), component_count = read_u32(sector + 60);
         uint64_t components_relative_lba = read_u64(sector + 64);
+        uint64_t component_words[128];
+        uint8_t *components = (uint8_t *)component_words;
         if (kernel_relative_lba < 2048 || components_relative_lba < 5 || components_relative_lba >= 2048 ||
+            component_count == 0 || component_count > 20 ||
             block->read_blocks(block, block->media->media_id, container_lba + components_relative_lba,
-                sizeof(sector), sector) != EFI_SUCCESS || !equal_bytes(sector, (const uint8_t *)"INFCOMP1", 8) ||
-            read_u32(sector + 8) != 1 || read_u32(sector + 12) != 512 || read_u32(sector + 16) != component_count ||
-            read_u32(sector + 20) != 48 || !valid_sector_record(sector, 512, 508)) continue;
+                sizeof(component_words), components) != EFI_SUCCESS ||
+            !equal_bytes(components, (const uint8_t *)"INFCOMP1", 8) ||
+            read_u32(components + 8) != 2 || read_u32(components + 12) != sizeof(component_words) ||
+            read_u32(components + 16) != component_count || read_u32(components + 20) != 48 ||
+            read_u32(components + 24) != 2 || !valid_sector_record(components, sizeof(component_words), 1020)) continue;
         uint8_t kernel_declared = 0, core_valid = 1;
         for (uint32_t component = 0; component < component_count; ++component) {
-            uint8_t *entry = sector + 32 + component * 48;
+            uint8_t *entry = components + 32 + component * 48;
             if (read_u32(entry + 16) != 1 || !(read_u32(entry + 20) & 1)) { core_valid = 0; break; }
             uint32_t component_arch = read_u32(entry + 12);
             if (component_arch != 0 && component_arch != INFINITY_ARCHITECTURE) { core_valid = 0; break; }

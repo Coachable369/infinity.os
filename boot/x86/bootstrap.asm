@@ -31,7 +31,7 @@ protected_entry:
     mov fs, ax
     mov gs, ax
     mov ss, ax
-    mov esp, 0x00090000
+    mov esp, 0x0009c000       ; 16 KiB above the maximum accepted payload end
     cld
 
     mov esi, kernel_image

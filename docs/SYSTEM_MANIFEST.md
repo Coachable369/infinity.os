@@ -1,6 +1,6 @@
 # InfinityOS System Manifest format
 
-All records are exactly 512 bytes, little-endian, independently versioned, zero-filled in reserved fields, and protected by IEEE CRC-32 in bytes 508..511. Readers reject unknown required versions, out-of-range counts/references, architecture mismatch, invalid lifecycle state, or checksum mismatch. Structures are encoded field-by-field; Rust/C struct memory is never persisted.
+Records are little-endian, independently versioned, zero-filled in reserved fields, and protected by an IEEE CRC-32 in their final four bytes. Boot Catalog and InfinitySystemManifest records are 512 bytes. The component table is a bounded multi-sector record. Readers reject unknown required versions, out-of-range counts/references, architecture mismatch, invalid lifecycle state, or checksum mismatch. Structures are encoded field-by-field; Rust/C struct memory is never persisted.
 
 ## Boot Catalog `INFBOOT1`, version 1
 
@@ -22,14 +22,18 @@ All records are exactly 512 bytes, little-endian, independently versioned, zero-
 
 Offsets 16/20 are lifecycle state and architecture; 24 is the 64-bit generation ID; 32 is build ID; 40/48/56 are kernel relative LBA, byte length, and CRC-32; 60/64 are bounded component count and component-table relative LBA; 72 is required runtime version; 80..95 is system UUID; 96 is a deterministic created timestamp (zero means unavailable). Remaining bytes are reserved for compatible extension.
 
-## Component table `INFCOMP1`, version 1
+## Component table `INFCOMP1`, version 2
 
-The header stores count and 48-byte entry size. Each entry contains 32-bit
+Version 2 occupies two contiguous 512-byte sectors and protects bytes 0..1023
+with its CRC-32 at bytes 1020..1023. The header stores total record bytes,
+component count, 48-byte entry size, and sector count. This removes the former
+single-sector capacity limit while retaining fixed bounds. Each entry contains 32-bit
 component ID, type, version, architecture (`0` means neutral), install class,
 required flags, content checksum, reference kind, then 64-bit content reference
-and byte length. Version 1 installs nine required CORE declarations: kernel,
+and byte length. Version 2 installs eleven required CORE declarations: kernel,
 EFI/bootstrap, required drivers, runtime, console, Intent Runtime, storage
-runtime, recovery metadata, and the native AI/local-ML/voice/agent suite.
+runtime, recovery metadata, the native AI/local-ML/voice/agent suite,
+InfinityUI/identity/session services, and the native networking suite.
 Statically linked components deliberately share the verified installed-kernel
 extent; this declares composition without pretending they are separate binaries
 or files.

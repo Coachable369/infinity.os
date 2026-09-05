@@ -1,6 +1,8 @@
 #[cfg(target_arch = "x86_64")]
 mod ata;
 #[cfg(feature = "installer")]
+mod component_manifest;
+#[cfg(feature = "installer")]
 mod format;
 pub mod layout;
 pub mod object;
