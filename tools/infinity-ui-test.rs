@@ -185,6 +185,28 @@ fn app_launcher_behavior_test() {
     );
 
     let app_window = layout.desktop_app_window_geometry(190, 160, 600, 620, false);
+    let editor_state = ui::system_layout::DesktopAppWindowState::new(190, 160, 600, 620);
+    let command_state = ui::system_layout::DesktopAppWindowState::new(260, 230, 520, 500);
+    assert_ne!(
+        layout
+            .desktop_app_window_geometry(
+                editor_state.x,
+                editor_state.y,
+                editor_state.width,
+                editor_state.height,
+                editor_state.maximized,
+            )
+            .window,
+        layout
+            .desktop_app_window_geometry(
+                command_state.x,
+                command_state.y,
+                command_state.width,
+                command_state.height,
+                command_state.maximized,
+            )
+            .window
+    );
     for (target, control) in [
         (DesktopAppWindowTarget::Minimize, app_window.minimize),
         (DesktopAppWindowTarget::Maximize, app_window.maximize),
@@ -204,8 +226,16 @@ fn app_launcher_behavior_test() {
         app_window.toolbar.x + 40,
         app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
     );
-    let (save_x, _) = normalized(
+    let (open_x, _) = normalized(
         app_window.toolbar.x + 150,
+        app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
+    );
+    let (save_x, _) = normalized(
+        app_window.toolbar.x + 240,
+        app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
+    );
+    let (delete_x, _) = normalized(
+        app_window.toolbar.x + 340,
         app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
     );
     assert_eq!(
@@ -213,8 +243,16 @@ fn app_launcher_behavior_test() {
         DesktopAppWindowTarget::NewDocument
     );
     assert_eq!(
+        layout.desktop_app_window_target(open_x, toolbar_y, 190, 160, 600, 620, false, true),
+        DesktopAppWindowTarget::OpenDocument
+    );
+    assert_eq!(
         layout.desktop_app_window_target(save_x, toolbar_y, 190, 160, 600, 620, false, true),
         DesktopAppWindowTarget::SaveDocument
+    );
+    assert_eq!(
+        layout.desktop_app_window_target(delete_x, toolbar_y, 190, 160, 600, 620, false, true),
+        DesktopAppWindowTarget::DeleteDocument
     );
 
     let mut document = TextDocument::new();
@@ -230,6 +268,9 @@ fn app_launcher_behavior_test() {
     document.clear();
     assert!(document.is_saved());
     assert!(document.bytes().is_empty());
+    assert!(document.open(b"persisted\ntext"));
+    assert_eq!(document.bytes(), b"persisted\ntext");
+    assert!(document.is_saved());
 }
 
 // ------------------------=
@@ -869,18 +910,20 @@ fn installed_system_hit_geometry_test() {
         "expanded configuration must remain attached to its owning row"
     );
     assert!(expanded_geometry.maximum_scroll > 0);
-    let scroll_point = (
-        (expanded_geometry.scrollbar_track.x + expanded_geometry.scrollbar_track.width as i32 / 2)
+    let thumb_point = (
+        (expanded_geometry.scrollbar_thumb.x + expanded_geometry.scrollbar_thumb.width as i32 / 2)
             * 1000
             / 1600,
-        (expanded_geometry.scrollbar_track.y + expanded_geometry.scrollbar_track.height as i32 / 2)
+        (expanded_geometry.scrollbar_thumb.y + expanded_geometry.scrollbar_thumb.height as i32 / 2)
             * 1000
             / 900,
     );
-    assert!(matches!(
-        compact.settings_target(scroll_point.0, scroll_point.1, expanded),
-        Some(SettingsTarget::ScrollPage(_))
-    ));
+    assert_eq!(
+        compact.settings_target(thumb_point.0, thumb_point.1, expanded),
+        Some(SettingsTarget::ScrollThumb)
+    );
+    let dragged_offset = compact.settings_scroll_offset_for_thumb(900, expanded, 0);
+    assert_eq!(dragged_offset, expanded_geometry.maximum_scroll);
     let picker = square.settings_primary_geometry(expanded);
     let picker_point = |rect: Rect| {
         (

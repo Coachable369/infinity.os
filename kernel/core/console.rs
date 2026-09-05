@@ -12,7 +12,7 @@ use crate::ui::app_launcher::{
     DESKTOP_DOCK_ENTRIES, LAUNCHER_CATEGORIES,
 };
 use crate::ui::system_layout::{
-    AppLauncherTarget, DesktopAppWindowTarget, DesktopTarget, OnboardingTarget,
+    AppLauncherTarget, DesktopAppWindowState, DesktopAppWindowTarget, DesktopTarget, OnboardingTarget,
     SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget,
 };
 use crate::ui::text_editor::TextDocument;
@@ -20,6 +20,7 @@ use crate::ui::text_editor::TextDocument;
 const OUTPUT_ROWS: usize = 6;
 const LINE_CAPACITY: usize = 96;
 const COMMAND_CAPACITY: usize = 160;
+const EDITOR_DOCUMENT_PATH: &[u8] = b"/personal/documents/text-editor-document";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DesktopAppKind {
@@ -339,6 +340,8 @@ struct ConsoleRuntime {
     settings_window_drag_offset_y: i32,
     settings_accent_dirty: bool,
     settings_primary_dirty: bool,
+    settings_scroll_dragging: bool,
+    settings_scroll_grab_offset: i32,
     onboarding_validation_error: bool,
     home_window_x: i32,
     home_window_y: i32,
@@ -383,6 +386,8 @@ struct ConsoleRuntime {
     app_window_drag_offset_x: i32,
     app_window_drag_offset_y: i32,
     editor_document: TextDocument,
+    editor_window: DesktopAppWindowState,
+    command_window: DesktopAppWindowState,
 }
 
 impl ConsoleRuntime {
@@ -445,6 +450,8 @@ impl ConsoleRuntime {
             settings_window_drag_offset_y: 0,
             settings_accent_dirty: false,
             settings_primary_dirty: false,
+            settings_scroll_dragging: false,
+            settings_scroll_grab_offset: 0,
             onboarding_validation_error: false,
             home_window_x: 30,
             home_window_y: 400,
@@ -497,6 +504,8 @@ impl ConsoleRuntime {
             app_window_drag_offset_x: 0,
             app_window_drag_offset_y: 0,
             editor_document: TextDocument::new(),
+            editor_window: DesktopAppWindowState::new(190, 160, 600, 620),
+            command_window: DesktopAppWindowState::new(240, 210, 600, 620),
         }
     }
 
@@ -676,6 +685,7 @@ impl ConsoleRuntime {
             } else {
                 &self.command[..self.command_length]
             };
+            let (editor_window, command_window) = self.desktop_app_windows();
             crate::bootstrap::system_ui_present(
                 screen,
                 self.system_step,
@@ -711,6 +721,10 @@ impl ConsoleRuntime {
                 self.app_window_height,
                 self.app_window_maximized,
                 self.editor_document.is_saved(),
+                self.editor_document.bytes(),
+                &self.command[..self.command_length],
+                editor_window,
+                command_window,
             );
             return;
         }
@@ -827,6 +841,7 @@ impl ConsoleRuntime {
         self.settings_editing = false;
         self.settings_accent_dirty = false;
         self.settings_primary_dirty = false;
+        self.settings_scroll_dragging = false;
         self.settings_window_dragging = false;
         self.settings_window_resizing = None;
         self.home_window_dragging = false;
@@ -847,8 +862,13 @@ impl ConsoleRuntime {
     // DESC: Opens the native multiline Text Editor as an authenticated desktop window.
     // ------------------=
     fn open_text_editor(&mut self) {
-        self.enter_desktop();
+        if self.mode != ConsoleMode::Desktop {
+            self.enter_desktop();
+        }
+        self.store_active_app_window();
         self.desktop_app = DesktopAppKind::TextEditor;
+        self.editor_window.visible = true;
+        self.load_active_app_window();
         self.app_window_dragging = false;
         self.app_window_resizing = None;
     }
@@ -858,8 +878,13 @@ impl ConsoleRuntime {
     // DESC: Opens the native Infinity Console language inside a desktop command window.
     // ------------------=
     fn open_command_window(&mut self) {
-        self.enter_desktop();
+        if self.mode != ConsoleMode::Desktop {
+            self.enter_desktop();
+        }
+        self.store_active_app_window();
         self.desktop_app = DesktopAppKind::CommandWindow;
+        self.command_window.visible = true;
+        self.load_active_app_window();
         self.app_window_dragging = false;
         self.app_window_resizing = None;
         self.reset_input();
@@ -875,10 +900,177 @@ impl ConsoleRuntime {
     // DESC: Dismisses the active desktop application without changing session or desktop state.
     // ------------------=
     fn close_desktop_app(&mut self) {
+        match self.desktop_app {
+            DesktopAppKind::TextEditor => self.editor_window.visible = false,
+            DesktopAppKind::CommandWindow => self.command_window.visible = false,
+            DesktopAppKind::None => {}
+        }
         self.desktop_app = DesktopAppKind::None;
         self.app_window_dragging = false;
         self.app_window_resizing = None;
         self.reset_input();
+    }
+
+    // ------------------------=
+    // FUNC: store_active_app_window
+    // DESC: Saves the focused application geometry without disturbing other open windows.
+    // ------------------=
+    fn store_active_app_window(&mut self) {
+        let state = DesktopAppWindowState {
+            x: self.app_window_x,
+            y: self.app_window_y,
+            width: self.app_window_width,
+            height: self.app_window_height,
+            maximized: self.app_window_maximized,
+            visible: true,
+        };
+        match self.desktop_app {
+            DesktopAppKind::TextEditor => self.editor_window = state,
+            DesktopAppKind::CommandWindow => self.command_window = state,
+            DesktopAppKind::None => {}
+        }
+    }
+
+    // ------------------------=
+    // FUNC: load_active_app_window
+    // DESC: Loads the focused application geometry for independent manipulation.
+    // ------------------=
+    fn load_active_app_window(&mut self) {
+        let state = match self.desktop_app {
+            DesktopAppKind::TextEditor => self.editor_window,
+            DesktopAppKind::CommandWindow => self.command_window,
+            DesktopAppKind::None => return,
+        };
+        self.app_window_x = state.x;
+        self.app_window_y = state.y;
+        self.app_window_width = state.width;
+        self.app_window_height = state.height;
+        self.app_window_maximized = state.maximized;
+    }
+
+    // ------------------------=
+    // FUNC: focus_desktop_app
+    // DESC: Raises one already-open application window while preserving the previous window state.
+    // ------------------=
+    fn focus_desktop_app(&mut self, app: DesktopAppKind) {
+        if app == self.desktop_app {
+            return;
+        }
+        self.store_active_app_window();
+        self.desktop_app = app;
+        self.load_active_app_window();
+        self.app_window_dragging = false;
+        self.app_window_resizing = None;
+    }
+
+    // ------------------------=
+    // FUNC: desktop_app_windows
+    // DESC: Returns both open window states with the focused window's live geometry applied.
+    // ------------------=
+    fn desktop_app_windows(&self) -> (DesktopAppWindowState, DesktopAppWindowState) {
+        let mut editor = self.editor_window;
+        let mut command = self.command_window;
+        let active = DesktopAppWindowState {
+            x: self.app_window_x,
+            y: self.app_window_y,
+            width: self.app_window_width,
+            height: self.app_window_height,
+            maximized: self.app_window_maximized,
+            visible: true,
+        };
+        match self.desktop_app {
+            DesktopAppKind::TextEditor => editor = active,
+            DesktopAppKind::CommandWindow => command = active,
+            DesktopAppKind::None => {}
+        }
+        (editor, command)
+    }
+
+    // ------------------------=
+    // FUNC: inactive_app_at_pointer
+    // DESC: Hit-tests visible non-focused application windows for click-to-raise behavior.
+    // ------------------=
+    fn inactive_app_at_pointer(&self, layout: SystemLayout) -> Option<DesktopAppKind> {
+        let (editor, command) = self.desktop_app_windows();
+        for (app, state, is_editor) in [
+            (DesktopAppKind::TextEditor, editor, true),
+            (DesktopAppKind::CommandWindow, command, false),
+        ] {
+            if app == self.desktop_app || !state.visible {
+                continue;
+            }
+            if layout.desktop_app_window_target(
+                self.pointer_x,
+                self.pointer_y,
+                state.x,
+                state.y,
+                state.width,
+                state.height,
+                state.maximized,
+                is_editor,
+            ) != DesktopAppWindowTarget::None
+            {
+                return Some(app);
+            }
+        }
+        None
+    }
+
+    // ------------------------=
+    // FUNC: save_editor_document
+    // DESC: Creates or updates the Text Editor document as a native Personal-space object.
+    // ------------------=
+    fn save_editor_document(&mut self) {
+        let content = self.editor_document.bytes();
+        let saved = crate::storage::object_write_path(EDITOR_DOCUMENT_PATH, content)
+            .map(|_| ())
+            .or_else(|error| {
+                if error == crate::storage::object::ObjectError::NotFound {
+                    crate::storage::object_create_note_at(
+                        b"text-editor-document",
+                        content,
+                        EDITOR_DOCUMENT_PATH,
+                    )
+                    .map(|_| ())
+                } else {
+                    Err(error)
+                }
+            })
+            .is_ok();
+        if saved {
+            self.editor_document.save();
+            crate::output_text(b"[editor] document persisted\n");
+        } else {
+            crate::output_text(b"[editor] save failed\n");
+        }
+    }
+
+    // ------------------------=
+    // FUNC: open_editor_document
+    // DESC: Opens the persisted Personal-space Text Editor document into the active buffer.
+    // ------------------=
+    fn open_editor_document(&mut self) {
+        let mut content = [0u8; crate::ui::text_editor::DOCUMENT_CAPACITY];
+        if let Ok((_, length)) = crate::storage::object_read_path(EDITOR_DOCUMENT_PATH, None, &mut content) {
+            if self.editor_document.open(&content[..length]) {
+                crate::output_text(b"[editor] document opened\n");
+                return;
+            }
+        }
+        crate::output_text(b"[editor] open failed\n");
+    }
+
+    // ------------------------=
+    // FUNC: delete_editor_document
+    // DESC: Removes the persisted Personal-space document and resets the editor buffer.
+    // ------------------=
+    fn delete_editor_document(&mut self) {
+        if crate::storage::object_remove_path(EDITOR_DOCUMENT_PATH).is_ok() {
+            self.editor_document.clear();
+            crate::output_text(b"[editor] document deleted\n");
+        } else {
+            crate::output_text(b"[editor] delete failed\n");
+        }
     }
 
     // ------------------------=
@@ -978,6 +1170,7 @@ impl ConsoleRuntime {
     // DESC: Opens one Settings section without accidentally activating its first value.
     // ------------------=
     fn open_settings(&mut self, section: usize) {
+        self.store_active_app_window();
         self.mode = ConsoleMode::Settings;
         self.system_focus = section.min(7);
         self.settings_window.row_count = if self.system_focus == 1 { 6 } else { 5 };
@@ -988,6 +1181,7 @@ impl ConsoleRuntime {
         self.settings_window_resizing = None;
         self.settings_accent_dirty = false;
         self.settings_primary_dirty = false;
+        self.settings_scroll_dragging = false;
         self.reset_input();
     }
 
@@ -1370,6 +1564,7 @@ impl ConsoleRuntime {
     // DESC: Opens the native installed application launcher with an empty live search query.
     // ------------------=
     fn open_app_launcher(&mut self) {
+        self.store_active_app_window();
         self.mode = ConsoleMode::AppLauncher;
         self.system_focus = 0;
         self.reset_input();
@@ -3027,23 +3222,37 @@ impl ConsoleRuntime {
                         DesktopAppWindowTarget::NewDocument => {
                             self.editor_document.clear();
                         }
+                        DesktopAppWindowTarget::OpenDocument => self.open_editor_document(),
                         DesktopAppWindowTarget::SaveDocument => {
-                            self.editor_document.save();
-                            crate::output_text(b"[editor] document saved\n");
+                            self.save_editor_document();
                         }
-                        DesktopAppWindowTarget::None => match self.desktop_target(layout) {
-                            Some(DesktopTarget::InfinityMenu) => self.open_shell_menu(0),
-                            Some(DesktopTarget::TopMenu(menu)) => self.open_shell_menu(menu),
-                            Some(DesktopTarget::Status(item)) => self.activate_status_item(item),
-                            Some(DesktopTarget::Dock(0)) => self.open_app_launcher(),
-                            _ => {}
-                        },
+                        DesktopAppWindowTarget::DeleteDocument => self.delete_editor_document(),
+                        DesktopAppWindowTarget::None => {
+                            if let Some(app) = self.inactive_app_at_pointer(layout) {
+                                self.focus_desktop_app(app);
+                            } else {
+                                match self.desktop_target(layout) {
+                                    Some(DesktopTarget::InfinityMenu) => self.open_shell_menu(0),
+                                    Some(DesktopTarget::TopMenu(menu)) => self.open_shell_menu(menu),
+                                    Some(DesktopTarget::Status(item)) => self.activate_status_item(item),
+                                    Some(DesktopTarget::Dock(0)) => self.open_app_launcher(),
+                                    _ => {}
+                                }
+                            }
+                        }
                         DesktopAppWindowTarget::Content
                         | DesktopAppWindowTarget::Title
                         | DesktopAppWindowTarget::Resize(_) => {}
                     }
                 }
-            } else if let Some(corner) = self.home_window_resizing {
+            } else if clicked {
+                if let Some(app) = self.inactive_app_at_pointer(layout) {
+                    self.focus_desktop_app(app);
+                    self.redraw();
+                    return;
+                }
+            }
+            if let Some(corner) = self.home_window_resizing {
                 if released {
                     let resized = crate::ui::system_layout::resize_home_window(
                         self.home_window_x,
@@ -3248,7 +3457,20 @@ impl ConsoleRuntime {
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
-            if let Some(corner) = self.settings_window_resizing {
+            if self.settings_scroll_dragging {
+                if left_button {
+                    self.settings_window.scroll_offset = layout.settings_scroll_offset_for_thumb(
+                        self.pointer_y,
+                        self.settings_window,
+                        self.settings_scroll_grab_offset,
+                    );
+                }
+                if released {
+                    self.settings_scroll_dragging = false;
+                }
+                self.redraw();
+                return;
+            } else if let Some(corner) = self.settings_window_resizing {
                 if left_button {
                     let resized = crate::ui::system_layout::resize_native_window(
                         self.settings_window.x,
@@ -3345,6 +3567,13 @@ impl ConsoleRuntime {
                     SettingsTarget::ScrollPage(down) if clicked => {
                         self.scroll_settings(if down { 4 } else { -4 })
                     }
+                    SettingsTarget::ScrollThumb if clicked => {
+                        let geometry = layout.settings_window_geometry(self.settings_window);
+                        let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+                        self.settings_scroll_grab_offset =
+                            pointer_y.saturating_sub(geometry.scrollbar_thumb.y);
+                        self.settings_scroll_dragging = true;
+                    }
                     SettingsTarget::Title if clicked && !self.settings_window.maximized => {
                         self.settings_window_dragging = true;
                         self.settings_window_drag_offset_x =
@@ -3365,6 +3594,7 @@ impl ConsoleRuntime {
                     | SettingsTarget::ContentRow(_)
                     | SettingsTarget::ExpandedAction
                     | SettingsTarget::ScrollPage(_)
+                    | SettingsTarget::ScrollThumb
                     | SettingsTarget::Title
                     | SettingsTarget::Resize(_)
                     | SettingsTarget::WindowControl(_) => {}

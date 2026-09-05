@@ -47,7 +47,9 @@ pub enum DesktopAppWindowTarget {
     Maximize,
     Close,
     NewDocument,
+    OpenDocument,
     SaveDocument,
+    DeleteDocument,
     Content,
     None,
 }
@@ -61,6 +63,33 @@ pub struct DesktopAppWindowGeometry {
     pub close: Rect,
     pub toolbar: Rect,
     pub content: Rect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DesktopAppWindowState {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub maximized: bool,
+    pub visible: bool,
+}
+
+impl DesktopAppWindowState {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates one independently manipulable restored desktop application window.
+    // ------------------=
+    pub const fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            maximized: false,
+            visible: false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,6 +128,7 @@ pub enum SettingsTarget {
     ContentRow(usize),
     ExpandedAction,
     ScrollPage(bool),
+    ScrollThumb,
     Title,
     Resize(usize),
     WindowControl(usize),
@@ -831,11 +861,17 @@ impl SystemLayout {
         }
         if text_editor && geometry.toolbar.contains(point) {
             let relative = point.x.saturating_sub(geometry.toolbar.x) as usize;
-            if relative < 108 * self.scale {
+            if relative < 96 * self.scale {
                 return DesktopAppWindowTarget::NewDocument;
             }
-            if relative < 216 * self.scale {
+            if relative < 192 * self.scale {
+                return DesktopAppWindowTarget::OpenDocument;
+            }
+            if relative < 288 * self.scale {
                 return DesktopAppWindowTarget::SaveDocument;
+            }
+            if relative < 384 * self.scale {
+                return DesktopAppWindowTarget::DeleteDocument;
             }
         }
         if geometry.content.contains(point) {
@@ -1164,6 +1200,9 @@ impl SystemLayout {
                 return Some(SettingsTarget::Section(index));
             }
         }
+        if geometry.maximum_scroll > 0 && geometry.scrollbar_thumb.contains(point) {
+            return Some(SettingsTarget::ScrollThumb);
+        }
         if geometry.maximum_scroll > 0 && geometry.scrollbar_track.contains(point) {
             return Some(SettingsTarget::ScrollPage(
                 point.y >= geometry.scrollbar_thumb.y,
@@ -1194,6 +1233,33 @@ impl SystemLayout {
             }
         }
         None
+    }
+
+    // ------------------------=
+    // FUNC: settings_scroll_offset_for_thumb
+    // DESC: Converts a dragged scrollbar thumb position into a bounded logical content offset.
+    // ------------------=
+    pub fn settings_scroll_offset_for_thumb(
+        self,
+        normalized_y: i32,
+        state: SettingsWindowState,
+        grab_offset: i32,
+    ) -> usize {
+        let geometry = self.settings_window_geometry(state);
+        if geometry.maximum_scroll == 0 {
+            return 0;
+        }
+        let pointer_y = self.height as i32 * normalized_y.clamp(0, 1000) / 1000;
+        let travel = geometry
+            .scrollbar_track
+            .height
+            .saturating_sub(geometry.scrollbar_thumb.height)
+            .max(1);
+        let thumb_y = pointer_y
+            .saturating_sub(grab_offset)
+            .saturating_sub(geometry.scrollbar_track.y)
+            .clamp(0, travel as i32) as usize;
+        thumb_y.saturating_mul(geometry.maximum_scroll) / travel as usize
     }
 
     // ------------------------=

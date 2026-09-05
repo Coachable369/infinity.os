@@ -2340,11 +2340,16 @@ impl super::DisplayDevice {
                 224,
             );
             if screen == 9 {
-                for (index, (label, role)) in [(b"New".as_slice(), 49usize), (b"Save", 51)]
-                    .iter()
-                    .enumerate()
+                for (index, (label, role)) in [
+                    (b"New".as_slice(), 49usize),
+                    (b"Open", 50),
+                    (b"Save", 51),
+                    (b"Delete", 52),
+                ]
+                .iter()
+                .enumerate()
                 {
-                    let button_left = toolbar_left + 14 * scale + index * 108 * scale;
+                    let button_left = toolbar_left + 10 * scale + index * 96 * scale;
                     let _ = self.themed_icon(
                         button_left + 13 * scale,
                         toolbar_top + 21 * scale,
@@ -2551,6 +2556,10 @@ impl super::DisplayDevice {
         app_window_height: i32,
         app_window_maximized: bool,
         editor_saved: bool,
+        editor_input: &[u8],
+        command_input: &[u8],
+        editor_window: crate::ui::system_layout::DesktopAppWindowState,
+        command_window: crate::ui::system_layout::DesktopAppWindowState,
     ) {
         self.mark_dirty_rect(0, 0, self.width, self.height);
         if matches!(screen, 5 | 6) {
@@ -2596,6 +2605,42 @@ impl super::DisplayDevice {
             self.app_launcher(scale, input, focus);
         }
 
+        if matches!(screen, 2 | 8 | 9) {
+            let active_editor = screen == 9;
+            let active_command = screen == 8;
+            if command_window.visible && !active_command {
+                self.desktop_native_app_window(
+                    8,
+                    command_input,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    command_window.x,
+                    command_window.y,
+                    command_window.width,
+                    command_window.height,
+                    command_window.maximized,
+                    true,
+                    false,
+                );
+            }
+            if editor_window.visible && !active_editor {
+                self.desktop_native_app_window(
+                    9,
+                    editor_input,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    editor_window.x,
+                    editor_window.y,
+                    editor_window.width,
+                    editor_window.height,
+                    editor_window.maximized,
+                    editor_saved,
+                    false,
+                );
+            }
+        }
         if matches!(screen, 8 | 9) {
             self.desktop_native_app_window(
                 screen,
@@ -5554,6 +5599,10 @@ pub fn system_ui_present(
     app_window_height: i32,
     app_window_maximized: bool,
     editor_saved: bool,
+    editor_input: &[u8],
+    command_input: &[u8],
+    editor_window: crate::ui::system_layout::DesktopAppWindowState,
+    command_window: crate::ui::system_layout::DesktopAppWindowState,
 ) {
     unsafe {
         let slot = &raw mut CONSOLE;
@@ -5567,6 +5616,10 @@ pub fn system_ui_present(
                 output_lengths,
                 output_count,
                 editor_saved,
+                editor_input,
+                command_input,
+                editor_window,
+                command_window,
             );
             let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
             let focus_changed = console.last_system_focus != focus;
@@ -5718,6 +5771,10 @@ pub fn system_ui_present(
                     app_window_height,
                     app_window_maximized,
                     editor_saved,
+                    editor_input,
+                    command_input,
+                    editor_window,
+                    command_window,
                 );
                 full_surface_redrawn = true;
             } else if crate::ui::redraw::onboarding_controls_require_repaint(
@@ -5799,6 +5856,10 @@ pub fn system_ui_present(
                     app_window_height,
                     app_window_maximized,
                     editor_saved,
+                    editor_input,
+                    command_input,
+                    editor_window,
+                    command_window,
                 );
                 full_surface_redrawn = true;
             }
@@ -5882,6 +5943,10 @@ pub fn system_ui_present(
     _app_window_height: i32,
     _app_window_maximized: bool,
     _editor_saved: bool,
+    _editor_input: &[u8],
+    _command_input: &[u8],
+    _editor_window: crate::ui::system_layout::DesktopAppWindowState,
+    _command_window: crate::ui::system_layout::DesktopAppWindowState,
 ) {
 }
 
@@ -5896,6 +5961,10 @@ fn system_content_hash(
     output_lengths: &[usize; 6],
     output_count: usize,
     editor_saved: bool,
+    editor_input: &[u8],
+    command_input: &[u8],
+    editor_window: crate::ui::system_layout::DesktopAppWindowState,
+    command_window: crate::ui::system_layout::DesktopAppWindowState,
 ) -> u32 {
     let mut hash = if masked {
         0x51ed_271bu32
@@ -5913,5 +5982,17 @@ fn system_content_hash(
         }
     }
     hash ^= editor_saved as u32;
+    for byte in editor_input.iter().chain(command_input.iter()) {
+        hash ^= *byte as u32;
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    for window in [editor_window, command_window] {
+        for value in [window.x, window.y, window.width, window.height] {
+            hash ^= value as u32;
+            hash = hash.wrapping_mul(0x0100_0193);
+        }
+        hash ^= (window.visible as u32) | ((window.maximized as u32) << 1);
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
     hash
 }

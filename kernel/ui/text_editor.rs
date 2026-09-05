@@ -73,6 +73,26 @@ impl TextDocument {
     }
 
     // ------------------------=
+    // FUNC: open
+    // DESC: Loads bounded persisted document bytes as the current saved revision.
+    // ------------------=
+    pub fn open(&mut self, content: &[u8]) -> bool {
+        if content.len() > DOCUMENT_CAPACITY
+            || content
+                .iter()
+                .any(|byte| !(32..=126).contains(byte) && *byte != b'\n')
+        {
+            return false;
+        }
+        self.bytes[..content.len()].copy_from_slice(content);
+        self.length = content.len();
+        self.saved_length = content.len();
+        self.revision = self.revision.wrapping_add(1);
+        self.saved_revision = self.revision;
+        true
+    }
+
+    // ------------------------=
     // FUNC: save
     // DESC: Commits the current in-session document revision.
     // ------------------=
