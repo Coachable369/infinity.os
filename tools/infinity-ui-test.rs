@@ -897,13 +897,13 @@ fn installed_system_hit_geometry_test() {
         Some(SettingsTarget::Resize(3))
     );
     let expanded = SettingsWindowState {
-        expanded_row: Some(3),
+        expanded_row: Some(2),
         height: 420,
         ..settings
     };
     let compact = SystemLayout::new(1600, 900);
     let expanded_geometry = compact.settings_window_geometry(expanded);
-    let primary_row = square.settings_row_geometry(expanded, 3);
+    let primary_row = square.settings_row_geometry(expanded, 2);
     assert_eq!(
         primary_row.detail.y,
         primary_row.summary.bottom() + 4,
@@ -943,7 +943,7 @@ fn installed_system_hit_geometry_test() {
         Some(SettingsAccentTarget::Hue(hue)) if (165..=185).contains(&hue)
     ));
     let accent_expanded = SettingsWindowState {
-        expanded_row: Some(4),
+        expanded_row: Some(3),
         ..expanded
     };
     let accent_picker = square.settings_accent_geometry(accent_expanded);
@@ -952,6 +952,23 @@ fn installed_system_hit_geometry_test() {
         square.settings_accent_target(accent_x, accent_y, accent_expanded),
         Some(SettingsAccentTarget::Spectrum { .. })
     ));
+    let standard_hidpi = SettingsWindowState {
+        x: 160,
+        y: 210,
+        width: 680,
+        height: 620,
+        maximized: false,
+        expanded_row: None,
+        scroll_offset: 0,
+        row_count: 6,
+    };
+    let hidpi_layout = SystemLayout::new(2560, 1440);
+    let hidpi_window = hidpi_layout.settings_window_geometry(standard_hidpi);
+    for color_row in [2usize, 3] {
+        let row = hidpi_layout.settings_row_geometry(standard_hidpi, color_row);
+        assert!(row.summary.y >= hidpi_window.viewport.y);
+        assert!(row.summary.bottom() <= hidpi_window.viewport.bottom());
+    }
     assert_eq!(
         resize_native_window(160, 210, 680, 620, 3, 920, 900, 600, 420),
         (160, 210, 760, 690)

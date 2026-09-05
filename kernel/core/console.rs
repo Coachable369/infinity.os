@@ -1520,8 +1520,8 @@ impl ConsoleRuntime {
                 });
             }
             (1, 1) => self.cycle_icon_theme(),
-            (1, 3) => self.cycle_primary(),
-            (1, 4) => self.cycle_accent(),
+            (1, 2) => self.cycle_primary(),
+            (1, 3) => self.cycle_accent(),
             (3, 0) => {
                 let current = crate::runtime::with_runtime(|runtime| {
                     runtime.identity.ai_profile(self.current_user)

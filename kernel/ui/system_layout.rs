@@ -1298,7 +1298,7 @@ impl SystemLayout {
     // DESC: Returns the inline HSV picker geometry owned by the expanded Accent row.
     // ------------------=
     pub fn settings_accent_geometry(self, state: SettingsWindowState) -> SettingsAccentGeometry {
-        self.settings_color_geometry(state, 4)
+        self.settings_color_geometry(state, 3)
     }
 
     // ------------------------=
@@ -1306,7 +1306,7 @@ impl SystemLayout {
     // DESC: Returns the inline HSV picker geometry owned by the expanded Primary row.
     // ------------------=
     pub fn settings_primary_geometry(self, state: SettingsWindowState) -> SettingsAccentGeometry {
-        self.settings_color_geometry(state, 3)
+        self.settings_color_geometry(state, 2)
     }
 
     // ------------------------=
@@ -1350,7 +1350,7 @@ impl SystemLayout {
         normalized_y: i32,
         state: SettingsWindowState,
     ) -> Option<SettingsAccentTarget> {
-        self.settings_color_target(normalized_x, normalized_y, state, 4)
+        self.settings_color_target(normalized_x, normalized_y, state, 3)
     }
 
     // ------------------------=
@@ -1363,7 +1363,7 @@ impl SystemLayout {
         normalized_y: i32,
         state: SettingsWindowState,
     ) -> Option<SettingsAccentTarget> {
-        self.settings_color_target(normalized_x, normalized_y, state, 3)
+        self.settings_color_target(normalized_x, normalized_y, state, 2)
     }
 
     // ------------------------=
@@ -1410,7 +1410,7 @@ impl SystemLayout {
 const fn settings_detail_height(index: usize) -> usize {
     match index {
         1 => 108,
-        3 | 4 => 112,
+        2 | 3 => 112,
         _ => 82,
     }
 }

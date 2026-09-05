@@ -1,7 +1,7 @@
 # Settings Service
 
 Appearance settings are typed and scoped to machine, user, or session. Skin,
-scale, accent, and wallpaper changes route through typed operations. Skin
+scale, primary, secondary, and wallpaper changes route through typed operations. Skin
 activation is transactional and retains Previous and LastKnownGood references;
 it cannot grant capabilities or override trusted UI semantics. The graphical
 Settings surface includes an Appearance section backed by the same service.
@@ -23,21 +23,19 @@ independent preference databases. Current scopes are System, Machine, User,
 Session, and Application; Milestone 7 implements machine naming and user-scoped
 appearance, local-AI policy, and opt-in voice state.
 
-## Installed theme color
+## Installed theme colors
 
-`Settings > Themes & Skins > Accent` expands to an inline HSV color picker. Pointer
-movement previews the selected color immediately; release commits it once to
-the authenticated user's profile. The selected RGB value is restored when that
-user next enters the installed desktop. Older profiles with no stored color or
-the retired teal default resolve to Infinity Blue (`#4DA3FF`). Window, top-bar,
-dock, and widget fills remain frosted translucent navy; the chosen accent is
-reserved for white-blue outlines, focus indicators, and selection details.
+`Settings > Themes & Skins` exposes adjacent `Primary` and `Secondary` rows.
+Each expands to its own inline HSV color picker. Pointer movement previews the
+selected color immediately; release performs one durable commit. Primary is
+machine-scoped and controls the frosted window, header, navigation, dock, and
+widget surfaces. Secondary is user-scoped and controls outlines, focus,
+selection, twiddles, and scrollbar details. The values remain independent and
+are restored when the installed desktop starts.
 
-The picker changes one semantic accent token rather than recoloring individual
-widgets. Derived roles cover window outlines, title/header surfaces, the system
-top bar, dock glass, widgets, focus indicators, and selection backgrounds. This
-keeps contrast and surface depth consistent across the desktop while allowing
-the user's color to remain recognizable.
+The pickers change semantic theme tokens rather than recoloring individual
+widgets. This keeps contrast and surface depth consistent across the desktop
+while allowing both theme colors to remain recognizable.
 
 The identity-state encoder owns persistence; the skin registry owns live color
 resolution; and Settings owns input/preview. This separation keeps the setting

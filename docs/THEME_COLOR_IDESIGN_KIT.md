@@ -4,17 +4,17 @@ Status: IMPLEMENTED BY THE INSTALLED APPEARANCE SERVICE
 
 ## User control
 
-The installed Settings application exposes one accent-color editor under
-`Themes & Skins`. The editor is a direct-manipulation HSV surface with a hue
-rail, a visible selection marker, and a live preview. Changes preview
-immediately and are committed to the authenticated user's profile when pointer
-interaction ends. Activating the Accent row advances through an accessible
-preset palette.
+The installed Settings application exposes adjacent Primary and Secondary color
+editors under `Themes & Skins`. Each editor is a direct-manipulation HSV surface
+with a hue rail, a visible selection marker, and a live preview. Changes preview
+immediately and commit once when pointer interaction ends. Primary controls
+machine-wide frosted surfaces; Secondary controls the authenticated user's
+interactive emphasis color.
 
 ## Semantic color contract
 
-One persisted RGB accent feeds semantic surface roles rather than isolated
-paint constants:
+Two independently persisted RGB values feed semantic surface roles rather than
+isolated paint constants:
 
 | Surface role | Treatment |
 | --- | --- |
@@ -31,14 +31,14 @@ success colors remain semantically fixed and are not recolored by the accent.
 
 ## Picker geometry and interaction
 
-- The picker opens from the `Accent` row without replacing other Settings
-  sections.
+- Each picker opens from its own Primary or Secondary row without replacing
+  other Settings sections.
 - Saturation increases left-to-right; brightness increases bottom-to-top.
 - The vertical hue rail spans the full hue wheel.
 - Pointer press and drag updates the preview continuously.
-- Pointer release persists the selected accent.
-- Activating the Accent row advances through a high-contrast preset palette.
-- The selected color is restored for the user at the next authenticated boot.
+- Pointer release persists only the selected color.
+- Activating either color row advances through its own accessible preset palette.
+- Both selected colors are restored at the next installed-system boot.
 
 ## Quality and accessibility
 

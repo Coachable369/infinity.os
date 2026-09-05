@@ -11,6 +11,7 @@ make clean
 make x86
 make x86_64
 make aarch64
+make settings-color-test
 make ui-install-parity-test
 make input-regression-test
 

@@ -3373,9 +3373,9 @@ impl super::DisplayDevice {
             1 => [
                 (b"Skin", b"InfinityOS Default Dark"),
                 (b"Icon Set", icon_theme.name()),
-                (b"UI Scale", b"Automatic"),
                 (b"Primary", b"Custom color"),
-                (b"Accent", b"Custom color"),
+                (b"Secondary", b"Custom color"),
+                (b"UI Scale", b"Automatic"),
                 (b"Wallpaper", b"Cosmic Horizon"),
             ],
             2 => [
@@ -3570,15 +3570,15 @@ impl super::DisplayDevice {
                             40 * scale,
                         );
                     }
-                } else if focus == 1 && index == 3 {
+                } else if focus == 1 && index == 2 {
                     self.settings_color_picker(settings_window, scale, true);
-                } else if focus == 1 && index == 4 {
+                } else if focus == 1 && index == 3 {
                     self.settings_color_picker(settings_window, scale, false);
                 } else {
                     let description: &[u8] = match (focus, index) {
                         (0, 0) => b"Rename this machine through the durable identity service.",
                         (1, 0) => b"Switch between installed, verified InfinityUI skins.",
-                        (1, 2) => b"Automatic scale follows the active display density.",
+                        (1, 4) => b"Automatic scale follows the active display density.",
                         (1, 5) => b"Cosmic Horizon is the active packaged desktop wallpaper.",
                         (3, 0) => {
                             b"Choose whether the local provider is strictly required or preferred."
