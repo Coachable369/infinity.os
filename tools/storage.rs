@@ -68,3 +68,5 @@ pub const fn days_in_month(year: u16, month: u8) -> u8 {
 pub mod object;
 #[path = "../kernel/storage/organization.rs"]
 pub mod organization;
+#[path = "../kernel/storage/layout.rs"]
+pub mod layout;

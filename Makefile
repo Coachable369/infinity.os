@@ -42,7 +42,7 @@ SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-
 	assets/boot/infinity-date-time-world-v1.bmp \
 	assets/boot/infinity-time-zone-map-v1.bmp
 
-.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety object-test namespace-test crash-recovery-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test desktop-system-test ui-install-parity-test input-regression-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
+.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test object-test namespace-test crash-recovery-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test desktop-system-test ui-install-parity-test input-regression-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
 
 milestone-7x-test:
 	@tools/skin-compiler-test.sh
@@ -138,6 +138,9 @@ test-console: x86 x86_64 aarch64
 
 test-installer-safety:
 	@tools/installer-safety-test.sh
+
+installer-capacity-test:
+	@tools/installer-capacity-test.sh
 
 object-test namespace-test crash-recovery-test:
 	@tools/object-store-test.sh

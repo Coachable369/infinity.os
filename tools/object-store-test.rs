@@ -85,8 +85,9 @@ impl ObjectCapabilityPolicy for Deny{fn authorize(&self,_:ObjectOperation,_:Opti
 // DESC: Runs the program entry point.
 // ------------------=
 fn main(){
-    let disk=MemoryDisk::new(80_000);let seed=[0x41;16];
-    let mut store=ObjectStore::format(disk.clone(),0,80_000,seed).expect("format");
+    let test_sectors=STORE_RELATIVE_LBA as usize+32_768;
+    let disk=MemoryDisk::new(test_sectors);let seed=[0x41;16];
+    let mut store=ObjectStore::format(disk.clone(),0,test_sectors as u64,seed).expect("format");
     assert!(store.runtime_bootstrap_valid());
     assert!(store.resolve(b"/home/default/documents").is_ok());
     let documents=store.resolve(b"/home/default/documents").expect("documents reference");
@@ -151,7 +152,7 @@ fn main(){
     disk.flip((STORE_RELATIVE_LBA+BANK_A+5) as usize,70);disk.flip((STORE_RELATIVE_LBA+BANK_B+5) as usize,70);
     assert!(matches!(ObjectStore::mount(disk.clone(),0),Err(ObjectError::CorruptMetadata)));
 
-    let content_disk=MemoryDisk::new(80_000);let mut content_store=ObjectStore::format(content_disk.clone(),0,80_000,seed).unwrap();
+    let content_disk=MemoryDisk::new(test_sectors);let mut content_store=ObjectStore::format(content_disk.clone(),0,test_sectors as u64,seed).unwrap();
     let content_id=content_store.create(b"corrupt",ObjectType::Text,Space::Personal,b"verified bytes").unwrap();
     // Eleven bootstrap contents precede this object: kernel, recovery, runtime,
     // service registry, capability policy, local model, AI bootstrap, voice
@@ -160,30 +161,30 @@ fn main(){
     assert_eq!(content_store.read(content_id,None,&mut out),Err(ObjectError::CorruptContent));
 
     for (offset,label) in [(1u64,"allocation"),(5,"object"),(15,"namespace"),(23,"relationship")]{
-        let corrupt=MemoryDisk::new(80_000);drop(ObjectStore::format(corrupt.clone(),0,80_000,seed).unwrap());
+        let corrupt=MemoryDisk::new(test_sectors);drop(ObjectStore::format(corrupt.clone(),0,test_sectors as u64,seed).unwrap());
         corrupt.flip((STORE_RELATIVE_LBA+BANK_B+offset) as usize,80);
         assert!(matches!(ObjectStore::mount(corrupt,0),Err(ObjectError::CorruptMetadata)),"{label}");}
 
-    let unsupported=MemoryDisk::new(80_000);drop(ObjectStore::format(unsupported.clone(),0,80_000,seed).unwrap());
+    let unsupported=MemoryDisk::new(test_sectors);drop(ObjectStore::format(unsupported.clone(),0,test_sectors as u64,seed).unwrap());
     unsupported.set_version_and_rechecksum((STORE_RELATIVE_LBA+ROOT_B) as usize,FORMAT_VERSION+1);
     assert!(matches!(ObjectStore::mount(unsupported,0),Err(ObjectError::UnsupportedFormat)));
 
-    for writes in [8usize,20,33]{let backing=MemoryDisk::new(80_000);let failing=FailingDisk::new(backing.clone());
-        let mut crash=ObjectStore::format(failing.clone(),0,80_000,seed).unwrap();let stable=crash.create(b"stable",ObjectType::Text,Space::Personal,b"before").unwrap();
+    for writes in [8usize,20,33]{let backing=MemoryDisk::new(test_sectors);let failing=FailingDisk::new(backing.clone());
+        let mut crash=ObjectStore::format(failing.clone(),0,test_sectors as u64,seed).unwrap();let stable=crash.create(b"stable",ObjectType::Text,Space::Personal,b"before").unwrap();
         let generation=crash.generation();failing.arm(writes);assert_eq!(crash.write(stable,b"after"),Err(ObjectError::TransactionFailed));
         failing.disarm();drop(crash);let mut recovered=ObjectStore::mount(backing,0).unwrap();let mut data=[0u8;32];let n=recovered.read(stable,None,&mut data).unwrap();
         assert_eq!(&data[..n],b"before");assert_eq!(recovered.generation(),generation);}
-    for writes in [5usize,25]{let backing=MemoryDisk::new(80_000);let failing=FailingDisk::new(backing.clone());
-        let mut crash=ObjectStore::format(failing.clone(),0,80_000,seed).unwrap();let stable=crash.create(b"stable",ObjectType::Text,Space::Personal,b"before").unwrap();
+    for writes in [5usize,25]{let backing=MemoryDisk::new(test_sectors);let failing=FailingDisk::new(backing.clone());
+        let mut crash=ObjectStore::format(failing.clone(),0,test_sectors as u64,seed).unwrap();let stable=crash.create(b"stable",ObjectType::Text,Space::Personal,b"before").unwrap();
         let generation=crash.generation();failing.arm(writes);assert_eq!(crash.attach(b"/home/default/documents/crash",stable),Err(ObjectError::TransactionFailed));
         failing.disarm();drop(crash);let recovered=ObjectStore::mount(backing,0).unwrap();assert_eq!(recovered.generation(),generation);
         assert_eq!(recovered.resolve(b"/home/default/documents/crash"),Err(ObjectError::NamespaceNotFound));}
 
-    let policy_disk=MemoryDisk::new(80_000);let mut policy_store=ObjectStore::format(policy_disk,0,80_000,seed).unwrap();
+    let policy_disk=MemoryDisk::new(test_sectors);let mut policy_store=ObjectStore::format(policy_disk,0,test_sectors as u64,seed).unwrap();
     let mut denied=ObjectService::new(&mut policy_store,&Deny);assert_eq!(denied.create(ObjectCreateRequest{name:b"blocked",
         kind:ObjectType::Text,space:Space::Personal,content:b"no"}),Err(ObjectError::Unauthorized));
 
-    let time_disk=MemoryDisk::new(80_000);let mut time_store=ObjectStore::format(time_disk.clone(),0,80_000,seed).unwrap();
+    let time_disk=MemoryDisk::new(test_sectors);let mut time_store=ObjectStore::format(time_disk.clone(),0,test_sectors as u64,seed).unwrap();
     let configured_time=DateTimeConfiguration{year:2026,month:9,day:4,hour:14,minute:30,second:0,time_zone_id:3,utc_offset_minutes:-360};
     time_store.install_date_time_configuration(configured_time).expect("install date/time configuration");
     assert_eq!(time_store.date_time_configuration(),Some(configured_time));drop(time_store);

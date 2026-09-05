@@ -2,6 +2,7 @@
 mod ata;
 #[cfg(feature = "installer")]
 mod format;
+pub mod layout;
 pub mod object;
 pub mod organization;
 #[cfg(target_arch = "aarch64")]

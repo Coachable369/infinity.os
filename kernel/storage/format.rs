@@ -114,39 +114,15 @@ pub fn plan_entire_disk(
     if device.logical_block_size != 512 || device.blocks < MINIMUM_BLOCKS || !date_time.is_valid() {
         return Err(StorageError::InsufficientCapacity);
     }
-    let esp_last = ESP_FIRST
-        .checked_add(ESP_BLOCKS)
-        .and_then(|x| x.checked_sub(1))
-        .ok_or(StorageError::Arithmetic)?;
-    let container_first = align_up(
-        esp_last.checked_add(1).ok_or(StorageError::Arithmetic)?,
-        ALIGNMENT_BLOCKS,
-    )?;
-    let container_last = device
-        .blocks
-        .checked_sub(34)
-        .ok_or(StorageError::Arithmetic)?;
-    let kernel_lba = container_first
-        .checked_add(KERNEL_RELATIVE_LBA)
-        .ok_or(StorageError::Arithmetic)?;
     let kernel_blocks = ((KERNEL_IMAGE.len() as u64)
         .checked_add(511)
         .ok_or(StorageError::Arithmetic)?)
         / 512;
-    if KERNEL_RELATIVE_LBA
-        .checked_add(kernel_blocks)
-        .ok_or(StorageError::Arithmetic)?
-        > super::object::STORE_RELATIVE_LBA
-    {
-        return Err(StorageError::InsufficientCapacity);
-    }
-    if kernel_lba
-        .checked_add(kernel_blocks)
-        .ok_or(StorageError::Arithmetic)?
-        > container_last
-    {
-        return Err(StorageError::InsufficientCapacity);
-    }
+    let layout = super::layout::plan_entire_disk(device.blocks, ESP_BLOCKS, kernel_blocks)
+        .map_err(|error| match error {
+            super::layout::LayoutError::InsufficientCapacity => StorageError::InsufficientCapacity,
+            super::layout::LayoutError::Arithmetic => StorageError::Arithmetic,
+        })?;
     Ok(StorageProvisioningPlan {
         target: device,
         current_layout: if device.has_gpt {
@@ -166,27 +142,16 @@ pub fn plan_entire_disk(
         pool: PoolPlan {
             uuid: derived_uuid(device.blocks, 0x504f_4f4c),
             member_count: 1,
-            total_blocks: container_last - container_first + 1,
+            total_blocks: layout.container_last - layout.container_first + 1,
         },
         spaces: profile_spaces(profile),
         esp_first_lba: ESP_FIRST,
-        esp_last_lba: esp_last,
-        container_first_lba: container_first,
-        container_last_lba: container_last,
-        kernel_lba,
-        expected_pool_blocks: container_last - container_first + 1,
+        esp_last_lba: layout.esp_last,
+        container_first_lba: layout.container_first,
+        container_last_lba: layout.container_last,
+        kernel_lba: layout.kernel_lba,
+        expected_pool_blocks: layout.container_last - layout.container_first + 1,
     })
-}
-
-// ------------------------=
-// FUNC: align_up
-// DESC: Implements the align up operation.
-// ------------------=
-fn align_up(value: u64, alignment: u64) -> Result<u64, StorageError> {
-    value
-        .checked_add(alignment - 1)
-        .map(|x| x / alignment * alignment)
-        .ok_or(StorageError::Arithmetic)
 }
 
 // ------------------------=

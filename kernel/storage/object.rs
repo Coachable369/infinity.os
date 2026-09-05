@@ -8,10 +8,10 @@ use super::{BlockDevice, DateTimeConfiguration};
 mod ai_model_asset;
 
 pub const ALLOCATION_BLOCK_SECTORS: u64 = 8; // 4 KiB independent of media sectors
-                                             // The first 32 MiB of the Infinity Container is reserved for the installed
+                                             // The first 48 MiB of the Infinity Container is reserved for the installed
                                              // kernel and future boot-critical growth. Native object metadata begins after
                                              // that explicit boundary rather than relying on the current kernel size.
-pub const STORE_RELATIVE_LBA: u64 = 65_536;
+pub use super::layout::STORE_RELATIVE_LBA;
 pub const ROOT_A: u64 = 0;
 pub const ROOT_B: u64 = 1;
 pub const BANK_A: u64 = 8;
