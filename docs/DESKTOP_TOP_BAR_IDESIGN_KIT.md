@@ -19,7 +19,9 @@ Reference target: the supplied 2258 x 80 desktop navigation screenshot.
 - Highlight: restrained blue upper wash and a soft center-right blue bloom.
 - Edge: one-pixel steel-blue outline with a quiet cyan lower separator.
 - Active state: compact translucent blue capsule contained within the rail.
-- Clock state: inset navy glass without a bright external rim or attached plate.
+- Clock state: typography sits directly in the continuous rail, separated from
+  status icons by a short low-contrast inset divider. It has no independent
+  fill, enclosing outline, rounded silhouette, external rim, or attached plate.
 
 ## Live layers
 

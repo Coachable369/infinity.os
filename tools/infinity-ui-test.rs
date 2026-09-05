@@ -769,6 +769,10 @@ fn installed_system_hit_geometry_test() {
         Some(DesktopTarget::Status(0))
     );
     assert_eq!(
+        square.desktop_target(970, 15, 30, 500, true, false),
+        Some(DesktopTarget::Status(6))
+    );
+    assert_eq!(
         square.desktop_target(100, 510, 30, 500, true, false),
         Some(DesktopTarget::HomeTitle)
     );

@@ -1229,7 +1229,7 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: paint_system_top_bar_clock_well
-    // DESC: Draws the live clock inside a recessed glass well aligned to the shared top-bar centerline.
+    // DESC: Draws the live clock as an inset segment of the continuous top-bar glass rail.
     // ------------------=
     pub(super) fn paint_system_top_bar_clock_well(
         &mut self,
@@ -1237,62 +1237,32 @@ impl super::DisplayDevice {
         height: usize,
         scale: usize,
     ) {
-        let well_width = (104 * scale).min(self.width);
-        let well_left = self.width.saturating_sub(well_width + 4 * scale);
-        let well_top = 4 * scale;
-        let well_height = height.saturating_sub(8 * scale);
-        let radius = 6 * scale;
-        self.fill_rounded_rect_alpha(
-            well_left.saturating_sub(scale),
-            well_top.saturating_sub(scale),
-            well_width.saturating_add(2 * scale),
-            well_height.saturating_add(2 * scale),
-            radius.saturating_add(scale),
-            0,
-            1,
-            5,
-            168,
-        );
-        self.fill_rounded_rect_alpha(
-            well_left,
-            well_top,
-            well_width,
-            well_height,
-            radius,
-            0,
-            7,
-            16,
-            178,
-        );
-        self.outline_rounded_rect(
-            well_left,
-            well_top,
-            well_width,
-            well_height,
-            radius,
-            24,
-            59,
-            82,
+        let segment_width = (104 * scale).min(self.width);
+        let segment_left = self.width.saturating_sub(segment_width + 4 * scale);
+        let separator_left = segment_left.saturating_sub(3 * scale);
+        let separator_top = 8 * scale;
+        let separator_height = height.saturating_sub(16 * scale);
+        let (outline_r, outline_g, outline_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        self.fill_rect_alpha(
+            separator_left,
+            separator_top,
+            scale,
+            separator_height,
+            outline_r,
+            outline_g,
+            outline_b,
+            104,
         );
         self.fill_rect_alpha(
-            well_left + radius,
-            well_top + scale,
-            well_width.saturating_sub(radius * 2),
+            separator_left + scale,
+            separator_top,
             scale,
+            separator_height,
             0,
-            0,
-            2,
-            190,
-        );
-        self.fill_rect_alpha(
-            well_left + radius,
-            well_top + well_height.saturating_sub(2 * scale),
-            well_width.saturating_sub(radius * 2),
-            scale,
-            54,
-            121,
-            157,
-            105,
+            3,
+            8,
+            92,
         );
 
         let mut time = *b"00:00:00";
@@ -1304,7 +1274,7 @@ impl super::DisplayDevice {
         time[7] = b'0' + clock.second % 10;
         let time_width = self.ui_text_width(&time, 1);
         self.ui_text_strong(
-            well_left + well_width.saturating_sub(time_width) / 2,
+            segment_left + segment_width.saturating_sub(time_width) / 2,
             height / 2 - UI_FONT_CELL_HEIGHT / 2,
             &time,
             226,
@@ -1321,39 +1291,39 @@ impl super::DisplayDevice {
     pub(super) fn system_top_bar_clock(&mut self, clock: crate::storage::DateTimeConfiguration) {
         let scale = self.ui_scale().max(1);
         let height = (38 * scale).min(self.height / 14).max(34 * scale);
-        let width = (112 * scale).min(self.width);
-        let left = self.width.saturating_sub(width);
-        self.paint_desktop_background_rect(left, 0, width, height);
-        self.fill_rect_alpha(left, 0, width, height, 0, 2, 7, 176);
+        let repaint_width = (116 * scale).min(self.width);
+        let repaint_left = self.width.saturating_sub(repaint_width);
+        let repaint_top = 3 * scale;
+        let repaint_height = height.saturating_sub(6 * scale);
+        let repaint_right = self.width.saturating_sub(4 * scale);
+        let interior_width = repaint_right.saturating_sub(repaint_left);
+        let (top_r, top_g, top_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::TopBar);
+        self.paint_desktop_background_rect(
+            repaint_left,
+            repaint_top,
+            interior_width,
+            repaint_height,
+        );
         self.fill_rect_alpha(
-            left,
-            2 * scale,
-            width.saturating_sub(2 * scale),
-            height.saturating_sub(4 * scale),
-            0,
-            8,
-            18,
+            repaint_left,
+            repaint_top,
+            interior_width,
+            repaint_height,
+            top_r,
+            top_g,
+            top_b,
             238,
         );
         self.fill_rect_alpha(
-            left,
-            2 * scale,
-            width.saturating_sub(2 * scale),
-            height / 2,
+            repaint_left,
+            repaint_top,
+            interior_width,
+            height / 2 - repaint_top,
             18,
             39,
             59,
             88,
-        );
-        self.fill_rect_alpha(
-            left,
-            height.saturating_sub(2 * scale),
-            width.saturating_sub(9 * scale),
-            1,
-            35,
-            113,
-            153,
-            150,
         );
         self.paint_system_top_bar_clock_well(clock, height, scale);
     }
