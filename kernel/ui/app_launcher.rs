@@ -70,8 +70,8 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
 
 pub const LAUNCHER_APPS: [LauncherEntry; 12] = [
     LauncherEntry {
-        label: b"Files",
-        icon_role: 3,
+        label: b"File Navigator",
+        icon_role: 4,
         action: LauncherAction::Home(0),
     },
     LauncherEntry {

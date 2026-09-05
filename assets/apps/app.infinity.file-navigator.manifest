@@ -1,0 +1,23 @@
+INFINITY-APPLICATION 1
+identity=app.infinity.file-navigator
+display-name=File Navigator
+window-class=Normal
+surface=persistent
+default-size=780x560
+minimum-size=640x420
+icon=assets/apps/file-navigator-icon-v1.png
+intent=BrowseNamespace:NamespaceRef
+intent=RevealObject:ObjectId
+intent=OpenObject:ObjectRef
+capability=Namespace.Traverse
+capability=Namespace.List
+capability=Namespace.Create
+capability=Namespace.Move
+capability=Namespace.Attach
+capability=Namespace.Detach
+capability=Object.Read
+capability=Object.Copy
+capability=Object.MetadataRead
+capability=Object.HistoryRead
+capability=Trash.Use
+capability=Application.Launch

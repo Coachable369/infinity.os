@@ -595,6 +595,22 @@ pub fn network_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError> 
 pub fn network_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
     object_write_path(b"/system/network/state", content)
 }
+
+// ------------------------=
+// FUNC: shell_profile_state_load
+// DESC: Loads versioned declarative Shell Profile objects from authoritative System Space.
+// ------------------=
+pub fn shell_profile_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError> {
+    object_read_path(b"/system/settings/shell/profiles", None, out).map(|(_, length)| length)
+}
+
+// ------------------------=
+// FUNC: shell_profile_state_commit
+// DESC: Commits declarative Shell Profile state without dotfiles or executable startup code.
+// ------------------=
+pub fn shell_profile_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
+    object_write_path(b"/system/settings/shell/profiles", content)
+}
 // ------------------------=
 // FUNC: namespace_attach
 // DESC: Implements the namespace attach operation.
@@ -688,6 +704,156 @@ pub fn namespace_move(from: &[u8], to: &[u8]) -> Result<(), object::ObjectError>
     {
         let _ = (from, to);
         Err(object::ObjectError::SpaceUnavailable)
+    }
+}
+
+// ------------------------=
+// FUNC: namespace_create
+// DESC: Creates a first-class Namespace Object and its human reference atomically.
+// ------------------=
+pub fn namespace_create(path: &[u8]) -> Result<object::ObjectId, object::ObjectError> {
+    let name = path.rsplit(|byte| *byte == b'/').next().unwrap_or(&[]);
+    if name.is_empty() {
+        return Err(object::ObjectError::InvalidPath);
+    }
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        with_store(|store| store.create_attached(name, object::ObjectType::NamespaceNode, object::Space::Personal, b"", path))
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = path;
+        Err(object::ObjectError::SpaceUnavailable)
+    }
+}
+
+// ------------------------=
+// FUNC: namespace_delete
+// DESC: Deletes only an empty non-protected Namespace and rejects implicit recursion.
+// ------------------=
+pub fn namespace_delete(path: &[u8]) -> Result<object::ObjectId, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        with_store(|store| store.delete_namespace(path))
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = path;
+        Err(object::ObjectError::SpaceUnavailable)
+    }
+}
+
+// ------------------------=
+// FUNC: object_copy_path
+// DESC: Creates a new logical Object identity while preserving source content and metadata.
+// ------------------=
+pub fn object_copy_path(source: &[u8], destination: &[u8]) -> Result<object::ObjectId, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        with_store(|store| {
+            let source = store.resolve(source)?;
+            store.copy_attached(source, destination)
+        })
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = (source, destination);
+        Err(object::ObjectError::SpaceUnavailable)
+    }
+}
+
+// ------------------------=
+// FUNC: object_destroy_explicit
+// DESC: Dispatches an explicit capability-confirmed underlying Object destruction request.
+// ------------------=
+pub fn object_destroy_explicit(reference: &[u8], authorized: bool) -> Result<(), object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        with_store(|store| {
+            let id = store.resolve(reference)?;
+            store.destroy_explicit(id, authorized)
+        })
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = (reference, authorized);
+        Err(object::ObjectError::SpaceUnavailable)
+    }
+}
+
+// ------------------------=
+// FUNC: trash_move
+// DESC: Moves a selected Namespace reference beneath Trash while preserving ObjectId and original path.
+// ------------------=
+pub fn trash_move(path: &[u8]) -> Result<object::ObjectId, object::ObjectError> {
+    if path.starts_with(b"/trash/") || path == b"/trash" || path.len() + 6 > 95 {
+        return Err(object::ObjectError::InvalidPath);
+    }
+    let id = namespace_resolve(path)?;
+    let mut trash_path = [0u8; 95];
+    trash_path[..6].copy_from_slice(b"/trash");
+    trash_path[6..6 + path.len()].copy_from_slice(path);
+    namespace_move(path, &trash_path[..6 + path.len()])?;
+    Ok(id)
+}
+
+// ------------------------=
+// FUNC: trash_restore
+// DESC: Restores a Trash Namespace reference to its exact original human path.
+// ------------------=
+pub fn trash_restore(trash_path: &[u8]) -> Result<object::ObjectId, object::ObjectError> {
+    if !trash_path.starts_with(b"/trash/") {
+        return Err(object::ObjectError::InvalidPath);
+    }
+    let original = &trash_path[6..];
+    let id = namespace_resolve(trash_path)?;
+    namespace_move(trash_path, original)?;
+    Ok(id)
+}
+
+// ------------------------=
+// FUNC: trash_delete
+// DESC: Permanently deletes one Trash entry through the selected reference lifecycle.
+// ------------------=
+pub fn trash_delete(trash_path: &[u8]) -> Result<object::ObjectId, object::ObjectError> {
+    if !trash_path.starts_with(b"/trash/") {
+        return Err(object::ObjectError::InvalidPath);
+    }
+    object_remove_path(trash_path)
+}
+
+// ------------------------=
+// FUNC: trash_empty
+// DESC: Permanently removes all visible Trash references with bounded repeated enumeration.
+// ------------------=
+pub fn trash_empty() -> Result<usize, object::ObjectError> {
+    let mut removed = 0usize;
+    loop {
+        let Some(entry) = namespace_list_nth(b"/trash", 0)? else {
+            return Ok(removed);
+        };
+        object_remove_path(&entry.path[..entry.path_len as usize])?;
+        removed += 1;
+    }
+}
+
+// ------------------------=
+// FUNC: object_reference_nth
+// DESC: Returns one Namespace reference attached to a stable Object identity.
+// ------------------=
+pub fn object_reference_nth(id: object::ObjectId, index: usize, out: &mut [u8]) -> Option<usize> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    unsafe {
+        let store = OBJECT_STORE.as_ref()?;
+        let path = store.namespace_ref_nth(id, index)?;
+        let length = path.len().min(out.len());
+        out[..length].copy_from_slice(&path[..length]);
+        Some(length)
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = (id, index, out);
+        None
     }
 }
 // ------------------------=

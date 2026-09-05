@@ -5274,6 +5274,14 @@ impl super::DisplayDevice {
             self.desktop_icon(pixel_x, pixel_y, name, *kind);
         }
         if window_visible {
+            let navigator_state = crate::runtime::with_runtime(|runtime| runtime.file_navigator)
+                .flatten();
+            let navigator_list_view = navigator_state
+                .map(|state| state.view_mode == crate::runtime::object_navigation::ViewMode::List)
+                .unwrap_or(true);
+            let navigator_inspector_open = navigator_state
+                .map(|state| state.inspector_open)
+                .unwrap_or(true);
             let (browser_left, browser_top, browser_width, browser_height) = if window_maximized {
                 let left = 10 * scale;
                 let top = (46 * scale).min(self.height / 12).max(40) + 10 * scale;
@@ -5321,7 +5329,7 @@ impl super::DisplayDevice {
             self.ui_text_strong(
                 browser_left + 38 * scale,
                 title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
-                b"Home",
+                b"File Navigator",
                 226,
                 237,
                 245,
@@ -5432,8 +5440,16 @@ impl super::DisplayDevice {
                 15 * scale,
                 false,
             );
-            let location_left = browser_left + 72 * scale;
-            let location_width = browser_width.saturating_sub(124 * scale);
+            self.authentication_icon(
+                browser_left + 76 * scale,
+                tool_top + 19 * scale,
+                15,
+                15 * scale,
+                false,
+            );
+            let location_left = browser_left + 100 * scale;
+            let mode_controls_width = 142 * scale;
+            let location_width = browser_width.saturating_sub(154 * scale + mode_controls_width);
             self.fill_rounded_rect_alpha(
                 location_left,
                 tool_top + 5 * scale,
@@ -5456,25 +5472,56 @@ impl super::DisplayDevice {
                 81,
             );
             let location_names: [&[u8]; 9] = [
-                b"Home",
-                b"Personal Space",
-                b"Documents",
-                b"Downloads",
-                b"Pictures",
-                b"Music",
-                b"Videos",
-                b"Projects",
-                b"Recycle Bin",
+                b"/home/default",
+                b"/home/default",
+                b"/home/default/documents",
+                b"/home/default/downloads",
+                b"/home/default/pictures",
+                b"/home/default/media",
+                b"/home/default/media",
+                b"/home/default/projects",
+                b"/trash",
             ];
             self.ui_text(
                 location_left + 14 * scale,
                 tool_top + 9 * scale,
-                location_names[home_location.min(8)],
+                navigator_state
+                    .as_ref()
+                    .map(|state| state.active_namespace_ref.as_bytes())
+                    .unwrap_or(location_names[home_location.min(8)]),
                 193,
                 211,
                 224,
                 1,
             );
+            for (index, label) in [b"List".as_slice(), b"Grid", b"Inspector"].iter().enumerate() {
+                let control_left = browser_left + browser_width.saturating_sub((146 - index * 46) * scale);
+                let control_width = if index == 2 { 54 * scale } else { 42 * scale };
+                let selected = (index == 0 && navigator_list_view)
+                    || (index == 1 && !navigator_list_view)
+                    || (index == 2 && navigator_inspector_open);
+                self.fill_rounded_rect_alpha(
+                    control_left,
+                    tool_top + 6 * scale,
+                    control_width,
+                    26 * scale,
+                    7 * scale,
+                    if selected { selection_r } else { 9 },
+                    if selected { selection_g } else { 29 },
+                    if selected { selection_b } else { 45 },
+                    230,
+                );
+                self.ui_text_centered(
+                    control_left,
+                    control_width,
+                    tool_top + 10 * scale,
+                    label,
+                    213,
+                    231,
+                    241,
+                    1,
+                );
+            }
             let sidebar_w = browser_width * 27 / 100;
             self.fill_rect_alpha(
                 browser_left,
@@ -5504,11 +5551,11 @@ impl super::DisplayDevice {
                 b"Music",
                 b"Videos",
                 b"Projects",
-                b"Recycle Bin",
+                b"Trash",
                 b"",
                 b"DEVICES",
                 b"Infinity Storage",
-                b"Backup Drive",
+                b"",
             ]
             .iter()
             .enumerate()
@@ -5594,7 +5641,23 @@ impl super::DisplayDevice {
                         190,
                     );
                 }
-                self.desktop_icon(grid_x + column * gap, grid_y + row * tile_step, name, *kind);
+                if navigator_list_view {
+                    let row_y = grid_y + index * 34 * scale;
+                    self.fill_rect_alpha(
+                        grid_x.saturating_sub(18 * scale),
+                        row_y.saturating_sub(7 * scale),
+                        browser_width.saturating_sub(sidebar_w + if navigator_inspector_open { browser_width * 25 / 100 + 36 * scale } else { 48 * scale }),
+                        30 * scale,
+                        8,
+                        28,
+                        44,
+                        if index % 2 == 0 { 170 } else { 105 },
+                    );
+                    let _ = self.themed_icon(grid_x, row_y + 7 * scale, if *kind == 3 { 4 } else { 3 }, 22 * scale);
+                    self.ui_text(grid_x + 22 * scale, row_y, name, 215, 229, 238, 1);
+                } else {
+                    self.desktop_icon(grid_x + column * gap, grid_y + row * tile_step, name, *kind);
+                }
             }
             if dragging_item == Some(6) {
                 self.ui_text(
@@ -5606,6 +5669,62 @@ impl super::DisplayDevice {
                     250,
                     1,
                 );
+            }
+            if navigator_inspector_open && browser_width >= 700 * scale {
+                let inspector_width = browser_width * 25 / 100;
+                let inspector_left = browser_left + browser_width - inspector_width;
+                let inspector_top = tool_top + 38 * scale;
+                self.fill_rect_alpha(
+                    inspector_left,
+                    inspector_top,
+                    inspector_width,
+                    browser_height.saturating_sub(title_h + 38 * scale),
+                    5,
+                    18,
+                    31,
+                    224,
+                );
+                self.outline_rect(
+                    inspector_left,
+                    inspector_top,
+                    inspector_width,
+                    browser_height.saturating_sub(title_h + 38 * scale),
+                    74,
+                    139,
+                    176,
+                );
+                self.ui_text_strong(inspector_left + 14 * scale, inspector_top + 16 * scale, b"INSPECTOR", 214, 237, 249, 1);
+                for (index, heading) in [
+                    b"IDENTITY".as_slice(),
+                    b"METADATA",
+                    b"STORAGE",
+                    b"SECURITY",
+                    b"REFERENCES",
+                    b"VERSIONS",
+                    b"RELATIONSHIPS",
+                ]
+                .iter()
+                .enumerate()
+                {
+                    self.ui_text(
+                        inspector_left + 14 * scale,
+                        inspector_top + (52 + index * 42) * scale,
+                        heading,
+                        92,
+                        202,
+                        248,
+                        1,
+                    );
+                    self.ui_text(
+                        inspector_left + 14 * scale,
+                        inspector_top + (70 + index * 42) * scale,
+                        if selected_item.is_some() { b"Available".as_slice() } else { b"Select an object".as_slice() },
+                        169,
+                        190,
+                        205,
+                        1,
+                    );
+                }
             }
         }
 

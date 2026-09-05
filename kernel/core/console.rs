@@ -311,6 +311,7 @@ struct ConsoleRuntime {
     command_length: usize,
     intent: IntentRuntime,
     language_session: crate::runtime::console_language::ConsoleSession,
+    navigation_context: crate::runtime::object_navigation::ConsoleNavigationContext,
     system: SystemSnapshot,
     pointer_x: i32,
     pointer_y: i32,
@@ -422,6 +423,12 @@ impl ConsoleRuntime {
             command_length: 0,
             intent: IntentRuntime::new(),
             language_session: crate::runtime::console_language::ConsoleSession::new(),
+            navigation_context: crate::runtime::object_navigation::ConsoleNavigationContext::new(
+                1,
+                0,
+                b"/home/default",
+            )
+            .unwrap(),
             system,
             pointer_x: 500,
             pointer_y: 500,
@@ -472,16 +479,16 @@ impl ConsoleRuntime {
             settings_scroll_dragging: false,
             settings_scroll_grab_offset: 0,
             onboarding_validation_error: false,
-            home_window_x: 30,
-            home_window_y: 400,
-            home_window_width: 430,
-            home_window_height: 480,
+            home_window_x: 110,
+            home_window_y: 150,
+            home_window_width: 780,
+            home_window_height: 660,
             home_window_visible: true,
             home_window_maximized: false,
-            home_window_restore_x: 30,
-            home_window_restore_y: 400,
-            home_window_restore_width: 430,
-            home_window_restore_height: 480,
+            home_window_restore_x: 110,
+            home_window_restore_y: 150,
+            home_window_restore_width: 780,
+            home_window_restore_height: 660,
             home_window_dragging: false,
             home_window_resizing: None,
             home_window_drag_offset_x: 0,
@@ -1903,6 +1910,10 @@ impl ConsoleRuntime {
                 self.home_window_visible = true;
                 self.home_previous_location = self.home_location;
                 self.home_location = location.min(8);
+                let path = home_location_path(self.home_location);
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime.file_navigator.as_mut().map(|navigator| navigator.navigate(path))
+                });
                 self.home_selected_item = None;
                 self.enter_desktop();
             }
@@ -3840,13 +3851,34 @@ impl ConsoleRuntime {
                         }
                         self.home_window_maximized = !self.home_window_maximized;
                     }
-                    Some(DesktopTarget::HomeToolbar(_)) => {
-                        core::mem::swap(&mut self.home_location, &mut self.home_previous_location);
+                    Some(DesktopTarget::HomeToolbar(action)) => {
+                        let _ = crate::runtime::with_runtime(|runtime| {
+                            let Some(navigator) = runtime.file_navigator.as_mut() else { return; };
+                            match action {
+                                0 => { let _ = navigator.back(); }
+                                1 => { let _ = navigator.forward(); }
+                                2 => {
+                                    if let Ok(parent) = crate::runtime::object_navigation::parent_path(
+                                        navigator.active_namespace_ref.as_bytes(),
+                                    ) {
+                                        let _ = navigator.navigate(parent.as_bytes());
+                                    }
+                                }
+                                3 => navigator.view_mode = crate::runtime::object_navigation::ViewMode::List,
+                                4 => navigator.view_mode = crate::runtime::object_navigation::ViewMode::Grid,
+                                5 => navigator.inspector_open = !navigator.inspector_open,
+                                _ => {}
+                            }
+                        });
                         self.home_selected_item = None;
                     }
                     Some(DesktopTarget::HomeSidebar(location)) => {
                         self.home_previous_location = self.home_location;
                         self.home_location = location;
+                        let path = home_location_path(location);
+                        let _ = crate::runtime::with_runtime(|runtime| {
+                            runtime.file_navigator.as_mut().map(|navigator| navigator.navigate(path))
+                        });
                         self.home_selected_item = None;
                     }
                     Some(DesktopTarget::HomeItem(item)) => {
@@ -4202,6 +4234,27 @@ impl ConsoleRuntime {
         let length = self.command_length;
         self.output
             .write_segments(&[self.prompt(), &command[..length]]);
+        let resolved_alias = crate::runtime::with_runtime(|runtime| {
+            runtime
+                .shell_profiles
+                .as_ref()
+                .and_then(|profiles| profiles.resolve(&command[..length]).ok())
+        })
+        .flatten();
+        if let Some(resolution) = resolved_alias {
+            if !resolution.native {
+                self.output.write_segments(&[
+                    b"Resolved profile ",
+                    &profile_id_text(resolution.resolved_profile),
+                    b" -> ",
+                    resolution.canonical.as_bytes(),
+                ]);
+            }
+            if self.execute_native_navigation_command(resolution.canonical.as_bytes()) {
+                self.reset_input();
+                return;
+            }
+        }
         if self.execute_language_command(&command[..length]) {
             self.reset_input();
             return;
@@ -4265,6 +4318,361 @@ impl ConsoleRuntime {
             }
         }
         self.reset_input();
+    }
+
+    // ------------------------=
+    // FUNC: execute_native_navigation_command
+    // DESC: Dispatches Milestone 8 vocabulary through typed Namespace, Object, Trash, Shell, and Application operations.
+    // ------------------=
+    fn execute_native_navigation_command(&mut self, command: &[u8]) -> bool {
+        let first = command_word(command, 0).unwrap_or(&[]);
+        if first == b"path" && command_word(command, 1).is_none() {
+            self.output.write_line(self.navigation_context.path());
+            return true;
+        }
+        if matches!(first, b"idir" | b"cd") {
+            let target = command_tail(command, 1).unwrap_or(b"home");
+            let result = self.navigation_context.navigate(target, |path| {
+                crate::storage::namespace_resolve(path).is_ok()
+            });
+            match result {
+                Ok(path) => self.output.write_line(path),
+                Err(_) => self.output.write_line(b"Namespace navigation denied or unavailable."),
+            }
+            return true;
+        }
+        if first == b"list" {
+            let mut prefix = self.navigation_context.path();
+            let mut tree = false;
+            if command_word(command, 1) == Some(b"tree") {
+                tree = true;
+                if let Some(path) = command_word(command, 2) {
+                    prefix = path;
+                }
+            } else if let Some(path) = command_word(command, 1) {
+                prefix = path;
+            }
+            let mut shown = 0usize;
+            for index in 0..32usize {
+                let entry = match crate::storage::namespace_list_nth(prefix, index) {
+                    Ok(Some(entry)) => entry,
+                    _ => break,
+                };
+                let path = &entry.path[..entry.path_len as usize];
+                if tree || immediate_namespace_child(prefix, path) {
+                    self.output.write_line(path);
+                    shown += 1;
+                }
+            }
+            self.output.write_number(b"Objects shown: ", shown as u64);
+            return true;
+        }
+        if matches!(first, b"examine" | b"resolve" | b"versions" | b"references" | b"relationships") {
+            let Some(target) = command_word(command, 1) else {
+                self.output.write_line(b"A NamespaceRef or ObjectId is required.");
+                return true;
+            };
+            match crate::storage::namespace_resolve(target) {
+                Ok(id) => {
+                    self.output.write_id(b"ObjectId: ", id);
+                    if first == b"resolve" {
+                        self.output.write_line(target);
+                    } else if first == b"versions" {
+                        if let Ok((_, count, current)) = crate::storage::object_history(target) {
+                            self.output.write_number(b"Versions: ", count as u64);
+                            self.output.write_number(b"Current version: ", current as u64);
+                        }
+                    } else if first == b"references" {
+                        for index in 0..32usize {
+                            let mut path = [0u8; 96];
+                            let Some(length) = crate::storage::object_reference_nth(id, index, &mut path) else { break; };
+                            self.output.write_line(&path[..length]);
+                        }
+                    } else if first == b"relationships" {
+                        self.output.write_line(b"Typed semantic relationships available through Object.Relationships.");
+                    } else if let Ok((metadata, references)) = crate::storage::object_inspect_path(target) {
+                        self.output.write_number(b"Object type: ", metadata.kind as u64);
+                        self.output.write_number(b"Reference count: ", references as u64);
+                        self.output.write_number(b"Version: ", metadata.current_version as u64);
+                        self.output.write_number(b"Logical bytes: ", metadata.logical_size as u64);
+                    }
+                }
+                Err(error) => self.storage_error(error),
+            }
+            return true;
+        }
+        if first == b"find" {
+            let query = command_tail(command, 1).unwrap_or(&[]);
+            let mut found = 0usize;
+            for index in 0..128usize {
+                let mut path = [0u8; 96];
+                let Some((length, _)) = crate::storage::namespace_entry(index, &mut path) else { break; };
+                if ascii_contains_case_insensitive(&path[..length], query) {
+                    self.output.write_line(&path[..length]);
+                    found += 1;
+                    if found == 32 { break; }
+                }
+            }
+            self.output.write_number(b"Search results: ", found as u64);
+            return true;
+        }
+        if first == b"open" {
+            let Some(target) = command_word(command, 1) else { return true; };
+            if crate::storage::object_inspect_path(target).is_ok() {
+                self.output.write_line(b"ApplicationAssociation.Resolve -> Application.Launch");
+                self.open_text_editor();
+            } else {
+                self.output.write_line(b"No authorized application association.");
+            }
+            return true;
+        }
+        if first == b"navigator" {
+            let target = command_word(command, 1).unwrap_or(self.navigation_context.path());
+            let target = if target == b"." { self.navigation_context.path() } else { target };
+            let navigated = crate::runtime::with_runtime(|runtime| {
+                runtime
+                    .file_navigator
+                    .as_mut()
+                    .map(|navigator| navigator.navigate(target).is_ok())
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+            if navigated {
+                self.home_window_visible = true;
+                self.enter_desktop();
+            } else {
+                self.output.write_line(b"Navigator target is not a valid NamespaceRef.");
+            }
+            return true;
+        }
+        if first == b"namespace" {
+            return self.execute_namespace_resource_command(command);
+        }
+        if first == b"object" {
+            return self.execute_object_resource_command(command);
+        }
+        if first == b"reference" {
+            return self.execute_reference_resource_command(command);
+        }
+        if first == b"trash" {
+            return self.execute_trash_resource_command(command);
+        }
+        if first == b"shell" {
+            return self.execute_shell_profile_command(command);
+        }
+        if first == b"commands" {
+            let group = command_word(command, 1).unwrap_or(b"all");
+            if matches!(group, b"all" | b"navigation") {
+                self.output.write_line(b"path idir cd list examine resolve references versions relationships find open navigator");
+            }
+            if matches!(group, b"all" | b"objects") {
+                self.output.write_line(b"namespace create/delete/move/list; object create/copy/delete/destroy; reference create/delete/list; trash add/list/restore/delete/empty");
+            }
+            if matches!(group, b"all" | b"shell") {
+                self.output.write_line(b"shell profile list/inspect/create/clone/enable/disable/set-default/delete; shell alias list/add/delete/resolve");
+            }
+            return true;
+        }
+        false
+    }
+
+    // ------------------------=
+    // FUNC: execute_namespace_resource_command
+    // DESC: Executes typed Namespace lifecycle commands with safe empty-container deletion.
+    // ------------------=
+    fn execute_namespace_resource_command(&mut self, command: &[u8]) -> bool {
+        let action = command_word(command, 1).unwrap_or(&[]);
+        let source = command_word(command, 2).unwrap_or(&[]);
+        let result = match action {
+            b"create" => crate::storage::namespace_create(source).map(|id| Some(id)),
+            b"delete" => crate::storage::namespace_delete(source).map(|id| Some(id)),
+            b"move" => {
+                let destination = command_word(command, 3).unwrap_or(&[]);
+                crate::storage::namespace_move(source, destination).map(|_| crate::storage::namespace_resolve(destination).ok())
+            }
+            b"list" => {
+                let path = if source.is_empty() { self.navigation_context.path() } else { source };
+                for index in 0..32usize {
+                    let Ok(Some(entry)) = crate::storage::namespace_list_nth(path, index) else { break; };
+                    self.output.write_line(&entry.path[..entry.path_len as usize]);
+                }
+                return true;
+            }
+            _ => return false,
+        };
+        match result {
+            Ok(Some(id)) => self.output.write_id(b"ObjectId: ", id),
+            Ok(None) => self.output.write_line(b"Namespace operation committed."),
+            Err(error) => self.storage_error(error),
+        }
+        true
+    }
+
+    // ------------------------=
+    // FUNC: execute_object_resource_command
+    // DESC: Executes typed Object create, copy, safe delete, and explicit destroy commands.
+    // ------------------=
+    fn execute_object_resource_command(&mut self, command: &[u8]) -> bool {
+        let action = command_word(command, 1).unwrap_or(&[]);
+        let source = command_word(command, 2).unwrap_or(&[]);
+        match action {
+            b"create" => {
+                let name = source.rsplit(|byte| *byte == b'/').next().unwrap_or(source);
+                match crate::storage::object_create_note_at(name, b"", source) {
+                    Ok(id) => self.output.write_id(b"ObjectId: ", id),
+                    Err(error) => self.storage_error(error),
+                }
+            }
+            b"copy" => match crate::storage::object_copy_path(source, command_word(command, 3).unwrap_or(&[])) {
+                Ok(id) => self.output.write_id(b"New ObjectId: ", id),
+                Err(error) => self.storage_error(error),
+            },
+            b"delete" => match crate::storage::trash_move(source) {
+                Ok(id) => self.output.write_id(b"Moved to Trash: ", id),
+                Err(error) => self.storage_error(error),
+            },
+            b"destroy" => {
+                let confirmed = command_word(command, 3) == Some(b"confirm=true");
+                match crate::storage::object_destroy_explicit(source, confirmed) {
+                    Ok(()) => self.output.write_line(b"Object identity permanently destroyed."),
+                    Err(error) => self.storage_error(error),
+                }
+            }
+            b"inspect" | b"history" | b"relationships" => {
+                let alias = if action == b"history" { b"versions".as_slice() } else if action == b"relationships" { b"relationships".as_slice() } else { b"examine".as_slice() };
+                let mut translated = [0u8; COMMAND_CAPACITY];
+                translated[..alias.len()].copy_from_slice(alias);
+                translated[alias.len()] = b' ';
+                translated[alias.len() + 1..alias.len() + 1 + source.len()].copy_from_slice(source);
+                return self.execute_native_navigation_command(&translated[..alias.len() + 1 + source.len()]);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    // ------------------------=
+    // FUNC: execute_reference_resource_command
+    // DESC: Executes additional-reference creation, selected-reference deletion, and reference enumeration.
+    // ------------------=
+    fn execute_reference_resource_command(&mut self, command: &[u8]) -> bool {
+        let action = command_word(command, 1).unwrap_or(&[]);
+        let source = command_word(command, 2).unwrap_or(&[]);
+        match action {
+            b"create" => match crate::storage::namespace_link(source, command_word(command, 3).unwrap_or(&[])) {
+                Ok(id) => self.output.write_id(b"Referenced ObjectId: ", id),
+                Err(error) => self.storage_error(error),
+            },
+            b"delete" => match crate::storage::namespace_detach(source) {
+                Ok(()) => self.output.write_line(b"Selected Namespace reference removed; ObjectId retained."),
+                Err(error) => self.storage_error(error),
+            },
+            b"list" => {
+                let mut translated = [0u8; COMMAND_CAPACITY];
+                translated[..11].copy_from_slice(b"references ");
+                translated[11..11 + source.len()].copy_from_slice(source);
+                return self.execute_native_navigation_command(&translated[..11 + source.len()]);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    // ------------------------=
+    // FUNC: execute_trash_resource_command
+    // DESC: Executes recoverable Trash lifecycle commands against the authoritative Namespace layer.
+    // ------------------=
+    fn execute_trash_resource_command(&mut self, command: &[u8]) -> bool {
+        let action = command_word(command, 1).unwrap_or(&[]);
+        let target = command_word(command, 2).unwrap_or(&[]);
+        match action {
+            b"add" => match crate::storage::trash_move(target) {
+                Ok(id) => self.output.write_id(b"Trash ObjectId: ", id),
+                Err(error) => self.storage_error(error),
+            },
+            b"list" => {
+                for index in 0..32usize {
+                    let Ok(Some(entry)) = crate::storage::namespace_list_nth(b"/trash", index) else { break; };
+                    self.output.write_line(&entry.path[..entry.path_len as usize]);
+                }
+            }
+            b"restore" => match crate::storage::trash_restore(target) {
+                Ok(id) => self.output.write_id(b"Restored ObjectId: ", id),
+                Err(error) => self.storage_error(error),
+            },
+            b"delete" => match crate::storage::trash_delete(target) {
+                Ok(id) => self.output.write_id(b"Permanently deleted ObjectId: ", id),
+                Err(error) => self.storage_error(error),
+            },
+            b"empty" => match crate::storage::trash_empty() {
+                Ok(count) => self.output.write_number(b"Trash entries deleted: ", count as u64),
+                Err(error) => self.storage_error(error),
+            },
+            _ => return false,
+        }
+        true
+    }
+
+    // ------------------------=
+    // FUNC: execute_shell_profile_command
+    // DESC: Executes persistent capability-aware Shell Profile and alias lifecycle operations.
+    // ------------------=
+    fn execute_shell_profile_command(&mut self, command: &[u8]) -> bool {
+        let resource = command_word(command, 1).unwrap_or(&[]);
+        if resource == b"status" {
+            crate::runtime::with_runtime(|runtime| {
+                if let Some(profiles) = runtime.shell_profiles.as_ref() {
+                    for index in 0..profiles.profile_count() {
+                        if let Some(profile) = profiles.profile_nth(index).filter(|profile| profile.enabled) {
+                            self.output.write_line(profile.name.as_bytes());
+                        }
+                    }
+                }
+            });
+            return true;
+        }
+        let action = command_word(command, 2).unwrap_or(&[]);
+        let name = command_word(command, 3).unwrap_or(&[]);
+        let actor = self.current_user.short();
+        let now = self.desktop_clock.second as u64 + 1;
+        if resource == b"profile" && action == b"list" {
+            crate::runtime::with_runtime(|runtime| {
+                if let Some(profiles) = runtime.shell_profiles.as_ref() {
+                    for index in 0..profiles.profile_count() {
+                        if let Some(profile) = profiles.profile_nth(index) {
+                            self.output.write_segments(&[profile.name.as_bytes(), if profile.enabled { b" [enabled]" } else { b" [disabled]" }]);
+                        }
+                    }
+                }
+            });
+            return true;
+        }
+        let result = crate::runtime::with_runtime(|runtime| {
+            let profiles = runtime.shell_profiles.as_mut().ok_or(crate::runtime::object_navigation::ProfileError::CorruptState)?;
+            match (resource, action) {
+                (b"profile", b"inspect") => profiles.profile(name).map(|_| ()).ok_or(crate::runtime::object_navigation::ProfileError::NotFound),
+                (b"profile", b"create") => profiles.create(actor, name, now).map(|_| ()),
+                (b"profile", b"clone") => profiles.clone_profile(actor, name, command_word(command, 4).unwrap_or(&[]), now).map(|_| ()),
+                (b"profile", b"enable") => profiles.enable(actor, name, now),
+                (b"profile", b"disable") => profiles.disable(actor, name, now),
+                (b"profile", b"set-default") => profiles.set_default(actor, name),
+                (b"profile", b"delete") => profiles.delete(actor, name).map(|_| ()),
+                (b"alias", b"add") => profiles.alias_add(actor, name, command_word(command, 4).unwrap_or(&[]), unquote_command_tail(command_tail(command, 5).unwrap_or(&[])), now),
+                (b"alias", b"delete") => profiles.alias_delete(actor, name, command_word(command, 4).unwrap_or(&[]), now),
+                (b"alias", b"resolve") => profiles.resolve(name).map(|_| ()),
+                (b"alias", b"list") => profiles.profile(name).map(|_| ()).ok_or(crate::runtime::object_navigation::ProfileError::NotFound),
+                _ => return Err(crate::runtime::object_navigation::ProfileError::NotFound),
+            }
+        })
+        .unwrap_or(Err(crate::runtime::object_navigation::ProfileError::CorruptState));
+        match result {
+            Ok(()) => {
+                let _ = crate::runtime::persist_shell_profile_state();
+                self.output.write_line(b"Shell Profile operation committed.");
+            }
+            Err(_) => self.output.write_line(b"Shell Profile operation rejected by validation, ownership, or immutability policy."),
+        }
+        true
     }
 
     // ------------------------=
@@ -5961,6 +6369,120 @@ fn split_once(bytes: &[u8], separator: u8) -> Option<(&[u8], &[u8])> {
     } else {
         Some((&bytes[..at], &bytes[at + 1..]))
     }
+}
+
+// ------------------------=
+// FUNC: command_word
+// DESC: Returns one whitespace-delimited command word without allocating or evaluating text.
+// ------------------=
+fn command_word(command: &[u8], index: usize) -> Option<&[u8]> {
+    command
+        .split(|byte| byte.is_ascii_whitespace())
+        .filter(|word| !word.is_empty())
+        .nth(index)
+}
+
+// ------------------------=
+// FUNC: command_tail
+// DESC: Returns the trimmed command remainder after a fixed number of words.
+// ------------------=
+fn command_tail(command: &[u8], words: usize) -> Option<&[u8]> {
+    let mut at = 0usize;
+    let mut consumed = 0usize;
+    while at < command.len() && consumed < words {
+        while at < command.len() && command[at].is_ascii_whitespace() {
+            at += 1;
+        }
+        if at == command.len() {
+            return None;
+        }
+        while at < command.len() && !command[at].is_ascii_whitespace() {
+            at += 1;
+        }
+        consumed += 1;
+    }
+    while at < command.len() && command[at].is_ascii_whitespace() {
+        at += 1;
+    }
+    (at < command.len()).then_some(&command[at..])
+}
+
+// ------------------------=
+// FUNC: unquote_command_tail
+// DESC: Removes one matching quote pair from a validated declarative alias template.
+// ------------------=
+fn unquote_command_tail(value: &[u8]) -> &[u8] {
+    if value.len() >= 2
+        && matches!((value.first(), value.last()), (Some(b'"'), Some(b'"')) | (Some(b'\''), Some(b'\'')))
+    {
+        &value[1..value.len() - 1]
+    } else {
+        value
+    }
+}
+
+// ------------------------=
+// FUNC: immediate_namespace_child
+// DESC: Distinguishes direct children from deeper bounded tree projections.
+// ------------------=
+fn immediate_namespace_child(parent: &[u8], candidate: &[u8]) -> bool {
+    if !candidate.starts_with(parent) || candidate.len() <= parent.len() {
+        return false;
+    }
+    let suffix = if parent == b"/" {
+        &candidate[1..]
+    } else if candidate.get(parent.len()) == Some(&b'/') {
+        &candidate[parent.len() + 1..]
+    } else {
+        return false;
+    };
+    !suffix.is_empty() && !suffix.contains(&b'/')
+}
+
+// ------------------------=
+// FUNC: ascii_contains_case_insensitive
+// DESC: Performs bounded capability-safe ASCII search matching without locale ambiguity.
+// ------------------=
+fn ascii_contains_case_insensitive(value: &[u8], query: &[u8]) -> bool {
+    query.is_empty()
+        || value.windows(query.len()).any(|window| {
+            window
+                .iter()
+                .zip(query.iter())
+                .all(|(left, right)| left.eq_ignore_ascii_case(right))
+        })
+}
+
+// ------------------------=
+// FUNC: profile_id_text
+// DESC: Formats a stable Shell Profile ID for transparent alias diagnostics.
+// ------------------=
+fn profile_id_text(value: u32) -> [u8; 10] {
+    let mut output = *b"0000000000";
+    let mut remaining = value;
+    for index in (0..output.len()).rev() {
+        output[index] = b'0' + (remaining % 10) as u8;
+        remaining /= 10;
+    }
+    output
+}
+
+// ------------------------=
+// FUNC: home_location_path
+// DESC: Maps File Navigator sidebar rows to configured native Namespace references.
+// ------------------=
+fn home_location_path(location: usize) -> &'static [u8] {
+    [
+        b"/home/default".as_slice(),
+        b"/home/default",
+        b"/home/default/documents",
+        b"/home/default/downloads",
+        b"/home/default/pictures",
+        b"/home/default/media",
+        b"/home/default/media",
+        b"/home/default/projects",
+        b"/trash",
+    ][location.min(8)]
 }
 
 // ------------------------=

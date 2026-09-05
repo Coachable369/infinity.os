@@ -383,11 +383,14 @@ fn main() {
             b"verified bytes",
         )
         .unwrap();
-    // Twelve bootstrap contents precede this object: kernel, recovery, runtime,
+    // Bootstrap contents precede this object: kernel, recovery, runtime,
     // service registry, capability policy, local model, AI bootstrap, voice
     // framework, agent policy, organization schema, identity state, and native
-    // network state.
-    content_disk.flip((STORE_RELATIVE_LBA + 80 + 12 * 8) as usize, 0);
+    // network state, and declarative shell-profile state.
+    content_disk.flip(
+        (STORE_RELATIVE_LBA + 80 + storage::object::BOOTSTRAP_CONTENT_OBJECTS * 8) as usize,
+        0,
+    );
     let mut out = [0u8; 4096];
     assert_eq!(
         content_store.read(content_id, None, &mut out),

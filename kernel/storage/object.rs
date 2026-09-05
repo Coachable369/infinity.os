@@ -17,6 +17,7 @@ pub const ROOT_B: u64 = 1;
 pub const BANK_A: u64 = 8;
 pub const BANK_B: u64 = 40;
 const CONTENT: u64 = 80;
+pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 13;
 // Eight object-table sectors fit in each 32-sector metadata bank. Keeping the
 // table capacity derived from its serialized geometry prevents bootstrap
 // System objects from consuming the user-visible object budget by accident.
@@ -503,7 +504,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Initializes initialize namespace state.
     // ------------------=
     fn initialize_namespace(&mut self) -> Result<(), ObjectError> {
-        let paths: [&[u8]; 16] = [
+        let paths: [&[u8]; 15] = [
             b"/",
             b"/home",
             b"/home/default",
@@ -517,15 +518,13 @@ impl<D: BlockDevice> ObjectStore<D> {
             b"/shared",
             b"/devices",
             b"/system",
-            b"/objects",
             b"/projects",
-            b"/collections",
+            b"/trash",
         ];
         for path in paths {
             let name = path.rsplit(|c| *c == b'/').next().unwrap_or(b"root");
             let space =
-                if path == b"/" || path == b"/system" || path == b"/objects" || path == b"/devices"
-                {
+                if path == b"/" || path == b"/system" || path == b"/trash" || path == b"/devices" {
                     Space::System
                 } else if path == b"/apps" {
                     Space::Applications
@@ -633,6 +632,10 @@ impl<D: BlockDevice> ObjectStore<D> {
         state[16..24].copy_from_slice(&1u64.to_le_bytes());
         self.write_record(network_state, &state)?;
         self.attach_record(b"/system/network/state", network_state)?;
+        let shell_profiles =
+            self.create_record(b"shell-profile-state", ObjectType::Metadata, Space::System)?;
+        self.write_record(shell_profiles, b"INFSHL01\x01\0")?;
+        self.attach_record(b"/system/settings/shell/profiles", shell_profiles)?;
         Ok(())
     }
 
@@ -663,9 +666,10 @@ impl<D: BlockDevice> ObjectStore<D> {
                 b"INFOORG1".as_slice(),
             ),
             (b"/system/identity/state".as_slice(), b"INFIDN1".as_slice()),
+            (b"/system/network/state".as_slice(), b"INFNET01".as_slice()),
             (
-                b"/system/network/state".as_slice(),
-                b"INFNET01".as_slice(),
+                b"/system/settings/shell/profiles".as_slice(),
+                b"INFSHL01".as_slice(),
             ),
         ] {
             let Ok(id) = self.resolve(path) else {
@@ -875,10 +879,121 @@ impl<D: BlockDevice> ObjectStore<D> {
     ) -> Result<ObjectId, ObjectError> {
         let before = self.begin()?;
         let result = (|| {
+            validate_path(path)?;
+            if self
+                .state
+                .entries
+                .iter()
+                .any(|entry| entry.used && entry.path() == path)
+            {
+                return Err(ObjectError::NameConflict);
+            }
             let id = self.create_record(name, kind, space)?;
             self.write_record(id, content)?;
             self.attach_record(path, id)?;
             Ok(id)
+        })();
+        self.finish(before, result)
+    }
+
+    // ------------------------=
+    // FUNC: copy_attached
+    // DESC: Copies content and metadata into a distinct ObjectId and atomically attaches its destination reference.
+    // ------------------=
+    pub fn copy_attached(
+        &mut self,
+        source: ObjectId,
+        destination: &[u8],
+    ) -> Result<ObjectId, ObjectError> {
+        let source_index = self.object_index(source)?;
+        let source_record = self.state.objects[source_index];
+        if source_record.tombstone {
+            return Err(ObjectError::NotFound);
+        }
+        let mut content = [0u8; MAX_CONTENT];
+        let content_length = self.read(source, None, &mut content)?;
+        let before = self.begin()?;
+        let result = (|| {
+            let name = destination
+                .rsplit(|byte| *byte == b'/')
+                .next()
+                .unwrap_or(&[]);
+            let id = self.create_record(
+                name,
+                type_from_u8(source_record.kind)?,
+                space_from_u8(source_record.space)?,
+            )?;
+            let target_index = self.object_index(id)?;
+            self.state.objects[target_index].owner = source_record.owner;
+            self.state.objects[target_index].flags = source_record.flags;
+            self.state.objects[target_index].content_type = source_record.content_type;
+            self.state.objects[target_index].tags_len = source_record.tags_len;
+            self.state.objects[target_index].tags = source_record.tags;
+            self.write_record(id, &content[..content_length])?;
+            self.attach_record(destination, id)?;
+            Ok(id)
+        })();
+        self.finish(before, result)
+    }
+
+    // ------------------------=
+    // FUNC: delete_namespace
+    // DESC: Atomically removes an empty Namespace reference and rejects non-empty containers by default.
+    // ------------------=
+    pub fn delete_namespace(&mut self, path: &[u8]) -> Result<ObjectId, ObjectError> {
+        if matches!(
+            path,
+            b"/" | b"/system" | b"/home" | b"/apps" | b"/shared" | b"/recovery" | b"/trash"
+        ) {
+            return Err(ObjectError::Unauthorized);
+        }
+        let id = self.resolve(path)?;
+        let metadata = self.metadata(id)?;
+        if metadata.kind != ObjectType::NamespaceNode {
+            return Err(ObjectError::InvalidObject);
+        }
+        let has_child = self.state.entries.iter().any(|entry| {
+            entry.used
+                && entry.path().len() > path.len()
+                && entry.path().starts_with(path)
+                && entry.path().get(path.len()) == Some(&b'/')
+        });
+        if has_child {
+            return Err(ObjectError::Busy);
+        }
+        self.remove_path(path)
+    }
+
+    // ------------------------=
+    // FUNC: destroy_explicit
+    // DESC: Permanently tombstones a non-system ObjectId only through an explicit authorized path.
+    // ------------------=
+    pub fn destroy_explicit(&mut self, id: ObjectId, authorized: bool) -> Result<(), ObjectError> {
+        if !authorized {
+            return Err(ObjectError::Unauthorized);
+        }
+        let before = self.begin()?;
+        let result = (|| {
+            let object = self.object_index(id)?;
+            if self.state.objects[object].space == Space::System as u8
+                || self.state.objects[object].flags & 1 != 0
+                || self.state.relationships.iter().any(|relationship| {
+                    relationship.used && (relationship.source == id || relationship.target == id)
+                })
+            {
+                return Err(ObjectError::Unauthorized);
+            }
+            for entry in self
+                .state
+                .entries
+                .iter_mut()
+                .filter(|entry| entry.used && entry.target == id)
+            {
+                entry.used = false;
+            }
+            self.state.objects[object].tombstone = true;
+            self.state.objects[object].modified = self.state.generation + 1;
+            Ok(())
         })();
         self.finish(before, result)
     }
@@ -1387,6 +1502,19 @@ impl<D: BlockDevice> ObjectStore<D> {
             .iter()
             .filter(|e| e.used && e.target == id)
             .count()
+    }
+
+    // ------------------------=
+    // FUNC: namespace_ref_nth
+    // DESC: Returns one authorized human Namespace reference for a stable ObjectId.
+    // ------------------=
+    pub fn namespace_ref_nth(&self, id: ObjectId, index: usize) -> Option<&[u8]> {
+        self.state
+            .entries
+            .iter()
+            .filter(|entry| entry.used && entry.target == id)
+            .nth(index)
+            .map(NamespaceRecord::path)
     }
     // ------------------------=
     // FUNC: usage_blocks

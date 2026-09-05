@@ -592,7 +592,7 @@ impl SystemLayout {
                 return Some(DesktopTarget::HomeTitle);
             }
             let tool_top = browser_top + title_height;
-            for index in 0..2usize {
+            for index in 0..3usize {
                 if rect(
                     browser_left + (7 + index * 28) * self.scale,
                     tool_top + 4 * self.scale,
@@ -602,6 +602,21 @@ impl SystemLayout {
                 .contains(point)
                 {
                     return Some(DesktopTarget::HomeToolbar(index));
+                }
+            }
+            for index in 0..3usize {
+                let control_left = browser_left
+                    + browser_width.saturating_sub((146 - index * 46) * self.scale);
+                let control_width = if index == 2 { 54 * self.scale } else { 42 * self.scale };
+                if rect(
+                    control_left,
+                    tool_top + 4 * self.scale,
+                    control_width,
+                    30 * self.scale,
+                )
+                .contains(point)
+                {
+                    return Some(DesktopTarget::HomeToolbar(index + 3));
                 }
             }
             let sidebar_width = browser_width * 27 / 100;

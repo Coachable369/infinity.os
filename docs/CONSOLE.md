@@ -1,5 +1,7 @@
 # Infinity Console Language v1
 
+Each interactive session owns an explicit `ConsoleNavigationContext.CurrentNamespaceRef`; `path`, `idir`, and native `cd` operate only on that state. There is no kernel or process CWD. Compatibility Shell Profiles are validated command mappings, and `pwd` resolves to `path` only while a profile that provides it is enabled.
+
 The Infinity Console is a human interface to typed InfinityOS operations. It
 is not a POSIX shell: it has no process launch, string expansion, file
 descriptor, byte-stream pipe, or ambient storage authority.

@@ -7,6 +7,7 @@ pub mod font;
 pub mod identity;
 pub mod iop;
 pub mod network;
+pub mod object_navigation;
 pub mod scheduler;
 pub mod service;
 
@@ -66,6 +67,21 @@ pub const EVENT_NETWORK_SERVICE_DISCOVERED: u32 = 0x9900c;
 pub const EVENT_NETWORK_SERVICE_LOST: u32 = 0x9900d;
 pub const EVENT_NETWORK_DEGRADED: u32 = 0x9900e;
 pub const EVENT_NETWORK_RECOVERED: u32 = 0x9900f;
+pub const EVENT_SHELL_PROFILE_CREATED: u32 = 0x9a001;
+pub const EVENT_SHELL_PROFILE_UPDATED: u32 = 0x9a002;
+pub const EVENT_SHELL_PROFILE_ENABLED: u32 = 0x9a003;
+pub const EVENT_SHELL_PROFILE_DISABLED: u32 = 0x9a004;
+pub const EVENT_SHELL_PROFILE_DELETED: u32 = 0x9a005;
+pub const EVENT_SHELL_ALIAS_DELETED: u32 = 0x9a006;
+pub const EVENT_SHELL_ACTIVE_SET_CHANGED: u32 = 0x9a007;
+pub const EVENT_NAMESPACE_REFERENCE_CREATED: u32 = 0x9b001;
+pub const EVENT_NAMESPACE_REFERENCE_REMOVED: u32 = 0x9b002;
+pub const EVENT_NAMESPACE_REFERENCE_MOVED: u32 = 0x9b003;
+pub const EVENT_OBJECT_CREATED: u32 = 0x9c001;
+pub const EVENT_OBJECT_DESTROYED: u32 = 0x9c002;
+pub const EVENT_TRASH_ITEM_ADDED: u32 = 0x9d001;
+pub const EVENT_TRASH_ITEM_RESTORED: u32 = 0x9d002;
+pub const EVENT_TRASH_ITEM_DESTROYED: u32 = 0x9d003;
 
 const NETWORK_EVENT_TYPES: [u32; 15] = [
     EVENT_NETWORK_INTERFACE_STATE_CHANGED, EVENT_NETWORK_ADDRESS_CHANGED,
@@ -109,6 +125,8 @@ pub struct InfinityRuntime {
     pub fonts: font::FontCatalog,
     pub ui: crate::ui::InfinityUiRuntime,
     pub network: network::NetworkRuntime,
+    pub shell_profiles: Option<object_navigation::ShellProfileService>,
+    pub file_navigator: Option<object_navigation::FileNavigatorState>,
     pub live_profile: bool,
     service_event_cap: Option<u64>,
     identity_event_cap: Option<u64>,
@@ -138,6 +156,8 @@ impl InfinityRuntime {
             fonts: font::FontCatalog::new(),
             ui: crate::ui::InfinityUiRuntime::new(),
             network: network::NetworkRuntime::new(),
+            shell_profiles: None,
+            file_navigator: None,
             live_profile,
             service_event_cap: None,
             identity_event_cap: None,
@@ -1600,6 +1620,8 @@ fn runtime_ref() -> &'static InfinityRuntime {
 // ------------------=
 pub fn initialize() {
     let runtime = runtime_mut();
+    runtime.shell_profiles = Some(object_navigation::ShellProfileService::new());
+    runtime.file_navigator = object_navigation::FileNavigatorState::new(b"/home/default").ok();
     let _ = runtime.define_bootstrap();
     // Bootstrap only the dependency roots. Storage/object/namespace readiness
     // is completed after the storage subsystem has initialized.
@@ -1679,6 +1701,19 @@ pub fn storage_initialized() {
         }
         #[cfg(target_os = "none")]
         {
+            let mut persisted = [0u8; object_navigation::PROFILE_STATE_BYTES];
+            if crate::storage::shell_profile_state_load(&mut persisted)
+                .ok()
+                .filter(|length| *length == object_navigation::PROFILE_STATE_BYTES)
+                .is_some()
+            {
+                if let Ok(state) = object_navigation::ShellProfileService::decode(&persisted) {
+                    runtime.shell_profiles = Some(state);
+                }
+            }
+        }
+        #[cfg(target_os = "none")]
+        {
             let mut persisted = [0u8; identity::IDENTITY_STATE_BYTES];
             if crate::storage::identity_state_load(&mut persisted)
                 .ok()
@@ -1694,6 +1729,24 @@ pub fn storage_initialized() {
             }
         }
     });
+}
+
+// ------------------------=
+// FUNC: persist_shell_profile_state
+// DESC: Commits declarative Shell Profile objects before any observable profile event.
+// ------------------=
+pub fn persist_shell_profile_state() -> bool {
+    #[cfg(target_os = "none")]
+    {
+        let Some(service) = runtime_ref().shell_profiles.as_ref() else {
+            return false;
+        };
+        crate::storage::shell_profile_state_commit(&service.encode()).is_ok()
+    }
+    #[cfg(not(target_os = "none"))]
+    {
+        true
+    }
 }
 
 // ------------------------=
