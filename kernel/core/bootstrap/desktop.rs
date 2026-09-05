@@ -3738,6 +3738,10 @@ impl super::DisplayDevice {
             Some(crate::runtime::network::types::ConnectivityClass::InternetReachableOptional) => b"Reachable",
             _ => b"Degraded",
         };
+        if focus == 6 {
+            self.render_network_settings_dashboard(settings_window, scale, connectivity);
+            return;
+        }
         let rows: [(&[u8], &[u8]); 8] = match focus.min(8) {
             0 => [
                 (b"Machine Name", input),
@@ -4057,6 +4061,219 @@ impl super::DisplayDevice {
                 );
             }
         }
+    }
+
+    // ------------------------=
+    // FUNC: render_network_settings_dashboard
+    // DESC: Renders a scalable live network overview, topology, telemetry, and operational profile selector.
+    // ------------------=
+    fn render_network_settings_dashboard(
+        &mut self,
+        settings_window: crate::ui::system_layout::SettingsWindowState,
+        scale: usize,
+        connectivity: &[u8],
+    ) {
+        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let geometry = layout.network_settings_geometry(settings_window);
+        let snapshot = crate::runtime::with_runtime(|runtime| {
+            (
+                runtime.network.status(),
+                runtime.network.topology(),
+                runtime.network.diagnostics(),
+            )
+        });
+        let Some((status, topology, diagnostics)) = snapshot else { return };
+        let (outline_r, outline_g, outline_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        let (selection_r, selection_g, selection_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
+        let cards = [geometry.overview, geometry.topology, geometry.telemetry];
+        for card in cards {
+            self.fill_rounded_rect_alpha(
+                card.x.max(0) as usize,
+                card.y.max(0) as usize,
+                card.width as usize,
+                card.height as usize,
+                12 * scale,
+                4,
+                18,
+                31,
+                220,
+            );
+            self.outline_rounded_rect(
+                card.x.max(0) as usize,
+                card.y.max(0) as usize,
+                card.width as usize,
+                card.height as usize,
+                12 * scale,
+                outline_r / 2,
+                outline_g / 2,
+                outline_b / 2,
+            );
+        }
+
+        let overview_left = geometry.overview.x.max(0) as usize;
+        let overview_top = geometry.overview.y.max(0) as usize;
+        self.authentication_icon(
+            overview_left + 36 * scale,
+            overview_top + geometry.overview.height as usize / 2,
+            14,
+            44 * scale,
+            true,
+        );
+        self.ui_text_strong(
+            overview_left + 74 * scale,
+            overview_top + 19 * scale,
+            b"NETWORK STATUS",
+            outline_r,
+            outline_g,
+            outline_b,
+            1,
+        );
+        self.ui_text_strong(
+            overview_left + 74 * scale,
+            overview_top + 49 * scale,
+            connectivity,
+            239,
+            246,
+            251,
+            2,
+        );
+        self.ui_text(
+            overview_left + 74 * scale,
+            overview_top + 82 * scale,
+            if status.resolver_enabled { b"Resolver ready - policy enforced" } else { b"Resolver offline - local system remains available" },
+            150,
+            177,
+            198,
+            1,
+        );
+        let profile_name: &[u8] = match status.active_profile {
+            1 => b"STANDARD",
+            2 => b"RESTRICTED",
+            3 => b"OFFLINE",
+            4 => b"OPERATIONS",
+            5 => b"DEVELOPER",
+            _ => b"CUSTOM",
+        };
+        let pill_width = 142 * scale;
+        let pill_left = overview_left + geometry.overview.width as usize - pill_width - 18 * scale;
+        self.fill_rounded_rect_alpha(
+            pill_left,
+            overview_top + 28 * scale,
+            pill_width,
+            48 * scale,
+            24 * scale,
+            selection_r,
+            selection_g,
+            selection_b,
+            220,
+        );
+        self.ui_text_centered(
+            pill_left,
+            overview_top + 44 * scale,
+            pill_width,
+            profile_name,
+            242,
+            249,
+            253,
+            1,
+        );
+
+        let topology_left = geometry.topology.x.max(0) as usize;
+        let topology_top = geometry.topology.y.max(0) as usize;
+        let topology_width = geometry.topology.width as usize;
+        let topology_height = geometry.topology.height as usize;
+        self.ui_text_strong(topology_left + 17 * scale, topology_top + 15 * scale, b"LIVE TOPOLOGY", outline_r, outline_g, outline_b, 1);
+        self.ui_text(topology_left + 17 * scale, topology_top + 40 * scale, b"Typed state - no shell parsing", 132, 158, 179, 1);
+        let center_x = topology_left + topology_width / 2;
+        let center_y = topology_top + topology_height * 62 / 100;
+        let nodes = [
+            (topology_left + topology_width / 6, center_y - 25 * scale, 14usize),
+            (topology_left + topology_width * 5 / 6, center_y - 25 * scale, 12usize),
+            (topology_left + topology_width / 4, center_y + 35 * scale, 4usize),
+            (topology_left + topology_width * 3 / 4, center_y + 35 * scale, 11usize),
+        ];
+        for (node_x, node_y, icon) in nodes {
+            self.icon_line(center_x as i32, center_y as i32, node_x as i32, node_y as i32, (outline_r, outline_g, outline_b), 1);
+            self.fill_rounded_rect_alpha(node_x.saturating_sub(20 * scale), node_y.saturating_sub(20 * scale), 40 * scale, 40 * scale, 20 * scale, 7, 28, 46, 235);
+            self.outline_rounded_rect(node_x.saturating_sub(20 * scale), node_y.saturating_sub(20 * scale), 40 * scale, 40 * scale, 20 * scale, outline_r, outline_g, outline_b);
+            self.authentication_icon(node_x, node_y, icon, 22 * scale, true);
+        }
+        self.fill_rounded_rect_alpha(center_x.saturating_sub(30 * scale), center_y.saturating_sub(30 * scale), 60 * scale, 60 * scale, 30 * scale, selection_r, selection_g, selection_b, 240);
+        self.small_infinity_mark(center_x, center_y, 38 * scale);
+
+        let telemetry_left = geometry.telemetry.x.max(0) as usize;
+        let telemetry_top = geometry.telemetry.y.max(0) as usize;
+        self.ui_text_strong(telemetry_left + 17 * scale, telemetry_top + 15 * scale, b"OBSERVED STATE", outline_r, outline_g, outline_b, 1);
+        let metrics = [
+            (b"Interfaces".as_slice(), status.interfaces as u64),
+            (b"Addresses".as_slice(), status.addresses as u64),
+            (b"Routes".as_slice(), status.routes as u64),
+            (b"Connections".as_slice(), diagnostics.active_connections as u64),
+            (b"Discovered services".as_slice(), topology.discovered_service_count as u64),
+        ];
+        for (index, (label, value)) in metrics.iter().enumerate() {
+            let row_y = telemetry_top + (45 + index * 27) * scale;
+            self.ui_text(telemetry_left + 17 * scale, row_y, label, 169, 190, 206, 1);
+            let (digits, length) = Self::network_metric_text(*value);
+            self.ui_text_strong(
+                telemetry_left + geometry.telemetry.width as usize - (34 + length * 10) * scale,
+                row_y,
+                &digits[..length],
+                235,
+                245,
+                251,
+                1,
+            );
+        }
+
+        let profiles_left = geometry.profiles.x.max(0) as usize;
+        let profiles_top = geometry.profiles.y.max(0) as usize;
+        self.ui_text_strong(profiles_left, profiles_top + 5 * scale, b"OPERATIONAL MODE", 205, 218, 228, 1);
+        let profile_labels: [&[u8]; 5] = [b"STANDARD", b"RESTRICTED", b"OFFLINE", b"OPERATIONS", b"DEVELOPER"];
+        for (index, card) in geometry.profile_cards.iter().enumerate() {
+            let left = card.x.max(0) as usize;
+            let top = card.y.max(0) as usize;
+            let active = status.active_profile as usize == index + 1;
+            self.fill_rounded_rect_alpha(left, top, card.width as usize, card.height as usize, 9 * scale, if active { selection_r } else { 5 }, if active { selection_g } else { 20 }, if active { selection_b } else { 34 }, 226);
+            self.outline_rounded_rect(left, top, card.width as usize, card.height as usize, 9 * scale, if active { outline_r } else { outline_r / 2 }, if active { outline_g } else { outline_g / 2 }, if active { outline_b } else { outline_b / 2 });
+            self.ui_text_centered(left, top + 14 * scale, card.width as usize, profile_labels[index], if active { 245 } else { 174 }, if active { 250 } else { 196 }, if active { 253 } else { 211 }, 1);
+            self.ui_text_centered(left, top + 39 * scale, card.width as usize, if active { b"ACTIVE" } else { b"SELECT" }, outline_r, outline_g, outline_b, 1);
+        }
+        if !settings_window.maximized {
+            let window = layout.settings_window_geometry(settings_window).window;
+            let right = window.right().max(0) as usize;
+            let bottom = window.bottom().max(0) as usize;
+            for offset in [5usize, 9, 13] {
+                self.icon_line(
+                    (right - offset * scale) as i32,
+                    (bottom - 3 * scale) as i32,
+                    (right - 3 * scale) as i32,
+                    (bottom - offset * scale) as i32,
+                    (outline_r, outline_g, outline_b),
+                    16 * scale,
+                );
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: network_metric_text
+    // DESC: Formats one bounded live network count without allocation or fabricated units.
+    // ------------------=
+    fn network_metric_text(mut value: u64) -> ([u8; 20], usize) {
+        let mut output = [b'0'; 20];
+        if value == 0 { return (output, 1); }
+        let mut reverse = [0u8; 20];
+        let mut length = 0usize;
+        while value > 0 && length < reverse.len() {
+            reverse[length] = b'0' + (value % 10) as u8;
+            value /= 10;
+            length += 1;
+        }
+        for index in 0..length { output[index] = reverse[length - index - 1]; }
+        (output, length)
     }
 
     // ------------------------=

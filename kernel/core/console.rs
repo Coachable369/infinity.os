@@ -1870,10 +1870,15 @@ impl ConsoleRuntime {
                     let _ = crate::runtime::persist_identity_state();
                 }
             }
-            (6, 1) => {
-                let active = crate::runtime::with_runtime(|runtime| runtime.network.profiles.active_id()).unwrap_or(1);
-                let next = if active >= 5 { 1 } else { active + 1 };
-                let _ = crate::runtime::activate_network_profile_from_settings(next, 0, next as u64);
+            (6, profile @ 0..=4) => {
+                let profile_id = profile as u32 + 1;
+                if crate::runtime::activate_network_profile_from_settings(
+                    profile_id,
+                    0,
+                    profile_id as u64,
+                ) {
+                    self.settings_window.expanded_row = Some(profile);
+                }
             }
             _ => {}
         }
@@ -2661,6 +2666,13 @@ impl ConsoleRuntime {
             }
             if self.system_focus == 3 {
                 self.activate_settings_content_row(0);
+            }
+            if self.system_focus == 6 {
+                let active = crate::runtime::with_runtime(|runtime| {
+                    runtime.network.profiles.active_id()
+                })
+                .unwrap_or(1);
+                self.activate_settings_content_row((active % 5) as usize);
             }
             return;
         }
@@ -4116,6 +4128,17 @@ impl ConsoleRuntime {
                     return;
                 }
             }
+            if clicked && self.system_focus == 6 {
+                if let Some(profile) = layout.network_profile_target(
+                    self.pointer_x,
+                    self.pointer_y,
+                    self.settings_window,
+                ) {
+                    self.activate_settings_content_row(profile);
+                    self.redraw();
+                    return;
+                }
+            }
             if let Some(target) =
                 layout.settings_target(self.pointer_x, self.pointer_y, self.settings_window)
             {
@@ -4128,7 +4151,9 @@ impl ConsoleRuntime {
                         self.settings_window.scroll_offset = 0;
                         self.reset_input();
                     }
-                    SettingsTarget::ContentRow(row) if clicked => self.toggle_settings_row(row),
+                    SettingsTarget::ContentRow(row) if clicked && self.system_focus != 6 => {
+                        self.toggle_settings_row(row)
+                    }
                     SettingsTarget::ExpandedAction if clicked => {
                         if let Some(row) = self.settings_window.expanded_row {
                             self.activate_settings_content_row(row);

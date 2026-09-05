@@ -44,12 +44,12 @@ runtime dependency.
 
 ## Network
 
-The Network section projects authoritative typed runtime state into Overview,
-Profiles, Interfaces & Topology, Application & Service Access, DNS/Resolution,
-Routes, Connections, and Diagnostics. Profile selection calls the capability-
-checked transactional runtime path and persists before publishing its event.
-The GUI does not parse Console output. Implementation is **HOST-COMPILED** and
-awaits direct installed-VM interaction acceptance.
+The Network section is a purpose-built responsive dashboard with a live status
+hero, vector topology, observed counts, and five selectable operational-mode
+cards. Profile selection calls the capability-checked transactional runtime
+path and persists before publishing its event. The GUI does not parse Console
+output. Geometry, hit targeting, profile persistence, and runtime behavior are
+**HOST-TESTED**; direct installed-VM visual acceptance remains pending.
 
 Unknown settings are rejected. Enabling voice changes preference only and does
 not grant microphone authority. Remote AI remains denied unless the explicit

@@ -173,6 +173,15 @@ pub enum SettingsTarget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NetworkSettingsGeometry {
+    pub overview: Rect,
+    pub topology: Rect,
+    pub telemetry: Rect,
+    pub profiles: Rect,
+    pub profile_cards: [Rect; 5],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SettingsWindowState {
     pub x: i32,
     pub y: i32,
@@ -1522,6 +1531,66 @@ impl SystemLayout {
             }
         }
         None
+    }
+
+    // ------------------------=
+    // FUNC: network_settings_geometry
+    // DESC: Derives a balanced, scalable dashboard for live topology, telemetry, and operational profile controls.
+    // ------------------=
+    pub fn network_settings_geometry(self, state: SettingsWindowState) -> NetworkSettingsGeometry {
+        let window = self.settings_window_geometry(state);
+        let content = window.content;
+        let gap = 14 * self.scale;
+        let top = content.y.max(0) as usize + 70 * self.scale;
+        let left = content.x.max(0) as usize;
+        let width = content.width as usize;
+        let available_height = (content.bottom().max(0) as usize).saturating_sub(top);
+        let overview_height = (112 * self.scale).min(available_height / 3);
+        let middle_top = top + overview_height + gap;
+        let middle_height = (190 * self.scale).min(available_height.saturating_sub(overview_height + gap) * 55 / 100);
+        let topology_width = width * 62 / 100;
+        let profile_top = middle_top + middle_height + gap;
+        let profile_height = available_height.saturating_sub(profile_top.saturating_sub(top));
+        let card_gap = 8 * self.scale;
+        let card_width = width.saturating_sub(card_gap * 4) / 5;
+        let mut cards = [rect(0, 0, 0, 0); 5];
+        for (index, card) in cards.iter_mut().enumerate() {
+            *card = rect(
+                left + index * (card_width + card_gap),
+                profile_top + 35 * self.scale,
+                card_width,
+                profile_height.saturating_sub(35 * self.scale),
+            );
+        }
+        NetworkSettingsGeometry {
+            overview: rect(left, top, width, overview_height),
+            topology: rect(left, middle_top, topology_width.saturating_sub(gap / 2), middle_height),
+            telemetry: rect(
+                left + topology_width + gap / 2,
+                middle_top,
+                width.saturating_sub(topology_width + gap / 2),
+                middle_height,
+            ),
+            profiles: rect(left, profile_top, width, profile_height),
+            profile_cards: cards,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: network_profile_target
+    // DESC: Resolves a pointer to one visible operational profile card using the dashboard's shared geometry.
+    // ------------------=
+    pub fn network_profile_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+    ) -> Option<usize> {
+        let point = self.point(normalized_x, normalized_y);
+        self.network_settings_geometry(state)
+            .profile_cards
+            .iter()
+            .position(|card| card.contains(point))
     }
 
     // ------------------------=

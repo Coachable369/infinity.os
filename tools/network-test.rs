@@ -19,7 +19,7 @@ use runtime::network::profile::{NetworkProfile, ProfileKind};
 use runtime::network::types::*;
 use runtime::network::NetworkRuntime;
 use runtime::service::*;
-use ui::system_layout::{OnboardingTarget, SystemLayout};
+use ui::system_layout::{OnboardingTarget, SettingsWindowState, SystemLayout};
 
 // ------------------------=
 // FUNC: identity
@@ -102,6 +102,42 @@ fn onboarding_network_behavior() {
     assert_eq!(layout.onboarding_target(6, 200, 489), Some(OnboardingTarget::NetworkChoice(1)));
     assert_eq!(layout.onboarding_target(6, 200, 543), Some(OnboardingTarget::NetworkChoice(2)));
     assert_eq!(layout.onboarding_target(5, 200, 435), None);
+}
+
+// ------------------------=
+// FUNC: settings_dashboard_behavior
+// DESC: Verifies that the live network dashboard remains bounded, non-overlapping, and exposes every operational profile as a hit target.
+// ------------------=
+fn settings_dashboard_behavior() {
+    for (width, height) in [(1280usize, 800usize), (1920, 1080), (2560, 1440)] {
+        let layout = SystemLayout::new(width, height);
+        let state = SettingsWindowState {
+            x: 140,
+            y: 150,
+            width: 720,
+            height: 720,
+            maximized: false,
+            expanded_row: None,
+            scroll_offset: 0,
+            row_count: 8,
+        };
+        let window = layout.settings_window_geometry(state);
+        let dashboard = layout.network_settings_geometry(state);
+        for panel in [dashboard.overview, dashboard.topology, dashboard.telemetry, dashboard.profiles] {
+            assert!(window.content.contains(ui::geometry::Point { x: panel.x, y: panel.y }));
+            assert!(panel.right() <= window.content.right());
+            assert!(panel.bottom() <= window.content.bottom());
+        }
+        assert!(dashboard.overview.bottom() <= dashboard.topology.y);
+        assert!(dashboard.topology.right() <= dashboard.telemetry.x);
+        assert!(dashboard.topology.bottom() <= dashboard.profiles.y);
+        for (index, card) in dashboard.profile_cards.iter().enumerate() {
+            assert!(card.width > 0 && card.height > 0);
+            let normalized_x = (card.x + card.width as i32 / 2) * 1000 / width as i32;
+            let normalized_y = (card.y + card.height as i32 / 2) * 1000 / height as i32;
+            assert_eq!(layout.network_profile_target(normalized_x, normalized_y, state), Some(index));
+        }
+    }
 }
 
 // ------------------------=
@@ -234,4 +270,4 @@ fn service_recovery_behavior() {
 // FUNC: main
 // DESC: Runs Milestone 8 behavior-only host acceptance tests.
 // ------------------=
-fn main() { route_behavior(); profile_behavior(); onboarding_network_behavior(); policy_and_transport_behavior(); resolver_and_discovery_behavior(); management_capability_behavior(); iop_and_console_behavior(); network_event_behavior(); service_recovery_behavior(); }
+fn main() { route_behavior(); profile_behavior(); onboarding_network_behavior(); settings_dashboard_behavior(); policy_and_transport_behavior(); resolver_and_discovery_behavior(); management_capability_behavior(); iop_and_console_behavior(); network_event_behavior(); service_recovery_behavior(); }
