@@ -24,6 +24,7 @@ installation experience.
 - `infinity-date-time-world-v1.png` — date/time step world-clock and synchronized-orbit artwork
 - `infinity-time-zone-map-v1.png` — text-free 2:1 world map used by the live time-zone picker; the selected longitude window, latitude guide, and marker are rendered from typed configuration
 - `infinity-installer-activation-v1.png` — generated system-generation activation artwork for progress and completion
+- `infinity-installer-progress-hero-v1.png` — exact progress-console hero crop with the captured cursor removed
 
 The same-named `.bmp` files are the firmware-ready copies embedded in the
 kernel. Edit or replace the PNG, then regenerate its BMP before building:

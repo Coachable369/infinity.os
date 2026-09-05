@@ -143,6 +143,14 @@ pub(super) const INSTALLER_ACTIVATION_BMP: &[u8] = &[];
     feature = "installer",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
+pub(super) const INSTALLER_PROGRESS_HERO_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-installer-progress-hero-v1.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const INSTALLER_PROGRESS_HERO_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 pub(super) const STORAGE_HIERARCHY_BMP: &[u8] =
     include_bytes!("../../../assets/boot/infinity-storage-hierarchy-v3.bmp");
 #[cfg(not(feature = "installer"))]
@@ -1011,7 +1019,7 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: installer_activation_art
-    // DESC: Draws the generated system-activation artwork used by installation progress and completion.
+    // DESC: Draws the reference progress hero or compact completion activation artwork.
     // ------------------=
     pub(super) fn installer_activation_art(&mut self, compact: bool) {
         #[cfg(target_arch = "x86")]
@@ -1019,12 +1027,20 @@ impl super::DisplayDevice {
 
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
-            let left = self.width * if compact { 52 } else { 22 } / 100;
-            let top = self.height * if compact { 40 } else { 37 } / 100;
-            let width = self.width * if compact { 35 } else { 56 } / 100;
-            let height = (width * 9 / 16).min(self.height * if compact { 34 } else { 32 } / 100);
-            self.paint_bitmap_fit_rect(INSTALLER_ACTIVATION_BMP, left, top, width, height);
-            self.outline_rect(left, top, width, height, 48, 118, 164);
+            if compact {
+                let left = self.width * 52 / 100;
+                let top = self.height * 40 / 100;
+                let width = self.width * 35 / 100;
+                let height = (width * 9 / 16).min(self.height * 34 / 100);
+                self.paint_bitmap_fit_rect(INSTALLER_ACTIVATION_BMP, left, top, width, height);
+                self.outline_rect(left, top, width, height, 48, 118, 164);
+            } else {
+                let left = self.width * 17 / 100;
+                let top = self.height * 38 / 100;
+                let width = self.width * 66 / 100;
+                let height = self.height * 26 / 100;
+                self.paint_bitmap_fit_rect(INSTALLER_PROGRESS_HERO_BMP, left, top, width, height);
+            }
         }
     }
 
@@ -1138,8 +1154,8 @@ impl super::DisplayDevice {
         }
 
         let (path_x, path_y) = infinity_point(phase);
-        let orb_x = self.width as i32 / 2 + path_x * (self.width as i32 / 820).max(1);
-        let orb_y = self.height as i32 * 55 / 100 + path_y * (self.height as i32 / 900).max(1);
+        let orb_x = self.width as i32 / 2 + path_x * (self.width as i32 / 650).max(1);
+        let orb_y = self.height as i32 * 50 / 100 + path_y * (self.height as i32 / 900).max(1);
         self.star_orb(orb_x, orb_y, 4 * scale as i32, 244, true);
 
         let mut percent_text = [b'0'; 4];

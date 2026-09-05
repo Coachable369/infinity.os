@@ -15,12 +15,16 @@ content changes for installation progress.
 - The progress track, fill, quarter markers, and active flares are rendered for every reported percentage.
 - A moving star glint follows the original infinity path over the illuminated
   activation emblem independently of progress.
+- The hero viewport uses an exact crop of the supplied console reference,
+  excluding its captured mouse cursor and all surrounding full-screen HUD.
 - The progress console is native framebuffer geometry and contains no baked
   progress values.
 
 ## Reference geometry
 
 - Progress console: approximately 11–89% horizontal and 67–86% vertical.
+- Hero viewport: approximately 17–83% horizontal and 38–64% vertical within
+  the retained installer composition.
 - Status baseline: approximately 71% vertical.
 - Progress track: approximately 14–86% horizontal and 77% vertical.
 - Palette: near-black navy glass, restrained cyan outlines, ice-blue fill, and white-blue highlights.
