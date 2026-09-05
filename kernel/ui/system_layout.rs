@@ -116,6 +116,21 @@ pub(crate) struct DesktopForegroundGeometry {
 pub(crate) const DESKTOP_FOREGROUND_WIDGETS: u8 = 1;
 pub(crate) const DESKTOP_FOREGROUND_DOCK: u8 = 2;
 
+// ------------------------=
+// FUNC: window_transition_damage
+// DESC: Returns padded and clipped old-plus-new bounds for bounded scene reconstruction during movement or resize.
+// ------------------=
+pub fn window_transition_damage(old: Rect, new: Rect, display: Rect, padding: u32) -> Rect {
+    let union = old.union(new);
+    Rect {
+        x: union.x.saturating_sub(padding as i32),
+        y: union.y.saturating_sub(padding as i32),
+        width: union.width.saturating_add(padding.saturating_mul(2)),
+        height: union.height.saturating_add(padding.saturating_mul(2)),
+    }
+    .intersection(display)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SystemMenuTarget {
     Item(usize),

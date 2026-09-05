@@ -28,6 +28,7 @@ pub struct DisplayDevice {
     presented_pixels: u64,
     full_frame_fallbacks: u32,
     damage_collapses: u32,
+    render_clip: Option<PresentRegion>,
 }
 
 const MAX_PRESENT_REGIONS: usize = 8;
@@ -155,7 +156,69 @@ impl DisplayDevice {
             presented_pixels: 0,
             full_frame_fallbacks: 0,
             damage_collapses: 0,
+            render_clip: None,
         })
+    }
+
+    // ------------------------=
+    // FUNC: set_render_clip
+    // DESC: Restricts scene reconstruction and presentation damage to one clipped display region.
+    // ------------------=
+    fn set_render_clip(&mut self, left: usize, top: usize, width: usize, height: usize) {
+        self.render_clip = Some(PresentRegion {
+            left: left.min(self.width),
+            top: top.min(self.height),
+            right: left.saturating_add(width).min(self.width),
+            bottom: top.saturating_add(height).min(self.height),
+        });
+    }
+
+    // ------------------------=
+    // FUNC: clear_render_clip
+    // DESC: Restores unrestricted rendering after one bounded scene reconstruction.
+    // ------------------=
+    fn clear_render_clip(&mut self) {
+        self.render_clip = None;
+    }
+
+    // ------------------------=
+    // FUNC: render_point_visible
+    // DESC: Reports whether one framebuffer point lies inside the active reconstruction clip.
+    // ------------------=
+    const fn render_point_visible(&self, x: usize, y: usize) -> bool {
+        match self.render_clip {
+            Some(clip) => x >= clip.left && x < clip.right && y >= clip.top && y < clip.bottom,
+            None => true,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: clipped_render_region
+    // DESC: Intersects one requested rectangle with the display and active reconstruction clip.
+    // ------------------=
+    fn clipped_render_region(
+        &self,
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+    ) -> Option<PresentRegion> {
+        if width == 0 || height == 0 || left >= self.width || top >= self.height {
+            return None;
+        }
+        let mut region = PresentRegion {
+            left,
+            top,
+            right: left.saturating_add(width).min(self.width),
+            bottom: top.saturating_add(height).min(self.height),
+        };
+        if let Some(clip) = self.render_clip {
+            region.left = region.left.max(clip.left);
+            region.top = region.top.max(clip.top);
+            region.right = region.right.min(clip.right);
+            region.bottom = region.bottom.min(clip.bottom);
+        }
+        (region.left < region.right && region.top < region.bottom).then_some(region)
     }
 
     // ------------------------=
@@ -163,14 +226,8 @@ impl DisplayDevice {
     // DESC: Adds a clipped framebuffer rectangle to the pending coherent presentation union.
     // ------------------=
     fn mark_dirty_rect(&mut self, left: usize, top: usize, width: usize, height: usize) {
-        if width == 0 || height == 0 || left >= self.width || top >= self.height {
+        let Some(mut submitted) = self.clipped_render_region(left, top, width, height) else {
             return;
-        }
-        let mut submitted = PresentRegion {
-            left,
-            top,
-            right: left.saturating_add(width).min(self.width),
-            bottom: top.saturating_add(height).min(self.height),
         };
         let count = self.dirty_count as usize;
         for index in 0..count {

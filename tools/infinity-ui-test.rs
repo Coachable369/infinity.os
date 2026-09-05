@@ -23,9 +23,10 @@ use ui::skin::{
 };
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
-    resize_home_window, resize_native_window, AppLauncherTarget, DesktopAppWindowTarget,
-    DesktopTarget, OnboardingTarget, SettingsAccentTarget, SettingsTarget, SettingsWindowState,
-    SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK, DESKTOP_FOREGROUND_WIDGETS,
+    resize_home_window, resize_native_window, window_transition_damage, AppLauncherTarget,
+    DesktopAppWindowTarget, DesktopTarget, OnboardingTarget, SettingsAccentTarget, SettingsTarget,
+    SettingsWindowState, SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK,
+    DESKTOP_FOREGROUND_WIDGETS,
 };
 use ui::text_editor::TextDocument;
 use ui::trusted::{TrustedSurface, TrustedUiError};
@@ -48,6 +49,7 @@ fn main() {
     installed_system_hit_geometry_test();
     app_launcher_behavior_test();
     desktop_foreground_damage_test();
+    window_move_composition_test();
     scene_and_damage_test();
     surface_and_compositor_test();
     semantic_damage_storm_test();
@@ -57,6 +59,146 @@ fn main() {
     drag_path_test();
     service_foundation_test();
     println!("InfinityUI native runtime: PASS");
+}
+
+// ------------------------=
+// FUNC: window_move_composition_test
+// DESC: Verifies bounded old-plus-new reconstruction clears stale pixels and restores foreground layers over a moved app.
+// ------------------=
+fn window_move_composition_test() {
+    let display = Rect {
+        x: 0,
+        y: 0,
+        width: 12,
+        height: 6,
+    };
+    let old = Rect {
+        x: 1,
+        y: 1,
+        width: 4,
+        height: 3,
+    };
+    let new = Rect {
+        x: 5,
+        y: 1,
+        width: 4,
+        height: 3,
+    };
+    let damage_rect = window_transition_damage(old, new, display, 0);
+    assert_eq!(
+        damage_rect,
+        Rect {
+            x: 1,
+            y: 1,
+            width: 8,
+            height: 3,
+        }
+    );
+    assert!(damage_rect.width < display.width || damage_rect.height < display.height);
+
+    let mut surfaces = SurfaceRegistry::new(1024);
+    let app_id = surfaces
+        .create(
+            ContextId(11),
+            Size {
+                width: 4,
+                height: 3,
+            },
+            PixelFormat::Xrgb8888,
+            SurfaceSecurityClass::Application,
+            false,
+        )
+        .unwrap();
+    let foreground_id = surfaces
+        .create(
+            ContextId(1),
+            Size {
+                width: 5,
+                height: 1,
+            },
+            PixelFormat::Xrgb8888,
+            SurfaceSecurityClass::System,
+            true,
+        )
+        .unwrap();
+    let app_pixels = [0xff22_66aa; 12];
+    let foreground_pixels = [0xffee_cc44; 5];
+    let foreground = SurfaceFrame {
+        descriptor: *surfaces.inspect(foreground_id).unwrap(),
+        pixels: &foreground_pixels,
+        bounds: Rect {
+            x: 3,
+            y: 2,
+            width: 5,
+            height: 1,
+        },
+        opacity: 255,
+        z_class: ZOrderClass::Floating,
+        visible: true,
+    };
+    let mut compositor = SoftwareCompositor::new(
+        Size {
+            width: 12,
+            height: 6,
+        },
+        12,
+        0xff00_0000,
+    );
+    let mut back = [0u32; 72];
+    let mut front = [0u32; 72];
+    let mut initial_damage = DamageTracker::new();
+    initial_damage.add_semantic(display, DamageClass::Geometry, 0, 100);
+    compositor
+        .compose(
+            &mut back,
+            &[
+                SurfaceFrame {
+                    descriptor: *surfaces.inspect(app_id).unwrap(),
+                    pixels: &app_pixels,
+                    bounds: old,
+                    opacity: 255,
+                    z_class: ZOrderClass::Normal,
+                    visible: true,
+                },
+                foreground,
+            ],
+            &initial_damage,
+        )
+        .unwrap();
+    compositor
+        .present(&mut front, &back, &initial_damage)
+        .unwrap();
+
+    let pixels_before_move = compositor.metrics().presented_pixels;
+    let mut move_damage = DamageTracker::new();
+    move_damage.add_semantic(damage_rect, DamageClass::Geometry, app_id.0, 180);
+    compositor
+        .compose(
+            &mut back,
+            &[
+                SurfaceFrame {
+                    descriptor: *surfaces.inspect(app_id).unwrap(),
+                    pixels: &app_pixels,
+                    bounds: new,
+                    opacity: 255,
+                    z_class: ZOrderClass::Normal,
+                    visible: true,
+                },
+                foreground,
+            ],
+            &move_damage,
+        )
+        .unwrap();
+    compositor.present(&mut front, &back, &move_damage).unwrap();
+
+    assert_eq!(front[1 * 12 + 1], 0xff00_0000);
+    assert_eq!(front[1 * 12 + 8], 0xff22_66aa);
+    assert_eq!(front[2 * 12 + 4], 0xffee_cc44);
+    assert_eq!(front[2 * 12 + 7], 0xffee_cc44);
+    assert_eq!(
+        compositor.metrics().presented_pixels - pixels_before_move,
+        u64::from(damage_rect.width) * u64::from(damage_rect.height)
+    );
 }
 
 // ------------------------=

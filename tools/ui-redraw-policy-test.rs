@@ -64,6 +64,16 @@ fn launcher_updates_are_damage_limited() {
 }
 
 // ------------------------=
+// FUNC: ordinary_desktop_pointer_motion_is_cursor_only
+// DESC: Verifies pointer travel without a state transition never requests structural desktop repainting.
+// ------------------=
+fn ordinary_desktop_pointer_motion_is_cursor_only() {
+    assert!(!focus_change_requires_structural_redraw(2, true, false));
+    assert!(!clock_change_requires_structural_redraw(2, false));
+    assert!(!desktop_clock_requires_bounded_redraw(2, false));
+}
+
+// ------------------------=
 // FUNC: desktop_drag_uses_bounded_damage
 // DESC: Verifies ordinary visible-window motion avoids a structural redraw while unsupported states retain the safe fallback.
 // ------------------=
@@ -94,5 +104,6 @@ fn main() {
     non_pointer_focus_remains_structural();
     visible_clock_updates_are_damage_limited();
     launcher_updates_are_damage_limited();
+    ordinary_desktop_pointer_motion_is_cursor_only();
     desktop_drag_uses_bounded_damage();
 }

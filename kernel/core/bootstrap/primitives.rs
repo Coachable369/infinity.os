@@ -222,6 +222,9 @@ impl super::DisplayDevice {
     // DESC: Writes one already-bounded raw framebuffer pixel for damage restoration.
     // ------------------=
     pub(super) fn write_framebuffer_pixel(&mut self, x: usize, y: usize, value: u32) {
+        if !self.render_point_visible(x, y) {
+            return;
+        }
         unsafe { write_volatile(self.buffer.add(y * self.stride + x), value) }
         self.mark_dirty_rect(x, y, 1, 1);
     }
@@ -246,10 +249,13 @@ impl super::DisplayDevice {
         height: usize,
         block_size: usize,
     ) {
-        let left_bound = left.min(self.width);
-        let top_bound = top.min(self.height);
-        let right_bound = left.saturating_add(width).min(self.width);
-        let bottom_bound = top.saturating_add(height).min(self.height);
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
+        let left_bound = region.left;
+        let top_bound = region.top;
+        let right_bound = region.right;
+        let bottom_bound = region.bottom;
         if right_bound.saturating_sub(left_bound) < 2
             || bottom_bound.saturating_sub(top_bound) < 2
             || block_size < 2
@@ -286,7 +292,12 @@ impl super::DisplayDevice {
                 }
             }
         }
-        self.mark_dirty_rect(left, top, right_bound - left, bottom_bound - top);
+        self.mark_dirty_rect(
+            left_bound,
+            top_bound,
+            right_bound - left_bound,
+            bottom_bound - top_bound,
+        );
     }
 
     // ------------------------=
@@ -294,7 +305,12 @@ impl super::DisplayDevice {
     // DESC: Writes one clipped RGB pixel using the firmware-provided channel format.
     // ------------------=
     pub(super) fn pixel(&mut self, x: i32, y: i32, red: u8, green: u8, blue: u8) {
-        if x < 0 || y < 0 || x as usize >= self.width || y as usize >= self.height {
+        if x < 0
+            || y < 0
+            || x as usize >= self.width
+            || y as usize >= self.height
+            || !self.render_point_visible(x as usize, y as usize)
+        {
             return;
         }
         let color = if self.format == 0 {
@@ -332,7 +348,12 @@ impl super::DisplayDevice {
         target_blue: u8,
         alpha: u8,
     ) {
-        if x < 0 || y < 0 || x as usize >= self.width || y as usize >= self.height {
+        if x < 0
+            || y < 0
+            || x as usize >= self.width
+            || y as usize >= self.height
+            || !self.render_point_visible(x as usize, y as usize)
+        {
             return;
         }
         let address = unsafe { self.buffer.add(y as usize * self.stride + x as usize) };
@@ -746,8 +767,11 @@ impl super::DisplayDevice {
         green: u8,
         blue: u8,
     ) {
-        for y in top..(top + height).min(self.height) {
-            for x in left..(left + width).min(self.width) {
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
+        for y in region.top..region.bottom {
+            for x in region.left..region.right {
                 self.pixel(x as i32, y as i32, red, green, blue);
             }
         }
@@ -768,8 +792,11 @@ impl super::DisplayDevice {
         blue: u8,
         alpha: u8,
     ) {
-        for y in top..(top + height).min(self.height) {
-            for x in left..(left + width).min(self.width) {
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
+        for y in region.top..region.bottom {
+            for x in region.left..region.right {
                 self.blend_color(x as i32, y as i32, red, green, blue, alpha);
             }
         }
@@ -1159,14 +1186,17 @@ impl super::DisplayDevice {
                 let height = source_width * self.height / self.width;
                 (0, (source_height - height) / 2, source_width, height)
             };
-        for y in top..(top + height).min(self.height) {
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
+        for y in region.top..region.bottom {
             let logical_y = crop_y + y * crop_height / self.height;
             let source_y = if signed_height < 0 {
                 logical_y
             } else {
                 source_height - 1 - logical_y
             };
-            for x in left..(left + width).min(self.width) {
+            for x in region.left..region.right {
                 let source_x = crop_x + x * crop_width / self.width;
                 let index = offset + source_y * row_bytes + source_x * 3;
                 if index + 2 >= bitmap.len() {

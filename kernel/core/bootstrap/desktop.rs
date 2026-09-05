@@ -4884,167 +4884,6 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
-    // FUNC: copy_framebuffer_rect
-    // DESC: Relocates an overlapping framebuffer rectangle using direction-safe row copies.
-    // ------------------=
-    pub(super) fn copy_framebuffer_rect(
-        &mut self,
-        source_left: usize,
-        source_top: usize,
-        destination_left: usize,
-        destination_top: usize,
-        width: usize,
-        height: usize,
-    ) {
-        if width == 0
-            || height == 0
-            || (source_left == destination_left && source_top == destination_top)
-        {
-            return;
-        }
-        if destination_top > source_top {
-            for row in (0..height).rev() {
-                unsafe {
-                    core::ptr::copy(
-                        self.buffer
-                            .add((source_top + row) * self.stride + source_left),
-                        self.buffer
-                            .add((destination_top + row) * self.stride + destination_left),
-                        width,
-                    );
-                }
-            }
-        } else {
-            for row in 0..height {
-                unsafe {
-                    core::ptr::copy(
-                        self.buffer
-                            .add((source_top + row) * self.stride + source_left),
-                        self.buffer
-                            .add((destination_top + row) * self.stride + destination_left),
-                        width,
-                    );
-                }
-            }
-        }
-        self.mark_dirty_rect(destination_left, destination_top, width, height);
-    }
-
-    // ------------------------=
-    // FUNC: restore_desktop_exposure
-    // DESC: Restores only portions of the old window bounds not covered by the relocated window.
-    // ------------------=
-    pub(super) fn restore_desktop_exposure(
-        &mut self,
-        old_rect: (usize, usize, usize, usize),
-        new_rect: (usize, usize, usize, usize),
-    ) {
-        let (old_left, old_top, old_width, old_height) = old_rect;
-        let (new_left, new_top, new_width, new_height) = new_rect;
-        let old_right = old_left + old_width;
-        let old_bottom = old_top + old_height;
-        let new_right = new_left + new_width;
-        let new_bottom = new_top + new_height;
-        let overlap_left = old_left.max(new_left);
-        let overlap_top = old_top.max(new_top);
-        let overlap_right = old_right.min(new_right);
-        let overlap_bottom = old_bottom.min(new_bottom);
-        if overlap_left >= overlap_right || overlap_top >= overlap_bottom {
-            self.paint_desktop_background_rect(old_left, old_top, old_width, old_height);
-            return;
-        }
-        self.paint_desktop_background_rect(
-            old_left,
-            old_top,
-            old_width,
-            overlap_top.saturating_sub(old_top),
-        );
-        self.paint_desktop_background_rect(
-            old_left,
-            overlap_bottom,
-            old_width,
-            old_bottom.saturating_sub(overlap_bottom),
-        );
-        self.paint_desktop_background_rect(
-            old_left,
-            overlap_top,
-            overlap_left.saturating_sub(old_left),
-            overlap_bottom - overlap_top,
-        );
-        self.paint_desktop_background_rect(
-            overlap_right,
-            overlap_top,
-            old_right.saturating_sub(overlap_right),
-            overlap_bottom - overlap_top,
-        );
-    }
-
-    // ------------------------=
-    // FUNC: move_desktop_window
-    // DESC: Moves the rendered Home window and repairs only newly exposed wallpaper strips.
-    // ------------------=
-    pub(super) fn move_desktop_window(
-        &mut self,
-        old_x: i32,
-        old_y: i32,
-        new_x: i32,
-        new_y: i32,
-        window_width: i32,
-        window_height: i32,
-    ) {
-        let old_rect = self.desktop_window_rect(old_x, old_y, window_width, window_height);
-        let new_rect = self.desktop_window_rect(new_x, new_y, window_width, window_height);
-        let width = old_rect.2.min(new_rect.2);
-        let height = old_rect.3.min(new_rect.3);
-        self.copy_framebuffer_rect(
-            old_rect.0, old_rect.1, new_rect.0, new_rect.1, width, height,
-        );
-        self.restore_desktop_exposure(old_rect, new_rect);
-        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
-        let damaged_layers =
-            layout.desktop_foreground_layers_for_rect(crate::ui::geometry::Rect {
-                x: old_rect.0 as i32,
-                y: old_rect.1 as i32,
-                width: old_rect.2 as u32,
-                height: old_rect.3 as u32,
-            }) | layout.desktop_foreground_layers_for_rect(crate::ui::geometry::Rect {
-                x: new_rect.0 as i32,
-                y: new_rect.1 as i32,
-                width: new_rect.2 as u32,
-                height: new_rect.3 as u32,
-            });
-        self.repair_desktop_foreground(damaged_layers);
-    }
-
-    // ------------------------=
-    // FUNC: repair_desktop_foreground
-    // DESC: Rebuilds only system chrome touched by a moved window so its glass backing and contents remain intact.
-    // ------------------=
-    fn repair_desktop_foreground(&mut self, damaged_layers: u8) {
-        let scale = self.ui_scale().max(1);
-        let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-            .desktop_foreground_geometry();
-        if damaged_layers & crate::ui::system_layout::DESKTOP_FOREGROUND_WIDGETS != 0 {
-            self.paint_desktop_background_rect(
-                geometry.widgets.x.max(0) as usize,
-                geometry.widgets.y.max(0) as usize,
-                geometry.widgets.width as usize,
-                geometry.widgets.height as usize,
-            );
-            self.desktop_widgets(scale);
-        }
-        if damaged_layers & crate::ui::system_layout::DESKTOP_FOREGROUND_DOCK != 0 {
-            self.paint_desktop_background_rect(
-                geometry.dock.x.max(0) as usize,
-                geometry.dock.y.max(0) as usize,
-                geometry.dock.width as usize,
-                geometry.dock.height as usize,
-            );
-            self.desktop_dock(scale, false);
-        }
-    }
-
-    // ------------------------=
     // FUNC: desktop_shell
     // DESC: Renders the screenshot-matched InfinityOS desktop, home browser, status cards, and application dock.
     // ------------------=
@@ -5775,6 +5614,30 @@ pub fn system_ui_present(
             let (background_opacity, background_blur) = console.display.active_background_effects();
             let background_effects_changed = console.last_background_opacity != background_opacity
                 || console.last_background_blur != background_blur;
+            let layout = crate::ui::system_layout::SystemLayout::new(
+                console.display.width,
+                console.display.height,
+            );
+            let display_rect = crate::ui::geometry::Rect {
+                x: 0,
+                y: 0,
+                width: console.display.width as u32,
+                height: console.display.height as u32,
+            };
+            let settings_geometry_changed = console.last_settings_window.x != settings_window.x
+                || console.last_settings_window.y != settings_window.y
+                || console.last_settings_window.width != settings_window.width
+                || console.last_settings_window.height != settings_window.height
+                || console.last_settings_window.maximized != settings_window.maximized;
+            let settings_content_changed = console.last_settings_window.expanded_row
+                != settings_window.expanded_row
+                || console.last_settings_window.scroll_offset != settings_window.scroll_offset
+                || console.last_settings_window.row_count != settings_window.row_count;
+            let app_window_geometry_changed = console.last_app_window_x != app_window_x
+                || console.last_app_window_y != app_window_y
+                || console.last_app_window_width != app_window_width
+                || console.last_app_window_height != app_window_height
+                || console.last_app_window_maximized != app_window_maximized;
             let bounded_menu_change =
                 crate::ui::redraw::desktop_menu_change_requires_bounded_redraw(
                     console.last_system_screen,
@@ -5809,12 +5672,7 @@ pub fn system_ui_present(
                     screen,
                     clock_changed,
                 )
-                || console.last_settings_window != settings_window
-                || console.last_app_window_x != app_window_x
-                || console.last_app_window_y != app_window_y
-                || console.last_app_window_width != app_window_width
-                || console.last_app_window_height != app_window_height
-                || console.last_app_window_maximized != app_window_maximized;
+                || settings_content_changed;
             let window_moved =
                 console.last_home_window_x != window_x || console.last_home_window_y != window_y;
             let window_resized = console.last_home_window_width != window_width
@@ -5822,27 +5680,26 @@ pub fn system_ui_present(
             let previous_window_rect = console.display.desktop_window_rect(
                 console.last_home_window_x,
                 console.last_home_window_y,
-                window_width,
-                window_height,
+                console.last_home_window_width,
+                console.last_home_window_height,
             );
-            let previous_window_touched_foreground = crate::ui::system_layout::SystemLayout::new(
-                console.display.width,
-                console.display.height,
-            )
-            .desktop_foreground_layers_for_rect(crate::ui::geometry::Rect {
-                x: previous_window_rect.0 as i32,
-                y: previous_window_rect.1 as i32,
-                width: previous_window_rect.2 as u32,
-                height: previous_window_rect.3 as u32,
-            }) != 0;
             let window_move_requires_structural_redraw =
                 crate::ui::redraw::desktop_window_move_requires_structural_redraw(
                     screen,
                     window_moved,
                     window_visible,
                     window_maximized,
-                ) || (window_moved && previous_window_touched_foreground);
+                );
             let content_changed = console.last_system_content != content;
+            let bounded_scene_geometry_change = !structural_change_without_window
+                && !content_changed
+                && console.last_system_screen == screen
+                && ((screen == 2
+                    && (window_moved || window_resized)
+                    && window_visible
+                    && !window_maximized)
+                    || (matches!(screen, 8 | 9) && app_window_geometry_changed)
+                    || (screen == 4 && settings_geometry_changed));
             let mut full_surface_redrawn = false;
             if bounded_menu_change
                 && !structural_change_without_window
@@ -5858,23 +5715,106 @@ pub fn system_ui_present(
                     focus,
                     clock,
                 );
-            } else if window_moved
-                && !structural_change_without_window
-                && !content_changed
-                && !window_move_requires_structural_redraw
-                && screen == 2
-                && console.last_system_screen == 2
-                && window_visible
-                && !window_maximized
-            {
-                console.display.move_desktop_window(
-                    console.last_home_window_x,
-                    console.last_home_window_y,
+            } else if bounded_scene_geometry_change {
+                let damage = if screen == 2 {
+                    let current = console.display.desktop_window_rect(
+                        window_x,
+                        window_y,
+                        window_width,
+                        window_height,
+                    );
+                    crate::ui::system_layout::window_transition_damage(
+                        crate::ui::geometry::Rect {
+                            x: previous_window_rect.0 as i32,
+                            y: previous_window_rect.1 as i32,
+                            width: previous_window_rect.2 as u32,
+                            height: previous_window_rect.3 as u32,
+                        },
+                        crate::ui::geometry::Rect {
+                            x: current.0 as i32,
+                            y: current.1 as i32,
+                            width: current.2 as u32,
+                            height: current.3 as u32,
+                        },
+                        display_rect,
+                        (16 * layout.scale()) as u32,
+                    )
+                } else if screen == 4 {
+                    crate::ui::system_layout::window_transition_damage(
+                        layout
+                            .settings_window_geometry(console.last_settings_window)
+                            .window,
+                        layout.settings_window_geometry(settings_window).window,
+                        display_rect,
+                        (16 * layout.scale()) as u32,
+                    )
+                } else {
+                    crate::ui::system_layout::window_transition_damage(
+                        layout
+                            .desktop_app_window_geometry(
+                                console.last_app_window_x,
+                                console.last_app_window_y,
+                                console.last_app_window_width,
+                                console.last_app_window_height,
+                                console.last_app_window_maximized,
+                            )
+                            .window,
+                        layout
+                            .desktop_app_window_geometry(
+                                app_window_x,
+                                app_window_y,
+                                app_window_width,
+                                app_window_height,
+                                app_window_maximized,
+                            )
+                            .window,
+                        display_rect,
+                        (16 * layout.scale()) as u32,
+                    )
+                };
+                console.display.set_render_clip(
+                    damage.x.max(0) as usize,
+                    damage.y.max(0) as usize,
+                    damage.width as usize,
+                    damage.height as usize,
+                );
+                console.display.system_ui_frame(
+                    screen,
+                    step,
+                    input,
+                    masked,
+                    focus,
+                    validation_error,
                     window_x,
                     window_y,
                     window_width,
                     window_height,
+                    window_visible,
+                    window_maximized,
+                    home_location,
+                    selected_item,
+                    dragging_item,
+                    note_location,
+                    desktop_items,
+                    desktop_item_positions,
+                    clock,
+                    settings_window,
+                    menu_kind,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    app_window_x,
+                    app_window_y,
+                    app_window_width,
+                    app_window_height,
+                    app_window_maximized,
+                    editor_saved,
+                    editor_input,
+                    command_input,
+                    editor_window,
+                    command_window,
                 );
+                console.display.clear_render_clip();
             } else if structural_change_without_window
                 || window_move_requires_structural_redraw
                 || window_resized
@@ -6129,10 +6069,6 @@ fn system_content_hash(
         hash = hash.wrapping_mul(0x0100_0193);
     }
     for window in [editor_window, command_window] {
-        for value in [window.x, window.y, window.width, window.height] {
-            hash ^= value as u32;
-            hash = hash.wrapping_mul(0x0100_0193);
-        }
         hash ^= (window.visible as u32) | ((window.maximized as u32) << 1);
         hash = hash.wrapping_mul(0x0100_0193);
     }
