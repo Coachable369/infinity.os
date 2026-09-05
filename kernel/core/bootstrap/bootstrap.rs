@@ -643,7 +643,7 @@ impl super::DisplayDevice {
         self.text(
             text_left,
             top + 82 * scale,
-            b"--[ Welcome to infinityOS ] -- SYSTEM READY -- \n\n",
+            b"--[ Welcome to infinityOS ]: \n\n",
             112,
             181,
             224,
