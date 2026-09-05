@@ -1,6 +1,6 @@
 # InfinityOS Icon IDesign Kit
 
-The installed desktop uses one stable 60-role semantic catalog across three interchangeable visual families. Every family ships in 24, 32, 48, 64, 96, and 128 pixel PNG sizes with transparent backgrounds, plus compact BGRA runtime atlases for framebuffer rendering. The live ISO and bootstrap do not package or embed these desktop-only resources.
+The installed desktop uses one stable 60-role semantic catalog across three interchangeable visual families. Every family ships in 24, 32, 48, 64, 96, 128, and 256 pixel PNG sizes with transparent backgrounds, plus compact BGRA runtime atlases for framebuffer rendering. The live ISO and bootstrap do not package or embed these desktop-only resources.
 
 ## Families
 
