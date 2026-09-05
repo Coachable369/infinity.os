@@ -63,18 +63,18 @@ while ! grep -Fq '[ui] startup selection' "$log" 2>/dev/null; do
     sleep 0.1
 done
 
-monitor_command 'sendkey 1' 0.2
-monitor_command 'sendkey ret' 0.7
-monitor_command 'sendkey ret' 0.5
-monitor_command 'sendkey ret' 0.5
-monitor_command 'sendkey ret' 0.5
-monitor_command 'sendkey ret' 0.5
-monitor_command 'sendkey right' 0.3
-monitor_command 'sendkey tab' 0.3
-monitor_command 'sendkey tab' 0.3
-monitor_command 'sendkey tab' 0.3
-monitor_command 'sendkey ret' 0.6
-monitor_command 'sendkey ret' 0.8
+monitor_command 'sendkey 1' 0.4
+monitor_command 'sendkey ret' 2
+monitor_command 'sendkey ret' 2
+monitor_command 'sendkey ret' 2
+monitor_command 'sendkey ret' 2
+monitor_command 'sendkey ret' 2
+monitor_command 'sendkey right' 0.6
+monitor_command 'sendkey tab' 0.6
+monitor_command 'sendkey tab' 0.6
+monitor_command 'sendkey tab' 0.6
+monitor_command 'sendkey ret' 2
+monitor_command 'sendkey ret' 2
 
 grep -Fq '[installer] confirmation popup opened' "$log" || { cat "$log"; exit 1; }
 capture_frame installer-confirmation
@@ -82,5 +82,5 @@ monitor_command 'mouse_move 48 28' 0.5
 capture_frame installer-confirmation-motion
 
 monitor_command 'sendkey ret' 0.25
-sleep 0.6
+sleep 1.2
 capture_frame installer-progress

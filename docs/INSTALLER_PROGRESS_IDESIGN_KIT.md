@@ -5,6 +5,10 @@ and activation artwork as the preceding guided-installation screens. The
 supplied 2006 x 784 reference defines only the lower progress-console treatment;
 it is not used as a replacement full-screen background.
 
+The centered setup console retains the same outer card, title rail, masthead,
+and placement used by the immediately preceding installer step. Only its inner
+content changes for installation progress.
+
 ## Live layers
 
 - The status label and percentage are framebuffer text driven by verified installer progress.
