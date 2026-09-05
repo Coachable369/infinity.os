@@ -19,13 +19,14 @@ ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
 	assets/icons/runtime/luminous-obsidian-base.bmp assets/icons/runtime/luminous-obsidian-actions.bmp \
 	assets/icons/runtime/frosted-quartz-base.bmp assets/icons/runtime/frosted-quartz-actions.bmp
-UI_ASSETS := $(shell find assets/skins -type f) assets/desktop/infinity-default-dark-wallpaper-v2.png assets/desktop/infinity-shell-wallpaper-v3.png assets/desktop/infinity-onboarding-wallpaper-v1.png assets/desktop/infinity-topbar-icon-v1.png
+UI_ASSETS := $(shell find assets/skins -type f) assets/desktop/infinity-default-dark-wallpaper-v2.png assets/desktop/infinity-shell-wallpaper-v3.png assets/desktop/infinity-onboarding-wallpaper-v1.png assets/desktop/infinity-topbar-icon-v1.png assets/desktop/infinity-topbar-icon-v2.png
 INSTALLER_UI_ASSETS := assets/boot/infinity-installer-mesh-diagram-v1.png
 ICON_THEME_SOURCES := $(shell find assets/icons -maxdepth 2 -type f -name 'master-*.png') tools/build-icon-themes.sh tools/slice-icon-atlas.py
 SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-console-background-v1.bmp \
 	assets/boot/infinity-emblem-v2.bmp \
 	assets/desktop/infinity-default-dark-wallpaper-v2.bmp assets/desktop/infinity-shell-wallpaper-v3.bmp \
 	assets/desktop/infinity-onboarding-wallpaper-v1.bmp assets/desktop/infinity-topbar-icon-v1.bmp \
+	assets/desktop/infinity-topbar-icon-v2.bmp \
 	assets/fonts/InfinityUI-Regular-24.atlas \
 	assets/fonts/InfinityUI-Semibold-24.atlas assets/fonts/InfinityUI-Regular-24.metrics \
 	assets/fonts/InfinityUI-Semibold-24.metrics assets/fonts/InfinityUI-Regular-24.kern \

@@ -18,3 +18,7 @@ framebuffer form embedded in both live and freshly installed kernels.
 compact desktop brand mark. `infinity-topbar-icon-v1.bmp` preserves the alpha
 channel in a deterministic 32-bit framebuffer asset so the illuminated ribbon
 composites cleanly over every top-bar state without a baked backdrop.
+
+`infinity-topbar-icon-v2.png` is the slimmer cyan-to-pearl desktop navigation
+mark matched to the compact glass-rail reference. Its 32-bit BMP derivative is
+the live framebuffer asset; the wordmark and every control remain native.

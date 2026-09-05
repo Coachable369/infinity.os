@@ -81,7 +81,7 @@ impl SystemLayout {
     // DESC: Returns the exact shared system top-bar height used by the renderer.
     // ------------------=
     pub fn top_bar_height(self) -> usize {
-        (46 * self.scale).min(self.height / 12).max(40)
+        (38 * self.scale).min(self.height / 14).max(34 * self.scale)
     }
 
     // ------------------------=
@@ -229,30 +229,30 @@ impl SystemLayout {
     ) -> Option<DesktopTarget> {
         let point = self.point(normalized_x, normalized_y);
         let top_bar = self.top_bar_height();
-        let brand_width = (150 * self.scale).min(self.width / 5);
+        let brand_width = (280 * self.scale).min(self.width / 3);
         if rect(
             8 * self.scale,
-            5 * self.scale,
+            4 * self.scale,
             brand_width,
-            top_bar.saturating_sub(10 * self.scale),
+            top_bar.saturating_sub(8 * self.scale),
         )
         .contains(point)
         {
             return Some(DesktopTarget::InfinityMenu);
         }
         let menu_bounds = [
-            (178usize, 60usize),
-            (238, 60),
-            (298, 62),
-            (360, 84),
-            (444, 62),
+            (300usize, 60usize),
+            (360, 60),
+            (420, 62),
+            (482, 84),
+            (610, 62),
         ];
         for (index, (left, width)) in menu_bounds.iter().enumerate() {
             if rect(
                 left * self.scale,
-                5 * self.scale,
+                4 * self.scale,
                 width * self.scale,
-                top_bar.saturating_sub(10 * self.scale),
+                top_bar.saturating_sub(8 * self.scale),
             )
             .contains(point)
             {
@@ -452,11 +452,11 @@ impl SystemLayout {
     // ------------------=
     pub fn system_menu_geometry(self, menu_kind: usize) -> (usize, usize, usize, usize, usize) {
         let (anchor, width, count) = match menu_kind {
-            1 => (176usize, 248usize, 5usize),
-            2 => (236, 230, 6),
-            3 => (296, 238, 5),
-            4 => (358, 242, 4),
-            5 => (442, 252, 4),
+            1 => (298usize, 248usize, 5usize),
+            2 => (358, 230, 6),
+            3 => (418, 238, 5),
+            4 => (480, 242, 4),
+            5 => (608, 252, 4),
             _ => (16, 268, 10),
         };
         let x = (anchor * self.scale).min(self.width.saturating_sub(width * self.scale + 8));

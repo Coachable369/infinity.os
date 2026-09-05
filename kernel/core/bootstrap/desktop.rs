@@ -13,7 +13,7 @@ pub(super) const ONBOARDING_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-onboarding-wallpaper-v1.bmp");
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const TOP_BAR_INFINITY_BMP: &[u8] =
-    include_bytes!("../../../assets/desktop/infinity-topbar-icon-v1.bmp");
+    include_bytes!("../../../assets/desktop/infinity-topbar-icon-v2.bmp");
 #[cfg(all(
     not(feature = "installer"),
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -329,7 +329,7 @@ impl super::DisplayDevice {
     pub(super) fn top_bar_infinity_icon(&mut self, center_x: usize, center_y: usize, width: usize) {
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
-            let height = width * 3 / 4;
+            let height = width * 7 / 15;
             self.paint_bitmap_alpha_fit_rect(
                 TOP_BAR_INFINITY_BMP,
                 center_x.saturating_sub(width / 2),
@@ -1036,37 +1036,91 @@ impl super::DisplayDevice {
         clock: crate::storage::DateTimeConfiguration,
     ) -> usize {
         let scale = self.ui_scale().max(1);
-        let height = (46 * scale).min(self.height / 12).max(40);
-        self.fill_rect_alpha(0, 0, self.width, height, 0, 4, 10, 218);
-        self.fill_rect_alpha(0, 0, self.width, height / 2, 14, 26, 39, 58);
-        self.fill_rect_alpha(0, height.saturating_sub(1), self.width, 1, 50, 70, 87, 170);
+        let height = (38 * scale).min(self.height / 14).max(34 * scale);
+        let rail_inset = 2 * scale;
+        let rail_width = self.width.saturating_sub(rail_inset * 2);
+        let rail_height = height.saturating_sub(rail_inset * 2);
+        self.fill_rect_alpha(0, 0, self.width, height, 0, 2, 7, 176);
+        self.fill_rounded_rect_alpha(
+            rail_inset,
+            rail_inset,
+            rail_width,
+            rail_height,
+            7 * scale,
+            0,
+            8,
+            18,
+            238,
+        );
+        self.fill_rounded_rect_alpha(
+            rail_inset,
+            rail_inset,
+            rail_width,
+            rail_height / 2,
+            7 * scale,
+            18,
+            39,
+            59,
+            88,
+        );
+        self.fill_rounded_rect_alpha(
+            self.width / 3,
+            rail_inset,
+            self.width / 2,
+            rail_height,
+            7 * scale,
+            20,
+            75,
+            112,
+            42,
+        );
+        self.outline_rounded_rect(
+            rail_inset,
+            rail_inset,
+            rail_width,
+            rail_height,
+            7 * scale,
+            64,
+            100,
+            128,
+        );
+        self.fill_rect_alpha(
+            9 * scale,
+            height.saturating_sub(2 * scale),
+            self.width.saturating_sub(18 * scale),
+            1,
+            35,
+            113,
+            153,
+            150,
+        );
 
-        let brand_width = (150 * scale).min(self.width / 5);
+        let brand_width = (280 * scale).min(self.width / 3);
         if active_menu == Some(0) {
             self.fill_rounded_rect_alpha(
                 8 * scale,
-                5 * scale,
+                4 * scale,
                 brand_width,
-                height.saturating_sub(10 * scale),
-                9 * scale,
-                15,
-                57,
-                83,
-                214,
+                height.saturating_sub(8 * scale),
+                7 * scale,
+                17,
+                69,
+                101,
+                188,
             );
         }
-        self.top_bar_infinity_icon(21 * scale, height / 2, 17 * scale);
-        self.ui_text_strong(
-            40 * scale,
+        self.top_bar_infinity_icon(36 * scale, height / 2, 68 * scale);
+        self.ui_text(
+            76 * scale,
             height / 2 - 10 * scale,
-            b"InfinityOS",
-            247,
-            249,
-            252,
+            b"I N F I N I T Y O S",
+            221,
+            229,
+            239,
             1,
         );
 
-        let menu_positions = [178usize, 238, 298, 360, 444];
+        let menu_positions = [300usize, 360, 420, 482, 610];
         for (index, label) in [b"File".as_slice(), b"Edit", b"View", b"Window", b"Help"]
             .iter()
             .enumerate()
@@ -1076,10 +1130,10 @@ impl super::DisplayDevice {
                 let active_width = self.ui_text_width(label, 1) + 18 * scale;
                 self.fill_rounded_rect_alpha(
                     menu_x.saturating_sub(9 * scale),
-                    5 * scale,
+                    4 * scale,
                     active_width,
-                    height.saturating_sub(10 * scale),
-                    8 * scale,
+                    height.saturating_sub(8 * scale),
+                    7 * scale,
                     18,
                     55,
                     78,
@@ -1136,13 +1190,41 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn system_top_bar_clock(&mut self, clock: crate::storage::DateTimeConfiguration) {
         let scale = self.ui_scale().max(1);
-        let height = (46 * scale).min(self.height / 12).max(40);
+        let height = (38 * scale).min(self.height / 14).max(34 * scale);
         let width = (112 * scale).min(self.width);
         let left = self.width.saturating_sub(width);
         self.paint_desktop_background_rect(left, 0, width, height);
-        self.fill_rect_alpha(left, 0, width, height, 0, 4, 10, 218);
-        self.fill_rect_alpha(left, 0, width, height / 2, 14, 26, 39, 58);
-        self.fill_rect_alpha(left, height.saturating_sub(1), width, 1, 50, 70, 87, 170);
+        self.fill_rect_alpha(left, 0, width, height, 0, 2, 7, 176);
+        self.fill_rect_alpha(
+            left,
+            2 * scale,
+            width.saturating_sub(2 * scale),
+            height.saturating_sub(4 * scale),
+            0,
+            8,
+            18,
+            238,
+        );
+        self.fill_rect_alpha(
+            left,
+            2 * scale,
+            width.saturating_sub(2 * scale),
+            height / 2,
+            18,
+            39,
+            59,
+            88,
+        );
+        self.fill_rect_alpha(
+            left,
+            height.saturating_sub(2 * scale),
+            width.saturating_sub(9 * scale),
+            1,
+            35,
+            113,
+            153,
+            150,
+        );
         let mut time = *b"00:00:00";
         time[0] = b'0' + clock.hour / 10;
         time[1] = b'0' + clock.hour % 10;
@@ -1205,7 +1287,7 @@ impl super::DisplayDevice {
     pub(super) fn system_menu_panel(&mut self, menu_kind: usize, focus: usize, scale: usize) {
         let (anchor, width, items): (usize, usize, &[&[u8]]) = match menu_kind {
             1 => (
-                176,
+                298,
                 248,
                 &[
                     b"Open Console",
@@ -1216,12 +1298,12 @@ impl super::DisplayDevice {
                 ],
             ),
             2 => (
-                236,
+                358,
                 230,
                 &[b"Undo", b"Redo", b"Cut", b"Copy", b"Paste", b"Select All"],
             ),
             3 => (
-                296,
+                418,
                 238,
                 &[
                     b"Show Home Window",
@@ -1232,7 +1314,7 @@ impl super::DisplayDevice {
                 ],
             ),
             4 => (
-                358,
+                480,
                 242,
                 &[
                     b"Minimize Home",
@@ -1242,7 +1324,7 @@ impl super::DisplayDevice {
                 ],
             ),
             5 => (
-                442,
+                608,
                 252,
                 &[
                     b"InfinityOS Help",
@@ -1269,7 +1351,7 @@ impl super::DisplayDevice {
             ),
         };
         let menu_x = (anchor * scale).min(self.width.saturating_sub(width * scale + 8));
-        let menu_y = (46 * scale).min(self.height / 12).max(40) + 6 * scale;
+        let menu_y = (38 * scale).min(self.height / 14).max(34 * scale) + 6 * scale;
         let menu_w = (width * scale).min(self.width.saturating_sub(menu_x + 8));
         let menu_h = (22 + items.len() * 34) * scale;
         self.glass_panel(menu_x, menu_y, menu_w, menu_h, true);

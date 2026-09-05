@@ -544,6 +544,7 @@ fn semantic_damage_storm_test() {
 // ------------------=
 fn installed_system_hit_geometry_test() {
     let wide = SystemLayout::new(1920, 1080);
+    assert_eq!(wide.top_bar_height(), 38);
     assert_eq!(
         wide.onboarding_target(0, 200, 790),
         Some(OnboardingTarget::Primary)
@@ -562,6 +563,7 @@ fn installed_system_hit_geometry_test() {
     );
 
     let square = SystemLayout::new(1600, 1600);
+    assert_eq!(square.top_bar_height(), 38);
     assert_eq!(
         square.onboarding_target(0, 200, 700),
         Some(OnboardingTarget::Primary)
@@ -578,7 +580,7 @@ fn installed_system_hit_geometry_test() {
         Some(DesktopTarget::InfinityMenu)
     );
     assert_eq!(
-        square.desktop_target(120, 15, 30, 500, true, false),
+        square.desktop_target(200, 15, 30, 500, true, false),
         Some(DesktopTarget::TopMenu(1))
     );
     assert_eq!(
@@ -644,6 +646,7 @@ fn installed_system_hit_geometry_test() {
     );
 
     let hidpi = SystemLayout::new(2560, 1440);
+    assert_eq!(hidpi.top_bar_height(), 76);
     assert_eq!(
         hidpi.onboarding_target(0, 220, 810),
         Some(OnboardingTarget::Primary)
