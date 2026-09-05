@@ -3258,74 +3258,20 @@ impl ConsoleRuntime {
         }
         let next_x = x.clamp(0, 1000);
         let next_y = y.clamp(0, 1000);
-        let button_changed = left_button != self.pointer_pressed;
-        if next_x == self.pointer_x && next_y == self.pointer_y && !button_changed {
-            // VirtualBox ARM's UEFI Absolute Pointer can signal a click by
-            // making GetState ready at the unchanged coordinate while leaving
-            // ActiveButtons at zero. Raw USB HID still supplies authoritative
-            // button bits when available. On the bootstrap selector only, a
-            // stationary firmware state notification inside an action row is
-            // therefore treated as one complete primary-button pulse. The
-            // UEFI protocol returns NOT_READY when there is no new state, so
-            // an idle pointer cannot repeatedly activate a row. Apply the
-            // same guarded pulse to installer controls because the firmware
-            // exhibits the same zero-button behavior after startup.
-            #[cfg(target_arch = "aarch64")]
-            if !left_button
-                && ((self.mode == ConsoleMode::Startup
-                    && !left_button
-                    && (180..=820).contains(&next_x)
-                    && (710..=858).contains(&next_y))
-                    || self.installer_stationary_pointer_target(next_x, next_y))
-            {
-                crate::bootstrap::note_pointer_activity();
-                self.pointer_interaction(true);
-                self.pointer_interaction(false);
-            }
+        if !crate::drivers::input::pointer::absolute_pointer_state_changed(
+            self.pointer_x,
+            self.pointer_y,
+            self.pointer_pressed,
+            next_x,
+            next_y,
+            left_button,
+        ) {
             return;
         }
-        if next_x != self.pointer_x || next_y != self.pointer_y || button_changed {
-            crate::bootstrap::note_pointer_activity();
-        }
+        crate::bootstrap::note_pointer_activity();
         self.pointer_x = next_x;
         self.pointer_y = next_y;
         self.pointer_interaction(left_button);
-    }
-
-    // ------------------------=
-    // FUNC: installer_stationary_pointer_target
-    // DESC: Limits VirtualBox ARM's buttonless firmware click fallback to visible installer controls.
-    // ------------------=
-    #[cfg(target_arch = "aarch64")]
-    fn installer_stationary_pointer_target(&self, x: i32, y: i32) -> bool {
-        if self.mode != ConsoleMode::Installer {
-            return false;
-        }
-        if self.installer_step == InstallerStep::DateTime
-            && (100..=475).contains(&x)
-            && ((465..=535).contains(&y) || (555..=625).contains(&y) || (645..=715).contains(&y))
-        {
-            return true;
-        }
-        if self.installer_step == InstallerStep::DateTime
-            && (500..=900).contains(&x)
-            && (405..=770).contains(&y)
-        {
-            return true;
-        }
-        if self.installer_step == InstallerStep::Confirm {
-            return ((310..=480).contains(&x) || (520..=730).contains(&x))
-                && (570..=630).contains(&y);
-        }
-        if self.installer_step == InstallerStep::Welcome {
-            return ((145..=470).contains(&x) || (480..=830).contains(&x))
-                && (810..=865).contains(&y);
-        }
-        if self.installer_step == InstallerStep::Hierarchy {
-            return ((135..=485).contains(&x) || (510..=860).contains(&x))
-                && (820..=875).contains(&y);
-        }
-        ((190..=490).contains(&x) || (510..=810).contains(&x)) && (830..=885).contains(&y)
     }
 
     // ------------------------=

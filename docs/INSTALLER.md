@@ -100,6 +100,8 @@ state over its Back and primary action controls. Tab moves between controls
 Enter activates the focused control; Escape cancels back to the startup selector.
 Mouse movement tracks across the full installer surface and clicking a control
 uses the same activation path as Enter.
+Button activation requires an explicit UEFI contact bit or raw USB HID press
+edge; stationary buttonless firmware notifications are ignored.
 
 The reviewed plan remains visible when a focused confirmation popup warns that
 all selected-disk data will be permanently erased. Cancel is available through

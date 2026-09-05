@@ -21,7 +21,7 @@ trap cleanup EXIT INT TERM
 case "$arch" in
     x86_64)
         firmware=${OVMF_CODE:-/opt/homebrew/share/qemu/edk2-x86_64-code.fd}
-        qemu-system-x86_64 -machine q35 -m 512M \
+        qemu-system-x86_64 -machine q35 -m 1024M \
             -drive if=pflash,format=raw,readonly=on,file="$firmware" \
             -cdrom build/infinity-x86_64.iso -serial file:"$log" -display none -no-reboot \
             -monitor unix:"$monitor",server=on,wait=off &

@@ -14,6 +14,10 @@ and focus. Window geometry and the pointer remain in one global coordinate
 space; applications receive only routed local interactions in the future IOP
 adapter.
 
+Absolute-pointer notifications are actionable only when coordinates move or a
+real pressed-button state changes. A stationary firmware notification with no
+active button is ignored and can never synthesize a wizard click.
+
 ## Status
 
 - Secure input precedence, focus, capture ownership, and modal hit testing:

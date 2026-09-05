@@ -42,6 +42,25 @@ fn composite_button_capture() {
 }
 
 // ------------------------=
+// FUNC: absolute_pointer_edges
+// DESC: Verifies stationary buttonless firmware notifications cannot fabricate wizard activations.
+// ------------------=
+fn absolute_pointer_edges() {
+    assert!(!pointer::absolute_pointer_state_changed(
+        420, 830, false, 420, 830, false
+    ));
+    assert!(pointer::absolute_pointer_state_changed(
+        420, 830, false, 421, 830, false
+    ));
+    assert!(pointer::absolute_pointer_state_changed(
+        420, 830, false, 420, 830, true
+    ));
+    assert!(pointer::absolute_pointer_state_changed(
+        420, 830, true, 420, 830, false
+    ));
+}
+
+// ------------------------=
 // FUNC: ps2_protocols
 // DESC: Verifies standard, wheel, and five-button PS/2 packet decoding.
 // ------------------=
@@ -125,6 +144,7 @@ fn main() {
     usb_hid_protocols();
     discovery_metadata();
     composite_button_capture();
+    absolute_pointer_edges();
     println!(
         "PASS pointer protocols: PS/2, wheel, five-button, USB HID relative, USB HID absolute"
     );

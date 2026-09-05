@@ -4,6 +4,21 @@ pub const BUTTON_MIDDLE: u8 = 1 << 2;
 pub const BUTTON_BACK: u8 = 1 << 3;
 pub const BUTTON_FORWARD: u8 = 1 << 4;
 
+// ------------------------=
+// FUNC: absolute_pointer_state_changed
+// DESC: Accepts only observable absolute motion or a real button transition as actionable pointer input.
+// ------------------=
+pub const fn absolute_pointer_state_changed(
+    previous_x: i32,
+    previous_y: i32,
+    previous_pressed: bool,
+    next_x: i32,
+    next_y: i32,
+    next_pressed: bool,
+) -> bool {
+    previous_x != next_x || previous_y != next_y || previous_pressed != next_pressed
+}
+
 pub const TRANSPORT_PS2: u32 = 1 << 0;
 pub const TRANSPORT_UEFI_RELATIVE: u32 = 1 << 1;
 pub const TRANSPORT_UEFI_ABSOLUTE: u32 = 1 << 2;
