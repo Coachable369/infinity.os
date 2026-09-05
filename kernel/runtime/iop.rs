@@ -121,6 +121,26 @@ pub enum OperationId {
     UiInspectFocus = 0xbe02,
     UiInspectDamage = 0xbe03,
     WindowList = 0xbe11,
+    SurfaceCreate = 0xbe12,
+    SurfaceDestroy = 0xbe13,
+    SurfacePresent = 0xbe14,
+    WindowCreate = 0xbe15,
+    WindowClose = 0xbe16,
+    WindowMove = 0xbe17,
+    WindowResize = 0xbe18,
+    WindowSetState = 0xbe19,
+    WindowFocus = 0xbe1a,
+    WindowCapturePointer = 0xbe1b,
+    WindowReleasePointer = 0xbe1c,
+    WindowInspect = 0xbe1d,
+    SurfaceList = 0xbe1e,
+    SurfaceInspect = 0xbe1f,
+    SurfaceResize = 0xbe20,
+    SurfaceCommit = 0xbe21,
+    CompositorStatus = 0xbe22,
+    CompositorDiagnostics = 0xbe23,
+    DisplayQuery = 0xbe24,
+    SecureInputStatus = 0xbe25,
     ClipboardRead = 0xbf01,
     ClipboardWrite = 0xbf02,
     SystemPowerOff = 0xbb02,
@@ -133,6 +153,91 @@ impl OperationId {
     // ------------------=
     pub const fn machine_id(self) -> u32 {
         self as u32
+    }
+}
+
+pub const WINDOW_MOVE_V1_BYTES: usize = 28;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct WindowMoveV1 {
+    pub window_id: u32,
+    pub x: i32,
+    pub y: i32,
+    pub work_x: i32,
+    pub work_y: i32,
+    pub work_width: u32,
+    pub work_height: u32,
+}
+
+impl WindowMoveV1 {
+    // ------------------------=
+    // FUNC: encode
+    // DESC: Encodes the version-one Window.Move request schema in stable little-endian field order.
+    // ------------------=
+    pub fn encode(&self, out: &mut [u8; WINDOW_MOVE_V1_BYTES]) {
+        put_u32(out, 0, self.window_id);
+        put_i32(out, 4, self.x);
+        put_i32(out, 8, self.y);
+        put_i32(out, 12, self.work_x);
+        put_i32(out, 16, self.work_y);
+        put_u32(out, 20, self.work_width);
+        put_u32(out, 24, self.work_height);
+    }
+
+    // ------------------------=
+    // FUNC: decode
+    // DESC: Decodes an exact-length Window.Move request and rejects malformed payload framing.
+    // ------------------=
+    pub fn decode(input: &[u8]) -> Result<Self, IopError> {
+        if input.len() != WINDOW_MOVE_V1_BYTES {
+            return Err(IopError::InvalidPayload);
+        }
+        Ok(Self {
+            window_id: get_u32(input, 0),
+            x: get_i32(input, 4),
+            y: get_i32(input, 8),
+            work_x: get_i32(input, 12),
+            work_y: get_i32(input, 16),
+            work_width: get_u32(input, 20),
+            work_height: get_u32(input, 24),
+        })
+    }
+}
+
+pub const SURFACE_COMMIT_V1_BYTES: usize = 16;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SurfaceCommitV1 {
+    pub surface_id: u32,
+    pub generation: u64,
+    pub damage_count: u16,
+}
+
+impl SurfaceCommitV1 {
+    // ------------------------=
+    // FUNC: encode
+    // DESC: Encodes a bounded Surface.Commit generation and semantic-damage count.
+    // ------------------=
+    pub fn encode(&self, out: &mut [u8; SURFACE_COMMIT_V1_BYTES]) {
+        out.fill(0);
+        put_u32(out, 0, self.surface_id);
+        put_u64(out, 4, self.generation);
+        put_u16(out, 12, self.damage_count);
+    }
+
+    // ------------------------=
+    // FUNC: decode
+    // DESC: Decodes an exact version-one Surface.Commit request payload.
+    // ------------------=
+    pub fn decode(input: &[u8]) -> Result<Self, IopError> {
+        if input.len() != SURFACE_COMMIT_V1_BYTES {
+            return Err(IopError::InvalidPayload);
+        }
+        Ok(Self {
+            surface_id: get_u32(input, 0),
+            generation: get_u64(input, 4),
+            damage_count: get_u16(input, 12),
+        })
     }
 }
 
@@ -362,6 +467,7 @@ impl Endpoint {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum IopError {
     InvalidHeader,
+    InvalidPayload,
     UnsupportedVersion,
     UnknownEndpoint,
     AccessDenied,
@@ -610,6 +716,13 @@ fn put_u64(o: &mut [u8], a: usize, v: u64) {
     o[a..a + 8].copy_from_slice(&v.to_le_bytes())
 }
 // ------------------------=
+// FUNC: put_i32
+// DESC: Encodes one signed 32-bit schema field in little-endian order.
+// ------------------=
+fn put_i32(o: &mut [u8], a: usize, v: i32) {
+    o[a..a + 4].copy_from_slice(&v.to_le_bytes())
+}
+// ------------------------=
 // FUNC: get_u16
 // DESC: Reads get u16 data.
 // ------------------=
@@ -638,4 +751,11 @@ fn get_u64(d: &[u8], a: usize) -> u64 {
         d[a + 6],
         d[a + 7],
     ])
+}
+// ------------------------=
+// FUNC: get_i32
+// DESC: Decodes one signed 32-bit schema field from little-endian bytes.
+// ------------------=
+fn get_i32(d: &[u8], a: usize) -> i32 {
+    i32::from_le_bytes([d[a], d[a + 1], d[a + 2], d[a + 3]])
 }

@@ -1,6 +1,6 @@
 # InfinityOS System Generations
 
-**Status: TESTED on x86_64 UEFI/QEMU; architecture-neutral format IMPLEMENTED for AArch64 but installed AArch64 boot is not yet implemented.**
+**Status: TESTED on x86_64 UEFI/QEMU and AArch64 UEFI/VirtualBox, including a fresh ISO install followed by boot of the installed System Generation.**
 
 An installation constructs a declared System Generation in System Space; it does not clone the recovery environment. Generation 1 follows `INSTALLING (1) -> READY (2) -> ACTIVE (3)`. Values `FAILED (4)` and `ROLLBACK (5)` are reserved. The installer writes all payload data, verifies it, writes READY and verifies again, then writes ACTIVE and finally publishes the active-generation Boot Catalog and complete container marker. An interrupted installation therefore has no selectable ACTIVE generation.
 
@@ -15,3 +15,14 @@ System generation manifests now include the identity/session service suite.
 Machine identity and Personal Space ownership are persistent data and are not
 recreated when a new System Generation boots. Sessions remain transient and a
 new authenticated session is required after reboot.
+
+# Compositor compatibility
+
+The installed kernel and live kernel are built from the same `kernel/ui`
+surface, compositor, input-router, and Window Server sources. The installed
+Window Server and InfinityUI manifests contain the same operation IDs and
+capability types as the live environment. The checksummed CORE UI-suite
+component covers compositor, Window Server, scene/surface runtime,
+display-present adapter, Trusted UI integration, diagnostics, and policy
+metadata. Installer-only artwork remains separately classified; no Milestone
+7C runtime code is ISO-only.

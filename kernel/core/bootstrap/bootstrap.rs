@@ -15,15 +15,18 @@ pub(super) const CONSOLE_BACKGROUND_BMP: &[u8] =
     include_bytes!("../../../assets/boot/infinity-console-background-v1.bmp");
 #[cfg(not(feature = "installer"))]
 pub(super) const CONSOLE_BACKGROUND_BMP: &[u8] = &[];
+
 // Startup BBS / FIGlet banner sizing.
 // The source bitmap glyphs are 8x8. This renderer resamples them to the
 // requested pixel height, so values such as 12px are supported directly.
-pub(super) const FIGLET_FONT_HEIGHT_PX: usize = 12;
-pub(super) const FIGLET_LINE_HEIGHT_PX: usize = 15;
+pub(super) const FIGLET_FONT_HEIGHT_PX: usize = 15;
+pub(super) const FIGLET_LINE_HEIGHT_PX: usize = 17;
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const EMBLEM_BMP: &[u8] = include_bytes!("../../../assets/boot/infinity-emblem-v2.bmp");
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const BOOT_EMBLEM_TOP_PERCENT: usize = 23;
+
 // Installer-only calibration: the ISO reveal pulse follows the visible ribbon
 // centerline in the composited bootstrap artwork, which sits 50 pixels below
 // the original mathematical path origin.
@@ -611,14 +614,16 @@ impl super::DisplayDevice {
         );
         let text_left = left + 22 * scale;
 
+        // ASCII - Grafiti Header
         let graffiti: [&[u8]; 6] = [
-            b".___ _______  ___________.___ _______  .___________________.___.________    _________",
-            b"|   |\\      \\ \\_   _____/|   |\\      \\ |   \\__    ___/\\__  |   |\\_____  \\  /   _____/",
-            b"|   |/   |   \\ |    __)  |   |/   |   \\|   | |    |    /   |   | /   |   \\ \\_____  \\",
-            b"|   /    |    \\|     \\   |   /    |    \\   | |    |    \\____   |/    |    \\/        \\",
-            b"|___\\____|__  /\\___  /   |___\\____|__  /___| |____|    / ______|\\_______  /_______  /",
-            b"            \\/     \\/                \\/                \\/               \\/        \\/",
+            br#"  .___           _____ .__         .__   __              ________     _________ "#,
+            br#"  |   |  ____  _/ ____\|__|  ____  |__|_/  |_  ___.__.   \_____  \   /   _____/ "#,
+            br#"  |   | /    \ \   __\ |  | /    \ |  |\   __\<   |  |    /   |   \  \_____  \  "#,
+            br#"  |   ||   |  \ |  |   |  ||   |  \|  | |  |   \___  |   /    |    \ /        \ "#,
+            br#"  |___||___|  / |__|   |__||___|  /|__| |__|   / ____| /\_______  //_______  /  "#,
+            br#"            \/                  \/             \/      \/        \/         \/  "#,
         ];
+
         for (row, line) in graffiti.iter().enumerate() {
             let (red, green, blue) = if row == 0 || row == 5 {
                 (143, 215, 255)
@@ -627,6 +632,7 @@ impl super::DisplayDevice {
             } else {
                 (214, 233, 249)
             };
+
             // Render the wide FIGlet banner at an explicit, alterable pixel
             // height instead of being restricted to 8px/16px integer scaling.
             self.text_scaled_to_height(
@@ -642,8 +648,8 @@ impl super::DisplayDevice {
         }
         self.text(
             text_left,
-            top.saturating_add(82 * scale).saturating_sub(12),
-            b"--[ Welcome to infinityOS ]: \n\n",
+            top.saturating_add(82 * scale).saturating_sub(22),
+            b"     --[ Welcome to infinityOS ]: \n\n",
             112,
             181,
             224,
@@ -668,7 +674,7 @@ impl super::DisplayDevice {
         self.text(
             self.width * 18 / 100,
             self.height * 93 / 100,
-            b"TAB / ARROWS: MOVE     ENTER: SELECT     TYPE: install | repair | console",
+            b"TAB / ARROWS: MOVE     ENTER: SELECT     CMDS: install | repair | console",
             121,
             158,
             191,
@@ -1238,6 +1244,7 @@ pub fn console_present(
             console.last_installer_choice = installer_choice;
             console.last_installer_date_time = installer_date_time;
             console.last_installer_date_time_part = installer_date_time_part;
+            console.display.present_damage();
         }
     }
 }
@@ -1286,6 +1293,7 @@ pub fn animation_tick() {
                     .display
                     .system_login_animation(console.particle_phase);
                 console.save_and_draw_cursor(console.cursor_x, console.cursor_y);
+                console.display.present_damage();
                 return;
             }
             // Animation and cursor share the front buffer. Restore the cursor
@@ -1303,6 +1311,7 @@ pub fn animation_tick() {
             if cursor_over_animation {
                 console.save_and_draw_cursor(console.cursor_x, console.cursor_y);
             }
+            console.display.present_damage();
         }
     }
 }
@@ -1404,6 +1413,7 @@ pub fn show_splash(info: &BootInfo) -> bool {
     let Some(mut display) = DisplayDevice::from_boot_info(info) else {
         return false;
     };
+    display.mark_dirty_rect(0, 0, display.width, display.height);
     display.paint_background();
     let stages: [(usize, &[u8]); 4] = [
         (25, b"GRAPHICS SURFACE READY"),
@@ -1417,6 +1427,7 @@ pub fn show_splash(info: &BootInfo) -> bool {
             display.emblem_reveal_band(sequence, 120);
             display.infinity_pulse(sequence * 3);
             display.progress(stage.saturating_sub(24) + frame * 24 / 30, label);
+            display.present_damage();
             wait_frame(35);
         }
     }
@@ -1424,6 +1435,7 @@ pub fn show_splash(info: &BootInfo) -> bool {
     // The BBS panel owns its lower rectangle, while particle restoration above
     // it now reads from the same boot artwork and full-size emblem geometry.
     display.finish_emblem();
+    display.force_full_present();
     activate_console(display);
     true
 }

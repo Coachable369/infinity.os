@@ -48,7 +48,10 @@ impl SkinId {
             bytes[index] = value[index];
             index += 1;
         }
-        Self { bytes, length: index as u8 }
+        Self {
+            bytes,
+            length: index as u8,
+        }
     }
 
     // ------------------------=
@@ -157,7 +160,11 @@ impl SkinRegistry {
                 return Err(SkinError::InheritanceCycle);
             }
         }
-        let slot = self.packages.iter_mut().find(|slot| slot.is_none()).ok_or(SkinError::Full)?;
+        let slot = self
+            .packages
+            .iter_mut()
+            .find(|slot| slot.is_none())
+            .ok_or(SkinError::Full)?;
         *slot = Some(package);
         Ok(())
     }
@@ -167,7 +174,10 @@ impl SkinRegistry {
     // DESC: Resolves a skin package by stable identifier.
     // ------------------=
     pub fn find(&self, id: SkinId) -> Option<&SkinPackage> {
-        self.packages.iter().flatten().find(|package| package.id == id)
+        self.packages
+            .iter()
+            .flatten()
+            .find(|package| package.id == id)
     }
 
     // ------------------------=
@@ -175,7 +185,9 @@ impl SkinRegistry {
     // DESC: Returns the currently active validated skin package.
     // ------------------=
     pub fn active(&self) -> &SkinPackage {
-        self.find(self.active).or_else(|| self.find(self.safe)).unwrap()
+        self.find(self.active)
+            .or_else(|| self.find(self.safe))
+            .unwrap()
     }
 
     // ------------------------=
@@ -230,7 +242,9 @@ impl SkinRegistry {
 // DESC: Enforces native package schema, scaling, identity, and content-integrity constraints.
 // ------------------=
 pub fn validate_package(package: &SkinPackage) -> Result<(), SkinError> {
-    if package.format_version != SKIN_PACKAGE_VERSION || package.minimum_ui_abi > super::INFINITY_UI_ABI_VERSION {
+    if package.format_version != SKIN_PACKAGE_VERSION
+        || package.minimum_ui_abi > super::INFINITY_UI_ABI_VERSION
+    {
         return Err(SkinError::InvalidVersion);
     }
     if package.id.as_bytes().is_empty() || !package.tokens.default_scale.valid() {
@@ -264,11 +278,15 @@ pub fn encode_header(package: &SkinPackage, out: &mut [u8; SKIN_HEADER_BYTES]) {
 // FUNC: decode_header
 // DESC: Parses and validates a bounded native skin header before asset loading.
 // ------------------=
-pub fn decode_header(data: &[u8; SKIN_HEADER_BYTES], tokens: SkinTokens) -> Result<SkinPackage, SkinError> {
+pub fn decode_header(
+    data: &[u8; SKIN_HEADER_BYTES],
+    tokens: SkinTokens,
+) -> Result<SkinPackage, SkinError> {
     if &data[..8] != b"INFSKIN1" {
         return Err(SkinError::InvalidMagic);
     }
-    if u32::from_le_bytes([data[60], data[61], data[62], data[63]]) != header_checksum(&data[..60]) {
+    if u32::from_le_bytes([data[60], data[61], data[62], data[63]]) != header_checksum(&data[..60])
+    {
         return Err(SkinError::InvalidHash);
     }
     let length = data[20] as usize;
@@ -278,11 +296,16 @@ pub fn decode_header(data: &[u8; SKIN_HEADER_BYTES], tokens: SkinTokens) -> Resu
     let mut id = [0; SKIN_ID_BYTES];
     id.copy_from_slice(&data[21..53]);
     let package = SkinPackage {
-        id: SkinId { bytes: id, length: length as u8 },
+        id: SkinId {
+            bytes: id,
+            length: length as u8,
+        },
         parent: None,
         format_version: u16::from_le_bytes([data[8], data[9]]),
         minimum_ui_abi: u16::from_le_bytes([data[10], data[11]]),
-        content_hash: u64::from_le_bytes([data[12], data[13], data[14], data[15], data[16], data[17], data[18], data[19]]),
+        content_hash: u64::from_le_bytes([
+            data[12], data[13], data[14], data[15], data[16], data[17], data[18], data[19],
+        ]),
         tokens,
         trusted: data[54] != 0,
     };
@@ -317,14 +340,28 @@ pub const fn default_dark_skin() -> SkinPackage {
         trusted: true,
         tokens: SkinTokens {
             colors: [
-                Color(0xff02070f), Color(0xe60a121d), Color(0xf0121d2a), Color(0xff33475b),
-                Color(0xfff1f5fa), Color(0xffaeb8c6), Color(0xff20bfff), Color(0xff9ce8ff),
-                Color(0xffffffff), Color(0xff50d890), Color(0xffffc857), Color(0xffff6170),
+                Color(0xff02070f),
+                Color(0xe60a121d),
+                Color(0xf0121d2a),
+                Color(0xff33475b),
+                Color(0xfff1f5fa),
+                Color(0xffaeb8c6),
+                Color(0xff20bfff),
+                Color(0xff9ce8ff),
+                Color(0xffffffff),
+                Color(0xff50d890),
+                Color(0xffffc857),
+                Color(0xffff6170),
                 Color(0x99000000),
             ],
             spacing: [4, 8, 12, 16, 20, 24, 32, 48],
             corner_radius: [4, 10, 16, 24],
-            panel_insets: Insets { top: 32, right: 32, bottom: 32, left: 32 },
+            panel_insets: Insets {
+                top: 32,
+                right: 32,
+                bottom: 32,
+                left: 32,
+            },
             default_scale: Scale::ONE,
             motion_duration_ms: [90, 160, 240, 420],
         },
@@ -345,14 +382,28 @@ pub const fn diagnostic_light_skin() -> SkinPackage {
         trusted: true,
         tokens: SkinTokens {
             colors: [
-                Color(0xffe8edf3), Color(0xfaf8fbff), Color(0xffffffff), Color(0xff8ca0b4),
-                Color(0xff101821), Color(0xff526170), Color(0xff0a74b9), Color(0xff38a9ea),
-                Color(0xff062a45), Color(0xff16834f), Color(0xff8d6500), Color(0xffb32436),
+                Color(0xffe8edf3),
+                Color(0xfaf8fbff),
+                Color(0xffffffff),
+                Color(0xff8ca0b4),
+                Color(0xff101821),
+                Color(0xff526170),
+                Color(0xff0a74b9),
+                Color(0xff38a9ea),
+                Color(0xff062a45),
+                Color(0xff16834f),
+                Color(0xff8d6500),
+                Color(0xffb32436),
                 Color(0x66000000),
             ],
             spacing: [4, 8, 12, 16, 20, 24, 32, 48],
             corner_radius: [2, 6, 10, 14],
-            panel_insets: Insets { top: 28, right: 28, bottom: 28, left: 28 },
+            panel_insets: Insets {
+                top: 28,
+                right: 28,
+                bottom: 28,
+                left: 28,
+            },
             default_scale: Scale::ONE,
             motion_duration_ms: [0, 0, 0, 0],
         },
@@ -373,14 +424,28 @@ pub const fn safe_skin() -> SkinPackage {
         trusted: true,
         tokens: SkinTokens {
             colors: [
-                Color(0xff000000), Color(0xff080808), Color(0xff101010), Color(0xffffffff),
-                Color(0xffffffff), Color(0xffd8d8d8), Color(0xff00d8ff), Color(0xffffffff),
-                Color(0xffffff00), Color(0xff00ff80), Color(0xffffff00), Color(0xffff4040),
+                Color(0xff000000),
+                Color(0xff080808),
+                Color(0xff101010),
+                Color(0xffffffff),
+                Color(0xffffffff),
+                Color(0xffd8d8d8),
+                Color(0xff00d8ff),
+                Color(0xffffffff),
+                Color(0xffffff00),
+                Color(0xff00ff80),
+                Color(0xffffff00),
+                Color(0xffff4040),
                 Color(0xcc000000),
             ],
             spacing: [4, 8, 12, 16, 20, 24, 32, 48],
             corner_radius: [0, 0, 0, 0],
-            panel_insets: Insets { top: 24, right: 24, bottom: 24, left: 24 },
+            panel_insets: Insets {
+                top: 24,
+                right: 24,
+                bottom: 24,
+                left: 24,
+            },
             default_scale: Scale::ONE,
             motion_duration_ms: [0, 0, 0, 0],
         },

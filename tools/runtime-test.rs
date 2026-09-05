@@ -47,7 +47,7 @@ fn capabilities(){let issuer=identity(1);let a=identity(2);let b=identity(3);let
 // FUNC: iop
 // DESC: Implements the iop operation.
 // ------------------=
-fn iop(){let caller=identity(4);let service=identity(5);let mut caps=CapabilityManager::new();let cap=caps.grant(CapabilityType::ServiceCall,OperationId::TestEcho as u64,1,0,service,caller,Some(100),0).unwrap();let mut router=IopRouter::new();router.register_endpoint(8,caller).unwrap();router.register_endpoint(9,service).unwrap();let message=IopMessage::request(OperationId::TestEcho,0xa81f,caller,cap,50,0xa81f,b"hello").unwrap();let mut encoded=[0u8;HEADER_BYTES];message.header.encode(&mut encoded);assert_eq!(IopHeader::decode(&encoded).unwrap(),message.header);let start=Instant::now();router.send(9,message,&caps,1).unwrap();let received=router.receive(9,1).unwrap();assert_eq!(received.bytes(),b"hello");router.respond(8,&received,service,b"hello",1).unwrap();let response=router.receive(8,1).unwrap();assert_eq!(response.header.message_type,MessageType::Response);assert_eq!(response.bytes(),b"hello");let nanos=start.elapsed().as_nanos();let expired=IopMessage::request(OperationId::TestEcho,2,caller,cap,2,2,b"late").unwrap();assert_eq!(router.send(9,expired,&caps,2),Err(IopError::DeadlineExceeded));let cancelled=IopMessage::request(OperationId::TestEcho,3,caller,cap,50,3,b"cancel").unwrap();router.cancel(3);assert_eq!(router.send(9,cancelled,&caps,3),Err(IopError::Cancelled));for id in 10..18{router.send(9,IopMessage::request(OperationId::TestEcho,id,caller,cap,90,id,b"x").unwrap(),&caps,3).unwrap()}assert_eq!(router.queue_depth(9),Some(ENDPOINT_QUEUE_CAPACITY));assert_eq!(router.send(9,IopMessage::request(OperationId::TestEcho,19,caller,cap,90,19,b"x").unwrap(),&caps,3),Err(IopError::Backpressure));caps.revoke(cap).unwrap();let denied=IopMessage::request(OperationId::TestEcho,20,caller,cap,90,20,b"x").unwrap();assert_eq!(router.send(9,denied,&caps,3),Err(IopError::AccessDenied));println!("PASS IOP: binary request/response echo, revoke, deadline, cancellation, bounded queue");println!("MEASURE host IOP round-trip={}ns",nanos);}
+fn iop(){let caller=identity(4);let service=identity(5);let mut caps=CapabilityManager::new();let cap=caps.grant(CapabilityType::ServiceCall,OperationId::TestEcho as u64,1,0,service,caller,Some(100),0).unwrap();let mut router=IopRouter::new();router.register_endpoint(8,caller).unwrap();router.register_endpoint(9,service).unwrap();let message=IopMessage::request(OperationId::TestEcho,0xa81f,caller,cap,50,0xa81f,b"hello").unwrap();let mut encoded=[0u8;HEADER_BYTES];message.header.encode(&mut encoded);assert_eq!(IopHeader::decode(&encoded).unwrap(),message.header);let move_request=WindowMoveV1{window_id:9,x:-12,y:44,work_x:0,work_y:30,work_width:1920,work_height:1050};let mut move_bytes=[0u8;WINDOW_MOVE_V1_BYTES];move_request.encode(&mut move_bytes);assert_eq!(WindowMoveV1::decode(&move_bytes),Ok(move_request));assert_eq!(WindowMoveV1::decode(&move_bytes[..20]),Err(IopError::InvalidPayload));let commit=SurfaceCommitV1{surface_id:7,generation:42,damage_count:3};let mut commit_bytes=[0u8;SURFACE_COMMIT_V1_BYTES];commit.encode(&mut commit_bytes);assert_eq!(SurfaceCommitV1::decode(&commit_bytes),Ok(commit));let start=Instant::now();router.send(9,message,&caps,1).unwrap();let received=router.receive(9,1).unwrap();assert_eq!(received.bytes(),b"hello");router.respond(8,&received,service,b"hello",1).unwrap();let response=router.receive(8,1).unwrap();assert_eq!(response.header.message_type,MessageType::Response);assert_eq!(response.bytes(),b"hello");let nanos=start.elapsed().as_nanos();let expired=IopMessage::request(OperationId::TestEcho,2,caller,cap,2,2,b"late").unwrap();assert_eq!(router.send(9,expired,&caps,2),Err(IopError::DeadlineExceeded));let cancelled=IopMessage::request(OperationId::TestEcho,3,caller,cap,50,3,b"cancel").unwrap();router.cancel(3);assert_eq!(router.send(9,cancelled,&caps,3),Err(IopError::Cancelled));for id in 10..18{router.send(9,IopMessage::request(OperationId::TestEcho,id,caller,cap,90,id,b"x").unwrap(),&caps,3).unwrap()}assert_eq!(router.queue_depth(9),Some(ENDPOINT_QUEUE_CAPACITY));assert_eq!(router.send(9,IopMessage::request(OperationId::TestEcho,19,caller,cap,90,19,b"x").unwrap(),&caps,3),Err(IopError::Backpressure));caps.revoke(cap).unwrap();let denied=IopMessage::request(OperationId::TestEcho,20,caller,cap,90,20,b"x").unwrap();assert_eq!(router.send(9,denied,&caps,3),Err(IopError::AccessDenied));println!("PASS IOP: binary request/response echo, typed UI schemas, revoke, deadline, cancellation, bounded queue");println!("MEASURE host IOP round-trip={}ns",nanos);}
 
 // ------------------------=
 // FUNC: events
@@ -69,7 +69,181 @@ let mut integrated=runtime::InfinityRuntime::new(false);integrated.define_bootst
 println!("PASS services: dependency order/cycle detection, explicit ready, discovery, failure event, noncritical restart, critical degraded mode");println!("MEASURE host service startup={}ns",start.elapsed().as_nanos());}
 
 // ------------------------=
+// FUNC: ui_authority
+// DESC: Proves compositor service operations require scoped, revocable capabilities and matching surface ownership.
+// ------------------=
+fn ui_authority() {
+    let mut integrated = runtime::InfinityRuntime::new(false);
+    integrated.define_bootstrap().unwrap();
+    integrated.start_all(0);
+    let window_context = integrated.services.inspect(SERVICE_WINDOW_SERVER).unwrap().context.unwrap();
+    let window_source = integrated.execution.get(window_context).unwrap().security_identity;
+    let observer = identity(32);
+    let moved_subscription_cap = integrated.capabilities.grant(
+        CapabilityType::EventSubscribe,
+        runtime::EVENT_WINDOW_MOVED as u64,
+        1,
+        0,
+        window_source,
+        observer,
+        Some(100),
+        0,
+    ).unwrap();
+    let moved_subscription = integrated.events.subscribe(
+        observer,
+        moved_subscription_cap,
+        EventFilter { type_id: runtime::EVENT_WINDOW_MOVED, scope: None },
+        100,
+        OverflowPolicy::LatestOnly,
+        2,
+        &integrated.capabilities,
+        0,
+    ).unwrap();
+    let issuer = identity(30);
+    let caller = identity(31);
+    let context = ui::window::ContextId(31);
+    let create_surface = integrated.capabilities.grant(
+        CapabilityType::SurfaceCreate,
+        SERVICE_WINDOW_SERVER as u64,
+        1,
+        0,
+        issuer,
+        caller,
+        Some(100),
+        0,
+    ).unwrap();
+    let surface = integrated.create_surface(
+        caller,
+        context,
+        create_surface,
+        ui::geometry::Size { width: 320, height: 200 },
+        ui::surface::PixelFormat::Argb8888,
+        ui::surface::SurfaceSecurityClass::Application,
+        1,
+    ).unwrap();
+    let publish = integrated.capabilities.grant(
+        CapabilityType::SurfacePublish,
+        surface.0 as u64,
+        1,
+        0,
+        issuer,
+        caller,
+        Some(100),
+        0,
+    ).unwrap();
+    integrated.publish_surface(caller, context, publish, surface, 1, 1).unwrap();
+    let inspect_surface = integrated.capabilities.grant(
+        CapabilityType::SurfaceInspectMetadata,
+        surface.0 as u64,
+        1,
+        0,
+        issuer,
+        caller,
+        Some(100),
+        0,
+    ).unwrap();
+    assert_eq!(integrated.inspect_surface(caller, inspect_surface, surface, 1).unwrap().owner, context);
+    assert_eq!(integrated.inspect_surface(identity(99), inspect_surface, surface, 1), Err(runtime::UiOperationError::AccessDenied));
+    let resize_surface = integrated.capabilities.grant(
+        CapabilityType::SurfaceResize,
+        surface.0 as u64,
+        1,
+        0,
+        issuer,
+        caller,
+        Some(100),
+        0,
+    ).unwrap();
+    assert_eq!(integrated.resize_surface(
+        caller,
+        context,
+        resize_surface,
+        surface,
+        ui::geometry::Size { width: 400, height: 240 },
+        1,
+    ).unwrap().size.width, 400);
+    let create_window = integrated.capabilities.grant(
+        CapabilityType::WindowCreate,
+        SERVICE_WINDOW_SERVER as u64,
+        1,
+        0,
+        issuer,
+        caller,
+        Some(100),
+        0,
+    ).unwrap();
+    let window = integrated.create_window(
+        caller,
+        context,
+        create_window,
+        surface,
+        ui::geometry::Rect { x: 40, y: 40, width: 320, height: 200 },
+        ui::window::ZOrderClass::Normal,
+        1,
+    ).unwrap();
+    let manage = integrated.capabilities.grant(
+        CapabilityType::WindowManageOwn,
+        window.0 as u64,
+        1,
+        0,
+        issuer,
+        caller,
+        Some(100),
+        0,
+    ).unwrap();
+    let inspect_window = integrated.capabilities.grant(
+        CapabilityType::WindowInspectMetadata,
+        window.0 as u64,
+        1,
+        0,
+        issuer,
+        caller,
+        Some(100),
+        0,
+    ).unwrap();
+    assert_eq!(integrated.inspect_window(caller, inspect_window, window, 1).unwrap().surface, surface);
+    assert_eq!(integrated.inspect_window(identity(99), inspect_window, window, 1), Err(runtime::UiOperationError::AccessDenied));
+    let destroy_surface = integrated.capabilities.grant(
+        CapabilityType::SurfaceDestroy,
+        surface.0 as u64,
+        1,
+        0,
+        issuer,
+        caller,
+        Some(100),
+        0,
+    ).unwrap();
+    assert_eq!(integrated.destroy_surface(caller, context, destroy_surface, surface, 1), Err(runtime::UiOperationError::Surface(ui::surface::SurfaceError::InUse)));
+    assert_eq!(integrated.move_window(
+        caller,
+        context,
+        manage,
+        window,
+        ui::geometry::Point { x: 80, y: 70 },
+        ui::geometry::Rect { x: 0, y: 30, width: 1280, height: 690 },
+        2,
+    ).unwrap().x, 80);
+    let moved_event = integrated.events.receive(moved_subscription, 2).unwrap();
+    assert_eq!(moved_event.class, EventClass::StateChange);
+    assert_eq!(moved_event.correlation_id, window.0 as u64);
+    assert_eq!(moved_event.payload[0], 1);
+    assert_eq!(u32::from_le_bytes(moved_event.payload[4..8].try_into().unwrap()), window.0);
+    integrated.capabilities.revoke(manage).unwrap();
+    assert_eq!(integrated.move_window(
+        caller,
+        context,
+        manage,
+        window,
+        ui::geometry::Point { x: 100, y: 90 },
+        ui::geometry::Rect { x: 0, y: 30, width: 1280, height: 690 },
+        3,
+    ), Err(runtime::UiOperationError::AccessDenied));
+    let window_service = integrated.services.inspect(SERVICE_WINDOW_SERVER).unwrap();
+    assert_eq!(window_service.manifest.operation_count, 12);
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Runs the program entry point.
 // ------------------=
-fn main(){execution_and_scheduler();capabilities();iop();events();services();println!("PASS Milestone 4 host acceptance");}
+fn main(){execution_and_scheduler();capabilities();iop();events();services();ui_authority();println!("PASS Milestone 4 host acceptance");}

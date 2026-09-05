@@ -57,7 +57,11 @@ impl SystemLayout {
         Self {
             width,
             height,
-            scale: if width >= 2560 && height >= 1440 { 2 } else { 1 },
+            scale: if width >= 2560 && height >= 1440 {
+                2
+            } else {
+                1
+            },
         }
     }
 
@@ -133,11 +137,7 @@ impl SystemLayout {
     // FUNC: authentication_target
     // DESC: Resolves account, credential, recovery, and session utility controls exactly.
     // ------------------=
-    pub fn authentication_target(
-        self,
-        normalized_x: i32,
-        normalized_y: i32,
-    ) -> Option<usize> {
+    pub fn authentication_target(self, normalized_x: i32, normalized_y: i32) -> Option<usize> {
         let point = self.point(normalized_x, normalized_y);
         let fit = (self.width.saturating_mul(1000) / 1536)
             .min(self.height.saturating_mul(1000) / 1024)
@@ -179,7 +179,7 @@ impl SystemLayout {
         let tray_y = sy(914);
         let tray_w = sw(478);
         let cell = tray_w / 4;
-        for index in 0..4usize {
+        for index in 0..5usize {
             if rect(tray_x + cell * index, tray_y, cell, sw(90)).contains(point) {
                 return Some(index + 7);
             }
@@ -230,7 +230,14 @@ impl SystemLayout {
         let point = self.point(normalized_x, normalized_y);
         let top_bar = self.top_bar_height();
         let brand_width = (150 * self.scale).min(self.width / 5);
-        if rect(8 * self.scale, 5 * self.scale, brand_width, top_bar.saturating_sub(10 * self.scale)).contains(point) {
+        if rect(
+            8 * self.scale,
+            5 * self.scale,
+            brand_width,
+            top_bar.saturating_sub(10 * self.scale),
+        )
+        .contains(point)
+        {
             return Some(DesktopTarget::InfinityMenu);
         }
         let menu_bounds = [
@@ -241,37 +248,76 @@ impl SystemLayout {
             (444, 62),
         ];
         for (index, (left, width)) in menu_bounds.iter().enumerate() {
-            if rect(left * self.scale, 5 * self.scale, width * self.scale, top_bar.saturating_sub(10 * self.scale)).contains(point) {
+            if rect(
+                left * self.scale,
+                5 * self.scale,
+                width * self.scale,
+                top_bar.saturating_sub(10 * self.scale),
+            )
+            .contains(point)
+            {
                 return Some(DesktopTarget::TopMenu(index + 1));
             }
         }
         let status_width = 32 * self.scale;
         let clock_width = 88 * self.scale;
-        let status_left = self.width.saturating_sub(7 * status_width + clock_width + 10 * self.scale);
+        let status_left = self
+            .width
+            .saturating_sub(7 * status_width + clock_width + 10 * self.scale);
         for index in 0..7usize {
-            if rect(status_left + index * status_width, 4 * self.scale, status_width, top_bar.saturating_sub(8 * self.scale)).contains(point) {
+            if rect(
+                status_left + index * status_width,
+                4 * self.scale,
+                status_width,
+                top_bar.saturating_sub(8 * self.scale),
+            )
+            .contains(point)
+            {
                 return Some(DesktopTarget::Status(index));
             }
         }
-        if rect(self.width.saturating_sub(clock_width + 8 * self.scale), 4 * self.scale, clock_width, top_bar.saturating_sub(8 * self.scale)).contains(point) {
+        if rect(
+            self.width.saturating_sub(clock_width + 8 * self.scale),
+            4 * self.scale,
+            clock_width,
+            top_bar.saturating_sub(8 * self.scale),
+        )
+        .contains(point)
+        {
             return Some(DesktopTarget::Status(6));
         }
 
         if window_visible {
-            let (browser_left, browser_top, browser_width, browser_height) = self.home_window_geometry_sized(
-                window_x,
-                window_y,
-                window_width,
-                window_height,
-                window_maximized,
-            );
+            let (browser_left, browser_top, browser_width, browser_height) = self
+                .home_window_geometry_sized(
+                    window_x,
+                    window_y,
+                    window_width,
+                    window_height,
+                    window_maximized,
+                );
             if !window_maximized {
                 let handle = (12 * self.scale).max(12);
                 let corners = [
                     rect(browser_left, browser_top, handle, handle),
-                    rect(browser_left + browser_width.saturating_sub(handle), browser_top, handle, handle),
-                    rect(browser_left, browser_top + browser_height.saturating_sub(handle), handle, handle),
-                    rect(browser_left + browser_width.saturating_sub(handle), browser_top + browser_height.saturating_sub(handle), handle, handle),
+                    rect(
+                        browser_left + browser_width.saturating_sub(handle),
+                        browser_top,
+                        handle,
+                        handle,
+                    ),
+                    rect(
+                        browser_left,
+                        browser_top + browser_height.saturating_sub(handle),
+                        handle,
+                        handle,
+                    ),
+                    rect(
+                        browser_left + browser_width.saturating_sub(handle),
+                        browser_top + browser_height.saturating_sub(handle),
+                        handle,
+                        handle,
+                    ),
                 ];
                 for (index, bounds) in corners.iter().enumerate() {
                     if bounds.contains(point) {
@@ -281,8 +327,16 @@ impl SystemLayout {
             }
             let title_height = 34 * self.scale;
             for index in 0..3usize {
-                let control_left = browser_left + browser_width.saturating_sub((28 + (2 - index) * 27) * self.scale);
-                if rect(control_left, browser_top + 7 * self.scale, 20 * self.scale, 20 * self.scale).contains(point) {
+                let control_left = browser_left
+                    + browser_width.saturating_sub((28 + (2 - index) * 27) * self.scale);
+                if rect(
+                    control_left,
+                    browser_top + 7 * self.scale,
+                    20 * self.scale,
+                    20 * self.scale,
+                )
+                .contains(point)
+                {
                     return Some(DesktopTarget::HomeControl(index));
                 }
             }
@@ -291,14 +345,28 @@ impl SystemLayout {
             }
             let tool_top = browser_top + title_height;
             for index in 0..2usize {
-                if rect(browser_left + (7 + index * 28) * self.scale, tool_top + 4 * self.scale, 26 * self.scale, 30 * self.scale).contains(point) {
+                if rect(
+                    browser_left + (7 + index * 28) * self.scale,
+                    tool_top + 4 * self.scale,
+                    26 * self.scale,
+                    30 * self.scale,
+                )
+                .contains(point)
+                {
                     return Some(DesktopTarget::HomeToolbar(index));
                 }
             }
             let sidebar_width = browser_width * 27 / 100;
             for index in 0..9usize {
                 let item_y = tool_top + (72 + index * 20) * self.scale;
-                if rect(browser_left + 7, item_y.saturating_sub(3), sidebar_width.saturating_sub(14), 20 * self.scale).contains(point) {
+                if rect(
+                    browser_left + 7,
+                    item_y.saturating_sub(3),
+                    sidebar_width.saturating_sub(14),
+                    20 * self.scale,
+                )
+                .contains(point)
+                {
                     return Some(DesktopTarget::HomeSidebar(index));
                 }
             }
@@ -309,7 +377,14 @@ impl SystemLayout {
             for index in 0..7usize {
                 let column = index % 4;
                 let row = index / 4;
-                if rect(grid_x + column * gap.saturating_sub(6 * self.scale), grid_y + row * tile_step.saturating_sub(8 * self.scale), gap.max(44 * self.scale), tile_step.max(54 * self.scale)).contains(point) {
+                if rect(
+                    grid_x + column * gap.saturating_sub(6 * self.scale),
+                    grid_y + row * tile_step.saturating_sub(8 * self.scale),
+                    gap.max(44 * self.scale),
+                    tile_step.max(54 * self.scale),
+                )
+                .contains(point)
+                {
                     return Some(DesktopTarget::HomeItem(index));
                 }
             }
@@ -331,7 +406,12 @@ impl SystemLayout {
     // FUNC: home_window_geometry
     // DESC: Returns the shared restored or maximized Home window geometry.
     // ------------------=
-    pub fn home_window_geometry(self, window_x: i32, window_y: i32, maximized: bool) -> (usize, usize, usize, usize) {
+    pub fn home_window_geometry(
+        self,
+        window_x: i32,
+        window_y: i32,
+        maximized: bool,
+    ) -> (usize, usize, usize, usize) {
         self.home_window_geometry_sized(window_x, window_y, 430, 380, maximized)
     }
 
@@ -351,15 +431,18 @@ impl SystemLayout {
             let left = 10 * self.scale;
             let top = self.top_bar_height() + 10 * self.scale;
             let bottom = self.height.saturating_sub(90 * self.scale);
-            return (left, top, self.width.saturating_sub(left * 2), bottom.saturating_sub(top));
+            return (
+                left,
+                top,
+                self.width.saturating_sub(left * 2),
+                bottom.saturating_sub(top),
+            );
         }
         (
             self.width * window_x.clamp(0, 900) as usize / 1000,
             self.height * window_y.clamp(50, 900) as usize / 1000,
-            (self.width * window_width.clamp(300, 900) as usize / 1000)
-                .min(self.width),
-            (self.height * window_height.clamp(260, 820) as usize / 1000)
-                .min(self.height),
+            (self.width * window_width.clamp(300, 900) as usize / 1000).min(self.width),
+            (self.height * window_height.clamp(260, 820) as usize / 1000).min(self.height),
         )
     }
 
@@ -393,8 +476,12 @@ impl SystemLayout {
         (
             x,
             y,
-            width.saturating_add(shadow).min(self.width.saturating_sub(x)),
-            height.saturating_add(shadow).min(self.height.saturating_sub(y)),
+            width
+                .saturating_add(shadow)
+                .min(self.width.saturating_sub(x)),
+            height
+                .saturating_add(shadow)
+                .min(self.height.saturating_sub(y)),
         )
     }
 
@@ -415,7 +502,14 @@ impl SystemLayout {
         }
         for index in 0..count {
             let row_y = menu_y + (11 + index * 34) * self.scale;
-            if rect(menu_x + 7 * self.scale, row_y, menu_w.saturating_sub(14 * self.scale), 30 * self.scale).contains(point) {
+            if rect(
+                menu_x + 7 * self.scale,
+                row_y,
+                menu_w.saturating_sub(14 * self.scale),
+                30 * self.scale,
+            )
+            .contains(point)
+            {
                 return SystemMenuTarget::Item(index);
             }
         }
@@ -442,21 +536,45 @@ impl SystemLayout {
             .min(self.height.saturating_sub(top_bar + 28));
         let (left, top, width, _height) = if maximized {
             let inset = 10 * self.scale;
-            (inset, top_bar + inset, self.width.saturating_sub(inset * 2), self.height.saturating_sub(top_bar + inset * 2))
+            (
+                inset,
+                top_bar + inset,
+                self.width.saturating_sub(inset * 2),
+                self.height.saturating_sub(top_bar + inset * 2),
+            )
         } else {
-            (self.width.saturating_sub(restored_width) / 2, top_bar + self.height.saturating_sub(top_bar + restored_height) / 2, restored_width, restored_height)
+            (
+                self.width.saturating_sub(restored_width) / 2,
+                top_bar + self.height.saturating_sub(top_bar + restored_height) / 2,
+                restored_width,
+                restored_height,
+            )
         };
         let title_height = 54 * self.scale;
         for index in 0..3usize {
             let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * self.scale);
-            if rect(control_left, top + 12 * self.scale, 20 * self.scale, 24 * self.scale).contains(point) {
+            if rect(
+                control_left,
+                top + 12 * self.scale,
+                20 * self.scale,
+                24 * self.scale,
+            )
+            .contains(point)
+            {
                 return Some(SettingsTarget::WindowControl(index));
             }
         }
         let nav_w = width * 28 / 100;
         for index in 0..8usize {
             let y = top + title_height + (25 + index * 43) * self.scale;
-            if rect(left + 10 * self.scale, y.saturating_sub(10 * self.scale), nav_w.saturating_sub(20 * self.scale), 36 * self.scale).contains(point) {
+            if rect(
+                left + 10 * self.scale,
+                y.saturating_sub(10 * self.scale),
+                nav_w.saturating_sub(20 * self.scale),
+                36 * self.scale,
+            )
+            .contains(point)
+            {
                 return Some(SettingsTarget::Section(index));
             }
         }
@@ -542,13 +660,23 @@ pub fn resize_home_window(
         let next_x = pointer_x.clamp(0, right.saturating_sub(300));
         (next_x, right.saturating_sub(next_x))
     } else {
-        (x, pointer_x.saturating_sub(x).clamp(300, 1000i32.saturating_sub(x)))
+        (
+            x,
+            pointer_x
+                .saturating_sub(x)
+                .clamp(300, 1000i32.saturating_sub(x)),
+        )
     };
     let (next_y, next_height) = if matches!(corner, 0 | 1) {
         let next_y = pointer_y.clamp(50, bottom.saturating_sub(260));
         (next_y, bottom.saturating_sub(next_y))
     } else {
-        (y, pointer_y.saturating_sub(y).clamp(260, 920i32.saturating_sub(y)))
+        (
+            y,
+            pointer_y
+                .saturating_sub(y)
+                .clamp(260, 920i32.saturating_sub(y)),
+        )
     };
     (next_x, next_y, next_width, next_height)
 }

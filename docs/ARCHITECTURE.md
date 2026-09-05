@@ -123,6 +123,24 @@ media. No installed UI asset is loaded from the host, network, or detached ISO.
 See `INFINITYUI.md`, `SKINS.md`, `WINDOW_SERVER.md`, `UI_SECURITY.md`, and
 `MILESTONE_7X_COMPLIANCE.md`.
 
+## Milestone 7C compositor boundary
+
+Milestone 7C separates retained pixel surfaces, software composition, window
+policy, trusted input routing, semantic damage, and legacy framebuffer drawing.
+Surface and window operations enter through capability-validated runtime APIs
+and stable IOP identifiers. Window lifecycle state is authoritative in the
+Window Server and can survive compositor replacement; typed bounded events
+announce changes afterward.
+
+The architecture-neutral software compositor, surface registry, trusted input
+router, and Window Server policy are **TESTED**. The live desktop Home-window
+move path uses bounded relocation and exposure repair and is **IMPLEMENTED,
+COMPILE-TESTED**. Bootstrap, installer, onboarding, authentication, and desktop
+primitives now share the bounded coherent presentation adapter. Direct
+framebuffer output remains a declared fallback only when the selected mode is
+larger than the 2560x1600 software buffer. See `COMPOSITOR.md`, `SURFACES.md`,
+`RENDERER.md`, `INPUT.md`, `TRUSTED_UI.md`, and `DESKTOP.md`.
+
 ## Known limitations and temporary mechanisms
 
 - x86, x86_64, and AArch64 are implemented and QEMU-tested. AArch64 is also
@@ -145,6 +163,8 @@ See `INFINITYUI.md`, `SKINS.md`, `WINDOW_SERVER.md`, `UI_SECURITY.md`, and
 - The console uses fixed arrays: six 96-byte output rows and one 64-byte command
   buffer. There is no kernel heap.
 - AArch64 keyboard and pointer input remain temporary UEFI bridges until native xHCI/HID.
+- GOP presentation has no page-flip/vsync primitive. Completed damaged regions
+  are copied coherently, but scanout tearing is not yet measurable or preventable.
 - Destructive installation is implemented only for x86_64 UEFI QEMU with a
   legacy ATA test disk. AArch64 and x86 installation remain unsupported.
 # Milestone 7 identity boundary

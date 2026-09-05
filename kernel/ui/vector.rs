@@ -95,13 +95,21 @@ pub fn validate(icon: &VectorIcon) -> Result<(), VectorError> {
     if icon.view_box.width == 0 || icon.view_box.height == 0 {
         return Err(VectorError::InvalidViewBox);
     }
-    for command in icon.commands[..icon.command_count as usize].iter().flatten() {
+    for command in icon.commands[..icon.command_count as usize]
+        .iter()
+        .flatten()
+    {
         let points = match command {
-            VectorCommand::Move(a) | VectorCommand::Line(a) => [*a, Point { x: 0, y: 0 }, Point { x: 0, y: 0 }],
+            VectorCommand::Move(a) | VectorCommand::Line(a) => {
+                [*a, Point { x: 0, y: 0 }, Point { x: 0, y: 0 }]
+            }
             VectorCommand::Cubic(a, b, c) => [*a, *b, *c],
             VectorCommand::Close => continue,
         };
-        if points.iter().any(|point| point.x.abs() > 32_000 || point.y.abs() > 32_000) {
+        if points
+            .iter()
+            .any(|point| point.x.abs() > 32_000 || point.y.abs() > 32_000)
+        {
             return Err(VectorError::CoordinateOverflow);
         }
     }

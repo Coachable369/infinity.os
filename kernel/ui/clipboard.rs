@@ -37,14 +37,28 @@ impl ClipboardService {
     // DESC: Creates an empty typed clipboard without ambient read or write authority.
     // ------------------=
     pub const fn new() -> Self {
-        Self { payload: ClipboardPayload { kind: ClipboardKind::Empty, bytes: [0; MAX_CLIPBOARD_BYTES], length: 0, source_context: 0, generation: 0 } }
+        Self {
+            payload: ClipboardPayload {
+                kind: ClipboardKind::Empty,
+                bytes: [0; MAX_CLIPBOARD_BYTES],
+                length: 0,
+                source_context: 0,
+                generation: 0,
+            },
+        }
     }
 
     // ------------------------=
     // FUNC: write
     // DESC: Replaces clipboard content only after an external capability decision authorizes the caller.
     // ------------------=
-    pub fn write(&mut self, authorized: bool, caller: u32, kind: ClipboardKind, bytes: &[u8]) -> Result<u32, ClipboardError> {
+    pub fn write(
+        &mut self,
+        authorized: bool,
+        caller: u32,
+        kind: ClipboardKind,
+        bytes: &[u8],
+    ) -> Result<u32, ClipboardError> {
         if !authorized {
             return Err(ClipboardError::AccessDenied);
         }
@@ -68,6 +82,10 @@ impl ClipboardService {
     // DESC: Returns typed clipboard metadata and content only to an authorized caller.
     // ------------------=
     pub fn read(&self, authorized: bool) -> Result<&ClipboardPayload, ClipboardError> {
-        if authorized { Ok(&self.payload) } else { Err(ClipboardError::AccessDenied) }
+        if authorized {
+            Ok(&self.payload)
+        } else {
+            Err(ClipboardError::AccessDenied)
+        }
     }
 }

@@ -24,17 +24,72 @@ struct TimeZoneChoice {
 }
 
 const TIME_ZONES: [TimeZoneChoice; 11] = [
-    TimeZoneChoice { id: 1, offset_minutes: -480, longitude_degrees: -122, label: b"UTC-08:00  Pacific" },
-    TimeZoneChoice { id: 2, offset_minutes: -420, longitude_degrees: -111, label: b"UTC-07:00  Mountain" },
-    TimeZoneChoice { id: 3, offset_minutes: -360, longitude_degrees: -95, label: b"UTC-06:00  Central" },
-    TimeZoneChoice { id: 4, offset_minutes: -300, longitude_degrees: -74, label: b"UTC-05:00  Eastern" },
-    TimeZoneChoice { id: 5, offset_minutes: -240, longitude_degrees: -63, label: b"UTC-04:00  Atlantic" },
-    TimeZoneChoice { id: 6, offset_minutes: 0, longitude_degrees: 0, label: b"UTC+00:00  Universal" },
-    TimeZoneChoice { id: 7, offset_minutes: 60, longitude_degrees: 10, label: b"UTC+01:00  Central Europe" },
-    TimeZoneChoice { id: 8, offset_minutes: 330, longitude_degrees: 78, label: b"UTC+05:30  India" },
-    TimeZoneChoice { id: 9, offset_minutes: 480, longitude_degrees: 104, label: b"UTC+08:00  Singapore" },
-    TimeZoneChoice { id: 10, offset_minutes: 540, longitude_degrees: 139, label: b"UTC+09:00  Japan" },
-    TimeZoneChoice { id: 11, offset_minutes: 600, longitude_degrees: 151, label: b"UTC+10:00  Eastern Australia" },
+    TimeZoneChoice {
+        id: 1,
+        offset_minutes: -480,
+        longitude_degrees: -122,
+        label: b"UTC-08:00  Pacific",
+    },
+    TimeZoneChoice {
+        id: 2,
+        offset_minutes: -420,
+        longitude_degrees: -111,
+        label: b"UTC-07:00  Mountain",
+    },
+    TimeZoneChoice {
+        id: 3,
+        offset_minutes: -360,
+        longitude_degrees: -95,
+        label: b"UTC-06:00  Central",
+    },
+    TimeZoneChoice {
+        id: 4,
+        offset_minutes: -300,
+        longitude_degrees: -74,
+        label: b"UTC-05:00  Eastern",
+    },
+    TimeZoneChoice {
+        id: 5,
+        offset_minutes: -240,
+        longitude_degrees: -63,
+        label: b"UTC-04:00  Atlantic",
+    },
+    TimeZoneChoice {
+        id: 6,
+        offset_minutes: 0,
+        longitude_degrees: 0,
+        label: b"UTC+00:00  Universal",
+    },
+    TimeZoneChoice {
+        id: 7,
+        offset_minutes: 60,
+        longitude_degrees: 10,
+        label: b"UTC+01:00  Central Europe",
+    },
+    TimeZoneChoice {
+        id: 8,
+        offset_minutes: 330,
+        longitude_degrees: 78,
+        label: b"UTC+05:30  India",
+    },
+    TimeZoneChoice {
+        id: 9,
+        offset_minutes: 480,
+        longitude_degrees: 104,
+        label: b"UTC+08:00  Singapore",
+    },
+    TimeZoneChoice {
+        id: 10,
+        offset_minutes: 540,
+        longitude_degrees: 139,
+        label: b"UTC+09:00  Japan",
+    },
+    TimeZoneChoice {
+        id: 11,
+        offset_minutes: 600,
+        longitude_degrees: 151,
+        label: b"UTC+10:00  Eastern Australia",
+    },
 ];
 
 // ------------------------=
@@ -60,7 +115,11 @@ fn time_zone_index(offset_minutes: i16) -> usize {
 // ------------------=
 fn wrap_installer_value(value: i32, minimum: i32, maximum: i32, reverse: bool) -> i32 {
     if reverse {
-        if value <= minimum { maximum } else { value - 1 }
+        if value <= minimum {
+            maximum
+        } else {
+            value - 1
+        }
     } else if value >= maximum {
         minimum
     } else {
@@ -658,8 +717,14 @@ impl ConsoleRuntime {
     // ------------------=
     fn desktop_reference_paths(item: usize) -> Option<(&'static [u8], &'static [u8])> {
         match item {
-            0 => Some((b"/home/default/documents", b"/home/default/desktop/documents")),
-            1 => Some((b"/home/default/downloads", b"/home/default/desktop/downloads")),
+            0 => Some((
+                b"/home/default/documents",
+                b"/home/default/desktop/documents",
+            )),
+            1 => Some((
+                b"/home/default/downloads",
+                b"/home/default/desktop/downloads",
+            )),
             2 => Some((b"/home/default/pictures", b"/home/default/desktop/pictures")),
             3 => Some((b"/home/default/media", b"/home/default/desktop/music")),
             4 => Some((b"/home/default/media", b"/home/default/desktop/videos")),
@@ -694,10 +759,8 @@ impl ConsoleRuntime {
         };
         if crate::storage::namespace_ensure_link(source, target).is_ok() {
             self.desktop_items |= 1u8 << item;
-            self.desktop_item_positions[item] = [
-                self.pointer_x.clamp(35, 950),
-                self.pointer_y.clamp(90, 880),
-            ];
+            self.desktop_item_positions[item] =
+                [self.pointer_x.clamp(35, 950), self.pointer_y.clamp(90, 880)];
             crate::output_text(b"[objects] Desktop reference committed\n");
         } else {
             crate::output_text(b"[objects] Desktop reference could not be committed\n");
@@ -749,39 +812,6 @@ impl ConsoleRuntime {
         self.system_focus = section.min(7);
         self.settings_editing = false;
         self.reset_input();
-    }
-
-    // ------------------------=
-    // FUNC: open_shell_menu
-    // DESC: Opens one native top-bar menu and selects its first actionable row.
-    // ------------------=
-    fn open_shell_menu(&mut self, menu: usize) {
-        self.mode = ConsoleMode::SystemMenu;
-        self.shell_menu = menu.min(5);
-        self.system_focus = 0;
-    }
-
-    // ------------------------=
-    // FUNC: shell_menu_item_count
-    // DESC: Returns the bounded row count for the currently open native menu.
-    // ------------------=
-    fn shell_menu_item_count(&self) -> usize {
-        match self.shell_menu {
-            1 => 5,
-            2 => 6,
-            3 => 5,
-            4 | 5 => 4,
-            _ => 10,
-        }
-    }
-
-    // ------------------------=
-    // FUNC: show_shell_notice
-    // DESC: Opens Infinity Console with a visible explanation for a context-sensitive menu action.
-    // ------------------=
-    fn show_shell_notice(&mut self, notice: &[u8]) {
-        self.enter_console();
-        self.output.write_line(notice);
     }
 
     // ------------------------=
@@ -899,6 +929,39 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: open_shell_menu
+    // DESC: Opens one native top-bar menu and selects its first actionable row.
+    // ------------------=
+    fn open_shell_menu(&mut self, menu: usize) {
+        self.mode = ConsoleMode::SystemMenu;
+        self.shell_menu = menu.min(5);
+        self.system_focus = 0;
+    }
+
+    // ------------------------=
+    // FUNC: shell_menu_item_count
+    // DESC: Returns the bounded row count for the currently open native menu.
+    // ------------------=
+    fn shell_menu_item_count(&self) -> usize {
+        match self.shell_menu {
+            1 => 5,
+            2 => 6,
+            3 => 5,
+            4 | 5 => 4,
+            _ => 10,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: show_shell_notice
+    // DESC: Opens Infinity Console with a visible explanation for a context-sensitive menu action.
+    // ------------------=
+    fn show_shell_notice(&mut self, notice: &[u8]) {
+        self.enter_console();
+        self.output.write_line(notice);
+    }
+
+    // ------------------------=
     // FUNC: activate_shell_menu_item
     // DESC: Executes the selected menu command through real shell, settings, session, or firmware behavior.
     // ------------------=
@@ -960,7 +1023,10 @@ impl ConsoleRuntime {
                 self.enter_desktop();
             }
             (2, 0 | 1) => {
-                core::mem::swap(&mut self.home_note_location, &mut self.home_note_previous_location);
+                core::mem::swap(
+                    &mut self.home_note_location,
+                    &mut self.home_note_previous_location,
+                );
                 self.enter_desktop();
             }
             (2, 2) => {
@@ -984,7 +1050,8 @@ impl ConsoleRuntime {
                 self.enter_desktop();
             }
             (2, 5) => {
-                self.home_selected_item = (self.home_note_location == self.home_location).then_some(6);
+                self.home_selected_item =
+                    (self.home_note_location == self.home_location).then_some(6);
                 self.enter_desktop();
             }
             (3, 0) => {
@@ -1024,7 +1091,9 @@ impl ConsoleRuntime {
             }
             (4, 3) => self.open_settings(0),
             (5, 0 | 3) => self.open_settings(7),
-            (5, 1) => self.show_shell_notice(b"Keyboard: Tab and arrows move focus. Enter selects. Escape closes."),
+            (5, 1) => self.show_shell_notice(
+                b"Keyboard: Tab and arrows move focus. Enter selects. Escape closes.",
+            ),
             (5, 2) => {
                 self.enter_console();
                 self.system_status();
@@ -1073,12 +1142,18 @@ impl ConsoleRuntime {
     // DESC: Advances modular first-boot steps and commits each authoritative identity change.
     // ------------------=
     fn input_onboarding(&mut self, key: ConsoleKey) {
-        if matches!(key, ConsoleKey::Tab(_) | ConsoleKey::Left | ConsoleKey::Right)
-            && self.system_step > 0
+        if matches!(
+            key,
+            ConsoleKey::Tab(_) | ConsoleKey::Left | ConsoleKey::Right
+        ) && self.system_step > 0
         {
             let reverse = matches!(key, ConsoleKey::Tab(true) | ConsoleKey::Left);
             self.system_focus = if reverse {
-                if self.system_focus == 0 { 1 } else { 0 }
+                if self.system_focus == 0 {
+                    1
+                } else {
+                    0
+                }
             } else if self.system_focus == 1 {
                 0
             } else {
@@ -1274,9 +1349,14 @@ impl ConsoleRuntime {
         }
         if self.mode == ConsoleMode::Authentication
             && self.system_focus == 0
-            && matches!(key, ConsoleKey::Up | ConsoleKey::Left | ConsoleKey::Down | ConsoleKey::Right)
+            && matches!(
+                key,
+                ConsoleKey::Up | ConsoleKey::Left | ConsoleKey::Down | ConsoleKey::Right
+            )
         {
-            let count = crate::runtime::with_runtime(|runtime| runtime.identity.user_count()).unwrap_or(0).max(1);
+            let count = crate::runtime::with_runtime(|runtime| runtime.identity.user_count())
+                .unwrap_or(0)
+                .max(1);
             if matches!(key, ConsoleKey::Up | ConsoleKey::Left) {
                 self.system_step = (self.system_step + count - 1) % count;
             } else {
@@ -1293,7 +1373,9 @@ impl ConsoleRuntime {
         }
         match self.system_focus {
             0 => {
-                let count = crate::runtime::with_runtime(|runtime| runtime.identity.user_count()).unwrap_or(0).max(1);
+                let count = crate::runtime::with_runtime(|runtime| runtime.identity.user_count())
+                    .unwrap_or(0)
+                    .max(1);
                 self.system_step = (self.system_step + 1) % count;
                 self.reset_input();
                 return;
@@ -1307,7 +1389,9 @@ impl ConsoleRuntime {
                 return;
             }
             5 => {
-                crate::output_text(b"[authentication] recovery requires a trusted recovery capability\n");
+                crate::output_text(
+                    b"[authentication] recovery requires a trusted recovery capability\n",
+                );
                 return;
             }
             6 => {
@@ -1325,7 +1409,9 @@ impl ConsoleRuntime {
                 return;
             }
             10 => {
-                crate::output_text(b"[accessibility] high contrast and keyboard navigation available\n");
+                crate::output_text(
+                    b"[accessibility] high contrast and keyboard navigation available\n",
+                );
                 return;
             }
             _ => {}
@@ -1351,7 +1437,9 @@ impl ConsoleRuntime {
             }
             return;
         }
-        let user = crate::runtime::with_runtime(|runtime| runtime.identity.user_nth(self.system_step)).flatten();
+        let user =
+            crate::runtime::with_runtime(|runtime| runtime.identity.user_nth(self.system_step))
+                .flatten();
         let Some(user) = user else {
             self.reset_input();
             return;
@@ -1437,40 +1525,14 @@ impl ConsoleRuntime {
         }
         if self.mode == ConsoleMode::Settings {
             if self.system_focus == 0 {
-                self.settings_editing = true;
-                self.reset_input();
+                self.activate_settings_content_row(0);
             }
             if self.system_focus == 1 {
-                let _ = crate::runtime::with_runtime(|runtime| {
-                    let dark = crate::ui::skin::SkinId::from_bytes(b"infinity.default.dark");
-                    let alternate = crate::ui::skin::SkinId::from_bytes(b"infinity.diagnostic.light");
-                    let next = if runtime.ui.skins.active().id == dark { alternate } else { dark };
-                    runtime.ui.skins.activate(next, crate::ui::skin::AppearanceScope::User)
-                });
+                self.activate_settings_content_row(0);
                 crate::output_text(b"[appearance] skin transaction committed\n");
             }
             if self.system_focus == 3 {
-                let current = crate::runtime::with_runtime(|runtime| {
-                    runtime.identity.ai_profile(self.current_user)
-                })
-                .flatten();
-                if let Some(profile) = current {
-                    let next = if profile.provider_policy
-                        == crate::runtime::identity::AiProviderPolicy::LocalOnly
-                    {
-                        crate::runtime::identity::AiProviderPolicy::PreferLocal
-                    } else {
-                        crate::runtime::identity::AiProviderPolicy::LocalOnly
-                    };
-                    let _ = crate::runtime::with_runtime(|runtime| {
-                        runtime.identity.update_ai_profile(
-                            self.current_user,
-                            self.current_user,
-                            next,
-                        )
-                    });
-                    let _ = crate::runtime::persist_identity_state();
-                }
+                self.activate_settings_content_row(0);
             }
             return;
         }
@@ -1576,16 +1638,13 @@ impl ConsoleRuntime {
             }
             InstallerStep::Details => self.installer_step = InstallerStep::DateTime,
             InstallerStep::DateTime => {
-                match self
-                    .storage_device
-                    .map(|device| {
-                        StorageManager::plan_entire_disk(
-                            device,
-                            StorageProfile::SharedDynamic,
-                            self.installer_date_time,
-                        )
-                    })
-                {
+                match self.storage_device.map(|device| {
+                    StorageManager::plan_entire_disk(
+                        device,
+                        StorageProfile::SharedDynamic,
+                        self.installer_date_time,
+                    )
+                }) {
                     Some(Ok(plan)) => {
                         self.storage_plan = Some(plan);
                         self.installer_step = InstallerStep::Preview;
@@ -1702,8 +1761,7 @@ impl ConsoleRuntime {
             self.installer_focus = ORDER[next];
             if self.installer_focus == 2 && self.installer_date_time_part > 2 {
                 self.installer_date_time_part = 0;
-            } else if self.installer_focus == 3
-                && !(3..=4).contains(&self.installer_date_time_part)
+            } else if self.installer_focus == 3 && !(3..=4).contains(&self.installer_date_time_part)
             {
                 self.installer_date_time_part = 3;
             }
@@ -1830,12 +1888,9 @@ impl ConsoleRuntime {
                     ) as u16;
                 }
                 1 => {
-                    self.installer_date_time.month = wrap_installer_value(
-                        self.installer_date_time.month as i32,
-                        1,
-                        12,
-                        reverse,
-                    ) as u8;
+                    self.installer_date_time.month =
+                        wrap_installer_value(self.installer_date_time.month as i32, 1, 12, reverse)
+                            as u8;
                 }
                 _ => {
                     let maximum = crate::storage::days_in_month(
@@ -1860,19 +1915,13 @@ impl ConsoleRuntime {
                 self.installer_date_time_part = 3;
             }
             if self.installer_date_time_part == 3 {
-                self.installer_date_time.hour = wrap_installer_value(
-                    self.installer_date_time.hour as i32,
-                    0,
-                    23,
-                    reverse,
-                ) as u8;
+                self.installer_date_time.hour =
+                    wrap_installer_value(self.installer_date_time.hour as i32, 0, 23, reverse)
+                        as u8;
             } else {
-                self.installer_date_time.minute = wrap_installer_value(
-                    self.installer_date_time.minute as i32,
-                    0,
-                    59,
-                    reverse,
-                ) as u8;
+                self.installer_date_time.minute =
+                    wrap_installer_value(self.installer_date_time.minute as i32, 0, 59, reverse)
+                        as u8;
             }
             self.installer_date_time.second = 0;
         }
@@ -1993,8 +2042,7 @@ impl ConsoleRuntime {
                     } else {
                         b"Current contents: Empty"
                     });
-                    self.output
-                        .write_line(b"ENTER: Continue to date and time");
+                    self.output.write_line(b"ENTER: Continue to date and time");
                 }
             }
             InstallerStep::DateTime => {
@@ -2355,16 +2403,12 @@ impl ConsoleRuntime {
                         self.input_authentication(ConsoleKey::Enter);
                     }
                 }
-            } else if let Some(target) = layout.onboarding_target(
-                self.system_step,
-                self.pointer_x,
-                self.pointer_y,
-            ) {
+            } else if let Some(target) =
+                layout.onboarding_target(self.system_step, self.pointer_x, self.pointer_y)
+            {
                 match target {
                     OnboardingTarget::Back => self.system_focus = 0,
-                    OnboardingTarget::Primary | OnboardingTarget::Input => {
-                        self.system_focus = 1
-                    }
+                    OnboardingTarget::Primary | OnboardingTarget::Input => self.system_focus = 1,
                 }
                 if clicked && !matches!(target, OnboardingTarget::Input) {
                     self.input_onboarding(ConsoleKey::Enter);
@@ -2399,10 +2443,8 @@ impl ConsoleRuntime {
                     let target = self.desktop_target(layout);
                     if self.home_drag_from_desktop {
                         if self.home_drag_moved {
-                            self.desktop_item_positions[item] = [
-                                self.pointer_x.clamp(35, 950),
-                                self.pointer_y.clamp(90, 880),
-                            ];
+                            self.desktop_item_positions[item] =
+                                [self.pointer_x.clamp(35, 950), self.pointer_y.clamp(90, 880)];
                         }
                     } else if !self.home_drag_moved && item < 6 {
                         self.home_previous_location = self.home_location;
@@ -2566,8 +2608,8 @@ impl ConsoleRuntime {
                         self.settings_editing = false;
                         self.reset_input();
                     }
-                    SettingsTarget::ContentRow(0) if clicked => {
-                        self.input_shell(ConsoleKey::Enter)
+                    SettingsTarget::ContentRow(row) if clicked => {
+                        self.activate_settings_content_row(row)
                     }
                     SettingsTarget::WindowControl(0 | 2) if clicked => self.enter_desktop(),
                     SettingsTarget::WindowControl(1) if clicked => {
@@ -2591,10 +2633,7 @@ impl ConsoleRuntime {
         let next_x = x.clamp(0, 1000);
         let next_y = y.clamp(0, 1000);
         let button_changed = left_button != self.pointer_pressed;
-        if next_x == self.pointer_x
-            && next_y == self.pointer_y
-            && !button_changed
-        {
+        if next_x == self.pointer_x && next_y == self.pointer_y && !button_changed {
             // VirtualBox ARM's UEFI Absolute Pointer can signal a click by
             // making GetState ready at the unchanged coordinate while leaving
             // ActiveButtons at zero. Raw USB HID still supplies authoritative
@@ -2608,9 +2647,9 @@ impl ConsoleRuntime {
             #[cfg(target_arch = "aarch64")]
             if !left_button
                 && ((self.mode == ConsoleMode::Startup
-                && !left_button
-                && (180..=820).contains(&next_x)
-                && (710..=858).contains(&next_y))
+                    && !left_button
+                    && (180..=820).contains(&next_x)
+                    && (710..=858).contains(&next_y))
                     || self.installer_stationary_pointer_target(next_x, next_y))
             {
                 crate::bootstrap::note_pointer_activity();
@@ -2638,9 +2677,13 @@ impl ConsoleRuntime {
         }
         if self.installer_step == InstallerStep::DateTime
             && (100..=475).contains(&x)
-            && ((465..=535).contains(&y)
-                || (555..=625).contains(&y)
-                || (645..=715).contains(&y))
+            && ((465..=535).contains(&y) || (555..=625).contains(&y) || (645..=715).contains(&y))
+        {
+            return true;
+        }
+        if self.installer_step == InstallerStep::DateTime
+            && (500..=900).contains(&x)
+            && (405..=770).contains(&y)
         {
             return true;
         }
@@ -2656,8 +2699,7 @@ impl ConsoleRuntime {
             return ((135..=485).contains(&x) || (510..=860).contains(&x))
                 && (820..=875).contains(&y);
         }
-        ((190..=490).contains(&x) || (510..=810).contains(&x))
-            && (830..=885).contains(&y)
+        ((190..=490).contains(&x) || (510..=810).contains(&x)) && (830..=885).contains(&y)
     }
 
     // ------------------------=
@@ -4798,7 +4840,10 @@ pub fn clock_tick() {
     unsafe {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
-            if !matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::SystemMenu | ConsoleMode::Settings) {
+            if !matches!(
+                runtime.mode,
+                ConsoleMode::Desktop | ConsoleMode::SystemMenu | ConsoleMode::Settings
+            ) {
                 return;
             }
             let next = firmware_date_time(runtime.system.firmware_runtime_services);

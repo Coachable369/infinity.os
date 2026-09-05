@@ -1,7 +1,8 @@
 # InfinityUI Rendering
 
-The renderer uses retained state and bounded damage rectangles. Old and new
-element bounds are invalidated together; overlapping damage is merged; overflow
+The renderer uses retained state and bounded semantic damage records. Each
+record carries a class, source identity, and priority. Old and new element
+bounds are invalidated together; overlapping damage is merged; overflow
 collapses to one safe region rather than allocating. Login animation restores
 only prior particle footprints and redraws new orbs along the right-hand
 infinity curve, outside the authentication panel.
@@ -23,7 +24,11 @@ its original mathematical origin so its particles follow the visible Infinity
 ribbon. This calibration affects only the installer boot reveal; installed-boot
 and desktop particle geometry retain their independent layout paths.
 
-Damage calculation and bounded cache behavior are TESTED at the native unit
-boundary. The current platform presenter still writes damaged regions to the
-firmware framebuffer; a hardware-accelerated compositor and full per-window
-double buffering are PLANNED and are not claimed.
+Damage calculation, surface budgets, software back-buffer composition,
+damage-only atomic presentation, and bounded cache behavior are **TESTED** at
+the native unit boundary. The Home window live drag path uses bounded relocation
+and exposure repair. Bootstrap, installer, onboarding, authentication, and
+desktop primitives now render into the bounded primary software back buffer and
+present completed damage only; this path is **IMPLEMENTED, COMPILE-TESTED**.
+Direct presentation remains an honest fallback above the current 2560x1600
+back-buffer ceiling. Hardware acceleration and vsync are **PLANNED**.

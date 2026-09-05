@@ -1,5 +1,31 @@
 # InfinityOS testing
 
+## Milestone 7C compositor and Window Server
+
+Run `make milestone-7c-test` for behavioral surface ownership and allocation
+bounds, typed damage collapse, coherent damage-only presentation, privileged
+z-order denial, secure input routing, pointer capture, rapid drag paths,
+context-failure cleanup, priority deferral/convergence, IOP codecs, capability
+revocation, and IEF correlation. The same target compile-checks x86_64 and
+AArch64 kernels. It does not use rendered copy or source text as an acceptance
+oracle.
+
+Run `./build.sh`, then `make ui-install-parity-test` to extract and byte-compare
+the real live and installed UI payload containers. Direct visual acceptance
+requires booting the ARM64 ISO in VirtualBox and exercising onboarding/login,
+cursor-only motion, title-bar capture, window movement, resize, menus, and
+exposed wallpaper while observing for whole-frame flashes, stale pixels, and
+cursor trails. Installed-disk-only acceptance remains separate and must never
+be inferred from host tests.
+
+The 2026-09-04 AArch64 VirtualBox pass behaviorally completed live-media boot,
+disk discovery, destructive confirmation, animated installation, reboot
+countdown, installed-System-Generation boot, onboarding, and desktop entry.
+Pointer selection and timezone-map selection worked. Two independent automated
+title-bar drag gestures left the Home window in its original bounds, so direct
+window-relocation acceptance remains open even though the host drag and bounded
+damage harnesses pass.
+
 ## Milestone 7.x
 
 Run `make milestone-7x-test` for skin compiler safety, native package integrity,

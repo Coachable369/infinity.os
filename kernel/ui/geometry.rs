@@ -91,14 +91,55 @@ impl Rect {
     }
 
     // ------------------------=
+    // FUNC: intersection
+    // DESC: Returns the shared pixel rectangle or an empty rectangle when two regions do not overlap.
+    // ------------------=
+    pub const fn intersection(self, other: Rect) -> Rect {
+        let left = if self.x > other.x { self.x } else { other.x };
+        let top = if self.y > other.y { self.y } else { other.y };
+        let right = if self.right() < other.right() {
+            self.right()
+        } else {
+            other.right()
+        };
+        let bottom = if self.bottom() < other.bottom() {
+            self.bottom()
+        } else {
+            other.bottom()
+        };
+        if right <= left || bottom <= top {
+            return Rect {
+                x: left,
+                y: top,
+                width: 0,
+                height: 0,
+            };
+        }
+        Rect {
+            x: left,
+            y: top,
+            width: right.saturating_sub(left) as u32,
+            height: bottom.saturating_sub(top) as u32,
+        }
+    }
+
+    // ------------------------=
     // FUNC: union
     // DESC: Computes the smallest rectangle containing both inputs.
     // ------------------=
     pub const fn union(self, other: Rect) -> Rect {
         let left = if self.x < other.x { self.x } else { other.x };
         let top = if self.y < other.y { self.y } else { other.y };
-        let right = if self.right() > other.right() { self.right() } else { other.right() };
-        let bottom = if self.bottom() > other.bottom() { self.bottom() } else { other.bottom() };
+        let right = if self.right() > other.right() {
+            self.right()
+        } else {
+            other.right()
+        };
+        let bottom = if self.bottom() > other.bottom() {
+            self.bottom()
+        } else {
+            other.bottom()
+        };
         Rect {
             x: left,
             y: top,
@@ -135,14 +176,18 @@ pub const fn fit_cover(source: Size, viewport: Rect) -> Rect {
     if by_width_height >= viewport.height {
         Rect {
             x: viewport.x,
-            y: viewport.y.saturating_sub(((by_width_height - viewport.height) / 2) as i32),
+            y: viewport
+                .y
+                .saturating_sub(((by_width_height - viewport.height) / 2) as i32),
             width: viewport.width,
             height: by_width_height,
         }
     } else {
         let width = viewport.height.saturating_mul(source.width) / source.height;
         Rect {
-            x: viewport.x.saturating_sub(((width - viewport.width) / 2) as i32),
+            x: viewport
+                .x
+                .saturating_sub(((width - viewport.width) / 2) as i32),
             y: viewport.y,
             width,
             height: viewport.height,

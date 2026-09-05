@@ -7,6 +7,31 @@ pub const MAX_ELEMENTS: usize = 128;
 pub const MAX_DAMAGE_REGIONS: usize = 24;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DamageClass {
+    Content,
+    Geometry,
+    Focus,
+    Overlay,
+    Cursor,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct DamageRecord {
+    pub rect: Rect,
+    pub class: DamageClass,
+    pub source_id: u32,
+    pub priority: u8,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub struct DamageDiagnostics {
+    pub submitted: u32,
+    pub merged: u32,
+    pub collapsed: u32,
+    pub clipped: u32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ElementKind {
     Root,
     Panel,
@@ -105,7 +130,11 @@ impl UiScene {
     // DESC: Creates an empty retained semantic scene with bounded storage.
     // ------------------=
     pub const fn new() -> Self {
-        Self { elements: [None; MAX_ELEMENTS], count: 0, frame_sequence: 0 }
+        Self {
+            elements: [None; MAX_ELEMENTS],
+            count: 0,
+            frame_sequence: 0,
+        }
     }
 
     // ------------------------=
@@ -135,7 +164,11 @@ impl UiScene {
                 return Err(SceneError::MissingParent);
             }
         }
-        let slot = self.elements.iter_mut().find(|entry| entry.is_none()).ok_or(SceneError::Full)?;
+        let slot = self
+            .elements
+            .iter_mut()
+            .find(|entry| entry.is_none())
+            .ok_or(SceneError::Full)?;
         *slot = Some(element);
         self.count = self.count.saturating_add(1);
         Ok(())
@@ -146,7 +179,10 @@ impl UiScene {
     // DESC: Resolves an immutable retained element by stable scene identity.
     // ------------------=
     pub fn get(&self, id: ElementId) -> Option<&SemanticElement> {
-        self.elements.iter().flatten().find(|element| element.id == id)
+        self.elements
+            .iter()
+            .flatten()
+            .find(|element| element.id == id)
     }
 
     // ------------------------=
@@ -154,7 +190,10 @@ impl UiScene {
     // DESC: Resolves a mutable retained element inside the current frame transaction.
     // ------------------=
     pub fn get_mut(&mut self, id: ElementId) -> Option<&mut SemanticElement> {
-        self.elements.iter_mut().flatten().find(|element| element.id == id)
+        self.elements
+            .iter_mut()
+            .flatten()
+            .find(|element| element.id == id)
     }
 
     // ------------------------=
@@ -165,7 +204,11 @@ impl UiScene {
         let mut result = None;
         let mut highest = i16::MIN;
         for element in self.elements.iter().flatten() {
-            if element.visible && element.action_mask != 0 && element.bounds.contains(point) && element.z_order >= highest {
+            if element.visible
+                && element.action_mask != 0
+                && element.bounds.contains(point)
+                && element.z_order >= highest
+            {
                 result = Some(element.id);
                 highest = element.z_order;
             }
@@ -180,8 +223,13 @@ impl UiScene {
     pub fn commit_frame(&self, damage: &mut DamageTracker) {
         for element in self.elements.iter().flatten() {
             if element.bounds != element.previous_bounds {
-                damage.add(element.previous_bounds);
-                damage.add(element.bounds);
+                damage.add_semantic(
+                    element.previous_bounds,
+                    DamageClass::Geometry,
+                    element.id.0,
+                    160,
+                );
+                damage.add_semantic(element.bounds, DamageClass::Geometry, element.id.0, 160);
             }
         }
     }
@@ -205,20 +253,40 @@ pub enum Axis {
 // FUNC: linear_layout
 // DESC: Divides a container into deterministic row or column cells with spacing and insets.
 // ------------------=
-pub fn linear_layout(container: Rect, insets: Insets, axis: Axis, count: usize, spacing: u16, out: &mut [Rect]) -> usize {
+pub fn linear_layout(
+    container: Rect,
+    insets: Insets,
+    axis: Axis,
+    count: usize,
+    spacing: u16,
+    out: &mut [Rect],
+) -> usize {
     let usable = container.inset(insets);
     let count = count.min(out.len());
     if count == 0 {
         return 0;
     }
     let gaps = spacing as u32 * count.saturating_sub(1) as u32;
-    let extent = match axis { Axis::Horizontal => usable.width, Axis::Vertical => usable.height };
+    let extent = match axis {
+        Axis::Horizontal => usable.width,
+        Axis::Vertical => usable.height,
+    };
     let cell = extent.saturating_sub(gaps) / count as u32;
     for (index, rect) in out.iter_mut().take(count).enumerate() {
         let offset = index as u32 * (cell + spacing as u32);
         *rect = match axis {
-            Axis::Horizontal => Rect { x: usable.x + offset as i32, y: usable.y, width: cell, height: usable.height },
-            Axis::Vertical => Rect { x: usable.x, y: usable.y + offset as i32, width: usable.width, height: cell },
+            Axis::Horizontal => Rect {
+                x: usable.x + offset as i32,
+                y: usable.y,
+                width: cell,
+                height: usable.height,
+            },
+            Axis::Vertical => Rect {
+                x: usable.x,
+                y: usable.y + offset as i32,
+                width: usable.width,
+                height: cell,
+            },
         };
     }
     count
@@ -226,8 +294,10 @@ pub fn linear_layout(container: Rect, insets: Insets, axis: Axis, count: usize, 
 
 pub struct DamageTracker {
     regions: [Rect; MAX_DAMAGE_REGIONS],
+    records: [DamageRecord; MAX_DAMAGE_REGIONS],
     count: u8,
     full_redraw: bool,
+    diagnostics: DamageDiagnostics,
 }
 
 impl DamageTracker {
@@ -236,7 +306,30 @@ impl DamageTracker {
     // DESC: Creates an empty bounded damage list for atomic frame presentation.
     // ------------------=
     pub const fn new() -> Self {
-        Self { regions: [Rect { x: 0, y: 0, width: 0, height: 0 }; MAX_DAMAGE_REGIONS], count: 0, full_redraw: false }
+        const EMPTY_RECT: Rect = Rect {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        };
+        const EMPTY_RECORD: DamageRecord = DamageRecord {
+            rect: EMPTY_RECT,
+            class: DamageClass::Content,
+            source_id: 0,
+            priority: 0,
+        };
+        Self {
+            regions: [EMPTY_RECT; MAX_DAMAGE_REGIONS],
+            records: [EMPTY_RECORD; MAX_DAMAGE_REGIONS],
+            count: 0,
+            full_redraw: false,
+            diagnostics: DamageDiagnostics {
+                submitted: 0,
+                merged: 0,
+                collapsed: 0,
+                clipped: 0,
+            },
+        }
     }
 
     // ------------------------=
@@ -253,12 +346,31 @@ impl DamageTracker {
     // DESC: Adds or merges one damaged rectangle and safely collapses on overflow.
     // ------------------=
     pub fn add(&mut self, rect: Rect) {
+        self.add_semantic(rect, DamageClass::Content, 0, 100);
+    }
+
+    // ------------------------=
+    // FUNC: add_semantic
+    // DESC: Adds typed damage, merging compatible geometry while retaining source and priority diagnostics.
+    // ------------------=
+    pub fn add_semantic(&mut self, rect: Rect, class: DamageClass, source_id: u32, priority: u8) {
         if rect.width == 0 || rect.height == 0 {
             return;
         }
-        for region in self.regions[..self.count as usize].iter_mut() {
-            if region.intersects(rect) {
-                *region = region.union(rect);
+        self.diagnostics.submitted = self.diagnostics.submitted.saturating_add(1);
+        for index in 0..self.count as usize {
+            if self.regions[index].intersects(rect) {
+                let merged = self.regions[index].union(rect);
+                self.regions[index] = merged;
+                self.records[index].rect = merged;
+                self.records[index].priority = self.records[index].priority.max(priority);
+                if self.records[index].class != class {
+                    self.records[index].class = DamageClass::Geometry;
+                    self.records[index].source_id = 0;
+                } else if self.records[index].source_id != source_id {
+                    self.records[index].source_id = 0;
+                }
+                self.diagnostics.merged = self.diagnostics.merged.saturating_add(1);
                 return;
             }
         }
@@ -268,12 +380,49 @@ impl DamageTracker {
                 combined = combined.union(*region);
             }
             self.regions[0] = combined;
+            self.records[0] = DamageRecord {
+                rect: combined,
+                class: DamageClass::Geometry,
+                source_id: 0,
+                priority: 255,
+            };
             self.count = 1;
             self.full_redraw = true;
+            self.diagnostics.collapsed = self.diagnostics.collapsed.saturating_add(1);
             return;
         }
         self.regions[self.count as usize] = rect;
+        self.records[self.count as usize] = DamageRecord {
+            rect,
+            class,
+            source_id,
+            priority,
+        };
         self.count += 1;
+    }
+
+    // ------------------------=
+    // FUNC: clip_to
+    // DESC: Clips every pending damage record to a display or surface boundary and removes empty results.
+    // ------------------=
+    pub fn clip_to(&mut self, boundary: Rect) {
+        let mut write = 0usize;
+        for read in 0..self.count as usize {
+            let clipped = self.regions[read].intersection(boundary);
+            if clipped != self.regions[read] {
+                self.diagnostics.clipped = self.diagnostics.clipped.saturating_add(1);
+            }
+            if clipped.width == 0 || clipped.height == 0 {
+                continue;
+            }
+            self.regions[write] = clipped;
+            self.records[write] = DamageRecord {
+                rect: clipped,
+                ..self.records[read]
+            };
+            write += 1;
+        }
+        self.count = write as u8;
     }
 
     // ------------------------=
@@ -285,10 +434,26 @@ impl DamageTracker {
     }
 
     // ------------------------=
+    // FUNC: records
+    // DESC: Exposes structured semantic damage records for compositor policy and inspection.
+    // ------------------=
+    pub fn records(&self) -> &[DamageRecord] {
+        &self.records[..self.count as usize]
+    }
+
+    // ------------------------=
     // FUNC: collapsed
     // DESC: Reports that excessive small changes were collapsed into one safe region.
     // ------------------=
     pub const fn collapsed(&self) -> bool {
         self.full_redraw
+    }
+
+    // ------------------------=
+    // FUNC: diagnostics
+    // DESC: Returns structured bounded-damage counters without relying on rendered or logged text.
+    // ------------------=
+    pub const fn diagnostics(&self) -> DamageDiagnostics {
+        self.diagnostics
     }
 }

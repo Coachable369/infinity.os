@@ -2024,6 +2024,7 @@ impl super::DisplayDevice {
         settings_maximized: bool,
         menu_kind: usize,
     ) {
+        self.mark_dirty_rect(0, 0, self.width, self.height);
         if matches!(screen, 5 | 6) {
             self.paint_authentication_background();
             self.authentication_frame(screen == 6, step, input, focus);
@@ -2407,7 +2408,7 @@ impl super::DisplayDevice {
             );
             let sections: [&[u8]; 8] = [
                 b"General",
-                b"Appearance",
+                b"Themes & Skins",
                 b"Users & Accounts",
                 b"AI & Voice",
                 b"Privacy & Security",
@@ -3218,6 +3219,7 @@ impl super::DisplayDevice {
                 }
             }
         }
+        self.mark_dirty_rect(destination_left, destination_top, width, height);
     }
 
     // ------------------------=
@@ -4105,6 +4107,7 @@ pub fn system_ui_present(
             console.last_desktop_item_positions = *desktop_item_positions;
             console.last_system_clock = clock;
             console.last_settings_maximized = settings_maximized;
+            console.display.present_damage();
         }
     }
 }

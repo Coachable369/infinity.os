@@ -143,6 +143,14 @@ pub(super) const INSTALLER_ACTIVATION_BMP: &[u8] = &[];
     feature = "installer",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
+pub(super) const INSTALLER_PROGRESS_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-installer-progress-v1.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const INSTALLER_PROGRESS_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 pub(super) const STORAGE_HIERARCHY_BMP: &[u8] =
     include_bytes!("../../../assets/boot/infinity-storage-hierarchy-v3.bmp");
 #[cfg(not(feature = "installer"))]
@@ -180,6 +188,15 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn paint_installer_background(&mut self) {
         self.paint_bitmap_cover_rect(INSTALLER_BMP, 0, 0, self.width, self.height);
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: paint_installer_progress_background
+    // DESC: Paints the screenshot-matched installation HUD without baked dynamic progress content.
+    // ------------------=
+    pub(super) fn paint_installer_progress_background(&mut self) {
+        self.paint_bitmap_fit_rect(INSTALLER_PROGRESS_BMP, 0, 0, self.width, self.height);
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -228,6 +245,10 @@ impl super::DisplayDevice {
     // DESC: Restores a clean installer scene before drawing the active wizard step.
     // ------------------=
     pub(super) fn restore_installer_panel(&mut self, screen: u8) {
+        if screen == 8 {
+            self.paint_installer_progress_background();
+            return;
+        }
         // Wizard panels intentionally vary slightly by content, so repainting
         // only the next panel rectangle can leave the wider previous panel's
         // edges behind. A step transition is infrequent; restore the complete
@@ -1034,48 +1055,60 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn installer_progress_frame(&mut self, percent: usize, label: &[u8], phase: usize) {
         let scale = self.ui_scale();
-        let left = self.width * 18 / 100;
-        let width = self.width * 64 / 100;
-        let top = self.height * 72 / 100;
-        let height = self.height * 11 / 100;
-        self.fill_rounded_rect_alpha(left, top, width, height, 14 * scale, 3, 13, 25, 255);
-        self.fill_rounded_rect_alpha(
-            left + 2,
-            top + 2,
-            width.saturating_sub(4),
-            height / 2,
-            12 * scale,
-            24,
-            49,
-            70,
-            90,
+        let left = self.width * 11 / 100;
+        let width = self.width * 78 / 100;
+        let top = self.height * 67 / 100;
+        let height = self.height * 19 / 100;
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        self.paint_bitmap_stretch_rect(INSTALLER_PROGRESS_BMP, left, top, width, height);
+        #[cfg(target_arch = "x86")]
+        self.fill_rect(left, top, width, height, 8, 17, 27);
+
+        self.ui_text_centered_strong(
+            left,
+            width,
+            top + height * 18 / 100,
+            label,
+            226,
+            238,
+            248,
+            1,
         );
-        self.outline_rounded_rect(left, top, width, height, 14 * scale, 52, 116, 155);
 
-        self.ui_text_centered_strong(left, width, top + 14 * scale, label, 225, 238, 248, 1);
-
-        let track_left = left + 28 * scale;
-        let track_top = top + 43 * scale;
-        let track_width = width.saturating_sub(56 * scale);
-        let track_height = 10 * scale;
-        self.fill_rect(track_left, track_top, track_width, track_height, 68, 75, 85);
+        let track_left = left + width * 7 / 200;
+        let track_top = top + height * 54 / 100;
+        let track_width = width * 93 / 100;
+        let track_height = (height * 13 / 100).max(8 * scale);
+        self.fill_rect(track_left, track_top, track_width, track_height, 42, 50, 61);
         self.fill_rect(
             track_left,
             track_top,
             track_width * percent.min(100) / 100,
             track_height,
-            185,
-            207,
-            224,
+            174,
+            219,
+            247,
         );
+        let fill_width = track_width * percent.min(100) / 100;
+        if fill_width > 0 && track_height > 4 {
+            self.fill_rect(
+                track_left,
+                track_top + track_height / 4,
+                fill_width,
+                track_height / 2,
+                205,
+                235,
+                253,
+            );
+        }
         self.outline_rect(
             track_left,
             track_top,
             track_width,
             track_height,
-            126,
-            164,
-            191,
+            104,
+            188,
+            235,
         );
 
         for marker in 0..=4usize {
@@ -1096,7 +1129,7 @@ impl super::DisplayDevice {
 
         let (path_x, path_y) = infinity_point(phase);
         let orb_x = self.width as i32 / 2 + path_x * (self.width as i32 / 820).max(1);
-        let orb_y = self.height as i32 * 55 / 100 + path_y * (self.height as i32 / 900).max(1);
+        let orb_y = self.height as i32 * 35 / 100 + path_y * (self.height as i32 / 900).max(1);
         self.star_orb(orb_x, orb_y, 4 * scale as i32, 244, true);
 
         let mut percent_text = [b'0'; 4];
@@ -3626,6 +3659,7 @@ pub fn installer_progress_update(percent: u8, label: &[u8]) {
                     label,
                     console.installer_animation_phase,
                 );
+                console.display.present_damage();
                 super::bootstrap::wait_frame(12);
             }
             console.installer_progress = target;
@@ -3660,12 +3694,14 @@ pub fn installer_reboot_countdown() {
                         frame,
                         console.installer_animation_phase,
                     );
+                    console.display.present_damage();
                     super::bootstrap::wait_frame(33);
                 }
             }
             console
                 .display
                 .installer_countdown_frame(0, 30, console.installer_animation_phase);
+            console.display.present_damage();
             super::bootstrap::wait_frame(220);
         }
     }

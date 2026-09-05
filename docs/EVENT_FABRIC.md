@@ -27,3 +27,16 @@ event from the Identity Service only after the native identity object commits.
 Its payload carries the new state generation, allowing subscribers to detect a
 gap and reconcile through typed Identity operations. Secrets and verifier
 material never enter the event payload or durable record log.
+
+# Window lifecycle events
+
+Stable IEF types cover Window.Created, Window.Destroyed, Window.Focused,
+Window.Moved, Window.Resized, Window.StateChanged, Surface.Committed,
+Display.Changed, Compositor.Degraded, Compositor.Recovered,
+SecureInput.Started, and SecureInput.Stopped. The Window Server produces an
+ordered bounded typed bridge queue for geometry, focus, state, capture,
+creation, destruction, and context failure. Queue pressure drops the oldest
+announcement and increments structured diagnostics; authoritative state remains
+queryable. Capability-checked post-commit publication of creation, movement,
+and surface commits, including correlation and causation, is **TESTED**. The
+remaining reserved lifecycle publishers are **SCAFFOLDED**.

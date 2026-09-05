@@ -46,11 +46,11 @@ fn visible_clock_updates_are_damage_limited() {
 }
 
 // ------------------------=
-// FUNC: desktop_drag_rebuilds_occluded_surfaces
-// DESC: Verifies window motion structurally rebuilds persistent desktop surfaces hidden beneath the moving window.
+// FUNC: desktop_drag_uses_bounded_damage
+// DESC: Verifies ordinary visible-window motion avoids a structural redraw while unsupported states retain the safe fallback.
 // ------------------=
-fn desktop_drag_rebuilds_occluded_surfaces() {
-    assert!(desktop_window_move_requires_structural_redraw(2, true, true, false));
+fn desktop_drag_uses_bounded_damage() {
+    assert!(!desktop_window_move_requires_structural_redraw(2, true, true, false));
     assert!(desktop_window_move_requires_structural_redraw(2, true, false, false));
     assert!(desktop_window_move_requires_structural_redraw(2, true, true, true));
     assert!(desktop_window_move_requires_structural_redraw(3, true, true, false));
@@ -65,5 +65,5 @@ fn main() {
     onboarding_pointer_focus_is_bounded();
     non_pointer_focus_remains_structural();
     visible_clock_updates_are_damage_limited();
-    desktop_drag_rebuilds_occluded_surfaces();
+    desktop_drag_uses_bounded_damage();
 }

@@ -16,6 +16,19 @@ live `AudioInput` lease. Remote-provider authority is separate from local model
 use. These boundaries and live revocation are HOST-TESTED.
 
 Capability authenticity currently uses the trusted in-memory manager. Cryptographic tokens at an MMU boundary are SCAFFOLDED. There is no permanent unrestricted root equivalent.
+
+# Milestone 7C UI authority
+
+Surface.Create, Surface.Publish, Surface.Resize, Surface.Destroy,
+Surface.InspectMetadata, Window.Create, Window.ManageOwn, Window.Focus,
+Window.CaptureInput, Window.InspectMetadata, Display.Capture, and
+TrustedUi.Present are distinct authority types. Pixel capture is deliberately
+separate from semantic metadata inspection. Surface and window ownership is
+checked again after capability validation. Ordinary surface/window creation
+cannot request Trusted or Cursor presentation classes; trusted z-order requires
+a token derived from an active secure-input lease. Create, publish, resize,
+destroy, metadata-inspect, move, cross-owner denial, in-use denial, and live
+revocation are **TESTED**.
 # Session-scoped identity authority
 
 Milestone 7 adds explicit self-profile, Personal Space, Settings, AI, Voice,

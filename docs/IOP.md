@@ -28,3 +28,16 @@ The operation registry now reserves stable IDs for Identity, Machine,
 Credential, Authentication, Session, Profile, Personal Space, AI Profile,
 Voice Profile, Settings, Onboarding, Shell, power-off, and restart. GUI and CLI
 adapters select these IDs directly and never communicate through command text.
+
+# Milestone 7C surface and window operations
+
+The registry reserves typed IDs for Surface.Create, Surface.Destroy,
+Surface.Present, Surface.List, Surface.Inspect, Surface.Resize, Surface.Commit,
+Window.Create, Window.Close, Window.Move, Window.Resize, Window.SetState,
+Window.Focus, Window.CapturePointer, Window.ReleasePointer, Window.List,
+Window.Inspect, Compositor.Status, Compositor.Diagnostics, Display.Query, and
+SecureInput.Status. Window Server and InfinityUI manifests publish these IDs in
+their policy domains. Runtime entry points validate scoped authority before
+touching UI state; live revocation is **TESTED**. Fixed little-endian version-1
+codecs for Window.Move and Surface.Commit are **TESTED**; remaining operation
+payload codecs are **SCAFFOLDED**.

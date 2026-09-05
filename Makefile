@@ -44,17 +44,21 @@ SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-
 	assets/boot/infinity-installer-mesh-hero-v1.bmp assets/boot/infinity-installer-mesh-overview-v1.bmp \
 	assets/boot/infinity-installer-mesh-diagram-v1.bmp \
 	assets/boot/infinity-installer-activation-v2.bmp \
+	assets/boot/infinity-installer-progress-v1.bmp \
 	assets/boot/infinity-storage-hierarchy-v3.bmp \
 	assets/boot/infinity-disk-discovery-vision-v1.bmp \
 	assets/boot/infinity-storage-device-v1.bmp \
 	assets/boot/infinity-date-time-world-v1.bmp \
 	assets/boot/infinity-time-zone-map-v1.bmp
 
-.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test object-test namespace-test crash-recovery-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test icon-theme-test desktop-system-test ui-install-parity-test input-regression-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
+.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test object-test namespace-test crash-recovery-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test milestone-7c-test icon-theme-test desktop-system-test ui-install-parity-test input-regression-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
 
 milestone-7x-test:
 	@tools/skin-compiler-test.sh
 	@tools/infinity-ui-test.sh
+
+milestone-7c-test:
+	@tools/milestone-7c-test.sh
 
 icon-theme-test:
 	@tools/icon-theme-test.sh
@@ -127,7 +131,7 @@ $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel
 	cp -R assets/skins/. $(BUILD)/fat/EFI/INFINITY/INFINITYUI/
 	cp assets/desktop/*.png $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Wallpapers/
 	cp $(INSTALLER_UI_ASSETS) $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Installer/
-	dd if=/dev/zero of=$@ bs=1M count=512 status=none
+	dd if=/dev/zero of=$@ bs=1M count=320 status=none
 	mformat -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat/EFI ::
 
@@ -334,7 +338,7 @@ $(BUILD)/infinity-aarch64.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/ke
 	cp -R assets/skins/. $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/
 	cp assets/desktop/*.png $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Wallpapers/
 	cp $(INSTALLER_UI_ASSETS) $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Installer/
-	dd if=/dev/zero of=$@ bs=1M count=512 status=none
+	dd if=/dev/zero of=$@ bs=1M count=320 status=none
 	mformat -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat-aarch64/EFI ::
 
@@ -354,7 +358,7 @@ $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch
 	cp -R assets/skins/. $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/
 	cp assets/desktop/*.png $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Wallpapers/
 	cp $(INSTALLER_UI_ASSETS) $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Installer/
-	dd if=/dev/zero of=$@ bs=1M count=512 status=none
+	dd if=/dev/zero of=$@ bs=1M count=320 status=none
 	mformat -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat-aarch64-qemu/EFI ::
 

@@ -40,6 +40,18 @@ pub enum CapabilityType {
     SettingsRead,
     SettingsUpdateAllowed,
     ShellUse,
+    SurfaceCreate,
+    SurfacePublish,
+    SurfaceResize,
+    SurfaceDestroy,
+    SurfaceInspectMetadata,
+    WindowCreate,
+    WindowManageOwn,
+    WindowFocus,
+    WindowCaptureInput,
+    WindowInspectMetadata,
+    DisplayCapture,
+    TrustedUiPresent,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

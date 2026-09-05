@@ -38,6 +38,40 @@ pub const EVENT_AGENT_STOPPED: u32 = 0x95002;
 pub const EVENT_AGENT_FAILED: u32 = 0x95003;
 pub const EVENT_IDENTITY_STATE_CHANGED: u32 = 0x96001;
 pub const EVENT_APPEARANCE_CHANGED: u32 = 0x97001;
+pub const EVENT_WINDOW_CREATED: u32 = 0x98001;
+pub const EVENT_WINDOW_DESTROYED: u32 = 0x98002;
+pub const EVENT_WINDOW_FOCUSED: u32 = 0x98003;
+pub const EVENT_WINDOW_STATE_CHANGED: u32 = 0x98004;
+pub const EVENT_DISPLAY_CONFIGURATION_CHANGED: u32 = 0x98005;
+pub const EVENT_WINDOW_MOVED: u32 = 0x98006;
+pub const EVENT_WINDOW_RESIZED: u32 = 0x98007;
+pub const EVENT_SURFACE_COMMITTED: u32 = 0x98008;
+pub const EVENT_COMPOSITOR_DEGRADED: u32 = 0x98009;
+pub const EVENT_COMPOSITOR_RECOVERED: u32 = 0x9800a;
+pub const EVENT_SECURE_INPUT_STARTED: u32 = 0x9800b;
+pub const EVENT_SECURE_INPUT_STOPPED: u32 = 0x9800c;
+
+const UI_EVENT_TYPES: [u32; 12] = [
+    EVENT_WINDOW_CREATED,
+    EVENT_WINDOW_DESTROYED,
+    EVENT_WINDOW_FOCUSED,
+    EVENT_WINDOW_STATE_CHANGED,
+    EVENT_DISPLAY_CONFIGURATION_CHANGED,
+    EVENT_WINDOW_MOVED,
+    EVENT_WINDOW_RESIZED,
+    EVENT_SURFACE_COMMITTED,
+    EVENT_COMPOSITOR_DEGRADED,
+    EVENT_COMPOSITOR_RECOVERED,
+    EVENT_SECURE_INPUT_STARTED,
+    EVENT_SECURE_INPUT_STOPPED,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum UiOperationError {
+    AccessDenied,
+    Surface(crate::ui::surface::SurfaceError),
+    Window(crate::ui::window::WindowError),
+}
 pub struct InfinityRuntime {
     pub execution: ExecutionManager,
     pub scheduler: Scheduler,
@@ -55,6 +89,7 @@ pub struct InfinityRuntime {
     installer_authority: [Option<u64>; 4],
     ai_console_capability: Option<u64>,
     ai_event_capabilities: [Option<u64>; 3],
+    ui_event_capabilities: [Option<u64>; UI_EVENT_TYPES.len()],
 }
 impl InfinityRuntime {
     // ------------------------=
@@ -79,7 +114,364 @@ impl InfinityRuntime {
             installer_authority: [None; 4],
             ai_console_capability: None,
             ai_event_capabilities: [None; 3],
+            ui_event_capabilities: [None; UI_EVENT_TYPES.len()],
         }
+    }
+
+    // ------------------------=
+    // FUNC: create_surface
+    // DESC: Creates an ordinary retained surface only after validating explicit caller authority.
+    // ------------------=
+    pub fn create_surface(
+        &mut self,
+        caller: execution::SecurityIdentity,
+        context: crate::ui::window::ContextId,
+        capability: capability::CapabilityId,
+        size: crate::ui::geometry::Size,
+        format: crate::ui::surface::PixelFormat,
+        security_class: crate::ui::surface::SurfaceSecurityClass,
+        now: u64,
+    ) -> Result<crate::ui::window::SurfaceId, UiOperationError> {
+        self.capabilities
+            .validate(
+                capability,
+                caller,
+                CapabilityType::SurfaceCreate,
+                SERVICE_WINDOW_SERVER as u64,
+                1,
+                0,
+                now,
+            )
+            .map_err(|_| UiOperationError::AccessDenied)?;
+        self.ui
+            .surfaces
+            .create(context, size, format, security_class, false)
+            .map_err(UiOperationError::Surface)
+    }
+
+    // ------------------------=
+    // FUNC: publish_surface
+    // DESC: Publishes a newer owned surface generation through an independently revocable capability.
+    // ------------------=
+    pub fn publish_surface(
+        &mut self,
+        caller: execution::SecurityIdentity,
+        context: crate::ui::window::ContextId,
+        capability: capability::CapabilityId,
+        surface: crate::ui::window::SurfaceId,
+        generation: u64,
+        now: u64,
+    ) -> Result<(), UiOperationError> {
+        self.capabilities
+            .validate(
+                capability,
+                caller,
+                CapabilityType::SurfacePublish,
+                surface.0 as u64,
+                1,
+                0,
+                now,
+            )
+            .map_err(|_| UiOperationError::AccessDenied)?;
+        self.ui
+            .surfaces
+            .publish(context, surface, generation)
+            .map_err(UiOperationError::Surface)?;
+        let mut payload = [0u8; 24];
+        payload[0] = 1;
+        payload[4..8].copy_from_slice(&surface.0.to_le_bytes());
+        payload[8..12].copy_from_slice(&context.0.to_le_bytes());
+        payload[16..24].copy_from_slice(&generation.to_le_bytes());
+        let _ = self.publish_ui_event(
+            EVENT_SURFACE_COMMITTED,
+            surface.0 as u64,
+            &payload,
+            140,
+            now,
+            generation,
+            generation,
+        );
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: resize_surface
+    // DESC: Reallocates owned retained-surface metadata only under a surface-scoped resize capability.
+    // ------------------=
+    pub fn resize_surface(
+        &mut self,
+        caller: execution::SecurityIdentity,
+        context: crate::ui::window::ContextId,
+        capability: capability::CapabilityId,
+        surface: crate::ui::window::SurfaceId,
+        size: crate::ui::geometry::Size,
+        now: u64,
+    ) -> Result<crate::ui::surface::SurfaceDescriptor, UiOperationError> {
+        self.capabilities
+            .validate(
+                capability,
+                caller,
+                CapabilityType::SurfaceResize,
+                surface.0 as u64,
+                1,
+                0,
+                now,
+            )
+            .map_err(|_| UiOperationError::AccessDenied)?;
+        self.ui
+            .surfaces
+            .resize(context, surface, size)
+            .map_err(UiOperationError::Surface)
+    }
+
+    // ------------------------=
+    // FUNC: destroy_surface
+    // DESC: Reclaims an owned surface only after scoped authorization and after all windows release it.
+    // ------------------=
+    pub fn destroy_surface(
+        &mut self,
+        caller: execution::SecurityIdentity,
+        context: crate::ui::window::ContextId,
+        capability: capability::CapabilityId,
+        surface: crate::ui::window::SurfaceId,
+        now: u64,
+    ) -> Result<(), UiOperationError> {
+        self.capabilities
+            .validate(
+                capability,
+                caller,
+                CapabilityType::SurfaceDestroy,
+                surface.0 as u64,
+                1,
+                0,
+                now,
+            )
+            .map_err(|_| UiOperationError::AccessDenied)?;
+        if self.ui.windows.uses_surface(surface) {
+            return Err(UiOperationError::Surface(
+                crate::ui::surface::SurfaceError::InUse,
+            ));
+        }
+        self.ui
+            .surfaces
+            .destroy(context, surface)
+            .map_err(UiOperationError::Surface)
+    }
+
+    // ------------------------=
+    // FUNC: inspect_surface
+    // DESC: Returns pixel-free surface metadata only under an explicitly scoped inspection capability.
+    // ------------------=
+    pub fn inspect_surface(
+        &self,
+        caller: execution::SecurityIdentity,
+        capability: capability::CapabilityId,
+        surface: crate::ui::window::SurfaceId,
+        now: u64,
+    ) -> Result<crate::ui::surface::SurfaceDescriptor, UiOperationError> {
+        self.capabilities
+            .validate(
+                capability,
+                caller,
+                CapabilityType::SurfaceInspectMetadata,
+                surface.0 as u64,
+                1,
+                0,
+                now,
+            )
+            .map_err(|_| UiOperationError::AccessDenied)?;
+        self.ui
+            .surfaces
+            .inspect(surface)
+            .copied()
+            .ok_or(UiOperationError::Surface(
+                crate::ui::surface::SurfaceError::Unknown,
+            ))
+    }
+
+    // ------------------------=
+    // FUNC: create_window
+    // DESC: Registers an owned window only when the surface owner and explicit window capability agree.
+    // ------------------=
+    pub fn create_window(
+        &mut self,
+        caller: execution::SecurityIdentity,
+        context: crate::ui::window::ContextId,
+        capability: capability::CapabilityId,
+        surface: crate::ui::window::SurfaceId,
+        bounds: crate::ui::geometry::Rect,
+        z_class: crate::ui::window::ZOrderClass,
+        now: u64,
+    ) -> Result<crate::ui::window::WindowId, UiOperationError> {
+        self.capabilities
+            .validate(
+                capability,
+                caller,
+                CapabilityType::WindowCreate,
+                SERVICE_WINDOW_SERVER as u64,
+                1,
+                0,
+                now,
+            )
+            .map_err(|_| UiOperationError::AccessDenied)?;
+        if self.ui.surfaces.inspect(surface).map(|entry| entry.owner) != Some(context) {
+            return Err(UiOperationError::AccessDenied);
+        }
+        let window = self
+            .ui
+            .windows
+            .create(context, surface, bounds, z_class)
+            .map_err(UiOperationError::Window)?;
+        self.flush_window_events(now, window.0 as u64, window.0 as u64);
+        Ok(window)
+    }
+
+    // ------------------------=
+    // FUNC: move_window
+    // DESC: Moves an owned window only while its scoped management capability remains valid.
+    // ------------------=
+    pub fn move_window(
+        &mut self,
+        caller: execution::SecurityIdentity,
+        context: crate::ui::window::ContextId,
+        capability: capability::CapabilityId,
+        window: crate::ui::window::WindowId,
+        point: crate::ui::geometry::Point,
+        work_area: crate::ui::geometry::Rect,
+        now: u64,
+    ) -> Result<crate::ui::geometry::Rect, UiOperationError> {
+        self.capabilities
+            .validate(
+                capability,
+                caller,
+                CapabilityType::WindowManageOwn,
+                window.0 as u64,
+                1,
+                0,
+                now,
+            )
+            .map_err(|_| UiOperationError::AccessDenied)?;
+        let moved = self
+            .ui
+            .windows
+            .move_window(context, window, point, work_area)
+            .map_err(UiOperationError::Window)?;
+        self.flush_window_events(now, window.0 as u64, window.0 as u64);
+        Ok(moved)
+    }
+
+    // ------------------------=
+    // FUNC: inspect_window
+    // DESC: Returns semantic window geometry and state without granting access to content pixels.
+    // ------------------=
+    pub fn inspect_window(
+        &self,
+        caller: execution::SecurityIdentity,
+        capability: capability::CapabilityId,
+        window: crate::ui::window::WindowId,
+        now: u64,
+    ) -> Result<crate::ui::window::Window, UiOperationError> {
+        self.capabilities
+            .validate(
+                capability,
+                caller,
+                CapabilityType::WindowInspectMetadata,
+                window.0 as u64,
+                1,
+                0,
+                now,
+            )
+            .map_err(|_| UiOperationError::AccessDenied)?;
+        self.ui
+            .windows
+            .inspect(window)
+            .copied()
+            .ok_or(UiOperationError::Window(
+                crate::ui::window::WindowError::Unknown,
+            ))
+    }
+
+    // ------------------------=
+    // FUNC: flush_window_events
+    // DESC: Announces committed bounded Window Server transitions through capability-checked typed IEF events.
+    // ------------------=
+    pub fn flush_window_events(
+        &mut self,
+        now: u64,
+        correlation_id: u64,
+        causation_id: u64,
+    ) -> usize {
+        let mut published = 0;
+        while let Some(event) = self.ui.windows.next_event() {
+            let type_id = match event.kind {
+                crate::ui::window::WindowEventKind::Created => EVENT_WINDOW_CREATED,
+                crate::ui::window::WindowEventKind::Destroyed
+                | crate::ui::window::WindowEventKind::ContextFailed => EVENT_WINDOW_DESTROYED,
+                crate::ui::window::WindowEventKind::Focused => EVENT_WINDOW_FOCUSED,
+                crate::ui::window::WindowEventKind::Moved => EVENT_WINDOW_MOVED,
+                crate::ui::window::WindowEventKind::Resized => EVENT_WINDOW_RESIZED,
+                crate::ui::window::WindowEventKind::StateChanged
+                | crate::ui::window::WindowEventKind::CaptureChanged => EVENT_WINDOW_STATE_CHANGED,
+            };
+            let mut payload = [0u8; crate::ui::window::WindowEvent::ENCODED_BYTES];
+            event.encode_v1(&mut payload);
+            if self.publish_ui_event(
+                type_id,
+                event.window.0 as u64,
+                &payload,
+                180,
+                now,
+                correlation_id,
+                causation_id,
+            ) {
+                published += 1;
+            }
+        }
+        published
+    }
+
+    // ------------------------=
+    // FUNC: publish_ui_event
+    // DESC: Uses the Window Server's non-ambient event capability to publish one post-commit UI transition.
+    // ------------------=
+    fn publish_ui_event(
+        &mut self,
+        type_id: u32,
+        scope: u64,
+        payload: &[u8],
+        priority: u8,
+        now: u64,
+        correlation_id: u64,
+        causation_id: u64,
+    ) -> bool {
+        let Some(index) = UI_EVENT_TYPES
+            .iter()
+            .position(|candidate| *candidate == type_id)
+        else {
+            return false;
+        };
+        let Some(capability) = self.ui_event_capabilities[index] else {
+            return false;
+        };
+        let Some(source) = self.service_identity(SERVICE_WINDOW_SERVER) else {
+            return false;
+        };
+        self.events
+            .publish(
+                EventClass::StateChange,
+                RoutingDomain::System,
+                type_id,
+                source,
+                scope,
+                correlation_id,
+                causation_id,
+                payload,
+                priority,
+                now,
+                &self.capabilities,
+                capability,
+            )
+            .is_ok()
     }
     // ------------------------=
     // FUNC: define_bootstrap
@@ -519,19 +911,59 @@ impl InfinityRuntime {
             SERVICE_WINDOW_SERVER,
             [SERVICE_RUNTIME, SERVICE_DEVICE, 0, 0],
             2,
-            [OperationId::WindowList as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            1,
+            [
+                OperationId::WindowList as u32,
+                OperationId::SurfaceCreate as u32,
+                OperationId::SurfaceDestroy as u32,
+                OperationId::SurfacePresent as u32,
+                OperationId::WindowCreate as u32,
+                OperationId::WindowClose as u32,
+                OperationId::WindowMove as u32,
+                OperationId::WindowResize as u32,
+                OperationId::WindowSetState as u32,
+                OperationId::WindowFocus as u32,
+                OperationId::WindowCapturePointer as u32,
+                OperationId::WindowReleasePointer as u32,
+            ],
+            12,
             RestartPolicy::BoundedRetry { maximum: 3 },
             Criticality::Important,
         ))?;
         self.services.define(manifest(
             SERVICE_INFINITY_UI,
-            [SERVICE_WINDOW_SERVER, SERVICE_SKIN_REGISTRY, SERVICE_FONT, SERVICE_SESSION],
+            [
+                SERVICE_WINDOW_SERVER,
+                SERVICE_SKIN_REGISTRY,
+                SERVICE_FONT,
+                SERVICE_SESSION,
+            ],
             4,
             [
                 OperationId::UiInspectTree as u32,
                 OperationId::UiInspectFocus as u32,
                 OperationId::UiInspectDamage as u32,
+                OperationId::WindowInspect as u32,
+                OperationId::SurfaceList as u32,
+                OperationId::SurfaceInspect as u32,
+                OperationId::SurfaceResize as u32,
+                OperationId::SurfaceCommit as u32,
+                OperationId::CompositorStatus as u32,
+                OperationId::CompositorDiagnostics as u32,
+                OperationId::DisplayQuery as u32,
+                OperationId::SecureInputStatus as u32,
+            ],
+            12,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_CLIPBOARD,
+            [SERVICE_INFINITY_UI, SERVICE_SESSION, 0, 0],
+            2,
+            [
+                OperationId::ClipboardRead as u32,
+                OperationId::ClipboardWrite as u32,
+                0,
                 0,
                 0,
                 0,
@@ -542,15 +974,6 @@ impl InfinityRuntime {
                 0,
                 0,
             ],
-            3,
-            RestartPolicy::BoundedRetry { maximum: 3 },
-            Criticality::Important,
-        ))?;
-        self.services.define(manifest(
-            SERVICE_CLIPBOARD,
-            [SERVICE_INFINITY_UI, SERVICE_SESSION, 0, 0],
-            2,
-            [OperationId::ClipboardRead as u32, OperationId::ClipboardWrite as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             2,
             RestartPolicy::OnFailure,
             Criticality::NonCritical,
@@ -637,6 +1060,25 @@ impl InfinityRuntime {
                         0,
                     )
                     .ok();
+            }
+        }
+        if self.ui_event_capabilities[0].is_none() {
+            if let Some(window_server) = self.service_identity(SERVICE_WINDOW_SERVER) {
+                for (index, event_type) in UI_EVENT_TYPES.iter().copied().enumerate() {
+                    self.ui_event_capabilities[index] = self
+                        .capabilities
+                        .grant(
+                            CapabilityType::EventPublish,
+                            event_type as u64,
+                            1,
+                            0,
+                            runtime,
+                            window_server,
+                            None,
+                            0,
+                        )
+                        .ok();
+                }
             }
         }
         if self.live_profile && self.installer_authority[0].is_none() {

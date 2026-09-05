@@ -6,14 +6,17 @@
 
 pub mod async_model;
 pub mod clipboard;
+pub mod compositor;
 pub mod geometry;
 pub mod icon_theme;
 pub mod input;
+pub mod input_router;
 pub mod localization;
 pub mod platform;
 pub mod redraw;
 pub mod scene;
 pub mod skin;
+pub mod surface;
 pub mod system_layout;
 pub mod trusted;
 pub mod vector;
@@ -23,6 +26,7 @@ use icon_theme::IconThemeRegistry;
 use input::FocusManager;
 use scene::{DamageTracker, UiScene};
 use skin::SkinRegistry;
+use surface::{SurfaceRegistry, DEFAULT_SURFACE_BUDGET_BYTES};
 use window::WindowServer;
 
 pub const INFINITY_UI_ABI_VERSION: u16 = 1;
@@ -35,9 +39,11 @@ pub struct InfinityUiRuntime {
     pub scene: UiScene,
     pub focus: FocusManager,
     pub windows: WindowServer,
+    pub surfaces: SurfaceRegistry,
     pub damage: DamageTracker,
     pub frame_sequence: u64,
     pub frame_clock: platform::FrameClock,
+    pub quality: platform::AdaptiveQualityController,
     pub trusted: trusted::TrustedUiManager,
 }
 
@@ -55,9 +61,11 @@ impl InfinityUiRuntime {
             scene: UiScene::new(),
             focus: FocusManager::new(),
             windows: WindowServer::new(),
+            surfaces: SurfaceRegistry::new(DEFAULT_SURFACE_BUDGET_BYTES),
             damage: DamageTracker::new(),
             frame_sequence: 0,
             frame_clock: platform::FrameClock::new(60),
+            quality: platform::AdaptiveQualityController::new(),
             trusted: trusted::TrustedUiManager::new(),
         }
     }
@@ -79,5 +87,15 @@ impl InfinityUiRuntime {
     pub fn commit_frame(&mut self) -> &[geometry::Rect] {
         self.scene.commit_frame(&mut self.damage);
         self.damage.regions()
+    }
+
+    // ------------------------=
+    // FUNC: context_failed
+    // DESC: Reclaims a failed context's windows and surface reservations while preserving unrelated UI state.
+    // ------------------=
+    pub fn context_failed(&mut self, owner: window::ContextId) -> (usize, usize) {
+        let windows = self.windows.context_failed(owner);
+        let surfaces = self.surfaces.context_failed(owner);
+        (windows, surfaces)
     }
 }

@@ -35,8 +35,16 @@ pub enum PointerPhase {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum UiEvent<'a> {
-    Pointer { position: Point, phase: PointerPhase, button: u8 },
-    Key { key: Key, pressed: bool, modifiers: u8 },
+    Pointer {
+        position: Point,
+        phase: PointerPhase,
+        button: u8,
+    },
+    Key {
+        key: Key,
+        pressed: bool,
+        modifiers: u8,
+    },
     Text(&'a [u8]),
     CompositionStart,
     CompositionUpdate(&'a [u8]),
@@ -63,7 +71,12 @@ impl FocusManager {
     // DESC: Creates an empty deterministic focus order for one UI scene.
     // ------------------=
     pub const fn new() -> Self {
-        Self { order: [None; MAX_FOCUSABLE], count: 0, current: None, trapped_root: None }
+        Self {
+            order: [None; MAX_FOCUSABLE],
+            count: 0,
+            current: None,
+            trapped_root: None,
+        }
     }
 
     // ------------------------=
@@ -111,7 +124,11 @@ impl FocusManager {
             .position(|entry| *entry == self.current)
             .unwrap_or(0);
         let next = if reverse {
-            if current_index == 0 { self.count as usize - 1 } else { current_index - 1 }
+            if current_index == 0 {
+                self.count as usize - 1
+            } else {
+                current_index - 1
+            }
         } else {
             (current_index + 1) % self.count as usize
         };
@@ -156,7 +173,10 @@ impl PointerAccelerator {
     // DESC: Creates deterministic subpixel pointer acceleration state.
     // ------------------=
     pub const fn new() -> Self {
-        Self { remainder_x: 0, remainder_y: 0 }
+        Self {
+            remainder_x: 0,
+            remainder_y: 0,
+        }
     }
 
     // ------------------------=
@@ -165,11 +185,20 @@ impl PointerAccelerator {
     // ------------------=
     pub fn apply(&mut self, dx: i32, dy: i32) -> Point {
         let magnitude = dx.abs().max(dy.abs());
-        let gain = if magnitude <= 2 { 100 } else if magnitude <= 7 { 135 } else { 185 };
+        let gain = if magnitude <= 2 {
+            100
+        } else if magnitude <= 7 {
+            135
+        } else {
+            185
+        };
         let scaled_x = dx.saturating_mul(gain).saturating_add(self.remainder_x);
         let scaled_y = dy.saturating_mul(gain).saturating_add(self.remainder_y);
         self.remainder_x = scaled_x % 100;
         self.remainder_y = scaled_y % 100;
-        Point { x: scaled_x / 100, y: scaled_y / 100 }
+        Point {
+            x: scaled_x / 100,
+            y: scaled_y / 100,
+        }
     }
 }

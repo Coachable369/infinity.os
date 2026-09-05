@@ -38,8 +38,7 @@ pub const fn desktop_window_move_requires_structural_redraw(
     window_visible: bool,
     window_maximized: bool,
 ) -> bool {
-    let _ = (screen, window_visible, window_maximized);
-    window_moved
+    window_moved && !(screen == 2 && window_visible && !window_maximized)
 }
 
 // ------------------------=
@@ -67,6 +66,5 @@ pub const fn desktop_menu_change_requires_bounded_redraw(
 ) -> bool {
     matches!(previous_screen, 2 | 3)
         && matches!(screen, 2 | 3)
-        && (previous_screen != screen
-            || (screen == 3 && (previous_menu != menu || focus_changed)))
+        && (previous_screen != screen || (screen == 3 && (previous_menu != menu || focus_changed)))
 }
