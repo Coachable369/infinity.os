@@ -12,15 +12,22 @@ use crate::ui::app_launcher::{
     DESKTOP_DOCK_ENTRIES, LAUNCHER_CATEGORIES,
 };
 use crate::ui::system_layout::{
-    AppLauncherTarget, DesktopAppWindowState, DesktopAppWindowTarget, DesktopTarget, OnboardingTarget,
-    SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget,
+    AppLauncherTarget, DesktopAppWindowState, DesktopAppWindowTarget, DesktopTarget,
+    EditorDialogTarget, EditorScrollTarget, OnboardingTarget, SettingsAccentTarget, SettingsTarget,
+    SettingsWindowState, SystemLayout, SystemMenuTarget,
 };
 use crate::ui::text_editor::TextDocument;
 
 const OUTPUT_ROWS: usize = 6;
 const LINE_CAPACITY: usize = 96;
 const COMMAND_CAPACITY: usize = 160;
-const EDITOR_DOCUMENT_PATH: &[u8] = b"/personal/documents/text-editor-document";
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EditorDialog {
+    None,
+    SaveAs,
+    Open,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DesktopAppKind {
@@ -388,6 +395,14 @@ struct ConsoleRuntime {
     app_window_drag_offset_x: i32,
     app_window_drag_offset_y: i32,
     editor_document: TextDocument,
+    editor_document_path: [u8; crate::ui::text_editor::DOCUMENT_PATH_CAPACITY],
+    editor_document_path_length: usize,
+    editor_document_name: [u8; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
+    editor_document_name_length: usize,
+    editor_dialog: EditorDialog,
+    editor_scroll_row: usize,
+    editor_scroll_dragging: bool,
+    editor_scroll_grab_offset: i32,
     editor_window: DesktopAppWindowState,
     command_window: DesktopAppWindowState,
 }
@@ -508,6 +523,14 @@ impl ConsoleRuntime {
             app_window_drag_offset_x: 0,
             app_window_drag_offset_y: 0,
             editor_document: TextDocument::new(),
+            editor_document_path: [0; crate::ui::text_editor::DOCUMENT_PATH_CAPACITY],
+            editor_document_path_length: 0,
+            editor_document_name: [0; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
+            editor_document_name_length: 0,
+            editor_dialog: EditorDialog::None,
+            editor_scroll_row: 0,
+            editor_scroll_dragging: false,
+            editor_scroll_grab_offset: 0,
             editor_window: DesktopAppWindowState::new(190, 160, 600, 620),
             command_window: DesktopAppWindowState::new(240, 210, 600, 620),
         }
@@ -729,6 +752,10 @@ impl ConsoleRuntime {
                 &self.command[..self.command_length],
                 editor_window,
                 command_window,
+                self.editor_scroll_row,
+                self.editor_dialog as u8,
+                &self.command[..self.command_length],
+                self.system_focus,
             );
             return;
         }
@@ -792,17 +819,49 @@ impl ConsoleRuntime {
     // DESC: Applies bounded multiline editing and native close keyboard behavior.
     // ------------------=
     fn input_text_editor(&mut self, key: ConsoleKey) {
+        if self.editor_dialog != EditorDialog::None {
+            match (self.editor_dialog, key) {
+                (EditorDialog::SaveAs, ConsoleKey::Character(character))
+                    if (32..=126).contains(&character)
+                        && self.command_length < crate::ui::text_editor::DOCUMENT_NAME_CAPACITY =>
+                {
+                    self.command[self.command_length] = character;
+                    self.command_length += 1;
+                }
+                (EditorDialog::SaveAs, ConsoleKey::Backspace) => {
+                    self.command_length = self.command_length.saturating_sub(1)
+                }
+                (EditorDialog::SaveAs, ConsoleKey::Enter) => self.save_editor_document_as(),
+                (EditorDialog::Open, ConsoleKey::Up) => {
+                    self.system_focus = self.system_focus.saturating_sub(1)
+                }
+                (EditorDialog::Open, ConsoleKey::Down) => {
+                    let count = self.editor_document_count();
+                    self.system_focus = self
+                        .system_focus
+                        .saturating_add(1)
+                        .min(count.saturating_sub(1));
+                }
+                (EditorDialog::Open, ConsoleKey::Enter) => self.open_selected_editor_document(),
+                (_, ConsoleKey::Escape) => self.close_editor_dialog(),
+                _ => {}
+            }
+            return;
+        }
         match key {
             ConsoleKey::Character(character) if (32..=126).contains(&character) => {
                 let _ = self.editor_document.insert(character);
+                self.editor_scroll_row = self.editor_scroll_geometry().maximum_scroll;
             }
             ConsoleKey::Enter => {
                 let _ = self.editor_document.insert(b'\n');
+                self.editor_scroll_row = self.editor_scroll_geometry().maximum_scroll;
             }
             ConsoleKey::Backspace => {
                 let _ = self.editor_document.backspace();
+                self.editor_scroll_row = self.editor_scroll_geometry().maximum_scroll;
             }
-            ConsoleKey::Escape => self.enter_desktop(),
+            ConsoleKey::Escape => self.close_desktop_app(),
             _ => {}
         }
     }
@@ -915,6 +974,8 @@ impl ConsoleRuntime {
         self.desktop_app = DesktopAppKind::None;
         self.app_window_dragging = false;
         self.app_window_resizing = None;
+        self.editor_scroll_dragging = false;
+        self.editor_dialog = EditorDialog::None;
         self.reset_input();
     }
 
@@ -1028,22 +1089,16 @@ impl ConsoleRuntime {
     // DESC: Creates or updates the Text Editor document as a native Personal-space object.
     // ------------------=
     fn save_editor_document(&mut self) {
+        if self.editor_document_path_length == 0 {
+            self.open_editor_save_as_dialog();
+            return;
+        }
         let content = self.editor_document.bytes();
-        let saved = crate::storage::object_write_path(EDITOR_DOCUMENT_PATH, content)
-            .map(|_| ())
-            .or_else(|error| {
-                if error == crate::storage::object::ObjectError::NotFound {
-                    crate::storage::object_create_note_at(
-                        b"text-editor-document",
-                        content,
-                        EDITOR_DOCUMENT_PATH,
-                    )
-                    .map(|_| ())
-                } else {
-                    Err(error)
-                }
-            })
-            .is_ok();
+        let saved = crate::storage::object_write_path(
+            &self.editor_document_path[..self.editor_document_path_length],
+            content,
+        )
+        .is_ok();
         if saved {
             self.editor_document.save();
             crate::output_text(b"[editor] document persisted\n");
@@ -1057,9 +1112,40 @@ impl ConsoleRuntime {
     // DESC: Opens the persisted Personal-space Text Editor document into the active buffer.
     // ------------------=
     fn open_editor_document(&mut self) {
+        self.editor_dialog = EditorDialog::Open;
+        self.system_focus = 0;
+        self.reset_input();
+        self.refresh_editor_open_list();
+    }
+
+    // ------------------------=
+    // FUNC: open_selected_editor_document
+    // DESC: Loads the selected native Text object and retains its stable namespace reference for later versioned saves.
+    // ------------------=
+    fn open_selected_editor_document(&mut self) {
+        let entry = match crate::storage::namespace_list_nth(
+            crate::ui::text_editor::DOCUMENT_NAMESPACE,
+            self.system_focus,
+        ) {
+            Ok(Some(entry)) => entry,
+            _ => return,
+        };
         let mut content = [0u8; crate::ui::text_editor::DOCUMENT_CAPACITY];
-        if let Ok((_, length)) = crate::storage::object_read_path(EDITOR_DOCUMENT_PATH, None, &mut content) {
+        let path_length = entry.path_len as usize;
+        if let Ok((_, length)) =
+            crate::storage::object_read_path(&entry.path[..path_length], None, &mut content)
+        {
             if self.editor_document.open(&content[..length]) {
+                self.editor_document_path[..path_length]
+                    .copy_from_slice(&entry.path[..path_length]);
+                self.editor_document_path_length = path_length;
+                let name =
+                    &entry.path[crate::ui::text_editor::DOCUMENT_NAMESPACE.len()..path_length];
+                let name_length = name.len().min(self.editor_document_name.len());
+                self.editor_document_name[..name_length].copy_from_slice(&name[..name_length]);
+                self.editor_document_name_length = name_length;
+                self.editor_scroll_row = 0;
+                self.close_editor_dialog();
                 crate::output_text(b"[editor] document opened\n");
                 return;
             }
@@ -1072,11 +1158,109 @@ impl ConsoleRuntime {
     // DESC: Removes the persisted Personal-space document and resets the editor buffer.
     // ------------------=
     fn delete_editor_document(&mut self) {
-        if crate::storage::object_remove_path(EDITOR_DOCUMENT_PATH).is_ok() {
+        if self.editor_document_path_length != 0
+            && crate::storage::object_remove_path(
+                &self.editor_document_path[..self.editor_document_path_length],
+            )
+            .is_ok()
+        {
             self.editor_document.clear();
+            self.editor_document_path_length = 0;
+            self.editor_document_name_length = 0;
+            self.editor_scroll_row = 0;
             crate::output_text(b"[editor] document deleted\n");
         } else {
             crate::output_text(b"[editor] delete failed\n");
+        }
+    }
+
+    // ------------------------=
+    // FUNC: open_editor_save_as_dialog
+    // DESC: Opens a bounded native-object naming sheet without changing the active document.
+    // ------------------=
+    fn open_editor_save_as_dialog(&mut self) {
+        self.editor_dialog = EditorDialog::SaveAs;
+        self.reset_input();
+    }
+
+    // ------------------------=
+    // FUNC: save_editor_document_as
+    // DESC: Creates a uniquely named Text object and binds the editor to its new stable Object ID through a namespace reference.
+    // ------------------=
+    fn save_editor_document_as(&mut self) {
+        let name = &self.command[..self.command_length];
+        let mut path = [0u8; crate::ui::text_editor::DOCUMENT_PATH_CAPACITY];
+        let Some(path_length) = crate::ui::text_editor::document_path(name, &mut path) else {
+            return;
+        };
+        if crate::storage::namespace_resolve(&path[..path_length]).is_ok() {
+            return;
+        }
+        if crate::storage::object_create_note_at(
+            name,
+            self.editor_document.bytes(),
+            &path[..path_length],
+        )
+        .is_ok()
+        {
+            self.editor_document_path[..path_length].copy_from_slice(&path[..path_length]);
+            self.editor_document_path_length = path_length;
+            self.editor_document_name[..name.len()].copy_from_slice(name);
+            self.editor_document_name_length = name.len();
+            self.editor_document.save();
+            self.close_editor_dialog();
+        }
+    }
+
+    // ------------------------=
+    // FUNC: close_editor_dialog
+    // DESC: Closes the editor naming or object-picker sheet and clears its transient input.
+    // ------------------=
+    fn close_editor_dialog(&mut self) {
+        self.editor_dialog = EditorDialog::None;
+        self.system_focus = 0;
+        self.reset_input();
+        self.output.clear();
+    }
+
+    // ------------------------=
+    // FUNC: editor_document_count
+    // DESC: Counts discoverable Personal document namespace references for bounded picker navigation.
+    // ------------------=
+    fn editor_document_count(&self) -> usize {
+        let mut count = 0usize;
+        while count < OUTPUT_ROWS
+            && matches!(
+                crate::storage::namespace_list_nth(
+                    crate::ui::text_editor::DOCUMENT_NAMESPACE,
+                    count,
+                ),
+                Ok(Some(_))
+            )
+        {
+            count += 1;
+        }
+        count
+    }
+
+    // ------------------------=
+    // FUNC: refresh_editor_open_list
+    // DESC: Projects discoverable native document names into the bounded picker without parsing rendered text for behavior.
+    // ------------------=
+    fn refresh_editor_open_list(&mut self) {
+        self.output.clear();
+        for index in 0..OUTPUT_ROWS {
+            let entry = match crate::storage::namespace_list_nth(
+                crate::ui::text_editor::DOCUMENT_NAMESPACE,
+                index,
+            ) {
+                Ok(Some(entry)) => entry,
+                _ => break,
+            };
+            let path_length = entry.path_len as usize;
+            self.output.write_line(
+                &entry.path[crate::ui::text_editor::DOCUMENT_NAMESPACE.len()..path_length],
+            );
         }
     }
 
@@ -1232,7 +1416,7 @@ impl ConsoleRuntime {
     // DESC: Moves the Settings accordion by bounded logical increments while leaving navigation focus unchanged.
     // ------------------=
     fn scroll_settings(&mut self, direction: i8) {
-        let distance = direction.unsigned_abs() as usize * 28;
+        let distance = direction.unsigned_abs() as usize * 58;
         let maximum_scroll = SystemLayout::new(
             self.system.framebuffer_width,
             self.system.framebuffer_height,
@@ -1248,6 +1432,51 @@ impl ConsoleRuntime {
                 .scroll_offset
                 .saturating_add(distance)
                 .min(maximum_scroll);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: editor_scroll_geometry
+    // DESC: Computes live wrapped-row and proportional scrollbar geometry for the active Text Editor.
+    // ------------------=
+    fn editor_scroll_geometry(&self) -> crate::ui::system_layout::EditorScrollGeometry {
+        let layout = SystemLayout::new(
+            self.system.framebuffer_width,
+            self.system.framebuffer_height,
+        );
+        let window = layout.desktop_app_window_geometry(
+            self.app_window_x,
+            self.app_window_y,
+            self.app_window_width,
+            self.app_window_height,
+            self.app_window_maximized,
+        );
+        let columns = (window.content.width as usize).saturating_sub(52 * layout.scale())
+            / (9 * layout.scale()).max(1);
+        let rows =
+            crate::ui::text_editor::visual_line_count(self.editor_document.bytes(), columns.max(1));
+        layout.desktop_editor_scroll_geometry(
+            self.app_window_x,
+            self.app_window_y,
+            self.app_window_width,
+            self.app_window_height,
+            self.app_window_maximized,
+            rows,
+            self.editor_scroll_row,
+        )
+    }
+
+    // ------------------------=
+    // FUNC: scroll_editor
+    // DESC: Scrolls the native Text Editor by bounded visual rows while preserving object content and selection state.
+    // ------------------=
+    fn scroll_editor(&mut self, direction: i8) {
+        let maximum = self.editor_scroll_geometry().maximum_scroll;
+        let distance = direction.unsigned_abs() as usize * 3;
+        if direction < 0 {
+            self.editor_scroll_row = self.editor_scroll_row.saturating_sub(distance);
+        } else {
+            self.editor_scroll_row = self.editor_scroll_row.saturating_add(distance).min(maximum);
         }
     }
 
@@ -3087,12 +3316,20 @@ impl ConsoleRuntime {
     // DESC: Consumes wheel motion inside Settings as content scrolling instead of changing the selected navigation section.
     // ------------------=
     fn pointer_scroll(&mut self, vertical: i8) -> bool {
-        if self.mode != ConsoleMode::Settings || vertical == 0 {
+        if vertical == 0 {
             return false;
         }
-        self.scroll_settings(vertical);
-        self.redraw();
-        true
+        if self.mode == ConsoleMode::Settings {
+            self.scroll_settings(vertical);
+            self.redraw();
+            return true;
+        }
+        if self.mode == ConsoleMode::Desktop && self.desktop_app == DesktopAppKind::TextEditor {
+            self.scroll_editor(vertical);
+            self.redraw();
+            return true;
+        }
+        false
     }
 
     // ------------------------=
@@ -3240,7 +3477,51 @@ impl ConsoleRuntime {
                 }
             }
         } else if self.mode == ConsoleMode::Desktop {
-            if let Some(corner) = self.app_window_resizing {
+            if self.editor_dialog != EditorDialog::None {
+                if clicked {
+                    let count = self.editor_document_count();
+                    if let Some(target) = layout.desktop_editor_dialog_target(
+                        self.pointer_x,
+                        self.pointer_y,
+                        self.app_window_x,
+                        self.app_window_y,
+                        self.app_window_width,
+                        self.app_window_height,
+                        self.app_window_maximized,
+                        self.editor_dialog == EditorDialog::Open,
+                        count,
+                    ) {
+                        match target {
+                            EditorDialogTarget::Row(index) => self.system_focus = index,
+                            EditorDialogTarget::Cancel => self.close_editor_dialog(),
+                            EditorDialogTarget::Accept => {
+                                if self.editor_dialog == EditorDialog::Open {
+                                    self.open_selected_editor_document();
+                                } else {
+                                    self.save_editor_document_as();
+                                }
+                            }
+                            EditorDialogTarget::NameField => {}
+                        }
+                    }
+                }
+                self.redraw();
+                return;
+            } else if self.editor_scroll_dragging {
+                let geometry = self.editor_scroll_geometry();
+                if left_button {
+                    self.editor_scroll_row = layout.desktop_editor_scroll_offset_for_thumb(
+                        self.pointer_y,
+                        geometry,
+                        self.editor_scroll_grab_offset,
+                    );
+                }
+                if released {
+                    self.editor_scroll_dragging = false;
+                }
+                self.redraw();
+                return;
+            } else if let Some(corner) = self.app_window_resizing {
                 if left_button {
                     let resized = crate::ui::system_layout::resize_native_window(
                         self.app_window_x,
@@ -3261,6 +3542,8 @@ impl ConsoleRuntime {
                 if released {
                     self.app_window_resizing = None;
                 }
+                self.redraw();
+                return;
             } else if self.app_window_dragging {
                 if left_button {
                     self.app_window_x = (self.pointer_x - self.app_window_drag_offset_x)
@@ -3271,9 +3554,37 @@ impl ConsoleRuntime {
                 if released {
                     self.app_window_dragging = false;
                 }
+                self.redraw();
+                return;
             } else if self.desktop_app != DesktopAppKind::None {
                 if clicked {
-                    match layout.desktop_app_window_target(
+                    if self.desktop_app == DesktopAppKind::TextEditor
+                        && self.editor_dialog == EditorDialog::None
+                    {
+                        let scroll_geometry = self.editor_scroll_geometry();
+                        if let Some(scroll_target) = layout.desktop_editor_scroll_target(
+                            self.pointer_x,
+                            self.pointer_y,
+                            scroll_geometry,
+                        ) {
+                            match scroll_target {
+                                EditorScrollTarget::Page(down) => {
+                                    self.scroll_editor(if down { 6 } else { -6 });
+                                }
+                                EditorScrollTarget::Thumb => {
+                                    let pointer_y = self.system.framebuffer_height as i32
+                                        * self.pointer_y
+                                        / 1000;
+                                    self.editor_scroll_grab_offset =
+                                        pointer_y.saturating_sub(scroll_geometry.thumb.y);
+                                    self.editor_scroll_dragging = true;
+                                }
+                            }
+                            self.redraw();
+                            return;
+                        }
+                    }
+                    let app_target = layout.desktop_app_window_target(
                         self.pointer_x,
                         self.pointer_y,
                         self.app_window_x,
@@ -3282,7 +3593,8 @@ impl ConsoleRuntime {
                         self.app_window_height,
                         self.app_window_maximized,
                         self.desktop_app == DesktopAppKind::TextEditor,
-                    ) {
+                    );
+                    match app_target {
                         DesktopAppWindowTarget::Resize(corner) if !self.app_window_maximized => {
                             self.app_window_resizing = Some(corner);
                         }
@@ -3310,10 +3622,16 @@ impl ConsoleRuntime {
                         }
                         DesktopAppWindowTarget::NewDocument => {
                             self.editor_document.clear();
+                            self.editor_document_path_length = 0;
+                            self.editor_document_name_length = 0;
+                            self.editor_scroll_row = 0;
                         }
                         DesktopAppWindowTarget::OpenDocument => self.open_editor_document(),
                         DesktopAppWindowTarget::SaveDocument => {
                             self.save_editor_document();
+                        }
+                        DesktopAppWindowTarget::SaveAsDocument => {
+                            self.open_editor_save_as_dialog();
                         }
                         DesktopAppWindowTarget::DeleteDocument => self.delete_editor_document(),
                         DesktopAppWindowTarget::None => {
@@ -3337,6 +3655,10 @@ impl ConsoleRuntime {
                         | DesktopAppWindowTarget::Title
                         | DesktopAppWindowTarget::Resize(_) => {}
                     }
+                    if app_target != DesktopAppWindowTarget::None {
+                        self.redraw();
+                        return;
+                    }
                 }
             } else if clicked {
                 if let Some(app) = self.inactive_app_at_pointer(layout) {
@@ -3346,7 +3668,7 @@ impl ConsoleRuntime {
                 }
             }
             if let Some(corner) = self.home_window_resizing {
-                if released {
+                if left_button {
                     let resized = crate::ui::system_layout::resize_home_window(
                         self.home_window_x,
                         self.home_window_y,
@@ -3360,6 +3682,8 @@ impl ConsoleRuntime {
                     self.home_window_y = resized.1;
                     self.home_window_width = resized.2;
                     self.home_window_height = resized.3;
+                }
+                if released {
                     self.home_window_resizing = None;
                 }
             } else if let Some(item) = self.home_dragging_item {
@@ -3706,7 +4030,8 @@ impl ConsoleRuntime {
                     }
                     SettingsTarget::ScrollThumb if clicked => {
                         let geometry = layout.settings_window_geometry(self.settings_window);
-                        let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+                        let pointer_y =
+                            self.system.framebuffer_height as i32 * self.pointer_y / 1000;
                         self.settings_scroll_grab_offset =
                             pointer_y.saturating_sub(geometry.scrollbar_thumb.y);
                         self.settings_scroll_dragging = true;

@@ -855,6 +855,25 @@ pub fn namespace_entry(index: usize, out: &mut [u8]) -> Option<(usize, object::O
 }
 
 // ------------------------=
+// FUNC: namespace_list_nth
+// DESC: Returns one typed namespace projection below a prefix for native object pickers.
+// ------------------=
+pub fn namespace_list_nth(
+    prefix: &[u8],
+    index: usize,
+) -> Result<Option<object::NamespaceListResult>, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        with_store(|store| Ok(store.namespace_list_nth(prefix, index)))
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = (prefix, index);
+        Err(object::ObjectError::SpaceUnavailable)
+    }
+}
+
+// ------------------------=
 // FUNC: local_ai_model_object_ref
 // DESC: Resolves the installed native model identity for Model Registry binding.
 // ------------------=

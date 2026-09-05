@@ -13,6 +13,8 @@ make x86_64
 make aarch64
 make crash-screen-test
 make settings-color-test
+make milestone-7x-test
+make object-test
 make ui-install-parity-test
 make input-regression-test
 

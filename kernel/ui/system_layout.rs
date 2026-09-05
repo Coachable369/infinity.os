@@ -49,9 +49,24 @@ pub enum DesktopAppWindowTarget {
     NewDocument,
     OpenDocument,
     SaveDocument,
+    SaveAsDocument,
     DeleteDocument,
     Content,
     None,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditorScrollTarget {
+    Page(bool),
+    Thumb,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditorDialogTarget {
+    NameField,
+    Row(usize),
+    Cancel,
+    Accept,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,6 +78,13 @@ pub struct DesktopAppWindowGeometry {
     pub close: Rect,
     pub toolbar: Rect,
     pub content: Rect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EditorScrollGeometry {
+    pub track: Rect,
+    pub thumb: Rect,
+    pub maximum_scroll: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -882,16 +904,19 @@ impl SystemLayout {
         }
         if text_editor && geometry.toolbar.contains(point) {
             let relative = point.x.saturating_sub(geometry.toolbar.x) as usize;
-            if relative < 96 * self.scale {
+            if relative < 82 * self.scale {
                 return DesktopAppWindowTarget::NewDocument;
             }
-            if relative < 192 * self.scale {
+            if relative < 164 * self.scale {
                 return DesktopAppWindowTarget::OpenDocument;
             }
-            if relative < 288 * self.scale {
+            if relative < 246 * self.scale {
                 return DesktopAppWindowTarget::SaveDocument;
             }
-            if relative < 384 * self.scale {
+            if relative < 352 * self.scale {
+                return DesktopAppWindowTarget::SaveAsDocument;
+            }
+            if relative < 434 * self.scale {
                 return DesktopAppWindowTarget::DeleteDocument;
             }
         }
@@ -899,6 +924,208 @@ impl SystemLayout {
             return DesktopAppWindowTarget::Content;
         }
         DesktopAppWindowTarget::None
+    }
+
+    // ------------------------=
+    // FUNC: desktop_editor_scroll_geometry
+    // DESC: Derives a proportional editor scrollbar from visual rows and the resizable content viewport.
+    // ------------------=
+    pub fn desktop_editor_scroll_geometry(
+        self,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        maximized: bool,
+        visual_rows: usize,
+        scroll_row: usize,
+    ) -> EditorScrollGeometry {
+        let window = self.desktop_app_window_geometry(
+            window_x,
+            window_y,
+            window_width,
+            window_height,
+            maximized,
+        );
+        let visible_rows = (window.content.height as usize / (24 * self.scale).max(1)).max(1);
+        let maximum_scroll = visual_rows.saturating_sub(visible_rows);
+        let track_height = (window.content.height as usize).saturating_sub(16 * self.scale);
+        let track = rect(
+            window
+                .content
+                .right()
+                .saturating_sub((14 * self.scale) as i32)
+                .max(0) as usize,
+            window.content.y.max(0) as usize + 8 * self.scale,
+            8 * self.scale,
+            track_height,
+        );
+        let thumb_height = if maximum_scroll == 0 {
+            0
+        } else {
+            (track_height.saturating_mul(visible_rows) / visual_rows.max(1))
+                .max(28 * self.scale)
+                .min(track_height)
+        };
+        let travel = track_height.saturating_sub(thumb_height);
+        let thumb_top = track.y.max(0) as usize
+            + if maximum_scroll == 0 {
+                0
+            } else {
+                travel.saturating_mul(scroll_row.min(maximum_scroll)) / maximum_scroll
+            };
+        EditorScrollGeometry {
+            track,
+            thumb: rect(
+                track.x.max(0) as usize,
+                thumb_top,
+                track.width as usize,
+                thumb_height,
+            ),
+            maximum_scroll,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: desktop_editor_scroll_target
+    // DESC: Hit-tests the complete editor scrollbar with a forgiving pointer target.
+    // ------------------=
+    pub fn desktop_editor_scroll_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        geometry: EditorScrollGeometry,
+    ) -> Option<EditorScrollTarget> {
+        if geometry.maximum_scroll == 0 {
+            return None;
+        }
+        let point = self.point(normalized_x, normalized_y);
+        let hit_track = rect(
+            geometry
+                .track
+                .x
+                .saturating_sub((5 * self.scale) as i32)
+                .max(0) as usize,
+            geometry.track.y.max(0) as usize,
+            geometry.track.width as usize + 10 * self.scale,
+            geometry.track.height as usize,
+        );
+        if geometry.thumb.contains(point) {
+            Some(EditorScrollTarget::Thumb)
+        } else if hit_track.contains(point) {
+            Some(EditorScrollTarget::Page(point.y >= geometry.thumb.y))
+        } else {
+            None
+        }
+    }
+
+    // ------------------------=
+    // FUNC: desktop_editor_scroll_offset_for_thumb
+    // DESC: Converts editor thumb movement into a bounded visual-row offset.
+    // ------------------=
+    pub fn desktop_editor_scroll_offset_for_thumb(
+        self,
+        normalized_y: i32,
+        geometry: EditorScrollGeometry,
+        grab_offset: i32,
+    ) -> usize {
+        if geometry.maximum_scroll == 0 {
+            return 0;
+        }
+        let pointer_y = self.height as i32 * normalized_y.clamp(0, 1000) / 1000;
+        let travel = geometry
+            .track
+            .height
+            .saturating_sub(geometry.thumb.height)
+            .max(1);
+        let thumb_y = pointer_y
+            .saturating_sub(grab_offset)
+            .saturating_sub(geometry.track.y)
+            .clamp(0, travel as i32) as usize;
+        thumb_y.saturating_mul(geometry.maximum_scroll) / travel as usize
+    }
+
+    // ------------------------=
+    // FUNC: desktop_editor_dialog_target
+    // DESC: Resolves mouse actions inside the modal Save As and Open object sheets from shared window geometry.
+    // ------------------=
+    pub fn desktop_editor_dialog_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        maximized: bool,
+        open_picker: bool,
+        row_count: usize,
+    ) -> Option<EditorDialogTarget> {
+        let point = self.point(normalized_x, normalized_y);
+        let window = self.desktop_app_window_geometry(
+            window_x,
+            window_y,
+            window_width,
+            window_height,
+            maximized,
+        );
+        let sheet_width =
+            (420 * self.scale).min((window.content.width as usize).saturating_sub(40 * self.scale));
+        let sheet_height = if open_picker {
+            330 * self.scale
+        } else {
+            220 * self.scale
+        };
+        let left = window.content.x.max(0) as usize
+            + (window.content.width as usize).saturating_sub(sheet_width) / 2;
+        let top = window.content.y.max(0) as usize
+            + (window.content.height as usize).saturating_sub(sheet_height) / 2;
+        if open_picker {
+            for index in 0..row_count.min(6) {
+                if rect(
+                    left + 24 * self.scale,
+                    top + (62 + index * 34) * self.scale,
+                    sheet_width.saturating_sub(48 * self.scale),
+                    30 * self.scale,
+                )
+                .contains(point)
+                {
+                    return Some(EditorDialogTarget::Row(index));
+                }
+            }
+        } else if rect(
+            left + 24 * self.scale,
+            top + 72 * self.scale,
+            sheet_width.saturating_sub(48 * self.scale),
+            46 * self.scale,
+        )
+        .contains(point)
+        {
+            return Some(EditorDialogTarget::NameField);
+        }
+        let button_top = top + sheet_height.saturating_sub(58 * self.scale);
+        let button_width = (sheet_width.saturating_sub(60 * self.scale)) / 2;
+        if rect(
+            left + 24 * self.scale,
+            button_top,
+            button_width,
+            38 * self.scale,
+        )
+        .contains(point)
+        {
+            return Some(EditorDialogTarget::Cancel);
+        }
+        if rect(
+            left + 36 * self.scale + button_width,
+            button_top,
+            button_width,
+            38 * self.scale,
+        )
+        .contains(point)
+        {
+            return Some(EditorDialogTarget::Accept);
+        }
+        None
     }
 
     // ------------------------=
@@ -1040,7 +1267,7 @@ impl SystemLayout {
         let title_height = 54 * self.scale;
         let navigation_width = width * 28 / 100;
         let content_left = left + navigation_width + 34 * self.scale;
-        let scrollbar_width = 6 * self.scale;
+        let scrollbar_width = 10 * self.scale;
         let content_right_padding = 30 * self.scale;
         let content_width = width.saturating_sub(navigation_width + 68 * self.scale);
         let viewport_top = top + title_height + 98 * self.scale;
@@ -1050,7 +1277,7 @@ impl SystemLayout {
         let visible_logical_height = viewport_height / self.scale.max(1);
         let maximum_scroll = total_content_height.saturating_sub(visible_logical_height);
         let track = rect(
-            left + width.saturating_sub(18 * self.scale),
+            left + width.saturating_sub(22 * self.scale),
             viewport_top,
             scrollbar_width,
             viewport_height,
@@ -1221,10 +1448,20 @@ impl SystemLayout {
                 return Some(SettingsTarget::Section(index));
             }
         }
+        let scroll_hit = rect(
+            geometry
+                .scrollbar_track
+                .x
+                .saturating_sub((5 * self.scale) as i32)
+                .max(0) as usize,
+            geometry.scrollbar_track.y.max(0) as usize,
+            geometry.scrollbar_track.width as usize + 10 * self.scale,
+            geometry.scrollbar_track.height as usize,
+        );
         if geometry.maximum_scroll > 0 && geometry.scrollbar_thumb.contains(point) {
             return Some(SettingsTarget::ScrollThumb);
         }
-        if geometry.maximum_scroll > 0 && geometry.scrollbar_track.contains(point) {
+        if geometry.maximum_scroll > 0 && scroll_hit.contains(point) {
             return Some(SettingsTarget::ScrollPage(
                 point.y >= geometry.scrollbar_thumb.y,
             ));

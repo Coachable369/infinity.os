@@ -1,6 +1,84 @@
 //! Allocation-free document state for the installed native Text Editor.
 
 pub const DOCUMENT_CAPACITY: usize = 2048;
+pub const DOCUMENT_NAME_CAPACITY: usize = 47;
+pub const DOCUMENT_PATH_CAPACITY: usize = 95;
+pub const DOCUMENT_NAMESPACE: &[u8] = b"/personal/documents/";
+
+// ------------------------=
+// FUNC: document_path
+// DESC: Builds a bounded human-namespace reference for one native Text object without making the path its identity.
+// ------------------=
+pub fn document_path(name: &[u8], out: &mut [u8; DOCUMENT_PATH_CAPACITY]) -> Option<usize> {
+    if name.is_empty()
+        || name.len() > DOCUMENT_NAME_CAPACITY
+        || DOCUMENT_NAMESPACE.len().saturating_add(name.len()) > out.len()
+        || name
+            .iter()
+            .any(|byte| *byte == b'/' || !(32..=126).contains(byte))
+    {
+        return None;
+    }
+    let length = DOCUMENT_NAMESPACE.len() + name.len();
+    out[..DOCUMENT_NAMESPACE.len()].copy_from_slice(DOCUMENT_NAMESPACE);
+    out[DOCUMENT_NAMESPACE.len()..length].copy_from_slice(name);
+    Some(length)
+}
+
+// ------------------------=
+// FUNC: visual_line_count
+// DESC: Counts wrapped visual rows for a bounded document at the current editor column width.
+// ------------------=
+pub fn visual_line_count(content: &[u8], columns: usize) -> usize {
+    let columns = columns.max(1);
+    if content.is_empty() {
+        return 1;
+    }
+    let mut rows = 1usize;
+    let mut column = 0usize;
+    for byte in content {
+        if *byte == b'\n' {
+            rows = rows.saturating_add(1);
+            column = 0;
+        } else {
+            column += 1;
+            if column == columns {
+                rows = rows.saturating_add(1);
+                column = 0;
+            }
+        }
+    }
+    rows
+}
+
+// ------------------------=
+// FUNC: visual_line_start
+// DESC: Resolves a wrapped visual row to its first byte so rendering can scroll without copying document content.
+// ------------------=
+pub fn visual_line_start(content: &[u8], columns: usize, target_row: usize) -> usize {
+    if target_row == 0 {
+        return 0;
+    }
+    let columns = columns.max(1);
+    let mut row = 0usize;
+    let mut column = 0usize;
+    for (index, byte) in content.iter().enumerate() {
+        if *byte == b'\n' {
+            row += 1;
+            column = 0;
+        } else {
+            column += 1;
+            if column == columns {
+                row += 1;
+                column = 0;
+            }
+        }
+        if row == target_row {
+            return index + 1;
+        }
+    }
+    content.len()
+}
 
 #[derive(Clone, Copy)]
 pub struct TextDocument {

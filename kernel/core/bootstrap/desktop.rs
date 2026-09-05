@@ -2214,6 +2214,10 @@ impl super::DisplayDevice {
         maximized: bool,
         editor_saved: bool,
         content_only: bool,
+        editor_scroll_row: usize,
+        editor_dialog: u8,
+        editor_dialog_input: &[u8],
+        editor_dialog_focus: usize,
     ) {
         let scale = self.ui_scale().max(1);
         let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
@@ -2367,12 +2371,13 @@ impl super::DisplayDevice {
                     (b"New".as_slice(), 49usize),
                     (b"Open", 50),
                     (b"Save", 51),
+                    (b"Save As", 51),
                     (b"Delete", 52),
                 ]
                 .iter()
                 .enumerate()
                 {
-                    let button_left = toolbar_left + 10 * scale + index * 96 * scale;
+                    let button_left = toolbar_left + 8 * scale + index * 82 * scale;
                     let _ = self.themed_icon(
                         button_left + 13 * scale,
                         toolbar_top + 21 * scale,
@@ -2474,9 +2479,14 @@ impl super::DisplayDevice {
         let line_height = 24 * scale;
         if screen == 9 {
             let mut row = 0usize;
-            let mut start = 0usize;
+            let columns = content_width.saturating_sub(52 * scale) / (9 * scale).max(1);
+            let total_rows = crate::ui::text_editor::visual_line_count(input, columns.max(1));
+            let visible_rows = (content_height / line_height).max(1);
+            let maximum_scroll = total_rows.saturating_sub(visible_rows);
+            let scroll_row = editor_scroll_row.min(maximum_scroll);
+            let mut start =
+                crate::ui::text_editor::visual_line_start(input, columns.max(1), scroll_row);
             let mut caret_width = 0usize;
-            let columns = content_width.saturating_sub(40 * scale) / (9 * scale).max(1);
             while start < input.len() && row * line_height + 36 * scale < content_height {
                 let remaining = &input[start..];
                 let explicit_end = remaining
@@ -2506,7 +2516,55 @@ impl super::DisplayDevice {
             }
             let caret_x = content_left + 20 * scale + caret_width;
             let caret_y = content_top + 18 * scale + row * line_height;
-            self.fill_rect(caret_x, caret_y, 2 * scale, 18 * scale, 111, 220, 255);
+            if scroll_row == maximum_scroll {
+                self.fill_rect(caret_x, caret_y, 2 * scale, 18 * scale, 111, 220, 255);
+            }
+            let scroll = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .desktop_editor_scroll_geometry(
+                    window_x,
+                    window_y,
+                    window_width,
+                    window_height,
+                    maximized,
+                    total_rows,
+                    scroll_row,
+                );
+            if scroll.maximum_scroll > 0 {
+                self.fill_rounded_rect_alpha(
+                    scroll.track.x.max(0) as usize,
+                    scroll.track.y.max(0) as usize,
+                    scroll.track.width as usize,
+                    scroll.track.height as usize,
+                    4 * scale,
+                    9,
+                    27,
+                    42,
+                    210,
+                );
+                self.fill_rounded_rect_alpha(
+                    scroll.thumb.x.max(0) as usize,
+                    scroll.thumb.y.max(0) as usize,
+                    scroll.thumb.width as usize,
+                    scroll.thumb.height as usize,
+                    4 * scale,
+                    95,
+                    206,
+                    250,
+                    245,
+                );
+            }
+            if editor_dialog != 0 {
+                self.desktop_editor_dialog(
+                    geometry.content,
+                    editor_dialog == 2,
+                    editor_dialog_input,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    editor_dialog_focus,
+                    scale,
+                );
+            }
         } else {
             for row in 0..output_count.min(6) {
                 self.ui_text(
@@ -2541,6 +2599,147 @@ impl super::DisplayDevice {
             );
             self.ui_text(content_left + 74 * scale, prompt_y, input, 232, 242, 248, 1);
         }
+    }
+
+    // ------------------------=
+    // FUNC: desktop_editor_dialog
+    // DESC: Renders native Save As and Open object sheets above editor content with mouse and keyboard focus states.
+    // ------------------=
+    fn desktop_editor_dialog(
+        &mut self,
+        content: crate::ui::geometry::Rect,
+        open_picker: bool,
+        name_input: &[u8],
+        output_lines: &[[u8; 96]; 6],
+        output_lengths: &[usize; 6],
+        output_count: usize,
+        focus: usize,
+        scale: usize,
+    ) {
+        let sheet_width = (420 * scale).min((content.width as usize).saturating_sub(40 * scale));
+        let sheet_height = if open_picker {
+            330 * scale
+        } else {
+            220 * scale
+        };
+        let left =
+            content.x.max(0) as usize + (content.width as usize).saturating_sub(sheet_width) / 2;
+        let top =
+            content.y.max(0) as usize + (content.height as usize).saturating_sub(sheet_height) / 2;
+        self.fill_rounded_rect_alpha(
+            left.saturating_sub(8 * scale),
+            top + 8 * scale,
+            sheet_width.saturating_add(16 * scale),
+            sheet_height,
+            18 * scale,
+            0,
+            2,
+            8,
+            150,
+        );
+        self.glass_panel(left, top, sheet_width, sheet_height, true);
+        self.ui_text_strong(
+            left + 24 * scale,
+            top + 24 * scale,
+            if open_picker {
+                b"Open Document"
+            } else {
+                b"Save As"
+            },
+            234,
+            244,
+            250,
+            1,
+        );
+        if open_picker {
+            if output_count == 0 {
+                self.ui_text(
+                    left + 24 * scale,
+                    top + 70 * scale,
+                    b"No saved documents yet.",
+                    160,
+                    184,
+                    199,
+                    1,
+                );
+            }
+            for index in 0..output_count.min(6) {
+                let row_top = top + (62 + index * 34) * scale;
+                if index == focus {
+                    self.fill_rounded_rect_alpha(
+                        left + 24 * scale,
+                        row_top,
+                        sheet_width.saturating_sub(48 * scale),
+                        30 * scale,
+                        7 * scale,
+                        11,
+                        72,
+                        108,
+                        235,
+                    );
+                }
+                self.ui_text(
+                    left + 38 * scale,
+                    row_top + 8 * scale,
+                    &output_lines[index][..output_lengths[index].min(96)],
+                    218,
+                    234,
+                    244,
+                    1,
+                );
+            }
+        } else {
+            self.fill_rounded_rect_alpha(
+                left + 24 * scale,
+                top + 72 * scale,
+                sheet_width.saturating_sub(48 * scale),
+                46 * scale,
+                9 * scale,
+                2,
+                16,
+                29,
+                245,
+            );
+            self.outline_rounded_rect(
+                left + 24 * scale,
+                top + 72 * scale,
+                sheet_width.saturating_sub(48 * scale),
+                46 * scale,
+                9 * scale,
+                78,
+                195,
+                242,
+            );
+            self.ui_text(
+                left + 40 * scale,
+                top + 86 * scale,
+                name_input,
+                231,
+                241,
+                247,
+                1,
+            );
+        }
+        let button_top = top + sheet_height.saturating_sub(58 * scale);
+        let button_width = (sheet_width.saturating_sub(60 * scale)) / 2;
+        self.polished_button(
+            left + 24 * scale,
+            button_top,
+            button_width,
+            38 * scale,
+            b"CANCEL",
+            false,
+            false,
+        );
+        self.polished_button(
+            left + 36 * scale + button_width,
+            button_top,
+            button_width,
+            38 * scale,
+            if open_picker { b"OPEN" } else { b"SAVE" },
+            true,
+            false,
+        );
     }
 
     // ------------------------=
@@ -2583,6 +2782,10 @@ impl super::DisplayDevice {
         command_input: &[u8],
         editor_window: crate::ui::system_layout::DesktopAppWindowState,
         command_window: crate::ui::system_layout::DesktopAppWindowState,
+        editor_scroll_row: usize,
+        editor_dialog: u8,
+        editor_dialog_input: &[u8],
+        editor_dialog_focus: usize,
     ) {
         self.mark_dirty_rect(0, 0, self.width, self.height);
         if matches!(screen, 5 | 6) {
@@ -2645,6 +2848,10 @@ impl super::DisplayDevice {
                     command_window.maximized,
                     true,
                     false,
+                    editor_scroll_row,
+                    editor_dialog,
+                    editor_dialog_input,
+                    editor_dialog_focus,
                 );
             }
             if editor_window.visible && !active_editor {
@@ -2661,6 +2868,10 @@ impl super::DisplayDevice {
                     editor_window.maximized,
                     editor_saved,
                     false,
+                    editor_scroll_row,
+                    editor_dialog,
+                    editor_dialog_input,
+                    editor_dialog_focus,
                 );
             }
         }
@@ -2678,6 +2889,10 @@ impl super::DisplayDevice {
                 app_window_maximized,
                 editor_saved,
                 false,
+                editor_scroll_row,
+                editor_dialog,
+                editor_dialog_input,
+                editor_dialog_focus,
             );
         }
 
@@ -5578,6 +5793,10 @@ pub fn system_ui_present(
     command_input: &[u8],
     editor_window: crate::ui::system_layout::DesktopAppWindowState,
     command_window: crate::ui::system_layout::DesktopAppWindowState,
+    editor_scroll_row: usize,
+    editor_dialog: u8,
+    editor_dialog_input: &[u8],
+    editor_dialog_focus: usize,
 ) {
     unsafe {
         let slot = &raw mut CONSOLE;
@@ -5595,6 +5814,10 @@ pub fn system_ui_present(
                 command_input,
                 editor_window,
                 command_window,
+                editor_scroll_row,
+                editor_dialog,
+                editor_dialog_input,
+                editor_dialog_focus,
             );
             let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
             let focus_changed = console.last_system_focus != focus;
@@ -5813,6 +6036,10 @@ pub fn system_ui_present(
                     command_input,
                     editor_window,
                     command_window,
+                    editor_scroll_row,
+                    editor_dialog,
+                    editor_dialog_input,
+                    editor_dialog_focus,
                 );
                 console.display.clear_render_clip();
             } else if structural_change_without_window
@@ -5855,6 +6082,10 @@ pub fn system_ui_present(
                     command_input,
                     editor_window,
                     command_window,
+                    editor_scroll_row,
+                    editor_dialog,
+                    editor_dialog_input,
+                    editor_dialog_focus,
                 );
                 full_surface_redrawn = true;
             } else if crate::ui::redraw::onboarding_controls_require_repaint(
@@ -5896,6 +6127,10 @@ pub fn system_ui_present(
                     app_window_maximized,
                     editor_saved,
                     true,
+                    editor_scroll_row,
+                    editor_dialog,
+                    editor_dialog_input,
+                    editor_dialog_focus,
                 );
             } else if content_changed
                 && (matches!(screen, 5 | 6) || (screen == 1 && (1..=4).contains(&step)))
@@ -5940,6 +6175,10 @@ pub fn system_ui_present(
                     command_input,
                     editor_window,
                     command_window,
+                    editor_scroll_row,
+                    editor_dialog,
+                    editor_dialog_input,
+                    editor_dialog_focus,
                 );
                 full_surface_redrawn = true;
             }
@@ -6029,6 +6268,10 @@ pub fn system_ui_present(
     _command_input: &[u8],
     _editor_window: crate::ui::system_layout::DesktopAppWindowState,
     _command_window: crate::ui::system_layout::DesktopAppWindowState,
+    _editor_scroll_row: usize,
+    _editor_dialog: u8,
+    _editor_dialog_input: &[u8],
+    _editor_dialog_focus: usize,
 ) {
 }
 
@@ -6047,6 +6290,10 @@ fn system_content_hash(
     command_input: &[u8],
     editor_window: crate::ui::system_layout::DesktopAppWindowState,
     command_window: crate::ui::system_layout::DesktopAppWindowState,
+    editor_scroll_row: usize,
+    editor_dialog: u8,
+    editor_dialog_input: &[u8],
+    editor_dialog_focus: usize,
 ) -> u32 {
     let mut hash = if masked {
         0x51ed_271bu32
@@ -6070,6 +6317,13 @@ fn system_content_hash(
     }
     for window in [editor_window, command_window] {
         hash ^= (window.visible as u32) | ((window.maximized as u32) << 1);
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    hash ^= editor_scroll_row as u32;
+    hash = hash.wrapping_mul(0x0100_0193);
+    hash ^= (editor_dialog as u32) | ((editor_dialog_focus as u32) << 8);
+    for byte in editor_dialog_input {
+        hash ^= *byte as u32;
         hash = hash.wrapping_mul(0x0100_0193);
     }
     hash

@@ -24,11 +24,11 @@ use ui::skin::{
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
     resize_home_window, resize_native_window, window_transition_damage, AppLauncherTarget,
-    DesktopAppWindowTarget, DesktopTarget, OnboardingTarget, SettingsAccentTarget, SettingsTarget,
-    SettingsWindowState, SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK,
-    DESKTOP_FOREGROUND_WIDGETS,
+    DesktopAppWindowTarget, DesktopTarget, EditorDialogTarget, EditorScrollTarget,
+    OnboardingTarget, SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout,
+    SystemMenuTarget, DESKTOP_FOREGROUND_DOCK, DESKTOP_FOREGROUND_WIDGETS,
 };
-use ui::text_editor::TextDocument;
+use ui::text_editor::{document_path, visual_line_count, visual_line_start, TextDocument};
 use ui::trusted::{TrustedSurface, TrustedUiError};
 use ui::vector::{
     semantic_name, validate, IconId, VectorCommand, VectorError, VectorIcon, MAX_VECTOR_COMMANDS,
@@ -50,6 +50,7 @@ fn main() {
     app_launcher_behavior_test();
     desktop_foreground_damage_test();
     window_move_composition_test();
+    independent_window_state_test();
     scene_and_damage_test();
     surface_and_compositor_test();
     semantic_damage_storm_test();
@@ -59,6 +60,65 @@ fn main() {
     drag_path_test();
     service_foundation_test();
     println!("InfinityUI native runtime: PASS");
+}
+
+// ------------------------=
+// FUNC: independent_window_state_test
+// DESC: Verifies moving and resizing the focused window cannot mutate the retained geometry of another layered window.
+// ------------------=
+fn independent_window_state_test() {
+    let editor = ui::system_layout::DesktopAppWindowState::new(140, 170, 520, 560);
+    let command = ui::system_layout::DesktopAppWindowState::new(290, 250, 460, 440);
+    let moved_editor = ui::system_layout::DesktopAppWindowState {
+        x: 330,
+        y: 120,
+        width: 610,
+        height: 650,
+        ..editor
+    };
+    assert_eq!(
+        (command.x, command.y, command.width, command.height),
+        (290, 250, 460, 440)
+    );
+    assert_ne!(
+        (
+            moved_editor.x,
+            moved_editor.y,
+            moved_editor.width,
+            moved_editor.height
+        ),
+        (editor.x, editor.y, editor.width, editor.height)
+    );
+    let display = Rect {
+        x: 0,
+        y: 0,
+        width: 1920,
+        height: 1080,
+    };
+    let damage = window_transition_damage(
+        Rect {
+            x: editor.x,
+            y: editor.y,
+            width: editor.width as u32,
+            height: editor.height as u32,
+        },
+        Rect {
+            x: moved_editor.x,
+            y: moved_editor.y,
+            width: moved_editor.width as u32,
+            height: moved_editor.height as u32,
+        },
+        display,
+        16,
+    );
+    assert!(damage.contains(Point {
+        x: editor.x,
+        y: editor.y,
+    }));
+    assert!(damage.contains(Point {
+        x: moved_editor.x + moved_editor.width - 1,
+        y: moved_editor.y + moved_editor.height - 1,
+    }));
 }
 
 // ------------------------=
@@ -376,8 +436,12 @@ fn app_launcher_behavior_test() {
         app_window.toolbar.x + 240,
         app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
     );
+    let (save_as_x, _) = normalized(
+        app_window.toolbar.x + 300,
+        app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
+    );
     let (delete_x, _) = normalized(
-        app_window.toolbar.x + 340,
+        app_window.toolbar.x + 390,
         app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
     );
     assert_eq!(
@@ -391,6 +455,10 @@ fn app_launcher_behavior_test() {
     assert_eq!(
         layout.desktop_app_window_target(save_x, toolbar_y, 190, 160, 600, 620, false, true),
         DesktopAppWindowTarget::SaveDocument
+    );
+    assert_eq!(
+        layout.desktop_app_window_target(save_as_x, toolbar_y, 190, 160, 600, 620, false, true),
+        DesktopAppWindowTarget::SaveAsDocument
     );
     assert_eq!(
         layout.desktop_app_window_target(delete_x, toolbar_y, 190, 160, 600, 620, false, true),
@@ -413,6 +481,33 @@ fn app_launcher_behavior_test() {
     assert!(document.open(b"persisted\ntext"));
     assert_eq!(document.bytes(), b"persisted\ntext");
     assert!(document.is_saved());
+
+    let wrapped = b"abcdef\nghijkl";
+    assert_eq!(visual_line_count(wrapped, 3), 6);
+    assert_eq!(visual_line_start(wrapped, 3, 3), 7);
+    let scroll = layout.desktop_editor_scroll_geometry(190, 160, 600, 620, false, 80, 8);
+    assert!(scroll.maximum_scroll > 0);
+    let (scroll_x, scroll_y) = normalized(
+        scroll.thumb.x + scroll.thumb.width as i32 / 2,
+        scroll.thumb.y + scroll.thumb.height as i32 / 2,
+    );
+    assert_eq!(
+        layout.desktop_editor_scroll_target(scroll_x, scroll_y, scroll),
+        Some(EditorScrollTarget::Thumb)
+    );
+    assert_eq!(
+        layout.desktop_editor_scroll_offset_for_thumb(1000, scroll, 0),
+        scroll.maximum_scroll
+    );
+
+    let mut path = [0u8; ui::text_editor::DOCUMENT_PATH_CAPACITY];
+    let path_length = document_path(b"design-notes", &mut path).unwrap();
+    assert_eq!(path_length, ui::text_editor::DOCUMENT_NAMESPACE.len() + 12);
+    assert!(document_path(b"invalid/name", &mut path).is_none());
+    assert_eq!(
+        layout.desktop_editor_dialog_target(500, 500, 190, 160, 600, 620, false, false, 0),
+        Some(EditorDialogTarget::NameField)
+    );
 }
 
 // ------------------------=
@@ -1113,6 +1208,16 @@ fn installed_system_hit_geometry_test() {
     assert_eq!(
         square.settings_effect_slider_drag_value(1000, opacity_expanded, 4, 15),
         15
+    );
+    let blur_expanded = SettingsWindowState {
+        expanded_row: Some(5),
+        ..opacity_expanded
+    };
+    let blur_slider = square.settings_effect_slider_geometry(blur_expanded, 5, 4, 8);
+    let (blur_x, blur_y) = normalized_center(blur_slider.thumb);
+    assert_eq!(
+        square.settings_effect_slider_target(blur_x, blur_y, blur_expanded, 5, 8),
+        Some(4)
     );
     let standard_hidpi = SettingsWindowState {
         x: 160,
