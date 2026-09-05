@@ -4,6 +4,7 @@
 mod boot_info;
 mod bootstrap;
 mod console;
+mod crash;
 #[path = "../drivers/mod.rs"]
 mod drivers;
 mod intent;
@@ -115,6 +116,7 @@ pub unsafe extern "C" fn memcmp(left: *const c_void, right: *const c_void, count
 // DESC: Implements the infinity kernel entry operation.
 // ------------------=
 pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
+    crash::register_boot_info(info);
     let valid = !info.is_null()
         && unsafe {
             (*info).magic == BOOT_MAGIC
@@ -127,10 +129,10 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
         unsafe {
             output::initialize(false);
         }
-        unsafe {
-            output::write(b"InfinityOS\nERROR: invalid BootInfo\n");
-        }
-        output::idle();
+        crash::fatal(
+            crash::CrashReason::InvalidBootInformation,
+            b"BOOTINFO CONTRACT VALIDATION FAILED",
+        );
     }
 
     let info = unsafe { &*info };
@@ -140,12 +142,18 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     unsafe {
         output::write(b"InfinityOS\nKernel online.\n");
     }
+    crash::set_phase(crash::CrashPhase::Drivers);
     let devices = drivers::initialize(info);
+    crash::set_phase(crash::CrashPhase::Runtime);
     runtime::initialize();
+    crash::set_phase(crash::CrashPhase::Storage);
     storage::initialize_object_store();
     runtime::storage_initialized();
+    crash::set_phase(crash::CrashPhase::Services);
     runtime::announce_services();
+    crash::set_phase(crash::CrashPhase::UserInterface);
     console::initialize(system::SystemSnapshot::new(info, devices));
+    crash::set_phase(crash::CrashPhase::Input);
     drivers::input::run()
 }
 
@@ -191,9 +199,6 @@ const fn expected_architecture() -> u32 {
 // FUNC: panic
 // DESC: Implements the panic operation.
 // ------------------=
-fn panic(_info: &PanicInfo) -> ! {
-    unsafe {
-        output::write(b"InfinityOS\nERROR: kernel panic\n");
-    }
-    output::idle()
+fn panic(info: &PanicInfo) -> ! {
+    crash::fatal_panic(info)
 }

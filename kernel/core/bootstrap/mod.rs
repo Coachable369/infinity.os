@@ -3,6 +3,7 @@
 use crate::boot_info::BootInfo;
 
 mod bootstrap;
+mod crash;
 mod desktop;
 mod installer;
 mod primitives;
@@ -10,6 +11,7 @@ mod primitives;
 use self::primitives::*;
 
 pub use self::bootstrap::{animation_tick, console_present, note_pointer_activity, show_splash};
+pub use self::crash::show_fatal_crash;
 pub use self::desktop::system_ui_present;
 pub use self::installer::{installer_progress_update, installer_reboot_countdown};
 

@@ -30,6 +30,16 @@ pub unsafe fn write(bytes: &[u8]) {
 }
 
 // ------------------------=
+// FUNC: quiesce
+// DESC: Masks asynchronous exceptions before the processor enters an unrecoverable stop state.
+// ------------------=
+pub fn quiesce() {
+    unsafe {
+        asm!("msr daifset, #0xf", options(nomem, nostack));
+    }
+}
+
+// ------------------------=
 // FUNC: idle
 // DESC: Implements the idle operation.
 // ------------------=

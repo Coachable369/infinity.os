@@ -19,6 +19,7 @@ struct Container<'a> {
     icon_root: Option<&'a str>,
     wallpaper_root: &'a str,
     installer_root: &'a str,
+    crash_root: &'a str,
 }
 
 // ------------------------=
@@ -336,6 +337,21 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         );
         sequence += 1;
     }
+
+    for source in collect_files(Path::new("assets/crash")) {
+        let name = source
+            .file_name()
+            .and_then(OsStr::to_str)
+            .expect("crash asset name");
+        assert_packaged_bytes(
+            container,
+            &source,
+            &format!("{}/{name}", container.crash_root),
+            scratch,
+            sequence,
+        );
+        sequence += 1;
+    }
     assert!(
         sequence > 0,
         "each system container must expose packaged UI assets"
@@ -364,6 +380,7 @@ fn main() {
             icon_root: None,
             wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers",
             installer_root: "/EFI/INFINITY/INFINITYUI/Installer",
+            crash_root: "/EFI/INFINITY/INFINITYUI/Crash",
         },
         Container {
             kind: ContainerKind::Fat,
@@ -374,6 +391,7 @@ fn main() {
             icon_root: None,
             wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers",
             installer_root: "/EFI/INFINITY/INFINITYUI/Installer",
+            crash_root: "/EFI/INFINITY/INFINITYUI/Crash",
         },
         Container {
             kind: ContainerKind::Fat,
@@ -384,6 +402,7 @@ fn main() {
             icon_root: None,
             wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers",
             installer_root: "/EFI/INFINITY/INFINITYUI/Installer",
+            crash_root: "/EFI/INFINITY/INFINITYUI/Crash",
         },
         Container {
             kind: ContainerKind::Fat,
@@ -394,6 +413,7 @@ fn main() {
             icon_root: Some("/EFI/InfinityOS/InfinityUI/Icons"),
             wallpaper_root: "/EFI/InfinityOS/InfinityUI/Wallpapers",
             installer_root: "/EFI/InfinityOS/InfinityUI/Installer",
+            crash_root: "/EFI/InfinityOS/InfinityUI/Crash",
         },
         Container {
             kind: ContainerKind::Fat,
@@ -404,6 +424,7 @@ fn main() {
             icon_root: Some("/EFI/InfinityOS/InfinityUI/Icons"),
             wallpaper_root: "/EFI/InfinityOS/InfinityUI/Wallpapers",
             installer_root: "/EFI/InfinityOS/InfinityUI/Installer",
+            crash_root: "/EFI/InfinityOS/InfinityUI/Crash",
         },
         Container {
             kind: ContainerKind::Iso,
@@ -414,6 +435,7 @@ fn main() {
             icon_root: None,
             wallpaper_root: "/System/InfinityUI/Wallpapers",
             installer_root: "/System/InfinityUI/Installer",
+            crash_root: "/System/InfinityUI/Crash",
         },
     ];
 

@@ -46,6 +46,16 @@ pub unsafe fn write(bytes: &[u8]) {
 }
 
 // ------------------------=
+// FUNC: quiesce
+// DESC: Masks interrupts before the processor enters an unrecoverable stop state.
+// ------------------=
+pub fn quiesce() {
+    unsafe {
+        asm!("cli", options(nomem, nostack));
+    }
+}
+
+// ------------------------=
 // FUNC: idle
 // DESC: Implements the idle operation.
 // ------------------=
