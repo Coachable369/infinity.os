@@ -6,6 +6,7 @@ Reference target: the supplied full-screen InfinityOS launcher composition.
 
 - The launcher rises above the centered bottom dock and remains inside the desktop work area.
 - The dock and right-side widgets are persistent foreground glass. Window movement recomposes an intersected foreground layer after repairing its backing, so dragging can never punch holes through system chrome.
+- While the launcher is visible, the complete desktop beneath it receives a restrained backdrop blur. Closing the launcher rebuilds the unfiltered desktop, so the effect never persists into ordinary use.
 - At standard density the panel occupies roughly 78% of the framebuffer width and 72% of the usable height, with a 24 px corner radius.
 - The wallpaper remains visible through a deep navy glass surface; a soft blue edge and restrained top highlight establish depth without a black outline.
 - The search well is centered at the top, followed by a two-row application grid, pagination, a divider, and one row of category actions.
@@ -17,10 +18,12 @@ Reference target: the supplied full-screen InfinityOS launcher composition.
 - Categories: Home, Work, System, Utilities, and Create Folder use wide glass cards with themed icons and a persistent active indicator.
 - Dock launcher: an illuminated Infinity mark in the reserved ninth dock position; its active indicator is visible while the launcher is open.
 - Empty search: the grid is replaced by a centered no-results state while the query remains editable.
+- Window close: a native upper-right close control uses the same glass, stroke, and X language as other InfinityOS windows.
 
 ## Interaction contract
 
 - Dock Infinity click opens the launcher; a second click, Escape, or a click outside the panel closes it.
+- The upper-right close control dismisses the launcher and restores the sharp desktop.
 - Typing filters applications by name. Backspace edits. `Ctrl + K` and `/` focus search.
 - Arrow keys move selection through visible results. Tab traverses apps and categories. Enter launches the selected action.
 - App and category actions route into native shell modes and typed Settings/Home operations; unavailable decorative placeholders are forbidden.

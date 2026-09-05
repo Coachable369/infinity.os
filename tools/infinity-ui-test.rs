@@ -146,6 +146,20 @@ fn app_launcher_behavior_test() {
         layout.app_launcher_target(240, 960, 12),
         AppLauncherTarget::DockToggle
     );
+    let (close_x, close_y) = normalized(
+        geometry.close.x + geometry.close.width as i32 / 2,
+        geometry.close.y + geometry.close.height as i32 / 2,
+    );
+    assert_eq!(
+        layout.app_launcher_target(close_x, close_y, 12),
+        AppLauncherTarget::Close
+    );
+    let (close_margin_x, close_margin_y) =
+        normalized((geometry.close.x - 4).max(0), (geometry.close.y - 4).max(0));
+    assert_eq!(
+        layout.app_launcher_target(close_margin_x, close_margin_y, 12),
+        AppLauncherTarget::Close
+    );
 }
 
 // ------------------------=

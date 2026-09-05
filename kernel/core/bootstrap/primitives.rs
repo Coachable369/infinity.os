@@ -227,6 +227,47 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: blur_framebuffer
+    // DESC: Applies a bounded block blur to the current framebuffer without allocating a second surface.
+    // ------------------=
+    pub(super) fn blur_framebuffer(&mut self, block_size: usize) {
+        if self.width < 2 || self.height < 2 || block_size < 2 {
+            return;
+        }
+        let average = |first: u32, second: u32, third: u32, fourth: u32| -> u32 {
+            let channel = |shift: u32| {
+                (((first >> shift) & 255)
+                    + ((second >> shift) & 255)
+                    + ((third >> shift) & 255)
+                    + ((fourth >> shift) & 255))
+                    >> 2
+            };
+            channel(0) | channel(8) << 8 | channel(16) << 16 | channel(24) << 24
+        };
+        let block = block_size.min(8);
+        for top in (0..self.height).step_by(block) {
+            let bottom = (top + block - 1).min(self.height - 1);
+            for left in (0..self.width).step_by(block) {
+                let right = (left + block - 1).min(self.width - 1);
+                let color = average(
+                    unsafe { read_volatile(self.buffer.add(top * self.stride + left)) },
+                    unsafe { read_volatile(self.buffer.add(top * self.stride + right)) },
+                    unsafe { read_volatile(self.buffer.add(bottom * self.stride + left)) },
+                    unsafe { read_volatile(self.buffer.add(bottom * self.stride + right)) },
+                );
+                for y in top..=(top + block - 1).min(self.height - 1) {
+                    for x in left..=(left + block - 1).min(self.width - 1) {
+                        unsafe {
+                            write_volatile(self.buffer.add(y * self.stride + x), color);
+                        }
+                    }
+                }
+            }
+        }
+        self.mark_dirty_rect(0, 0, self.width, self.height);
+    }
+
+    // ------------------------=
     // FUNC: pixel
     // DESC: Writes one clipped RGB pixel using the firmware-provided channel format.
     // ------------------=

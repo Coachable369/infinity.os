@@ -33,6 +33,7 @@ pub enum AppLauncherTarget {
     Search,
     App(usize),
     Category(usize),
+    Close,
     DockToggle,
     Panel,
     Dismiss,
@@ -42,6 +43,7 @@ pub enum AppLauncherTarget {
 pub struct AppLauncherGeometry {
     pub panel: Rect,
     pub search: Rect,
+    pub close: Rect,
     pub grid_left: usize,
     pub grid_top: usize,
     pub grid_cell_width: usize,
@@ -523,6 +525,12 @@ impl SystemLayout {
         AppLauncherGeometry {
             panel,
             search,
+            close: rect(
+                panel_left + panel_width.saturating_sub(42 * self.scale),
+                panel_top + 12 * self.scale,
+                24 * self.scale,
+                24 * self.scale,
+            ),
             grid_left: panel_left + inset,
             grid_top,
             grid_cell_width: inner_width / 6,
@@ -556,6 +564,16 @@ impl SystemLayout {
         let geometry = self.app_launcher_geometry();
         if !geometry.panel.contains(point) {
             return AppLauncherTarget::Dismiss;
+        }
+        let close_padding = 8 * self.scale;
+        let close_target = rect(
+            (geometry.close.x.max(0) as usize).saturating_sub(close_padding),
+            (geometry.close.y.max(0) as usize).saturating_sub(close_padding),
+            geometry.close.width as usize + close_padding * 2,
+            geometry.close.height as usize + close_padding * 2,
+        );
+        if close_target.contains(point) {
+            return AppLauncherTarget::Close;
         }
         if geometry.search.contains(point) {
             return AppLauncherTarget::Search;

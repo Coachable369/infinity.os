@@ -2671,10 +2671,15 @@ impl ConsoleRuntime {
                         self.activate_launcher_focus();
                     }
                 }
-                AppLauncherTarget::DockToggle | AppLauncherTarget::Dismiss if clicked => {
+                AppLauncherTarget::Close
+                | AppLauncherTarget::DockToggle
+                | AppLauncherTarget::Dismiss
+                    if clicked =>
+                {
                     self.enter_desktop();
                 }
                 AppLauncherTarget::Panel
+                | AppLauncherTarget::Close
                 | AppLauncherTarget::DockToggle
                 | AppLauncherTarget::Dismiss => {}
             }
