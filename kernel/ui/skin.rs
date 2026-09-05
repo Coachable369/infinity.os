@@ -4,6 +4,8 @@ use super::geometry::{Insets, Scale};
 
 pub const SKIN_PACKAGE_VERSION: u16 = 1;
 pub const MAX_SKINS: usize = 4;
+pub const DEFAULT_BACKGROUND_OPACITY: u8 = 88;
+pub const DEFAULT_BACKGROUND_BLUR: u8 = 4;
 pub const SKIN_ID_BYTES: usize = 32;
 pub const SKIN_HEADER_BYTES: usize = 64;
 pub const DEFAULT_PRIMARY_RGB: u32 = 0x0d2238;
@@ -167,6 +169,8 @@ pub struct SkinRegistry {
     generation: u32,
     accent_override: Option<Color>,
     primary_override: Option<Color>,
+    background_opacity: u8,
+    background_blur: u8,
 }
 
 impl SkinRegistry {
@@ -187,6 +191,8 @@ impl SkinRegistry {
             generation: 1,
             accent_override: None,
             primary_override: None,
+            background_opacity: DEFAULT_BACKGROUND_OPACITY,
+            background_blur: DEFAULT_BACKGROUND_BLUR,
         }
     }
 
@@ -347,6 +353,41 @@ impl SkinRegistry {
         self.primary_override
             .unwrap_or(Color::rgb(DEFAULT_PRIMARY_RGB))
             .rgb24()
+    }
+
+    // ------------------------=
+    // FUNC: set_background_effects
+    // DESC: Applies machine-wide opacity and blur to semantic glass backgrounds without changing control tokens.
+    // ------------------=
+    pub fn set_background_effects(
+        &mut self,
+        opacity: u8,
+        blur: u8,
+        _scope: AppearanceScope,
+    ) -> Result<u32, SkinError> {
+        if !(40..=100).contains(&opacity) || (opacity - 40) % 4 != 0 || blur > 8 {
+            return Err(SkinError::InvalidAccent);
+        }
+        self.background_opacity = opacity;
+        self.background_blur = blur;
+        self.generation = self.generation.wrapping_add(1);
+        Ok(self.generation)
+    }
+
+    // ------------------------=
+    // FUNC: background_effects
+    // DESC: Returns active background-only opacity and blur values.
+    // ------------------=
+    pub const fn background_effects(&self) -> (u8, u8) {
+        (self.background_opacity, self.background_blur)
+    }
+
+    // ------------------------=
+    // FUNC: background_alpha
+    // DESC: Scales one semantic background fill alpha while leaving outlines and controls untouched.
+    // ------------------=
+    pub fn background_alpha(&self, base: u8) -> u8 {
+        (u16::from(base) * u16::from(self.background_opacity) / 100) as u8
     }
 
     // ------------------------=

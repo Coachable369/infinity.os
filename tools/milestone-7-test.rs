@@ -116,11 +116,19 @@ fn identity_lifecycle() {
         .update_user_accent(owner.id, owner.id, 0xd45cff)
         .unwrap();
     identities.update_primary(owner.id, 0x251f42).unwrap();
+    identities
+        .update_background_effects(owner.id, 64, 7)
+        .unwrap();
     let primary_round_trip = IdentitySystem::decode(&identities.encode()).unwrap();
     assert_eq!(primary_round_trip.primary_rgb(), 0x251f42);
+    assert_eq!(primary_round_trip.background_effects(), (64, 7));
     assert_eq!(
         identities.update_primary(StableId::zero(), 0x142f36),
         Err(IdentityError::AccessDenied)
+    );
+    assert_eq!(
+        identities.update_background_effects(owner.id, 39, 4),
+        Err(IdentityError::InvalidInput)
     );
     assert_eq!(
         identities.update_user_accent(second.id, owner.id, 0x33d69f),
@@ -147,7 +155,11 @@ fn identity_lifecycle() {
         b"nebula-high-contrast"
     );
     assert_eq!(restored.user_profile(owner.id).unwrap().icon_theme, 2);
-    assert_eq!(restored.user_profile(owner.id).unwrap().accent_rgb, 0xd45cff);
+    assert_eq!(restored.background_effects(), (64, 7));
+    assert_eq!(
+        restored.user_profile(owner.id).unwrap().accent_rgb,
+        0xd45cff
+    );
     assert_eq!(
         restored.ai_profile(owner.id).unwrap().provider_policy,
         AiProviderPolicy::AskBeforeRemote

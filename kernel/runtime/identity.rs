@@ -10,8 +10,11 @@ pub const PASSWORD_ITERATIONS: u32 = 4096;
 pub const USER_ICON_THEME_OFFSET: usize = 4056;
 pub const USER_ACCENT_OFFSET: usize = 4064;
 pub const SYSTEM_PRIMARY_OFFSET: usize = 4088;
+pub const SYSTEM_BACKGROUND_EFFECTS_OFFSET: usize = 4091;
 pub const DEFAULT_ACCENT_RGB: u32 = 0x4da3ff;
 pub const DEFAULT_PRIMARY_RGB: u32 = 0x0d2238;
+pub const DEFAULT_BACKGROUND_OPACITY: u8 = 88;
+pub const DEFAULT_BACKGROUND_BLUR: u8 = 4;
 const LEGACY_DEFAULT_ACCENT_RGB: u32 = 0x20bfff;
 
 pub const SESSION_PERSONAL_READ: u64 = 1 << 0;
@@ -279,6 +282,8 @@ pub struct IdentitySystem {
     next_id: u64,
     generation: u64,
     primary_rgb: u32,
+    background_opacity: u8,
+    background_blur: u8,
 }
 
 impl IdentitySystem {
@@ -300,6 +305,8 @@ impl IdentitySystem {
             next_id: 1,
             generation: 0,
             primary_rgb: DEFAULT_PRIMARY_RGB,
+            background_opacity: DEFAULT_BACKGROUND_OPACITY,
+            background_blur: DEFAULT_BACKGROUND_BLUR,
         }
     }
 
@@ -408,6 +415,41 @@ impl IdentitySystem {
         self.primary_rgb = primary_rgb;
         self.commit();
         Ok(primary_rgb)
+    }
+
+    // ------------------------=
+    // FUNC: background_effects
+    // DESC: Returns the durable machine-wide background opacity percentage and blur radius.
+    // ------------------=
+    pub const fn background_effects(&self) -> (u8, u8) {
+        (self.background_opacity, self.background_blur)
+    }
+
+    // ------------------------=
+    // FUNC: update_background_effects
+    // DESC: Persists validated background-only glass opacity and blur values for the active machine.
+    // ------------------=
+    pub fn update_background_effects(
+        &mut self,
+        actor: StableId,
+        opacity: u8,
+        blur: u8,
+    ) -> Result<(u8, u8), IdentityError> {
+        if !self
+            .users
+            .iter()
+            .flatten()
+            .any(|user| user.id == actor && user.state == UserState::Active)
+        {
+            return Err(IdentityError::AccessDenied);
+        }
+        if !(40..=100).contains(&opacity) || (opacity - 40) % 4 != 0 || blur > 8 {
+            return Err(IdentityError::InvalidInput);
+        }
+        self.background_opacity = opacity;
+        self.background_blur = blur;
+        self.commit();
+        Ok((opacity, blur))
     }
 
     // ------------------------=
@@ -1094,6 +1136,8 @@ impl IdentitySystem {
         out[SYSTEM_PRIMARY_OFFSET] = ((self.primary_rgb >> 16) & 0xff) as u8;
         out[SYSTEM_PRIMARY_OFFSET + 1] = ((self.primary_rgb >> 8) & 0xff) as u8;
         out[SYSTEM_PRIMARY_OFFSET + 2] = (self.primary_rgb & 0xff) as u8;
+        out[SYSTEM_BACKGROUND_EFFECTS_OFFSET] =
+            encode_background_effects(self.background_opacity, self.background_blur);
         let checksum = checksum32(&out[..IDENTITY_STATE_BYTES - 4]);
         put32(&mut out, IDENTITY_STATE_BYTES - 4, checksum);
         out
@@ -1125,6 +1169,9 @@ impl IdentitySystem {
         } else {
             stored_primary
         };
+        let (opacity, blur) = decode_background_effects(bytes[SYSTEM_BACKGROUND_EFFECTS_OFFSET]);
+        state.background_opacity = opacity;
+        state.background_blur = blur;
         if bytes[32] == 1 {
             state.machine = Some(MachineIdentity {
                 id: read_id(bytes, 40),
@@ -1402,6 +1449,27 @@ fn mix64(mut value: u64) -> u64 {
     value ^= value >> 27;
     value = value.wrapping_mul(0x94d049bb133111eb);
     value ^ (value >> 31)
+}
+
+// ------------------------=
+// FUNC: encode_background_effects
+// DESC: Packs opacity and blur into the final backward-compatible preference byte.
+// ------------------=
+fn encode_background_effects(opacity: u8, blur: u8) -> u8 {
+    let opacity_level = opacity.saturating_sub(40) / 4;
+    (opacity_level << 4) | blur.min(8).saturating_add(1)
+}
+
+// ------------------------=
+// FUNC: decode_background_effects
+// DESC: Restores packed glass effects while mapping legacy zero bytes to the frosted defaults.
+// ------------------=
+fn decode_background_effects(packed: u8) -> (u8, u8) {
+    if packed == 0 {
+        return (DEFAULT_BACKGROUND_OPACITY, DEFAULT_BACKGROUND_BLUR);
+    }
+    let opacity = 40 + (packed >> 4).min(15) * 4;
+    (opacity, (packed & 0x0f).saturating_sub(1).min(8))
 }
 
 // ------------------------=

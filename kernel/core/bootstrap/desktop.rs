@@ -83,6 +83,26 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: active_background_effects
+    // DESC: Returns the active background-only opacity percentage and blur radius.
+    // ------------------=
+    pub(super) fn active_background_effects(&self) -> (u8, u8) {
+        crate::runtime::with_runtime(|runtime| runtime.ui.skins.background_effects()).unwrap_or((
+            crate::runtime::identity::DEFAULT_BACKGROUND_OPACITY,
+            crate::runtime::identity::DEFAULT_BACKGROUND_BLUR,
+        ))
+    }
+
+    // ------------------------=
+    // FUNC: active_background_alpha
+    // DESC: Scales one panel fill alpha without changing outlines, controls, text, or focus treatments.
+    // ------------------=
+    pub(super) fn active_background_alpha(&self, base: u8) -> u8 {
+        crate::runtime::with_runtime(|runtime| runtime.ui.skins.background_alpha(base))
+            .unwrap_or(base)
+    }
+
+    // ------------------------=
     // FUNC: active_icon_theme
     // DESC: Reads the current user-scoped icon family for surface-independent semantic rendering.
     // ------------------=
@@ -1116,7 +1136,10 @@ impl super::DisplayDevice {
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         let (selection_r, selection_g, selection_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
-        self.fill_rect_alpha(0, 0, self.width, height, 0, 2, 7, 176);
+        let backdrop_alpha = self.active_background_alpha(176);
+        let rail_alpha = self.active_background_alpha(238);
+        let highlight_alpha = self.active_background_alpha(88);
+        self.fill_rect_alpha(0, 0, self.width, height, 0, 2, 7, backdrop_alpha);
         self.fill_rounded_rect_alpha(
             rail_inset,
             rail_inset,
@@ -1126,7 +1149,7 @@ impl super::DisplayDevice {
             top_r,
             top_g,
             top_b,
-            238,
+            rail_alpha,
         );
         self.fill_rounded_rect_alpha(
             rail_inset,
@@ -1137,7 +1160,7 @@ impl super::DisplayDevice {
             18,
             39,
             59,
-            88,
+            highlight_alpha,
         );
         self.fill_rounded_rect_alpha(
             self.width / 3,
@@ -3229,6 +3252,8 @@ impl super::DisplayDevice {
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         let (primary_r, primary_g, primary_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Widget);
+        let (background_opacity, _) = self.active_background_effects();
+        let panel_alpha = |base: u8| (u16::from(base) * u16::from(background_opacity) / 100) as u8;
         self.glass_panel(left, top, width, height, true);
         self.fill_rect_alpha(
             left,
@@ -3238,7 +3263,7 @@ impl super::DisplayDevice {
             header_r,
             header_g,
             header_b,
-            222,
+            panel_alpha(222),
         );
         let title_center_y = top + title_height / 2;
         self.small_infinity_mark(left + 25 * scale, title_center_y, 31 * scale);
@@ -3285,7 +3310,7 @@ impl super::DisplayDevice {
             primary_r / 2,
             primary_g / 2,
             primary_b / 2,
-            214,
+            panel_alpha(214),
         );
         self.fill_rect_alpha(
             left + nav_width,
@@ -3361,7 +3386,20 @@ impl super::DisplayDevice {
         );
         let icon_theme = crate::ui::icon_theme::IconThemeId::from_u8(self.active_icon_theme())
             .unwrap_or(crate::ui::icon_theme::IconThemeId::CrystalBlueGlass);
-        let rows: [(&[u8], &[u8]); 6] = match focus.min(7) {
+        let (opacity, blur) = self.active_background_effects();
+        let mut opacity_value = [b'0'; 4];
+        opacity_value[3] = b'%';
+        let opacity_text: &[u8] = if opacity == 100 {
+            opacity_value[..3].copy_from_slice(b"100");
+            &opacity_value
+        } else {
+            opacity_value[0] = b'0' + opacity / 10;
+            opacity_value[1] = b'0' + opacity % 10;
+            opacity_value[2] = b'%';
+            &opacity_value[..3]
+        };
+        let blur_value = [b'0' + blur.min(8), b' ', b'p', b'x'];
+        let rows: [(&[u8], &[u8]); 8] = match focus.min(7) {
             0 => [
                 (b"Machine Name", input),
                 (b"Language", b"English (US)"),
@@ -3369,12 +3407,16 @@ impl super::DisplayDevice {
                 (b"System Generation", b"Active"),
                 (b"Updates", b"Generation based"),
                 (b"", b""),
+                (b"", b""),
+                (b"", b""),
             ],
             1 => [
                 (b"Skin", b"InfinityOS Default Dark"),
                 (b"Icon Set", icon_theme.name()),
                 (b"Primary", b"Custom color"),
                 (b"Secondary", b"Custom color"),
+                (b"Opacity", opacity_text),
+                (b"Blur", &blur_value),
                 (b"UI Scale", b"Automatic"),
                 (b"Wallpaper", b"Cosmic Horizon"),
             ],
@@ -3385,6 +3427,8 @@ impl super::DisplayDevice {
                 (b"Personal Space", b"Private"),
                 (b"Profile", b"Persistent"),
                 (b"", b""),
+                (b"", b""),
+                (b"", b""),
             ],
             3 => [
                 (b"AI Provider", b"Local only"),
@@ -3392,6 +3436,8 @@ impl super::DisplayDevice {
                 (b"Voice", b"Off"),
                 (b"Activation", b"Disabled"),
                 (b"Model Access", b"Capability gated"),
+                (b"", b""),
+                (b"", b""),
                 (b"", b""),
             ],
             4 => [
@@ -3401,6 +3447,8 @@ impl super::DisplayDevice {
                 (b"Session Auth", b"Verified"),
                 (b"Trusted UI", b"Active"),
                 (b"", b""),
+                (b"", b""),
+                (b"", b""),
             ],
             5 => [
                 (b"Display", b"Ready"),
@@ -3408,6 +3456,8 @@ impl super::DisplayDevice {
                 (b"Pointer", b"Ready"),
                 (b"Audio Input", b"Unavailable"),
                 (b"Network", b"Ready"),
+                (b"", b""),
+                (b"", b""),
                 (b"", b""),
             ],
             6 => [
@@ -3417,6 +3467,8 @@ impl super::DisplayDevice {
                 (b"Recovery Space", b"Ready"),
                 (b"External Drives", b"Discoverable"),
                 (b"", b""),
+                (b"", b""),
+                (b"", b""),
             ],
             _ => [
                 (b"InfinityOS", b"Development"),
@@ -3425,11 +3477,13 @@ impl super::DisplayDevice {
                 (b"Identity Format", b"Version 1"),
                 (b"Icon Families", b"3 complete sets"),
                 (b"", b""),
+                (b"", b""),
+                (b"", b""),
             ],
         };
         for (index, (label, value)) in rows
             .iter()
-            .take(settings_window.row_count.clamp(1, 6))
+            .take(settings_window.row_count.clamp(1, 8))
             .enumerate()
         {
             let row = layout.settings_row_geometry(settings_window, index);
@@ -3449,7 +3503,7 @@ impl super::DisplayDevice {
                     primary_r / 2,
                     primary_g.saturating_mul(3) / 4,
                     primary_b.saturating_mul(3) / 4,
-                    218,
+                    panel_alpha(218),
                 );
                 self.outline_rounded_rect(
                     summary_left,
@@ -3535,7 +3589,7 @@ impl super::DisplayDevice {
                     primary_r / 2,
                     primary_g.saturating_mul(2) / 3,
                     primary_b.saturating_mul(2) / 3,
-                    232,
+                    panel_alpha(232),
                 );
                 self.outline_rounded_rect(
                     detail_left,
@@ -3574,12 +3628,14 @@ impl super::DisplayDevice {
                     self.settings_color_picker(settings_window, scale, true);
                 } else if focus == 1 && index == 3 {
                     self.settings_color_picker(settings_window, scale, false);
+                } else if focus == 1 && matches!(index, 4 | 5) {
+                    self.settings_effect_slider(settings_window, scale, index);
                 } else {
                     let description: &[u8] = match (focus, index) {
                         (0, 0) => b"Rename this machine through the durable identity service.",
                         (1, 0) => b"Switch between installed, verified InfinityUI skins.",
-                        (1, 4) => b"Automatic scale follows the active display density.",
-                        (1, 5) => b"Cosmic Horizon is the active packaged desktop wallpaper.",
+                        (1, 6) => b"Automatic scale follows the active display density.",
+                        (1, 7) => b"Cosmic Horizon is the active packaged desktop wallpaper.",
                         (3, 0) => {
                             b"Choose whether the local provider is strictly required or preferred."
                         }
@@ -3652,6 +3708,71 @@ impl super::DisplayDevice {
                 );
             }
         }
+    }
+
+    // ------------------------=
+    // FUNC: settings_effect_slider
+    // DESC: Renders one full-strength slider over a background-only opacity or blur preview value.
+    // ------------------=
+    fn settings_effect_slider(
+        &mut self,
+        settings_window: crate::ui::system_layout::SettingsWindowState,
+        scale: usize,
+        index: usize,
+    ) {
+        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let (opacity, blur) = self.active_background_effects();
+        let (value, maximum) = if index == 4 {
+            (opacity.saturating_sub(40) / 4, 15)
+        } else {
+            (blur, 8)
+        };
+        let geometry =
+            layout.settings_effect_slider_geometry(settings_window, index, value, maximum);
+        let (outline_r, outline_g, outline_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        self.fill_rounded_rect_alpha(
+            geometry.track.x.max(0) as usize,
+            geometry.track.y.max(0) as usize,
+            geometry.track.width as usize,
+            geometry.track.height as usize,
+            4 * scale,
+            214,
+            228,
+            241,
+            94,
+        );
+        self.outline_rounded_rect(
+            geometry.track.x.max(0) as usize,
+            geometry.track.y.max(0) as usize,
+            geometry.track.width as usize,
+            geometry.track.height as usize,
+            4 * scale,
+            outline_r,
+            outline_g,
+            outline_b,
+        );
+        self.fill_rounded_rect_alpha(
+            geometry.thumb.x.max(0) as usize,
+            geometry.thumb.y.max(0) as usize,
+            geometry.thumb.width as usize,
+            geometry.thumb.height as usize,
+            10 * scale,
+            239,
+            247,
+            255,
+            255,
+        );
+        self.outline_rounded_rect(
+            geometry.thumb.x.max(0) as usize,
+            geometry.thumb.y.max(0) as usize,
+            geometry.thumb.width as usize,
+            geometry.thumb.height as usize,
+            10 * scale,
+            outline_r,
+            outline_g,
+            outline_b,
+        );
     }
 
     // ------------------------=
@@ -3828,6 +3949,10 @@ impl super::DisplayDevice {
         outline: (u8, u8, u8),
     ) {
         let radius = (width.min(height) / 12).clamp(8, 18);
+        let (opacity, blur) = self.active_background_effects();
+        if blur >= 2 && opacity < 100 {
+            self.blur_framebuffer_region(left, top, width, height, blur as usize);
+        }
         if self.skin_visual_mode() == 1 {
             self.fill_rounded_rect_alpha(
                 left,
@@ -3838,13 +3963,23 @@ impl super::DisplayDevice {
                 248,
                 251,
                 255,
-                if strong { 244 } else { 226 },
+                ((if strong { 244u16 } else { 226u16 }) * u16::from(opacity) / 100) as u8,
             );
             self.outline_rounded_rect(left, top, width, height, radius, 122, 145, 166);
             return;
         }
         if self.skin_visual_mode() == 2 {
-            self.fill_rounded_rect_alpha(left, top, width, height, radius, 8, 8, 8, 255);
+            self.fill_rounded_rect_alpha(
+                left,
+                top,
+                width,
+                height,
+                radius,
+                8,
+                8,
+                8,
+                (255u16 * u16::from(opacity) / 100) as u8,
+            );
             self.outline_rounded_rect(left, top, width, height, radius, 255, 255, 255);
             return;
         }
@@ -3875,7 +4010,7 @@ impl super::DisplayDevice {
             panel.0,
             panel.1,
             panel.2,
-            if strong { 232 } else { 204 },
+            ((if strong { 232u16 } else { 204u16 }) * u16::from(opacity) / 100) as u8,
         );
         self.outline_rounded_rect(
             left, top, width, height, radius, outline.0, outline.1, outline.2,
@@ -5410,6 +5545,7 @@ impl super::DisplayDevice {
         self.glass_panel(dock_left, dock_top, dock_width, dock_height, false);
         let (dock_r, dock_g, dock_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Dock);
+        let dock_alpha = self.active_background_alpha(104);
         self.fill_rounded_rect_alpha(
             dock_left + 2 * scale,
             dock_top + 2 * scale,
@@ -5419,7 +5555,7 @@ impl super::DisplayDevice {
             dock_r,
             dock_g,
             dock_b,
-            104,
+            dock_alpha,
         );
         let entries = &crate::ui::app_launcher::DESKTOP_DOCK_ENTRIES;
         let icon_gap = dock_width / entries.len();
@@ -5636,6 +5772,9 @@ pub fn system_ui_present(
                 console.last_primary_rgb,
                 primary_rgb,
             );
+            let (background_opacity, background_blur) = console.display.active_background_effects();
+            let background_effects_changed = console.last_background_opacity != background_opacity
+                || console.last_background_blur != background_blur;
             let bounded_menu_change =
                 crate::ui::redraw::desktop_menu_change_requires_bounded_redraw(
                     console.last_system_screen,
@@ -5656,6 +5795,7 @@ pub fn system_ui_present(
                 || icon_theme_changed
                 || accent_changed
                 || primary_changed
+                || background_effects_changed
                 || console.last_system_validation_error != validation_error
                 || console.last_home_window_visible != window_visible
                 || console.last_home_window_maximized != window_maximized
@@ -5878,6 +6018,8 @@ pub fn system_ui_present(
             console.last_icon_theme = icon_theme;
             console.last_accent_rgb = accent_rgb;
             console.last_primary_rgb = primary_rgb;
+            console.last_background_opacity = background_opacity;
+            console.last_background_blur = background_blur;
             console.last_system_content = content;
             console.last_system_validation_error = validation_error;
             console.last_home_window_x = window_x;

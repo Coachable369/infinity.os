@@ -231,7 +231,29 @@ impl super::DisplayDevice {
     // DESC: Applies a bounded block blur to the current framebuffer without allocating a second surface.
     // ------------------=
     pub(super) fn blur_framebuffer(&mut self, block_size: usize) {
-        if self.width < 2 || self.height < 2 || block_size < 2 {
+        self.blur_framebuffer_region(0, 0, self.width, self.height, block_size);
+    }
+
+    // ------------------------=
+    // FUNC: blur_framebuffer_region
+    // DESC: Applies allocation-free block blur only beneath one semantic background rectangle.
+    // ------------------=
+    pub(super) fn blur_framebuffer_region(
+        &mut self,
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+        block_size: usize,
+    ) {
+        let left_bound = left.min(self.width);
+        let top_bound = top.min(self.height);
+        let right_bound = left.saturating_add(width).min(self.width);
+        let bottom_bound = top.saturating_add(height).min(self.height);
+        if right_bound.saturating_sub(left_bound) < 2
+            || bottom_bound.saturating_sub(top_bound) < 2
+            || block_size < 2
+        {
             return;
         }
         let average = |first: u32, second: u32, third: u32, fourth: u32| -> u32 {
@@ -245,18 +267,18 @@ impl super::DisplayDevice {
             channel(0) | channel(8) << 8 | channel(16) << 16 | channel(24) << 24
         };
         let block = block_size.min(8);
-        for top in (0..self.height).step_by(block) {
-            let bottom = (top + block - 1).min(self.height - 1);
-            for left in (0..self.width).step_by(block) {
-                let right = (left + block - 1).min(self.width - 1);
+        for block_top in (top_bound..bottom_bound).step_by(block) {
+            let bottom = (block_top + block - 1).min(bottom_bound - 1);
+            for block_left in (left_bound..right_bound).step_by(block) {
+                let right = (block_left + block - 1).min(right_bound - 1);
                 let color = average(
-                    unsafe { read_volatile(self.buffer.add(top * self.stride + left)) },
-                    unsafe { read_volatile(self.buffer.add(top * self.stride + right)) },
-                    unsafe { read_volatile(self.buffer.add(bottom * self.stride + left)) },
+                    unsafe { read_volatile(self.buffer.add(block_top * self.stride + block_left)) },
+                    unsafe { read_volatile(self.buffer.add(block_top * self.stride + right)) },
+                    unsafe { read_volatile(self.buffer.add(bottom * self.stride + block_left)) },
                     unsafe { read_volatile(self.buffer.add(bottom * self.stride + right)) },
                 );
-                for y in top..=(top + block - 1).min(self.height - 1) {
-                    for x in left..=(left + block - 1).min(self.width - 1) {
+                for y in block_top..=(block_top + block - 1).min(bottom_bound - 1) {
+                    for x in block_left..=(block_left + block - 1).min(right_bound - 1) {
                         unsafe {
                             write_volatile(self.buffer.add(y * self.stride + x), color);
                         }
@@ -264,7 +286,7 @@ impl super::DisplayDevice {
                 }
             }
         }
-        self.mark_dirty_rect(0, 0, self.width, self.height);
+        self.mark_dirty_rect(left, top, right_bound - left, bottom_bound - top);
     }
 
     // ------------------------=

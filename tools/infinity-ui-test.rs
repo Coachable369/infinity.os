@@ -866,7 +866,7 @@ fn installed_system_hit_geometry_test() {
         maximized: false,
         expanded_row: None,
         scroll_offset: 0,
-        row_count: 6,
+        row_count: 8,
     };
     let settings_geometry = square.settings_window_geometry(settings);
     let normalized_center = |rect: Rect| {
@@ -952,6 +952,26 @@ fn installed_system_hit_geometry_test() {
         square.settings_accent_target(accent_x, accent_y, accent_expanded),
         Some(SettingsAccentTarget::Spectrum { .. })
     ));
+    let opacity_expanded = SettingsWindowState {
+        expanded_row: Some(4),
+        scroll_offset: 0,
+        height: 620,
+        ..settings
+    };
+    let slider = square.settings_effect_slider_geometry(opacity_expanded, 4, 8, 15);
+    let (slider_x, slider_y) = normalized_center(slider.thumb);
+    assert_eq!(
+        square.settings_effect_slider_target(slider_x, slider_y, opacity_expanded, 4, 15),
+        Some(8)
+    );
+    assert_eq!(
+        square.settings_effect_slider_drag_value(0, opacity_expanded, 4, 15),
+        0
+    );
+    assert_eq!(
+        square.settings_effect_slider_drag_value(1000, opacity_expanded, 4, 15),
+        15
+    );
     let standard_hidpi = SettingsWindowState {
         x: 160,
         y: 210,
@@ -1157,6 +1177,21 @@ fn skin_test() {
     for index in [0usize, 5, 6] {
         assert_eq!(accent_only[index], primary_after[index]);
     }
+    let outline_before_effects = registry.accent_surface(AccentSurface::WindowOutline);
+    registry
+        .set_background_effects(64, 7, AppearanceScope::Machine)
+        .unwrap();
+    assert_eq!(registry.background_effects(), (64, 7));
+    assert_eq!(registry.background_alpha(200), 128);
+    assert_eq!(
+        registry.accent_surface(AccentSurface::WindowOutline),
+        outline_before_effects,
+        "background effects must not alter outline/control color tokens"
+    );
+    assert_eq!(
+        registry.set_background_effects(39, 4, AppearanceScope::Machine),
+        Err(SkinError::InvalidAccent)
+    );
     assert_eq!(hsv_to_rgb(0, 255, 255), 0xff0000);
     assert_eq!(hsv_to_rgb(120, 255, 255), 0x00ff00);
     assert_eq!(hsv_to_rgb(240, 255, 255), 0x0000ff);

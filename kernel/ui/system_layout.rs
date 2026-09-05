@@ -166,6 +166,12 @@ pub struct SettingsRowGeometry {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SettingsSliderGeometry {
+    pub track: Rect,
+    pub thumb: Rect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SettingsAccentTarget {
     Spectrum { saturation: u8, value: u8 },
     Hue(u16),
@@ -1025,7 +1031,7 @@ impl SystemLayout {
         let viewport_top = top + title_height + 98 * self.scale;
         let viewport_height = height.saturating_sub(title_height + 116 * self.scale);
         let detail_height = state.expanded_row.map(settings_detail_height).unwrap_or(0);
-        let total_content_height = state.row_count.clamp(1, 6) * 58 + detail_height;
+        let total_content_height = state.row_count.clamp(1, 8) * 58 + detail_height;
         let visible_logical_height = viewport_height / self.scale.max(1);
         let maximum_scroll = total_content_height.saturating_sub(visible_logical_height);
         let track = rect(
@@ -1211,7 +1217,7 @@ impl SystemLayout {
         if !geometry.viewport.contains(point) {
             return None;
         }
-        for index in 0..state.row_count.clamp(1, 6) {
+        for index in 0..state.row_count.clamp(1, 8) {
             let row = self.settings_row_geometry(state, index);
             if row.summary.contains(point) {
                 return Some(SettingsTarget::ContentRow(index));
@@ -1367,6 +1373,90 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: settings_effect_slider_geometry
+    // DESC: Returns the shared inline track and thumb geometry for an expanded opacity or blur row.
+    // ------------------=
+    pub fn settings_effect_slider_geometry(
+        self,
+        state: SettingsWindowState,
+        index: usize,
+        value: u8,
+        maximum: u8,
+    ) -> SettingsSliderGeometry {
+        let row = self.settings_row_geometry(state, index);
+        let track = rect(
+            row.detail.x.max(0) as usize + 22 * self.scale,
+            row.detail.y.max(0) as usize + 35 * self.scale,
+            (row.detail.width as usize).saturating_sub(44 * self.scale),
+            8 * self.scale,
+        );
+        let thumb_size = 20 * self.scale;
+        let travel = (track.width as usize).saturating_sub(thumb_size);
+        let thumb_left = track.x.max(0) as usize
+            + travel.saturating_mul(value.min(maximum) as usize) / maximum.max(1) as usize;
+        SettingsSliderGeometry {
+            track,
+            thumb: rect(
+                thumb_left,
+                track.y.saturating_sub((6 * self.scale) as i32).max(0) as usize,
+                thumb_size,
+                thumb_size,
+            ),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: settings_effect_slider_target
+    // DESC: Hit-tests an opacity or blur track and returns its bounded typed value.
+    // ------------------=
+    pub fn settings_effect_slider_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+        index: usize,
+        maximum: u8,
+    ) -> Option<u8> {
+        if state.expanded_row != Some(index) || !matches!(index, 4 | 5) {
+            return None;
+        }
+        let point = self.point(normalized_x, normalized_y);
+        let geometry = self.settings_effect_slider_geometry(state, index, 0, maximum);
+        let row = self.settings_row_geometry(state, index);
+        if !row.detail.contains(point)
+            || point.y < geometry.thumb.y
+            || point.y >= geometry.thumb.bottom()
+        {
+            return None;
+        }
+        Some(self.settings_effect_slider_drag_value(normalized_x, state, index, maximum))
+    }
+
+    // ------------------------=
+    // FUNC: settings_effect_slider_drag_value
+    // DESC: Converts captured horizontal pointer motion into a bounded typed slider value.
+    // ------------------=
+    pub fn settings_effect_slider_drag_value(
+        self,
+        normalized_x: i32,
+        state: SettingsWindowState,
+        index: usize,
+        maximum: u8,
+    ) -> u8 {
+        let point = self.point(normalized_x, 0);
+        let geometry = self.settings_effect_slider_geometry(state, index, 0, maximum);
+        let half_thumb = 10 * self.scale;
+        let start = geometry.track.x + half_thumb as i32;
+        let travel = geometry
+            .track
+            .width
+            .saturating_sub((half_thumb * 2) as u32)
+            .max(1);
+        let offset = point.x.saturating_sub(start).clamp(0, travel as i32) as u32;
+        ((offset.saturating_mul(maximum as u32) + travel / 2) / travel).min(maximum as u32) as u8
+    }
+
+    // ------------------------=
     // FUNC: settings_color_target
     // DESC: Maps one color row pointer position to typed HSV picker coordinates.
     // ------------------=
@@ -1411,6 +1501,7 @@ const fn settings_detail_height(index: usize) -> usize {
     match index {
         1 => 108,
         2 | 3 => 112,
+        4 | 5 => 78,
         _ => 82,
     }
 }

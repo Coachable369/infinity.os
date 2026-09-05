@@ -340,6 +340,8 @@ struct ConsoleRuntime {
     settings_window_drag_offset_y: i32,
     settings_accent_dirty: bool,
     settings_primary_dirty: bool,
+    settings_effects_dirty: bool,
+    settings_effect_dragging: Option<usize>,
     settings_scroll_dragging: bool,
     settings_scroll_grab_offset: i32,
     onboarding_validation_error: bool,
@@ -442,7 +444,7 @@ impl ConsoleRuntime {
                 maximized: false,
                 expanded_row: None,
                 scroll_offset: 0,
-                row_count: 6,
+                row_count: 8,
             },
             settings_window_dragging: false,
             settings_window_resizing: None,
@@ -450,6 +452,8 @@ impl ConsoleRuntime {
             settings_window_drag_offset_y: 0,
             settings_accent_dirty: false,
             settings_primary_dirty: false,
+            settings_effects_dirty: false,
+            settings_effect_dragging: None,
             settings_scroll_dragging: false,
             settings_scroll_grab_offset: 0,
             onboarding_validation_error: false,
@@ -841,6 +845,8 @@ impl ConsoleRuntime {
         self.settings_editing = false;
         self.settings_accent_dirty = false;
         self.settings_primary_dirty = false;
+        self.settings_effects_dirty = false;
+        self.settings_effect_dragging = None;
         self.settings_scroll_dragging = false;
         self.settings_window_dragging = false;
         self.settings_window_resizing = None;
@@ -852,6 +858,7 @@ impl ConsoleRuntime {
         self.sync_icon_theme();
         self.sync_accent();
         self.sync_primary();
+        self.sync_background_effects();
         self.refresh_desktop_items();
         self.reset_input();
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
@@ -1173,7 +1180,7 @@ impl ConsoleRuntime {
         self.store_active_app_window();
         self.mode = ConsoleMode::Settings;
         self.system_focus = section.min(7);
-        self.settings_window.row_count = if self.system_focus == 1 { 6 } else { 5 };
+        self.settings_window.row_count = if self.system_focus == 1 { 8 } else { 5 };
         self.settings_editing = false;
         self.settings_window.expanded_row = None;
         self.settings_window.scroll_offset = 0;
@@ -1181,6 +1188,8 @@ impl ConsoleRuntime {
         self.settings_window_resizing = None;
         self.settings_accent_dirty = false;
         self.settings_primary_dirty = false;
+        self.settings_effects_dirty = false;
+        self.settings_effect_dragging = None;
         self.settings_scroll_dragging = false;
         self.reset_input();
     }
@@ -1291,6 +1300,87 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: sync_background_effects
+    // DESC: Applies durable machine glass opacity and blur to every live semantic panel.
+    // ------------------=
+    fn sync_background_effects(&mut self) {
+        let _ = crate::runtime::with_runtime(|runtime| {
+            let (opacity, blur) = runtime.identity.background_effects();
+            runtime.ui.skins.set_background_effects(
+                opacity,
+                blur,
+                crate::ui::skin::AppearanceScope::Machine,
+            )
+        });
+    }
+
+    // ------------------------=
+    // FUNC: preview_background_effect
+    // DESC: Applies one slider value live without persisting every captured pointer sample.
+    // ------------------=
+    fn preview_background_effect(&mut self, row: usize, value: u8) {
+        let changed = crate::runtime::with_runtime(|runtime| {
+            let (mut opacity, mut blur) = runtime.ui.skins.background_effects();
+            if row == 4 {
+                opacity = value.clamp(40, 100);
+            } else if row == 5 {
+                blur = value.min(8);
+            } else {
+                return Err(crate::ui::skin::SkinError::InvalidAccent);
+            }
+            runtime.ui.skins.set_background_effects(
+                opacity,
+                blur,
+                crate::ui::skin::AppearanceScope::Machine,
+            )
+        })
+        .transpose()
+        .is_ok();
+        if changed {
+            self.settings_effects_dirty = true;
+        }
+    }
+
+    // ------------------------=
+    // FUNC: commit_background_effects
+    // DESC: Commits the previewed glass effects once to durable machine appearance state.
+    // ------------------=
+    fn commit_background_effects(&mut self) {
+        if !self.settings_effects_dirty {
+            return;
+        }
+        let user = self.current_user;
+        let changed = crate::runtime::with_runtime(|runtime| {
+            let (opacity, blur) = runtime.ui.skins.background_effects();
+            runtime
+                .identity
+                .update_background_effects(user, opacity, blur)
+        })
+        .transpose()
+        .is_ok();
+        if changed {
+            let _ = crate::runtime::persist_identity_state();
+        }
+        self.settings_effects_dirty = false;
+    }
+
+    // ------------------------=
+    // FUNC: cycle_background_effect
+    // DESC: Provides keyboard stepping for the same typed opacity and blur values used by pointer dragging.
+    // ------------------=
+    fn cycle_background_effect(&mut self, row: usize) {
+        let (opacity, blur) =
+            crate::runtime::with_runtime(|runtime| runtime.ui.skins.background_effects())
+                .unwrap_or((88, 4));
+        if row == 4 {
+            self.preview_background_effect(row, if opacity >= 100 { 40 } else { opacity + 4 });
+        } else if row == 5 {
+            self.preview_background_effect(row, if blur >= 8 { 0 } else { blur + 1 });
+        }
+        self.commit_background_effects();
+    }
+
+    // ------------------------=
     // FUNC: preview_primary
     // DESC: Applies one primary picker color live without writing every pointer sample.
     // ------------------=
@@ -1356,9 +1446,7 @@ impl ConsoleRuntime {
     // DESC: Provides keyboard-only primary surface selection from restrained frosted presets.
     // ------------------=
     fn cycle_primary(&mut self) {
-        const PRESETS: [u32; 6] = [
-            0x0d2238, 0x162a46, 0x251f42, 0x142f36, 0x35233d, 0x273041,
-        ];
+        const PRESETS: [u32; 6] = [0x0d2238, 0x162a46, 0x251f42, 0x142f36, 0x35233d, 0x273041];
         let current = crate::runtime::with_runtime(|runtime| runtime.ui.skins.primary_rgb())
             .unwrap_or(PRESETS[0]);
         let next = PRESETS
@@ -1522,6 +1610,7 @@ impl ConsoleRuntime {
             (1, 1) => self.cycle_icon_theme(),
             (1, 2) => self.cycle_primary(),
             (1, 3) => self.cycle_accent(),
+            (1, 4 | 5) => self.cycle_background_effect(row),
             (3, 0) => {
                 let current = crate::runtime::with_runtime(|runtime| {
                     runtime.identity.ai_profile(self.current_user)
@@ -2220,7 +2309,7 @@ impl ConsoleRuntime {
             };
             self.system_focus = (self.system_focus + count - 1) % count;
             if self.mode == ConsoleMode::Settings {
-                self.settings_window.row_count = if self.system_focus == 1 { 6 } else { 5 };
+                self.settings_window.row_count = if self.system_focus == 1 { 8 } else { 5 };
                 self.settings_window.expanded_row = None;
                 self.settings_window.scroll_offset = 0;
             }
@@ -2237,7 +2326,7 @@ impl ConsoleRuntime {
             };
             self.system_focus = (self.system_focus + 1) % count;
             if self.mode == ConsoleMode::Settings {
-                self.settings_window.row_count = if self.system_focus == 1 { 6 } else { 5 };
+                self.settings_window.row_count = if self.system_focus == 1 { 8 } else { 5 };
                 self.settings_window.expanded_row = None;
                 self.settings_window.scroll_offset = 0;
             }
@@ -3233,8 +3322,12 @@ impl ConsoleRuntime {
                             } else {
                                 match self.desktop_target(layout) {
                                     Some(DesktopTarget::InfinityMenu) => self.open_shell_menu(0),
-                                    Some(DesktopTarget::TopMenu(menu)) => self.open_shell_menu(menu),
-                                    Some(DesktopTarget::Status(item)) => self.activate_status_item(item),
+                                    Some(DesktopTarget::TopMenu(menu)) => {
+                                        self.open_shell_menu(menu)
+                                    }
+                                    Some(DesktopTarget::Status(item)) => {
+                                        self.activate_status_item(item)
+                                    }
                                     Some(DesktopTarget::Dock(0)) => self.open_app_launcher(),
                                     _ => {}
                                 }
@@ -3457,7 +3550,27 @@ impl ConsoleRuntime {
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
-            if self.settings_scroll_dragging {
+            if let Some(row) = self.settings_effect_dragging {
+                if left_button {
+                    let maximum = if row == 4 { 15 } else { 8 };
+                    let value = layout.settings_effect_slider_drag_value(
+                        self.pointer_x,
+                        self.settings_window,
+                        row,
+                        maximum,
+                    );
+                    self.preview_background_effect(
+                        row,
+                        if row == 4 { 40 + value * 4 } else { value },
+                    );
+                }
+                if released {
+                    self.settings_effect_dragging = None;
+                    self.commit_background_effects();
+                }
+                self.redraw();
+                return;
+            } else if self.settings_scroll_dragging {
                 if left_button {
                     self.settings_window.scroll_offset = layout.settings_scroll_offset_for_thumb(
                         self.pointer_y,
@@ -3506,6 +3619,30 @@ impl ConsoleRuntime {
                 self.redraw();
                 return;
             } else if self.system_focus == 1 && left_button {
+                if clicked {
+                    if let Some(row) = self
+                        .settings_window
+                        .expanded_row
+                        .filter(|row| matches!(row, 4 | 5))
+                    {
+                        let maximum = if row == 4 { 15 } else { 8 };
+                        if let Some(value) = layout.settings_effect_slider_target(
+                            self.pointer_x,
+                            self.pointer_y,
+                            self.settings_window,
+                            row,
+                            maximum,
+                        ) {
+                            self.settings_effect_dragging = Some(row);
+                            self.preview_background_effect(
+                                row,
+                                if row == 4 { 40 + value * 4 } else { value },
+                            );
+                            self.redraw();
+                            return;
+                        }
+                    }
+                }
                 if let Some(target) = layout.settings_primary_target(
                     self.pointer_x,
                     self.pointer_y,
@@ -3552,7 +3689,7 @@ impl ConsoleRuntime {
                 match target {
                     SettingsTarget::Section(index) if clicked => {
                         self.system_focus = index;
-                        self.settings_window.row_count = if index == 1 { 6 } else { 5 };
+                        self.settings_window.row_count = if index == 1 { 8 } else { 5 };
                         self.settings_editing = false;
                         self.settings_window.expanded_row = None;
                         self.settings_window.scroll_offset = 0;

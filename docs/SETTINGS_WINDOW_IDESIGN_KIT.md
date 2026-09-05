@@ -8,6 +8,8 @@
 - Replace detached configuration controls with one accordion: each 46-unit summary row owns a 12-unit disclosure twiddle and, when open, a rounded detail well directly beneath it.
 - Rotate the twiddle from right-facing to down-facing. Use the active accent only for the open row edge, focus ring, selected option, and scrollbar thumb.
 - Keep a 12-unit gap between rows. Only one row may be open, so hierarchy remains calm and scannable.
+- Place Opacity and Blur directly after the two color rows. Each opens an inline horizontal slider with a quiet frosted track, a full-strength blue/white thumb and outline, and a right-aligned numeric value.
+- Opacity spans 40–100% and changes only semantic window/component background fills. Blur spans 0–8 logical pixels and softens only the framebuffer region beneath those fills; neither value dims outlines, controls, text, focus rings, resize grips, or scrollbar details.
 
 ## Overflow and resize behavior
 
@@ -25,5 +27,6 @@
 - Hover/focus: brighter outline and twiddle.
 - Expanded: down twiddle, accent edge, contained detail surface.
 - Primary and Secondary pickers: matching inline HSV wells with independent live previews and one durable commit on pointer release.
+- Opacity and Blur sliders: captured thumb/track drag, live preview while held, keyboard stepping through the same typed values, and one durable machine-wide commit on release.
 - Scrolling: subdued track, accent thumb, no content may paint outside the viewport.
 - Resizing: geometry follows the pointer continuously and all content reflows from shared layout calculations.
