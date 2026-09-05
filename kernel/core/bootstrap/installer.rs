@@ -1,6 +1,168 @@
-//! Installation wizard backgrounds, panels, controls, and live storage presentation.
+//! Installer artwork, typography, storage screens, cards, controls, and composition.
 
 use super::*;
+
+pub(super) const INSTALLER_FONT_NATIVE_SIZE_PX: usize = 24;
+pub(super) const INSTALLER_FONT_SIZE_PX: usize = 24;
+pub(super) const INSTALLER_HEADLINE_FONT_NATIVE_SIZE_PX: usize = 32;
+pub(super) const INSTALLER_HEADLINE_FONT_SIZE_PX: usize = 32;
+pub(super) const INSTALLER_COMPACT_FONT_NATIVE_SIZE_PX: usize = 19;
+pub(super) const INSTALLER_COMPACT_FONT_SIZE_PX: usize = 19;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_FONT_ATLAS: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Regular-24.atlas");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_FONT_SEMIBOLD_ATLAS: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Semibold-24.atlas");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_FONT_METRICS: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Regular-24.metrics");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_FONT_SEMIBOLD_METRICS: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Semibold-24.metrics");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_FONT_KERN: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Regular-24.kern");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_FONT_SEMIBOLD_KERN: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Semibold-24.kern");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_HEADLINE_FONT_ATLAS: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Semibold-32.atlas");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_HEADLINE_FONT_METRICS: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Semibold-32.metrics");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_HEADLINE_FONT_KERN: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Semibold-32.kern");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_COMPACT_FONT_ATLAS: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Regular-19.atlas");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_COMPACT_FONT_SEMIBOLD_ATLAS: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Semibold-19.atlas");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_COMPACT_FONT_METRICS: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Regular-19.metrics");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_COMPACT_FONT_SEMIBOLD_METRICS: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Semibold-19.metrics");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_COMPACT_FONT_KERN: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Regular-19.kern");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const INSTALLER_COMPACT_FONT_SEMIBOLD_KERN: &[u8] =
+    include_bytes!("../../../assets/fonts/InfinityInstaller-Semibold-19.kern");
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_FONT_ATLAS: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_FONT_SEMIBOLD_ATLAS: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_FONT_METRICS: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_FONT_SEMIBOLD_METRICS: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_FONT_KERN: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_FONT_SEMIBOLD_KERN: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_COMPACT_FONT_ATLAS: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_COMPACT_FONT_SEMIBOLD_ATLAS: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_COMPACT_FONT_METRICS: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_COMPACT_FONT_SEMIBOLD_METRICS: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_COMPACT_FONT_KERN: &[u8] = &[];
+#[cfg(target_arch = "x86")]
+pub(super) const INSTALLER_COMPACT_FONT_SEMIBOLD_KERN: &[u8] = &[];
+pub(super) const INSTALLER_FONT_CELL_WIDTH: usize = 24;
+pub(super) const INSTALLER_FONT_CELL_HEIGHT: usize = 28;
+pub(super) const INSTALLER_HEADLINE_FONT_CELL_WIDTH: usize = 32;
+pub(super) const INSTALLER_HEADLINE_FONT_CELL_HEIGHT: usize = 38;
+pub(super) const INSTALLER_COMPACT_FONT_CELL_WIDTH: usize = 20;
+pub(super) const INSTALLER_COMPACT_FONT_CELL_HEIGHT: usize = 24;
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const INSTALLER_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-installer-background-v2.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const INSTALLER_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const INSTALLER_MASTHEAD_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-installer-masthead-v2.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const INSTALLER_MASTHEAD_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const INSTALLER_WELCOME_MASTHEAD_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-installer-masthead-v1.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const INSTALLER_WELCOME_MASTHEAD_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const INSTALLER_MESH_HERO_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-installer-mesh-hero-v1.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const INSTALLER_MESH_HERO_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const INSTALLER_MESH_OVERVIEW_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-installer-mesh-overview-v1.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const INSTALLER_MESH_OVERVIEW_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const INSTALLER_ACTIVATION_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-installer-activation-v2.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const INSTALLER_ACTIVATION_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const STORAGE_HIERARCHY_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-storage-hierarchy-v3.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const STORAGE_HIERARCHY_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const DISK_DISCOVERY_VISION_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-disk-discovery-vision-v1.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const DISK_DISCOVERY_VISION_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const STORAGE_DEVICE_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-storage-device-v1.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const STORAGE_DEVICE_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const DATE_TIME_WORLD_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-time-zone-map-v1.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const DATE_TIME_WORLD_BMP: &[u8] = &[];
 
 impl super::DisplayDevice {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -70,190 +232,513 @@ impl super::DisplayDevice {
         }
     }
 
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
-    // FUNC: paint_bitmap_cover_rect
-    // DESC: Samples a bitmap with cover scaling and paints only the requested rectangle.
+    // FUNC: installer_text_width
+    // DESC: Measures installer copy at the reference panel's fixed antialiased type size.
     // ------------------=
-    pub(super) fn paint_bitmap_cover_rect(
-        &mut self,
-        bitmap: &[u8],
-        left: usize,
-        top: usize,
-        width: usize,
-        height: usize,
-    ) {
-        if bitmap.len() < 54 || &bitmap[0..2] != b"BM" {
-            return;
-        }
-        let offset = le32(bitmap, 10) as usize;
-        let source_width = le32(bitmap, 18) as usize;
-        let signed_height = le32(bitmap, 22) as i32;
-        let source_height = signed_height.unsigned_abs() as usize;
-        if le16(bitmap, 28) != 24 || source_width == 0 || source_height == 0 {
-            return;
-        }
-        let row_bytes = (source_width * 3 + 3) & !3;
-        let (crop_x, crop_y, crop_width, crop_height) =
-            if source_width * self.height > source_height * self.width {
-                let width = source_height * self.width / self.height;
-                ((source_width - width) / 2, 0, width, source_height)
-            } else {
-                let height = source_width * self.height / self.width;
-                (0, (source_height - height) / 2, source_width, height)
-            };
-        for y in top..(top + height).min(self.height) {
-            let logical_y = crop_y + y * crop_height / self.height;
-            let source_y = if signed_height < 0 {
-                logical_y
-            } else {
-                source_height - 1 - logical_y
-            };
-            for x in left..(left + width).min(self.width) {
-                let source_x = crop_x + x * crop_width / self.width;
-                let index = offset + source_y * row_bytes + source_x * 3;
-                if index + 2 >= bitmap.len() {
-                    return;
-                }
-                self.pixel(
-                    x as i32,
-                    y as i32,
-                    bitmap[index + 2],
-                    bitmap[index + 1],
-                    bitmap[index],
-                );
+    pub(super) fn installer_text_width(&self, text: &[u8], semibold: bool) -> usize {
+        let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, INSTALLER_FONT_SIZE_PX);
+        let metrics = if semibold {
+            INSTALLER_FONT_SEMIBOLD_METRICS
+        } else {
+            INSTALLER_FONT_METRICS
+        };
+        let kerning = if semibold {
+            INSTALLER_FONT_SEMIBOLD_KERN
+        } else {
+            INSTALLER_FONT_KERN
+        };
+        let mut width = 0usize;
+        let mut previous = None;
+        for byte in text {
+            if !(32..=126).contains(byte) {
+                previous = None;
+                continue;
             }
+            width = Self::font_position_advance(
+                width,
+                font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)),
+            );
+            width =
+                width.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
+            previous = Some(*byte);
         }
+        width
+    }
+
+    // ------------------------=
+    // FUNC: installer_text
+    // DESC: Draws installer body copy with the fixed-size smooth reference typography.
+    // ------------------=
+    pub(super) fn installer_text(
+        &mut self,
+        x: usize,
+        y: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+    ) {
+        self.installer_text_weighted(x, y, text, red, green, blue, false);
+    }
+
+    // ------------------------=
+    // FUNC: installer_text_strong
+    // DESC: Draws installer headings with the fixed-size smooth semibold reference typography.
+    // ------------------=
+    pub(super) fn installer_text_strong(
+        &mut self,
+        x: usize,
+        y: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+    ) {
+        self.installer_text_weighted(x, y, text, red, green, blue, true);
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
-    // FUNC: paint_bitmap_fit_rect
-    // DESC: Samples a bitmap with aspect-fit scaling inside the requested rectangle.
+    // FUNC: installer_headline_text_width
+    // DESC: Measures the larger semibold face reserved for installer hero statements.
     // ------------------=
-    pub(super) fn paint_bitmap_fit_rect(
-        &mut self,
-        bitmap: &[u8],
-        left: usize,
-        top: usize,
-        width: usize,
-        height: usize,
-    ) {
-        if bitmap.len() < 54 || &bitmap[0..2] != b"BM" || le16(bitmap, 28) != 24 {
-            return;
-        }
-        let offset = le32(bitmap, 10) as usize;
-        let source_width = le32(bitmap, 18) as usize;
-        let signed_height = le32(bitmap, 22) as i32;
-        let source_height = signed_height.unsigned_abs() as usize;
-        if source_width == 0 || source_height == 0 || width == 0 || height == 0 {
-            return;
-        }
-        let row_bytes = (source_width * 3 + 3) & !3;
-        for y in 0..height.min(self.height.saturating_sub(top)) {
-            let sy = y * source_height / height;
-            let source_y = if signed_height < 0 {
-                sy
-            } else {
-                source_height - 1 - sy
-            };
-            for x in 0..width.min(self.width.saturating_sub(left)) {
-                let sx = x * source_width / width;
-                let index = offset + source_y * row_bytes + sx * 3;
-                if index + 2 >= bitmap.len() {
-                    return;
-                }
-                self.pixel(
-                    (left + x) as i32,
-                    (top + y) as i32,
-                    bitmap[index + 2],
-                    bitmap[index + 1],
-                    bitmap[index],
-                );
+    pub(super) fn installer_headline_text_width(&self, text: &[u8]) -> usize {
+        let font_size = FontSize::new(
+            INSTALLER_HEADLINE_FONT_NATIVE_SIZE_PX,
+            INSTALLER_HEADLINE_FONT_SIZE_PX,
+        );
+        let mut width = 0usize;
+        let mut previous = None;
+        for byte in text {
+            if !(32..=126).contains(byte) {
+                previous = None;
+                continue;
             }
+            width = Self::font_position_advance(
+                width,
+                font_size.scale_isize(Self::font_pair_adjustment(
+                    INSTALLER_HEADLINE_FONT_KERN,
+                    previous,
+                    *byte,
+                )),
+            );
+            width =
+                width
+                    .saturating_add(font_size.scale_usize(
+                        INSTALLER_HEADLINE_FONT_METRICS[*byte as usize - 32] as usize,
+                    ));
+            previous = Some(*byte);
         }
+        width
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
-    // FUNC: paint_bitmap_cover_box
-    // DESC: Aspect-crops a bitmap into a fixed destination box without painting beyond its bounds.
+    // FUNC: installer_headline_text
+    // DESC: Alpha-rasterizes the 32px semibold installer hero face.
     // ------------------=
-    pub(super) fn paint_bitmap_cover_box(
+    pub(super) fn installer_headline_text(
         &mut self,
-        bitmap: &[u8],
-        left: usize,
-        top: usize,
-        width: usize,
-        height: usize,
+        mut x: usize,
+        y: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
     ) {
-        if bitmap.len() < 54 || &bitmap[0..2] != b"BM" || le16(bitmap, 28) != 24 {
-            return;
-        }
-        let offset = le32(bitmap, 10) as usize;
-        let source_width = le32(bitmap, 18) as usize;
-        let signed_height = le32(bitmap, 22) as i32;
-        let source_height = signed_height.unsigned_abs() as usize;
-        if source_width == 0 || source_height == 0 || width == 0 || height == 0 {
-            return;
-        }
-        let row_bytes = (source_width * 3 + 3) & !3;
-        let (crop_x, crop_y, crop_width, crop_height) =
-            if source_width * height > source_height * width {
-                let cropped_width = source_height * width / height;
-                (
-                    (source_width.saturating_sub(cropped_width)) / 2,
-                    0,
-                    cropped_width,
-                    source_height,
-                )
-            } else {
-                let cropped_height = source_width * height / width;
-                (
-                    0,
-                    (source_height.saturating_sub(cropped_height)) / 2,
-                    source_width,
-                    cropped_height,
-                )
-            };
-        for y in 0..height.min(self.height.saturating_sub(top)) {
-            let sy = crop_y + y * crop_height / height;
-            let source_y = if signed_height < 0 {
-                sy
-            } else {
-                source_height - 1 - sy
-            };
-            for x in 0..width.min(self.width.saturating_sub(left)) {
-                let sx = crop_x + x * crop_width / width;
-                let index = offset + source_y * row_bytes + sx * 3;
-                if index + 2 >= bitmap.len() {
-                    return;
-                }
-                self.pixel(
-                    (left + x) as i32,
-                    (top + y) as i32,
-                    bitmap[index + 2],
-                    bitmap[index + 1],
-                    bitmap[index],
-                );
+        let font_size = FontSize::new(
+            INSTALLER_HEADLINE_FONT_NATIVE_SIZE_PX,
+            INSTALLER_HEADLINE_FONT_SIZE_PX,
+        );
+        let glyph_width = font_size
+            .scale_usize(INSTALLER_HEADLINE_FONT_CELL_WIDTH)
+            .max(1);
+        let glyph_height = font_size
+            .scale_usize(INSTALLER_HEADLINE_FONT_CELL_HEIGHT)
+            .max(1);
+        let mut previous = None;
+        for byte in text {
+            if !(32..=126).contains(byte) {
+                previous = None;
+                continue;
             }
+            x = Self::font_position_advance(
+                x,
+                font_size.scale_isize(Self::font_pair_adjustment(
+                    INSTALLER_HEADLINE_FONT_KERN,
+                    previous,
+                    *byte,
+                )),
+            );
+            let glyph = (*byte as usize - 32) * INSTALLER_HEADLINE_FONT_CELL_WIDTH;
+            for row in 0..glyph_height {
+                let source_row = font_size
+                    .source_index(row)
+                    .min(INSTALLER_HEADLINE_FONT_CELL_HEIGHT - 1);
+                for column in 0..glyph_width {
+                    let source_column = font_size
+                        .source_index(column)
+                        .min(INSTALLER_HEADLINE_FONT_CELL_WIDTH - 1);
+                    let alpha = INSTALLER_HEADLINE_FONT_ATLAS[source_row
+                        * INSTALLER_HEADLINE_FONT_CELL_WIDTH
+                        * 95
+                        + glyph
+                        + source_column];
+                    if alpha != 0 {
+                        self.blend_color(
+                            (x + column) as i32,
+                            (y + row) as i32,
+                            red,
+                            green,
+                            blue,
+                            alpha,
+                        );
+                    }
+                }
+            }
+            x = x.saturating_add(
+                font_size
+                    .scale_usize(INSTALLER_HEADLINE_FONT_METRICS[*byte as usize - 32] as usize),
+            );
+            previous = Some(*byte);
         }
     }
 
-    #[cfg(target_arch = "x86")]
     // ------------------------=
-    // FUNC: paint_bitmap_cover_box
-    // DESC: Supplies a bounded dark hero fallback when legacy x86 omits high-resolution bitmap decoding.
+    // FUNC: installer_text_weighted
+    // DESC: Alpha-rasterizes installer text without inheriting desktop DPI multiplication.
     // ------------------=
-    pub(super) fn paint_bitmap_cover_box(
+    pub(super) fn installer_text_weighted(
         &mut self,
-        _bitmap: &[u8],
-        left: usize,
-        top: usize,
-        width: usize,
-        height: usize,
+        mut x: usize,
+        mut y: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+        semibold: bool,
     ) {
-        self.fill_rect(left, top, width, height, 2, 10, 18);
+        let line_start = x;
+        let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, INSTALLER_FONT_SIZE_PX);
+        let atlas = if semibold {
+            INSTALLER_FONT_SEMIBOLD_ATLAS
+        } else {
+            INSTALLER_FONT_ATLAS
+        };
+        let metrics = if semibold {
+            INSTALLER_FONT_SEMIBOLD_METRICS
+        } else {
+            INSTALLER_FONT_METRICS
+        };
+        let kerning = if semibold {
+            INSTALLER_FONT_SEMIBOLD_KERN
+        } else {
+            INSTALLER_FONT_KERN
+        };
+        let glyph_width = font_size.scale_usize(INSTALLER_FONT_CELL_WIDTH).max(1);
+        let glyph_height = font_size.scale_usize(INSTALLER_FONT_CELL_HEIGHT).max(1);
+        let line_advance = glyph_height.saturating_add(font_size.scale_usize(4));
+        let mut previous = None;
+        for byte in text {
+            if *byte == b'\n' {
+                x = line_start;
+                y = y.saturating_add(line_advance);
+                previous = None;
+                continue;
+            }
+            if !(32..=126).contains(byte) {
+                previous = None;
+                continue;
+            }
+            x = Self::font_position_advance(
+                x,
+                font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)),
+            );
+            let glyph = (*byte as usize - 32) * INSTALLER_FONT_CELL_WIDTH;
+            for row in 0..glyph_height {
+                let source_row = font_size
+                    .source_index(row)
+                    .min(INSTALLER_FONT_CELL_HEIGHT - 1);
+                for column in 0..glyph_width {
+                    let source_column = font_size
+                        .source_index(column)
+                        .min(INSTALLER_FONT_CELL_WIDTH - 1);
+                    let alpha =
+                        atlas[source_row * INSTALLER_FONT_CELL_WIDTH * 95 + glyph + source_column];
+                    if alpha != 0 {
+                        self.blend_color(
+                            (x + column) as i32,
+                            (y + row) as i32,
+                            red,
+                            green,
+                            blue,
+                            alpha,
+                        );
+                    }
+                }
+            }
+            x = x.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
+            previous = Some(*byte);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: installer_text_wrapped
+    // DESC: Wraps installer copy into a bounded card using the reference's compact line rhythm.
+    // ------------------=
+    pub(super) fn installer_text_wrapped(
+        &mut self,
+        x: usize,
+        y: usize,
+        max_width: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+        max_lines: usize,
+    ) {
+        let mut start = 0usize;
+        let mut line = 0usize;
+        while start < text.len() && line < max_lines {
+            while start < text.len() && text[start] == b' ' {
+                start += 1;
+            }
+            if start >= text.len() {
+                break;
+            }
+            let mut end = start + 1;
+            let mut last_space = None;
+            while end <= text.len() {
+                if end < text.len() && text[end] == b' ' {
+                    last_space = Some(end);
+                }
+                if self.installer_text_width(&text[start..end], false) > max_width {
+                    end = last_space.unwrap_or(end.saturating_sub(1).max(start + 1));
+                    break;
+                }
+                if end == text.len() {
+                    break;
+                }
+                end += 1;
+            }
+            self.installer_text(
+                x,
+                y + line
+                    * (FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, INSTALLER_FONT_SIZE_PX)
+                        .scale_usize(INSTALLER_FONT_CELL_HEIGHT + 2)),
+                &text[start..end],
+                red,
+                green,
+                blue,
+            );
+            start = end;
+            line += 1;
+        }
+    }
+
+    // ------------------------=
+    // FUNC: installer_compact_text_width
+    // DESC: Measures the smaller Roboto companion used only by dense four-column information cards.
+    // ------------------=
+    pub(super) fn installer_compact_text_width(&self, text: &[u8], semibold: bool) -> usize {
+        let font_size = FontSize::new(
+            INSTALLER_COMPACT_FONT_NATIVE_SIZE_PX,
+            INSTALLER_COMPACT_FONT_SIZE_PX,
+        );
+        let metrics = if semibold {
+            INSTALLER_COMPACT_FONT_SEMIBOLD_METRICS
+        } else {
+            INSTALLER_COMPACT_FONT_METRICS
+        };
+        let kerning = if semibold {
+            INSTALLER_COMPACT_FONT_SEMIBOLD_KERN
+        } else {
+            INSTALLER_COMPACT_FONT_KERN
+        };
+        let mut width = 0usize;
+        let mut previous = None;
+        for byte in text {
+            if !(32..=126).contains(byte) {
+                previous = None;
+                continue;
+            }
+            width = Self::font_position_advance(
+                width,
+                font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)),
+            );
+            width =
+                width.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
+            previous = Some(*byte);
+        }
+        width
+    }
+
+    // ------------------------=
+    // FUNC: installer_compact_text
+    // DESC: Draws compact card body copy with the 19px Roboto companion face.
+    // ------------------=
+    pub(super) fn installer_compact_text(
+        &mut self,
+        x: usize,
+        y: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+    ) {
+        self.installer_compact_text_weighted(x, y, text, red, green, blue, false);
+    }
+
+    // ------------------------=
+    // FUNC: installer_compact_text_strong
+    // DESC: Draws compact card labels with the 19px Roboto Medium companion face.
+    // ------------------=
+    pub(super) fn installer_compact_text_strong(
+        &mut self,
+        x: usize,
+        y: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+    ) {
+        self.installer_compact_text_weighted(x, y, text, red, green, blue, true);
+    }
+
+    // ------------------------=
+    // FUNC: installer_compact_text_weighted
+    // DESC: Alpha-rasterizes one compact Roboto weight with proportional metrics and pair kerning.
+    // ------------------=
+    pub(super) fn installer_compact_text_weighted(
+        &mut self,
+        mut x: usize,
+        y: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+        semibold: bool,
+    ) {
+        let font_size = FontSize::new(
+            INSTALLER_COMPACT_FONT_NATIVE_SIZE_PX,
+            INSTALLER_COMPACT_FONT_SIZE_PX,
+        );
+        let atlas = if semibold {
+            INSTALLER_COMPACT_FONT_SEMIBOLD_ATLAS
+        } else {
+            INSTALLER_COMPACT_FONT_ATLAS
+        };
+        let metrics = if semibold {
+            INSTALLER_COMPACT_FONT_SEMIBOLD_METRICS
+        } else {
+            INSTALLER_COMPACT_FONT_METRICS
+        };
+        let kerning = if semibold {
+            INSTALLER_COMPACT_FONT_SEMIBOLD_KERN
+        } else {
+            INSTALLER_COMPACT_FONT_KERN
+        };
+        let glyph_width = font_size
+            .scale_usize(INSTALLER_COMPACT_FONT_CELL_WIDTH)
+            .max(1);
+        let glyph_height = font_size
+            .scale_usize(INSTALLER_COMPACT_FONT_CELL_HEIGHT)
+            .max(1);
+        let mut previous = None;
+        for byte in text {
+            if !(32..=126).contains(byte) {
+                previous = None;
+                continue;
+            }
+            x = Self::font_position_advance(
+                x,
+                font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)),
+            );
+            let glyph = (*byte as usize - 32) * INSTALLER_COMPACT_FONT_CELL_WIDTH;
+            for row in 0..glyph_height {
+                let source_row = font_size
+                    .source_index(row)
+                    .min(INSTALLER_COMPACT_FONT_CELL_HEIGHT - 1);
+                for column in 0..glyph_width {
+                    let source_column = font_size
+                        .source_index(column)
+                        .min(INSTALLER_COMPACT_FONT_CELL_WIDTH - 1);
+                    let alpha = atlas[source_row * INSTALLER_COMPACT_FONT_CELL_WIDTH * 95
+                        + glyph
+                        + source_column];
+                    if alpha != 0 {
+                        self.blend_color(
+                            (x + column) as i32,
+                            (y + row) as i32,
+                            red,
+                            green,
+                            blue,
+                            alpha,
+                        );
+                    }
+                }
+            }
+            x = x.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
+            previous = Some(*byte);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: installer_compact_text_wrapped
+    // DESC: Wraps compact card copy without shrinking or clipping individual glyphs.
+    // ------------------=
+    pub(super) fn installer_compact_text_wrapped(
+        &mut self,
+        x: usize,
+        y: usize,
+        max_width: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+        max_lines: usize,
+    ) {
+        let mut start = 0usize;
+        let mut line = 0usize;
+        while start < text.len() && line < max_lines {
+            while start < text.len() && text[start] == b' ' {
+                start += 1;
+            }
+            if start >= text.len() {
+                break;
+            }
+            let mut end = start + 1;
+            let mut last_space = None;
+            while end <= text.len() {
+                if end < text.len() && text[end] == b' ' {
+                    last_space = Some(end);
+                }
+                if self.installer_compact_text_width(&text[start..end], false) > max_width {
+                    end = last_space.unwrap_or(end.saturating_sub(1).max(start + 1));
+                    break;
+                }
+                if end == text.len() {
+                    break;
+                }
+                end += 1;
+            }
+            self.installer_compact_text(
+                x,
+                y + line
+                    * FontSize::new(
+                        INSTALLER_COMPACT_FONT_NATIVE_SIZE_PX,
+                        INSTALLER_COMPACT_FONT_SIZE_PX,
+                    )
+                    .scale_usize(INSTALLER_COMPACT_FONT_CELL_HEIGHT + 1),
+                &text[start..end],
+                red,
+                green,
+                blue,
+            );
+            start = end;
+            line += 1;
+        }
     }
 
     // ------------------------=
@@ -442,13 +927,7 @@ impl super::DisplayDevice {
             39,
             255,
         );
-        self.authentication_icon(
-            left + 45 * scale,
-            top + 46 * scale,
-            8,
-            23 * scale,
-            true,
-        );
+        self.authentication_icon(left + 45 * scale, top + 46 * scale, 8, 23 * scale, true);
         self.ui_text_strong(
             left + 82 * scale,
             top + 26 * scale,
@@ -536,22 +1015,8 @@ impl super::DisplayDevice {
             let top = self.height * if compact { 40 } else { 37 } / 100;
             let width = self.width * if compact { 35 } else { 56 } / 100;
             let height = (width * 9 / 16).min(self.height * if compact { 34 } else { 32 } / 100);
-            self.paint_bitmap_fit_rect(
-                INSTALLER_ACTIVATION_BMP,
-                left,
-                top,
-                width,
-                height,
-            );
-            self.outline_rect(
-                left,
-                top,
-                width,
-                height,
-                48,
-                118,
-                164,
-            );
+            self.paint_bitmap_fit_rect(INSTALLER_ACTIVATION_BMP, left, top, width, height);
+            self.outline_rect(left, top, width, height, 48, 118, 164);
         }
     }
 
@@ -566,19 +1031,20 @@ impl super::DisplayDevice {
         let top = self.height * 72 / 100;
         let height = self.height * 11 / 100;
         self.fill_rounded_rect_alpha(left, top, width, height, 14 * scale, 3, 13, 25, 255);
-        self.fill_rounded_rect_alpha(left + 2, top + 2, width.saturating_sub(4), height / 2, 12 * scale, 24, 49, 70, 90);
+        self.fill_rounded_rect_alpha(
+            left + 2,
+            top + 2,
+            width.saturating_sub(4),
+            height / 2,
+            12 * scale,
+            24,
+            49,
+            70,
+            90,
+        );
         self.outline_rounded_rect(left, top, width, height, 14 * scale, 52, 116, 155);
 
-        self.ui_text_centered_strong(
-            left,
-            width,
-            top + 14 * scale,
-            label,
-            225,
-            238,
-            248,
-            1,
-        );
+        self.ui_text_centered_strong(left, width, top + 14 * scale, label, 225, 238, 248, 1);
 
         let track_left = left + 28 * scale;
         let track_top = top + 43 * scale;
@@ -658,7 +1124,12 @@ impl super::DisplayDevice {
     // FUNC: installer_countdown_frame
     // DESC: Draws a cinematic, bounded reboot countdown frame after installation succeeds.
     // ------------------=
-    pub(super) fn installer_countdown_frame(&mut self, remaining: usize, frame: usize, phase: usize) {
+    pub(super) fn installer_countdown_frame(
+        &mut self,
+        remaining: usize,
+        frame: usize,
+        phase: usize,
+    ) {
         let scale = self.ui_scale();
         let left = self.width * 31 / 100;
         let top = self.height * 48 / 100;
@@ -933,14 +1404,7 @@ impl super::DisplayDevice {
             self.text(left + 24 * scale, y, prompt, 235, 241, 248);
             let prompt_width = self.installer_text_width(prompt, false);
             let command_width = self.installer_text_width(command, false);
-            self.text(
-                left + 24 * scale + prompt_width,
-                y,
-                command,
-                255,
-                255,
-                255,
-            );
+            self.text(left + 24 * scale + prompt_width, y, command, 255, 255, 255);
             self.text(
                 left + 24 * scale + prompt_width + command_width,
                 y,
@@ -1042,7 +1506,16 @@ impl super::DisplayDevice {
         let graphic_left = left_panel + left_width + gap;
         let graphic_width = (left + width).saturating_sub(graphic_left + inset);
 
-        self.fill_rect_alpha(left_panel, content_top, left_width, content_height, 2, 11, 20, 202);
+        self.fill_rect_alpha(
+            left_panel,
+            content_top,
+            left_width,
+            content_height,
+            2,
+            11,
+            20,
+            202,
+        );
         self.outline_rounded_rect(
             left_panel,
             content_top,
@@ -1057,14 +1530,7 @@ impl super::DisplayDevice {
 
         let copy_x = left_panel + width * 25 / 1000;
         let headline_y = content_top + height * 39 / 1000;
-        self.installer_headline_text(
-            copy_x,
-            headline_y,
-            b"ONE DISK BECOMES",
-            246,
-            249,
-            253,
-        );
+        self.installer_headline_text(copy_x, headline_y, b"ONE DISK BECOMES", 246, 249, 253);
         let second_prefix = b"PART OF THE ";
         let second_y = headline_y + INSTALLER_HEADLINE_FONT_CELL_HEIGHT + 2;
         self.installer_headline_text(copy_x, second_y, second_prefix, 246, 249, 253);
@@ -1097,14 +1563,7 @@ impl super::DisplayDevice {
         .iter()
         .enumerate()
         {
-            self.installer_text(
-                copy_x,
-                body_y + index * 26,
-                line,
-                193,
-                207,
-                222,
-            );
+            self.installer_text(copy_x, body_y + index * 26, line, 193, 207, 222);
         }
         let taxonomy_y = body_y + 3 * 26 + 2;
         self.installer_text_strong(
@@ -1119,7 +1578,12 @@ impl super::DisplayDevice {
         let cards_top = taxonomy_y + INSTALLER_FONT_CELL_HEIGHT + 5;
         let cards_bottom = content_bottom.saturating_sub(10 * scale);
         let cards_height = cards_bottom.saturating_sub(cards_top);
-        self.installer_pool_space_cards(copy_x, cards_top, left_width.saturating_sub(width * 50 / 1000), cards_height);
+        self.installer_pool_space_cards(
+            copy_x,
+            cards_top,
+            left_width.saturating_sub(width * 50 / 1000),
+            cards_height,
+        );
 
         self.fill_rect_alpha(
             graphic_left,
@@ -1260,23 +1724,108 @@ impl super::DisplayDevice {
         self.icon_circle(cx, cy, half + 2, (24, 130, 174), size);
         match kind {
             0 => {
-                self.line(cx - half / 2, cy - half / 2, cx, cy - half * 3 / 4, color.0, color.1, color.2);
-                self.line(cx, cy - half * 3 / 4, cx + half / 2, cy - half / 2, color.0, color.1, color.2);
-                self.line(cx - half / 2, cy - half / 2, cx - half / 2, cy + half / 5, color.0, color.1, color.2);
-                self.line(cx + half / 2, cy - half / 2, cx + half / 2, cy + half / 5, color.0, color.1, color.2);
-                self.line(cx - half / 2, cy + half / 5, cx, cy + half * 3 / 4, color.0, color.1, color.2);
-                self.line(cx + half / 2, cy + half / 5, cx, cy + half * 3 / 4, color.0, color.1, color.2);
+                self.line(
+                    cx - half / 2,
+                    cy - half / 2,
+                    cx,
+                    cy - half * 3 / 4,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx,
+                    cy - half * 3 / 4,
+                    cx + half / 2,
+                    cy - half / 2,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx - half / 2,
+                    cy - half / 2,
+                    cx - half / 2,
+                    cy + half / 5,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx + half / 2,
+                    cy - half / 2,
+                    cx + half / 2,
+                    cy + half / 5,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx - half / 2,
+                    cy + half / 5,
+                    cx,
+                    cy + half * 3 / 4,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx + half / 2,
+                    cy + half / 5,
+                    cx,
+                    cy + half * 3 / 4,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
             }
             1 => {
                 self.icon_circle(cx, cy - half / 3, half / 3, color, size);
-                self.line(cx - half / 2, cy + half * 2 / 3, cx - half / 2, cy + half / 3, color.0, color.1, color.2);
-                self.line(cx - half / 2, cy + half / 3, cx, cy + half / 8, color.0, color.1, color.2);
-                self.line(cx + half / 2, cy + half / 3, cx, cy + half / 8, color.0, color.1, color.2);
-                self.line(cx + half / 2, cy + half / 3, cx + half / 2, cy + half * 2 / 3, color.0, color.1, color.2);
+                self.line(
+                    cx - half / 2,
+                    cy + half * 2 / 3,
+                    cx - half / 2,
+                    cy + half / 3,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx - half / 2,
+                    cy + half / 3,
+                    cx,
+                    cy + half / 8,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx + half / 2,
+                    cy + half / 3,
+                    cx,
+                    cy + half / 8,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx + half / 2,
+                    cy + half / 3,
+                    cx + half / 2,
+                    cy + half * 2 / 3,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
             }
             2 => {
                 let cell = (half * 2 / 3).max(4) as usize;
-                for (dx, dy) in [(-half * 2 / 3, -half * 2 / 3), (half / 6, -half * 2 / 3), (-half * 2 / 3, half / 6), (half / 6, half / 6)] {
+                for (dx, dy) in [
+                    (-half * 2 / 3, -half * 2 / 3),
+                    (half / 6, -half * 2 / 3),
+                    (-half * 2 / 3, half / 6),
+                    (half / 6, half / 6),
+                ] {
                     self.outline_rounded_rect(
                         (cx + dx) as usize,
                         (cy + dy) as usize,
@@ -1291,8 +1840,24 @@ impl super::DisplayDevice {
             }
             _ => {
                 self.icon_circle(cx, cy, half * 2 / 3, color, size);
-                self.line(cx - half * 3 / 4, cy - half / 3, cx - half / 3, cy - half / 2, color.0, color.1, color.2);
-                self.line(cx - half * 3 / 4, cy - half / 3, cx - half * 2 / 3, cy + half / 8, color.0, color.1, color.2);
+                self.line(
+                    cx - half * 3 / 4,
+                    cy - half / 3,
+                    cx - half / 3,
+                    cy - half / 2,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx - half * 3 / 4,
+                    cy - half / 3,
+                    cx - half * 2 / 3,
+                    cy + half / 8,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
             }
         }
     }
@@ -1359,7 +1924,16 @@ impl super::DisplayDevice {
         let right_panel = left_panel + left_width + gap;
         let right_width = (left + width).saturating_sub(right_panel + inset);
 
-        self.fill_rect_alpha(left_panel, content_top, left_width, content_height, 1, 10, 19, 225);
+        self.fill_rect_alpha(
+            left_panel,
+            content_top,
+            left_width,
+            content_height,
+            1,
+            10,
+            19,
+            225,
+        );
         self.outline_rounded_rect(
             left_panel,
             content_top,
@@ -1411,7 +1985,16 @@ impl super::DisplayDevice {
         let card_width = left_width.saturating_sub(4);
         if let Some(device) = storage_device {
             self.fill_rect_alpha(card_left, card_top, card_width, card_height, 3, 24, 38, 238);
-            self.fill_rect_alpha(card_left, card_top, card_width, card_height / 2, 20, 67, 92, 44);
+            self.fill_rect_alpha(
+                card_left,
+                card_top,
+                card_width,
+                card_height / 2,
+                20,
+                67,
+                92,
+                44,
+            );
             self.outline_rounded_rect(
                 card_left,
                 card_top,
@@ -1473,23 +2056,9 @@ impl super::DisplayDevice {
                 198,
                 238,
             );
-            self.installer_compact_text_strong(
-                badge_left + 8,
-                title_y,
-                badge,
-                189,
-                225,
-                248,
-            );
+            self.installer_compact_text_strong(badge_left + 8, title_y, badge, 189, 225, 248);
 
-            self.installer_compact_text(
-                detail_x,
-                title_y + 30,
-                device.model(),
-                126,
-                192,
-                234,
-            );
+            self.installer_compact_text(detail_x, title_y + 30, device.model(), 126, 192, 234);
             let (capacity, capacity_length) = Self::installer_capacity_label(device.capacity_mib());
             self.installer_compact_text(
                 detail_x,
@@ -1499,7 +2068,8 @@ impl super::DisplayDevice {
                 192,
                 234,
             );
-            let capacity_width = self.installer_compact_text_width(&capacity[..capacity_length], false);
+            let capacity_width =
+                self.installer_compact_text_width(&capacity[..capacity_length], false);
             self.installer_compact_text(
                 detail_x + capacity_width + 12,
                 title_y + 55,
@@ -1656,22 +2226,8 @@ impl super::DisplayDevice {
         for (index, (title, subtitle)) in benefits.iter().enumerate() {
             let row_y = benefits_top + index * 45;
             self.installer_discovery_benefit_icon(vision_x + 17, row_y + 16, index, 30);
-            self.installer_compact_text_strong(
-                vision_x + 42,
-                row_y,
-                title,
-                164,
-                215,
-                246,
-            );
-            self.installer_compact_text(
-                vision_x + 42,
-                row_y + 22,
-                subtitle,
-                87,
-                177,
-                229,
-            );
+            self.installer_compact_text_strong(vision_x + 42, row_y, title, 164, 215, 246);
+            self.installer_compact_text(vision_x + 42, row_y + 22, subtitle, 87, 177, 229);
         }
         let promise = b"PEOPLE + IDEAS + DATA";
         let promise_width = self.installer_compact_text_width(promise, true);
@@ -1737,12 +2293,60 @@ impl super::DisplayDevice {
                 }
             }
             1 => {
-                self.line(cx - half / 2, cy - half / 2, cx, cy - half * 3 / 4, color.0, color.1, color.2);
-                self.line(cx, cy - half * 3 / 4, cx + half / 2, cy - half / 2, color.0, color.1, color.2);
-                self.line(cx - half / 2, cy - half / 2, cx - half / 2, cy + half / 5, color.0, color.1, color.2);
-                self.line(cx + half / 2, cy - half / 2, cx + half / 2, cy + half / 5, color.0, color.1, color.2);
-                self.line(cx - half / 2, cy + half / 5, cx, cy + half * 3 / 4, color.0, color.1, color.2);
-                self.line(cx + half / 2, cy + half / 5, cx, cy + half * 3 / 4, color.0, color.1, color.2);
+                self.line(
+                    cx - half / 2,
+                    cy - half / 2,
+                    cx,
+                    cy - half * 3 / 4,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx,
+                    cy - half * 3 / 4,
+                    cx + half / 2,
+                    cy - half / 2,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx - half / 2,
+                    cy - half / 2,
+                    cx - half / 2,
+                    cy + half / 5,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx + half / 2,
+                    cy - half / 2,
+                    cx + half / 2,
+                    cy + half / 5,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx - half / 2,
+                    cy + half / 5,
+                    cx,
+                    cy + half * 3 / 4,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx + half / 2,
+                    cy + half / 5,
+                    cx,
+                    cy + half * 3 / 4,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
             }
             2 => {
                 for (index, bar) in [half / 3, half * 2 / 3, half].iter().enumerate() {
@@ -1760,8 +2364,24 @@ impl super::DisplayDevice {
             _ => {
                 self.icon_circle(cx - half / 3, cy, half / 2, color, size);
                 self.icon_circle(cx + half / 3, cy, half / 2, color, size);
-                self.line(cx - half * 2 / 3, cy - half / 3, cx + half * 2 / 3, cy + half / 3, color.0, color.1, color.2);
-                self.line(cx - half * 2 / 3, cy + half / 3, cx + half * 2 / 3, cy - half / 3, color.0, color.1, color.2);
+                self.line(
+                    cx - half * 2 / 3,
+                    cy - half / 3,
+                    cx + half * 2 / 3,
+                    cy + half / 3,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+                self.line(
+                    cx - half * 2 / 3,
+                    cy + half / 3,
+                    cx + half * 2 / 3,
+                    cy - half / 3,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
             }
         }
     }
@@ -1948,7 +2568,13 @@ impl super::DisplayDevice {
     // FUNC: installer_corner_accents
     // DESC: Draws the short cyan corner brackets used by the approved setup frame.
     // ------------------=
-    pub(super) fn installer_corner_accents(&mut self, left: usize, top: usize, width: usize, height: usize) {
+    pub(super) fn installer_corner_accents(
+        &mut self,
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+    ) {
         let length = (width / 110).clamp(10, 24) as i32;
         let inset = (width / 1000).clamp(2, 4) as i32;
         let color = (32, 173, 222);
@@ -1981,14 +2607,7 @@ impl super::DisplayDevice {
         self.fill_rect_alpha(left, top, width, height, 1, 10, 19, 194);
         self.outline_rect(left, top, width, height, 18, 83, 119);
         self.installer_corner_accents(left, top, width, height);
-        self.installer_text_strong(
-            left + 42,
-            top + 15,
-            b"WELCOME TO INFINITYOS",
-            50,
-            203,
-            246,
-        );
+        self.installer_text_strong(left + 42, top + 15, b"WELCOME TO INFINITYOS", 50, 203, 246);
         self.line(
             (left + 18) as i32,
             (top + 26) as i32,
@@ -2063,7 +2682,15 @@ impl super::DisplayDevice {
         let label_width = self.installer_compact_text_width(label, true);
         let label_x = left + width.saturating_sub(label_width) / 2;
         let label_y = top.saturating_sub(31);
-        self.fill_rect(left, label_y + 10, label_x.saturating_sub(left + 14), 1, 23, 91, 128);
+        self.fill_rect(
+            left,
+            label_y + 10,
+            label_x.saturating_sub(left + 14),
+            1,
+            23,
+            91,
+            128,
+        );
         self.fill_rect(
             label_x + label_width + 14,
             label_y + 10,
@@ -2105,7 +2732,15 @@ impl super::DisplayDevice {
             self.outline_rect(x, top, card_width, height, 27, 75, 104);
             self.installer_mesh_icon(x + 27, top + 28, *icon, 26);
             self.installer_compact_text_strong(x + 16, top + 43, title, 52, 198, 241);
-            self.fill_rect(x + 14, top + 74, card_width.saturating_sub(28), 1, 22, 81, 112);
+            self.fill_rect(
+                x + 14,
+                top + 74,
+                card_width.saturating_sub(28),
+                1,
+                22,
+                81,
+                112,
+            );
             self.installer_compact_text_wrapped(
                 x + 16,
                 top + 78,
@@ -2202,8 +2837,24 @@ impl super::DisplayDevice {
                     color.2,
                 );
                 for offset in [-half, half] {
-                    self.line(cx + offset, cy - half / 2, cx + offset * 2 / 3, cy - half / 2, color.0, color.1, color.2);
-                    self.line(cx + offset, cy + half / 2, cx + offset * 2 / 3, cy + half / 2, color.0, color.1, color.2);
+                    self.line(
+                        cx + offset,
+                        cy - half / 2,
+                        cx + offset * 2 / 3,
+                        cy - half / 2,
+                        color.0,
+                        color.1,
+                        color.2,
+                    );
+                    self.line(
+                        cx + offset,
+                        cy + half / 2,
+                        cx + offset * 2 / 3,
+                        cy + half / 2,
+                        color.0,
+                        color.1,
+                        color.2,
+                    );
                 }
                 self.star_orb(cx, cy, (half / 4).max(2), 250, false);
             }
@@ -2219,10 +2870,23 @@ impl super::DisplayDevice {
                     color.2,
                 );
                 self.icon_circle(cx, cy - half / 4, half / 2, color, size);
-                self.line(cx, cy + half / 4, cx, cy + half / 2, color.0, color.1, color.2);
+                self.line(
+                    cx,
+                    cy + half / 4,
+                    cx,
+                    cy + half / 2,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
             }
             2 => {
-                let nodes = [(cx, cy - half), (cx - half, cy + half / 2), (cx + half, cy + half / 2), (cx, cy)];
+                let nodes = [
+                    (cx, cy - half),
+                    (cx - half, cy + half / 2),
+                    (cx + half, cy + half / 2),
+                    (cx, cy),
+                ];
                 for (x, y) in nodes {
                     self.icon_circle(x, y, (half / 5).max(2), color, size);
                 }
@@ -2521,11 +3185,11 @@ impl super::DisplayDevice {
         }
     }
 
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
     // FUNC: installer_date_time_panel
     // DESC: Draws the functional date, time, and typed time-zone installer screen.
     // ------------------=
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     pub(super) fn installer_date_time_panel(
         &mut self,
         left: usize,
@@ -2583,7 +3247,16 @@ impl super::DisplayDevice {
         let form_width = self.width * 38 / 100;
         let form_height = self.height * 365 / 1000;
         self.fill_rect_alpha(form_left, form_top, form_width, form_height, 2, 13, 23, 212);
-        self.outline_rounded_rect(form_left, form_top, form_width, form_height, 12 * scale, 25, 95, 132);
+        self.outline_rounded_rect(
+            form_left,
+            form_top,
+            form_width,
+            form_height,
+            12 * scale,
+            25,
+            95,
+            132,
+        );
         self.installer_corner_accents(form_left, form_top, form_width, form_height);
         self.installer_headline_text(
             form_left + 20 * scale,
@@ -2615,7 +3288,12 @@ impl super::DisplayDevice {
         let fields: [(&[u8], &[u8], usize, usize); 3] = [
             (b"DATE", &date, 465, 2),
             (b"TIME", &time, 555, 3),
-            (b"TIME ZONE", Self::installer_time_zone_label(date_time.time_zone_id), 645, 4),
+            (
+                b"TIME ZONE",
+                Self::installer_time_zone_label(date_time.time_zone_id),
+                645,
+                4,
+            ),
         ];
         for (label, value, normalized_y, field_focus) in fields {
             let field_top = self.height * normalized_y / 1000;
@@ -2678,7 +3356,13 @@ impl super::DisplayDevice {
             );
         }
 
-        let active_y = if focus == 2 { 465 } else if focus == 3 { 555 } else { 645 };
+        let active_y = if focus == 2 {
+            465
+        } else if focus == 3 {
+            555
+        } else {
+            645
+        };
         if focus == 2 || focus == 3 {
             let (part_x, part_width) = if focus == 2 {
                 match active_part.min(2) {
@@ -2718,23 +3402,16 @@ impl super::DisplayDevice {
             map_width,
             map_height,
         );
-        let (longitude, latitude) = Self::installer_time_zone_map_coordinates(date_time.time_zone_id);
+        let (longitude, latitude) =
+            Self::installer_time_zone_map_coordinates(date_time.time_zone_id);
         let marker_x = map_left as i32 + (longitude as i32 + 180) * map_width as i32 / 360;
         let marker_y = map_top as i32 + (90 - latitude as i32) * map_height as i32 / 180;
         let band_width = (map_width / 24).max(4 * scale);
         let band_left = (marker_x - band_width as i32 / 2)
             .max(map_left as i32)
-            .min((map_left + map_width.saturating_sub(band_width)) as i32) as usize;
-        self.fill_rect_alpha(
-            band_left,
-            map_top,
-            band_width,
-            map_height,
-            32,
-            173,
-            238,
-            54,
-        );
+            .min((map_left + map_width.saturating_sub(band_width)) as i32)
+            as usize;
+        self.fill_rect_alpha(band_left, map_top, band_width, map_height, 32, 173, 238, 54);
         self.fill_rect(band_left, map_top, scale, map_height, 63, 196, 241);
         self.fill_rect(
             band_left + band_width.saturating_sub(scale),
@@ -2766,7 +3443,16 @@ impl super::DisplayDevice {
             17,
             208,
         );
-        self.outline_rounded_rect(art_left, art_top, art_width, art_height, 12 * scale, 38, 111, 151);
+        self.outline_rounded_rect(
+            art_left,
+            art_top,
+            art_width,
+            art_height,
+            12 * scale,
+            38,
+            111,
+            151,
+        );
         self.installer_corner_accents(art_left, art_top, art_width, art_height);
         self.installer_text_strong(
             art_left + 22 * scale,
@@ -2957,5 +3643,75 @@ impl super::DisplayDevice {
             );
         }
     }
-
 }
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
+// FUNC: installer_progress_update
+// DESC: Animates the graphical installer from its last verified checkpoint to the next one.
+// ------------------=
+pub fn installer_progress_update(percent: u8, label: &[u8]) {
+    unsafe {
+        let slot = &raw mut CONSOLE;
+        if let Some(console) = (*slot).as_mut() {
+            console.restore_cursor();
+            let target = (percent as usize).min(100);
+            let start = console.installer_progress.min(target);
+            for value in start..=target {
+                console.installer_animation_phase = (console.installer_animation_phase + 5) % 384;
+                console.display.installer_progress_frame(
+                    value,
+                    label,
+                    console.installer_animation_phase,
+                );
+                super::bootstrap::wait_frame(12);
+            }
+            console.installer_progress = target;
+            console.save_and_draw_cursor(console.cursor_x, console.cursor_y);
+        }
+    }
+}
+
+#[cfg(target_arch = "x86")]
+// ------------------------=
+// FUNC: installer_progress_update
+// DESC: Provides a text-only fallback when the architecture has no graphical installer surface.
+// ------------------=
+pub fn installer_progress_update(_percent: u8, _label: &[u8]) {}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
+// FUNC: installer_reboot_countdown
+// DESC: Presents a three-second animated transition before firmware reset.
+// ------------------=
+pub fn installer_reboot_countdown() {
+    unsafe {
+        let slot = &raw mut CONSOLE;
+        if let Some(console) = (*slot).as_mut() {
+            console.restore_cursor();
+            for remaining in (1..=3usize).rev() {
+                for frame in 0..30usize {
+                    console.installer_animation_phase =
+                        (console.installer_animation_phase + 4) % 384;
+                    console.display.installer_countdown_frame(
+                        remaining,
+                        frame,
+                        console.installer_animation_phase,
+                    );
+                    super::bootstrap::wait_frame(33);
+                }
+            }
+            console
+                .display
+                .installer_countdown_frame(0, 30, console.installer_animation_phase);
+            super::bootstrap::wait_frame(220);
+        }
+    }
+}
+
+#[cfg(target_arch = "x86")]
+// ------------------------=
+// FUNC: installer_reboot_countdown
+// DESC: Provides an immediate text-mode transition on architectures without graphical countdown support.
+// ------------------=
+pub fn installer_reboot_countdown() {}
