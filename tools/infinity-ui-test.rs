@@ -825,6 +825,7 @@ fn installed_system_hit_geometry_test() {
         maximized: false,
         expanded_row: None,
         scroll_offset: 0,
+        row_count: 6,
     };
     let settings_geometry = square.settings_window_geometry(settings);
     let normalized_center = |rect: Rect| {
@@ -861,10 +862,10 @@ fn installed_system_hit_geometry_test() {
     };
     let compact = SystemLayout::new(1600, 900);
     let expanded_geometry = compact.settings_window_geometry(expanded);
-    let accent_row = square.settings_row_geometry(expanded, 3);
+    let primary_row = square.settings_row_geometry(expanded, 3);
     assert_eq!(
-        accent_row.detail.y,
-        accent_row.summary.bottom() + 4,
+        primary_row.detail.y,
+        primary_row.summary.bottom() + 4,
         "expanded configuration must remain attached to its owning row"
     );
     assert!(expanded_geometry.maximum_scroll > 0);
@@ -880,7 +881,7 @@ fn installed_system_hit_geometry_test() {
         compact.settings_target(scroll_point.0, scroll_point.1, expanded),
         Some(SettingsTarget::ScrollPage(_))
     ));
-    let picker = square.settings_accent_geometry(expanded);
+    let picker = square.settings_primary_geometry(expanded);
     let picker_point = |rect: Rect| {
         (
             (rect.x + rect.width as i32 / 2) * 1000 / 1600,
@@ -889,14 +890,24 @@ fn installed_system_hit_geometry_test() {
     };
     let (spectrum_x, spectrum_y) = picker_point(picker.spectrum);
     assert!(matches!(
-        square.settings_accent_target(spectrum_x, spectrum_y, expanded),
+        square.settings_primary_target(spectrum_x, spectrum_y, expanded),
         Some(SettingsAccentTarget::Spectrum { saturation, value })
             if (120..=135).contains(&saturation) && (120..=135).contains(&value)
     ));
     let (hue_x, hue_y) = picker_point(picker.hue);
     assert!(matches!(
-        square.settings_accent_target(hue_x, hue_y, expanded),
+        square.settings_primary_target(hue_x, hue_y, expanded),
         Some(SettingsAccentTarget::Hue(hue)) if (165..=185).contains(&hue)
+    ));
+    let accent_expanded = SettingsWindowState {
+        expanded_row: Some(4),
+        ..expanded
+    };
+    let accent_picker = square.settings_accent_geometry(accent_expanded);
+    let (accent_x, accent_y) = picker_point(accent_picker.spectrum);
+    assert!(matches!(
+        square.settings_accent_target(accent_x, accent_y, accent_expanded),
+        Some(SettingsAccentTarget::Spectrum { .. })
     ));
     assert_eq!(
         resize_native_window(160, 210, 680, 620, 3, 920, 900, 600, 420),
@@ -1065,6 +1076,26 @@ fn skin_test() {
             before[index], after[index],
             "frosted chrome must not be flooded by the selected accent"
         );
+    }
+    let accent_only = after;
+    registry
+        .set_primary(0x35233d, AppearanceScope::Machine)
+        .unwrap();
+    assert_eq!(registry.primary_rgb(), 0x35233d);
+    let primary_after = [
+        registry.accent_surface(AccentSurface::WindowOutline),
+        registry.accent_surface(AccentSurface::Header),
+        registry.accent_surface(AccentSurface::TopBar),
+        registry.accent_surface(AccentSurface::Dock),
+        registry.accent_surface(AccentSurface::Widget),
+        registry.accent_surface(AccentSurface::Focus),
+        registry.accent_surface(AccentSurface::Selection),
+    ];
+    for index in 1..=4usize {
+        assert_ne!(accent_only[index], primary_after[index]);
+    }
+    for index in [0usize, 5, 6] {
+        assert_eq!(accent_only[index], primary_after[index]);
     }
     assert_eq!(hsv_to_rgb(0, 255, 255), 0xff0000);
     assert_eq!(hsv_to_rgb(120, 255, 255), 0x00ff00);

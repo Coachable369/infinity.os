@@ -6,6 +6,7 @@ pub const SKIN_PACKAGE_VERSION: u16 = 1;
 pub const MAX_SKINS: usize = 4;
 pub const SKIN_ID_BYTES: usize = 32;
 pub const SKIN_HEADER_BYTES: usize = 64;
+pub const DEFAULT_PRIMARY_RGB: u32 = 0x0d2238;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
@@ -165,6 +166,7 @@ pub struct SkinRegistry {
     safe: SkinId,
     generation: u32,
     accent_override: Option<Color>,
+    primary_override: Option<Color>,
 }
 
 impl SkinRegistry {
@@ -184,6 +186,7 @@ impl SkinRegistry {
             safe: safe.id,
             generation: 1,
             accent_override: None,
+            primary_override: None,
         }
     }
 
@@ -320,17 +323,47 @@ impl SkinRegistry {
     }
 
     // ------------------------=
+    // FUNC: set_primary
+    // DESC: Applies the machine-wide primary color used to tint every frosted OS surface.
+    // ------------------=
+    pub fn set_primary(
+        &mut self,
+        primary_rgb: u32,
+        _scope: AppearanceScope,
+    ) -> Result<u32, SkinError> {
+        if primary_rgb == 0 || primary_rgb > 0x00ff_ffff {
+            return Err(SkinError::InvalidAccent);
+        }
+        self.primary_override = Some(Color::rgb(primary_rgb));
+        self.generation = self.generation.wrapping_add(1);
+        Ok(self.generation)
+    }
+
+    // ------------------------=
+    // FUNC: primary_rgb
+    // DESC: Returns the active portable RGB primary theme color.
+    // ------------------=
+    pub fn primary_rgb(&self) -> u32 {
+        self.primary_override
+            .unwrap_or(Color::rgb(DEFAULT_PRIMARY_RGB))
+            .rgb24()
+    }
+
+    // ------------------------=
     // FUNC: accent_surface
     // DESC: Derives consistent window, navigation, dock, widget, focus, and selection colors.
     // ------------------=
     pub fn accent_surface(&self, surface: AccentSurface) -> Color {
         let accent = self.color(ColorRole::Accent);
+        let primary = self
+            .primary_override
+            .unwrap_or(Color::rgb(DEFAULT_PRIMARY_RGB));
         match surface {
             AccentSurface::WindowOutline => mix_color(accent, Color::rgb(0x00ef_f8ff), 112),
-            AccentSurface::Header => Color::rgb(0x000a_1b30),
-            AccentSurface::TopBar => Color::rgb(0x0006_1629),
-            AccentSurface::Dock => Color::rgb(0x000a_1d32),
-            AccentSurface::Widget => Color::rgb(0x000d_2238),
+            AccentSurface::Header => mix_color(primary, Color::rgb(0x0002_0c18), 56),
+            AccentSurface::TopBar => mix_color(primary, Color::rgb(0x0002_0c18), 104),
+            AccentSurface::Dock => mix_color(primary, Color::rgb(0x0002_0c18), 72),
+            AccentSurface::Widget => primary,
             AccentSurface::Focus => mix_color(accent, Color::rgb(0x00ff_ffff), 88),
             AccentSurface::Selection => mix_color(accent, Color::rgb(0x0008_2138), 208),
         }

@@ -113,6 +113,7 @@ pub struct SettingsWindowState {
     pub maximized: bool,
     pub expanded_row: Option<usize>,
     pub scroll_offset: usize,
+    pub row_count: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -988,7 +989,7 @@ impl SystemLayout {
         let viewport_top = top + title_height + 98 * self.scale;
         let viewport_height = height.saturating_sub(title_height + 116 * self.scale);
         let detail_height = state.expanded_row.map(settings_detail_height).unwrap_or(0);
-        let total_content_height = 5 * 58 + detail_height;
+        let total_content_height = state.row_count.clamp(1, 6) * 58 + detail_height;
         let visible_logical_height = viewport_height / self.scale.max(1);
         let maximum_scroll = total_content_height.saturating_sub(visible_logical_height);
         let track = rect(
@@ -1171,7 +1172,7 @@ impl SystemLayout {
         if !geometry.viewport.contains(point) {
             return None;
         }
-        for index in 0..5usize {
+        for index in 0..state.row_count.clamp(1, 6) {
             let row = self.settings_row_geometry(state, index);
             if row.summary.contains(point) {
                 return Some(SettingsTarget::ContentRow(index));
@@ -1231,7 +1232,27 @@ impl SystemLayout {
     // DESC: Returns the inline HSV picker geometry owned by the expanded Accent row.
     // ------------------=
     pub fn settings_accent_geometry(self, state: SettingsWindowState) -> SettingsAccentGeometry {
-        let row = self.settings_row_geometry(state, 3);
+        self.settings_color_geometry(state, 4)
+    }
+
+    // ------------------------=
+    // FUNC: settings_primary_geometry
+    // DESC: Returns the inline HSV picker geometry owned by the expanded Primary row.
+    // ------------------=
+    pub fn settings_primary_geometry(self, state: SettingsWindowState) -> SettingsAccentGeometry {
+        self.settings_color_geometry(state, 3)
+    }
+
+    // ------------------------=
+    // FUNC: settings_color_geometry
+    // DESC: Derives shared inline HSV geometry for one expanded color row.
+    // ------------------=
+    fn settings_color_geometry(
+        self,
+        state: SettingsWindowState,
+        index: usize,
+    ) -> SettingsAccentGeometry {
+        let row = self.settings_row_geometry(state, index);
         let hue_width = 24 * self.scale;
         let gap = 14 * self.scale;
         SettingsAccentGeometry {
@@ -1263,11 +1284,38 @@ impl SystemLayout {
         normalized_y: i32,
         state: SettingsWindowState,
     ) -> Option<SettingsAccentTarget> {
-        if state.expanded_row != Some(3) {
+        self.settings_color_target(normalized_x, normalized_y, state, 4)
+    }
+
+    // ------------------------=
+    // FUNC: settings_primary_target
+    // DESC: Maps a pointer position in the Primary picker to typed HSV coordinates.
+    // ------------------=
+    pub fn settings_primary_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+    ) -> Option<SettingsAccentTarget> {
+        self.settings_color_target(normalized_x, normalized_y, state, 3)
+    }
+
+    // ------------------------=
+    // FUNC: settings_color_target
+    // DESC: Maps one color row pointer position to typed HSV picker coordinates.
+    // ------------------=
+    fn settings_color_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+        index: usize,
+    ) -> Option<SettingsAccentTarget> {
+        if state.expanded_row != Some(index) {
             return None;
         }
         let point = self.point(normalized_x, normalized_y);
-        let geometry = self.settings_accent_geometry(state);
+        let geometry = self.settings_color_geometry(state, index);
         if geometry.spectrum.contains(point) {
             let x = point.x.saturating_sub(geometry.spectrum.x) as u32;
             let y = point.y.saturating_sub(geometry.spectrum.y) as u32;
@@ -1296,7 +1344,7 @@ impl SystemLayout {
 const fn settings_detail_height(index: usize) -> usize {
     match index {
         1 => 108,
-        3 => 112,
+        3 | 4 => 112,
         _ => 82,
     }
 }

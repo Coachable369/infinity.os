@@ -338,6 +338,7 @@ struct ConsoleRuntime {
     settings_window_drag_offset_x: i32,
     settings_window_drag_offset_y: i32,
     settings_accent_dirty: bool,
+    settings_primary_dirty: bool,
     onboarding_validation_error: bool,
     home_window_x: i32,
     home_window_y: i32,
@@ -436,12 +437,14 @@ impl ConsoleRuntime {
                 maximized: false,
                 expanded_row: None,
                 scroll_offset: 0,
+                row_count: 6,
             },
             settings_window_dragging: false,
             settings_window_resizing: None,
             settings_window_drag_offset_x: 0,
             settings_window_drag_offset_y: 0,
             settings_accent_dirty: false,
+            settings_primary_dirty: false,
             onboarding_validation_error: false,
             home_window_x: 30,
             home_window_y: 400,
@@ -823,6 +826,7 @@ impl ConsoleRuntime {
         self.shell_menu = 0;
         self.settings_editing = false;
         self.settings_accent_dirty = false;
+        self.settings_primary_dirty = false;
         self.settings_window_dragging = false;
         self.settings_window_resizing = None;
         self.home_window_dragging = false;
@@ -832,6 +836,7 @@ impl ConsoleRuntime {
         self.home_dragging_item = None;
         self.sync_icon_theme();
         self.sync_accent();
+        self.sync_primary();
         self.refresh_desktop_items();
         self.reset_input();
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
@@ -975,12 +980,14 @@ impl ConsoleRuntime {
     fn open_settings(&mut self, section: usize) {
         self.mode = ConsoleMode::Settings;
         self.system_focus = section.min(7);
+        self.settings_window.row_count = if self.system_focus == 1 { 6 } else { 5 };
         self.settings_editing = false;
         self.settings_window.expanded_row = None;
         self.settings_window.scroll_offset = 0;
         self.settings_window_dragging = false;
         self.settings_window_resizing = None;
         self.settings_accent_dirty = false;
+        self.settings_primary_dirty = false;
         self.reset_input();
     }
 
@@ -992,7 +999,7 @@ impl ConsoleRuntime {
         self.settings_window.expanded_row = if self.settings_window.expanded_row == Some(row) {
             None
         } else {
-            Some(row.min(4))
+            Some(row.min(self.settings_window.row_count.saturating_sub(1)))
         };
         self.settings_window.scroll_offset = 0;
         let layout = SystemLayout::new(
@@ -1074,6 +1081,99 @@ impl ConsoleRuntime {
                 .skins
                 .set_accent(accent, crate::ui::skin::AppearanceScope::User)
         });
+    }
+
+    // ------------------------=
+    // FUNC: sync_primary
+    // DESC: Applies the durable machine primary color to every live frosted OS surface.
+    // ------------------=
+    fn sync_primary(&mut self) {
+        let _ = crate::runtime::with_runtime(|runtime| {
+            runtime.ui.skins.set_primary(
+                runtime.identity.primary_rgb(),
+                crate::ui::skin::AppearanceScope::Machine,
+            )
+        });
+    }
+
+    // ------------------------=
+    // FUNC: preview_primary
+    // DESC: Applies one primary picker color live without writing every pointer sample.
+    // ------------------=
+    fn preview_primary(&mut self, primary_rgb: u32) {
+        let changed = crate::runtime::with_runtime(|runtime| {
+            runtime
+                .ui
+                .skins
+                .set_primary(primary_rgb, crate::ui::skin::AppearanceScope::Machine)
+        })
+        .transpose()
+        .is_ok();
+        if changed {
+            self.settings_primary_dirty = true;
+        }
+    }
+
+    // ------------------------=
+    // FUNC: commit_primary
+    // DESC: Commits the previewed primary color once to durable machine appearance state.
+    // ------------------=
+    fn commit_primary(&mut self) {
+        if !self.settings_primary_dirty {
+            return;
+        }
+        let user = self.current_user;
+        let changed = crate::runtime::with_runtime(|runtime| {
+            runtime
+                .identity
+                .update_primary(user, runtime.ui.skins.primary_rgb())
+        })
+        .transpose()
+        .is_ok();
+        if changed {
+            let _ = crate::runtime::persist_identity_state();
+        }
+        self.settings_primary_dirty = false;
+    }
+
+    // ------------------------=
+    // FUNC: adjust_primary
+    // DESC: Adjusts the primary theme color from typed picker coordinates and previews it live.
+    // ------------------=
+    fn adjust_primary(&mut self, target: SettingsAccentTarget) {
+        let current = crate::runtime::with_runtime(|runtime| runtime.ui.skins.primary_rgb())
+            .unwrap_or(crate::runtime::identity::DEFAULT_PRIMARY_RGB);
+        let (mut hue, mut saturation, mut value) = crate::ui::skin::rgb_to_hsv(current);
+        match target {
+            SettingsAccentTarget::Spectrum {
+                saturation: next_saturation,
+                value: next_value,
+            } => {
+                saturation = next_saturation;
+                value = next_value.max(20);
+            }
+            SettingsAccentTarget::Hue(next_hue) => hue = next_hue,
+        }
+        self.preview_primary(crate::ui::skin::hsv_to_rgb(hue, saturation, value));
+    }
+
+    // ------------------------=
+    // FUNC: cycle_primary
+    // DESC: Provides keyboard-only primary surface selection from restrained frosted presets.
+    // ------------------=
+    fn cycle_primary(&mut self) {
+        const PRESETS: [u32; 6] = [
+            0x0d2238, 0x162a46, 0x251f42, 0x142f36, 0x35233d, 0x273041,
+        ];
+        let current = crate::runtime::with_runtime(|runtime| runtime.ui.skins.primary_rgb())
+            .unwrap_or(PRESETS[0]);
+        let next = PRESETS
+            .iter()
+            .position(|value| *value == current)
+            .map(|index| PRESETS[(index + 1) % PRESETS.len()])
+            .unwrap_or(PRESETS[0]);
+        self.preview_primary(next);
+        self.commit_primary();
     }
 
     // ------------------------=
@@ -1226,7 +1326,8 @@ impl ConsoleRuntime {
                 });
             }
             (1, 1) => self.cycle_icon_theme(),
-            (1, 3) => self.cycle_accent(),
+            (1, 3) => self.cycle_primary(),
+            (1, 4) => self.cycle_accent(),
             (3, 0) => {
                 let current = crate::runtime::with_runtime(|runtime| {
                     runtime.identity.ai_profile(self.current_user)
@@ -1923,6 +2024,11 @@ impl ConsoleRuntime {
                 8
             };
             self.system_focus = (self.system_focus + count - 1) % count;
+            if self.mode == ConsoleMode::Settings {
+                self.settings_window.row_count = if self.system_focus == 1 { 6 } else { 5 };
+                self.settings_window.expanded_row = None;
+                self.settings_window.scroll_offset = 0;
+            }
             return;
         }
         if matches!(
@@ -1935,6 +2041,11 @@ impl ConsoleRuntime {
                 8
             };
             self.system_focus = (self.system_focus + 1) % count;
+            if self.mode == ConsoleMode::Settings {
+                self.settings_window.row_count = if self.system_focus == 1 { 6 } else { 5 };
+                self.settings_window.expanded_row = None;
+                self.settings_window.scroll_offset = 0;
+            }
             return;
         }
         if !matches!(key, ConsoleKey::Enter) {
@@ -3173,6 +3284,15 @@ impl ConsoleRuntime {
                 self.redraw();
                 return;
             } else if self.system_focus == 1 && left_button {
+                if let Some(target) = layout.settings_primary_target(
+                    self.pointer_x,
+                    self.pointer_y,
+                    self.settings_window,
+                ) {
+                    self.adjust_primary(target);
+                    self.redraw();
+                    return;
+                }
                 if let Some(target) = layout.settings_accent_target(
                     self.pointer_x,
                     self.pointer_y,
@@ -3182,6 +3302,11 @@ impl ConsoleRuntime {
                     self.redraw();
                     return;
                 }
+            }
+            if released && self.settings_primary_dirty {
+                self.commit_primary();
+                self.redraw();
+                return;
             }
             if released && self.settings_accent_dirty {
                 self.commit_accent();
@@ -3205,6 +3330,7 @@ impl ConsoleRuntime {
                 match target {
                     SettingsTarget::Section(index) if clicked => {
                         self.system_focus = index;
+                        self.settings_window.row_count = if index == 1 { 6 } else { 5 };
                         self.settings_editing = false;
                         self.settings_window.expanded_row = None;
                         self.settings_window.scroll_offset = 0;

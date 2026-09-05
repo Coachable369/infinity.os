@@ -4,6 +4,7 @@
 
 - Preserve the screenshot's centered navy window, compact title chrome, left navigation rail, and generous content column.
 - Use frosted translucent navy for window, header, navigation, dock, and widget fills. The default accent is clean Infinity Blue (`#4DA3FF`), mixed toward white for borders and focus lines; never wash a complete panel with the accent color.
+- Expose Primary and Accent as separate color controls. Primary starts at Frosted Navy (`#0D2238`) and tints window, header, navigation, dock, and widget glass; Accent remains Infinity Blue (`#4DA3FF`) and is reserved for borders, focus, selection, twiddles, and scrollbar details.
 - Replace detached configuration controls with one accordion: each 46-unit summary row owns a 12-unit disclosure twiddle and, when open, a rounded detail well directly beneath it.
 - Rotate the twiddle from right-facing to down-facing. Use the active accent only for the open row edge, focus ring, selected option, and scrollbar thumb.
 - Keep a 12-unit gap between rows. Only one row may be open, so hierarchy remains calm and scannable.
@@ -20,5 +21,6 @@
 - Summary: quiet deep-navy surface, label left, current value and twiddle right.
 - Hover/focus: brighter outline and twiddle.
 - Expanded: down twiddle, accent edge, contained detail surface.
+- Primary picker: the same inline HSV well as Accent, with live surface preview and one durable commit on pointer release.
 - Scrolling: subdued track, accent thumb, no content may paint outside the viewport.
 - Resizing: geometry follows the pointer continuously and all content reflows from shared layout calculations.

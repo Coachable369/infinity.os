@@ -74,6 +74,15 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: active_primary_rgb
+    // DESC: Returns the current portable RGB primary surface color.
+    // ------------------=
+    pub(super) fn active_primary_rgb(&self) -> u32 {
+        crate::runtime::with_runtime(|runtime| runtime.ui.skins.primary_rgb())
+            .unwrap_or(crate::runtime::identity::DEFAULT_PRIMARY_RGB)
+    }
+
+    // ------------------------=
     // FUNC: active_icon_theme
     // DESC: Reads the current user-scoped icon family for surface-independent semantic rendering.
     // ------------------=
@@ -3144,7 +3153,7 @@ impl super::DisplayDevice {
                 );
             }
             if focus == 1 {
-                self.settings_accent_picker(settings_window, scale);
+                self.settings_color_picker(settings_window, scale, false);
             }
         }
     }
@@ -3173,6 +3182,8 @@ impl super::DisplayDevice {
             self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
         let (outline_r, outline_g, outline_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        let (primary_r, primary_g, primary_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Widget);
         self.glass_panel(left, top, width, height, true);
         self.fill_rect_alpha(
             left,
@@ -3226,9 +3237,9 @@ impl super::DisplayDevice {
             top + title_height,
             nav_width,
             height.saturating_sub(title_height),
-            4,
-            15,
-            27,
+            primary_r / 2,
+            primary_g / 2,
+            primary_b / 2,
             214,
         );
         self.fill_rect_alpha(
@@ -3305,18 +3316,20 @@ impl super::DisplayDevice {
         );
         let icon_theme = crate::ui::icon_theme::IconThemeId::from_u8(self.active_icon_theme())
             .unwrap_or(crate::ui::icon_theme::IconThemeId::CrystalBlueGlass);
-        let rows: [(&[u8], &[u8]); 5] = match focus.min(7) {
+        let rows: [(&[u8], &[u8]); 6] = match focus.min(7) {
             0 => [
                 (b"Machine Name", input),
                 (b"Language", b"English (US)"),
                 (b"Region", b"United States"),
                 (b"System Generation", b"Active"),
                 (b"Updates", b"Generation based"),
+                (b"", b""),
             ],
             1 => [
                 (b"Skin", b"InfinityOS Default Dark"),
                 (b"Icon Set", icon_theme.name()),
                 (b"UI Scale", b"Automatic"),
+                (b"Primary", b"Custom color"),
                 (b"Accent", b"Custom color"),
                 (b"Wallpaper", b"Cosmic Horizon"),
             ],
@@ -3326,6 +3339,7 @@ impl super::DisplayDevice {
                 (b"Session", b"Authenticated"),
                 (b"Personal Space", b"Private"),
                 (b"Profile", b"Persistent"),
+                (b"", b""),
             ],
             3 => [
                 (b"AI Provider", b"Local only"),
@@ -3333,6 +3347,7 @@ impl super::DisplayDevice {
                 (b"Voice", b"Off"),
                 (b"Activation", b"Disabled"),
                 (b"Model Access", b"Capability gated"),
+                (b"", b""),
             ],
             4 => [
                 (b"Ambient Authority", b"Denied"),
@@ -3340,6 +3355,7 @@ impl super::DisplayDevice {
                 (b"Remote AI", b"Denied"),
                 (b"Session Auth", b"Verified"),
                 (b"Trusted UI", b"Active"),
+                (b"", b""),
             ],
             5 => [
                 (b"Display", b"Ready"),
@@ -3347,6 +3363,7 @@ impl super::DisplayDevice {
                 (b"Pointer", b"Ready"),
                 (b"Audio Input", b"Unavailable"),
                 (b"Network", b"Ready"),
+                (b"", b""),
             ],
             6 => [
                 (b"Infinity Pool", b"Online"),
@@ -3354,6 +3371,7 @@ impl super::DisplayDevice {
                 (b"Personal Space", b"Owned"),
                 (b"Recovery Space", b"Ready"),
                 (b"External Drives", b"Discoverable"),
+                (b"", b""),
             ],
             _ => [
                 (b"InfinityOS", b"Development"),
@@ -3361,9 +3379,14 @@ impl super::DisplayDevice {
                 (b"Boot", b"Verified"),
                 (b"Identity Format", b"Version 1"),
                 (b"Icon Families", b"3 complete sets"),
+                (b"", b""),
             ],
         };
-        for (index, (label, value)) in rows.iter().enumerate() {
+        for (index, (label, value)) in rows
+            .iter()
+            .take(settings_window.row_count.clamp(1, 6))
+            .enumerate()
+        {
             let row = layout.settings_row_geometry(settings_window, index);
             if row.summary.y >= geometry.viewport.y
                 && row.summary.bottom() <= geometry.viewport.bottom()
@@ -3378,9 +3401,9 @@ impl super::DisplayDevice {
                     summary_width,
                     row.summary.height as usize,
                     10 * scale,
-                    6,
-                    20,
-                    33,
+                    primary_r / 2,
+                    primary_g.saturating_mul(3) / 4,
+                    primary_b.saturating_mul(3) / 4,
                     218,
                 );
                 self.outline_rounded_rect(
@@ -3464,9 +3487,9 @@ impl super::DisplayDevice {
                     detail_width,
                     detail_height,
                     9 * scale,
-                    5,
-                    17,
-                    30,
+                    primary_r / 2,
+                    primary_g.saturating_mul(2) / 3,
+                    primary_b.saturating_mul(2) / 3,
                     232,
                 );
                 self.outline_rounded_rect(
@@ -3503,13 +3526,15 @@ impl super::DisplayDevice {
                         );
                     }
                 } else if focus == 1 && index == 3 {
-                    self.settings_accent_picker(settings_window, scale);
+                    self.settings_color_picker(settings_window, scale, true);
+                } else if focus == 1 && index == 4 {
+                    self.settings_color_picker(settings_window, scale, false);
                 } else {
                     let description: &[u8] = match (focus, index) {
                         (0, 0) => b"Rename this machine through the durable identity service.",
                         (1, 0) => b"Switch between installed, verified InfinityUI skins.",
                         (1, 2) => b"Automatic scale follows the active display density.",
-                        (1, 4) => b"Cosmic Horizon is the active packaged desktop wallpaper.",
+                        (1, 5) => b"Cosmic Horizon is the active packaged desktop wallpaper.",
                         (3, 0) => {
                             b"Choose whether the local provider is strictly required or preferred."
                         }
@@ -3585,17 +3610,26 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
-    // FUNC: settings_accent_picker
-    // DESC: Renders the live HSV color picker from the same geometry used for pointer hit testing.
+    // FUNC: settings_color_picker
+    // DESC: Renders a live Primary or Accent HSV picker from shared hit-test geometry.
     // ------------------=
-    fn settings_accent_picker(
+    fn settings_color_picker(
         &mut self,
         settings_window: crate::ui::system_layout::SettingsWindowState,
         scale: usize,
+        primary: bool,
     ) {
-        let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-            .settings_accent_geometry(settings_window);
-        let current = self.active_accent_rgb();
+        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let geometry = if primary {
+            layout.settings_primary_geometry(settings_window)
+        } else {
+            layout.settings_accent_geometry(settings_window)
+        };
+        let current = if primary {
+            self.active_primary_rgb()
+        } else {
+            self.active_accent_rgb()
+        };
         let (hue, saturation, value) = crate::ui::skin::rgb_to_hsv(current);
         let columns = 32usize;
         let rows = 12usize;
@@ -5544,6 +5578,11 @@ pub fn system_ui_present(
                 console.last_accent_rgb,
                 accent_rgb,
             );
+            let primary_rgb = console.display.active_primary_rgb();
+            let primary_changed = crate::ui::redraw::appearance_change_requires_structural_redraw(
+                console.last_primary_rgb,
+                primary_rgb,
+            );
             let bounded_menu_change =
                 crate::ui::redraw::desktop_menu_change_requires_bounded_redraw(
                     console.last_system_screen,
@@ -5563,6 +5602,7 @@ pub fn system_ui_present(
                 || console.last_system_step != step
                 || icon_theme_changed
                 || accent_changed
+                || primary_changed
                 || console.last_system_validation_error != validation_error
                 || console.last_home_window_visible != window_visible
                 || console.last_home_window_maximized != window_maximized
@@ -5776,6 +5816,7 @@ pub fn system_ui_present(
             console.last_system_menu = menu_kind;
             console.last_icon_theme = icon_theme;
             console.last_accent_rgb = accent_rgb;
+            console.last_primary_rgb = primary_rgb;
             console.last_system_content = content;
             console.last_system_validation_error = validation_error;
             console.last_home_window_x = window_x;

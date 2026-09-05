@@ -115,6 +115,13 @@ fn identity_lifecycle() {
     identities
         .update_user_accent(owner.id, owner.id, 0xd45cff)
         .unwrap();
+    identities.update_primary(owner.id, 0x251f42).unwrap();
+    let primary_round_trip = IdentitySystem::decode(&identities.encode()).unwrap();
+    assert_eq!(primary_round_trip.primary_rgb(), 0x251f42);
+    assert_eq!(
+        identities.update_primary(StableId::zero(), 0x142f36),
+        Err(IdentityError::AccessDenied)
+    );
     assert_eq!(
         identities.update_user_accent(second.id, owner.id, 0x33d69f),
         Err(IdentityError::AccessDenied)

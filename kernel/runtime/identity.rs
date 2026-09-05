@@ -9,7 +9,9 @@ pub const IDENTITY_FORMAT_VERSION: u16 = 1;
 pub const PASSWORD_ITERATIONS: u32 = 4096;
 pub const USER_ICON_THEME_OFFSET: usize = 4056;
 pub const USER_ACCENT_OFFSET: usize = 4064;
+pub const SYSTEM_PRIMARY_OFFSET: usize = 4088;
 pub const DEFAULT_ACCENT_RGB: u32 = 0x4da3ff;
+pub const DEFAULT_PRIMARY_RGB: u32 = 0x0d2238;
 const LEGACY_DEFAULT_ACCENT_RGB: u32 = 0x20bfff;
 
 pub const SESSION_PERSONAL_READ: u64 = 1 << 0;
@@ -276,6 +278,7 @@ pub struct IdentitySystem {
     onboarding: OnboardingState,
     next_id: u64,
     generation: u64,
+    primary_rgb: u32,
 }
 
 impl IdentitySystem {
@@ -296,6 +299,7 @@ impl IdentitySystem {
             onboarding: OnboardingState::Required,
             next_id: 1,
             generation: 0,
+            primary_rgb: DEFAULT_PRIMARY_RGB,
         }
     }
 
@@ -371,6 +375,39 @@ impl IdentitySystem {
         let result = *machine;
         self.commit();
         Ok(result)
+    }
+
+    // ------------------------=
+    // FUNC: primary_rgb
+    // DESC: Returns the durable machine-wide primary theme color.
+    // ------------------=
+    pub const fn primary_rgb(&self) -> u32 {
+        self.primary_rgb
+    }
+
+    // ------------------------=
+    // FUNC: update_primary
+    // DESC: Persists a validated primary theme color for OS-wide glass surfaces.
+    // ------------------=
+    pub fn update_primary(
+        &mut self,
+        actor: StableId,
+        primary_rgb: u32,
+    ) -> Result<u32, IdentityError> {
+        if !self
+            .users
+            .iter()
+            .flatten()
+            .any(|user| user.id == actor && user.state == UserState::Active)
+        {
+            return Err(IdentityError::AccessDenied);
+        }
+        if primary_rgb == 0 || primary_rgb > 0x00ff_ffff {
+            return Err(IdentityError::InvalidInput);
+        }
+        self.primary_rgb = primary_rgb;
+        self.commit();
+        Ok(primary_rgb)
     }
 
     // ------------------------=
@@ -1054,6 +1091,9 @@ impl IdentitySystem {
                 out[accent_at + 2] = (value.accent_rgb & 0xff) as u8;
             }
         }
+        out[SYSTEM_PRIMARY_OFFSET] = ((self.primary_rgb >> 16) & 0xff) as u8;
+        out[SYSTEM_PRIMARY_OFFSET + 1] = ((self.primary_rgb >> 8) & 0xff) as u8;
+        out[SYSTEM_PRIMARY_OFFSET + 2] = (self.primary_rgb & 0xff) as u8;
         let checksum = checksum32(&out[..IDENTITY_STATE_BYTES - 4]);
         put32(&mut out, IDENTITY_STATE_BYTES - 4, checksum);
         out
@@ -1077,6 +1117,14 @@ impl IdentitySystem {
         state.onboarding = onboarding_from(bytes[12])?;
         state.next_id = get64(bytes, 16).max(1);
         state.generation = get64(bytes, 24);
+        let stored_primary = ((bytes[SYSTEM_PRIMARY_OFFSET] as u32) << 16)
+            | ((bytes[SYSTEM_PRIMARY_OFFSET + 1] as u32) << 8)
+            | bytes[SYSTEM_PRIMARY_OFFSET + 2] as u32;
+        state.primary_rgb = if stored_primary == 0 {
+            DEFAULT_PRIMARY_RGB
+        } else {
+            stored_primary
+        };
         if bytes[32] == 1 {
             state.machine = Some(MachineIdentity {
                 id: read_id(bytes, 40),
