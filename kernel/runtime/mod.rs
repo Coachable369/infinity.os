@@ -119,6 +119,7 @@ pub struct InfinityRuntime {
     ui_event_capabilities: [Option<u64>; UI_EVENT_TYPES.len()],
     network_event_capabilities: [Option<u64>; NETWORK_EVENT_TYPES.len()],
     settings_network_profile_capability: Option<u64>,
+    onboarding_network_profile_capability: Option<u64>,
 }
 impl InfinityRuntime {
     // ------------------------=
@@ -147,6 +148,7 @@ impl InfinityRuntime {
             ui_event_capabilities: [None; UI_EVENT_TYPES.len()],
             network_event_capabilities: [None; NETWORK_EVENT_TYPES.len()],
             settings_network_profile_capability: None,
+            onboarding_network_profile_capability: None,
         }
     }
 
@@ -1225,6 +1227,20 @@ impl InfinityRuntime {
                 ).ok();
             }
         }
+        if self.onboarding_network_profile_capability.is_none() {
+            if let Some(onboarding) = self.service_identity(SERVICE_ONBOARDING) {
+                self.onboarding_network_profile_capability = self.capabilities.grant(
+                    CapabilityType::NetworkProfileActivate,
+                    0,
+                    1,
+                    0,
+                    runtime,
+                    onboarding,
+                    None,
+                    0,
+                ).ok();
+            }
+        }
         if self.live_profile && self.installer_authority[0].is_none() {
             let Some(installer) = self.service_identity(SERVICE_INSTALLER) else {
                 return;
@@ -1740,6 +1756,46 @@ pub fn activate_network_profile_from_settings(profile_id: u32, now: u64, correla
     if let Some(index) = NETWORK_EVENT_TYPES.iter().position(|event| *event == EVENT_NETWORK_PROFILE_ACTIVATED) {
         if let (Some(capability), Some(source)) = (runtime.network_event_capabilities[index], runtime.service_identity(SERVICE_NETWORK)) {
             let mut payload = [0u8; 16]; payload[..4].copy_from_slice(&profile_id.to_le_bytes()); payload[8..16].copy_from_slice(&generation.to_le_bytes());
+            let _ = runtime.events.publish(EventClass::Record, RoutingDomain::Network, EVENT_NETWORK_PROFILE_ACTIVATED, source, profile_id as u64, correlation_id, correlation_id, &payload, 220, now, &runtime.capabilities, capability);
+        }
+    }
+    true
+}
+
+// ------------------------=
+// FUNC: select_network_mode_from_onboarding
+// DESC: Stages one explicit first-boot connectivity choice for shared GUI and keyboard interaction.
+// ------------------=
+pub fn select_network_mode_from_onboarding(mode: network::types::NetworkSetupMode) -> bool {
+    let runtime = runtime_mut();
+    if runtime.service_identity(SERVICE_ONBOARDING).is_none() { return false; }
+    runtime.network.select_setup_mode(mode);
+    true
+}
+
+// ------------------------=
+// FUNC: apply_network_mode_from_onboarding
+// DESC: Applies and durably commits first-boot connectivity through the onboarding service's scoped authority.
+// ------------------=
+pub fn apply_network_mode_from_onboarding(now: u64, correlation_id: u64) -> bool {
+    let runtime = runtime_mut();
+    let Some(onboarding) = runtime.service_identity(SERVICE_ONBOARDING) else { return false; };
+    let Some(authority) = runtime.onboarding_network_profile_capability else { return false; };
+    if runtime.capabilities.validate(authority, onboarding, CapabilityType::NetworkProfileActivate, 0, 1, 0, now).is_err() { return false; }
+    let _previous = runtime.network.encode_state();
+    let profile_id: u32 = if runtime.network.setup_snapshot().selected == network::types::NetworkSetupMode::Offline { 3 } else { 1 };
+    if runtime.network.apply_setup_mode().is_err() { return false; }
+    #[cfg(target_os = "none")]
+    if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
+        let _ = runtime.network.restore_state(&_previous);
+        return false;
+    }
+    if let Some(index) = NETWORK_EVENT_TYPES.iter().position(|event| *event == EVENT_NETWORK_PROFILE_ACTIVATED) {
+        if let (Some(capability), Some(source)) = (runtime.network_event_capabilities[index], runtime.service_identity(SERVICE_NETWORK)) {
+            let generation = runtime.network.profiles.generation();
+            let mut payload = [0u8; 16];
+            payload[..4].copy_from_slice(&profile_id.to_le_bytes());
+            payload[8..16].copy_from_slice(&generation.to_le_bytes());
             let _ = runtime.events.publish(EventClass::Record, RoutingDomain::Network, EVENT_NETWORK_PROFILE_ACTIVATED, source, profile_id as u64, correlation_id, correlation_id, &payload, 220, now, &runtime.capabilities, capability);
         }
     }

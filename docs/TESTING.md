@@ -3,7 +3,9 @@
 ## Milestone 8 native networking
 
 Run `make network-test` for behavior-only IPv4/IPv6 type behavior, route
-selection, profile transaction/rollback/persistence, per-identity policy,
+selection, post-install network-mode activation and persistence, onboarding
+network-row pointer targets, profile transaction/rollback/persistence,
+per-identity policy,
 capability revocation and leases, bounded connection queues, resolver
 deadlines/cache expiry, discovery saturation/expiry, network IOP codecs,
 Console operation mapping, Network-domain IEF delivery, metadata isolation, and

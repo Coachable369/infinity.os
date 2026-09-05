@@ -72,6 +72,19 @@ impl InterfaceManager {
     pub fn interface_nth(&self, index: usize) -> Option<&NetworkInterface> { self.interfaces.iter().flatten().nth(index) }
 
     // ------------------------=
+    // FUNC: setup_interface
+    // DESC: Selects the first real interface compatible with a post-install wired or wireless setup choice.
+    // ------------------=
+    pub fn setup_interface(&self, mode: NetworkSetupMode) -> Option<&NetworkInterface> {
+        self.interfaces.iter().flatten().find(|interface| match mode {
+            NetworkSetupMode::Wired => matches!(interface.device.link_type, LinkType::Ethernet | LinkType::Virtual),
+            NetworkSetupMode::Wireless => interface.device.link_type == LinkType::Wireless,
+            NetworkSetupMode::Automatic => interface.device.link_type != LinkType::Loopback,
+            NetworkSetupMode::Offline => false,
+        })
+    }
+
+    // ------------------------=
     // FUNC: add_address
     // DESC: Validates and adds an interface-scoped IPv4 or IPv6 address.
     // ------------------=

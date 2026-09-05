@@ -19,6 +19,7 @@ use runtime::network::profile::{NetworkProfile, ProfileKind};
 use runtime::network::types::*;
 use runtime::network::NetworkRuntime;
 use runtime::service::*;
+use ui::system_layout::{OnboardingTarget, SystemLayout};
 
 // ------------------------=
 // FUNC: identity
@@ -63,6 +64,44 @@ fn profile_behavior() {
     assert_eq!(network.profiles.create(invalid), Err(NetworkError::InvalidProfile));
     assert_eq!(network.status().active_profile, 3);
     assert!(network.activate_profile(1).is_ok());
+}
+
+// ------------------------=
+// FUNC: onboarding_network_behavior
+// DESC: Verifies real interface availability, wired and wireless activation, offline persistence, and network-step hit geometry.
+// ------------------=
+fn onboarding_network_behavior() {
+    let mut offline = NetworkRuntime::new();
+    offline.initialize().unwrap();
+    assert!(!offline.setup_snapshot().wired_available);
+    assert!(!offline.setup_snapshot().wireless_available);
+    offline.select_setup_mode(NetworkSetupMode::Offline);
+    assert_eq!(offline.apply_setup_mode().unwrap(), ConnectivityClass::Offline);
+    let state = offline.encode_state();
+    let mut restored = NetworkRuntime::new();
+    restored.initialize().unwrap();
+    restored.restore_state(&state).unwrap();
+    assert_eq!(restored.setup_snapshot().selected, NetworkSetupMode::Offline);
+
+    let mut wired = NetworkRuntime::new();
+    wired.initialize().unwrap();
+    wired.interfaces.add_interface(NetworkInterface { id: 2, device: NetworkDevice { device_id: 22, driver_id: 7, link_type: LinkType::Virtual, hardware_address: None, link_state: LinkState::Up, maximum_frame_size: 1500, can_receive: true, can_transmit: true, offload_capabilities: 0, operational_state: OperationalState::Ready, error_code: 0 }, enabled: false, rx_packets: 0, tx_packets: 0, rx_drops: 0, tx_drops: 0 }).unwrap();
+    wired.select_setup_mode(NetworkSetupMode::Wired);
+    assert_eq!(wired.apply_setup_mode().unwrap(), ConnectivityClass::LinkOnly);
+    assert!(wired.interfaces.interface(2).unwrap().enabled);
+
+    let mut wireless = NetworkRuntime::new();
+    wireless.initialize().unwrap();
+    wireless.interfaces.add_interface(NetworkInterface { id: 3, device: NetworkDevice { device_id: 33, driver_id: 8, link_type: LinkType::Wireless, hardware_address: None, link_state: LinkState::Up, maximum_frame_size: 1500, can_receive: true, can_transmit: true, offload_capabilities: 0, operational_state: OperationalState::Ready, error_code: 0 }, enabled: false, rx_packets: 0, tx_packets: 0, rx_drops: 0, tx_drops: 0 }).unwrap();
+    wireless.select_setup_mode(NetworkSetupMode::Wireless);
+    assert_eq!(wireless.apply_setup_mode().unwrap(), ConnectivityClass::LinkOnly);
+    assert!(wireless.interfaces.interface(3).unwrap().enabled);
+
+    let layout = SystemLayout::new(1920, 1080);
+    assert_eq!(layout.onboarding_target(6, 200, 435), Some(OnboardingTarget::NetworkChoice(0)));
+    assert_eq!(layout.onboarding_target(6, 200, 489), Some(OnboardingTarget::NetworkChoice(1)));
+    assert_eq!(layout.onboarding_target(6, 200, 543), Some(OnboardingTarget::NetworkChoice(2)));
+    assert_eq!(layout.onboarding_target(5, 200, 435), None);
 }
 
 // ------------------------=
@@ -195,4 +234,4 @@ fn service_recovery_behavior() {
 // FUNC: main
 // DESC: Runs Milestone 8 behavior-only host acceptance tests.
 // ------------------=
-fn main() { route_behavior(); profile_behavior(); policy_and_transport_behavior(); resolver_and_discovery_behavior(); management_capability_behavior(); iop_and_console_behavior(); network_event_behavior(); service_recovery_behavior(); }
+fn main() { route_behavior(); profile_behavior(); onboarding_network_behavior(); policy_and_transport_behavior(); resolver_and_discovery_behavior(); management_capability_behavior(); iop_and_console_behavior(); network_event_behavior(); service_recovery_behavior(); }

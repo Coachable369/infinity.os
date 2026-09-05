@@ -12,6 +12,7 @@ pub enum OnboardingTarget {
     Back,
     Primary,
     Input,
+    NetworkChoice(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -341,6 +342,21 @@ impl SystemLayout {
             let field_top = card_top + (94 + 132 + 28) * self.scale;
             if rect(inner_left, field_top, inner_width, 50 * self.scale).contains(point) {
                 return Some(OnboardingTarget::Input);
+            }
+        }
+        if step == 6 {
+            let body_top = card_top + (94 + 132) * self.scale;
+            for index in 0..3usize {
+                if rect(
+                    inner_left,
+                    body_top + index * 58 * self.scale,
+                    inner_width,
+                    48 * self.scale,
+                )
+                .contains(point)
+                {
+                    return Some(OnboardingTarget::NetworkChoice(index));
+                }
             }
         }
 

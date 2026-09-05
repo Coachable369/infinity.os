@@ -1674,7 +1674,7 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: onboarding_step_indicator
-    // DESC: Renders six compact progress segments with completed, current, and remaining states.
+    // DESC: Renders seven compact progress segments with completed, current, and remaining states.
     // ------------------=
     pub(super) fn onboarding_step_indicator(
         &mut self,
@@ -1689,11 +1689,12 @@ impl super::DisplayDevice {
             2 | 3 => 2,
             4 => 3,
             5 => 4,
-            _ => 5,
+            6 => 5,
+            _ => 6,
         };
         let gap = 8usize;
-        let segment_width = width.saturating_sub(gap * 5) / 6;
-        for index in 0..6usize {
+        let segment_width = width.saturating_sub(gap * 6) / 7;
+        for index in 0..7usize {
             let x = left + index * (segment_width + gap);
             let (red, green, blue, alpha) = if index < visual_step {
                 (63, 197, 239, 235)
@@ -1881,6 +1882,7 @@ impl super::DisplayDevice {
             3 => (b"PROFILE", b"How should we address you?", b"Use the name you want InfinityOS to show across your local experience.", b"Display name"),
             4 => (b"SECURITY", b"Secure your account", b"Use at least eight characters. Your password remains local to this system.", b"Create a password"),
             5 => (b"AI, VOICE & APPEARANCE", b"Private by default", b"Local AI is ready. Remote processing and microphone access begin disabled.", b""),
+            6 => (b"NETWORK", b"Connect this Infinity Node", b"Choose wired, Wi-Fi, or continue offline. You can change this later.", b""),
             _ => (b"READY", b"Your Infinity begins here", b"Your identity, Personal Space, privacy policy, and Default Dark appearance are ready.", b""),
         };
         let content_top = card_top + 94 * scale;
@@ -2055,6 +2057,8 @@ impl super::DisplayDevice {
                     1,
                 );
             }
+        } else if step == 6 {
+            self.onboarding_network_rows(inner_left, body_top, inner_width, focus, validation_error);
         } else {
             self.fill_rounded_rect_alpha(
                 inner_left,
@@ -2098,6 +2102,84 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: onboarding_network_rows
+    // DESC: Draws real wired, wireless, and offline choices from authoritative Network Runtime state.
+    // ------------------=
+    pub(super) fn onboarding_network_rows(
+        &mut self,
+        left: usize,
+        top: usize,
+        width: usize,
+        focus: usize,
+        validation_error: bool,
+    ) {
+        use crate::runtime::network::types::{ConnectivityClass, LinkState, NetworkSetupMode};
+        let scale = self.ui_scale().max(1);
+        let snapshot = crate::runtime::with_runtime(|runtime| runtime.network.setup_snapshot());
+        let selected = snapshot.map(|value| value.selected).unwrap_or(NetworkSetupMode::Automatic);
+        let wired_detail: &[u8] = match snapshot {
+            Some(value) if value.wired_available && value.wired_link == LinkState::Up => b"Connected link detected",
+            Some(value) if value.wired_available => b"Connect a network cable",
+            _ => b"No wired adapter detected",
+        };
+        let wireless_detail: &[u8] = match snapshot {
+            Some(value) if value.wireless_available && value.wireless_link == LinkState::Up => b"Connected wireless link detected",
+            Some(value) if value.wireless_available => b"Wireless link is not connected",
+            _ => b"No wireless adapter detected",
+        };
+        let rows: [(&[u8], &[u8], usize, NetworkSetupMode); 3] = [
+            (b"Wired network", wired_detail, 4usize, NetworkSetupMode::Wired),
+            (b"Wi-Fi", wireless_detail, 3usize, NetworkSetupMode::Wireless),
+            (b"Continue offline", b"Set up networking later in Settings", 8usize, NetworkSetupMode::Offline),
+        ];
+        for (index, (label, detail, icon, mode)) in rows.iter().enumerate() {
+            let row_top = top + index * 58 * scale;
+            let is_selected = *mode == selected
+                || (selected == NetworkSetupMode::Automatic
+                    && index == snapshot.map(|value| if value.wired_available { 0 } else if value.wireless_available { 1 } else { 2 }).unwrap_or(2));
+            let is_focused = focus == index + 2;
+            self.fill_rounded_rect_alpha(
+                left,
+                row_top,
+                width,
+                48 * scale,
+                10 * scale,
+                if is_focused { 9 } else { 5 },
+                if is_focused { 44 } else { 20 },
+                if is_focused { 68 } else { 34 },
+                255,
+            );
+            self.outline_rounded_rect(
+                left,
+                row_top,
+                width,
+                48 * scale,
+                10 * scale,
+                if is_focused || is_selected { 55 } else { 31 },
+                if is_focused || is_selected { 194 } else { 74 },
+                if is_focused || is_selected { 238 } else { 98 },
+            );
+            self.authentication_icon(left + 22 * scale, row_top + 24 * scale, *icon, 20 * scale, is_selected);
+            self.ui_text_strong(left + 46 * scale, row_top + 7 * scale, label, 226, 237, 245, 1);
+            self.ui_text(left + 46 * scale, row_top + 27 * scale, detail, 133, 157, 177, 1);
+            if is_selected {
+                self.ui_text(
+                    left + width.saturating_sub(72 * scale),
+                    row_top + 16 * scale,
+                    if snapshot.map(|value| value.connectivity != ConnectivityClass::Offline).unwrap_or(false) && index < 2 { b"ACTIVE" } else { b"SELECTED" },
+                    88,
+                    207,
+                    244,
+                    1,
+                );
+            }
+        }
+        if validation_error {
+            self.ui_text(left, top + 178 * scale, b"That connection is unavailable. Connect hardware or choose Offline.", 255, 118, 126, 1);
+        }
+    }
+
+    // ------------------------=
     // FUNC: onboarding_actions
     // DESC: Repaints only the first-boot navigation controls for flicker-free pointer hover changes.
     // ------------------=
@@ -2131,7 +2213,7 @@ impl super::DisplayDevice {
                 button_top,
                 inner_width.saturating_sub(back_width + 12 * scale),
                 button_height,
-                if step >= 6 {
+                if step >= 7 {
                     b"Enter InfinityOS"
                 } else {
                     b"Continue"
@@ -2192,6 +2274,19 @@ impl super::DisplayDevice {
                 focus == 1,
                 placeholder,
             );
+        } else if step == 6 {
+            let scale = self.ui_scale().max(1);
+            let top_bar = (46 * scale).min(self.height / 12).max(40);
+            let card_width = (self.width * 34 / 100).clamp(500, 600 * scale);
+            let card_height = (self.height * 68 / 100)
+                .clamp(560, 680 * scale)
+                .min(self.height.saturating_sub(top_bar + 24));
+            let card_left = self.width * 4 / 100;
+            let card_top = top_bar + self.height.saturating_sub(top_bar + card_height) / 2;
+            let inner_left = card_left + 32 * scale;
+            let inner_width = card_width.saturating_sub(64 * scale);
+            let body_top = card_top + (94 + 132) * scale;
+            self.onboarding_network_rows(inner_left, body_top, inner_width, focus, false);
         }
         self.onboarding_actions(step, focus);
     }

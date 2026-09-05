@@ -2131,14 +2131,65 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: select_onboarding_network
+    // DESC: Stages one pointer or keyboard-selected first-boot network mode through the native runtime.
+    // ------------------=
+    fn select_onboarding_network(&mut self, index: usize) -> bool {
+        let mode = match index {
+            0 => crate::runtime::network::types::NetworkSetupMode::Wired,
+            1 => crate::runtime::network::types::NetworkSetupMode::Wireless,
+            _ => crate::runtime::network::types::NetworkSetupMode::Offline,
+        };
+        crate::runtime::select_network_mode_from_onboarding(mode)
+    }
+
+    // ------------------------=
     // FUNC: input_onboarding
-    // DESC: Advances modular first-boot steps and commits each authoritative identity change.
+    // DESC: Advances modular first-boot steps and commits identity and connectivity changes.
     // ------------------=
     fn input_onboarding(&mut self, key: ConsoleKey) {
+        if self.system_step == 6 {
+            if matches!(key, ConsoleKey::Tab(_)) {
+                let reverse = matches!(key, ConsoleKey::Tab(true));
+                self.system_focus = match (reverse, self.system_focus) {
+                    (false, 0) => 2,
+                    (false, 2) => 3,
+                    (false, 3) => 4,
+                    (false, 4) => 1,
+                    (false, _) => 0,
+                    (true, 0) => 1,
+                    (true, 1) => 4,
+                    (true, 4) => 3,
+                    (true, 3) => 2,
+                    (true, _) => 0,
+                };
+                return;
+            }
+            if matches!(key, ConsoleKey::Up | ConsoleKey::Down) {
+                self.system_focus = match (matches!(key, ConsoleKey::Up), self.system_focus) {
+                    (true, 2) => 4,
+                    (true, 3) => 2,
+                    (true, _) => 3,
+                    (false, 2) => 3,
+                    (false, 3) => 4,
+                    (false, _) => 2,
+                };
+                return;
+            }
+            if matches!(key, ConsoleKey::Left | ConsoleKey::Right) {
+                self.system_focus = if matches!(key, ConsoleKey::Left) { 0 } else { 1 };
+                return;
+            }
+            if matches!(key, ConsoleKey::Enter) && (2..=4).contains(&self.system_focus) {
+                self.onboarding_validation_error = !self.select_onboarding_network(self.system_focus - 2);
+                if !self.onboarding_validation_error { self.system_focus = 1; }
+                return;
+            }
+        }
         if matches!(
             key,
             ConsoleKey::Tab(_) | ConsoleKey::Left | ConsoleKey::Right
-        ) && self.system_step > 0
+        ) && self.system_step > 0 && self.system_step != 6
         {
             let reverse = matches!(key, ConsoleKey::Tab(true) | ConsoleKey::Left);
             self.system_focus = if reverse {
@@ -2154,7 +2205,7 @@ impl ConsoleRuntime {
             };
             return;
         }
-        if self.system_focus == 1 && self.edit_system_text(key) {
+        if (1..=4).contains(&self.system_step) && self.system_focus == 1 && self.edit_system_text(key) {
             self.onboarding_validation_error = false;
             return;
         }
@@ -2276,7 +2327,27 @@ impl ConsoleRuntime {
                 }
                 self.system_step = 5;
             }
-            5 => self.system_step = 6,
+            5 => {
+                let selected = crate::runtime::with_runtime(|runtime| {
+                    let state = runtime.network.setup_snapshot();
+                    if state.wired_available {
+                        crate::runtime::network::types::NetworkSetupMode::Wired
+                    } else if state.wireless_available {
+                        crate::runtime::network::types::NetworkSetupMode::Wireless
+                    } else {
+                        crate::runtime::network::types::NetworkSetupMode::Offline
+                    }
+                }).unwrap_or(crate::runtime::network::types::NetworkSetupMode::Offline);
+                let _ = crate::runtime::select_network_mode_from_onboarding(selected);
+                self.system_step = 6;
+            }
+            6 => {
+                if !crate::runtime::apply_network_mode_from_onboarding(0, 0x4f4e_424f_4152_4401) {
+                    self.onboarding_validation_error = true;
+                    return;
+                }
+                self.system_step = 7;
+            }
             _ => {
                 let session = crate::runtime::with_runtime(|runtime| {
                     runtime.identity.complete_onboarding()?;
@@ -2304,7 +2375,7 @@ impl ConsoleRuntime {
             }
         }
         self.reset_input();
-        self.system_focus = 1;
+        self.system_focus = if self.system_step == 6 { 2 } else { 1 };
         self.onboarding_validation_error = false;
         let _ = crate::runtime::persist_identity_state();
     }
@@ -3476,6 +3547,7 @@ impl ConsoleRuntime {
                 match target {
                     OnboardingTarget::Back => self.system_focus = 0,
                     OnboardingTarget::Primary | OnboardingTarget::Input => self.system_focus = 1,
+                    OnboardingTarget::NetworkChoice(index) => self.system_focus = index + 2,
                 }
                 if clicked && !matches!(target, OnboardingTarget::Input) {
                     self.input_onboarding(ConsoleKey::Enter);

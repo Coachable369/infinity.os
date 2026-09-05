@@ -36,6 +36,16 @@ pub struct TopologySnapshot {
     pub discovered_service_count: u8, pub remote_identity_count: u8,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct NetworkSetupSnapshot {
+    pub selected: NetworkSetupMode,
+    pub wired_available: bool,
+    pub wired_link: LinkState,
+    pub wireless_available: bool,
+    pub wireless_link: LinkState,
+    pub connectivity: ConnectivityClass,
+}
+
 pub struct NetworkRuntime {
     pub interfaces: InterfaceManager,
     pub policy: PolicyEngine,
@@ -45,6 +55,7 @@ pub struct NetworkRuntime {
     pub discovery: DiscoveryManager,
     initialized: bool,
     degraded_reason: u32,
+    setup_mode: NetworkSetupMode,
 }
 
 impl NetworkRuntime {
@@ -52,7 +63,7 @@ impl NetworkRuntime {
     // FUNC: new
     // DESC: Creates the separable native networking managers without ambient authority.
     // ------------------=
-    pub const fn new() -> Self { Self { interfaces: InterfaceManager::new(), policy: PolicyEngine::new(), profiles: ProfileManager::new(), resolver: Resolver::new(), connections: ConnectionManager::new(), discovery: DiscoveryManager::new(), initialized: false, degraded_reason: 0 } }
+    pub const fn new() -> Self { Self { interfaces: InterfaceManager::new(), policy: PolicyEngine::new(), profiles: ProfileManager::new(), resolver: Resolver::new(), connections: ConnectionManager::new(), discovery: DiscoveryManager::new(), initialized: false, degraded_reason: 0, setup_mode: NetworkSetupMode::Automatic } }
 
     // ------------------------=
     // FUNC: initialize
@@ -175,6 +186,50 @@ impl NetworkRuntime {
     pub fn topology(&self) -> TopologySnapshot { TopologySnapshot { local_machine: true, interface_count: self.interfaces.interface_count() as u8, route_count: self.interfaces.route_count() as u8, discovered_service_count: self.discovery.count() as u8, remote_identity_count: 0 } }
 
     // ------------------------=
+    // FUNC: setup_snapshot
+    // DESC: Returns honest post-install connectivity choices from discovered interface state.
+    // ------------------=
+    pub fn setup_snapshot(&self) -> NetworkSetupSnapshot {
+        let wired = self.interfaces.setup_interface(NetworkSetupMode::Wired);
+        let wireless = self.interfaces.setup_interface(NetworkSetupMode::Wireless);
+        NetworkSetupSnapshot {
+            selected: self.setup_mode,
+            wired_available: wired.is_some(),
+            wired_link: wired.map(|interface| interface.device.link_state).unwrap_or(LinkState::Unknown),
+            wireless_available: wireless.is_some(),
+            wireless_link: wireless.map(|interface| interface.device.link_state).unwrap_or(LinkState::Unknown),
+            connectivity: self.status().connectivity,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: select_setup_mode
+    // DESC: Stages the user's explicit first-boot connectivity choice without claiming a connection exists.
+    // ------------------=
+    pub fn select_setup_mode(&mut self, mode: NetworkSetupMode) { self.setup_mode = mode; }
+
+    // ------------------------=
+    // FUNC: apply_setup_mode
+    // DESC: Applies the staged offline, wired, or already-associated wireless configuration through native profile state.
+    // ------------------=
+    pub fn apply_setup_mode(&mut self) -> Result<ConnectivityClass, NetworkError> {
+        if self.setup_mode == NetworkSetupMode::Offline {
+            self.activate_profile(3)?;
+            return Ok(ConnectivityClass::Offline);
+        }
+        let selected = if self.setup_mode == NetworkSetupMode::Automatic {
+            self.interfaces.setup_interface(NetworkSetupMode::Automatic)
+        } else {
+            self.interfaces.setup_interface(self.setup_mode)
+        }.ok_or(NetworkError::InterfaceNotFound)?;
+        if selected.device.link_state != LinkState::Up { return Err(NetworkError::LinkDown); }
+        let id = selected.id;
+        self.interfaces.set_state(id, true)?;
+        self.activate_profile(1)?;
+        Ok(self.status().connectivity)
+    }
+
+    // ------------------------=
     // FUNC: inspect_connection
     // DESC: Returns full ownership metadata only to the owner or an explicitly authorized inspector.
     // ------------------=
@@ -187,13 +242,13 @@ impl NetworkRuntime {
     // FUNC: encode_state
     // DESC: Encodes the persistent profile selection as a typed versioned native object payload.
     // ------------------=
-    pub fn encode_state(&self) -> [u8; NETWORK_STATE_BYTES] { let mut out = [0; NETWORK_STATE_BYTES]; out[..8].copy_from_slice(&NETWORK_STATE_MAGIC); out[8..10].copy_from_slice(&1u16.to_le_bytes()); out[12..16].copy_from_slice(&self.profiles.active_id().to_le_bytes()); out[16..24].copy_from_slice(&self.profiles.generation().to_le_bytes()); out }
+    pub fn encode_state(&self) -> [u8; NETWORK_STATE_BYTES] { let mut out = [0; NETWORK_STATE_BYTES]; out[..8].copy_from_slice(&NETWORK_STATE_MAGIC); out[8..10].copy_from_slice(&1u16.to_le_bytes()); out[10] = match self.setup_mode { NetworkSetupMode::Automatic => 0, NetworkSetupMode::Wired => 1, NetworkSetupMode::Wireless => 2, NetworkSetupMode::Offline => 3 }; out[12..16].copy_from_slice(&self.profiles.active_id().to_le_bytes()); out[16..24].copy_from_slice(&self.profiles.generation().to_le_bytes()); out }
 
     // ------------------------=
     // FUNC: restore_state
     // DESC: Validates and restores native persistent network state without ad-hoc text configuration.
     // ------------------=
-    pub fn restore_state(&mut self, input: &[u8]) -> Result<(), NetworkError> { if input.len() < NETWORK_STATE_BYTES || input[..8] != NETWORK_STATE_MAGIC || u16::from_le_bytes([input[8],input[9]]) != 1 { return Err(NetworkError::InvalidProfile); } let id = u32::from_le_bytes([input[12],input[13],input[14],input[15]]); let generation = u64::from_le_bytes([input[16],input[17],input[18],input[19],input[20],input[21],input[22],input[23]]); self.profiles.restore_active(id, generation)?; self.apply_active_profile() }
+    pub fn restore_state(&mut self, input: &[u8]) -> Result<(), NetworkError> { if input.len() < NETWORK_STATE_BYTES || input[..8] != NETWORK_STATE_MAGIC || u16::from_le_bytes([input[8],input[9]]) != 1 { return Err(NetworkError::InvalidProfile); } self.setup_mode = match input[10] { 0 => NetworkSetupMode::Automatic, 1 => NetworkSetupMode::Wired, 2 => NetworkSetupMode::Wireless, 3 => NetworkSetupMode::Offline, _ => return Err(NetworkError::InvalidProfile) }; let id = u32::from_le_bytes([input[12],input[13],input[14],input[15]]); let generation = u64::from_le_bytes([input[16],input[17],input[18],input[19],input[20],input[21],input[22],input[23]]); self.profiles.restore_active(id, generation)?; self.apply_active_profile() }
 
     // ------------------------=
     // FUNC: initialized

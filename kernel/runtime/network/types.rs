@@ -50,6 +50,8 @@ pub enum SecurityState { Plain, Negotiating, VerifiedFixture, VerificationFailed
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ConnectivityClass { Offline, LinkOnly, LocalNetwork, LimitedConnectivity, Routed, InternetReachableOptional, Degraded }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NetworkSetupMode { Automatic, Wired, Wireless, Offline }
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Subject { System, Context(SecurityIdentity), Service(u32), Application(u64), Session(u64) }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Direction { Inbound, Outbound }

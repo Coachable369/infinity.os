@@ -22,16 +22,21 @@ critical, so local storage, authentication, UI, Console, and local AI continue.
   deterministic routing; fixed-capacity state; Offline profile behavior;
   scoped policy; capability revocation and leases; typed loopback connection
   queues; resolver deadlines/cache expiry; discovery leases; Network-domain
-  IEF records; Console schema mapping; service restart.
+  IEF records; Console schema mapping; service restart; first-boot wired,
+  already-associated wireless, and offline selection behavior; setup-mode
+  persistence; and resolution-aware network-step pointer targets.
 - **IMPLEMENTED BUT UNTESTED IN A VM:** settings-side Network Inspector,
-  transactional built-in profile selection, native profile persistence, and
-  System Generation bootstrap objects.
+  transactional built-in profile selection, native profile persistence,
+  the graphical post-install Network step, and System Generation bootstrap
+  objects.
 - **SCAFFOLDED:** secure-connection identity boundary, future NodeIdentity on
   connections/discovery, dynamic address sources, listener operation IDs,
   wire resolver adapter, and physical adapter registration boundary.
 - **UNSUPPORTED:** physical NIC discovery/interrupts/DMA, virtio-net,
   DHCP/SLAAC exchanges, routed packet IO, DNS wire queries, TCP/UDP wire
-  engines, and production TLS/certificate validation.
+  engines, Wi-Fi scanning/association, and production TLS/certificate
+  validation. When those devices or links are unavailable, onboarding reports
+  that state and offers offline setup; it never invents an SSID or connection.
 
 `InternetReachable` is never inferred from an address or default route. The
 implemented connectivity states are Offline, LinkOnly, LocalNetwork, Routed,
