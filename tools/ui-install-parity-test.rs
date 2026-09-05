@@ -97,6 +97,45 @@ fn assert_packaged_bytes(
 }
 
 // ------------------------=
+// FUNC: assert_packaged_path_absent
+// DESC: Verifies an undeclared asset cannot be extracted from a live or installed system container.
+// ------------------=
+fn assert_packaged_path_absent(
+    container: &Container<'_>,
+    packaged_path: &str,
+    scratch: &Path,
+    sequence: usize,
+) {
+    let destination = scratch.join(format!("unexpected-asset-{sequence}"));
+    let status = match container.kind {
+        ContainerKind::Fat => Command::new("mcopy")
+            .args(["-i", container.image, &format!("::{packaged_path}")])
+            .arg(&destination)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+        ContainerKind::Iso => Command::new("xorriso")
+            .args([
+                "-osirrox",
+                "on",
+                "-indev",
+                container.image,
+                "-extract",
+                packaged_path,
+            ])
+            .arg(&destination)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+    }
+    .expect("container extraction tool must run");
+    assert!(
+        !status.success(),
+        "undeclared asset must not be extractable: {packaged_path}"
+    );
+}
+
+// ------------------------=
 // FUNC: assert_packaged_tree
 // DESC: Extracts and byte-compares a complete packaged asset hierarchy in one container operation.
 // ------------------=
@@ -246,10 +285,11 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         assert_tree_absent(container, icon_root, scratch);
     }
 
-    for source in collect_files(Path::new("assets/desktop")) {
-        if source.extension().and_then(OsStr::to_str) != Some("png") {
-            continue;
-        }
+    for source in [
+        Path::new("assets/desktop/infinity-default-dark-wallpaper-v2.png"),
+        Path::new("assets/desktop/infinity-shell-wallpaper-v3.png"),
+        Path::new("assets/desktop/infinity-onboarding-wallpaper-v1.png"),
+    ] {
         let name = source
             .file_name()
             .and_then(OsStr::to_str)
@@ -257,6 +297,22 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         assert_packaged_bytes(
             container,
             &source,
+            &format!("{}/{name}", container.wallpaper_root),
+            scratch,
+            sequence,
+        );
+        sequence += 1;
+    }
+
+    for name in [
+        "infinity-default-dark-wallpaper-v2-source.png",
+        "infinity-shell-wallpaper-v3-source.png",
+        "infinity-topbar-icon-v2.png",
+        "infinity-desktop-wallpaper-v1.png",
+        "infinity-topbar-icon-v1.png",
+    ] {
+        assert_packaged_path_absent(
+            container,
             &format!("{}/{name}", container.wallpaper_root),
             scratch,
             sequence,

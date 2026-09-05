@@ -16,7 +16,8 @@ persisted. Completion requires a machine, active user, credential, profiles,
 and Personal Space ownership. It then authenticates a fresh Session and enters
 the shell.
 
-The artwork under `assets/identity/` contains no baked controls or text. Native
-framebuffer controls supply focus, masked input, keyboard navigation, pointer
-hit targets, and damage-limited redraws. Text entry repaints only the active
-field, keeping the high-resolution generated scene stable and input responsive.
+The current onboarding artwork under `assets/desktop/` contains no baked
+controls or text. Native framebuffer controls supply focus, masked input,
+keyboard navigation, pointer hit targets, and damage-limited redraws. Text entry
+repaints only the active field, keeping the high-resolution generated scene
+stable and input responsive.
