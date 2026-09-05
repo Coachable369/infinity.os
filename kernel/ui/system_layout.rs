@@ -463,10 +463,60 @@ impl SystemLayout {
         let content_x = left + nav_w + 34 * self.scale;
         let content_width = width.saturating_sub(nav_w + 68 * self.scale);
         let content_y = top + title_height + 29 * self.scale;
-        for index in 0..4usize {
+        for index in 0..5usize {
             let y = content_y + (78 + index * 58) * self.scale;
             if rect(content_x, y, content_width, 46 * self.scale).contains(point) {
                 return Some(SettingsTarget::ContentRow(index));
+            }
+        }
+        None
+    }
+
+    // ------------------------=
+    // FUNC: settings_icon_theme_target
+    // DESC: Hit-tests the three explicit icon-family preview cards in Themes and Skins.
+    // ------------------=
+    pub fn settings_icon_theme_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        maximized: bool,
+    ) -> Option<u8> {
+        let point = self.point(normalized_x, normalized_y);
+        let top_bar = self.top_bar_height();
+        let restored_width = (self.width * 68 / 100)
+            .clamp(900, 1200 * self.scale)
+            .min(self.width.saturating_sub(40));
+        let restored_height = (self.height * 62 / 100)
+            .clamp(560, 760 * self.scale)
+            .min(self.height.saturating_sub(top_bar + 28));
+        let (left, top, width) = if maximized {
+            let inset = 10 * self.scale;
+            (inset, top_bar + inset, self.width.saturating_sub(inset * 2))
+        } else {
+            (
+                self.width.saturating_sub(restored_width) / 2,
+                top_bar + self.height.saturating_sub(top_bar + restored_height) / 2,
+                restored_width,
+            )
+        };
+        let title_height = 54 * self.scale;
+        let nav_width = width * 28 / 100;
+        let content_x = left + nav_width + 34 * self.scale;
+        let content_width = width.saturating_sub(nav_width + 68 * self.scale);
+        let content_y = top + title_height + 29 * self.scale;
+        let preview_top = content_y + 380 * self.scale;
+        let preview_gap = content_width / 3;
+        for theme in 0..3usize {
+            if rect(
+                content_x + theme * preview_gap + 4 * self.scale,
+                preview_top,
+                preview_gap.saturating_sub(8 * self.scale),
+                78 * self.scale,
+            )
+            .contains(point)
+            {
+                return Some(theme as u8);
             }
         }
         None

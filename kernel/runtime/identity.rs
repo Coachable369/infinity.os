@@ -7,6 +7,7 @@ pub const MAX_SESSIONS: usize = 8;
 pub const IDENTITY_STATE_BYTES: usize = 4096;
 pub const IDENTITY_FORMAT_VERSION: u16 = 1;
 pub const PASSWORD_ITERATIONS: u32 = 4096;
+pub const USER_ICON_THEME_OFFSET: usize = 4056;
 
 pub const SESSION_PERSONAL_READ: u64 = 1 << 0;
 pub const SESSION_PERSONAL_WRITE: u64 = 1 << 1;
@@ -210,6 +211,7 @@ pub struct UserProfile {
     pub language: ShortText,
     pub region: ShortText,
     pub theme: ShortText,
+    pub icon_theme: u8,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -409,6 +411,7 @@ impl IdentitySystem {
             language: ShortText::new(b"English (US)")?,
             region: ShortText::new(b"United States")?,
             theme: ShortText::new(b"Cosmic Dark")?,
+            icon_theme: 0,
         });
         self.ai_profiles[slot] = Some(AiProfile {
             user: user_id,
@@ -771,6 +774,34 @@ impl IdentitySystem {
     }
 
     // ------------------------=
+    // FUNC: update_user_icon_theme
+    // DESC: Persists one validated user-scoped desktop icon family selection.
+    // ------------------=
+    pub fn update_user_icon_theme(
+        &mut self,
+        actor: StableId,
+        user: StableId,
+        icon_theme: u8,
+    ) -> Result<UserProfile, IdentityError> {
+        if actor != user {
+            return Err(IdentityError::AccessDenied);
+        }
+        if icon_theme >= crate::ui::icon_theme::ICON_THEME_COUNT {
+            return Err(IdentityError::InvalidInput);
+        }
+        let profile = self
+            .profiles
+            .iter_mut()
+            .flatten()
+            .find(|profile| profile.user == user)
+            .ok_or(IdentityError::NotFound)?;
+        profile.icon_theme = icon_theme;
+        let result = *profile;
+        self.commit();
+        Ok(result)
+    }
+
+    // ------------------------=
     // FUNC: lock_session
     // DESC: Locks an active session and makes its UI inaccessible without ending it.
     // ------------------=
@@ -983,6 +1014,7 @@ impl IdentitySystem {
         for (index, profile) in self.profiles.iter().enumerate() {
             if let Some(value) = profile {
                 write_profile(&mut out, 2880 + index * 147, *value);
+                out[USER_ICON_THEME_OFFSET + index] = value.icon_theme;
             }
         }
         let checksum = checksum32(&out[..IDENTITY_STATE_BYTES - 4]);
@@ -1029,6 +1061,13 @@ impl IdentitySystem {
                 } else {
                     read_profile(bytes, profile_offset, user.0.id)?
                 });
+                let icon_theme = bytes[USER_ICON_THEME_OFFSET + index];
+                if icon_theme >= crate::ui::icon_theme::ICON_THEME_COUNT {
+                    return Err(IdentityError::CorruptState);
+                }
+                if let Some(profile) = state.profiles[index].as_mut() {
+                    profile.icon_theme = icon_theme;
+                }
                 state.ai_profiles[index] = Some(user.2);
                 state.voice_profiles[index] = Some(user.3);
                 state.ownership[index] = Some(PersonalSpaceOwnership {
@@ -1386,6 +1425,7 @@ fn read_profile(input: &[u8], at: usize, user: StableId) -> Result<UserProfile, 
         language: read_text(input, at)?,
         region: read_text(input, at + 49)?,
         theme: read_text(input, at + 98)?,
+        icon_theme: 0,
     })
 }
 
@@ -1441,6 +1481,7 @@ fn read_user(
         language: ShortText::new(b"English (US)")?,
         region: ShortText::new(b"United States")?,
         theme: ShortText::new(b"Cosmic Dark")?,
+        icon_theme: 0,
     };
     let ai = AiProfile {
         user: id,

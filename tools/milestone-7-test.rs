@@ -57,37 +57,97 @@ fn identity_lifecycle() {
         Err(IdentityError::AccessDenied)
     );
 
-    identities.lock_session(second_session.id, second.id).unwrap();
-    assert_eq!(identities.session_by_short(second_session.id.short()).unwrap().state, SessionState::Locked);
-    assert_eq!(identities.unlock_session(second_session.id, b"wrong secret", 8), Err(IdentityError::InvalidCredential));
-    identities.unlock_session(second_session.id, b"different secret", 9).unwrap();
-    identities.end_session(second_session.id, second.id).unwrap();
-    let closed = identities.session_by_short(second_session.id.short()).unwrap();
+    identities
+        .lock_session(second_session.id, second.id)
+        .unwrap();
+    assert_eq!(
+        identities
+            .session_by_short(second_session.id.short())
+            .unwrap()
+            .state,
+        SessionState::Locked
+    );
+    assert_eq!(
+        identities.unlock_session(second_session.id, b"wrong secret", 8),
+        Err(IdentityError::InvalidCredential)
+    );
+    identities
+        .unlock_session(second_session.id, b"different secret", 9)
+        .unwrap();
+    identities
+        .end_session(second_session.id, second.id)
+        .unwrap();
+    let closed = identities
+        .session_by_short(second_session.id.short())
+        .unwrap();
     assert_eq!(closed.state, SessionState::Closed);
     assert_eq!(closed.capabilities, 0);
-    assert_eq!(identities.authenticate(second.id, b"wrong", 20), Err(IdentityError::InvalidCredential));
-    assert_eq!(identities.authenticate(second.id, b"wrong", 21), Err(IdentityError::InvalidCredential));
-    assert_eq!(identities.authenticate(second.id, b"wrong", 22), Err(IdentityError::InvalidCredential));
-    assert_eq!(identities.authenticate(second.id, b"different secret", 23), Err(IdentityError::RateLimited));
-    identities.revoke_credential(owner.id, second_credential.id, true).unwrap();
-    assert_eq!(identities.authenticate(second.id, b"different secret", 20_000), Err(IdentityError::InvalidCredential));
+    assert_eq!(
+        identities.authenticate(second.id, b"wrong", 20),
+        Err(IdentityError::InvalidCredential)
+    );
+    assert_eq!(
+        identities.authenticate(second.id, b"wrong", 21),
+        Err(IdentityError::InvalidCredential)
+    );
+    assert_eq!(
+        identities.authenticate(second.id, b"wrong", 22),
+        Err(IdentityError::InvalidCredential)
+    );
+    assert_eq!(
+        identities.authenticate(second.id, b"different secret", 23),
+        Err(IdentityError::RateLimited)
+    );
+    identities
+        .revoke_credential(owner.id, second_credential.id, true)
+        .unwrap();
+    assert_eq!(
+        identities.authenticate(second.id, b"different secret", 20_000),
+        Err(IdentityError::InvalidCredential)
+    );
 
-    identities.update_user_theme(owner.id, owner.id, b"nebula-high-contrast").unwrap();
-    identities.update_ai_profile(owner.id, owner.id, AiProviderPolicy::AskBeforeRemote).unwrap();
-    identities.update_voice_profile(owner.id, owner.id, true, VoiceActivation::PushToTalk).unwrap();
+    identities
+        .update_user_theme(owner.id, owner.id, b"nebula-high-contrast")
+        .unwrap();
+    identities
+        .update_user_icon_theme(owner.id, owner.id, 2)
+        .unwrap();
+    assert_eq!(
+        identities.update_user_icon_theme(owner.id, owner.id, 3),
+        Err(IdentityError::InvalidInput)
+    );
+    identities
+        .update_ai_profile(owner.id, owner.id, AiProviderPolicy::AskBeforeRemote)
+        .unwrap();
+    identities
+        .update_voice_profile(owner.id, owner.id, true, VoiceActivation::PushToTalk)
+        .unwrap();
     let encoded = identities.encode();
     assert!(!contains(&encoded, b"correct horse battery"));
     assert!(!contains(&encoded, b"different secret"));
     let restored = IdentitySystem::decode(&encoded).unwrap();
     assert_eq!(restored.onboarding_state(), OnboardingState::Complete);
     assert_eq!(restored.machine().unwrap().id, machine.id);
-    assert_eq!(restored.user_profile(owner.id).unwrap().theme.as_bytes(), b"nebula-high-contrast");
-    assert_eq!(restored.ai_profile(owner.id).unwrap().provider_policy, AiProviderPolicy::AskBeforeRemote);
+    assert_eq!(
+        restored.user_profile(owner.id).unwrap().theme.as_bytes(),
+        b"nebula-high-contrast"
+    );
+    assert_eq!(restored.user_profile(owner.id).unwrap().icon_theme, 2);
+    assert_eq!(
+        restored.ai_profile(owner.id).unwrap().provider_policy,
+        AiProviderPolicy::AskBeforeRemote
+    );
     assert!(restored.voice_profile(owner.id).unwrap().enabled);
-    assert!(restored.session_nth(0).is_none(), "sessions must not survive reboot");
+    assert!(
+        restored.session_nth(0).is_none(),
+        "sessions must not survive reboot"
+    );
     let mut corrupt = encoded;
     corrupt[240] ^= 0x5a;
-    assert!(matches!(IdentitySystem::decode(&corrupt), Err(IdentityError::CorruptState)));
+    assert!(matches!(
+        IdentitySystem::decode(&corrupt),
+        Err(IdentityError::CorruptState)
+    ));
     println!("PASS identity lifecycle: stable IDs, PBKDF verifier, private spaces, scoped capabilities, lock/unlock/logout, persistent profiles, and corruption recovery");
 }
 

@@ -7,6 +7,7 @@
 pub mod async_model;
 pub mod clipboard;
 pub mod geometry;
+pub mod icon_theme;
 pub mod input;
 pub mod localization;
 pub mod platform;
@@ -18,6 +19,7 @@ pub mod trusted;
 pub mod vector;
 pub mod window;
 
+use icon_theme::IconThemeRegistry;
 use input::FocusManager;
 use scene::{DamageTracker, UiScene};
 use skin::SkinRegistry;
@@ -28,6 +30,7 @@ pub const INFINITY_UI_ABI_VERSION: u16 = 1;
 pub struct InfinityUiRuntime {
     pub async_tasks: async_model::AsyncUiModel,
     pub clipboard: clipboard::ClipboardService,
+    pub icons: IconThemeRegistry,
     pub skins: SkinRegistry,
     pub scene: UiScene,
     pub focus: FocusManager,
@@ -47,6 +50,7 @@ impl InfinityUiRuntime {
         Self {
             async_tasks: async_model::AsyncUiModel::new(),
             clipboard: clipboard::ClipboardService::new(),
+            icons: IconThemeRegistry::new(),
             skins: SkinRegistry::new(),
             scene: UiScene::new(),
             focus: FocusManager::new(),

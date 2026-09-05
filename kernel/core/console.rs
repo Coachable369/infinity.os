@@ -646,6 +646,7 @@ impl ConsoleRuntime {
         self.home_window_dragging = false;
         self.home_window_resizing = None;
         self.home_dragging_item = None;
+        self.sync_icon_theme();
         self.refresh_desktop_items();
         self.reset_input();
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
@@ -781,6 +782,120 @@ impl ConsoleRuntime {
     fn show_shell_notice(&mut self, notice: &[u8]) {
         self.enter_console();
         self.output.write_line(notice);
+    }
+
+    // ------------------------=
+    // FUNC: sync_icon_theme
+    // DESC: Applies the authenticated user's durable icon selection to every live UI surface.
+    // ------------------=
+    fn sync_icon_theme(&mut self) {
+        let user = self.current_user;
+        let _ = crate::runtime::with_runtime(|runtime| {
+            let selection = runtime
+                .identity
+                .user_profile(user)
+                .map(|profile| profile.icon_theme)
+                .unwrap_or(0);
+            runtime.ui.icons.activate(selection)
+        });
+    }
+
+    // ------------------------=
+    // FUNC: cycle_icon_theme
+    // DESC: Selects, persists, and immediately applies the next complete desktop icon family.
+    // ------------------=
+    fn cycle_icon_theme(&mut self) {
+        let next = crate::runtime::with_runtime(|runtime| {
+            let current = runtime
+                .identity
+                .user_profile(self.current_user)
+                .map(|profile| profile.icon_theme)
+                .unwrap_or(runtime.ui.icons.active() as u8);
+            crate::ui::icon_theme::IconThemeId::from_u8(current)
+                .unwrap_or(crate::ui::icon_theme::IconThemeId::CrystalBlueGlass)
+                .next() as u8
+        })
+        .unwrap_or(0);
+        self.select_icon_theme(next);
+    }
+
+    // ------------------------=
+    // FUNC: select_icon_theme
+    // DESC: Persists and immediately applies one explicitly selected installed icon family.
+    // ------------------=
+    fn select_icon_theme(&mut self, selection: u8) {
+        let user = self.current_user;
+        let changed = crate::runtime::with_runtime(|runtime| {
+            runtime
+                .identity
+                .update_user_icon_theme(user, user, selection)?;
+            runtime
+                .ui
+                .icons
+                .activate(selection)
+                .map_err(|_| crate::runtime::identity::IdentityError::InvalidInput)?;
+            Ok::<(), crate::runtime::identity::IdentityError>(())
+        })
+        .transpose()
+        .is_ok();
+        if changed {
+            let _ = crate::runtime::persist_identity_state();
+            crate::output_text(b"[appearance] icon family transaction committed\n");
+        }
+    }
+
+    // ------------------------=
+    // FUNC: activate_settings_content_row
+    // DESC: Executes the selected typed settings row without coupling row and navigation focus.
+    // ------------------=
+    fn activate_settings_content_row(&mut self, row: usize) {
+        match (self.system_focus, row) {
+            (0, 0) => {
+                self.settings_editing = true;
+                self.reset_input();
+            }
+            (1, 0) => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    let dark = crate::ui::skin::SkinId::from_bytes(b"infinity.default.dark");
+                    let alternate =
+                        crate::ui::skin::SkinId::from_bytes(b"infinity.diagnostic.light");
+                    let next = if runtime.ui.skins.active().id == dark {
+                        alternate
+                    } else {
+                        dark
+                    };
+                    runtime
+                        .ui
+                        .skins
+                        .activate(next, crate::ui::skin::AppearanceScope::User)
+                });
+            }
+            (1, 1) => self.cycle_icon_theme(),
+            (3, 0) => {
+                let current = crate::runtime::with_runtime(|runtime| {
+                    runtime.identity.ai_profile(self.current_user)
+                })
+                .flatten();
+                if let Some(profile) = current {
+                    let next = if profile.provider_policy
+                        == crate::runtime::identity::AiProviderPolicy::LocalOnly
+                    {
+                        crate::runtime::identity::AiProviderPolicy::PreferLocal
+                    } else {
+                        crate::runtime::identity::AiProviderPolicy::LocalOnly
+                    };
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime.identity.update_ai_profile(
+                            self.current_user,
+                            self.current_user,
+                            next,
+                        )
+                    });
+                    let _ = crate::runtime::persist_identity_state();
+                }
+            }
+            _ => {}
+        }
     }
 
     // ------------------------=
@@ -2431,7 +2546,20 @@ impl ConsoleRuntime {
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
-            if let Some(target) = layout.settings_target(self.pointer_x, self.pointer_y, self.settings_maximized) {
+            if clicked && self.system_focus == 1 {
+                if let Some(theme) = layout.settings_icon_theme_target(
+                    self.pointer_x,
+                    self.pointer_y,
+                    self.settings_maximized,
+                ) {
+                    self.select_icon_theme(theme);
+                    self.redraw();
+                    return;
+                }
+            }
+            if let Some(target) =
+                layout.settings_target(self.pointer_x, self.pointer_y, self.settings_maximized)
+            {
                 match target {
                     SettingsTarget::Section(index) => {
                         self.system_focus = index;

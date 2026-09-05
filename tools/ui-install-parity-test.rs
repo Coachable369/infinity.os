@@ -16,6 +16,7 @@ struct Container<'a> {
     font_root: &'a str,
     license_root: &'a str,
     skin_root: &'a str,
+    icon_root: Option<&'a str>,
     wallpaper_root: &'a str,
     installer_root: &'a str,
 }
@@ -52,14 +53,24 @@ fn extract(container: &Container<'_>, packaged_path: &str, destination: &Path) {
             .arg(destination)
             .status(),
         ContainerKind::Iso => Command::new("xorriso")
-            .args(["-osirrox", "on", "-indev", container.image, "-extract", packaged_path])
+            .args([
+                "-osirrox",
+                "on",
+                "-indev",
+                container.image,
+                "-extract",
+                packaged_path,
+            ])
             .arg(destination)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status(),
     }
     .expect("container extraction tool must run");
-    assert!(status.success(), "packaged asset must be extractable: {packaged_path}");
+    assert!(
+        status.success(),
+        "packaged asset must be extractable: {packaged_path}"
+    );
 }
 
 // ------------------------=
@@ -77,7 +88,109 @@ fn assert_packaged_bytes(
     extract(container, packaged_path, &destination);
     let expected = fs::read(source).expect("source asset must be readable");
     let actual = fs::read(&destination).expect("extracted asset must be readable");
-    assert_eq!(actual, expected, "packaged bytes must match source: {}", source.display());
+    assert_eq!(
+        actual,
+        expected,
+        "packaged bytes must match source: {}",
+        source.display()
+    );
+}
+
+// ------------------------=
+// FUNC: assert_packaged_tree
+// DESC: Extracts and byte-compares a complete packaged asset hierarchy in one container operation.
+// ------------------=
+fn assert_packaged_tree(
+    container: &Container<'_>,
+    source_root: &Path,
+    packaged_root: &str,
+    scratch: &Path,
+) {
+    let destination = scratch.join("icon-tree");
+    fs::create_dir_all(&destination).expect("tree destination must be creatable");
+    let status = match container.kind {
+        ContainerKind::Fat => Command::new("mcopy")
+            .args(["-i", container.image, "-s", &format!("::{packaged_root}/*")])
+            .arg(&destination)
+            .status(),
+        ContainerKind::Iso => Command::new("xorriso")
+            .args([
+                "-osirrox",
+                "on",
+                "-indev",
+                container.image,
+                "-extract",
+                packaged_root,
+            ])
+            .arg(&destination)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+    }
+    .expect("container tree extraction tool must run");
+    assert!(
+        status.success(),
+        "packaged icon hierarchy must be extractable"
+    );
+
+    let expected_files = collect_files(source_root);
+    for source in &expected_files {
+        let relative = source
+            .strip_prefix(source_root)
+            .expect("icon relative path");
+        let actual = destination.join(relative);
+        assert!(
+            actual.is_file(),
+            "packaged icon must exist: {}",
+            relative.display()
+        );
+        assert_eq!(
+            fs::read(&actual).expect("packaged icon must be readable"),
+            fs::read(source).expect("source icon must be readable"),
+            "packaged icon bytes must match: {}",
+            relative.display()
+        );
+    }
+    assert_eq!(
+        collect_files(&destination).len(),
+        expected_files.len(),
+        "packaged icon hierarchy must contain every and only declared asset"
+    );
+}
+
+// ------------------------=
+// FUNC: assert_tree_absent
+// DESC: Verifies a desktop-only asset hierarchy cannot be extracted from a live boot container.
+// ------------------=
+fn assert_tree_absent(container: &Container<'_>, packaged_root: &str, scratch: &Path) {
+    let destination = scratch.join("unexpected-icon-tree");
+    fs::create_dir_all(&destination).expect("absence destination must be creatable");
+    let status = match container.kind {
+        ContainerKind::Fat => Command::new("mcopy")
+            .args(["-i", container.image, "-s", &format!("::{packaged_root}/*")])
+            .arg(&destination)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+        ContainerKind::Iso => Command::new("xorriso")
+            .args([
+                "-osirrox",
+                "on",
+                "-indev",
+                container.image,
+                "-extract",
+                packaged_root,
+            ])
+            .arg(&destination)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+    }
+    .expect("container extraction tool must run");
+    assert!(
+        !status.success(),
+        "desktop icon hierarchy must not be present in a live boot container"
+    );
 }
 
 // ------------------------=
@@ -88,7 +201,10 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
     let mut sequence = 0usize;
     for source in collect_files(Path::new("assets/fonts")) {
         let extension = source.extension().and_then(OsStr::to_str);
-        let name = source.file_name().and_then(OsStr::to_str).expect("font name");
+        let name = source
+            .file_name()
+            .and_then(OsStr::to_str)
+            .expect("font name");
         let root = if extension == Some("ttf") {
             container.font_root
         } else if extension == Some("txt") && name.starts_with("OFL-") {
@@ -96,12 +212,20 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         } else {
             continue;
         };
-        assert_packaged_bytes(container, &source, &format!("{root}/{name}"), scratch, sequence);
+        assert_packaged_bytes(
+            container,
+            &source,
+            &format!("{root}/{name}"),
+            scratch,
+            sequence,
+        );
         sequence += 1;
     }
 
     for source in collect_files(Path::new("assets/skins")) {
-        let relative = source.strip_prefix("assets/skins").expect("skin relative path");
+        let relative = source
+            .strip_prefix("assets/skins")
+            .expect("skin relative path");
         assert_packaged_bytes(
             container,
             &source,
@@ -112,11 +236,24 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         sequence += 1;
     }
 
+    if let Some(icon_root) = container.icon_root {
+        assert_packaged_tree(container, Path::new("assets/icons"), icon_root, scratch);
+    } else {
+        let icon_root = match container.kind {
+            ContainerKind::Fat => "/EFI/INFINITY/INFINITYUI/Icons",
+            ContainerKind::Iso => "/System/InfinityUI/Icons",
+        };
+        assert_tree_absent(container, icon_root, scratch);
+    }
+
     for source in collect_files(Path::new("assets/desktop")) {
         if source.extension().and_then(OsStr::to_str) != Some("png") {
             continue;
         }
-        let name = source.file_name().and_then(OsStr::to_str).expect("wallpaper name");
+        let name = source
+            .file_name()
+            .and_then(OsStr::to_str)
+            .expect("wallpaper name");
         assert_packaged_bytes(
             container,
             &source,
@@ -127,8 +264,13 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         sequence += 1;
     }
 
-    for source in [Path::new("assets/boot/infinity-installer-mesh-diagram-v1.png")] {
-        let name = source.file_name().and_then(OsStr::to_str).expect("installer asset name");
+    for source in [Path::new(
+        "assets/boot/infinity-installer-mesh-diagram-v1.png",
+    )] {
+        let name = source
+            .file_name()
+            .and_then(OsStr::to_str)
+            .expect("installer asset name");
         assert_packaged_bytes(
             container,
             source,
@@ -138,7 +280,10 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         );
         sequence += 1;
     }
-    assert!(sequence > 0, "each system container must expose packaged UI assets");
+    assert!(
+        sequence > 0,
+        "each system container must expose packaged UI assets"
+    );
 }
 
 // ------------------------=
@@ -146,6 +291,7 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
 // DESC: Exercises every live and fresh-install UI container and compares its extracted asset bytes.
 // ------------------=
 fn main() {
+    let requested: Vec<String> = env::args().skip(1).collect();
     let scratch = env::temp_dir().join(format!("infinity-ui-parity-{}", std::process::id()));
     if scratch.exists() {
         fs::remove_dir_all(&scratch).expect("stale scratch directory must be removable");
@@ -153,20 +299,88 @@ fn main() {
     fs::create_dir_all(&scratch).expect("scratch directory must be creatable");
 
     let containers = [
-        Container { kind: ContainerKind::Fat, image: "build/infinity-x86_64.img", font_root: "/EFI/INFINITY/FONTS", license_root: "/EFI/INFINITY/FONT-LICENSES", skin_root: "/EFI/INFINITY/INFINITYUI", wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers", installer_root: "/EFI/INFINITY/INFINITYUI/Installer" },
-        Container { kind: ContainerKind::Fat, image: "build/infinity-aarch64.img", font_root: "/EFI/INFINITY/FONTS", license_root: "/EFI/INFINITY/FONT-LICENSES", skin_root: "/EFI/INFINITY/INFINITYUI", wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers", installer_root: "/EFI/INFINITY/INFINITYUI/Installer" },
-        Container { kind: ContainerKind::Fat, image: "build/infinity-aarch64-qemu.img", font_root: "/EFI/INFINITY/FONTS", license_root: "/EFI/INFINITY/FONT-LICENSES", skin_root: "/EFI/INFINITY/INFINITYUI", wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers", installer_root: "/EFI/INFINITY/INFINITYUI/Installer" },
-        Container { kind: ContainerKind::Fat, image: "build/x86_64/installed-esp.img", font_root: "/EFI/InfinityOS/Fonts", license_root: "/EFI/InfinityOS/FontLicenses", skin_root: "/EFI/InfinityOS/InfinityUI", wallpaper_root: "/EFI/InfinityOS/InfinityUI/Wallpapers", installer_root: "/EFI/InfinityOS/InfinityUI/Installer" },
-        Container { kind: ContainerKind::Fat, image: "build/aarch64/installed-esp.img", font_root: "/EFI/InfinityOS/Fonts", license_root: "/EFI/InfinityOS/FontLicenses", skin_root: "/EFI/InfinityOS/InfinityUI", wallpaper_root: "/EFI/InfinityOS/InfinityUI/Wallpapers", installer_root: "/EFI/InfinityOS/InfinityUI/Installer" },
-        Container { kind: ContainerKind::Iso, image: "build/infinity-x86.iso", font_root: "/System/Fonts", license_root: "/System/FontLicenses", skin_root: "/System/InfinityUI", wallpaper_root: "/System/InfinityUI/Wallpapers", installer_root: "/System/InfinityUI/Installer" },
+        Container {
+            kind: ContainerKind::Fat,
+            image: "build/infinity-x86_64.img",
+            font_root: "/EFI/INFINITY/FONTS",
+            license_root: "/EFI/INFINITY/FONT-LICENSES",
+            skin_root: "/EFI/INFINITY/INFINITYUI",
+            icon_root: None,
+            wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers",
+            installer_root: "/EFI/INFINITY/INFINITYUI/Installer",
+        },
+        Container {
+            kind: ContainerKind::Fat,
+            image: "build/infinity-aarch64.img",
+            font_root: "/EFI/INFINITY/FONTS",
+            license_root: "/EFI/INFINITY/FONT-LICENSES",
+            skin_root: "/EFI/INFINITY/INFINITYUI",
+            icon_root: None,
+            wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers",
+            installer_root: "/EFI/INFINITY/INFINITYUI/Installer",
+        },
+        Container {
+            kind: ContainerKind::Fat,
+            image: "build/infinity-aarch64-qemu.img",
+            font_root: "/EFI/INFINITY/FONTS",
+            license_root: "/EFI/INFINITY/FONT-LICENSES",
+            skin_root: "/EFI/INFINITY/INFINITYUI",
+            icon_root: None,
+            wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers",
+            installer_root: "/EFI/INFINITY/INFINITYUI/Installer",
+        },
+        Container {
+            kind: ContainerKind::Fat,
+            image: "build/x86_64/installed-esp.img",
+            font_root: "/EFI/InfinityOS/Fonts",
+            license_root: "/EFI/InfinityOS/FontLicenses",
+            skin_root: "/EFI/InfinityOS/InfinityUI",
+            icon_root: Some("/EFI/InfinityOS/InfinityUI/Icons"),
+            wallpaper_root: "/EFI/InfinityOS/InfinityUI/Wallpapers",
+            installer_root: "/EFI/InfinityOS/InfinityUI/Installer",
+        },
+        Container {
+            kind: ContainerKind::Fat,
+            image: "build/aarch64/installed-esp.img",
+            font_root: "/EFI/InfinityOS/Fonts",
+            license_root: "/EFI/InfinityOS/FontLicenses",
+            skin_root: "/EFI/InfinityOS/InfinityUI",
+            icon_root: Some("/EFI/InfinityOS/InfinityUI/Icons"),
+            wallpaper_root: "/EFI/InfinityOS/InfinityUI/Wallpapers",
+            installer_root: "/EFI/InfinityOS/InfinityUI/Installer",
+        },
+        Container {
+            kind: ContainerKind::Iso,
+            image: "build/infinity-x86.iso",
+            font_root: "/System/Fonts",
+            license_root: "/System/FontLicenses",
+            skin_root: "/System/InfinityUI",
+            icon_root: None,
+            wallpaper_root: "/System/InfinityUI/Wallpapers",
+            installer_root: "/System/InfinityUI/Installer",
+        },
     ];
 
+    let mut verified = 0usize;
     for (index, container) in containers.iter().enumerate() {
-        assert!(Path::new(container.image).is_file(), "system container must exist");
+        if !requested.is_empty() && !requested.iter().any(|image| image == container.image) {
+            continue;
+        }
+        assert!(
+            Path::new(container.image).is_file(),
+            "system container must exist"
+        );
         let container_scratch = scratch.join(format!("container-{index}"));
-        fs::create_dir_all(&container_scratch).expect("container scratch directory must be creatable");
+        fs::create_dir_all(&container_scratch)
+            .expect("container scratch directory must be creatable");
         verify_container(container, &container_scratch);
+        verified += 1;
     }
+
+    assert!(
+        verified > 0,
+        "at least one requested system container must be verified"
+    );
 
     fs::remove_dir_all(&scratch).expect("scratch directory must be removable");
 }

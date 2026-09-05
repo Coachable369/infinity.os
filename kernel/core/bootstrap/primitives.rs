@@ -1220,6 +1220,72 @@ impl super::DisplayDevice {
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
+    // FUNC: paint_bitmap_alpha_atlas_cell
+    // DESC: Alpha-blends one semantic cell from a uniformly divided 32-bit BGRA icon atlas.
+    // ------------------=
+    pub(super) fn paint_bitmap_alpha_atlas_cell(
+        &mut self,
+        bitmap: &[u8],
+        columns: usize,
+        rows: usize,
+        cell: usize,
+        left: usize,
+        top: usize,
+        size: usize,
+    ) -> bool {
+        if bitmap.len() < 54
+            || &bitmap[0..2] != b"BM"
+            || le16(bitmap, 28) != 32
+            || columns == 0
+            || rows == 0
+            || cell >= columns.saturating_mul(rows)
+            || size == 0
+        {
+            return false;
+        }
+        let offset = le32(bitmap, 10) as usize;
+        let source_width = le32(bitmap, 18) as usize;
+        let signed_height = le32(bitmap, 22) as i32;
+        let source_height = signed_height.unsigned_abs() as usize;
+        let cell_width = source_width / columns;
+        let cell_height = source_height / rows;
+        if cell_width == 0 || cell_height == 0 {
+            return false;
+        }
+        let cell_x = (cell % columns) * cell_width;
+        let cell_y = (cell / columns) * cell_height;
+        let row_bytes = source_width * 4;
+        for y in 0..size.min(self.height.saturating_sub(top)) {
+            let atlas_y = cell_y + y * cell_height / size;
+            let source_y = if signed_height < 0 {
+                atlas_y
+            } else {
+                source_height - 1 - atlas_y
+            };
+            for x in 0..size.min(self.width.saturating_sub(left)) {
+                let source_x = cell_x + x * cell_width / size;
+                let index = offset + source_y * row_bytes + source_x * 4;
+                if index + 3 >= bitmap.len() {
+                    return false;
+                }
+                let alpha = bitmap[index + 3];
+                if alpha != 0 {
+                    self.blend_color(
+                        (left + x) as i32,
+                        (top + y) as i32,
+                        bitmap[index + 2],
+                        bitmap[index + 1],
+                        bitmap[index],
+                        alpha,
+                    );
+                }
+            }
+        }
+        true
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
     // FUNC: paint_bitmap_cover_box
     // DESC: Aspect-crops a bitmap into a fixed destination box without painting beyond its bounds.
     // ------------------=

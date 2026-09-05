@@ -14,8 +14,151 @@ pub(super) const ONBOARDING_BMP: &[u8] =
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const TOP_BAR_INFINITY_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-topbar-icon-v1.bmp");
+#[cfg(all(
+    not(feature = "installer"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const CRYSTAL_BLUE_GLASS_BASE_BMP: &[u8] =
+    include_bytes!("../../../assets/icons/runtime/crystal-blue-glass-base.bmp");
+#[cfg(all(
+    not(feature = "installer"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const CRYSTAL_BLUE_GLASS_ACTIONS_BMP: &[u8] =
+    include_bytes!("../../../assets/icons/runtime/crystal-blue-glass-actions.bmp");
+#[cfg(all(
+    not(feature = "installer"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const LUMINOUS_OBSIDIAN_BASE_BMP: &[u8] =
+    include_bytes!("../../../assets/icons/runtime/luminous-obsidian-base.bmp");
+#[cfg(all(
+    not(feature = "installer"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const LUMINOUS_OBSIDIAN_ACTIONS_BMP: &[u8] =
+    include_bytes!("../../../assets/icons/runtime/luminous-obsidian-actions.bmp");
+#[cfg(all(
+    not(feature = "installer"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const FROSTED_QUARTZ_BASE_BMP: &[u8] =
+    include_bytes!("../../../assets/icons/runtime/frosted-quartz-base.bmp");
+#[cfg(all(
+    not(feature = "installer"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const FROSTED_QUARTZ_ACTIONS_BMP: &[u8] =
+    include_bytes!("../../../assets/icons/runtime/frosted-quartz-actions.bmp");
 
 impl super::DisplayDevice {
+    // ------------------------=
+    // FUNC: active_icon_theme
+    // DESC: Reads the current user-scoped icon family for surface-independent semantic rendering.
+    // ------------------=
+    pub(super) fn active_icon_theme(&self) -> u8 {
+        crate::runtime::with_runtime(|runtime| runtime.ui.icons.active() as u8).unwrap_or(0)
+    }
+
+    #[cfg(all(
+        not(feature = "installer"),
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    // ------------------------=
+    // FUNC: themed_icon
+    // DESC: Renders one semantic role from the active complete icon family.
+    // ------------------=
+    pub(super) fn themed_icon(
+        &mut self,
+        center_x: usize,
+        center_y: usize,
+        role: usize,
+        size: usize,
+    ) -> bool {
+        if role >= crate::ui::icon_theme::ICON_ROLE_COUNT {
+            return false;
+        }
+        let action = role >= 45;
+        let bitmap = match (self.active_icon_theme(), action) {
+            (1, false) => LUMINOUS_OBSIDIAN_BASE_BMP,
+            (1, true) => LUMINOUS_OBSIDIAN_ACTIONS_BMP,
+            (2, false) => FROSTED_QUARTZ_BASE_BMP,
+            (2, true) => FROSTED_QUARTZ_ACTIONS_BMP,
+            (_, false) => CRYSTAL_BLUE_GLASS_BASE_BMP,
+            (_, true) => CRYSTAL_BLUE_GLASS_ACTIONS_BMP,
+        };
+        self.paint_bitmap_alpha_atlas_cell(
+            bitmap,
+            5,
+            if action { 3 } else { 9 },
+            if action { role - 45 } else { role },
+            center_x.saturating_sub(size / 2),
+            center_y.saturating_sub(size / 2),
+            size,
+        )
+    }
+
+    #[cfg(all(
+        not(feature = "installer"),
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    // ------------------------=
+    // FUNC: icon_theme_preview
+    // DESC: Renders the same semantic sample from a requested family for the Themes and Skins chooser.
+    // ------------------=
+    pub(super) fn icon_theme_preview(
+        &mut self,
+        theme: u8,
+        center_x: usize,
+        center_y: usize,
+        size: usize,
+    ) -> bool {
+        let bitmap = match theme {
+            1 => LUMINOUS_OBSIDIAN_BASE_BMP,
+            2 => FROSTED_QUARTZ_BASE_BMP,
+            _ => CRYSTAL_BLUE_GLASS_BASE_BMP,
+        };
+        self.paint_bitmap_alpha_atlas_cell(
+            bitmap,
+            5,
+            9,
+            0,
+            center_x.saturating_sub(size / 2),
+            center_y.saturating_sub(size / 2),
+            size,
+        )
+    }
+
+    #[cfg(any(feature = "installer", target_arch = "x86"))]
+    // ------------------------=
+    // FUNC: themed_icon
+    // DESC: Leaves semantic icon rendering to vector fallbacks on the legacy text architecture.
+    // ------------------=
+    pub(super) fn themed_icon(
+        &mut self,
+        _center_x: usize,
+        _center_y: usize,
+        _role: usize,
+        _size: usize,
+    ) -> bool {
+        false
+    }
+
+    #[cfg(any(feature = "installer", target_arch = "x86"))]
+    // ------------------------=
+    // FUNC: icon_theme_preview
+    // DESC: Omits raster theme previews on the legacy text architecture.
+    // ------------------=
+    pub(super) fn icon_theme_preview(
+        &mut self,
+        _theme: u8,
+        _center_x: usize,
+        _center_y: usize,
+        _size: usize,
+    ) -> bool {
+        false
+    }
+
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
     // FUNC: paint_first_boot_background
@@ -557,6 +700,28 @@ impl super::DisplayDevice {
         size: usize,
         active: bool,
     ) {
+        let role = [37usize, 0, 47, 46, 1, 17, 23, 26, 32, 34, 13, 28, 27]
+            .get(kind.saturating_sub(1))
+            .copied();
+        if let Some(role) = role {
+            if active {
+                let radius = size.max(8) / 4;
+                self.fill_rounded_rect_alpha(
+                    center_x.saturating_sub(size / 2 + 2),
+                    center_y.saturating_sub(size / 2 + 2),
+                    size + 4,
+                    size + 4,
+                    radius,
+                    31,
+                    142,
+                    194,
+                    72,
+                );
+            }
+            if self.themed_icon(center_x, center_y, role, size.max(12)) {
+                return;
+            }
+        }
         let color = if active {
             (139, 225, 255)
         } else {
@@ -1164,6 +1329,17 @@ impl super::DisplayDevice {
         kind: usize,
         size: usize,
     ) {
+        let role = match kind {
+            0 => 40,
+            1 => 37,
+            2 => 38,
+            3 => 39,
+            4 => 27,
+            _ => 26,
+        };
+        if self.themed_icon(center_x, center_y, role, size.max(16)) {
+            return;
+        }
         let cx = center_x as i32;
         let cy = center_y as i32;
         let half = size.max(10) as i32 / 2;
@@ -2292,15 +2468,19 @@ impl super::DisplayDevice {
                 176,
                 1,
             );
-            let rows: [(&[u8], &[u8]); 4] = match focus.min(7) {
+            let icon_theme = crate::ui::icon_theme::IconThemeId::from_u8(self.active_icon_theme())
+                .unwrap_or(crate::ui::icon_theme::IconThemeId::CrystalBlueGlass);
+            let rows: [(&[u8], &[u8]); 5] = match focus.min(7) {
                 0 => [
                     (b"Machine Name", input),
                     (b"Language", b"English (US)"),
                     (b"Region", b"United States"),
                     (b"System Generation", b"Active"),
+                    (b"Updates", b"Generation based"),
                 ],
                 1 => [
                     (b"Skin", b"InfinityOS Default Dark"),
+                    (b"Icon Set", icon_theme.name()),
                     (b"UI Scale", b"Automatic"),
                     (b"Accent", b"Infinity Blue"),
                     (b"Wallpaper", b"Cosmic Horizon"),
@@ -2310,36 +2490,42 @@ impl super::DisplayDevice {
                     (b"Credential", b"Password"),
                     (b"Session", b"Authenticated"),
                     (b"Personal Space", b"Private"),
+                    (b"Profile", b"Persistent"),
                 ],
                 3 => [
                     (b"AI Provider", b"Local only"),
                     (b"Remote Processing", b"Off"),
                     (b"Voice", b"Off"),
                     (b"Activation", b"Disabled"),
+                    (b"Model Access", b"Capability gated"),
                 ],
                 4 => [
                     (b"Ambient Authority", b"Denied"),
                     (b"Microphone", b"Not granted"),
                     (b"Remote AI", b"Denied"),
                     (b"Session Auth", b"Verified"),
+                    (b"Trusted UI", b"Active"),
                 ],
                 5 => [
                     (b"Display", b"Ready"),
                     (b"Keyboard", b"Ready"),
                     (b"Pointer", b"Ready"),
                     (b"Audio Input", b"Unavailable"),
+                    (b"Network", b"Ready"),
                 ],
                 6 => [
                     (b"Infinity Pool", b"Online"),
                     (b"System Space", b"Ready"),
                     (b"Personal Space", b"Owned"),
                     (b"Recovery Space", b"Ready"),
+                    (b"External Drives", b"Discoverable"),
                 ],
                 _ => [
                     (b"InfinityOS", b"Development"),
                     (b"Architecture", b"Native"),
                     (b"Boot", b"Verified"),
                     (b"Identity Format", b"Version 1"),
+                    (b"Icon Families", b"3 complete sets"),
                 ],
             };
             for (index, (label, value)) in rows.iter().enumerate() {
@@ -2391,6 +2577,54 @@ impl super::DisplayDevice {
                     12 * scale,
                     false,
                 );
+            }
+            if focus == 1 {
+                let preview_top = content_y + 380 * scale;
+                let preview_gap = content_width / 3;
+                for theme in 0..3u8 {
+                    let preview_left = content_x + theme as usize * preview_gap;
+                    let selected = theme == icon_theme as u8;
+                    self.fill_rounded_rect_alpha(
+                        preview_left + 4 * scale,
+                        preview_top,
+                        preview_gap.saturating_sub(8 * scale),
+                        78 * scale,
+                        12 * scale,
+                        if selected { 18 } else { 6 },
+                        if selected { 75 } else { 24 },
+                        if selected { 108 } else { 38 },
+                        220,
+                    );
+                    self.outline_rounded_rect(
+                        preview_left + 4 * scale,
+                        preview_top,
+                        preview_gap.saturating_sub(8 * scale),
+                        78 * scale,
+                        12 * scale,
+                        if selected { 81 } else { 39 },
+                        if selected { 210 } else { 64 },
+                        if selected { 250 } else { 83 },
+                    );
+                    self.icon_theme_preview(
+                        theme,
+                        preview_left + preview_gap / 2,
+                        preview_top + 28 * scale,
+                        44 * scale,
+                    );
+                    let name = crate::ui::icon_theme::IconThemeId::from_u8(theme)
+                        .unwrap_or(crate::ui::icon_theme::IconThemeId::CrystalBlueGlass)
+                        .name();
+                    self.ui_text_centered_strong(
+                        preview_left,
+                        preview_gap,
+                        preview_top + 54 * scale,
+                        name,
+                        if selected { 224 } else { 160 },
+                        if selected { 244 } else { 181 },
+                        if selected { 252 } else { 194 },
+                        1,
+                    );
+                }
             }
         }
     }
@@ -2479,6 +2713,29 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn desktop_icon(&mut self, left: usize, top: usize, label: &[u8], kind: usize) {
         let size = (self.height / 21).max(44);
+        let role = match label {
+            b"Documents" => 4,
+            b"Downloads" => 5,
+            b"Pictures" => 6,
+            b"Music" => 7,
+            b"Videos" => 8,
+            b"Projects" => 9,
+            b"notes.txt" => 49,
+            _ => 2,
+        };
+        if self.themed_icon(left + size / 2, top + size / 2, role, size) {
+            let label_width = self.ui_text_width(label, 1);
+            self.ui_text(
+                left + size.saturating_sub(label_width) / 2,
+                top + size + 8,
+                label,
+                221,
+                235,
+                243,
+                1,
+            );
+            return;
+        }
         if kind == 3 {
             let paper_x = left + size / 7;
             let paper_w = size * 5 / 7;
@@ -2638,6 +2895,26 @@ impl super::DisplayDevice {
         kind: usize,
         active: bool,
     ) {
+        let role = [25usize, 2, 26, 28, 23, 27, 17, 10]
+            .get(kind)
+            .copied()
+            .unwrap_or(2);
+        if self.themed_icon(left + size / 2, top + size / 2, role, size) {
+            if active {
+                self.fill_rounded_rect_alpha(
+                    left + size / 2 - 3,
+                    top + size + 5,
+                    6,
+                    3,
+                    2,
+                    125,
+                    220,
+                    255,
+                    255,
+                );
+            }
+            return;
+        }
         let radius = (size / 5).max(7);
         self.fill_rounded_rect_alpha(left + 3, top + 5, size, size, radius, 0, 3, 9, 180);
         let palette = match kind {
@@ -3651,6 +3928,8 @@ pub fn system_ui_present(
             let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
             let focus_changed = console.last_system_focus != focus;
             let clock_changed = console.last_system_clock != clock;
+            let icon_theme = console.display.active_icon_theme();
+            let icon_theme_changed = console.last_icon_theme != icon_theme;
             let bounded_menu_change =
                 crate::ui::redraw::desktop_menu_change_requires_bounded_redraw(
                     console.last_system_screen,
@@ -3668,6 +3947,7 @@ pub fn system_ui_present(
                     )
                     || console.last_system_menu != menu_kind))
                 || console.last_system_step != step
+                || icon_theme_changed
                 || console.last_system_validation_error != validation_error
                 || console.last_home_window_visible != window_visible
                 || console.last_home_window_maximized != window_maximized
@@ -3808,6 +4088,7 @@ pub fn system_ui_present(
             console.last_system_step = step;
             console.last_system_focus = focus;
             console.last_system_menu = menu_kind;
+            console.last_icon_theme = icon_theme;
             console.last_system_content = content;
             console.last_system_validation_error = validation_error;
             console.last_home_window_x = window_x;

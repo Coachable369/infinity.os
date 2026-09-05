@@ -15,8 +15,13 @@ OVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-x86_64-code.fd
 AAVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-aarch64-code.fd))
 KERNEL_SOURCES := $(shell find kernel -type f)
 FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt)
+ICON_ASSETS := $(shell find assets/icons -type f)
+ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
+	assets/icons/runtime/luminous-obsidian-base.bmp assets/icons/runtime/luminous-obsidian-actions.bmp \
+	assets/icons/runtime/frosted-quartz-base.bmp assets/icons/runtime/frosted-quartz-actions.bmp
 UI_ASSETS := $(shell find assets/skins -type f) assets/desktop/infinity-default-dark-wallpaper-v2.png assets/desktop/infinity-shell-wallpaper-v3.png assets/desktop/infinity-onboarding-wallpaper-v1.png assets/desktop/infinity-topbar-icon-v1.png
 INSTALLER_UI_ASSETS := assets/boot/infinity-installer-mesh-diagram-v1.png
+ICON_THEME_SOURCES := $(shell find assets/icons -maxdepth 2 -type f -name 'master-*.png') tools/build-icon-themes.sh tools/slice-icon-atlas.py
 SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-console-background-v1.bmp \
 	assets/boot/infinity-emblem-v2.bmp \
 	assets/desktop/infinity-default-dark-wallpaper-v2.bmp assets/desktop/infinity-shell-wallpaper-v3.bmp \
@@ -45,21 +50,27 @@ SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-
 	assets/boot/infinity-date-time-world-v1.bmp \
 	assets/boot/infinity-time-zone-map-v1.bmp
 
-.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test object-test namespace-test crash-recovery-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test desktop-system-test ui-install-parity-test input-regression-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
+.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test object-test namespace-test crash-recovery-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test icon-theme-test desktop-system-test ui-install-parity-test input-regression-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
 
 milestone-7x-test:
 	@tools/skin-compiler-test.sh
 	@tools/infinity-ui-test.sh
 
+icon-theme-test:
+	@tools/icon-theme-test.sh
+
 all: x86_64
 
 check-tools:
-	@tools="$(CLANG) $(LD_LLD) $(LLD_LINK) $(OBJCOPY) $(RUSTC) $(CARGO) mformat mcopy xorriso $(QEMU_X64) $(QEMU_AARCH64)"; \
+	@tools="$(CLANG) $(LD_LLD) $(LLD_LINK) $(OBJCOPY) $(RUSTC) $(CARGO) python3 ffmpeg mformat mcopy xorriso $(QEMU_X64) $(QEMU_AARCH64)"; \
 	for tool in $$tools; do command -v $$tool >/dev/null 2>&1 || { echo "ERROR: required tool not found: $$tool"; exit 1; }; done
 	@test -f "$(OVMF_CODE)" || { echo "ERROR: OVMF firmware not found (install qemu)"; exit 1; }
 	@test -f "$(AAVMF_CODE)" || { echo "ERROR: AArch64 UEFI firmware not found (install qemu)"; exit 1; }
 
-$(BUILD)/x86_64/installed-kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET)
+$(ICON_RUNTIME_ASSETS): $(ICON_THEME_SOURCES)
+	@tools/build-icon-themes.sh
+
+$(BUILD)/x86_64/installed-kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUNTIME_ASSETS)
 	@mkdir -p $(@D)
 	RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=$(BUILD)/cargo-installed $(CARGO) build --release \
 		-Z build-std=core --target x86_64-unknown-none
@@ -91,20 +102,23 @@ $(BUILD)/x86_64/handoff.obj: boot/x86_64/handoff.asm
 $(BUILD)/x86_64/BOOTX64.EFI: $(BUILD)/x86_64/loader.obj $(BUILD)/x86_64/handoff.obj
 	$(LLD_LINK) /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:x64 /out:$@ $^
 
-$(BUILD)/x86_64/installed-esp.img: $(BUILD)/x86_64/BOOTX64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(INSTALLER_UI_ASSETS)
-	@mkdir -p $(BUILD)/installed-fat/EFI/BOOT $(BUILD)/installed-fat/EFI/InfinityOS/Fonts $(BUILD)/installed-fat/EFI/InfinityOS/FontLicenses $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Installer
+$(BUILD)/x86_64/installed-esp.img: $(BUILD)/x86_64/BOOTX64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(ICON_ASSETS) $(INSTALLER_UI_ASSETS)
+	rm -rf $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Icons
+	@mkdir -p $(BUILD)/installed-fat/EFI/BOOT $(BUILD)/installed-fat/EFI/InfinityOS/Fonts $(BUILD)/installed-fat/EFI/InfinityOS/FontLicenses $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Installer $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Icons
 	cp $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/installed-fat/EFI/BOOT/BOOTX64.EFI
 	cp $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/installed-fat/EFI/InfinityOS/infinity.efi
 	cp assets/fonts/*.ttf $(BUILD)/installed-fat/EFI/InfinityOS/Fonts/
 	cp assets/fonts/OFL-*.txt $(BUILD)/installed-fat/EFI/InfinityOS/FontLicenses/
 	cp -R assets/skins/. $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/
 	cp assets/desktop/*.png $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Wallpapers/
+	cp -R assets/icons/. $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Icons/
 	cp $(INSTALLER_UI_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Installer/
-	dd if=/dev/zero of=$@ bs=1M count=64 status=none
+	dd if=/dev/zero of=$@ bs=1M count=128 status=none
 	mformat -i $@ -v INFINITYEFI ::
 	mcopy -i $@ -s $(BUILD)/installed-fat/EFI ::
 
 $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel.elf $(FONT_ASSETS) $(UI_ASSETS) $(INSTALLER_UI_ASSETS)
+	rm -rf $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Icons
 	@mkdir -p $(BUILD)/fat/EFI/BOOT $(BUILD)/fat/EFI/INFINITY/FONTS $(BUILD)/fat/EFI/INFINITY/FONT-LICENSES $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Wallpapers $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Installer
 	cp $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/fat/EFI/BOOT/BOOTX64.EFI
 	cp $(BUILD)/x86_64/kernel.elf $(BUILD)/fat/EFI/INFINITY/KERNEL.ELF
@@ -113,7 +127,7 @@ $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel
 	cp -R assets/skins/. $(BUILD)/fat/EFI/INFINITY/INFINITYUI/
 	cp assets/desktop/*.png $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Wallpapers/
 	cp $(INSTALLER_UI_ASSETS) $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Installer/
-	dd if=/dev/zero of=$@ bs=1M count=256 status=none
+	dd if=/dev/zero of=$@ bs=1M count=512 status=none
 	mformat -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat/EFI ::
 
@@ -244,6 +258,7 @@ $(BUILD)/infinity-x86.img: $(BUILD)/x86/boot-sector.bin $(BUILD)/x86/bootstrap.b
 	dd if=$(BUILD)/x86/bootstrap.bin of=$@ bs=512 seek=1 conv=notrunc status=none
 
 $(BUILD)/infinity-x86.iso: $(BUILD)/infinity-x86.img $(UI_ASSETS) $(INSTALLER_UI_ASSETS)
+	rm -rf $(BUILD)/iso-x86/System/InfinityUI/Icons
 	@mkdir -p $(BUILD)/iso-x86/System/Fonts $(BUILD)/iso-x86/System/FontLicenses $(BUILD)/iso-x86/System/InfinityUI/Wallpapers $(BUILD)/iso-x86/System/InfinityUI/Installer
 	cp $< $(BUILD)/iso-x86/x86-boot.img
 	cp assets/fonts/*.ttf $(BUILD)/iso-x86/System/Fonts/
@@ -259,7 +274,7 @@ x86: check-tools $(BUILD)/infinity-x86.iso
 test-x86: x86
 	@tools/smoke-test.sh x86
 
-$(BUILD)/aarch64/installed-kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET)
+$(BUILD)/aarch64/installed-kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUNTIME_ASSETS)
 	@mkdir -p $(@D)
 	RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=$(BUILD)/cargo-installed-aarch64 $(CARGO) build --release \
 		-Z build-std=core --target aarch64-unknown-none-softfloat
@@ -269,16 +284,18 @@ $(BUILD)/aarch64/installed-kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET)
 $(BUILD)/aarch64/installed-kernel.elf: $(BUILD)/aarch64/installed-kernel.stamp linker/aarch64.ld
 	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a
 
-$(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(INSTALLER_UI_ASSETS)
-	@mkdir -p $(BUILD)/installed-fat-aarch64/EFI/BOOT $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Fonts $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/FontLicenses $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Installer
+$(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(ICON_ASSETS) $(INSTALLER_UI_ASSETS)
+	rm -rf $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Icons
+	@mkdir -p $(BUILD)/installed-fat-aarch64/EFI/BOOT $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Fonts $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/FontLicenses $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Installer $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Icons
 	cp $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/installed-fat-aarch64/EFI/BOOT/BOOTAA64.EFI
 	cp $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/infinity.efi
 	cp assets/fonts/*.ttf $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Fonts/
 	cp assets/fonts/OFL-*.txt $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/FontLicenses/
 	cp -R assets/skins/. $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/
 	cp assets/desktop/*.png $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers/
+	cp -R assets/icons/. $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Icons/
 	cp $(INSTALLER_UI_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Installer/
-	dd if=/dev/zero of=$@ bs=1M count=64 status=none
+	dd if=/dev/zero of=$@ bs=1M count=128 status=none
 	mformat -i $@ -v INFINITYEFI ::
 	mcopy -i $@ -s $(BUILD)/installed-fat-aarch64/EFI ::
 
@@ -308,6 +325,7 @@ $(BUILD)/aarch64/BOOTAA64.EFI: $(BUILD)/aarch64/loader.obj $(BUILD)/aarch64/hand
 	$(LLD_LINK) /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:arm64 /out:$@ $^
 
 $(BUILD)/infinity-aarch64.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/kernel.elf $(FONT_ASSETS) $(UI_ASSETS) $(INSTALLER_UI_ASSETS)
+	rm -rf $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Icons
 	@mkdir -p $(BUILD)/fat-aarch64/EFI/BOOT $(BUILD)/fat-aarch64/EFI/INFINITY/FONTS $(BUILD)/fat-aarch64/EFI/INFINITY/FONT-LICENSES $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Wallpapers $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Installer
 	cp $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/fat-aarch64/EFI/BOOT/BOOTAA64.EFI
 	cp $(BUILD)/aarch64/kernel.elf $(BUILD)/fat-aarch64/EFI/INFINITY/KERNEL.ELF
@@ -316,7 +334,7 @@ $(BUILD)/infinity-aarch64.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/ke
 	cp -R assets/skins/. $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/
 	cp assets/desktop/*.png $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Wallpapers/
 	cp $(INSTALLER_UI_ASSETS) $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Installer/
-	dd if=/dev/zero of=$@ bs=1M count=256 status=none
+	dd if=/dev/zero of=$@ bs=1M count=512 status=none
 	mformat -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat-aarch64/EFI ::
 
@@ -327,6 +345,7 @@ $(BUILD)/infinity-aarch64.iso: $(BUILD)/infinity-aarch64.img
 	xorriso -as mkisofs -R -V INFINITYOS_ARM64 -e efi.img -no-emul-boot -o $@ $(BUILD)/iso-aarch64
 
 $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/kernel-qemu.elf $(FONT_ASSETS) $(UI_ASSETS) $(INSTALLER_UI_ASSETS)
+	rm -rf $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Icons
 	@mkdir -p $(BUILD)/fat-aarch64-qemu/EFI/BOOT $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONTS $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONT-LICENSES $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Wallpapers $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Installer
 	cp $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/fat-aarch64-qemu/EFI/BOOT/BOOTAA64.EFI
 	cp $(BUILD)/aarch64/kernel-qemu.elf $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/KERNEL.ELF
@@ -335,7 +354,7 @@ $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch
 	cp -R assets/skins/. $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/
 	cp assets/desktop/*.png $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Wallpapers/
 	cp $(INSTALLER_UI_ASSETS) $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Installer/
-	dd if=/dev/zero of=$@ bs=1M count=256 status=none
+	dd if=/dev/zero of=$@ bs=1M count=512 status=none
 	mformat -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat-aarch64-qemu/EFI ::
 

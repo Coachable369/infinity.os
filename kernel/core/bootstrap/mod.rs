@@ -69,6 +69,7 @@ struct ConsoleSurface {
     last_system_step: usize,
     last_system_focus: usize,
     last_system_menu: usize,
+    last_icon_theme: u8,
     last_system_content: u32,
     last_system_validation_error: bool,
     last_home_window_x: i32,
