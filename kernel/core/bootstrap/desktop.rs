@@ -2336,6 +2336,20 @@ impl super::DisplayDevice {
                     );
                 }
             }
+            if !maximized {
+                let (outline_r, outline_g, outline_b) =
+                    self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+                for offset in [5usize, 9, 13] {
+                    self.icon_line(
+                        (left + width - offset * scale) as i32,
+                        (top + height - 3 * scale) as i32,
+                        (left + width - 3 * scale) as i32,
+                        (top + height - offset * scale) as i32,
+                        (outline_r, outline_g, outline_b),
+                        16 * scale,
+                    );
+                }
+            }
             self.fill_rect_alpha(
                 toolbar_left,
                 toolbar_top,
@@ -2547,7 +2561,7 @@ impl super::DisplayDevice {
         desktop_items: u8,
         desktop_item_positions: &[[i32; 2]; 7],
         clock: crate::storage::DateTimeConfiguration,
-        settings_maximized: bool,
+        settings_window: crate::ui::system_layout::SettingsWindowState,
         menu_kind: usize,
         output_lines: &[[u8; 96]; 6],
         output_lengths: &[usize; 6],
@@ -2618,6 +2632,11 @@ impl super::DisplayDevice {
                 editor_saved,
                 false,
             );
+        }
+
+        if screen == 4 {
+            self.render_settings_window(focus, input, settings_window, scale);
+            return;
         }
 
         if matches!(screen, 1 | 5 | 6) {
@@ -2890,7 +2909,7 @@ impl super::DisplayDevice {
             let restored_height = (self.height * 62 / 100)
                 .clamp(560, 760 * scale)
                 .min(self.height.saturating_sub(top_bar + 28));
-            let (left, top, width, height) = if settings_maximized {
+            let (left, top, width, height) = if settings_window.maximized {
                 let inset = 10 * scale;
                 (
                     inset,
@@ -3155,7 +3174,442 @@ impl super::DisplayDevice {
                 );
             }
             if focus == 1 {
-                self.settings_accent_picker(settings_maximized, scale);
+                self.settings_accent_picker(settings_window, scale);
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: render_settings_window
+    // DESC: Renders the resizable Settings window with inline disclosure wells and bounded overflow scrolling.
+    // ------------------=
+    fn render_settings_window(
+        &mut self,
+        focus: usize,
+        input: &[u8],
+        settings_window: crate::ui::system_layout::SettingsWindowState,
+        scale: usize,
+    ) {
+        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let geometry = layout.settings_window_geometry(settings_window);
+        let left = geometry.window.x.max(0) as usize;
+        let top = geometry.window.y.max(0) as usize;
+        let width = geometry.window.width as usize;
+        let height = geometry.window.height as usize;
+        let title_height = 54 * scale;
+        let (header_r, header_g, header_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
+        let (selection_r, selection_g, selection_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
+        let (outline_r, outline_g, outline_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        self.glass_panel(left, top, width, height, true);
+        self.fill_rect_alpha(
+            left,
+            top,
+            width,
+            title_height,
+            header_r,
+            header_g,
+            header_b,
+            222,
+        );
+        let title_center_y = top + title_height / 2;
+        self.small_infinity_mark(left + 25 * scale, title_center_y, 31 * scale);
+        self.ui_text_strong(
+            left + 50 * scale,
+            title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
+            b"System Settings",
+            241,
+            246,
+            250,
+            1,
+        );
+        for index in 0..3usize {
+            let control_size = 18 * scale;
+            let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * scale);
+            self.fill_rounded_rect_alpha(
+                control_left,
+                title_center_y.saturating_sub(control_size / 2),
+                control_size,
+                control_size,
+                5 * scale,
+                14,
+                28,
+                42,
+                225,
+            );
+            self.outline_rounded_rect(
+                control_left,
+                title_center_y.saturating_sub(control_size / 2),
+                control_size,
+                control_size,
+                5 * scale,
+                56,
+                78,
+                96,
+            );
+        }
+        let nav_width = geometry.navigation.width as usize;
+        self.fill_rect_alpha(
+            left,
+            top + title_height,
+            nav_width,
+            height.saturating_sub(title_height),
+            4,
+            15,
+            27,
+            214,
+        );
+        self.fill_rect_alpha(
+            left + nav_width,
+            top + title_height,
+            1,
+            height.saturating_sub(title_height),
+            36,
+            58,
+            76,
+            180,
+        );
+        let sections: [&[u8]; 8] = [
+            b"General",
+            b"Themes & Skins",
+            b"Users & Accounts",
+            b"AI & Voice",
+            b"Privacy & Security",
+            b"Devices",
+            b"Storage",
+            b"About",
+        ];
+        for (index, section) in sections.iter().enumerate() {
+            let y = top + title_height + (25 + index * 43) * scale;
+            if focus == index {
+                self.fill_rounded_rect_alpha(
+                    left + 10 * scale,
+                    y.saturating_sub(10 * scale),
+                    nav_width.saturating_sub(20 * scale),
+                    36 * scale,
+                    9 * scale,
+                    selection_r,
+                    selection_g,
+                    selection_b,
+                    226,
+                );
+            }
+            self.authentication_icon(
+                left + 27 * scale,
+                y + 8 * scale,
+                [8usize, 13, 6, 7, 8, 11, 11, 12][index],
+                17 * scale,
+                focus == index,
+            );
+            self.ui_text_strong(
+                left + 48 * scale,
+                y,
+                section,
+                if focus == index { 237 } else { 180 },
+                if focus == index { 245 } else { 198 },
+                if focus == index { 251 } else { 211 },
+                1,
+            );
+        }
+        let content_x = geometry.content.x.max(0) as usize;
+        let content_y = geometry.content.y.max(0) as usize;
+        self.ui_text_strong(
+            content_x,
+            content_y,
+            sections[focus.min(7)],
+            238,
+            244,
+            249,
+            2,
+        );
+        self.ui_text(
+            content_x,
+            content_y + 36 * scale,
+            b"Open a row to view its controls and configuration details.",
+            143,
+            160,
+            176,
+            1,
+        );
+        let icon_theme = crate::ui::icon_theme::IconThemeId::from_u8(self.active_icon_theme())
+            .unwrap_or(crate::ui::icon_theme::IconThemeId::CrystalBlueGlass);
+        let rows: [(&[u8], &[u8]); 5] = match focus.min(7) {
+            0 => [
+                (b"Machine Name", input),
+                (b"Language", b"English (US)"),
+                (b"Region", b"United States"),
+                (b"System Generation", b"Active"),
+                (b"Updates", b"Generation based"),
+            ],
+            1 => [
+                (b"Skin", b"InfinityOS Default Dark"),
+                (b"Icon Set", icon_theme.name()),
+                (b"UI Scale", b"Automatic"),
+                (b"Accent", b"Custom color"),
+                (b"Wallpaper", b"Cosmic Horizon"),
+            ],
+            2 => [
+                (b"Current User", b"Active"),
+                (b"Credential", b"Password"),
+                (b"Session", b"Authenticated"),
+                (b"Personal Space", b"Private"),
+                (b"Profile", b"Persistent"),
+            ],
+            3 => [
+                (b"AI Provider", b"Local only"),
+                (b"Remote Processing", b"Off"),
+                (b"Voice", b"Off"),
+                (b"Activation", b"Disabled"),
+                (b"Model Access", b"Capability gated"),
+            ],
+            4 => [
+                (b"Ambient Authority", b"Denied"),
+                (b"Microphone", b"Not granted"),
+                (b"Remote AI", b"Denied"),
+                (b"Session Auth", b"Verified"),
+                (b"Trusted UI", b"Active"),
+            ],
+            5 => [
+                (b"Display", b"Ready"),
+                (b"Keyboard", b"Ready"),
+                (b"Pointer", b"Ready"),
+                (b"Audio Input", b"Unavailable"),
+                (b"Network", b"Ready"),
+            ],
+            6 => [
+                (b"Infinity Pool", b"Online"),
+                (b"System Space", b"Ready"),
+                (b"Personal Space", b"Owned"),
+                (b"Recovery Space", b"Ready"),
+                (b"External Drives", b"Discoverable"),
+            ],
+            _ => [
+                (b"InfinityOS", b"Development"),
+                (b"Architecture", b"Native"),
+                (b"Boot", b"Verified"),
+                (b"Identity Format", b"Version 1"),
+                (b"Icon Families", b"3 complete sets"),
+            ],
+        };
+        for (index, (label, value)) in rows.iter().enumerate() {
+            let row = layout.settings_row_geometry(settings_window, index);
+            if row.summary.y >= geometry.viewport.y
+                && row.summary.bottom() <= geometry.viewport.bottom()
+            {
+                let summary_left = row.summary.x.max(0) as usize;
+                let summary_top = row.summary.y.max(0) as usize;
+                let summary_width = row.summary.width as usize;
+                let expanded = settings_window.expanded_row == Some(index);
+                self.fill_rounded_rect_alpha(
+                    summary_left,
+                    summary_top,
+                    summary_width,
+                    row.summary.height as usize,
+                    10 * scale,
+                    6,
+                    20,
+                    33,
+                    218,
+                );
+                self.outline_rounded_rect(
+                    summary_left,
+                    summary_top,
+                    summary_width,
+                    row.summary.height as usize,
+                    10 * scale,
+                    if expanded { outline_r } else { outline_r / 2 },
+                    if expanded { outline_g } else { outline_g / 2 },
+                    if expanded { outline_b } else { outline_b / 2 },
+                );
+                self.ui_text_strong(
+                    summary_left + 16 * scale,
+                    summary_top + 13 * scale,
+                    label,
+                    190,
+                    205,
+                    217,
+                    1,
+                );
+                let value_width = self.ui_text_width(value, 1);
+                self.ui_text(
+                    summary_left + summary_width.saturating_sub(value_width + 40 * scale),
+                    summary_top + 13 * scale,
+                    value,
+                    220,
+                    232,
+                    240,
+                    1,
+                );
+                let twiddle_x = summary_left + summary_width.saturating_sub(20 * scale);
+                let twiddle_y = summary_top + 23 * scale;
+                if expanded {
+                    self.icon_line(
+                        (twiddle_x - 5 * scale) as i32,
+                        (twiddle_y - 3 * scale) as i32,
+                        twiddle_x as i32,
+                        (twiddle_y + 3 * scale) as i32,
+                        (109, 220, 255),
+                        12 * scale,
+                    );
+                    self.icon_line(
+                        twiddle_x as i32,
+                        (twiddle_y + 3 * scale) as i32,
+                        (twiddle_x + 5 * scale) as i32,
+                        (twiddle_y - 3 * scale) as i32,
+                        (109, 220, 255),
+                        12 * scale,
+                    );
+                } else {
+                    self.icon_line(
+                        (twiddle_x - 3 * scale) as i32,
+                        (twiddle_y - 5 * scale) as i32,
+                        (twiddle_x + 3 * scale) as i32,
+                        twiddle_y as i32,
+                        (109, 220, 255),
+                        12 * scale,
+                    );
+                    self.icon_line(
+                        (twiddle_x + 3 * scale) as i32,
+                        twiddle_y as i32,
+                        (twiddle_x - 3 * scale) as i32,
+                        (twiddle_y + 5 * scale) as i32,
+                        (109, 220, 255),
+                        12 * scale,
+                    );
+                }
+            }
+            if settings_window.expanded_row == Some(index)
+                && row.detail.y >= geometry.viewport.y
+                && row.detail.bottom() <= geometry.viewport.bottom()
+            {
+                let detail_left = row.detail.x.max(0) as usize;
+                let detail_top = row.detail.y.max(0) as usize;
+                let detail_width = row.detail.width as usize;
+                let detail_height = row.detail.height as usize;
+                self.fill_rounded_rect_alpha(
+                    detail_left,
+                    detail_top,
+                    detail_width,
+                    detail_height,
+                    9 * scale,
+                    5,
+                    17,
+                    30,
+                    232,
+                );
+                self.outline_rounded_rect(
+                    detail_left,
+                    detail_top,
+                    detail_width,
+                    detail_height,
+                    9 * scale,
+                    outline_r / 2,
+                    outline_g / 2,
+                    outline_b / 2,
+                );
+                if focus == 1 && index == 1 {
+                    let card_width = detail_width / 3;
+                    for theme in 0..3usize {
+                        let card_left = detail_left + theme * card_width + 5 * scale;
+                        let selected = self.active_icon_theme() as usize == theme;
+                        self.fill_rounded_rect_alpha(
+                            card_left,
+                            detail_top + 8 * scale,
+                            card_width.saturating_sub(10 * scale),
+                            detail_height.saturating_sub(16 * scale),
+                            8 * scale,
+                            if selected { selection_r } else { 8 },
+                            if selected { selection_g } else { 28 },
+                            if selected { selection_b } else { 44 },
+                            226,
+                        );
+                        let _ = self.icon_theme_preview(
+                            theme as u8,
+                            card_left + card_width / 2,
+                            detail_top + 39 * scale,
+                            40 * scale,
+                        );
+                    }
+                } else if focus == 1 && index == 3 {
+                    self.settings_accent_picker(settings_window, scale);
+                } else {
+                    let description: &[u8] = match (focus, index) {
+                        (0, 0) => b"Rename this machine through the durable identity service.",
+                        (1, 0) => b"Switch between installed, verified InfinityUI skins.",
+                        (1, 2) => b"Automatic scale follows the active display density.",
+                        (1, 4) => b"Cosmic Horizon is the active packaged desktop wallpaper.",
+                        (3, 0) => {
+                            b"Choose whether the local provider is strictly required or preferred."
+                        }
+                        _ => b"This value is read from the active System Generation.",
+                    };
+                    self.ui_text(
+                        detail_left + 14 * scale,
+                        detail_top + 13 * scale,
+                        description,
+                        167,
+                        188,
+                        203,
+                        1,
+                    );
+                    let action: Option<&[u8]> = match (focus, index) {
+                        (0, 0) => Some(b"EDIT NAME"),
+                        (1, 0) => Some(b"SWITCH SKIN"),
+                        (3, 0) => Some(b"CHANGE POLICY"),
+                        _ => None,
+                    };
+                    if let Some(action) = action {
+                        self.polished_button(
+                            detail_left + 14 * scale,
+                            detail_top + detail_height.saturating_sub(42 * scale),
+                            (170 * scale).min(detail_width.saturating_sub(28 * scale)),
+                            32 * scale,
+                            action,
+                            true,
+                            false,
+                        );
+                    }
+                }
+            }
+        }
+        if geometry.maximum_scroll > 0 {
+            let track = geometry.scrollbar_track;
+            let thumb = geometry.scrollbar_thumb;
+            self.fill_rounded_rect_alpha(
+                track.x.max(0) as usize,
+                track.y.max(0) as usize,
+                track.width as usize,
+                track.height as usize,
+                3 * scale,
+                6,
+                19,
+                31,
+                190,
+            );
+            self.fill_rounded_rect_alpha(
+                thumb.x.max(0) as usize,
+                thumb.y.max(0) as usize,
+                thumb.width as usize,
+                thumb.height as usize,
+                3 * scale,
+                outline_r,
+                outline_g,
+                outline_b,
+                235,
+            );
+        }
+        if !settings_window.maximized {
+            for offset in [5usize, 9, 13] {
+                self.icon_line(
+                    (left + width - offset * scale) as i32,
+                    (top + height - 3 * scale) as i32,
+                    (left + width - 3 * scale) as i32,
+                    (top + height - offset * scale) as i32,
+                    (outline_r, outline_g, outline_b),
+                    16 * scale,
+                );
             }
         }
     }
@@ -3164,9 +3618,13 @@ impl super::DisplayDevice {
     // FUNC: settings_accent_picker
     // DESC: Renders the live HSV color picker from the same geometry used for pointer hit testing.
     // ------------------=
-    fn settings_accent_picker(&mut self, maximized: bool, scale: usize) {
+    fn settings_accent_picker(
+        &mut self,
+        settings_window: crate::ui::system_layout::SettingsWindowState,
+        scale: usize,
+    ) {
         let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-            .settings_accent_geometry(maximized);
+            .settings_accent_geometry(settings_window);
         let current = self.active_accent_rgb();
         let (hue, saturation, value) = crate::ui::skin::rgb_to_hsv(current);
         let columns = 32usize;
@@ -4563,6 +5021,20 @@ impl super::DisplayDevice {
                     );
                 }
             }
+            if !window_maximized {
+                let (outline_r, outline_g, outline_b) =
+                    self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+                for offset in [5usize, 9, 13] {
+                    self.icon_line(
+                        (browser_left + browser_width - offset * scale) as i32,
+                        (browser_top + browser_height - 3 * scale) as i32,
+                        (browser_left + browser_width - 3 * scale) as i32,
+                        (browser_top + browser_height - offset * scale) as i32,
+                        (outline_r, outline_g, outline_b),
+                        16 * scale,
+                    );
+                }
+            }
             let tool_top = browser_top + title_h;
             self.fill_rect_alpha(
                 browser_left,
@@ -5067,7 +5539,7 @@ pub fn system_ui_present(
     desktop_items: u8,
     desktop_item_positions: &[[i32; 2]; 7],
     clock: crate::storage::DateTimeConfiguration,
-    settings_maximized: bool,
+    settings_window: crate::ui::system_layout::SettingsWindowState,
     menu_kind: usize,
     output_lines: &[[u8; 96]; 6],
     output_lengths: &[usize; 6],
@@ -5128,7 +5600,7 @@ pub fn system_ui_present(
                     screen,
                     clock_changed,
                 )
-                || console.last_settings_maximized != settings_maximized
+                || console.last_settings_window != settings_window
                 || console.last_app_window_x != app_window_x
                 || console.last_app_window_y != app_window_y
                 || console.last_app_window_width != app_window_width
@@ -5219,7 +5691,7 @@ pub fn system_ui_present(
                     desktop_items,
                     desktop_item_positions,
                     clock,
-                    settings_maximized,
+                    settings_window,
                     menu_kind,
                     output_lines,
                     output_lengths,
@@ -5300,7 +5772,7 @@ pub fn system_ui_present(
                     desktop_items,
                     desktop_item_positions,
                     clock,
-                    settings_maximized,
+                    settings_window,
                     menu_kind,
                     output_lines,
                     output_lengths,
@@ -5342,7 +5814,7 @@ pub fn system_ui_present(
             console.last_desktop_items = desktop_items;
             console.last_desktop_item_positions = *desktop_item_positions;
             console.last_system_clock = clock;
-            console.last_settings_maximized = settings_maximized;
+            console.last_settings_window = settings_window;
             console.last_app_window_x = app_window_x;
             console.last_app_window_y = app_window_y;
             console.last_app_window_width = app_window_width;
@@ -5381,7 +5853,7 @@ pub fn system_ui_present(
     _desktop_items: u8,
     _desktop_item_positions: &[[i32; 2]; 7],
     _clock: crate::storage::DateTimeConfiguration,
-    _settings_maximized: bool,
+    _settings_window: crate::ui::system_layout::SettingsWindowState,
     _menu_kind: usize,
     _output_lines: &[[u8; 96]; 6],
     _output_lengths: &[usize; 6],

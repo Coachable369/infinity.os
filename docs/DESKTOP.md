@@ -11,6 +11,11 @@ wallpaper repair; it no longer forces a complete desktop redraw for each motion
 report. Maximize, resize, visibility, content, and structural screen changes
 still request a structural repaint.
 
+Every user-facing native desktop window exposes the same four-corner resize
+contract while restored: Home, System Settings, Text Editor, and Command all
+share bounded normalized geometry, visible corner affordances, and minimum
+usable dimensions. Maximized windows suppress resize targets until restored.
+
 The Window Server publishes a bounded typed lifecycle queue for create, destroy,
 focus, move, resize, state, capture, and context-failure transitions. The
 runtime reserves stable IOP IDs for surface/window operations and IEF type IDs

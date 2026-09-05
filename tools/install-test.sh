@@ -84,7 +84,9 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-qemu-system-x86_64 -machine pc -m 512M \
+# The live installer kernel carries the complete multi-architecture generation
+# payload and requires enough contiguous firmware pages before ExitBootServices.
+qemu-system-x86_64 -machine pc -m 1024M \
     -drive if=pflash,format=raw,readonly=on,file="$firmware" \
     -drive if=ide,index=0,format=raw,file="$disk" \
     -drive if=ide,index=2,media=cdrom,readonly=on,file=build/infinity-x86_64.iso \

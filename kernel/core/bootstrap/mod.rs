@@ -305,7 +305,7 @@ struct ConsoleSurface {
     last_desktop_items: u8,
     last_desktop_item_positions: [[i32; 2]; 7],
     last_system_clock: crate::storage::DateTimeConfiguration,
-    last_settings_maximized: bool,
+    last_settings_window: crate::ui::system_layout::SettingsWindowState,
     last_app_window_x: i32,
     last_app_window_y: i32,
     last_app_window_width: i32,

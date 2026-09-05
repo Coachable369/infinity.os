@@ -42,6 +42,7 @@ pub enum AppLauncherTarget {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DesktopAppWindowTarget {
     Title,
+    Resize(usize),
     Minimize,
     Maximize,
     Close,
@@ -96,7 +97,41 @@ pub enum SystemMenuTarget {
 pub enum SettingsTarget {
     Section(usize),
     ContentRow(usize),
+    ExpandedAction,
+    ScrollPage(bool),
+    Title,
+    Resize(usize),
     WindowControl(usize),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SettingsWindowState {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub maximized: bool,
+    pub expanded_row: Option<usize>,
+    pub scroll_offset: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SettingsWindowGeometry {
+    pub window: Rect,
+    pub title: Rect,
+    pub navigation: Rect,
+    pub content: Rect,
+    pub viewport: Rect,
+    pub scrollbar_track: Rect,
+    pub scrollbar_thumb: Rect,
+    pub total_content_height: usize,
+    pub maximum_scroll: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SettingsRowGeometry {
+    pub summary: Rect,
+    pub detail: Rect,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -133,6 +168,14 @@ impl SystemLayout {
                 1
             },
         }
+    }
+
+    // ------------------------=
+    // FUNC: scale
+    // DESC: Exposes the integer UI scale used by shared framebuffer geometry.
+    // ------------------=
+    pub const fn scale(self) -> usize {
+        self.scale
     }
 
     // ------------------------=
@@ -757,6 +800,31 @@ impl SystemLayout {
                 return target;
             }
         }
+        if !maximized {
+            let grip = 18 * self.scale;
+            let window = geometry.window;
+            for (corner, corner_x, corner_y) in [
+                (0usize, window.x, window.y),
+                (1, window.right().saturating_sub(grip as i32), window.y),
+                (2, window.x, window.bottom().saturating_sub(grip as i32)),
+                (
+                    3,
+                    window.right().saturating_sub(grip as i32),
+                    window.bottom().saturating_sub(grip as i32),
+                ),
+            ] {
+                if rect(
+                    corner_x.max(0) as usize,
+                    corner_y.max(0) as usize,
+                    grip,
+                    grip,
+                )
+                .contains(point)
+                {
+                    return DesktopAppWindowTarget::Resize(corner);
+                }
+            }
+        }
         if geometry.title.contains(point) {
             return DesktopAppWindowTarget::Title;
         }
@@ -890,24 +958,12 @@ impl SystemLayout {
     }
 
     // ------------------------=
-    // FUNC: settings_target
-    // DESC: Resolves Settings navigation, value rows, and close affordance without side effects on hover.
+    // FUNC: settings_window_geometry
+    // DESC: Derives the complete resizable Settings window, scroll viewport, and proportional scrollbar geometry.
     // ------------------=
-    pub fn settings_target(
-        self,
-        normalized_x: i32,
-        normalized_y: i32,
-        maximized: bool,
-    ) -> Option<SettingsTarget> {
-        let point = self.point(normalized_x, normalized_y);
+    pub fn settings_window_geometry(self, state: SettingsWindowState) -> SettingsWindowGeometry {
         let top_bar = self.top_bar_height();
-        let restored_width = (self.width * 68 / 100)
-            .clamp(900, 1200 * self.scale)
-            .min(self.width.saturating_sub(40));
-        let restored_height = (self.height * 62 / 100)
-            .clamp(560, 760 * self.scale)
-            .min(self.height.saturating_sub(top_bar + 28));
-        let (left, top, width, _height) = if maximized {
+        let (left, top, width, height) = if state.maximized {
             let inset = 10 * self.scale;
             (
                 inset,
@@ -917,13 +973,135 @@ impl SystemLayout {
             )
         } else {
             (
-                self.width.saturating_sub(restored_width) / 2,
-                top_bar + self.height.saturating_sub(top_bar + restored_height) / 2,
-                restored_width,
-                restored_height,
+                self.width * state.x.clamp(0, 850) as usize / 1000,
+                self.height * state.y.clamp(50, 850) as usize / 1000,
+                (self.width * state.width.clamp(600, 950) as usize / 1000).min(self.width),
+                (self.height * state.height.clamp(420, 900) as usize / 1000).min(self.height),
             )
         };
         let title_height = 54 * self.scale;
+        let navigation_width = width * 28 / 100;
+        let content_left = left + navigation_width + 34 * self.scale;
+        let scrollbar_width = 6 * self.scale;
+        let content_right_padding = 30 * self.scale;
+        let content_width = width.saturating_sub(navigation_width + 68 * self.scale);
+        let viewport_top = top + title_height + 98 * self.scale;
+        let viewport_height = height.saturating_sub(title_height + 116 * self.scale);
+        let detail_height = state.expanded_row.map(settings_detail_height).unwrap_or(0);
+        let total_content_height = 5 * 58 + detail_height;
+        let visible_logical_height = viewport_height / self.scale.max(1);
+        let maximum_scroll = total_content_height.saturating_sub(visible_logical_height);
+        let track = rect(
+            left + width.saturating_sub(18 * self.scale),
+            viewport_top,
+            scrollbar_width,
+            viewport_height,
+        );
+        let thumb_height = if maximum_scroll == 0 {
+            0
+        } else {
+            (viewport_height * visible_logical_height / total_content_height.max(1))
+                .max(34 * self.scale)
+                .min(viewport_height)
+        };
+        let clamped_scroll = state.scroll_offset.min(maximum_scroll);
+        let thumb_top = if maximum_scroll == 0 {
+            viewport_top
+        } else {
+            viewport_top
+                + viewport_height.saturating_sub(thumb_height) * clamped_scroll / maximum_scroll
+        };
+        SettingsWindowGeometry {
+            window: rect(left, top, width, height),
+            title: rect(
+                left + 12 * self.scale,
+                top,
+                width.saturating_sub(150 * self.scale),
+                title_height,
+            ),
+            navigation: rect(
+                left,
+                top + title_height,
+                navigation_width,
+                height.saturating_sub(title_height),
+            ),
+            content: rect(
+                content_left,
+                top + title_height + 29 * self.scale,
+                content_width.saturating_sub(content_right_padding),
+                height.saturating_sub(title_height + 47 * self.scale),
+            ),
+            viewport: rect(
+                content_left,
+                viewport_top,
+                content_width.saturating_sub(content_right_padding),
+                viewport_height,
+            ),
+            scrollbar_track: track,
+            scrollbar_thumb: rect(
+                track.x.max(0) as usize,
+                thumb_top,
+                scrollbar_width,
+                thumb_height,
+            ),
+            total_content_height,
+            maximum_scroll,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: settings_row_geometry
+    // DESC: Returns one summary row and its inline detail well after applying the shared scroll offset.
+    // ------------------=
+    pub fn settings_row_geometry(
+        self,
+        state: SettingsWindowState,
+        index: usize,
+    ) -> SettingsRowGeometry {
+        let window = self.settings_window_geometry(state);
+        let prior_detail = state
+            .expanded_row
+            .filter(|expanded| *expanded < index)
+            .map(settings_detail_height)
+            .unwrap_or(0);
+        let summary_top = window.viewport.y + ((index * 58 + prior_detail) * self.scale) as i32
+            - (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
+        let detail_height = if state.expanded_row == Some(index) {
+            settings_detail_height(index) * self.scale
+        } else {
+            0
+        };
+        SettingsRowGeometry {
+            summary: rect(
+                window.viewport.x.max(0) as usize,
+                summary_top.max(0) as usize,
+                window.viewport.width as usize,
+                46 * self.scale,
+            ),
+            detail: rect(
+                window.viewport.x.max(0) as usize,
+                summary_top.saturating_add((50 * self.scale) as i32).max(0) as usize,
+                window.viewport.width as usize,
+                detail_height,
+            ),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: settings_target
+    // DESC: Resolves Settings navigation, accordion, scrolling, chrome, and resize affordances from shared geometry.
+    // ------------------=
+    pub fn settings_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+    ) -> Option<SettingsTarget> {
+        let point = self.point(normalized_x, normalized_y);
+        let geometry = self.settings_window_geometry(state);
+        let left = geometry.window.x.max(0) as usize;
+        let top = geometry.window.y.max(0) as usize;
+        let width = geometry.window.width as usize;
         for index in 0..3usize {
             let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * self.scale);
             if rect(
@@ -937,13 +1115,47 @@ impl SystemLayout {
                 return Some(SettingsTarget::WindowControl(index));
             }
         }
-        let nav_w = width * 28 / 100;
+        if !state.maximized {
+            let grip = 18 * self.scale;
+            for (corner, corner_x, corner_y) in [
+                (0usize, geometry.window.x, geometry.window.y),
+                (
+                    1,
+                    geometry.window.right().saturating_sub(grip as i32),
+                    geometry.window.y,
+                ),
+                (
+                    2,
+                    geometry.window.x,
+                    geometry.window.bottom().saturating_sub(grip as i32),
+                ),
+                (
+                    3,
+                    geometry.window.right().saturating_sub(grip as i32),
+                    geometry.window.bottom().saturating_sub(grip as i32),
+                ),
+            ] {
+                if rect(
+                    corner_x.max(0) as usize,
+                    corner_y.max(0) as usize,
+                    grip,
+                    grip,
+                )
+                .contains(point)
+                {
+                    return Some(SettingsTarget::Resize(corner));
+                }
+            }
+        }
+        if geometry.title.contains(point) {
+            return Some(SettingsTarget::Title);
+        }
         for index in 0..8usize {
-            let y = top + title_height + (25 + index * 43) * self.scale;
+            let y = top + 54 * self.scale + (25 + index * 43) * self.scale;
             if rect(
                 left + 10 * self.scale,
                 y.saturating_sub(10 * self.scale),
-                nav_w.saturating_sub(20 * self.scale),
+                (geometry.navigation.width as usize).saturating_sub(20 * self.scale),
                 36 * self.scale,
             )
             .contains(point)
@@ -951,13 +1163,33 @@ impl SystemLayout {
                 return Some(SettingsTarget::Section(index));
             }
         }
-        let content_x = left + nav_w + 34 * self.scale;
-        let content_width = width.saturating_sub(nav_w + 68 * self.scale);
-        let content_y = top + title_height + 29 * self.scale;
+        if geometry.maximum_scroll > 0 && geometry.scrollbar_track.contains(point) {
+            return Some(SettingsTarget::ScrollPage(
+                point.y >= geometry.scrollbar_thumb.y,
+            ));
+        }
+        if !geometry.viewport.contains(point) {
+            return None;
+        }
         for index in 0..5usize {
-            let y = content_y + (78 + index * 58) * self.scale;
-            if rect(content_x, y, content_width, 46 * self.scale).contains(point) {
+            let row = self.settings_row_geometry(state, index);
+            if row.summary.contains(point) {
                 return Some(SettingsTarget::ContentRow(index));
+            }
+            if state.expanded_row == Some(index) && row.detail.contains(point) {
+                let action = rect(
+                    row.detail.x.max(0) as usize + 14 * self.scale,
+                    row.detail
+                        .bottom()
+                        .saturating_sub((42 * self.scale) as i32)
+                        .max(0) as usize,
+                    (170 * self.scale)
+                        .min((row.detail.width as usize).saturating_sub(28 * self.scale)),
+                    32 * self.scale,
+                );
+                if action.contains(point) {
+                    return Some(SettingsTarget::ExpandedAction);
+                }
             }
         }
         None
@@ -965,45 +1197,26 @@ impl SystemLayout {
 
     // ------------------------=
     // FUNC: settings_icon_theme_target
-    // DESC: Hit-tests the three explicit icon-family preview cards in Themes and Skins.
+    // DESC: Hit-tests the three explicit icon-family preview cards inside the Icon Set detail well.
     // ------------------=
     pub fn settings_icon_theme_target(
         self,
         normalized_x: i32,
         normalized_y: i32,
-        maximized: bool,
+        state: SettingsWindowState,
     ) -> Option<u8> {
+        if state.expanded_row != Some(1) {
+            return None;
+        }
         let point = self.point(normalized_x, normalized_y);
-        let top_bar = self.top_bar_height();
-        let restored_width = (self.width * 68 / 100)
-            .clamp(900, 1200 * self.scale)
-            .min(self.width.saturating_sub(40));
-        let restored_height = (self.height * 62 / 100)
-            .clamp(560, 760 * self.scale)
-            .min(self.height.saturating_sub(top_bar + 28));
-        let (left, top, width) = if maximized {
-            let inset = 10 * self.scale;
-            (inset, top_bar + inset, self.width.saturating_sub(inset * 2))
-        } else {
-            (
-                self.width.saturating_sub(restored_width) / 2,
-                top_bar + self.height.saturating_sub(top_bar + restored_height) / 2,
-                restored_width,
-            )
-        };
-        let title_height = 54 * self.scale;
-        let nav_width = width * 28 / 100;
-        let content_x = left + nav_width + 34 * self.scale;
-        let content_width = width.saturating_sub(nav_width + 68 * self.scale);
-        let content_y = top + title_height + 29 * self.scale;
-        let preview_top = content_y + 380 * self.scale;
-        let preview_gap = content_width / 3;
+        let row = self.settings_row_geometry(state, 1);
+        let preview_gap = row.detail.width as usize / 3;
         for theme in 0..3usize {
             if rect(
-                content_x + theme * preview_gap + 4 * self.scale,
-                preview_top,
+                row.detail.x.max(0) as usize + theme * preview_gap + 4 * self.scale,
+                row.detail.y.max(0) as usize + 8 * self.scale,
                 preview_gap.saturating_sub(8 * self.scale),
-                78 * self.scale,
+                (row.detail.height as usize).saturating_sub(16 * self.scale),
             )
             .contains(point)
             {
@@ -1015,44 +1228,25 @@ impl SystemLayout {
 
     // ------------------------=
     // FUNC: settings_accent_geometry
-    // DESC: Returns the shared pixel geometry for the installed appearance color picker.
+    // DESC: Returns the inline HSV picker geometry owned by the expanded Accent row.
     // ------------------=
-    pub fn settings_accent_geometry(self, maximized: bool) -> SettingsAccentGeometry {
-        let top_bar = self.top_bar_height();
-        let restored_width = (self.width * 68 / 100)
-            .clamp(900, 1200 * self.scale)
-            .min(self.width.saturating_sub(40));
-        let restored_height = (self.height * 62 / 100)
-            .clamp(560, 760 * self.scale)
-            .min(self.height.saturating_sub(top_bar + 28));
-        let (left, top, width) = if maximized {
-            let inset = 10 * self.scale;
-            (inset, top_bar + inset, self.width.saturating_sub(inset * 2))
-        } else {
-            (
-                self.width.saturating_sub(restored_width) / 2,
-                top_bar + self.height.saturating_sub(top_bar + restored_height) / 2,
-                restored_width,
-            )
-        };
-        let title_height = 54 * self.scale;
-        let nav_width = width * 28 / 100;
-        let content_x = left + nav_width + 34 * self.scale;
-        let content_width = width.saturating_sub(nav_width + 68 * self.scale);
-        let content_y = top + title_height + 29 * self.scale;
-        let picker_top = content_y + 380 * self.scale;
+    pub fn settings_accent_geometry(self, state: SettingsWindowState) -> SettingsAccentGeometry {
+        let row = self.settings_row_geometry(state, 3);
         let hue_width = 24 * self.scale;
         let gap = 14 * self.scale;
         SettingsAccentGeometry {
             spectrum: rect(
-                content_x + 4 * self.scale,
-                picker_top,
-                content_width.saturating_sub(hue_width + gap + 8 * self.scale),
+                row.detail.x.max(0) as usize + 12 * self.scale,
+                row.detail.y.max(0) as usize + 12 * self.scale,
+                (row.detail.width as usize).saturating_sub(hue_width + gap + 24 * self.scale),
                 78 * self.scale,
             ),
             hue: rect(
-                content_x + content_width.saturating_sub(hue_width + 4 * self.scale),
-                picker_top,
+                row.detail
+                    .right()
+                    .saturating_sub((hue_width + 12 * self.scale) as i32)
+                    .max(0) as usize,
+                row.detail.y.max(0) as usize + 12 * self.scale,
                 hue_width,
                 78 * self.scale,
             ),
@@ -1067,10 +1261,13 @@ impl SystemLayout {
         self,
         normalized_x: i32,
         normalized_y: i32,
-        maximized: bool,
+        state: SettingsWindowState,
     ) -> Option<SettingsAccentTarget> {
+        if state.expanded_row != Some(3) {
+            return None;
+        }
         let point = self.point(normalized_x, normalized_y);
-        let geometry = self.settings_accent_geometry(maximized);
+        let geometry = self.settings_accent_geometry(state);
         if geometry.spectrum.contains(point) {
             let x = point.x.saturating_sub(geometry.spectrum.x) as u32;
             let y = point.y.saturating_sub(geometry.spectrum.y) as u32;
@@ -1093,6 +1290,18 @@ impl SystemLayout {
 }
 
 // ------------------------=
+// FUNC: settings_detail_height
+// DESC: Returns the logical inline well height needed by each Settings row's real controls or explanation.
+// ------------------=
+const fn settings_detail_height(index: usize) -> usize {
+    match index {
+        1 => 108,
+        3 => 112,
+        _ => 82,
+    }
+}
+
+// ------------------------=
 // FUNC: resize_home_window
 // DESC: Applies traditional four-corner resizing while preserving minimum size and the visible work area.
 // ------------------=
@@ -1105,28 +1314,46 @@ pub fn resize_home_window(
     pointer_x: i32,
     pointer_y: i32,
 ) -> (i32, i32, i32, i32) {
+    resize_native_window(x, y, width, height, corner, pointer_x, pointer_y, 300, 260)
+}
+
+// ------------------------=
+// FUNC: resize_native_window
+// DESC: Applies four-corner resizing to any restored native window while preserving its minimum usable area.
+// ------------------=
+pub fn resize_native_window(
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    corner: usize,
+    pointer_x: i32,
+    pointer_y: i32,
+    minimum_width: i32,
+    minimum_height: i32,
+) -> (i32, i32, i32, i32) {
     let right = x.saturating_add(width);
     let bottom = y.saturating_add(height);
     let (next_x, next_width) = if matches!(corner, 0 | 2) {
-        let next_x = pointer_x.clamp(0, right.saturating_sub(300));
+        let next_x = pointer_x.clamp(0, right.saturating_sub(minimum_width));
         (next_x, right.saturating_sub(next_x))
     } else {
         (
             x,
             pointer_x
                 .saturating_sub(x)
-                .clamp(300, 1000i32.saturating_sub(x)),
+                .clamp(minimum_width, 1000i32.saturating_sub(x)),
         )
     };
     let (next_y, next_height) = if matches!(corner, 0 | 1) {
-        let next_y = pointer_y.clamp(50, bottom.saturating_sub(260));
+        let next_y = pointer_y.clamp(50, bottom.saturating_sub(minimum_height));
         (next_y, bottom.saturating_sub(next_y))
     } else {
         (
             y,
             pointer_y
                 .saturating_sub(y)
-                .clamp(260, 920i32.saturating_sub(y)),
+                .clamp(minimum_height, 920i32.saturating_sub(y)),
         )
     };
     (next_x, next_y, next_width, next_height)

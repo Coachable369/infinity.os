@@ -12,8 +12,8 @@ use crate::ui::app_launcher::{
     DESKTOP_DOCK_ENTRIES, LAUNCHER_CATEGORIES,
 };
 use crate::ui::system_layout::{
-    AppLauncherTarget, DesktopAppWindowTarget, DesktopTarget, OnboardingTarget, SettingsTarget,
-    SettingsAccentTarget, SystemLayout, SystemMenuTarget,
+    AppLauncherTarget, DesktopAppWindowTarget, DesktopTarget, OnboardingTarget,
+    SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget,
 };
 use crate::ui::text_editor::TextDocument;
 
@@ -332,7 +332,11 @@ struct ConsoleRuntime {
     current_user: crate::runtime::identity::StableId,
     current_session: crate::runtime::identity::StableId,
     settings_editing: bool,
-    settings_maximized: bool,
+    settings_window: SettingsWindowState,
+    settings_window_dragging: bool,
+    settings_window_resizing: Option<usize>,
+    settings_window_drag_offset_x: i32,
+    settings_window_drag_offset_y: i32,
     settings_accent_dirty: bool,
     onboarding_validation_error: bool,
     home_window_x: i32,
@@ -374,6 +378,7 @@ struct ConsoleRuntime {
     app_window_restore_width: i32,
     app_window_restore_height: i32,
     app_window_dragging: bool,
+    app_window_resizing: Option<usize>,
     app_window_drag_offset_x: i32,
     app_window_drag_offset_y: i32,
     editor_document: TextDocument,
@@ -423,7 +428,19 @@ impl ConsoleRuntime {
             current_user: crate::runtime::identity::StableId::zero(),
             current_session: crate::runtime::identity::StableId::zero(),
             settings_editing: false,
-            settings_maximized: false,
+            settings_window: SettingsWindowState {
+                x: 160,
+                y: 210,
+                width: 680,
+                height: 620,
+                maximized: false,
+                expanded_row: None,
+                scroll_offset: 0,
+            },
+            settings_window_dragging: false,
+            settings_window_resizing: None,
+            settings_window_drag_offset_x: 0,
+            settings_window_drag_offset_y: 0,
             settings_accent_dirty: false,
             onboarding_validation_error: false,
             home_window_x: 30,
@@ -473,6 +490,7 @@ impl ConsoleRuntime {
             app_window_restore_width: 600,
             app_window_restore_height: 620,
             app_window_dragging: false,
+            app_window_resizing: None,
             app_window_drag_offset_x: 0,
             app_window_drag_offset_y: 0,
             editor_document: TextDocument::new(),
@@ -679,7 +697,7 @@ impl ConsoleRuntime {
                 self.desktop_items,
                 &self.desktop_item_positions,
                 self.desktop_clock,
-                self.settings_maximized,
+                self.settings_window,
                 self.shell_menu,
                 &self.output.lines,
                 &self.output.lengths,
@@ -805,8 +823,12 @@ impl ConsoleRuntime {
         self.shell_menu = 0;
         self.settings_editing = false;
         self.settings_accent_dirty = false;
+        self.settings_window_dragging = false;
+        self.settings_window_resizing = None;
         self.home_window_dragging = false;
         self.home_window_resizing = None;
+        self.app_window_dragging = false;
+        self.app_window_resizing = None;
         self.home_dragging_item = None;
         self.sync_icon_theme();
         self.sync_accent();
@@ -823,6 +845,7 @@ impl ConsoleRuntime {
         self.enter_desktop();
         self.desktop_app = DesktopAppKind::TextEditor;
         self.app_window_dragging = false;
+        self.app_window_resizing = None;
     }
 
     // ------------------------=
@@ -833,6 +856,7 @@ impl ConsoleRuntime {
         self.enter_desktop();
         self.desktop_app = DesktopAppKind::CommandWindow;
         self.app_window_dragging = false;
+        self.app_window_resizing = None;
         self.reset_input();
         self.output.clear();
         self.output.write_line(b"Infinity Command Window");
@@ -848,6 +872,7 @@ impl ConsoleRuntime {
     fn close_desktop_app(&mut self) {
         self.desktop_app = DesktopAppKind::None;
         self.app_window_dragging = false;
+        self.app_window_resizing = None;
         self.reset_input();
     }
 
@@ -951,8 +976,69 @@ impl ConsoleRuntime {
         self.mode = ConsoleMode::Settings;
         self.system_focus = section.min(7);
         self.settings_editing = false;
+        self.settings_window.expanded_row = None;
+        self.settings_window.scroll_offset = 0;
+        self.settings_window_dragging = false;
+        self.settings_window_resizing = None;
         self.settings_accent_dirty = false;
         self.reset_input();
+    }
+
+    // ------------------------=
+    // FUNC: toggle_settings_row
+    // DESC: Opens one inline Settings detail well, closes it on a second activation, and reveals lower rows safely.
+    // ------------------=
+    fn toggle_settings_row(&mut self, row: usize) {
+        self.settings_window.expanded_row = if self.settings_window.expanded_row == Some(row) {
+            None
+        } else {
+            Some(row.min(4))
+        };
+        self.settings_window.scroll_offset = 0;
+        let layout = SystemLayout::new(
+            self.system.framebuffer_width,
+            self.system.framebuffer_height,
+        );
+        let window = layout.settings_window_geometry(self.settings_window);
+        let desired_scroll = self
+            .settings_window
+            .expanded_row
+            .map(|expanded| {
+                layout
+                    .settings_row_geometry(self.settings_window, expanded)
+                    .detail
+                    .bottom()
+                    .saturating_sub(window.viewport.bottom())
+                    .max(0) as usize
+                    / layout.scale().max(1)
+            })
+            .unwrap_or(0);
+        let maximum_scroll = window.maximum_scroll;
+        self.settings_window.scroll_offset = desired_scroll.min(maximum_scroll);
+    }
+
+    // ------------------------=
+    // FUNC: scroll_settings
+    // DESC: Moves the Settings accordion by bounded logical increments while leaving navigation focus unchanged.
+    // ------------------=
+    fn scroll_settings(&mut self, direction: i8) {
+        let distance = direction.unsigned_abs() as usize * 28;
+        let maximum_scroll = SystemLayout::new(
+            self.system.framebuffer_width,
+            self.system.framebuffer_height,
+        )
+        .settings_window_geometry(self.settings_window)
+        .maximum_scroll;
+        if direction < 0 {
+            self.settings_window.scroll_offset =
+                self.settings_window.scroll_offset.saturating_sub(distance);
+        } else {
+            self.settings_window.scroll_offset = self
+                .settings_window
+                .scroll_offset
+                .saturating_add(distance)
+                .min(maximum_scroll);
+        }
     }
 
     // ------------------------=
@@ -2602,6 +2688,19 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: pointer_scroll
+    // DESC: Consumes wheel motion inside Settings as content scrolling instead of changing the selected navigation section.
+    // ------------------=
+    fn pointer_scroll(&mut self, vertical: i8) -> bool {
+        if self.mode != ConsoleMode::Settings || vertical == 0 {
+            return false;
+        }
+        self.scroll_settings(vertical);
+        self.redraw();
+        true
+    }
+
+    // ------------------------=
     // FUNC: pointer_interaction
     // DESC: Handles pointer interaction input or state transitions.
     // ------------------=
@@ -2746,7 +2845,28 @@ impl ConsoleRuntime {
                 }
             }
         } else if self.mode == ConsoleMode::Desktop {
-            if self.app_window_dragging {
+            if let Some(corner) = self.app_window_resizing {
+                if left_button {
+                    let resized = crate::ui::system_layout::resize_native_window(
+                        self.app_window_x,
+                        self.app_window_y,
+                        self.app_window_width,
+                        self.app_window_height,
+                        corner,
+                        self.pointer_x,
+                        self.pointer_y,
+                        420,
+                        360,
+                    );
+                    self.app_window_x = resized.0;
+                    self.app_window_y = resized.1;
+                    self.app_window_width = resized.2;
+                    self.app_window_height = resized.3;
+                }
+                if released {
+                    self.app_window_resizing = None;
+                }
+            } else if self.app_window_dragging {
                 if left_button {
                     self.app_window_x = (self.pointer_x - self.app_window_drag_offset_x)
                         .clamp(0, 1000i32.saturating_sub(self.app_window_width));
@@ -2768,6 +2888,9 @@ impl ConsoleRuntime {
                         self.app_window_maximized,
                         self.desktop_app == DesktopAppKind::TextEditor,
                     ) {
+                        DesktopAppWindowTarget::Resize(corner) if !self.app_window_maximized => {
+                            self.app_window_resizing = Some(corner);
+                        }
                         DesktopAppWindowTarget::Title if !self.app_window_maximized => {
                             self.app_window_dragging = true;
                             self.app_window_drag_offset_x = self.pointer_x - self.app_window_x;
@@ -2804,7 +2927,9 @@ impl ConsoleRuntime {
                             Some(DesktopTarget::Dock(0)) => self.open_app_launcher(),
                             _ => {}
                         },
-                        DesktopAppWindowTarget::Content | DesktopAppWindowTarget::Title => {}
+                        DesktopAppWindowTarget::Content
+                        | DesktopAppWindowTarget::Title
+                        | DesktopAppWindowTarget::Resize(_) => {}
                     }
                 }
             } else if let Some(corner) = self.home_window_resizing {
@@ -3012,11 +3137,46 @@ impl ConsoleRuntime {
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
-            if self.system_focus == 1 && left_button {
+            if let Some(corner) = self.settings_window_resizing {
+                if left_button {
+                    let resized = crate::ui::system_layout::resize_native_window(
+                        self.settings_window.x,
+                        self.settings_window.y,
+                        self.settings_window.width,
+                        self.settings_window.height,
+                        corner,
+                        self.pointer_x,
+                        self.pointer_y,
+                        600,
+                        420,
+                    );
+                    self.settings_window.x = resized.0;
+                    self.settings_window.y = resized.1;
+                    self.settings_window.width = resized.2;
+                    self.settings_window.height = resized.3;
+                }
+                if released {
+                    self.settings_window_resizing = None;
+                }
+                self.redraw();
+                return;
+            } else if self.settings_window_dragging {
+                if left_button {
+                    self.settings_window.x = (self.pointer_x - self.settings_window_drag_offset_x)
+                        .clamp(0, 1000i32.saturating_sub(self.settings_window.width));
+                    self.settings_window.y = (self.pointer_y - self.settings_window_drag_offset_y)
+                        .clamp(50, 920i32.saturating_sub(self.settings_window.height));
+                }
+                if released {
+                    self.settings_window_dragging = false;
+                }
+                self.redraw();
+                return;
+            } else if self.system_focus == 1 && left_button {
                 if let Some(target) = layout.settings_accent_target(
                     self.pointer_x,
                     self.pointer_y,
-                    self.settings_maximized,
+                    self.settings_window,
                 ) {
                     self.adjust_accent(target);
                     self.redraw();
@@ -3032,7 +3192,7 @@ impl ConsoleRuntime {
                 if let Some(theme) = layout.settings_icon_theme_target(
                     self.pointer_x,
                     self.pointer_y,
-                    self.settings_maximized,
+                    self.settings_window,
                 ) {
                     self.select_icon_theme(theme);
                     self.redraw();
@@ -3040,22 +3200,48 @@ impl ConsoleRuntime {
                 }
             }
             if let Some(target) =
-                layout.settings_target(self.pointer_x, self.pointer_y, self.settings_maximized)
+                layout.settings_target(self.pointer_x, self.pointer_y, self.settings_window)
             {
                 match target {
-                    SettingsTarget::Section(index) => {
+                    SettingsTarget::Section(index) if clicked => {
                         self.system_focus = index;
                         self.settings_editing = false;
+                        self.settings_window.expanded_row = None;
+                        self.settings_window.scroll_offset = 0;
                         self.reset_input();
                     }
-                    SettingsTarget::ContentRow(row) if clicked => {
-                        self.activate_settings_content_row(row)
+                    SettingsTarget::ContentRow(row) if clicked => self.toggle_settings_row(row),
+                    SettingsTarget::ExpandedAction if clicked => {
+                        if let Some(row) = self.settings_window.expanded_row {
+                            self.activate_settings_content_row(row);
+                        }
+                    }
+                    SettingsTarget::ScrollPage(down) if clicked => {
+                        self.scroll_settings(if down { 4 } else { -4 })
+                    }
+                    SettingsTarget::Title if clicked && !self.settings_window.maximized => {
+                        self.settings_window_dragging = true;
+                        self.settings_window_drag_offset_x =
+                            self.pointer_x - self.settings_window.x;
+                        self.settings_window_drag_offset_y =
+                            self.pointer_y - self.settings_window.y;
+                    }
+                    SettingsTarget::Resize(corner)
+                        if clicked && !self.settings_window.maximized =>
+                    {
+                        self.settings_window_resizing = Some(corner)
                     }
                     SettingsTarget::WindowControl(0 | 2) if clicked => self.enter_desktop(),
                     SettingsTarget::WindowControl(1) if clicked => {
-                        self.settings_maximized = !self.settings_maximized
+                        self.settings_window.maximized = !self.settings_window.maximized
                     }
-                    SettingsTarget::ContentRow(_) | SettingsTarget::WindowControl(_) => {}
+                    SettingsTarget::Section(_)
+                    | SettingsTarget::ContentRow(_)
+                    | SettingsTarget::ExpandedAction
+                    | SettingsTarget::ScrollPage(_)
+                    | SettingsTarget::Title
+                    | SettingsTarget::Resize(_)
+                    | SettingsTarget::WindowControl(_) => {}
                 }
             }
         }
@@ -5262,6 +5448,20 @@ pub fn pointer(delta_x: i16, delta_y: i16, left_button: bool) {
         if let Some(runtime) = (*slot).as_mut() {
             runtime.pointer(delta_x, delta_y, left_button);
         }
+    }
+}
+
+// ------------------------=
+// FUNC: pointer_scroll
+// DESC: Routes vertical wheel input to a scrollable native surface and reports whether it consumed the gesture.
+// ------------------=
+pub fn pointer_scroll(vertical: i8) -> bool {
+    unsafe {
+        let slot = &raw mut RUNTIME;
+        (*slot)
+            .as_mut()
+            .map(|runtime| runtime.pointer_scroll(vertical))
+            .unwrap_or(false)
     }
 }
 

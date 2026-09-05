@@ -1,8 +1,8 @@
+pub mod pointer;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod ps2;
 #[cfg(target_arch = "aarch64")]
 pub(crate) mod uefi;
-pub mod pointer;
 
 use crate::boot_info::BootInfo;
 pub use pointer::{AbsolutePointerEvent, PointerCapabilities, PointerEvent};
@@ -106,14 +106,16 @@ pub fn dispatch_pointer_absolute(event: AbsolutePointerEvent) {
 // DESC: Routes bounded wheel movement through the same accessible navigation actions as arrow keys.
 // ------------------=
 fn dispatch_pointer_wheel(horizontal: i8, vertical: i8) {
-    let vertical_steps = (vertical as i16).unsigned_abs().min(8);
-    let vertical_key = if vertical < 0 {
-        crate::console::ConsoleKey::Up
-    } else {
-        crate::console::ConsoleKey::Down
-    };
-    for _ in 0..vertical_steps {
-        crate::console::input(vertical_key);
+    if !crate::console::pointer_scroll(vertical) {
+        let vertical_steps = (vertical as i16).unsigned_abs().min(8);
+        let vertical_key = if vertical < 0 {
+            crate::console::ConsoleKey::Up
+        } else {
+            crate::console::ConsoleKey::Down
+        };
+        for _ in 0..vertical_steps {
+            crate::console::input(vertical_key);
+        }
     }
     let horizontal_steps = (horizontal as i16).unsigned_abs().min(8);
     let horizontal_key = if horizontal < 0 {

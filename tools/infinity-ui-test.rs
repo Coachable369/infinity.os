@@ -23,10 +23,9 @@ use ui::skin::{
 };
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
-    resize_home_window, AppLauncherTarget, DesktopAppWindowTarget, DesktopTarget, OnboardingTarget,
-    SettingsAccentTarget, SettingsTarget, SystemLayout, SystemMenuTarget,
-    DESKTOP_FOREGROUND_DOCK,
-    DESKTOP_FOREGROUND_WIDGETS,
+    resize_home_window, resize_native_window, AppLauncherTarget, DesktopAppWindowTarget,
+    DesktopTarget, OnboardingTarget, SettingsAccentTarget, SettingsTarget, SettingsWindowState,
+    SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK, DESKTOP_FOREGROUND_WIDGETS,
 };
 use ui::text_editor::TextDocument;
 use ui::trusted::{TrustedSurface, TrustedUiError};
@@ -814,19 +813,70 @@ fn installed_system_hit_geometry_test() {
     let (damage_x, damage_y, damage_w, damage_h) = square.system_menu_damage_geometry(0);
     assert_eq!((damage_x, damage_y), (menu_x, menu_y));
     assert!(damage_w > menu_w && damage_h > menu_h);
+    let settings = SettingsWindowState {
+        x: 160,
+        y: 210,
+        width: 680,
+        height: 620,
+        maximized: false,
+        expanded_row: None,
+        scroll_offset: 0,
+    };
+    let settings_geometry = square.settings_window_geometry(settings);
+    let normalized_center = |rect: Rect| {
+        (
+            (rect.x + rect.width as i32 / 2) * 1000 / 1600,
+            (rect.y + rect.height as i32 / 2) * 1000 / 1600,
+        )
+    };
+    let section_point = (
+        (settings_geometry.navigation.x + 20) * 1000 / 1600,
+        (settings_geometry.navigation.y + 25) * 1000 / 1600,
+    );
     assert_eq!(
-        square.settings_target(200, 335, false),
+        square.settings_target(section_point.0, section_point.1, settings),
         Some(SettingsTarget::Section(0))
     );
+    let row_point = normalized_center(square.settings_row_geometry(settings, 0).summary);
     assert_eq!(
-        square.settings_target(500, 390, false),
+        square.settings_target(row_point.0, row_point.1, settings),
         Some(SettingsTarget::ContentRow(0))
     );
-    assert_eq!(
-        square.settings_target(815, 290, false),
-        Some(SettingsTarget::WindowControl(1))
+    let resize_point = (
+        (settings_geometry.window.right() - 4) * 1000 / 1600,
+        (settings_geometry.window.bottom() - 4) * 1000 / 1600,
     );
-    let picker = square.settings_accent_geometry(false);
+    assert_eq!(
+        square.settings_target(resize_point.0, resize_point.1, settings),
+        Some(SettingsTarget::Resize(3))
+    );
+    let expanded = SettingsWindowState {
+        expanded_row: Some(3),
+        height: 420,
+        ..settings
+    };
+    let compact = SystemLayout::new(1600, 900);
+    let expanded_geometry = compact.settings_window_geometry(expanded);
+    let accent_row = square.settings_row_geometry(expanded, 3);
+    assert_eq!(
+        accent_row.detail.y,
+        accent_row.summary.bottom() + 4,
+        "expanded configuration must remain attached to its owning row"
+    );
+    assert!(expanded_geometry.maximum_scroll > 0);
+    let scroll_point = (
+        (expanded_geometry.scrollbar_track.x + expanded_geometry.scrollbar_track.width as i32 / 2)
+            * 1000
+            / 1600,
+        (expanded_geometry.scrollbar_track.y + expanded_geometry.scrollbar_track.height as i32 / 2)
+            * 1000
+            / 900,
+    );
+    assert!(matches!(
+        compact.settings_target(scroll_point.0, scroll_point.1, expanded),
+        Some(SettingsTarget::ScrollPage(_))
+    ));
+    let picker = square.settings_accent_geometry(expanded);
     let picker_point = |rect: Rect| {
         (
             (rect.x + rect.width as i32 / 2) * 1000 / 1600,
@@ -835,15 +885,23 @@ fn installed_system_hit_geometry_test() {
     };
     let (spectrum_x, spectrum_y) = picker_point(picker.spectrum);
     assert!(matches!(
-        square.settings_accent_target(spectrum_x, spectrum_y, false),
+        square.settings_accent_target(spectrum_x, spectrum_y, expanded),
         Some(SettingsAccentTarget::Spectrum { saturation, value })
             if (120..=135).contains(&saturation) && (120..=135).contains(&value)
     ));
     let (hue_x, hue_y) = picker_point(picker.hue);
     assert!(matches!(
-        square.settings_accent_target(hue_x, hue_y, false),
-        Some(SettingsAccentTarget::Hue(hue)) if (175..=185).contains(&hue)
+        square.settings_accent_target(hue_x, hue_y, expanded),
+        Some(SettingsAccentTarget::Hue(hue)) if (165..=185).contains(&hue)
     ));
+    assert_eq!(
+        resize_native_window(160, 210, 680, 620, 3, 920, 900, 600, 420),
+        (160, 210, 760, 690)
+    );
+    assert_eq!(
+        square.desktop_app_window_target(699, 749, 210, 260, 490, 490, false, false),
+        DesktopAppWindowTarget::Resize(3)
+    );
 
     let hidpi = SystemLayout::new(2560, 1440);
     assert_eq!(hidpi.top_bar_height(), 76);
@@ -988,7 +1046,10 @@ fn skin_test() {
         registry.accent_surface(AccentSurface::Focus),
         registry.accent_surface(AccentSurface::Selection),
     ];
-    assert!(before.iter().zip(after.iter()).all(|(left, right)| left != right));
+    assert!(before
+        .iter()
+        .zip(after.iter())
+        .all(|(left, right)| left != right));
     assert_eq!(hsv_to_rgb(0, 255, 255), 0xff0000);
     assert_eq!(hsv_to_rgb(120, 255, 255), 0x00ff00);
     assert_eq!(hsv_to_rgb(240, 255, 255), 0x0000ff);

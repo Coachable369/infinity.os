@@ -6,6 +6,13 @@ activation is transactional and retains Previous and LastKnownGood references;
 it cannot grant capabilities or override trusted UI semantics. The graphical
 Settings surface includes an Appearance section backed by the same service.
 
+Configuration rows use a single-open inline accordion: activating the twiddle
+reveals that row's real control or explanation directly beneath its summary,
+and activating it again collapses the well. Content is clipped to an internal
+viewport and mouse-wheel or scrollbar paging is used whenever the resized
+window cannot show the complete accordion. No configuration control is painted
+outside the Settings window.
+
 Status: **TESTED** for typed persistent state, graphical color selection, live
 semantic-theme propagation, and keyboard navigation of the graphical Settings
 surface from an authenticated installed-disk session.
@@ -18,7 +25,7 @@ appearance, local-AI policy, and opt-in voice state.
 
 ## Installed theme color
 
-`Settings > Themes & Skins > Accent` exposes an HSV color picker. Pointer
+`Settings > Themes & Skins > Accent` expands to an inline HSV color picker. Pointer
 movement previews the selected color immediately; release commits it once to
 the authenticated user's profile. The selected RGB value is restored when that
 user next enters the installed desktop. Older profiles with no stored color
