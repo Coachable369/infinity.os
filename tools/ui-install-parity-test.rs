@@ -17,6 +17,7 @@ struct Container<'a> {
     license_root: &'a str,
     skin_root: &'a str,
     wallpaper_root: &'a str,
+    installer_root: &'a str,
 }
 
 // ------------------------=
@@ -125,6 +126,18 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         );
         sequence += 1;
     }
+
+    for source in [Path::new("assets/boot/infinity-installer-mesh-diagram-v1.png")] {
+        let name = source.file_name().and_then(OsStr::to_str).expect("installer asset name");
+        assert_packaged_bytes(
+            container,
+            source,
+            &format!("{}/{name}", container.installer_root),
+            scratch,
+            sequence,
+        );
+        sequence += 1;
+    }
     assert!(sequence > 0, "each system container must expose packaged UI assets");
 }
 
@@ -140,12 +153,12 @@ fn main() {
     fs::create_dir_all(&scratch).expect("scratch directory must be creatable");
 
     let containers = [
-        Container { kind: ContainerKind::Fat, image: "build/infinity-x86_64.img", font_root: "/EFI/INFINITY/FONTS", license_root: "/EFI/INFINITY/FONT-LICENSES", skin_root: "/EFI/INFINITY/INFINITYUI", wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers" },
-        Container { kind: ContainerKind::Fat, image: "build/infinity-aarch64.img", font_root: "/EFI/INFINITY/FONTS", license_root: "/EFI/INFINITY/FONT-LICENSES", skin_root: "/EFI/INFINITY/INFINITYUI", wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers" },
-        Container { kind: ContainerKind::Fat, image: "build/infinity-aarch64-qemu.img", font_root: "/EFI/INFINITY/FONTS", license_root: "/EFI/INFINITY/FONT-LICENSES", skin_root: "/EFI/INFINITY/INFINITYUI", wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers" },
-        Container { kind: ContainerKind::Fat, image: "build/x86_64/installed-esp.img", font_root: "/EFI/InfinityOS/Fonts", license_root: "/EFI/InfinityOS/FontLicenses", skin_root: "/EFI/InfinityOS/InfinityUI", wallpaper_root: "/EFI/InfinityOS/InfinityUI/Wallpapers" },
-        Container { kind: ContainerKind::Fat, image: "build/aarch64/installed-esp.img", font_root: "/EFI/InfinityOS/Fonts", license_root: "/EFI/InfinityOS/FontLicenses", skin_root: "/EFI/InfinityOS/InfinityUI", wallpaper_root: "/EFI/InfinityOS/InfinityUI/Wallpapers" },
-        Container { kind: ContainerKind::Iso, image: "build/infinity-x86.iso", font_root: "/System/Fonts", license_root: "/System/FontLicenses", skin_root: "/System/InfinityUI", wallpaper_root: "/System/InfinityUI/Wallpapers" },
+        Container { kind: ContainerKind::Fat, image: "build/infinity-x86_64.img", font_root: "/EFI/INFINITY/FONTS", license_root: "/EFI/INFINITY/FONT-LICENSES", skin_root: "/EFI/INFINITY/INFINITYUI", wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers", installer_root: "/EFI/INFINITY/INFINITYUI/Installer" },
+        Container { kind: ContainerKind::Fat, image: "build/infinity-aarch64.img", font_root: "/EFI/INFINITY/FONTS", license_root: "/EFI/INFINITY/FONT-LICENSES", skin_root: "/EFI/INFINITY/INFINITYUI", wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers", installer_root: "/EFI/INFINITY/INFINITYUI/Installer" },
+        Container { kind: ContainerKind::Fat, image: "build/infinity-aarch64-qemu.img", font_root: "/EFI/INFINITY/FONTS", license_root: "/EFI/INFINITY/FONT-LICENSES", skin_root: "/EFI/INFINITY/INFINITYUI", wallpaper_root: "/EFI/INFINITY/INFINITYUI/Wallpapers", installer_root: "/EFI/INFINITY/INFINITYUI/Installer" },
+        Container { kind: ContainerKind::Fat, image: "build/x86_64/installed-esp.img", font_root: "/EFI/InfinityOS/Fonts", license_root: "/EFI/InfinityOS/FontLicenses", skin_root: "/EFI/InfinityOS/InfinityUI", wallpaper_root: "/EFI/InfinityOS/InfinityUI/Wallpapers", installer_root: "/EFI/InfinityOS/InfinityUI/Installer" },
+        Container { kind: ContainerKind::Fat, image: "build/aarch64/installed-esp.img", font_root: "/EFI/InfinityOS/Fonts", license_root: "/EFI/InfinityOS/FontLicenses", skin_root: "/EFI/InfinityOS/InfinityUI", wallpaper_root: "/EFI/InfinityOS/InfinityUI/Wallpapers", installer_root: "/EFI/InfinityOS/InfinityUI/Installer" },
+        Container { kind: ContainerKind::Iso, image: "build/infinity-x86.iso", font_root: "/System/Fonts", license_root: "/System/FontLicenses", skin_root: "/System/InfinityUI", wallpaper_root: "/System/InfinityUI/Wallpapers", installer_root: "/System/InfinityUI/Installer" },
     ];
 
     for (index, container) in containers.iter().enumerate() {

@@ -14,6 +14,7 @@ installation experience.
 - `infinity-installer-welcome-v1.png` — legacy first-step welcome illustration source (not packaged)
 - `infinity-installer-mesh-hero-v1.png` — connected-device hero for the mesh welcome screen
 - `infinity-installer-mesh-overview-v1.png` — planetary network artwork for the reusable overview card
+- `infinity-installer-mesh-diagram-v1.png` — panoramic device-to-InfinityOS mesh diagram used beneath the first-step overview heading
 - `infinity-cursor-v1.png` — mouse cursor source
 - `infinity-storage-comparison-v1.png` — fixed partitions versus Infinity Pool explainer
 - `infinity-storage-hierarchy-v2.png` — Infinity Pool to four Spaces explainer

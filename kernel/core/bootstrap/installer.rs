@@ -127,6 +127,14 @@ pub(super) const INSTALLER_MESH_OVERVIEW_BMP: &[u8] = &[];
     feature = "installer",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
+pub(super) const INSTALLER_MESH_DIAGRAM_BMP: &[u8] =
+    include_bytes!("../../../assets/boot/infinity-installer-mesh-diagram-v1.bmp");
+#[cfg(not(feature = "installer"))]
+pub(super) const INSTALLER_MESH_DIAGRAM_BMP: &[u8] = &[];
+#[cfg(all(
+    feature = "installer",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 pub(super) const INSTALLER_ACTIVATION_BMP: &[u8] =
     include_bytes!("../../../assets/boot/infinity-installer-activation-v2.bmp");
 #[cfg(not(feature = "installer"))]
@@ -2669,7 +2677,7 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: installer_mesh_overview_row
-    // DESC: Draws the four compact mesh benefits in one equally spaced lower-left row.
+    // DESC: Draws the generated panoramic mesh-compute diagram beneath its centered section label.
     // ------------------=
     pub(super) fn installer_mesh_overview_row(
         &mut self,
@@ -2701,57 +2709,11 @@ impl super::DisplayDevice {
             128,
         );
         self.installer_compact_text_strong(label_x, label_y, label, 63, 181, 226);
-
-        let items: [(&[u8], &[u8], usize); 4] = [
-            (
-                b"SHARE RESOURCES",
-                b"CPU, GPU, storage, and bandwidth across your devices.",
-                0,
-            ),
-            (
-                b"SYNC SECURELY",
-                b"Fast, private sync that keeps your data safe.",
-                1,
-            ),
-            (
-                b"YOU CONTROL",
-                b"Every device is yours. Your data. Your rules.",
-                2,
-            ),
-            (
-                b"BUILT FOR TOMORROW",
-                b"Scale from one device to thousands. InfinityOS grows with you.",
-                3,
-            ),
-        ];
-        let gap = 12usize;
-        let card_width = width.saturating_sub(gap * 3) / 4;
-        for (index, (title, body, icon)) in items.iter().enumerate() {
-            let x = left + index * (card_width + gap);
-            self.fill_rect_alpha(x, top, card_width, height, 2, 13, 23, 204);
-            self.outline_rect(x, top, card_width, height, 27, 75, 104);
-            self.installer_mesh_icon(x + 27, top + 28, *icon, 26);
-            self.installer_compact_text_strong(x + 16, top + 43, title, 52, 198, 241);
-            self.fill_rect(
-                x + 14,
-                top + 74,
-                card_width.saturating_sub(28),
-                1,
-                22,
-                81,
-                112,
-            );
-            self.installer_compact_text_wrapped(
-                x + 16,
-                top + 78,
-                card_width.saturating_sub(32),
-                body,
-                181,
-                199,
-                217,
-                4,
-            );
-        }
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        self.paint_bitmap_fit_rect(INSTALLER_MESH_DIAGRAM_BMP, left, top, width, height);
+        #[cfg(target_arch = "x86")]
+        self.fill_rect_alpha(left, top, width, height, 2, 10, 18, 226);
+        self.outline_rect(left, top, width, height, 27, 91, 130);
     }
 
     // ------------------------=
