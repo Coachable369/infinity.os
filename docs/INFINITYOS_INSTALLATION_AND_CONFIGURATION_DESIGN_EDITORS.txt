@@ -1,0 +1,377 @@
+INFINITYOS INSTALLATION AND CONFIGURATION DESIGN EDITORS
+========================================================
+
+Purpose
+-------
+
+InfinityOS Installer Studio is the native macOS visual authoring tool for two
+related user-interface flows:
+
+1. The eleven-screen installation wizard used by the live installation system.
+2. The eight-screen OS configuration wizard used by the installed system during
+   first boot and onboarding.
+
+Both flows are maintained in the same application so they use the same visual
+language, geometry rules, editing behavior, validation, serialization, and
+runtime rendering contract. They remain separate screen collections and are
+saved as separate source and runtime files.
+
+
+Editor Application
+------------------
+
+The editor is implemented as a native SwiftUI macOS application in:
+
+    tools/installer-designer/
+
+Build and launch commands:
+
+    tools/installer-designer/build.sh
+    tools/installer-designer/run.sh
+
+The production application bundle is written to:
+
+    builds/InfinityOS Installer Studio.app
+
+The main editor window contains:
+
+* A toolbar with screen selection, undo, redo, grid controls, preview,
+  validation, and save actions.
+* A left sidebar with independently expandable Installation Screens and OS
+  Configuration Screens collections.
+* A central, zoomable 1000 by 1000 normalized artboard.
+* A right-side layer list and element inspector.
+* A status bar showing validation state, selected geometry, snapping state,
+  zoom controls, and the current output status.
+
+The two screen collections share the same editing surface but retain independent
+documents, screen numbering, selections, and factory defaults. Screens may be
+added, duplicated, renamed, reordered, removed, or reset within the selected
+collection. The editor supports between 1 and 32 contiguous screens per
+document.
+
+
+Canvas and Interaction Model
+----------------------------
+
+All screen layouts use normalized integer coordinates in a 1000 by 1000
+artboard. The OS scales these coordinates to the active framebuffer size. This
+keeps authored proportions stable across x86, x86_64, and AArch64 display modes
+without storing resolution-specific layouts.
+
+The canvas provides:
+
+* Click selection and Shift-click multi-selection behavior.
+* Drag movement and eight-handle resizing.
+* Arrow-key nudging and grid-sized Shift-arrow movement.
+* A 10-unit minor grid, 50-unit major grid, and emphasized center axes.
+* Optional snapping with visible guides and coordinate feedback.
+* Zoom from 25 percent through 300 percent.
+* Direct text editing and inspector-based editing.
+* Undo and redo for document mutations.
+* Layer ordering, duplication, deletion, visibility, and locking.
+* Repository image import and adjustable image cropping.
+
+The editor can create Panel, Image, Text, Console, and Button elements. Element
+roles describe their runtime purpose rather than merely their appearance:
+
+    Decoration, Masthead, Console, Content, Title, Body, Image,
+    Back Button, Primary Button, Footer, and Input.
+
+Each screen must retain one visible Back action, one visible Primary action, and
+at least one Console frame. Navigation buttons are functional OS controls. The
+factory documents keep them locked, and locked elements cannot be edited,
+duplicated, moved, resized, or deleted. Locks can be deliberately toggled in the
+inspector; regardless of lock state, validation refuses to save a document in
+which either required navigation role is missing, hidden, or not a Button.
+
+
+Element Structure and Styling
+-----------------------------
+
+Every element has a stable UUID and the following editable or persisted fields:
+
+* Human-readable layer name.
+* Element kind and semantic role.
+* Normalized x, y, width, and height.
+* UTF-8 text content.
+* Repository-relative image asset identifier.
+* Left, top, right, and bottom crop percentages.
+* Fill/text RGBA color.
+* Border RGBA color.
+* Font size.
+* Overall opacity from 0 through 100.
+* Corner radius.
+* Signed z-order.
+* Locked and hidden flags.
+
+The visual system uses dark blue-black glass panels, cool hairline borders,
+white text, and cyan for selection, snapping, and save state. Amber indicates
+validation warnings. Canvas selection is shown with a cyan outline and eight
+white/cyan handles, so selection does not depend on color alone.
+
+The inspector exposes precise normalized geometry, multiline copy, typography,
+image selection and crop, native fill and border color wells, opacity, corner
+radius, visibility, lock state, layer ordering, duplication, and deletion.
+
+
+Editable Source Templates
+-------------------------
+
+The human-readable editor documents are versioned, pretty-printed JSON:
+
+    assets/boot/installer-screens.infinityui
+    assets/boot/configuration-screens.infinityui
+
+Each source document contains:
+
+    version
+    canvasWidth
+    canvasHeight
+    screens[]
+
+Each screen contains a contiguous numeric ID, title, and elements array. Each
+element contains the identity, semantic, geometry, content, appearance, crop,
+layering, visibility, and lock fields described above.
+
+The `.infinityui` documents are the files designers edit and review. They are
+not parsed directly by the InfinityOS kernel.
+
+
+Runtime Template Format
+-----------------------
+
+Validated source documents compile into deterministic binary runtime templates:
+
+    assets/boot/installer-screens.iuit
+    assets/boot/configuration-screens.iuit
+
+The current runtime format is version 3. All multibyte numeric fields are
+little-endian. Its top-level structure is:
+
+    4 bytes   Magic signature: "IUIT"
+    u16       Format version
+    u16       Screen count
+    repeated  Screen records
+
+Each screen record contains:
+
+    u8        Contiguous screen ID
+    u8+bytes  UTF-8 screen title, maximum 63 bytes
+    u16       Element count
+    repeated  Element records
+
+Each element record contains, in order:
+
+    16 bytes  UUID
+    u8        Element kind
+    u8        Semantic role
+    u8        Flags: bit 0 locked, bit 1 hidden
+    i16       Z-order
+    u16 x 4   Normalized x, y, width, and height
+    4 bytes   Fill/text RGBA
+    4 bytes   Border RGBA
+    u8        Opacity percentage
+    u8        Corner radius
+    u16       Font size
+    u8+bytes  Layer name, maximum 63 UTF-8 bytes
+    u16+bytes Element text, maximum 512 UTF-8 bytes
+    u8+bytes  Image asset identifier, maximum 127 UTF-8 bytes
+    u8 x 4    Left, top, right, and bottom crop percentages
+
+The compiler first validates the editable document, encodes it, decodes the
+result again, and requires the decoded document to equal the source document.
+Saving is atomic. A failed validation or round-trip check does not replace a
+known-good runtime template.
+
+
+Validation and Safety
+---------------------
+
+Editor-side validation rejects:
+
+* Unsupported document versions.
+* Any canvas other than 1000 by 1000.
+* Missing, duplicate, noncontiguous, or out-of-range screen IDs.
+* Empty or oversized screen titles.
+* Elements outside the artboard or smaller than the minimum dimensions.
+* Oversized runtime strings.
+* Invalid image crops that leave no usable image area.
+* Missing, hidden, or incorrectly typed navigation actions.
+* Screens without a Console frame.
+
+The no-allocation Rust parser independently validates the binary again inside
+InfinityOS. It rejects an invalid signature or version, truncated data, trailing
+data, duplicate or missing screens, unknown kinds or roles, unsupported flag
+bits, invalid UTF-8, invalid geometry, opacity above 100, font sizes below 6,
+invalid crop bounds, and invalid navigation controls.
+
+The template is accepted as one complete unit. A partially valid template is
+never applied. If installer geometry cannot be obtained from a valid template,
+InfinityOS uses its compiled safe installer layout instead.
+
+
+Save and Compilation Workflow
+-----------------------------
+
+Command-S or the Save toolbar action validates and atomically writes all four
+artifacts:
+
+    installer-screens.infinityui
+    installer-screens.iuit
+    configuration-screens.infinityui
+    configuration-screens.iuit
+
+The command-line compiler can regenerate either runtime artifact:
+
+    tools/installer-designer/compile-template.sh
+
+For the configuration document, pass the source and output explicitly:
+
+    tools/installer-designer/compile-template.sh \
+      assets/boot/configuration-screens.infinityui \
+      assets/boot/configuration-screens.iuit
+
+The Makefile declares each `.iuit` file as depending on its `.infinityui`
+source, the Swift editor sources, Package.swift, and the compiler script. A
+normal build therefore recompiles a runtime template whenever its source or
+compiler is newer:
+
+    make installer-template-runtime
+
+The exact-source/runtime relationship can be checked with:
+
+    tools/installer-designer/verify-template-build.sh
+
+That check compiles both source documents into temporary binaries and requires
+byte-for-byte equality with the checked-in `.iuit` files.
+
+
+How InfinityOS Consumes the Templates at Build Time
+---------------------------------------------------
+
+The build-time path is:
+
+    Installer Studio
+        -> validates editable JSON
+        -> writes deterministic IUIT v3 binaries
+        -> Makefile dependency checks regenerate stale binaries
+        -> Rust include_bytes! embeds both IUIT files into the kernel
+        -> architecture kernels are linked
+        -> templates and referenced image assets are copied into ISO payloads
+
+`kernel/ui/installer_layout.rs` embeds the files at Rust compilation time:
+
+    INSTALLER_TEMPLATE_BYTES
+        includes assets/boot/installer-screens.iuit
+
+    CONFIGURATION_TEMPLATE_BYTES
+        includes assets/boot/configuration-screens.iuit
+
+Consequently, changing only an `.infinityui` source file is insufficient. The
+corresponding `.iuit` must be regenerated, and the kernel must be rebuilt before
+the OS can display the change.
+
+The Makefile includes both source and runtime templates in the installer UI
+asset dependency set. The runtime binaries are also kernel build dependencies.
+This causes template changes to invalidate the appropriate kernel and image
+targets.
+
+For UEFI builds, the artifacts and `assets/boot/installer-assets/` directory are
+copied into both locations:
+
+* The live ISO filesystem under `EFI/INFINITY/INFINITYUI/Installer/`.
+* The installed ESP under `EFI/InfinityOS/InfinityUI/Installer/`.
+
+The binary embedded in the live installer kernel drives installation screens.
+The binary embedded in the installed kernel drives first-boot OS configuration.
+Copying the same source/runtime assets into both payloads preserves fresh-install
+parity and makes the authored inputs available for inspection and recovery.
+
+
+Runtime Rendering
+-----------------
+
+At runtime, `kernel/ui/installer_template.rs` parses and validates the embedded
+binary. `kernel/ui/installer_layout.rs` resolves elements by screen and semantic
+role, then scales normalized rectangles to the active display.
+
+The installation renderer in `kernel/core/bootstrap/installer.rs` consumes the
+installation template for wizard layout and authored Title and Body content.
+
+The installed desktop/onboarding renderer in
+`kernel/core/bootstrap/desktop.rs` consumes the configuration template for
+Console, Title, Body, Input, Back Button, and Primary Button roles. The same
+role-derived rectangles are used by `kernel/ui/system_layout.rs` for pointer
+hit-testing, so visual placement and interaction geometry remain aligned.
+
+Runtime code supplies live state such as discovered disks, validation errors,
+progress, typed input, focus, and button actions. The current OS renderers
+actively consume role-based geometry and authored Title and Body copy. The
+binary parser also exposes fill, border, opacity, corner radius, font size,
+image asset, crop, z-order, lock, and hidden metadata, and the build packages
+referenced image files. However, the present screen-specific renderers still
+draw much of their visual styling and imagery in Rust. Those serialized style
+fields form the established runtime contract, but they are not yet all applied
+by a generic element-by-element compositor. The templates do not replace the
+installer or onboarding state machines.
+
+
+Recommended Production Procedure
+--------------------------------
+
+1. Run Installer Studio from the repository.
+2. Select Installation Screens or OS Configuration Screens.
+3. Edit and preview the required screens at several zoom levels.
+4. Validate the complete document.
+5. Save all editable and runtime artifacts.
+6. Run `make installer-template-test`.
+7. Run `tools/installer-designer/verify-template-build.sh`.
+8. Build the target architecture or run the repository `build.sh` workflow.
+9. Boot the live installer and inspect every changed installation screen.
+10. Complete a fresh installation, detach the ISO, and inspect every changed
+    configuration screen from the installed system.
+
+This sequence verifies the editor document, the deterministic compiler, the
+kernel parser, live-ISO packaging, installed-system packaging, rendering,
+interaction geometry, and fresh-install parity as separate concerns.
+
+
+Primary Implementation References
+---------------------------------
+
+Editor model:
+    tools/installer-designer/Sources/InfinityInstallerStudio/Models.swift
+
+Editor state, validation, save, and import behavior:
+    tools/installer-designer/Sources/InfinityInstallerStudio/TemplateStore.swift
+
+Binary codec and validation:
+    tools/installer-designer/Sources/InfinityInstallerStudio/RuntimeTemplateCodec.swift
+
+Editor window and navigation:
+    tools/installer-designer/Sources/InfinityInstallerStudio/StudioRootView.swift
+
+Canvas and direct manipulation:
+    tools/installer-designer/Sources/InfinityInstallerStudio/InstallerCanvas.swift
+
+Layer and property inspector:
+    tools/installer-designer/Sources/InfinityInstallerStudio/ElementInspector.swift
+
+OS binary parser:
+    kernel/ui/installer_template.rs
+
+OS template access and normalized scaling:
+    kernel/ui/installer_layout.rs
+
+Installation rendering:
+    kernel/core/bootstrap/installer.rs
+
+Configuration/onboarding rendering:
+    kernel/core/bootstrap/desktop.rs
+
+Interactive hit geometry:
+    kernel/ui/system_layout.rs
+
+Build and packaging contract:
+    Makefile
