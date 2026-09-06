@@ -63,10 +63,10 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     func testCanvasMoveAndResizeSnapToConfiguredGrid() {
         let store = TemplateStore()
         let body = store.selectedScreen!.elements.first { $0.role == .body }!
-        store.selectElement(body.id)
-        store.beginGesture()
+        store.beginGesture(elementID: body.id)
         store.moveSelected(translation: CGSize(width: 19, height: 16), canvasScale: CGSize(width: 1, height: 1))
         store.endGesture()
+        XCTAssertEqual(store.selectedElementID, body.id)
         XCTAssertEqual(store.selectedElement!.frame.x, 90)
         XCTAssertEqual(store.selectedElement!.frame.y, 450)
 
@@ -120,5 +120,64 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         let runtime = try Data(contentsOf: runtimeURL)
         XCTAssertEqual(try RuntimeTemplateCodec.decode(runtime), store.document)
         XCTAssertEqual(store.status, "Saved editable and runtime templates")
+    }
+
+    // ------------------------=
+    // FUNC: testScreenLifecyclePreservesOrderAndProtectedControls
+    // DESC: Exercises add, duplicate, reorder, rename, and remove behavior through editor state.
+    // ------------------=
+    @MainActor
+    func testScreenLifecyclePreservesOrderAndProtectedControls() throws {
+        let store = TemplateStore()
+        store.selectScreen(3)
+        store.addScreen()
+        XCTAssertEqual(store.document.screens.count, 12)
+        XCTAssertEqual(store.selectedScreenID, 4)
+        store.renameSelectedScreen("Storage Choices")
+        store.duplicateScreen()
+        XCTAssertEqual(store.document.screens.count, 13)
+        XCTAssertEqual(store.selectedScreen?.title, "Storage Choices Copy")
+        store.moveScreen(-1)
+        XCTAssertEqual(store.selectedScreenID, 4)
+        store.removeScreen()
+
+        XCTAssertEqual(store.document.screens.map(\.id), Array(1...12))
+        for screen in store.document.screens {
+            XCTAssertEqual(screen.elements.filter { $0.role == .backButton && $0.locked }.count, 1)
+            XCTAssertEqual(screen.elements.filter { $0.role == .primaryButton && $0.locked }.count, 1)
+        }
+        XCTAssertNoThrow(try TemplateValidator.validate(store.document))
+    }
+
+    // ------------------------=
+    // FUNC: testVariableScreenCountSurvivesRuntimePersistence
+    // DESC: Proves an authored screen addition is retained by the exact binary format consumed by the installer.
+    // ------------------=
+    @MainActor
+    func testVariableScreenCountSurvivesRuntimePersistence() throws {
+        let store = TemplateStore()
+        store.addScreen()
+        store.renameSelectedScreen("Custom Diagnostics")
+
+        let decoded = try RuntimeTemplateCodec.decode(RuntimeTemplateCodec.encode(store.document))
+
+        XCTAssertEqual(decoded, store.document)
+        XCTAssertEqual(decoded.screens.count, 12)
+        XCTAssertEqual(decoded.screens[1].title, "Custom Diagnostics")
+    }
+
+    // ------------------------=
+    // FUNC: testZoomControlsClampAndResetCanvasScale
+    // DESC: Exercises user zoom controls across their supported bounds and fit reset.
+    // ------------------=
+    @MainActor
+    func testZoomControlsClampAndResetCanvasScale() {
+        let store = TemplateStore()
+        for _ in 0..<40 { store.zoomIn() }
+        XCTAssertEqual(store.zoom, TemplateStore.maximumZoom, accuracy: 0.001)
+        for _ in 0..<40 { store.zoomOut() }
+        XCTAssertEqual(store.zoom, TemplateStore.minimumZoom, accuracy: 0.001)
+        store.resetZoom()
+        XCTAssertEqual(store.zoom, 1.0, accuracy: 0.001)
     }
 }

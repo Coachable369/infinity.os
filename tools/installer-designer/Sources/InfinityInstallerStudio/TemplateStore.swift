@@ -10,6 +10,8 @@ enum ResizeHandle: CaseIterable, Identifiable {
 
 @MainActor
 final class TemplateStore: ObservableObject {
+    static let minimumZoom = 0.25
+    static let maximumZoom = 3.0
     @Published var document: InstallerStudioDocument
     @Published var selectedScreenID = 1
     @Published var selectedElementID: UUID?
@@ -44,6 +46,8 @@ final class TemplateStore: ObservableObject {
 
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
+    var canAddScreen: Bool { document.screens.count < InstallerStudioDocument.maximumScreenCount }
+    var canRemoveScreen: Bool { document.screens.count > InstallerStudioDocument.minimumScreenCount }
 
     // ------------------------=
     // FUNC: init
@@ -80,6 +84,108 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     func selectElement(_ id: UUID?) {
         selectedElementID = id
+    }
+
+    // ------------------------=
+    // FUNC: addScreen
+    // DESC: Inserts a complete editable installer screen after the current screen.
+    // ------------------=
+    func addScreen() {
+        guard canAddScreen else {
+            status = "A maximum of 32 screens is supported"
+            return
+        }
+        recordUndo()
+        let insertion = min((selectedScreenIndex ?? (document.screens.count - 1)) + 1, document.screens.count)
+        var screen = selectedScreen ?? InstallerStudioDocument.factoryDefault().screens[0]
+        screen.title = "New Screen"
+        screen.elements = clonedElements(screen.elements)
+        document.screens.insert(screen, at: insertion)
+        reindexScreens()
+        selectedScreenID = insertion + 1
+        selectedElementID = nil
+        status = "Screen added"
+    }
+
+    // ------------------------=
+    // FUNC: duplicateScreen
+    // DESC: Duplicates the selected screen with fresh element identifiers and intact protected controls.
+    // ------------------=
+    func duplicateScreen() {
+        guard canAddScreen, let index = selectedScreenIndex else {
+            status = "A maximum of 32 screens is supported"
+            return
+        }
+        recordUndo()
+        var screen = document.screens[index]
+        screen.title += " Copy"
+        screen.elements = clonedElements(screen.elements)
+        document.screens.insert(screen, at: index + 1)
+        reindexScreens()
+        selectedScreenID = index + 2
+        selectedElementID = nil
+        status = "Screen duplicated"
+    }
+
+    // ------------------------=
+    // FUNC: removeScreen
+    // DESC: Removes the selected screen while retaining at least one valid installer screen.
+    // ------------------=
+    func removeScreen() {
+        guard canRemoveScreen, let index = selectedScreenIndex else {
+            status = "At least one installer screen is required"
+            return
+        }
+        recordUndo()
+        document.screens.remove(at: index)
+        reindexScreens()
+        selectedScreenID = min(index + 1, document.screens.count)
+        selectedElementID = nil
+        status = "Screen removed"
+    }
+
+    // ------------------------=
+    // FUNC: moveScreens
+    // DESC: Reorders screens from native list drag-and-drop positions and preserves the active selection.
+    // ------------------=
+    func moveScreens(fromOffsets: IndexSet, toOffset: Int) {
+        guard !fromOffsets.isEmpty else { return }
+        let selectedMarker = selectedScreen?.elements.first?.id
+        recordUndo()
+        document.screens.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        reindexScreens()
+        restoreScreenSelection(marker: selectedMarker)
+        selectedElementID = nil
+        status = "Screens reordered"
+    }
+
+    // ------------------------=
+    // FUNC: moveScreen
+    // DESC: Moves the selected screen one position for precise keyboard and button reordering.
+    // ------------------=
+    func moveScreen(_ delta: Int) {
+        guard let index = selectedScreenIndex else { return }
+        let destination = (index + delta).clamped(to: 0...(document.screens.count - 1))
+        guard destination != index else { return }
+        let selectedMarker = selectedScreen?.elements.first?.id
+        recordUndo()
+        let screen = document.screens.remove(at: index)
+        document.screens.insert(screen, at: destination)
+        reindexScreens()
+        restoreScreenSelection(marker: selectedMarker)
+        selectedElementID = nil
+        status = "Screen moved"
+    }
+
+    // ------------------------=
+    // FUNC: renameSelectedScreen
+    // DESC: Updates the selected screen's editor label as one undoable document change.
+    // ------------------=
+    func renameSelectedScreen(_ title: String) {
+        guard let index = selectedScreenIndex, document.screens[index].title != title else { return }
+        recordUndo()
+        document.screens[index].title = String(title.prefix(63))
+        status = "Screen renamed"
     }
 
     // ------------------------=
@@ -175,7 +281,10 @@ final class TemplateStore: ObservableObject {
     // FUNC: beginGesture
     // DESC: Captures one undo baseline and geometry origin for a canvas drag or resize.
     // ------------------=
-    func beginGesture() {
+    func beginGesture(elementID: UUID? = nil) {
+        if let elementID, selectedElementID != elementID {
+            selectedElementID = elementID
+        }
         guard gestureBaseline == nil, let element = selectedElement, !element.locked else { return }
         gestureBaseline = document
         gestureFrame = element.frame
@@ -252,6 +361,33 @@ final class TemplateStore: ObservableObject {
     }
 
     // ------------------------=
+    // FUNC: zoomIn
+    // DESC: Increases canvas magnification by one predictable step within safe bounds.
+    // ------------------=
+    func zoomIn() {
+        zoom = (zoom + 0.1).clamped(to: Self.minimumZoom...Self.maximumZoom)
+        status = "Canvas zoom " + String(Int(zoom * 100)) + "%"
+    }
+
+    // ------------------------=
+    // FUNC: zoomOut
+    // DESC: Decreases canvas magnification by one predictable step within safe bounds.
+    // ------------------=
+    func zoomOut() {
+        zoom = (zoom - 0.1).clamped(to: Self.minimumZoom...Self.maximumZoom)
+        status = "Canvas zoom " + String(Int(zoom * 100)) + "%"
+    }
+
+    // ------------------------=
+    // FUNC: resetZoom
+    // DESC: Restores the fit-relative canvas magnification to one hundred percent.
+    // ------------------=
+    func resetZoom() {
+        zoom = 1.0
+        status = "Canvas fit reset"
+    }
+
+    // ------------------------=
     // FUNC: undo
     // DESC: Restores the previous complete template document.
     // ------------------=
@@ -284,7 +420,7 @@ final class TemplateStore: ObservableObject {
         do {
             try TemplateValidator.validate(document)
             validationIssues = []
-            status = "All eleven screens are valid"
+            status = "All " + String(document.screens.count) + " screens are valid"
             return true
         } catch {
             validationIssues = [String(describing: error)]
@@ -374,6 +510,44 @@ final class TemplateStore: ObservableObject {
               let elementIndex = document.screens[screen].elements.firstIndex(where: { $0.id == id })
         else { return nil }
         return (screen, elementIndex, document.screens[screen].elements[elementIndex])
+    }
+
+    // ------------------------=
+    // FUNC: clonedElements
+    // DESC: Copies a screen's element collection with fresh stable identities.
+    // ------------------=
+    private func clonedElements(_ elements: [StudioElement]) -> [StudioElement] {
+        elements.map { element in
+            var copy = element
+            copy.id = UUID()
+            return copy
+        }
+    }
+
+    // ------------------------=
+    // FUNC: reindexScreens
+    // DESC: Keeps persisted screen identifiers contiguous and aligned with visible ordering.
+    // ------------------=
+    private func reindexScreens() {
+        for index in document.screens.indices {
+            document.screens[index].id = index + 1
+        }
+    }
+
+    // ------------------------=
+    // FUNC: restoreScreenSelection
+    // DESC: Restores the selected screen after reordering using an element identity marker.
+    // ------------------=
+    private func restoreScreenSelection(marker: UUID?) {
+        guard let marker,
+              let screen = document.screens.first(where: { screen in
+                  screen.elements.contains(where: { $0.id == marker })
+              })
+        else {
+            selectedScreenID = document.screens.first?.id ?? 1
+            return
+        }
+        selectedScreenID = screen.id
     }
 
     // ------------------------=

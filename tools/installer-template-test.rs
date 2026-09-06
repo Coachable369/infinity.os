@@ -48,6 +48,8 @@ fn first_primary_x_offset(data: &[u8]) -> usize {
     let mut offset = 8;
     assert_eq!(data[offset], 1);
     offset += 1;
+    let title = data[offset] as usize;
+    offset += 1 + title;
     let count = little_u16(data, &mut offset);
     for _ in 0..count {
         let (role, x_offset) = skip_element(data, &mut offset);
@@ -64,7 +66,8 @@ fn first_primary_x_offset(data: &[u8]) -> usize {
 // ------------------=
 fn main() {
     let template = InstallerTemplate::parse(FACTORY_TEMPLATE).expect("factory template must load");
-    for screen in 1..=11 {
+    assert_eq!(template.screen_count(), 11);
+    for screen in 1..=template.screen_count() as u8 {
         assert!(template.element(screen, InstallerTemplateRole::Console).is_some());
         assert!(template.element(screen, InstallerTemplateRole::Content).is_some());
         assert!(!template.element(screen, InstallerTemplateRole::Title).unwrap().text.is_empty());

@@ -31,5 +31,5 @@ done
 iconutil -c icns "$iconset_dir" -o "$contents_dir/Resources/InstallerStudioIcon.icns"
 codesign --force --deep --sign - "$app_dir" >/dev/null
 
-"$contents_dir/MacOS/InfinityInstallerStudio" --export-default "$repo_dir/assets/boot"
+"$script_dir/compile-template.sh"
 echo "$app_dir"

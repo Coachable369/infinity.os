@@ -102,36 +102,89 @@ private struct ScreenSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("INSTALLATION SCREENS")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-            List(store.document.screens) { screen in
-                Button(action: { store.selectScreen(screen.id) }) {
-                    HStack(spacing: 10) {
-                        Text(String(format: "%02d", screen.id))
-                            .font(.system(.caption, design: .monospaced).weight(.bold))
-                            .foregroundStyle(screen.id == store.selectedScreenID ? .black : .cyan)
-                            .frame(width: 28, height: 28)
-                            .background(screen.id == store.selectedScreenID ? Color.cyan : Color.cyan.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(screen.title).font(.callout.weight(.medium))
-                            Text("\(screen.elements.count) layers")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
+            HStack {
+                Text("INSTALLATION SCREENS")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(action: store.addScreen) {
+                    Image(systemName: "plus")
                 }
-                .buttonStyle(.plain)
-                .listRowBackground(
-                    screen.id == store.selectedScreenID ? Color.cyan.opacity(0.13) : Color.clear
-                )
+                .buttonStyle(.borderless)
+                .disabled(!store.canAddScreen)
+                .help("Add Screen")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            List {
+                ForEach(store.document.screens) { screen in
+                    Button(action: { store.selectScreen(screen.id) }) {
+                        HStack(spacing: 10) {
+                            Text(String(format: "%02d", screen.id))
+                                .font(.system(.caption, design: .monospaced).weight(.bold))
+                                .foregroundStyle(screen.id == store.selectedScreenID ? .black : .cyan)
+                                .frame(width: 28, height: 28)
+                                .background(screen.id == store.selectedScreenID ? Color.cyan : Color.cyan.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 7))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(screen.title).font(.callout.weight(.medium))
+                                Text("\(screen.elements.count) layers")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(
+                        screen.id == store.selectedScreenID ? Color.cyan.opacity(0.13) : Color.clear
+                    )
+                }
+                .onMove(perform: store.moveScreens)
             }
             .listStyle(.sidebar)
+            Divider()
+            if store.selectedScreen != nil {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("SCREEN NAME")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    TextField(
+                        "Screen name",
+                        text: Binding(
+                            get: { store.selectedScreen?.title ?? "" },
+                            set: { value in store.renameSelectedScreen(value) }
+                        )
+                    )
+                    HStack(spacing: 6) {
+                        Button(action: store.duplicateScreen) {
+                            Image(systemName: "plus.square.on.square")
+                        }
+                        .help("Duplicate Screen")
+                        .disabled(!store.canAddScreen)
+                        Button(action: { store.moveScreen(-1) }) {
+                            Image(systemName: "arrow.up")
+                        }
+                        .help("Move Screen Up")
+                        .disabled(store.selectedScreenIndex == 0)
+                        Button(action: { store.moveScreen(1) }) {
+                            Image(systemName: "arrow.down")
+                        }
+                        .help("Move Screen Down")
+                        .disabled(store.selectedScreenIndex == store.document.screens.count - 1)
+                        Spacer()
+                        Button(role: .destructive, action: store.removeScreen) {
+                            Image(systemName: "trash")
+                        }
+                        .help("Remove Screen")
+                        .disabled(!store.canRemoveScreen)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .controlSize(.small)
+                .padding(14)
+            }
             Divider()
             Button(role: .destructive, action: store.resetScreen) {
                 Label("Reset Current Screen", systemImage: "arrow.counterclockwise")
@@ -159,9 +212,30 @@ private struct StudioStatusBar: View {
             }
             Spacer()
             Text(store.snapEnabled ? "Snap \(store.gridSize)" : "Free positioning")
-            Slider(value: $store.zoom, in: 0.35...1.25, step: 0.05)
+            HStack(spacing: 5) {
+                Button(action: store.zoomOut) {
+                    Image(systemName: "minus.magnifyingglass")
+                }
+                .help("Zoom Out")
+                Slider(
+                    value: $store.zoom,
+                    in: TemplateStore.minimumZoom...TemplateStore.maximumZoom,
+                    step: 0.05
+                )
                 .frame(width: 130)
-            Text("\(Int(store.zoom * 100))%").monospacedDigit().frame(width: 40)
+                Button(action: store.resetZoom) {
+                    Text("\(Int(store.zoom * 100))%")
+                        .monospacedDigit()
+                        .frame(width: 42)
+                }
+                .buttonStyle(.borderless)
+                .help("Reset Zoom")
+                Button(action: store.zoomIn) {
+                    Image(systemName: "plus.magnifyingglass")
+                }
+                .help("Zoom In")
+            }
+            .buttonStyle(.borderless)
         }
         .font(.caption)
         .foregroundStyle(.secondary)

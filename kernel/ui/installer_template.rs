@@ -1,8 +1,8 @@
 //! Bounded parser for installer layouts authored by InfinityOS Installer Studio.
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 1;
-const SCREEN_COUNT: u16 = 11;
+const FORMAT_VERSION: u16 = 2;
+const MAX_SCREEN_COUNT: u16 = 32;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +58,7 @@ pub enum InstallerTemplateError {
 #[derive(Clone, Copy)]
 pub struct InstallerTemplate<'a> {
     data: &'a [u8],
+    screen_count: u16,
 }
 
 impl<'a> InstallerTemplate<'a> {
@@ -73,22 +74,27 @@ impl<'a> InstallerTemplate<'a> {
         if reader.u16()? != FORMAT_VERSION {
             return Err(InstallerTemplateError::InvalidVersion);
         }
-        if reader.u16()? != SCREEN_COUNT {
+        let screen_count = reader.u16()?;
+        if screen_count == 0 || screen_count > MAX_SCREEN_COUNT {
             return Err(InstallerTemplateError::InvalidScreenSet);
         }
 
-        let mut seen_screens = 0u16;
-        for _ in 0..SCREEN_COUNT {
+        let mut seen_screens = 0u32;
+        for _ in 0..screen_count {
             let screen = reader.u8()?;
-            if !(1..=11).contains(&screen) {
+            if screen == 0 || screen as u16 > screen_count {
                 return Err(InstallerTemplateError::InvalidScreenSet);
             }
-            let screen_bit = 1u16 << (screen - 1);
+            let screen_bit = 1u32 << (screen - 1);
             if seen_screens & screen_bit != 0 {
                 return Err(InstallerTemplateError::InvalidScreenSet);
             }
             seen_screens |= screen_bit;
 
+            let screen_title = reader.short_string()?;
+            if screen_title.is_empty() || core::str::from_utf8(screen_title).is_err() {
+                return Err(InstallerTemplateError::InvalidScreenSet);
+            }
             let count = reader.u16()?;
             let mut back_count = 0u8;
             let mut primary_count = 0u8;
@@ -118,13 +124,26 @@ impl<'a> InstallerTemplate<'a> {
                 return Err(InstallerTemplateError::InvalidNavigation);
             }
         }
-        if seen_screens != 0x07ff {
+        let expected_screens = if screen_count == MAX_SCREEN_COUNT {
+            u32::MAX
+        } else {
+            (1u32 << screen_count) - 1
+        };
+        if seen_screens != expected_screens {
             return Err(InstallerTemplateError::InvalidScreenSet);
         }
         if !reader.is_at_end() {
             return Err(InstallerTemplateError::TrailingData);
         }
-        Ok(Self { data })
+        Ok(Self { data, screen_count })
+    }
+
+    // ------------------------=
+    // FUNC: screen_count
+    // DESC: Reports the validated number of saved installer screens.
+    // ------------------=
+    pub const fn screen_count(&self) -> u16 {
+        self.screen_count
     }
 
     // ------------------------=
@@ -134,8 +153,9 @@ impl<'a> InstallerTemplate<'a> {
     pub fn element(&self, target_screen: u8, target_role: InstallerTemplateRole) -> Option<InstallerTemplateElement<'a>> {
         let mut reader = Reader::new(self.data);
         reader.take(8).ok()?;
-        for _ in 0..SCREEN_COUNT {
+        for _ in 0..self.screen_count {
             let screen = reader.u8().ok()?;
+            reader.short_string().ok()?;
             let count = reader.u16().ok()?;
             for _ in 0..count {
                 let element = reader.element().ok()?;

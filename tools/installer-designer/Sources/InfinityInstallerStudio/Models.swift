@@ -176,6 +176,8 @@ struct InstallerScreenTemplate: Identifiable, Codable, Hashable {
 
 struct InstallerStudioDocument: Codable, Hashable {
     static let currentVersion = 1
+    static let minimumScreenCount = 1
+    static let maximumScreenCount = 32
     var version: Int
     var canvasWidth: Int
     var canvasHeight: Int

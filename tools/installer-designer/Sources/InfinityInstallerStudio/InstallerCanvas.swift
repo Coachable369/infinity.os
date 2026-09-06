@@ -15,6 +15,8 @@ struct InstallerCanvas: View {
                 let canvasScale = CGSize(width: unitScale * 1.6, height: unitScale)
                 ZStack(alignment: .topLeading) {
                     artboardBackground(scale: canvasScale)
+                        .contentShape(Rectangle())
+                        .onTapGesture { store.selectElement(nil) }
                     if store.showGrid {
                         SnapGrid(gridSize: store.gridSize, scale: canvasScale)
                     }
@@ -32,8 +34,6 @@ struct InstallerCanvas: View {
                 }
                 .shadow(color: .black.opacity(0.65), radius: 28, y: 12)
                 .padding(32)
-                .contentShape(Rectangle())
-                .onTapGesture { store.selectElement(nil) }
             }
             .background(
                 LinearGradient(
@@ -254,8 +254,8 @@ private struct CanvasElementView: View {
     private var moveGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
-                guard isSelected, !element.locked else { return }
-                store.beginGesture()
+                guard !element.locked else { return }
+                store.beginGesture(elementID: element.id)
                 store.moveSelected(translation: value.translation, canvasScale: canvasScale)
             }
             .onEnded { _ in store.endGesture() }
@@ -294,7 +294,7 @@ private struct ResizeHandleView: View {
             .overlay(Circle().stroke(Color.cyan, lineWidth: 2))
             .frame(width: 11, height: 11)
             .position(handlePosition)
-            .gesture(
+            .highPriorityGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         store.beginGesture()

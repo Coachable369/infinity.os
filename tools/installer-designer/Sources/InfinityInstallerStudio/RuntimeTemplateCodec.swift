@@ -26,12 +26,17 @@ enum TemplateValidator {
         guard document.canvasWidth == 1000, document.canvasHeight == 1000 else {
             throw TemplateValidationIssue.invalidDocument("Canvas must use normalized 1000 × 1000 coordinates")
         }
-        guard document.screens.count == 11,
-              Set(document.screens.map(\.id)) == Set(1...11)
+        guard (InstallerStudioDocument.minimumScreenCount...InstallerStudioDocument.maximumScreenCount).contains(document.screens.count),
+              document.screens.map(\.id) == Array(1...document.screens.count)
         else {
-            throw TemplateValidationIssue.invalidDocument("Exactly eleven unique installer screens are required")
+            throw TemplateValidationIssue.invalidDocument("Installer screens must be ordered and numbered contiguously")
         }
         for screen in document.screens {
+            guard !screen.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  screen.title.utf8.count <= 63
+            else {
+                throw TemplateValidationIssue.invalidScreen(screen.id, "Screen name must contain 1 to 63 UTF-8 bytes")
+            }
             let back = screen.elements.filter { $0.role == .backButton }
             let primary = screen.elements.filter { $0.role == .primaryButton }
             guard back.count == 1, primary.count == 1 else {
@@ -64,7 +69,7 @@ enum TemplateValidator {
 
 enum RuntimeTemplateCodec {
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 1
+    static let version: UInt16 = 2
 
     // ------------------------=
     // FUNC: encode
@@ -76,8 +81,9 @@ enum RuntimeTemplateCodec {
         output.append(magic)
         output.appendLittleEndian(version)
         output.appendLittleEndian(UInt16(document.screens.count))
-        for screen in document.screens.sorted(by: { $0.id < $1.id }) {
+        for screen in document.screens {
             output.append(UInt8(screen.id))
+            output.appendLengthPrefixed(screen.title, length: .u8, limit: 63)
             output.appendLittleEndian(UInt16(screen.elements.count))
             for element in screen.elements {
                 output.append(contentsOf: element.id.bytes)
@@ -123,6 +129,7 @@ enum RuntimeTemplateCodec {
         var screens: [InstallerScreenTemplate] = []
         for _ in 0..<screenCount {
             let screenID = Int(try reader.readUInt8())
+            let screenTitle = try reader.readString(length: .u8, limit: 63)
             let elementCount = Int(try reader.readUInt16())
             var elements: [StudioElement] = []
             for _ in 0..<elementCount {
@@ -166,21 +173,21 @@ enum RuntimeTemplateCodec {
                     hidden: flags & 2 != 0
                 ))
             }
-            screens.append(InstallerScreenTemplate(id: screenID, title: "Screen \(screenID)", elements: elements))
+            screens.append(InstallerScreenTemplate(
+                id: screenID,
+                title: screenTitle,
+                elements: elements
+            ))
         }
         guard reader.isAtEnd else {
             throw TemplateValidationIssue.invalidDocument("Trailing runtime-template bytes")
         }
-        var document = InstallerStudioDocument(
+        let document = InstallerStudioDocument(
             version: InstallerStudioDocument.currentVersion,
             canvasWidth: 1000,
             canvasHeight: 1000,
             screens: screens
         )
-        let defaultTitles = InstallerStudioDocument.factoryDefault().screens
-        for index in document.screens.indices {
-            document.screens[index].title = defaultTitles.first(where: { $0.id == document.screens[index].id })?.title ?? "Screen \(document.screens[index].id)"
-        }
         try TemplateValidator.validate(document)
         return document
     }
