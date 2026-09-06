@@ -32,6 +32,28 @@ pub enum DesktopTarget {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AiChatTarget {
+    Model,
+    Timeline,
+    Composer,
+    Send,
+    Minimize,
+    Close,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AiChatGeometry {
+    pub panel: Rect,
+    pub header: Rect,
+    pub model: Rect,
+    pub timeline: Rect,
+    pub composer: Rect,
+    pub send: Rect,
+    pub minimize: Rect,
+    pub close: Rect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AppLauncherTarget {
     Search,
     App(usize),
@@ -300,9 +322,10 @@ impl SystemLayout {
         let overview_top = self.height * 7 / 100;
         let overview_height = (330 * self.scale).min(self.height * 30 / 100);
         let ai_top = overview_top + overview_height + 20 * self.scale;
-        let ai_height = (250 * self.scale).min(self.height * 24 / 100);
         let dock_width = self.width * 54 / 100;
         let dock_height = 72 * self.scale;
+        let dock_top = self.height.saturating_sub(dock_height + 10 * self.scale);
+        let ai_height = dock_top.saturating_sub(ai_top + 20 * self.scale);
         DesktopForegroundGeometry {
             widgets: rect(
                 widget_left,
@@ -312,11 +335,115 @@ impl SystemLayout {
             ),
             dock: rect(
                 self.width.saturating_sub(dock_width) / 2,
-                self.height.saturating_sub(dock_height + 10 * self.scale),
+                dock_top,
                 dock_width,
                 dock_height,
             ),
         }
+    }
+
+    // ------------------------=
+    // FUNC: ai_chat_geometry
+    // DESC: Returns the shared responsive geometry for the right-side desktop AI chat surface.
+    // ------------------=
+    pub fn ai_chat_geometry(self, minimized: bool) -> AiChatGeometry {
+        let foreground = self.desktop_foreground_geometry();
+        let overview_height = (330 * self.scale).min(self.height * 30 / 100);
+        let left = foreground.widgets.x.max(0) as usize;
+        let width = foreground.widgets.width as usize;
+        let top = foreground.widgets.y.max(0) as usize + overview_height + 20 * self.scale;
+        let available_height = foreground
+            .widgets
+            .bottom()
+            .saturating_sub(top as i32)
+            .max(0) as usize;
+        let height = if minimized {
+            50 * self.scale
+        } else {
+            available_height
+        };
+        let header_height = 46 * self.scale;
+        let model_top = top + header_height + 8 * self.scale;
+        let model_height = 42 * self.scale;
+        let composer_height = 46 * self.scale;
+        let send_width = 70 * self.scale;
+        let composer_top = top + height.saturating_sub(composer_height + 12 * self.scale);
+        AiChatGeometry {
+            panel: rect(left, top, width, height),
+            header: rect(left, top, width, header_height),
+            model: rect(
+                left + 12 * self.scale,
+                model_top,
+                width.saturating_sub(24 * self.scale),
+                model_height,
+            ),
+            timeline: rect(
+                left + 12 * self.scale,
+                model_top + model_height + 10 * self.scale,
+                width.saturating_sub(24 * self.scale),
+                composer_top.saturating_sub(model_top + model_height + 18 * self.scale),
+            ),
+            composer: rect(
+                left + 12 * self.scale,
+                composer_top,
+                width.saturating_sub(send_width + 30 * self.scale),
+                composer_height,
+            ),
+            send: rect(
+                left + width.saturating_sub(send_width + 12 * self.scale),
+                composer_top,
+                send_width,
+                composer_height,
+            ),
+            minimize: rect(
+                left + width.saturating_sub(58 * self.scale),
+                top + 10 * self.scale,
+                20 * self.scale,
+                20 * self.scale,
+            ),
+            close: rect(
+                left + width.saturating_sub(30 * self.scale),
+                top + 10 * self.scale,
+                20 * self.scale,
+                20 * self.scale,
+            ),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: ai_chat_target
+    // DESC: Resolves pointer input against the exact rendered AI chat controls.
+    // ------------------=
+    pub fn ai_chat_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        minimized: bool,
+    ) -> Option<AiChatTarget> {
+        let point = self.point(normalized_x, normalized_y);
+        let geometry = self.ai_chat_geometry(minimized);
+        if geometry.close.contains(point) {
+            return Some(AiChatTarget::Close);
+        }
+        if geometry.minimize.contains(point) {
+            return Some(AiChatTarget::Minimize);
+        }
+        if minimized || !geometry.panel.contains(point) {
+            return None;
+        }
+        if geometry.model.contains(point) {
+            return Some(AiChatTarget::Model);
+        }
+        if geometry.composer.contains(point) {
+            return Some(AiChatTarget::Composer);
+        }
+        if geometry.send.contains(point) {
+            return Some(AiChatTarget::Send);
+        }
+        geometry
+            .timeline
+            .contains(point)
+            .then_some(AiChatTarget::Timeline)
     }
 
     // ------------------------=
@@ -1638,9 +1765,7 @@ impl SystemLayout {
         }
         let mode_gap = 7 * self.scale;
         let mode_left = left + 14 * self.scale;
-        let mode_width = topology_width
-            .saturating_sub(28 * self.scale + mode_gap * 3)
-            / 4;
+        let mode_width = topology_width.saturating_sub(28 * self.scale + mode_gap * 3) / 4;
         let mode_top = middle_top + 64 * self.scale;
         let mode_height = middle_height.saturating_sub(80 * self.scale);
         let mut mode_cards = [rect(0, 0, 0, 0); 4];

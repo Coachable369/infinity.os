@@ -11,14 +11,14 @@ use crate::ui::app_launcher::{
     launcher_visible_count, launcher_visible_entry, DockAction, LauncherAction,
     DESKTOP_DOCK_ENTRIES, LAUNCHER_CATEGORIES,
 };
-use crate::ui::system_layout::{
-    AppLauncherTarget, DesktopAppWindowState, DesktopAppWindowTarget, DesktopTarget,
-    EditorDialogTarget, EditorScrollTarget, NetworkSettingsTarget, OnboardingTarget,
-    SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget,
-};
 use crate::ui::session_state::{
     DesktopResumeSurface, DesktopSessionLayout, LockedDesktopState, SessionIdleState,
     WindowPlacement,
+};
+use crate::ui::system_layout::{
+    AiChatTarget, AppLauncherTarget, DesktopAppWindowState, DesktopAppWindowTarget, DesktopTarget,
+    EditorDialogTarget, EditorScrollTarget, NetworkSettingsTarget, OnboardingTarget,
+    SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget,
 };
 use crate::ui::text_editor::TextDocument;
 
@@ -334,6 +334,7 @@ struct ConsoleRuntime {
     installer_date_time_part: usize,
     system_step: usize,
     system_focus: usize,
+    ai_chat_focus: usize,
     shell_menu: usize,
     onboarding_machine: [u8; 48],
     onboarding_machine_length: usize,
@@ -455,6 +456,7 @@ impl ConsoleRuntime {
             installer_date_time_part: 0,
             system_step: 0,
             system_focus: 1,
+            ai_chat_focus: 0,
             shell_menu: 0,
             onboarding_machine: [0; 48],
             onboarding_machine_length: 0,
@@ -813,6 +815,10 @@ impl ConsoleRuntime {
     fn input(&mut self, key: ConsoleKey) {
         self.session_idle.note_activity();
         if self.mode == ConsoleMode::Desktop {
+            if self.ai_chat_focus != 0 && self.input_ai_chat(key) {
+                self.redraw();
+                return;
+            }
             if self.desktop_app == DesktopAppKind::CommandWindow {
                 self.input_console(key);
                 self.redraw();
@@ -840,6 +846,49 @@ impl ConsoleRuntime {
             ConsoleMode::Authentication | ConsoleMode::Locked => self.input_authentication(key),
         }
         self.redraw();
+    }
+
+    // ------------------------=
+    // FUNC: input_ai_chat
+    // DESC: Handles keyboard navigation, model selection, and bounded chat composer editing.
+    // ------------------=
+    fn input_ai_chat(&mut self, key: ConsoleKey) -> bool {
+        match key {
+            ConsoleKey::Character(byte) if self.ai_chat_focus == 2 => {
+                crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.push_input(byte));
+            }
+            ConsoleKey::Backspace if self.ai_chat_focus == 2 => {
+                crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.pop_input());
+            }
+            ConsoleKey::Tab(reverse) => {
+                self.ai_chat_focus = if reverse {
+                    if self.ai_chat_focus <= 1 {
+                        5
+                    } else {
+                        self.ai_chat_focus - 1
+                    }
+                } else if self.ai_chat_focus >= 5 {
+                    1
+                } else {
+                    self.ai_chat_focus + 1
+                };
+            }
+            ConsoleKey::Enter => match self.ai_chat_focus {
+                1 => self.select_next_chat_model(),
+                2 | 3 => {
+                    crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.submit_input());
+                    self.ai_chat_focus = 2;
+                }
+                4 => crate::runtime::ai::with_ai_runtime(|runtime| {
+                    runtime.chat.set_minimized(!runtime.chat.minimized())
+                }),
+                5 => self.set_ai_chat_enabled(false),
+                _ => {}
+            },
+            ConsoleKey::Escape => self.ai_chat_focus = 0,
+            _ => {}
+        }
+        true
     }
 
     // ------------------------=
@@ -886,12 +935,9 @@ impl ConsoleRuntime {
             ConsoleKey::Up | ConsoleKey::Down => {
                 let count = navigator_child_count(state.active_namespace_ref.as_bytes());
                 let _ = crate::runtime::with_runtime(|runtime| {
-                    runtime
-                        .file_navigator
-                        .as_mut()
-                        .map(|navigator| {
-                            navigator.move_selection(count, matches!(key, ConsoleKey::Up))
-                        })
+                    runtime.file_navigator.as_mut().map(|navigator| {
+                        navigator.move_selection(count, matches!(key, ConsoleKey::Up))
+                    })
                 });
                 true
             }
@@ -1143,6 +1189,7 @@ impl ConsoleRuntime {
         self.mode = ConsoleMode::Desktop;
         self.desktop_app = DesktopAppKind::None;
         self.system_focus = 0;
+        self.ai_chat_focus = 0;
         self.shell_menu = 0;
         self.settings_editing = false;
         self.settings_accent_dirty = false;
@@ -1162,9 +1209,71 @@ impl ConsoleRuntime {
         self.sync_accent();
         self.sync_primary();
         self.sync_background_effects();
+        self.sync_ai_chat_preferences();
         self.refresh_desktop_items();
         self.reset_input();
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
+    }
+
+    // ------------------------=
+    // FUNC: sync_ai_chat_preferences
+    // DESC: Applies the authenticated user's persistent chat visibility and model choice.
+    // ------------------=
+    fn sync_ai_chat_preferences(&mut self) {
+        let preferences =
+            crate::runtime::with_runtime(|runtime| runtime.identity.ai_profile(self.current_user))
+                .flatten();
+        if let Some(profile) = preferences {
+            crate::runtime::ai::with_ai_runtime(|runtime| {
+                runtime.chat.set_enabled(profile.chat_enabled);
+                runtime
+                    .chat
+                    .select_model_index(profile.chat_model_index as usize);
+            });
+        }
+    }
+
+    // ------------------------=
+    // FUNC: persist_ai_chat_preferences
+    // DESC: Commits desktop chat visibility and selected model to the user's native identity object.
+    // ------------------=
+    fn persist_ai_chat_preferences(&mut self) {
+        let (enabled, model_index) = crate::runtime::ai::with_ai_runtime(|runtime| {
+            (
+                runtime.chat.enabled(),
+                runtime.chat.selected_model_index() as u8,
+            )
+        });
+        let user = self.current_user;
+        let updated = crate::runtime::with_runtime(|runtime| {
+            runtime
+                .identity
+                .update_ai_chat_preferences(user, user, enabled, model_index)
+        })
+        .transpose()
+        .is_ok();
+        if updated {
+            let _ = crate::runtime::persist_identity_state();
+        }
+    }
+
+    // ------------------------=
+    // FUNC: set_ai_chat_enabled
+    // DESC: Enables or disables the desktop AI surface and persists the authenticated preference.
+    // ------------------=
+    fn set_ai_chat_enabled(&mut self, enabled: bool) {
+        crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.set_enabled(enabled));
+        self.ai_chat_focus = 0;
+        self.persist_ai_chat_preferences();
+    }
+
+    // ------------------------=
+    // FUNC: select_next_chat_model
+    // DESC: Selects the next installed chat model and persists the choice.
+    // ------------------=
+    fn select_next_chat_model(&mut self) {
+        crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.select_next_model());
+        self.persist_ai_chat_preferences();
     }
 
     // ------------------------=
@@ -1785,8 +1894,7 @@ impl ConsoleRuntime {
         }
         let count = navigator_child_count(state.active_namespace_ref.as_bytes());
         let index = if state.view_mode == crate::runtime::object_navigation::ViewMode::List {
-            state.scroll_offset / (34 * scale)
-                + point_y.saturating_sub(grid_y) / (34 * scale)
+            state.scroll_offset / (34 * scale) + point_y.saturating_sub(grid_y) / (34 * scale)
         } else {
             let gap = width.saturating_sub(sidebar + 55 * scale) / 4;
             let tile_step = (self.system.framebuffer_height as usize / 23).max(34) + 40 * scale;
@@ -1805,7 +1913,13 @@ impl ConsoleRuntime {
         self.store_active_app_window();
         self.mode = ConsoleMode::Settings;
         self.system_focus = section.min(8);
-        self.settings_window.row_count = if matches!(self.system_focus, 1 | 6) { 8 } else { 5 };
+        self.settings_window.row_count = if matches!(self.system_focus, 1 | 6) {
+            8
+        } else if self.system_focus == 3 {
+            7
+        } else {
+            5
+        };
         self.settings_editing = false;
         self.settings_window.expanded_row = None;
         self.settings_window.scroll_offset = 0;
@@ -2359,6 +2473,11 @@ impl ConsoleRuntime {
                     let _ = crate::runtime::persist_identity_state();
                 }
             }
+            (3, 1) => {
+                let enabled = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.enabled());
+                self.set_ai_chat_enabled(!enabled);
+            }
+            (3, 2) => self.select_next_chat_model(),
             (4, 3) => self.cycle_user_no_activity_timeout(),
             (6, profile @ 0..=4) => {
                 let profile_id = profile as u32 + 1;
@@ -2407,7 +2526,10 @@ impl ConsoleRuntime {
                 self.home_location = location.min(8);
                 let path = home_location_path(self.home_location);
                 let _ = crate::runtime::with_runtime(|runtime| {
-                    runtime.file_navigator.as_mut().map(|navigator| navigator.navigate(path))
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.navigate(path))
                 });
                 self.home_selected_item = None;
                 self.enter_desktop();
@@ -2677,19 +2799,27 @@ impl ConsoleRuntime {
                 return;
             }
             if matches!(key, ConsoleKey::Left | ConsoleKey::Right) {
-                self.system_focus = if matches!(key, ConsoleKey::Left) { 0 } else { 1 };
+                self.system_focus = if matches!(key, ConsoleKey::Left) {
+                    0
+                } else {
+                    1
+                };
                 return;
             }
             if matches!(key, ConsoleKey::Enter) && (2..=4).contains(&self.system_focus) {
-                self.onboarding_validation_error = !self.select_onboarding_network(self.system_focus - 2);
-                if !self.onboarding_validation_error { self.system_focus = 1; }
+                self.onboarding_validation_error =
+                    !self.select_onboarding_network(self.system_focus - 2);
+                if !self.onboarding_validation_error {
+                    self.system_focus = 1;
+                }
                 return;
             }
         }
         if matches!(
             key,
             ConsoleKey::Tab(_) | ConsoleKey::Left | ConsoleKey::Right
-        ) && self.system_step > 0 && self.system_step != 6
+        ) && self.system_step > 0
+            && self.system_step != 6
         {
             let reverse = matches!(key, ConsoleKey::Tab(true) | ConsoleKey::Left);
             self.system_focus = if reverse {
@@ -2705,7 +2835,10 @@ impl ConsoleRuntime {
             };
             return;
         }
-        if (1..=4).contains(&self.system_step) && self.system_focus == 1 && self.edit_system_text(key) {
+        if (1..=4).contains(&self.system_step)
+            && self.system_focus == 1
+            && self.edit_system_text(key)
+        {
             self.onboarding_validation_error = false;
             return;
         }
@@ -2837,7 +2970,8 @@ impl ConsoleRuntime {
                     } else {
                         crate::runtime::network::types::NetworkSetupMode::Offline
                     }
-                }).unwrap_or(crate::runtime::network::types::NetworkSetupMode::Offline);
+                })
+                .unwrap_or(crate::runtime::network::types::NetworkSetupMode::Offline);
                 let _ = crate::runtime::select_network_mode_from_onboarding(selected);
                 self.system_step = 6;
             }
@@ -3117,7 +3251,13 @@ impl ConsoleRuntime {
             };
             self.system_focus = (self.system_focus + count - 1) % count;
             if self.mode == ConsoleMode::Settings {
-                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6) { 8 } else { 5 };
+                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6) {
+                    8
+                } else if self.system_focus == 3 {
+                    7
+                } else {
+                    5
+                };
                 self.settings_window.expanded_row = None;
                 self.settings_window.scroll_offset = 0;
             }
@@ -3134,7 +3274,13 @@ impl ConsoleRuntime {
             };
             self.system_focus = (self.system_focus + 1) % count;
             if self.mode == ConsoleMode::Settings {
-                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6) { 8 } else { 5 };
+                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6) {
+                    8
+                } else if self.system_focus == 3 {
+                    7
+                } else {
+                    5
+                };
                 self.settings_window.expanded_row = None;
                 self.settings_window.scroll_offset = 0;
             }
@@ -3162,10 +3308,9 @@ impl ConsoleRuntime {
                 }
             }
             if self.system_focus == 6 {
-                let active = crate::runtime::with_runtime(|runtime| {
-                    runtime.network.profiles.active_id()
-                })
-                .unwrap_or(1);
+                let active =
+                    crate::runtime::with_runtime(|runtime| runtime.network.profiles.active_id())
+                        .unwrap_or(1);
                 self.activate_settings_content_row((active % 5) as usize);
             }
             return;
@@ -4291,6 +4436,41 @@ impl ConsoleRuntime {
                 }
             }
         } else if self.mode == ConsoleMode::Desktop {
+            let chat_state = crate::runtime::ai::with_ai_runtime(|runtime| {
+                (runtime.chat.enabled(), runtime.chat.minimized())
+            });
+            if clicked && chat_state.0 {
+                if let Some(target) =
+                    layout.ai_chat_target(self.pointer_x, self.pointer_y, chat_state.1)
+                {
+                    match target {
+                        AiChatTarget::Model => {
+                            self.ai_chat_focus = 1;
+                            self.select_next_chat_model();
+                        }
+                        AiChatTarget::Composer => self.ai_chat_focus = 2,
+                        AiChatTarget::Send => {
+                            self.ai_chat_focus = 3;
+                            crate::runtime::ai::with_ai_runtime(|runtime| {
+                                runtime.chat.submit_input()
+                            });
+                        }
+                        AiChatTarget::Minimize => {
+                            self.ai_chat_focus = 4;
+                            crate::runtime::ai::with_ai_runtime(|runtime| {
+                                runtime.chat.set_minimized(!runtime.chat.minimized())
+                            });
+                        }
+                        AiChatTarget::Close => self.set_ai_chat_enabled(false),
+                        AiChatTarget::Timeline => self.ai_chat_focus = 0,
+                    }
+                    self.redraw();
+                    return;
+                }
+            }
+            if clicked {
+                self.ai_chat_focus = 0;
+            }
             if self.editor_dialog != EditorDialog::None {
                 if clicked {
                     let count = self.editor_document_count();
@@ -4993,7 +5173,13 @@ impl ConsoleRuntime {
                 match target {
                     SettingsTarget::Section(index) if clicked => {
                         self.system_focus = index;
-                        self.settings_window.row_count = if matches!(index, 1 | 6) { 8 } else { 5 };
+                        self.settings_window.row_count = if matches!(index, 1 | 6) {
+                            8
+                        } else if index == 3 {
+                            7
+                        } else {
+                            5
+                        };
                         self.settings_editing = false;
                         self.settings_window.expanded_row = None;
                         self.settings_window.scroll_offset = 0;
@@ -5212,7 +5398,9 @@ impl ConsoleRuntime {
             });
             match result {
                 Ok(path) => self.output.write_line(path),
-                Err(_) => self.output.write_line(b"Namespace navigation denied or unavailable."),
+                Err(_) => self
+                    .output
+                    .write_line(b"Namespace navigation denied or unavailable."),
             }
             return true;
         }
@@ -5247,9 +5435,13 @@ impl ConsoleRuntime {
             self.output.write_number(b"Objects shown: ", shown as u64);
             return true;
         }
-        if matches!(first, b"examine" | b"resolve" | b"versions" | b"references" | b"relationships") {
+        if matches!(
+            first,
+            b"examine" | b"resolve" | b"versions" | b"references" | b"relationships"
+        ) {
             let Some(target) = command_word(command, 1) else {
-                self.output.write_line(b"A NamespaceRef or ObjectId is required.");
+                self.output
+                    .write_line(b"A NamespaceRef or ObjectId is required.");
                 return true;
             };
             match crate::storage::namespace_resolve(target) {
@@ -5260,21 +5452,34 @@ impl ConsoleRuntime {
                     } else if first == b"versions" {
                         if let Ok((_, count, current)) = crate::storage::object_history(target) {
                             self.output.write_number(b"Versions: ", count as u64);
-                            self.output.write_number(b"Current version: ", current as u64);
+                            self.output
+                                .write_number(b"Current version: ", current as u64);
                         }
                     } else if first == b"references" {
                         for index in 0..32usize {
                             let mut path = [0u8; 96];
-                            let Some(length) = crate::storage::object_reference_nth(id, index, &mut path) else { break; };
+                            let Some(length) =
+                                crate::storage::object_reference_nth(id, index, &mut path)
+                            else {
+                                break;
+                            };
                             self.output.write_line(&path[..length]);
                         }
                     } else if first == b"relationships" {
-                        self.output.write_line(b"Typed semantic relationships available through Object.Relationships.");
-                    } else if let Ok((metadata, references)) = crate::storage::object_inspect_path(target) {
-                        self.output.write_number(b"Object type: ", metadata.kind as u64);
-                        self.output.write_number(b"Reference count: ", references as u64);
-                        self.output.write_number(b"Version: ", metadata.current_version as u64);
-                        self.output.write_number(b"Logical bytes: ", metadata.logical_size as u64);
+                        self.output.write_line(
+                            b"Typed semantic relationships available through Object.Relationships.",
+                        );
+                    } else if let Ok((metadata, references)) =
+                        crate::storage::object_inspect_path(target)
+                    {
+                        self.output
+                            .write_number(b"Object type: ", metadata.kind as u64);
+                        self.output
+                            .write_number(b"Reference count: ", references as u64);
+                        self.output
+                            .write_number(b"Version: ", metadata.current_version as u64);
+                        self.output
+                            .write_number(b"Logical bytes: ", metadata.logical_size as u64);
                     }
                 }
                 Err(error) => self.storage_error(error),
@@ -5286,29 +5491,41 @@ impl ConsoleRuntime {
             let mut found = 0usize;
             for index in 0..128usize {
                 let mut path = [0u8; 96];
-                let Some((length, _)) = crate::storage::namespace_entry(index, &mut path) else { break; };
+                let Some((length, _)) = crate::storage::namespace_entry(index, &mut path) else {
+                    break;
+                };
                 if ascii_contains_case_insensitive(&path[..length], query) {
                     self.output.write_line(&path[..length]);
                     found += 1;
-                    if found == 32 { break; }
+                    if found == 32 {
+                        break;
+                    }
                 }
             }
             self.output.write_number(b"Search results: ", found as u64);
             return true;
         }
         if first == b"open" {
-            let Some(target) = command_word(command, 1) else { return true; };
+            let Some(target) = command_word(command, 1) else {
+                return true;
+            };
             if crate::storage::object_inspect_path(target).is_ok() {
-                self.output.write_line(b"ApplicationAssociation.Resolve -> Application.Launch");
+                self.output
+                    .write_line(b"ApplicationAssociation.Resolve -> Application.Launch");
                 self.open_text_editor();
             } else {
-                self.output.write_line(b"No authorized application association.");
+                self.output
+                    .write_line(b"No authorized application association.");
             }
             return true;
         }
         if first == b"navigator" {
             let target = command_word(command, 1).unwrap_or(self.navigation_context.path());
-            let target = if target == b"." { self.navigation_context.path() } else { target };
+            let target = if target == b"." {
+                self.navigation_context.path()
+            } else {
+                target
+            };
             let navigated = crate::runtime::with_runtime(|runtime| {
                 runtime
                     .file_navigator
@@ -5321,7 +5538,8 @@ impl ConsoleRuntime {
                 self.home_window_visible = true;
                 self.enter_desktop();
             } else {
-                self.output.write_line(b"Navigator target is not a valid NamespaceRef.");
+                self.output
+                    .write_line(b"Navigator target is not a valid NamespaceRef.");
             }
             return true;
         }
@@ -5368,13 +5586,21 @@ impl ConsoleRuntime {
             b"delete" => crate::storage::namespace_delete(source).map(|id| Some(id)),
             b"move" => {
                 let destination = command_word(command, 3).unwrap_or(&[]);
-                crate::storage::namespace_move(source, destination).map(|_| crate::storage::namespace_resolve(destination).ok())
+                crate::storage::namespace_move(source, destination)
+                    .map(|_| crate::storage::namespace_resolve(destination).ok())
             }
             b"list" => {
-                let path = if source.is_empty() { self.navigation_context.path() } else { source };
+                let path = if source.is_empty() {
+                    self.navigation_context.path()
+                } else {
+                    source
+                };
                 for index in 0..32usize {
-                    let Ok(Some(entry)) = crate::storage::namespace_list_nth(path, index) else { break; };
-                    self.output.write_line(&entry.path[..entry.path_len as usize]);
+                    let Ok(Some(entry)) = crate::storage::namespace_list_nth(path, index) else {
+                        break;
+                    };
+                    self.output
+                        .write_line(&entry.path[..entry.path_len as usize]);
                 }
                 return true;
             }
@@ -5403,7 +5629,10 @@ impl ConsoleRuntime {
                     Err(error) => self.storage_error(error),
                 }
             }
-            b"copy" => match crate::storage::object_copy_path(source, command_word(command, 3).unwrap_or(&[])) {
+            b"copy" => match crate::storage::object_copy_path(
+                source,
+                command_word(command, 3).unwrap_or(&[]),
+            ) {
                 Ok(id) => self.output.write_id(b"New ObjectId: ", id),
                 Err(error) => self.storage_error(error),
             },
@@ -5414,17 +5643,27 @@ impl ConsoleRuntime {
             b"destroy" => {
                 let confirmed = command_word(command, 3) == Some(b"confirm=true");
                 match crate::storage::object_destroy_explicit(source, confirmed) {
-                    Ok(()) => self.output.write_line(b"Object identity permanently destroyed."),
+                    Ok(()) => self
+                        .output
+                        .write_line(b"Object identity permanently destroyed."),
                     Err(error) => self.storage_error(error),
                 }
             }
             b"inspect" | b"history" | b"relationships" => {
-                let alias = if action == b"history" { b"versions".as_slice() } else if action == b"relationships" { b"relationships".as_slice() } else { b"examine".as_slice() };
+                let alias = if action == b"history" {
+                    b"versions".as_slice()
+                } else if action == b"relationships" {
+                    b"relationships".as_slice()
+                } else {
+                    b"examine".as_slice()
+                };
                 let mut translated = [0u8; COMMAND_CAPACITY];
                 translated[..alias.len()].copy_from_slice(alias);
                 translated[alias.len()] = b' ';
                 translated[alias.len() + 1..alias.len() + 1 + source.len()].copy_from_slice(source);
-                return self.execute_native_navigation_command(&translated[..alias.len() + 1 + source.len()]);
+                return self.execute_native_navigation_command(
+                    &translated[..alias.len() + 1 + source.len()],
+                );
             }
             _ => return false,
         }
@@ -5439,12 +5678,17 @@ impl ConsoleRuntime {
         let action = command_word(command, 1).unwrap_or(&[]);
         let source = command_word(command, 2).unwrap_or(&[]);
         match action {
-            b"create" => match crate::storage::namespace_link(source, command_word(command, 3).unwrap_or(&[])) {
+            b"create" => match crate::storage::namespace_link(
+                source,
+                command_word(command, 3).unwrap_or(&[]),
+            ) {
                 Ok(id) => self.output.write_id(b"Referenced ObjectId: ", id),
                 Err(error) => self.storage_error(error),
             },
             b"delete" => match crate::storage::namespace_detach(source) {
-                Ok(()) => self.output.write_line(b"Selected Namespace reference removed; ObjectId retained."),
+                Ok(()) => self
+                    .output
+                    .write_line(b"Selected Namespace reference removed; ObjectId retained."),
                 Err(error) => self.storage_error(error),
             },
             b"list" => {
@@ -5472,8 +5716,12 @@ impl ConsoleRuntime {
             },
             b"list" => {
                 for index in 0..32usize {
-                    let Ok(Some(entry)) = crate::storage::namespace_list_nth(b"/trash", index) else { break; };
-                    self.output.write_line(&entry.path[..entry.path_len as usize]);
+                    let Ok(Some(entry)) = crate::storage::namespace_list_nth(b"/trash", index)
+                    else {
+                        break;
+                    };
+                    self.output
+                        .write_line(&entry.path[..entry.path_len as usize]);
                 }
             }
             b"restore" => match crate::storage::trash_restore(target) {
@@ -5485,7 +5733,9 @@ impl ConsoleRuntime {
                 Err(error) => self.storage_error(error),
             },
             b"empty" => match crate::storage::trash_empty() {
-                Ok(count) => self.output.write_number(b"Trash entries deleted: ", count as u64),
+                Ok(count) => self
+                    .output
+                    .write_number(b"Trash entries deleted: ", count as u64),
                 Err(error) => self.storage_error(error),
             },
             _ => return false,
@@ -5503,7 +5753,10 @@ impl ConsoleRuntime {
             crate::runtime::with_runtime(|runtime| {
                 if let Some(profiles) = runtime.shell_profiles.as_ref() {
                     for index in 0..profiles.profile_count() {
-                        if let Some(profile) = profiles.profile_nth(index).filter(|profile| profile.enabled) {
+                        if let Some(profile) = profiles
+                            .profile_nth(index)
+                            .filter(|profile| profile.enabled)
+                        {
                             self.output.write_line(profile.name.as_bytes());
                         }
                     }
@@ -5520,7 +5773,14 @@ impl ConsoleRuntime {
                 if let Some(profiles) = runtime.shell_profiles.as_ref() {
                     for index in 0..profiles.profile_count() {
                         if let Some(profile) = profiles.profile_nth(index) {
-                            self.output.write_segments(&[profile.name.as_bytes(), if profile.enabled { b" [enabled]" } else { b" [disabled]" }]);
+                            self.output.write_segments(&[
+                                profile.name.as_bytes(),
+                                if profile.enabled {
+                                    b" [enabled]"
+                                } else {
+                                    b" [disabled]"
+                                },
+                            ]);
                         }
                     }
                 }
@@ -5528,23 +5788,44 @@ impl ConsoleRuntime {
             return true;
         }
         let result = crate::runtime::with_runtime(|runtime| {
-            let profiles = runtime.shell_profiles.as_mut().ok_or(crate::runtime::object_navigation::ProfileError::CorruptState)?;
+            let profiles = runtime
+                .shell_profiles
+                .as_mut()
+                .ok_or(crate::runtime::object_navigation::ProfileError::CorruptState)?;
             match (resource, action) {
-                (b"profile", b"inspect") => profiles.profile(name).map(|_| ()).ok_or(crate::runtime::object_navigation::ProfileError::NotFound),
+                (b"profile", b"inspect") => profiles
+                    .profile(name)
+                    .map(|_| ())
+                    .ok_or(crate::runtime::object_navigation::ProfileError::NotFound),
                 (b"profile", b"create") => profiles.create(actor, name, now).map(|_| ()),
-                (b"profile", b"clone") => profiles.clone_profile(actor, name, command_word(command, 4).unwrap_or(&[]), now).map(|_| ()),
+                (b"profile", b"clone") => profiles
+                    .clone_profile(actor, name, command_word(command, 4).unwrap_or(&[]), now)
+                    .map(|_| ()),
                 (b"profile", b"enable") => profiles.enable(actor, name, now),
                 (b"profile", b"disable") => profiles.disable(actor, name, now),
                 (b"profile", b"set-default") => profiles.set_default(actor, name),
                 (b"profile", b"delete") => profiles.delete(actor, name).map(|_| ()),
-                (b"alias", b"add") => profiles.alias_add(actor, name, command_word(command, 4).unwrap_or(&[]), unquote_command_tail(command_tail(command, 5).unwrap_or(&[])), now),
-                (b"alias", b"delete") => profiles.alias_delete(actor, name, command_word(command, 4).unwrap_or(&[]), now),
+                (b"alias", b"add") => profiles.alias_add(
+                    actor,
+                    name,
+                    command_word(command, 4).unwrap_or(&[]),
+                    unquote_command_tail(command_tail(command, 5).unwrap_or(&[])),
+                    now,
+                ),
+                (b"alias", b"delete") => {
+                    profiles.alias_delete(actor, name, command_word(command, 4).unwrap_or(&[]), now)
+                }
                 (b"alias", b"resolve") => profiles.resolve(name).map(|_| ()),
-                (b"alias", b"list") => profiles.profile(name).map(|_| ()).ok_or(crate::runtime::object_navigation::ProfileError::NotFound),
+                (b"alias", b"list") => profiles
+                    .profile(name)
+                    .map(|_| ())
+                    .ok_or(crate::runtime::object_navigation::ProfileError::NotFound),
                 _ => return Err(crate::runtime::object_navigation::ProfileError::NotFound),
             }
         })
-        .unwrap_or(Err(crate::runtime::object_navigation::ProfileError::CorruptState));
+        .unwrap_or(Err(
+            crate::runtime::object_navigation::ProfileError::CorruptState,
+        ));
         match result {
             Ok(()) => {
                 let _ = crate::runtime::persist_shell_profile_state();
@@ -5813,53 +6094,145 @@ impl ConsoleRuntime {
         use crate::runtime::network::types::ConnectivityClass;
         match node.schema.operation {
             OperationId::NetworkStatus => {
-                let status = crate::runtime::with_runtime(|runtime| runtime.network.status()).unwrap();
+                let status =
+                    crate::runtime::with_runtime(|runtime| runtime.network.status()).unwrap();
                 let class = match status.connectivity {
                     ConnectivityClass::Offline => b"Offline".as_slice(),
                     ConnectivityClass::LinkOnly => b"LinkOnly".as_slice(),
                     ConnectivityClass::LocalNetwork => b"LocalNetwork".as_slice(),
                     ConnectivityClass::LimitedConnectivity => b"LimitedConnectivity".as_slice(),
                     ConnectivityClass::Routed => b"Routed".as_slice(),
-                    ConnectivityClass::InternetReachableOptional => b"InternetReachableOptional".as_slice(),
+                    ConnectivityClass::InternetReachableOptional => {
+                        b"InternetReachableOptional".as_slice()
+                    }
                     ConnectivityClass::Degraded => b"Degraded".as_slice(),
                 };
                 self.output.write_segments(&[b"connectivity: ", class]);
-                self.output.write_number(b"active profile: network-profile:", status.active_profile as u64);
-                self.output.write_number(b"interfaces: ", status.interfaces as u64);
-                self.output.write_number(b"connections: ", status.active_connections as u64);
+                self.output.write_number(
+                    b"active profile: network-profile:",
+                    status.active_profile as u64,
+                );
+                self.output
+                    .write_number(b"interfaces: ", status.interfaces as u64);
+                self.output
+                    .write_number(b"connections: ", status.active_connections as u64);
             }
             OperationId::NetworkInterfaceList | OperationId::NetworkInterfaceInspect => {
-                let count = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.interface_count()).unwrap_or(0);
-                for index in 0..count { if let Some(interface) = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.interface_nth(index).copied()).flatten() { self.output.write_number(b"interface:", interface.id as u64); self.output.write_number(b"  device identity: ", interface.device.device_id); self.output.write_number(b"  rx packets: ", interface.rx_packets); self.output.write_number(b"  tx packets: ", interface.tx_packets); } }
+                let count = crate::runtime::with_runtime(|runtime| {
+                    runtime.network.interfaces.interface_count()
+                })
+                .unwrap_or(0);
+                for index in 0..count {
+                    if let Some(interface) = crate::runtime::with_runtime(|runtime| {
+                        runtime.network.interfaces.interface_nth(index).copied()
+                    })
+                    .flatten()
+                    {
+                        self.output.write_number(b"interface:", interface.id as u64);
+                        self.output
+                            .write_number(b"  device identity: ", interface.device.device_id);
+                        self.output
+                            .write_number(b"  rx packets: ", interface.rx_packets);
+                        self.output
+                            .write_number(b"  tx packets: ", interface.tx_packets);
+                    }
+                }
             }
             OperationId::NetworkAddressList => {
-                let count = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.address_count()).unwrap_or(0);
-                for index in 0..count { if let Some(address) = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.address_nth(index).copied()).flatten() { self.output.write_number(b"address:", address.id as u64); self.output.write_number(b"  interface: ", address.interface_id as u64); self.output.write_number(b"  prefix: ", address.prefix_length as u64); } }
+                let count = crate::runtime::with_runtime(|runtime| {
+                    runtime.network.interfaces.address_count()
+                })
+                .unwrap_or(0);
+                for index in 0..count {
+                    if let Some(address) = crate::runtime::with_runtime(|runtime| {
+                        runtime.network.interfaces.address_nth(index).copied()
+                    })
+                    .flatten()
+                    {
+                        self.output.write_number(b"address:", address.id as u64);
+                        self.output
+                            .write_number(b"  interface: ", address.interface_id as u64);
+                        self.output
+                            .write_number(b"  prefix: ", address.prefix_length as u64);
+                    }
+                }
             }
             OperationId::NetworkRouteList => {
-                let count = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.route_count()).unwrap_or(0);
-                for index in 0..count { if let Some(route) = crate::runtime::with_runtime(|runtime| runtime.network.interfaces.route_nth(index).copied()).flatten() { self.output.write_number(b"route:", route.id as u64); self.output.write_number(b"  interface: ", route.interface_id as u64); self.output.write_number(b"  prefix: ", route.prefix_length as u64); self.output.write_number(b"  metric: ", route.metric as u64); } }
+                let count = crate::runtime::with_runtime(|runtime| {
+                    runtime.network.interfaces.route_count()
+                })
+                .unwrap_or(0);
+                for index in 0..count {
+                    if let Some(route) = crate::runtime::with_runtime(|runtime| {
+                        runtime.network.interfaces.route_nth(index).copied()
+                    })
+                    .flatten()
+                    {
+                        self.output.write_number(b"route:", route.id as u64);
+                        self.output
+                            .write_number(b"  interface: ", route.interface_id as u64);
+                        self.output
+                            .write_number(b"  prefix: ", route.prefix_length as u64);
+                        self.output.write_number(b"  metric: ", route.metric as u64);
+                    }
+                }
             }
             OperationId::NetworkConnectionList | OperationId::NetworkConnectionInspect => {
-                let count = crate::runtime::with_runtime(|runtime| runtime.network.connections.count()).unwrap_or(0);
-                self.output.write_number(b"authorized connections: ", count as u64);
+                let count =
+                    crate::runtime::with_runtime(|runtime| runtime.network.connections.count())
+                        .unwrap_or(0);
+                self.output
+                    .write_number(b"authorized connections: ", count as u64);
             }
             OperationId::NetworkPolicyList | OperationId::NetworkPolicyInspect => {
-                let count = crate::runtime::with_runtime(|runtime| runtime.network.policy.count()).unwrap_or(0);
-                self.output.write_number(b"effective policy rules: ", count as u64);
+                let count = crate::runtime::with_runtime(|runtime| runtime.network.policy.count())
+                    .unwrap_or(0);
+                self.output
+                    .write_number(b"effective policy rules: ", count as u64);
             }
             OperationId::NetworkProfileList | OperationId::NetworkProfileInspect => {
-                let count = crate::runtime::with_runtime(|runtime| runtime.network.profiles.count()).unwrap_or(0);
-                let active = crate::runtime::with_runtime(|runtime| runtime.network.profiles.active_id()).unwrap_or(0);
-                for index in 0..count { if let Some(profile) = crate::runtime::with_runtime(|runtime| runtime.network.profiles.nth(index).copied()).flatten() { self.output.write_number(if profile.id == active { b"active network-profile:" } else { b"network-profile:" }, profile.id as u64); } }
+                let count =
+                    crate::runtime::with_runtime(|runtime| runtime.network.profiles.count())
+                        .unwrap_or(0);
+                let active =
+                    crate::runtime::with_runtime(|runtime| runtime.network.profiles.active_id())
+                        .unwrap_or(0);
+                for index in 0..count {
+                    if let Some(profile) = crate::runtime::with_runtime(|runtime| {
+                        runtime.network.profiles.nth(index).copied()
+                    })
+                    .flatten()
+                    {
+                        self.output.write_number(
+                            if profile.id == active {
+                                b"active network-profile:"
+                            } else {
+                                b"network-profile:"
+                            },
+                            profile.id as u64,
+                        );
+                    }
+                }
             }
             OperationId::NetworkDiagnostics => {
-                let diagnostics = crate::runtime::with_runtime(|runtime| runtime.network.diagnostics()).unwrap();
-                self.output.write_number(b"rx packets: ", diagnostics.rx_packets); self.output.write_number(b"tx packets: ", diagnostics.tx_packets); self.output.write_number(b"drops: ", diagnostics.drops); self.output.write_number(b"queue pressure: ", diagnostics.queue_pressure); self.output.write_number(b"policy denials: ", diagnostics.policy_denials);
+                let diagnostics =
+                    crate::runtime::with_runtime(|runtime| runtime.network.diagnostics()).unwrap();
+                self.output
+                    .write_number(b"rx packets: ", diagnostics.rx_packets);
+                self.output
+                    .write_number(b"tx packets: ", diagnostics.tx_packets);
+                self.output.write_number(b"drops: ", diagnostics.drops);
+                self.output
+                    .write_number(b"queue pressure: ", diagnostics.queue_pressure);
+                self.output
+                    .write_number(b"policy denials: ", diagnostics.policy_denials);
             }
             OperationId::ServiceDiscoverLocal => {
-                let count = crate::runtime::with_runtime(|runtime| runtime.network.discovery.count()).unwrap_or(0);
-                self.output.write_number(b"discovered untrusted services: ", count as u64);
+                let count =
+                    crate::runtime::with_runtime(|runtime| runtime.network.discovery.count())
+                        .unwrap_or(0);
+                self.output
+                    .write_number(b"discovered untrusted services: ", count as u64);
             }
             _ => return false,
         }
@@ -7293,7 +7666,10 @@ fn command_tail(command: &[u8], words: usize) -> Option<&[u8]> {
 // ------------------=
 fn unquote_command_tail(value: &[u8]) -> &[u8] {
     if value.len() >= 2
-        && matches!((value.first(), value.last()), (Some(b'"'), Some(b'"')) | (Some(b'\''), Some(b'\'')))
+        && matches!(
+            (value.first(), value.last()),
+            (Some(b'"'), Some(b'"')) | (Some(b'\''), Some(b'\''))
+        )
     {
         &value[1..value.len() - 1]
     } else {
@@ -7327,9 +7703,8 @@ fn navigator_child_nth(
     parent: &[u8],
     requested: usize,
 ) -> Option<crate::storage::object::NamespaceListResult> {
-    let requested = requested.checked_sub(
-        crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT,
-    )?;
+    let requested = requested
+        .checked_sub(crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT)?;
     let descending = crate::runtime::with_runtime(|runtime| {
         runtime
             .file_navigator

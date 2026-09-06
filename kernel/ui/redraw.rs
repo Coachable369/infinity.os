@@ -40,6 +40,17 @@ pub const fn desktop_app_content_requires_bounded_redraw(
 }
 
 // ------------------------=
+// FUNC: desktop_chat_content_requires_bounded_redraw
+// DESC: Selects widget-column-only repainting when desktop AI chat state changes.
+// ------------------=
+pub const fn desktop_chat_content_requires_bounded_redraw(
+    screen: u8,
+    content_changed: bool,
+) -> bool {
+    screen == 2 && content_changed
+}
+
+// ------------------------=
 // FUNC: appearance_change_requires_structural_redraw
 // DESC: Invalidates the complete composed surface when the active semantic accent changes.
 // ------------------=

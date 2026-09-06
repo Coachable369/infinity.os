@@ -232,6 +232,8 @@ pub struct AiProfile {
     pub user: StableId,
     pub provider_policy: AiProviderPolicy,
     pub remote_processing: bool,
+    pub chat_enabled: bool,
+    pub chat_model_index: u8,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -506,6 +508,8 @@ impl IdentitySystem {
             user: user_id,
             provider_policy: AiProviderPolicy::LocalOnly,
             remote_processing: false,
+            chat_enabled: true,
+            chat_model_index: 0,
         });
         self.voice_profiles[slot] = Some(VoiceProfile {
             user: user_id,
@@ -1044,6 +1048,33 @@ impl IdentitySystem {
             .ok_or(IdentityError::NotFound)?;
         profile.provider_policy = policy;
         profile.remote_processing = policy == AiProviderPolicy::RemoteAllowed;
+        let result = *profile;
+        self.commit();
+        Ok(result)
+    }
+
+    // ------------------------=
+    // FUNC: update_ai_chat_preferences
+    // DESC: Persists desktop chat enablement and one installed model selection for the owning user.
+    // ------------------=
+    pub fn update_ai_chat_preferences(
+        &mut self,
+        actor: StableId,
+        user: StableId,
+        enabled: bool,
+        model_index: u8,
+    ) -> Result<AiProfile, IdentityError> {
+        if actor != user || model_index as usize >= crate::runtime::ai::chat::CHAT_MODELS.len() {
+            return Err(IdentityError::AccessDenied);
+        }
+        let profile = self
+            .ai_profiles
+            .iter_mut()
+            .flatten()
+            .find(|profile| profile.user == user)
+            .ok_or(IdentityError::NotFound)?;
+        profile.chat_enabled = enabled;
+        profile.chat_model_index = model_index;
         let result = *profile;
         self.commit();
         Ok(result)
@@ -1650,11 +1681,20 @@ fn write_user(
     write_id(out, at + 124, user.profile_ref);
     write_id(out, at + 140, user.personal_space_ref);
     out[at + 156] = ai.map(|v| v.provider_policy as u8).unwrap_or(1);
-    out[at + 157] = ai.map(|v| v.remote_processing as u8).unwrap_or(0);
+    out[at + 157] = ai
+        .map(|value| {
+            0x80 | (value.remote_processing as u8)
+                | ((value.chat_enabled as u8) << 1)
+                | ((value.chat_model_index.min(15)) << 2)
+        })
+        .unwrap_or(0x82);
     let timeout_minutes = profile
         .map(|value| value.no_activity_timeout_minutes)
         .unwrap_or(DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES)
-        .clamp(MIN_NO_ACTIVITY_TIMEOUT_MINUTES, MAX_NO_ACTIVITY_TIMEOUT_MINUTES);
+        .clamp(
+            MIN_NO_ACTIVITY_TIMEOUT_MINUTES,
+            MAX_NO_ACTIVITY_TIMEOUT_MINUTES,
+        );
     out[at + 158] = voice.map(|v| v.enabled as u8).unwrap_or(0) | (timeout_minutes << 1);
     out[at + 159] = voice.map(|v| v.activation as u8).unwrap_or(1)
 }
@@ -1694,6 +1734,8 @@ fn read_user(
             _ => return Err(IdentityError::CorruptState),
         },
     };
+    let ai_preferences = input[at + 157];
+    let ai_preferences_versioned = ai_preferences & 0x80 != 0;
     let ai = AiProfile {
         user: id,
         provider_policy: match input[at + 156] {
@@ -1703,7 +1745,17 @@ fn read_user(
             4 => AiProviderPolicy::RemoteAllowed,
             _ => return Err(IdentityError::CorruptState),
         },
-        remote_processing: input[at + 157] != 0,
+        remote_processing: ai_preferences & 1 != 0,
+        chat_enabled: !ai_preferences_versioned || ai_preferences & 2 != 0,
+        chat_model_index: if ai_preferences_versioned {
+            ((ai_preferences >> 2) & 0x0f).min(
+                crate::runtime::ai::chat::CHAT_MODELS
+                    .len()
+                    .saturating_sub(1) as u8,
+            )
+        } else {
+            0
+        },
     };
     let voice = VoiceProfile {
         user: id,

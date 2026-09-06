@@ -280,7 +280,7 @@ $(BUILD)/x86/kernel.stamp: $(KERNEL_SOURCES) targets/i686-infinity.json
 	touch $@
 
 $(BUILD)/x86/kernel.elf: $(BUILD)/x86/kernel.stamp linker/x86.ld
-	$(LD_LLD) -m elf_i386 -nostdlib -static -T linker/x86.ld -o $@ $(BUILD)/x86/libkernel.a
+	$(LD_LLD) -m elf_i386 -nostdlib -static -s -T linker/x86.ld -o $@ $(BUILD)/x86/libkernel.a
 
 $(BUILD)/x86/bootstrap.bin: boot/x86/bootstrap.asm $(BUILD)/x86/kernel.elf
 	@mkdir -p $(@D)

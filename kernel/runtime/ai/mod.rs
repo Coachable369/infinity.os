@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod broker;
+pub mod chat;
 pub mod intent;
 pub mod model;
 pub mod provider;
@@ -8,6 +9,7 @@ pub mod voice;
 
 use agent::AgentManager;
 use broker::{ContextBroker, CONTEXT_SYSTEM_STATE};
+use chat::ChatRuntime;
 use intent::{ConsequencePolicy, IntentPlan};
 use model::{local_model_descriptor, LocalCpuBackend, ModelRegistry, LOCAL_INTENT_MODEL_ID};
 use provider::{local_provider, ProviderRouter};
@@ -19,6 +21,7 @@ pub struct AiRuntime {
     pub providers: ProviderRouter,
     pub voice: VoiceService,
     pub agents: AgentManager,
+    pub chat: ChatRuntime,
     cpu: LocalCpuBackend,
     initialized: bool,
     inference_count: u64,
@@ -38,6 +41,7 @@ impl AiRuntime {
             providers: ProviderRouter::new(),
             voice: VoiceService::new(),
             agents: AgentManager::new(),
+            chat: ChatRuntime::new(),
             cpu: LocalCpuBackend::new(4),
             initialized: false,
             inference_count: 0,

@@ -2126,7 +2126,13 @@ impl super::DisplayDevice {
                 );
             }
         } else if step == 6 {
-            self.onboarding_network_rows(inner_left, body_top, inner_width, focus, validation_error);
+            self.onboarding_network_rows(
+                inner_left,
+                body_top,
+                inner_width,
+                focus,
+                validation_error,
+            );
         } else {
             self.fill_rounded_rect_alpha(
                 inner_left,
@@ -2184,28 +2190,59 @@ impl super::DisplayDevice {
         use crate::runtime::network::types::{ConnectivityClass, LinkState, NetworkSetupMode};
         let scale = self.ui_scale().max(1);
         let snapshot = crate::runtime::with_runtime(|runtime| runtime.network.setup_snapshot());
-        let selected = snapshot.map(|value| value.selected).unwrap_or(NetworkSetupMode::Automatic);
+        let selected = snapshot
+            .map(|value| value.selected)
+            .unwrap_or(NetworkSetupMode::Automatic);
         let wired_detail: &[u8] = match snapshot {
-            Some(value) if value.wired_available && value.wired_link == LinkState::Up => b"Connected link detected",
-            Some(value) if value.wired_available && value.wired_link == LinkState::Down => b"Adapter detected; connect a network cable",
-            Some(value) if value.wired_available => b"Wired adapter detected; link unverified",
+            Some(value) if value.wired_available && value.wired_link == LinkState::Up => {
+                b"Connected link detected"
+            }
+            Some(value) if value.wired_available => b"Connect a network cable",
             _ => b"No wired adapter detected",
         };
         let wireless_detail: &[u8] = match snapshot {
-            Some(value) if value.wireless_available && value.wireless_link == LinkState::Up => b"Connected wireless link detected",
+            Some(value) if value.wireless_available && value.wireless_link == LinkState::Up => {
+                b"Connected wireless link detected"
+            }
             Some(value) if value.wireless_available => b"Wireless link is not connected",
             _ => b"No wireless adapter detected",
         };
         let rows: [(&[u8], &[u8], usize, NetworkSetupMode); 3] = [
-            (b"Wired network", wired_detail, 4usize, NetworkSetupMode::Wired),
-            (b"Wi-Fi", wireless_detail, 3usize, NetworkSetupMode::Wireless),
-            (b"Continue offline", b"Set up networking later in Settings", 8usize, NetworkSetupMode::Offline),
+            (
+                b"Wired network",
+                wired_detail,
+                4usize,
+                NetworkSetupMode::Wired,
+            ),
+            (
+                b"Wi-Fi",
+                wireless_detail,
+                3usize,
+                NetworkSetupMode::Wireless,
+            ),
+            (
+                b"Continue offline",
+                b"Set up networking later in Settings",
+                8usize,
+                NetworkSetupMode::Offline,
+            ),
         ];
         for (index, (label, detail, icon, mode)) in rows.iter().enumerate() {
             let row_top = top + index * 58 * scale;
             let is_selected = *mode == selected
                 || (selected == NetworkSetupMode::Automatic
-                    && index == snapshot.map(|value| if value.wired_available { 0 } else if value.wireless_available { 1 } else { 2 }).unwrap_or(2));
+                    && index
+                        == snapshot
+                            .map(|value| {
+                                if value.wired_available {
+                                    0
+                                } else if value.wireless_available {
+                                    1
+                                } else {
+                                    2
+                                }
+                            })
+                            .unwrap_or(2));
             let is_focused = focus == index + 2;
             self.fill_rounded_rect_alpha(
                 left,
@@ -2228,14 +2265,44 @@ impl super::DisplayDevice {
                 if is_focused || is_selected { 194 } else { 74 },
                 if is_focused || is_selected { 238 } else { 98 },
             );
-            self.authentication_icon(left + 22 * scale, row_top + 24 * scale, *icon, 20 * scale, is_selected);
-            self.ui_text_strong(left + 46 * scale, row_top + 7 * scale, label, 226, 237, 245, 1);
-            self.ui_text(left + 46 * scale, row_top + 27 * scale, detail, 133, 157, 177, 1);
+            self.authentication_icon(
+                left + 22 * scale,
+                row_top + 24 * scale,
+                *icon,
+                20 * scale,
+                is_selected,
+            );
+            self.ui_text_strong(
+                left + 46 * scale,
+                row_top + 7 * scale,
+                label,
+                226,
+                237,
+                245,
+                1,
+            );
+            self.ui_text(
+                left + 46 * scale,
+                row_top + 27 * scale,
+                detail,
+                133,
+                157,
+                177,
+                1,
+            );
             if is_selected {
                 self.ui_text(
                     left + width.saturating_sub(72 * scale),
                     row_top + 16 * scale,
-                    if snapshot.map(|value| value.connectivity != ConnectivityClass::Offline).unwrap_or(false) && index < 2 { b"ACTIVE" } else { b"SELECTED" },
+                    if snapshot
+                        .map(|value| value.connectivity != ConnectivityClass::Offline)
+                        .unwrap_or(false)
+                        && index < 2
+                    {
+                        b"ACTIVE"
+                    } else {
+                        b"SELECTED"
+                    },
                     88,
                     207,
                     244,
@@ -2244,7 +2311,15 @@ impl super::DisplayDevice {
             }
         }
         if validation_error {
-            self.ui_text(left, top + 178 * scale, b"That connection is unavailable. Connect hardware or choose Offline.", 255, 118, 126, 1);
+            self.ui_text(
+                left,
+                top + 178 * scale,
+                b"That connection is unavailable. Connect hardware or choose Offline.",
+                255,
+                118,
+                126,
+                1,
+            );
         }
     }
 
@@ -3496,10 +3571,16 @@ impl super::DisplayDevice {
             let connectivity: &[u8] = match network_status.map(|value| value.connectivity) {
                 Some(crate::runtime::network::types::ConnectivityClass::Offline) => b"Offline",
                 Some(crate::runtime::network::types::ConnectivityClass::LinkOnly) => b"Link only",
-                Some(crate::runtime::network::types::ConnectivityClass::LocalNetwork) => b"Local network",
+                Some(crate::runtime::network::types::ConnectivityClass::LocalNetwork) => {
+                    b"Local network"
+                }
                 Some(crate::runtime::network::types::ConnectivityClass::Routed) => b"Routed",
-                Some(crate::runtime::network::types::ConnectivityClass::LimitedConnectivity) => b"Limited",
-                Some(crate::runtime::network::types::ConnectivityClass::InternetReachableOptional) => b"Reachable",
+                Some(crate::runtime::network::types::ConnectivityClass::LimitedConnectivity) => {
+                    b"Limited"
+                }
+                Some(
+                    crate::runtime::network::types::ConnectivityClass::InternetReachableOptional,
+                ) => b"Reachable",
                 _ => b"Degraded",
             };
             let rows: [(&[u8], &[u8]); 5] = match focus.min(8) {
@@ -3801,12 +3882,24 @@ impl super::DisplayDevice {
         let connectivity: &[u8] = match network_status.map(|value| value.connectivity) {
             Some(crate::runtime::network::types::ConnectivityClass::Offline) => b"Offline",
             Some(crate::runtime::network::types::ConnectivityClass::LinkOnly) => b"Link only",
-            Some(crate::runtime::network::types::ConnectivityClass::LocalNetwork) => b"Local network",
+            Some(crate::runtime::network::types::ConnectivityClass::LocalNetwork) => {
+                b"Local network"
+            }
             Some(crate::runtime::network::types::ConnectivityClass::Routed) => b"Routed",
-            Some(crate::runtime::network::types::ConnectivityClass::LimitedConnectivity) => b"Limited",
-            Some(crate::runtime::network::types::ConnectivityClass::InternetReachableOptional) => b"Reachable",
+            Some(crate::runtime::network::types::ConnectivityClass::LimitedConnectivity) => {
+                b"Limited"
+            }
+            Some(crate::runtime::network::types::ConnectivityClass::InternetReachableOptional) => {
+                b"Reachable"
+            }
             _ => b"Degraded",
         };
+        let (chat_enabled, chat_model) = crate::runtime::ai::with_ai_runtime(|runtime| {
+            (
+                runtime.chat.enabled(),
+                runtime.chat.selected_model_descriptor().name,
+            )
+        });
         if focus == 6 {
             self.render_network_settings_dashboard(settings_window, scale, connectivity);
             return;
@@ -3844,12 +3937,19 @@ impl super::DisplayDevice {
             ],
             3 => [
                 (b"AI Provider", b"Local only"),
+                (
+                    b"Desktop AI Chat",
+                    if chat_enabled {
+                        b"Enabled"
+                    } else {
+                        b"Disabled"
+                    },
+                ),
+                (b"Chat Model", chat_model),
                 (b"Remote Processing", b"Off"),
                 (b"Voice", b"Off"),
                 (b"Activation", b"Disabled"),
                 (b"Model Access", b"Capability gated"),
-                (b"", b""),
-                (b"", b""),
                 (b"", b""),
             ],
             4 => [
@@ -4167,7 +4267,9 @@ impl super::DisplayDevice {
                 runtime.network.setup_snapshot(),
             )
         });
-        let Some((status, topology, diagnostics, setup)) = snapshot else { return };
+        let Some((status, topology, diagnostics, setup)) = snapshot else {
+            return;
+        };
         let (outline_r, outline_g, outline_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         let (selection_r, selection_g, selection_b) =
@@ -4227,7 +4329,11 @@ impl super::DisplayDevice {
         self.ui_text(
             overview_left + 74 * scale,
             overview_top + 82 * scale,
-            if status.resolver_enabled { b"Resolver ready - policy enforced" } else { b"Resolver offline - local system remains available" },
+            if status.resolver_enabled {
+                b"Resolver ready - policy enforced"
+            } else {
+                b"Resolver offline - local system remains available"
+            },
             150,
             177,
             198,
@@ -4286,10 +4392,26 @@ impl super::DisplayDevice {
             1,
         );
         let modes = [
-            (b"AUTO".as_slice(), crate::runtime::network::types::NetworkSetupMode::Automatic, setup.wired_available || setup.wireless_available),
-            (b"WIRED".as_slice(), crate::runtime::network::types::NetworkSetupMode::Wired, setup.wired_available),
-            (b"WI-FI".as_slice(), crate::runtime::network::types::NetworkSetupMode::Wireless, setup.wireless_available),
-            (b"OFFLINE".as_slice(), crate::runtime::network::types::NetworkSetupMode::Offline, true),
+            (
+                b"AUTO".as_slice(),
+                crate::runtime::network::types::NetworkSetupMode::Automatic,
+                setup.wired_available || setup.wireless_available,
+            ),
+            (
+                b"WIRED".as_slice(),
+                crate::runtime::network::types::NetworkSetupMode::Wired,
+                setup.wired_available,
+            ),
+            (
+                b"WI-FI".as_slice(),
+                crate::runtime::network::types::NetworkSetupMode::Wireless,
+                setup.wireless_available,
+            ),
+            (
+                b"OFFLINE".as_slice(),
+                crate::runtime::network::types::NetworkSetupMode::Offline,
+                true,
+            ),
         ];
         for (index, card) in geometry.mode_cards.iter().enumerate() {
             let left = card.x.max(0) as usize;
@@ -4347,13 +4469,27 @@ impl super::DisplayDevice {
 
         let telemetry_left = geometry.telemetry.x.max(0) as usize;
         let telemetry_top = geometry.telemetry.y.max(0) as usize;
-        self.ui_text_strong(telemetry_left + 17 * scale, telemetry_top + 15 * scale, b"OBSERVED STATE", outline_r, outline_g, outline_b, 1);
+        self.ui_text_strong(
+            telemetry_left + 17 * scale,
+            telemetry_top + 15 * scale,
+            b"OBSERVED STATE",
+            outline_r,
+            outline_g,
+            outline_b,
+            1,
+        );
         let metrics = [
             (b"Interfaces".as_slice(), status.interfaces as u64),
             (b"Addresses".as_slice(), status.addresses as u64),
             (b"Routes".as_slice(), status.routes as u64),
-            (b"Connections".as_slice(), diagnostics.active_connections as u64),
-            (b"Discovered services".as_slice(), topology.discovered_service_count as u64),
+            (
+                b"Connections".as_slice(),
+                diagnostics.active_connections as u64,
+            ),
+            (
+                b"Discovered services".as_slice(),
+                topology.discovered_service_count as u64,
+            ),
         ];
         for (index, (label, value)) in metrics.iter().enumerate() {
             let row_y = telemetry_top + (45 + index * 27) * scale;
@@ -4372,16 +4508,67 @@ impl super::DisplayDevice {
 
         let profiles_left = geometry.profiles.x.max(0) as usize;
         let profiles_top = geometry.profiles.y.max(0) as usize;
-        self.ui_text_strong(profiles_left, profiles_top + 5 * scale, b"OPERATIONAL MODE", 205, 218, 228, 1);
-        let profile_labels: [&[u8]; 5] = [b"STANDARD", b"RESTRICTED", b"OFFLINE", b"OPERATIONS", b"DEVELOPER"];
+        self.ui_text_strong(
+            profiles_left,
+            profiles_top + 5 * scale,
+            b"OPERATIONAL MODE",
+            205,
+            218,
+            228,
+            1,
+        );
+        let profile_labels: [&[u8]; 5] = [
+            b"STANDARD",
+            b"RESTRICTED",
+            b"OFFLINE",
+            b"OPERATIONS",
+            b"DEVELOPER",
+        ];
         for (index, card) in geometry.profile_cards.iter().enumerate() {
             let left = card.x.max(0) as usize;
             let top = card.y.max(0) as usize;
             let active = status.active_profile as usize == index + 1;
-            self.fill_rounded_rect_alpha(left, top, card.width as usize, card.height as usize, 9 * scale, if active { selection_r } else { 5 }, if active { selection_g } else { 20 }, if active { selection_b } else { 34 }, 226);
-            self.outline_rounded_rect(left, top, card.width as usize, card.height as usize, 9 * scale, if active { outline_r } else { outline_r / 2 }, if active { outline_g } else { outline_g / 2 }, if active { outline_b } else { outline_b / 2 });
-            self.ui_text_centered(left, top + 14 * scale, card.width as usize, profile_labels[index], if active { 245 } else { 174 }, if active { 250 } else { 196 }, if active { 253 } else { 211 }, 1);
-            self.ui_text_centered(left, top + 39 * scale, card.width as usize, if active { b"ACTIVE" } else { b"SELECT" }, outline_r, outline_g, outline_b, 1);
+            self.fill_rounded_rect_alpha(
+                left,
+                top,
+                card.width as usize,
+                card.height as usize,
+                9 * scale,
+                if active { selection_r } else { 5 },
+                if active { selection_g } else { 20 },
+                if active { selection_b } else { 34 },
+                226,
+            );
+            self.outline_rounded_rect(
+                left,
+                top,
+                card.width as usize,
+                card.height as usize,
+                9 * scale,
+                if active { outline_r } else { outline_r / 2 },
+                if active { outline_g } else { outline_g / 2 },
+                if active { outline_b } else { outline_b / 2 },
+            );
+            self.ui_text_centered(
+                left,
+                top + 14 * scale,
+                card.width as usize,
+                profile_labels[index],
+                if active { 245 } else { 174 },
+                if active { 250 } else { 196 },
+                if active { 253 } else { 211 },
+                1,
+            );
+            self.ui_text_centered(
+                left,
+                top + 39 * scale,
+                card.width as usize,
+                if active { b"ACTIVE" } else { b"SELECT" },
+                outline_r,
+                outline_g,
+                outline_b,
+                1,
+            );
         }
         if !settings_window.maximized {
             let window = layout.settings_window_geometry(settings_window).window;
@@ -4406,7 +4593,9 @@ impl super::DisplayDevice {
     // ------------------=
     fn network_metric_text(mut value: u64) -> ([u8; 20], usize) {
         let mut output = [b'0'; 20];
-        if value == 0 { return (output, 1); }
+        if value == 0 {
+            return (output, 1);
+        }
         let mut reverse = [0u8; 20];
         let mut length = 0usize;
         while value > 0 && length < reverse.len() {
@@ -4414,7 +4603,9 @@ impl super::DisplayDevice {
             value /= 10;
             length += 1;
         }
-        for index in 0..length { output[index] = reverse[length - index - 1]; }
+        for index in 0..length {
+            output[index] = reverse[length - index - 1];
+        }
         (output, length)
     }
 
@@ -5660,8 +5851,8 @@ impl super::DisplayDevice {
             self.desktop_icon(pixel_x, pixel_y, name, *kind);
         }
         if window_visible {
-            let navigator_state = crate::runtime::with_runtime(|runtime| runtime.file_navigator)
-                .flatten();
+            let navigator_state =
+                crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
             let navigator_list_view = navigator_state
                 .map(|state| state.view_mode == crate::runtime::object_navigation::ViewMode::List)
                 .unwrap_or(true);
@@ -6343,7 +6534,15 @@ impl super::DisplayDevice {
                     139,
                     176,
                 );
-                self.ui_text_strong(inspector_left + 14 * scale, inspector_top + 16 * scale, b"INSPECTOR", 214, 237, 249, 1);
+                self.ui_text_strong(
+                    inspector_left + 14 * scale,
+                    inspector_top + 16 * scale,
+                    b"INSPECTOR",
+                    214,
+                    237,
+                    249,
+                    1,
+                );
                 for (index, heading) in [
                     b"IDENTITY".as_slice(),
                     b"METADATA",
@@ -6368,7 +6567,11 @@ impl super::DisplayDevice {
                     self.ui_text(
                         inspector_left + 14 * scale,
                         inspector_top + (70 + index * 42) * scale,
-                        if selected_item.is_some() { b"Available".as_slice() } else { b"Select an object".as_slice() },
+                        if selected_item.is_some() {
+                            b"Available".as_slice()
+                        } else {
+                            b"Select an object".as_slice()
+                        },
                         169,
                         190,
                         205,
@@ -6509,40 +6712,259 @@ impl super::DisplayDevice {
                 );
             }
         }
-        let ai_top = overview_top + overview_height + 20 * scale;
-        let ai_height = (250 * scale).min(self.height * 24 / 100);
-        self.glass_panel(widget_left, ai_top, widget_width, ai_height, false);
-        self.ui_text(
-            widget_left + 18 * scale,
-            ai_top + 16 * scale,
-            b"AI STATUS",
+        self.desktop_ai_chat(scale);
+    }
+
+    // ------------------------=
+    // FUNC: desktop_ai_chat
+    // DESC: Renders the persistent model-selectable AI status and conversation surface.
+    // ------------------=
+    fn desktop_ai_chat(&mut self, scale: usize) {
+        let chat = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat);
+        if !chat.enabled() {
+            return;
+        }
+        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let geometry = layout.ai_chat_geometry(chat.minimized());
+        let left = geometry.panel.x.max(0) as usize;
+        let top = geometry.panel.y.max(0) as usize;
+        let width = geometry.panel.width as usize;
+        let height = geometry.panel.height as usize;
+        let (accent_r, accent_g, accent_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Focus);
+        self.glass_panel(left, top, width, height, false);
+        self.ui_text_strong(
+            left + 16 * scale,
+            top + 15 * scale,
+            b"AI CHAT",
             accent_r,
             accent_g,
             accent_b,
             1,
         );
-        for (index, (label, value)) in [
-            (b"Processing".as_slice(), b"Local only".as_slice()),
-            (b"Remote access", b"Disabled".as_slice()),
-            (b"Voice", b"Permission required".as_slice()),
-            (b"Privacy", b"Capability gated".as_slice()),
-        ]
-        .iter()
-        .enumerate()
-        {
-            let row_y = ai_top + (50 + index * 34) * scale;
-            self.ui_text(widget_left + 18 * scale, row_y, label, 158, 174, 190, 1);
-            let value_width = self.ui_text_width(value, 1);
+        let state = if chat.minimized() {
+            b"LOCAL  +".as_slice()
+        } else {
+            b"LOCAL  READY".as_slice()
+        };
+        let state_width = self.ui_text_width(state, 1);
+        self.ui_text(
+            left + width.saturating_sub(state_width + 72 * scale),
+            top + 15 * scale,
+            state,
+            139,
+            184,
+            207,
+            1,
+        );
+        self.ui_text(
+            geometry.minimize.x.max(0) as usize + 5 * scale,
+            geometry.minimize.y.max(0) as usize + 2 * scale,
+            if chat.minimized() { b"+" } else { b"-" },
+            225,
+            238,
+            246,
+            1,
+        );
+        self.ui_text(
+            geometry.close.x.max(0) as usize + 4 * scale,
+            geometry.close.y.max(0) as usize + 2 * scale,
+            b"x",
+            225,
+            238,
+            246,
+            1,
+        );
+        if chat.minimized() {
+            return;
+        }
+        let model = chat.selected_model_descriptor();
+        let model_left = geometry.model.x.max(0) as usize;
+        let model_top = geometry.model.y.max(0) as usize;
+        self.fill_rounded_rect_alpha(
+            model_left,
+            model_top,
+            geometry.model.width as usize,
+            geometry.model.height as usize,
+            9 * scale,
+            7,
+            25,
+            40,
+            226,
+        );
+        self.outline_rounded_rect(
+            model_left,
+            model_top,
+            geometry.model.width as usize,
+            geometry.model.height as usize,
+            9 * scale,
+            accent_r / 2,
+            accent_g / 2,
+            accent_b / 2,
+        );
+        self.ui_text(
+            model_left + 12 * scale,
+            model_top + 5 * scale,
+            b"MODEL",
+            123,
+            151,
+            170,
+            1,
+        );
+        self.ui_text_strong(
+            model_left + 12 * scale,
+            model_top + 21 * scale,
+            model.name,
+            224,
+            235,
+            243,
+            1,
+        );
+        self.ui_text(
+            model_left + geometry.model.width as usize - 18 * scale,
+            model_top + 15 * scale,
+            b">",
+            accent_r,
+            accent_g,
+            accent_b,
+            1,
+        );
+        let timeline_left = geometry.timeline.x.max(0) as usize;
+        let timeline_top = geometry.timeline.y.max(0) as usize;
+        let timeline_width = geometry.timeline.width as usize;
+        let timeline_height = geometry.timeline.height as usize;
+        self.fill_rounded_rect_alpha(
+            timeline_left,
+            timeline_top,
+            timeline_width,
+            timeline_height,
+            9 * scale,
+            2,
+            12,
+            22,
+            190,
+        );
+        if chat.message_count() == 0 {
             self.ui_text_strong(
-                widget_left + widget_width.saturating_sub(value_width + 18 * scale),
-                row_y,
-                value,
-                209,
-                225,
-                235,
+                timeline_left + 14 * scale,
+                timeline_top + 18 * scale,
+                b"How can I help with InfinityOS?",
+                218,
+                232,
+                241,
                 1,
             );
+            self.ui_text(
+                timeline_left + 14 * scale,
+                timeline_top + 44 * scale,
+                b"Ask about this system, storage,",
+                137,
+                160,
+                178,
+                1,
+            );
+            self.ui_text(
+                timeline_left + 14 * scale,
+                timeline_top + 62 * scale,
+                b"devices, memory, or networking.",
+                137,
+                160,
+                178,
+                1,
+            );
+        } else {
+            let visible = (timeline_height / (48 * scale).max(1)).max(1).min(4);
+            let start = chat.message_count().saturating_sub(visible);
+            for index in start..chat.message_count() {
+                let Some(message) = chat.message(index) else {
+                    continue;
+                };
+                let row = index - start;
+                let row_top = timeline_top + 7 * scale + row * 48 * scale;
+                let user = message.role == crate::runtime::ai::chat::ChatRole::User;
+                let inset = if user { 28 * scale } else { 7 * scale };
+                self.fill_rounded_rect_alpha(
+                    timeline_left + inset,
+                    row_top,
+                    timeline_width.saturating_sub(35 * scale),
+                    40 * scale,
+                    8 * scale,
+                    if user { accent_r / 3 } else { 8 },
+                    if user { accent_g / 3 } else { 27 },
+                    if user { accent_b / 3 } else { 42 },
+                    224,
+                );
+                let maximum =
+                    (timeline_width / self.ui_text_width(b"M", 1).max(1)).saturating_sub(8);
+                let text = &message.text()[..message.text().len().min(maximum)];
+                self.ui_text(
+                    timeline_left + inset + 10 * scale,
+                    row_top + 12 * scale,
+                    text,
+                    218,
+                    231,
+                    240,
+                    1,
+                );
+            }
         }
+        let composer_left = geometry.composer.x.max(0) as usize;
+        let composer_top = geometry.composer.y.max(0) as usize;
+        self.fill_rounded_rect_alpha(
+            composer_left,
+            composer_top,
+            geometry.composer.width as usize,
+            geometry.composer.height as usize,
+            9 * scale,
+            3,
+            16,
+            28,
+            236,
+        );
+        self.outline_rounded_rect(
+            composer_left,
+            composer_top,
+            geometry.composer.width as usize,
+            geometry.composer.height as usize,
+            9 * scale,
+            accent_r / 2,
+            accent_g / 2,
+            accent_b / 2,
+        );
+        let composer_text = chat.input();
+        self.ui_text(
+            composer_left + 12 * scale,
+            composer_top + 15 * scale,
+            if composer_text.is_empty() {
+                b"Ask InfinityOS..."
+            } else {
+                composer_text
+            },
+            if composer_text.is_empty() { 130 } else { 224 },
+            if composer_text.is_empty() { 151 } else { 235 },
+            if composer_text.is_empty() { 168 } else { 243 },
+            1,
+        );
+        self.fill_rounded_rect_alpha(
+            geometry.send.x.max(0) as usize,
+            geometry.send.y.max(0) as usize,
+            geometry.send.width as usize,
+            geometry.send.height as usize,
+            9 * scale,
+            accent_r / 2,
+            accent_g / 2,
+            accent_b / 2,
+            238,
+        );
+        self.ui_text_strong(
+            geometry.send.x.max(0) as usize + 16 * scale,
+            geometry.send.y.max(0) as usize + 15 * scale,
+            b"Send",
+            239,
+            247,
+            252,
+            1,
+        );
     }
 
     // ------------------------=
@@ -6800,7 +7222,10 @@ pub fn system_ui_present(
                 editor_dialog,
                 editor_dialog_input,
                 editor_dialog_focus,
-            );
+            ) ^ crate::runtime::ai::with_ai_runtime(|runtime| {
+                let hash = runtime.chat.state_hash();
+                hash as u32 ^ (hash >> 32) as u32
+            });
             let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
             let focus_changed = console.last_system_focus != focus;
             let clock_changed = console.last_system_clock != clock;
@@ -7132,6 +7557,58 @@ pub fn system_ui_present(
                     editor_dialog_input,
                     editor_dialog_focus,
                 );
+            } else if crate::ui::redraw::desktop_chat_content_requires_bounded_redraw(
+                screen,
+                content_changed,
+            ) {
+                let widgets = layout.desktop_foreground_geometry().widgets;
+                console.display.set_render_clip(
+                    widgets.x.max(0) as usize,
+                    widgets.y.max(0) as usize,
+                    widgets.width as usize,
+                    widgets.height as usize,
+                );
+                console.display.system_ui_frame(
+                    screen,
+                    step,
+                    input,
+                    masked,
+                    focus,
+                    validation_error,
+                    window_x,
+                    window_y,
+                    window_width,
+                    window_height,
+                    window_visible,
+                    window_maximized,
+                    home_location,
+                    selected_item,
+                    dragging_item,
+                    note_location,
+                    desktop_items,
+                    desktop_item_positions,
+                    clock,
+                    settings_window,
+                    menu_kind,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    app_window_x,
+                    app_window_y,
+                    app_window_width,
+                    app_window_height,
+                    app_window_maximized,
+                    editor_saved,
+                    editor_input,
+                    command_input,
+                    editor_window,
+                    command_window,
+                    editor_scroll_row,
+                    editor_dialog,
+                    editor_dialog_input,
+                    editor_dialog_focus,
+                );
+                console.display.clear_render_clip();
             } else if content_changed
                 && (matches!(screen, 5 | 6) || (screen == 1 && (1..=4).contains(&step)))
             {

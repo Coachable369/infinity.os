@@ -23,10 +23,11 @@ use ui::skin::{
 };
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
-    resize_home_window, resize_native_window, window_transition_damage, AppLauncherTarget,
-    DesktopAppWindowTarget, DesktopTarget, EditorDialogTarget, EditorScrollTarget,
-    OnboardingTarget, SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout,
-    SystemMenuTarget, DESKTOP_FOREGROUND_DOCK, DESKTOP_FOREGROUND_WIDGETS,
+    resize_home_window, resize_native_window, window_transition_damage, AiChatTarget,
+    AppLauncherTarget, DesktopAppWindowTarget, DesktopTarget, EditorDialogTarget,
+    EditorScrollTarget, OnboardingTarget, SettingsAccentTarget, SettingsTarget,
+    SettingsWindowState, SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK,
+    DESKTOP_FOREGROUND_WIDGETS,
 };
 use ui::text_editor::{document_path, visual_line_count, visual_line_start, TextDocument};
 use ui::trusted::{TrustedSurface, TrustedUiError};
@@ -49,6 +50,7 @@ fn main() {
     installed_system_hit_geometry_test();
     app_launcher_behavior_test();
     desktop_foreground_damage_test();
+    desktop_ai_chat_layout_test();
     window_move_composition_test();
     independent_window_state_test();
     scene_and_damage_test();
@@ -304,6 +306,53 @@ fn desktop_foreground_damage_test() {
         }),
         DESKTOP_FOREGROUND_WIDGETS | DESKTOP_FOREGROUND_DOCK
     );
+}
+
+// ------------------------=
+// FUNC: desktop_ai_chat_layout_test
+// DESC: Verifies responsive chat geometry and pointer targeting for every interactive control.
+// ------------------=
+fn desktop_ai_chat_layout_test() {
+    let layout = SystemLayout::new(1920, 1080);
+    let geometry = layout.ai_chat_geometry(false);
+    let foreground = layout.desktop_foreground_geometry();
+    assert!(geometry.panel.height > 300);
+    assert!(geometry.panel.bottom() <= foreground.widgets.bottom());
+    assert!(geometry.timeline.bottom() <= geometry.composer.y);
+
+    let normalized = |rect: Rect| {
+        (
+            (rect.x + rect.width as i32 / 2) * 1000 / 1920,
+            (rect.y + rect.height as i32 / 2) * 1000 / 1080,
+        )
+    };
+    for (rect, target) in [
+        (geometry.model, AiChatTarget::Model),
+        (geometry.timeline, AiChatTarget::Timeline),
+        (geometry.composer, AiChatTarget::Composer),
+        (geometry.send, AiChatTarget::Send),
+        (geometry.minimize, AiChatTarget::Minimize),
+        (geometry.close, AiChatTarget::Close),
+    ] {
+        let (x, y) = normalized(rect);
+        assert_eq!(layout.ai_chat_target(x, y, false), Some(target));
+    }
+
+    let minimized = layout.ai_chat_geometry(true);
+    assert!(minimized.panel.height < geometry.panel.height);
+    let (model_x, model_y) = normalized(minimized.model);
+    assert_eq!(layout.ai_chat_target(model_x, model_y, true), None);
+    let (close_x, close_y) = normalized(minimized.close);
+    assert_eq!(
+        layout.ai_chat_target(close_x, close_y, true),
+        Some(AiChatTarget::Close)
+    );
+    assert!(ui::redraw::desktop_chat_content_requires_bounded_redraw(
+        2, true
+    ));
+    assert!(!ui::redraw::desktop_chat_content_requires_bounded_redraw(
+        4, true
+    ));
 }
 
 // ------------------------=
