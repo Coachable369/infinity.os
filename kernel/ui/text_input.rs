@@ -8,6 +8,17 @@ static CARET_INDEX: AtomicUsize = AtomicUsize::new(0);
 static CARET_KIND: AtomicUsize = AtomicUsize::new(0);
 static POINTER_TEXT: AtomicBool = AtomicBool::new(false);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextEditKey {
+    Character(u8),
+    Backspace,
+    Delete,
+    Left,
+    Right,
+    Home,
+    End,
+}
+
 // ------------------------=
 // FUNC: insert_ascii
 // DESC: Inserts one printable ASCII byte at a bounded caret and shifts trailing text right.

@@ -248,37 +248,38 @@ impl ChatRuntime {
     // FUNC: edit_input
     // DESC: Applies standard printable insertion, deletion, and caret navigation to the composer.
     // ------------------=
-    pub fn edit_input(&mut self, key: crate::console::ConsoleKey) -> bool {
+    pub fn edit_input(&mut self, key: crate::ui::text_input::TextEditKey) -> bool {
         match key {
-            crate::console::ConsoleKey::Character(value) => crate::ui::text_input::insert_ascii(
-                &mut self.input,
-                &mut self.input_length,
-                &mut self.input_cursor,
-                value,
-            ),
-            crate::console::ConsoleKey::Backspace => crate::ui::text_input::backspace(
-                &mut self.input,
-                &mut self.input_length,
-                &mut self.input_cursor,
-            ),
-            crate::console::ConsoleKey::Delete => crate::ui::text_input::delete(
+            crate::ui::text_input::TextEditKey::Character(value) => {
+                crate::ui::text_input::insert_ascii(
+                    &mut self.input,
+                    &mut self.input_length,
+                    &mut self.input_cursor,
+                    value,
+                )
+            }
+            crate::ui::text_input::TextEditKey::Backspace => crate::ui::text_input::backspace(
                 &mut self.input,
                 &mut self.input_length,
                 &mut self.input_cursor,
             ),
-            crate::console::ConsoleKey::Left => {
+            crate::ui::text_input::TextEditKey::Delete => crate::ui::text_input::delete(
+                &mut self.input,
+                &mut self.input_length,
+                &mut self.input_cursor,
+            ),
+            crate::ui::text_input::TextEditKey::Left => {
                 crate::ui::text_input::move_caret(&mut self.input_cursor, self.input_length, -1)
             }
-            crate::console::ConsoleKey::Right => {
+            crate::ui::text_input::TextEditKey::Right => {
                 crate::ui::text_input::move_caret(&mut self.input_cursor, self.input_length, 1)
             }
-            crate::console::ConsoleKey::Home => {
+            crate::ui::text_input::TextEditKey::Home => {
                 crate::ui::text_input::move_caret(&mut self.input_cursor, self.input_length, -2)
             }
-            crate::console::ConsoleKey::End => {
+            crate::ui::text_input::TextEditKey::End => {
                 crate::ui::text_input::move_caret(&mut self.input_cursor, self.input_length, 2)
             }
-            _ => false,
         }
     }
 

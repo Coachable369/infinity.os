@@ -138,29 +138,30 @@ impl<const N: usize> ByteText<N> {
     // FUNC: edit
     // DESC: Applies insertion, deletion, and movement at an explicit bounded caret.
     // ------------------=
-    pub fn edit(&mut self, caret: &mut usize, key: crate::console::ConsoleKey) -> bool {
+    pub fn edit(&mut self, caret: &mut usize, key: crate::ui::text_input::TextEditKey) -> bool {
         let mut length = self.length as usize;
         let changed = match key {
-            crate::console::ConsoleKey::Character(value) => {
+            crate::ui::text_input::TextEditKey::Character(value) => {
                 crate::ui::text_input::insert_ascii(&mut self.bytes, &mut length, caret, value)
             }
-            crate::console::ConsoleKey::Backspace => {
+            crate::ui::text_input::TextEditKey::Backspace => {
                 crate::ui::text_input::backspace(&mut self.bytes, &mut length, caret)
             }
-            crate::console::ConsoleKey::Delete => {
+            crate::ui::text_input::TextEditKey::Delete => {
                 crate::ui::text_input::delete(&mut self.bytes, &mut length, caret)
             }
-            crate::console::ConsoleKey::Left => {
+            crate::ui::text_input::TextEditKey::Left => {
                 crate::ui::text_input::move_caret(caret, length, -1)
             }
-            crate::console::ConsoleKey::Right => {
+            crate::ui::text_input::TextEditKey::Right => {
                 crate::ui::text_input::move_caret(caret, length, 1)
             }
-            crate::console::ConsoleKey::Home => {
+            crate::ui::text_input::TextEditKey::Home => {
                 crate::ui::text_input::move_caret(caret, length, -2)
             }
-            crate::console::ConsoleKey::End => crate::ui::text_input::move_caret(caret, length, 2),
-            _ => false,
+            crate::ui::text_input::TextEditKey::End => {
+                crate::ui::text_input::move_caret(caret, length, 2)
+            }
         };
         self.length = length as u8;
         changed

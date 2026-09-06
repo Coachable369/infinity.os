@@ -220,6 +220,24 @@ pub enum ConsoleKey {
     Help,
 }
 
+// ------------------------=
+// FUNC: text_edit_key
+// DESC: Converts kernel input events into the UI-owned text editing contract.
+// ------------------=
+fn text_edit_key(key: ConsoleKey) -> Option<crate::ui::text_input::TextEditKey> {
+    use crate::ui::text_input::TextEditKey;
+    match key {
+        ConsoleKey::Character(value) => Some(TextEditKey::Character(value)),
+        ConsoleKey::Backspace => Some(TextEditKey::Backspace),
+        ConsoleKey::Delete => Some(TextEditKey::Delete),
+        ConsoleKey::Left => Some(TextEditKey::Left),
+        ConsoleKey::Right => Some(TextEditKey::Right),
+        ConsoleKey::Home => Some(TextEditKey::Home),
+        ConsoleKey::End => Some(TextEditKey::End),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InstallerStep {
     Welcome,
@@ -1108,7 +1126,11 @@ impl ConsoleRuntime {
             | ConsoleKey::End
                 if self.ai_chat_focus == 2 =>
             {
-                crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.edit_input(key));
+                if let Some(edit_key) = text_edit_key(key) {
+                    crate::runtime::ai::with_ai_runtime(|runtime| {
+                        runtime.chat.edit_input(edit_key)
+                    });
+                }
             }
             ConsoleKey::Tab(reverse) => {
                 self.ai_chat_focus = if reverse {
@@ -1161,9 +1183,11 @@ impl ConsoleRuntime {
                 | ConsoleKey::End => {
                     let _ = crate::runtime::with_runtime(|runtime| {
                         runtime.file_navigator.as_mut().map(|navigator| {
-                            navigator
-                                .editor_text
-                                .edit(&mut navigator.editor_cursor, key)
+                            text_edit_key(key).map(|edit_key| {
+                                navigator
+                                    .editor_text
+                                    .edit(&mut navigator.editor_cursor, edit_key)
+                            })
                         })
                     });
                 }
