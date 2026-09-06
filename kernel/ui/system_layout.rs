@@ -726,32 +726,12 @@ impl SystemLayout {
                     window_maximized,
                 );
             if !window_maximized {
-                let handle = (12 * self.scale).max(12);
-                let corners = [
-                    rect(browser_left, browser_top, handle, handle),
-                    rect(
-                        browser_left + browser_width.saturating_sub(handle),
-                        browser_top,
-                        handle,
-                        handle,
-                    ),
-                    rect(
-                        browser_left,
-                        browser_top + browser_height.saturating_sub(handle),
-                        handle,
-                        handle,
-                    ),
-                    rect(
-                        browser_left + browser_width.saturating_sub(handle),
-                        browser_top + browser_height.saturating_sub(handle),
-                        handle,
-                        handle,
-                    ),
-                ];
-                for (index, bounds) in corners.iter().enumerate() {
-                    if bounds.contains(point) {
-                        return Some(DesktopTarget::HomeResize(index));
-                    }
+                if let Some(handle) = native_window_resize_target(
+                    rect(browser_left, browser_top, browser_width, browser_height),
+                    point,
+                    self.scale,
+                ) {
+                    return Some(DesktopTarget::HomeResize(handle));
                 }
             }
             let title_height = 34 * self.scale;
@@ -1115,28 +1095,8 @@ impl SystemLayout {
             }
         }
         if !maximized {
-            let grip = 18 * self.scale;
-            let window = geometry.window;
-            for (corner, corner_x, corner_y) in [
-                (0usize, window.x, window.y),
-                (1, window.right().saturating_sub(grip as i32), window.y),
-                (2, window.x, window.bottom().saturating_sub(grip as i32)),
-                (
-                    3,
-                    window.right().saturating_sub(grip as i32),
-                    window.bottom().saturating_sub(grip as i32),
-                ),
-            ] {
-                if rect(
-                    corner_x.max(0) as usize,
-                    corner_y.max(0) as usize,
-                    grip,
-                    grip,
-                )
-                .contains(point)
-                {
-                    return DesktopAppWindowTarget::Resize(corner);
-                }
+            if let Some(handle) = native_window_resize_target(geometry.window, point, self.scale) {
+                return DesktopAppWindowTarget::Resize(handle);
             }
         }
         if geometry.title.contains(point) {
@@ -1641,35 +1601,8 @@ impl SystemLayout {
             }
         }
         if !state.maximized {
-            let grip = 18 * self.scale;
-            for (corner, corner_x, corner_y) in [
-                (0usize, geometry.window.x, geometry.window.y),
-                (
-                    1,
-                    geometry.window.right().saturating_sub(grip as i32),
-                    geometry.window.y,
-                ),
-                (
-                    2,
-                    geometry.window.x,
-                    geometry.window.bottom().saturating_sub(grip as i32),
-                ),
-                (
-                    3,
-                    geometry.window.right().saturating_sub(grip as i32),
-                    geometry.window.bottom().saturating_sub(grip as i32),
-                ),
-            ] {
-                if rect(
-                    corner_x.max(0) as usize,
-                    corner_y.max(0) as usize,
-                    grip,
-                    grip,
-                )
-                .contains(point)
-                {
-                    return Some(SettingsTarget::Resize(corner));
-                }
+            if let Some(handle) = native_window_resize_target(geometry.window, point, self.scale) {
+                return Some(SettingsTarget::Resize(handle));
             }
         }
         if geometry.title.contains(point) {
@@ -2138,8 +2071,63 @@ const fn settings_detail_height(index: usize) -> usize {
 }
 
 // ------------------------=
+// FUNC: native_window_resize_target
+// DESC: Resolves four corner grips and a forgiving full-width bottom resize border.
+// ------------------=
+pub fn native_window_resize_target(window: Rect, point: Point, scale: usize) -> Option<usize> {
+    let top_grip = (12 * scale.max(1)) as i32;
+    for (handle, x) in [(0usize, window.x), (1, window.right() - top_grip)] {
+        if (Rect {
+            x,
+            y: window.y,
+            width: top_grip as u32,
+            height: top_grip as u32,
+        })
+        .contains(point)
+        {
+            return Some(handle);
+        }
+    }
+    let grip = (18 * scale.max(1)) as i32;
+    let halo = (6 * scale.max(1)) as i32;
+    let corner_size = (grip + halo * 2).max(1) as u32;
+    for (handle, x, y) in [
+        (2usize, window.x - halo, window.bottom() - grip - halo),
+        (
+            3,
+            window.right() - grip - halo,
+            window.bottom() - grip - halo,
+        ),
+    ] {
+        if (Rect {
+            x,
+            y,
+            width: corner_size,
+            height: corner_size,
+        })
+        .contains(point)
+        {
+            return Some(handle);
+        }
+    }
+    let bottom_left = window.x + grip;
+    let bottom_width = window.width.saturating_sub((grip * 2).max(0) as u32);
+    if (Rect {
+        x: bottom_left,
+        y: window.bottom() - halo,
+        width: bottom_width,
+        height: (halo * 2 + 1) as u32,
+    })
+    .contains(point)
+    {
+        return Some(4);
+    }
+    None
+}
+
+// ------------------------=
 // FUNC: resize_home_window
-// DESC: Applies traditional four-corner resizing while preserving minimum size and the visible work area.
+// DESC: Applies shared border resizing while preserving minimum size and the visible work area.
 // ------------------=
 pub fn resize_home_window(
     x: i32,
@@ -2155,7 +2143,7 @@ pub fn resize_home_window(
 
 // ------------------------=
 // FUNC: resize_native_window
-// DESC: Applies four-corner resizing to any restored native window while preserving its minimum usable area.
+// DESC: Applies corner or bottom-edge resizing while preserving the minimum usable area.
 // ------------------=
 pub fn resize_native_window(
     x: i32,
@@ -2173,13 +2161,15 @@ pub fn resize_native_window(
     let (next_x, next_width) = if matches!(corner, 0 | 2) {
         let next_x = pointer_x.clamp(0, right.saturating_sub(minimum_width));
         (next_x, right.saturating_sub(next_x))
-    } else {
+    } else if matches!(corner, 1 | 3) {
         (
             x,
             pointer_x
                 .saturating_sub(x)
                 .clamp(minimum_width, 1000i32.saturating_sub(x)),
         )
+    } else {
+        (x, width)
     };
     let (next_y, next_height) = if matches!(corner, 0 | 1) {
         let next_y = pointer_y.clamp(50, bottom.saturating_sub(minimum_height));

@@ -1124,6 +1124,10 @@ fn installed_system_hit_geometry_test() {
         square.desktop_target_sized(629, 699, 30, 200, 600, 500, true, false),
         Some(DesktopTarget::HomeResize(3))
     );
+    assert_eq!(
+        square.desktop_target_sized(330, 700, 30, 200, 600, 500, true, false),
+        Some(DesktopTarget::HomeResize(4))
+    );
     let context = square.file_navigator_context_geometry(950, 950);
     assert!(context.x + context.width as i32 <= 1600);
     assert!(context.y + context.height as i32 <= 1600);
@@ -1190,6 +1194,14 @@ fn installed_system_hit_geometry_test() {
     assert_eq!(
         square.settings_target(resize_point.0, resize_point.1, settings),
         Some(SettingsTarget::Resize(3))
+    );
+    let settings_bottom = (
+        (settings_geometry.window.x + settings_geometry.window.width as i32 / 2) * 1000 / 1600,
+        settings_geometry.window.bottom() * 1000 / 1600,
+    );
+    assert_eq!(
+        square.settings_target(settings_bottom.0, settings_bottom.1, settings),
+        Some(SettingsTarget::Resize(4))
     );
     let expanded = SettingsWindowState {
         expanded_row: Some(2),
@@ -1320,8 +1332,16 @@ fn installed_system_hit_geometry_test() {
         (160, 210, 760, 690)
     );
     assert_eq!(
+        resize_native_window(160, 210, 680, 620, 4, 500, 900, 600, 420),
+        (160, 210, 680, 690)
+    );
+    assert_eq!(
         square.desktop_app_window_target(699, 749, 210, 260, 490, 490, false, false),
         DesktopAppWindowTarget::Resize(3)
+    );
+    assert_eq!(
+        square.desktop_app_window_target(455, 750, 210, 260, 490, 490, false, false),
+        DesktopAppWindowTarget::Resize(4)
     );
 
     let hidpi = SystemLayout::new(2560, 1440);
