@@ -8,6 +8,11 @@ families="crystal-blue-glass luminous-obsidian frosted-quartz"
 base_names="home user folder folder-open documents downloads pictures music videos projects trash-empty trash-full drive-internal drive-external optical-disc usb-drive cloud-drive network server computer display printer camera microphone headphones terminal settings search information help lock unlock shield key power restart sleep wifi bluetooth battery volume clipboard mail calendar clock"
 action_names="back forward up refresh new-file new-folder save cut copy paste undo redo add remove close"
 
+if [ ! -f assets/icons/luminous-obsidian/master-base-v2.png ] || \
+   [ ! -f assets/icons/luminous-obsidian/master-actions-v2.png ]; then
+    python3 tools/assemble-luminous-obsidian-v2.py
+fi
+
 # ------------------------=
 # FUNC: build_group
 # DESC: Slices one generated master grid into named, square, multi-resolution PNG icon resources.

@@ -65,6 +65,22 @@ def validate_launcher_atlas(path: Path) -> None:
 
 
 # ------------------------=
+# FUNC: validate_generated_master
+# DESC: Verifies a generated source master retains native 256px-or-better cells and real RGBA transparency.
+# ------------------=
+def validate_generated_master(path: Path, rows: int) -> None:
+    with Image.open(path) as image:
+        assert image.mode == "RGBA", f"generated master is not RGBA: {path}"
+        assert image.width // 5 >= 256 and image.height // rows >= 256, (
+            f"generated master lacks 256px source fidelity: {path}: {image.size}"
+        )
+        alpha = image.getchannel("A")
+        minimum, maximum = alpha.getextrema()
+        assert minimum == 0 and maximum == 255, f"generated master lost alpha range: {path}"
+        assert any(alpha.histogram()[1:255]), f"generated master lost partial alpha: {path}"
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Validates every semantic icon in every installed family and supported pixel tier.
 # ------------------=
@@ -89,6 +105,8 @@ def main() -> None:
                     validate_icon(path, size)
                     checked += 1
         validate_launcher_atlas(root / "runtime" / f"{family}-launcher-256.bmp")
+    validate_generated_master(root / "luminous-obsidian" / "master-base-v2.png", 9)
+    validate_generated_master(root / "luminous-obsidian" / "master-actions-v2.png", 3)
     assert checked == len(FAMILIES) * len(SIZES) * sum(GROUP_COUNTS.values())
     print(f"PASS icon assets: {checked} semantic PNGs have exact dimensions and alpha")
 
