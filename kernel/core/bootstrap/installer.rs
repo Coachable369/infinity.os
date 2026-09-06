@@ -196,10 +196,16 @@ impl super::DisplayDevice {
     // DESC: Centers the generated InfinityOS brand masthead above every setup step.
     // ------------------=
     pub(super) fn paint_installer_masthead(&mut self) {
-        let height = self.height * 30 / 100;
-        let width = (height * 3).min(self.width * 82 / 100);
-        let left = self.width.saturating_sub(width) / 2;
-        self.paint_bitmap_fit_rect(INSTALLER_MASTHEAD_BMP, left, 0, width, height);
+        let masthead =
+            crate::ui::installer_layout::installer_wizard_layout(1, self.width, self.height)
+                .masthead;
+        self.paint_bitmap_fit_rect(
+            INSTALLER_MASTHEAD_BMP,
+            masthead.left,
+            masthead.top,
+            masthead.width,
+            masthead.height,
+        );
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -235,17 +241,11 @@ impl super::DisplayDevice {
     // FUNC: restore_installer_panel
     // DESC: Restores a clean installer scene before drawing the active wizard step.
     // ------------------=
-    pub(super) fn restore_installer_panel(&mut self, screen: u8) {
-        // Wizard panels intentionally vary slightly by content, so repainting
-        // only the next panel rectangle can leave the wider previous panel's
-        // edges behind. A step transition is infrequent; restore the complete
-        // scene to guarantee that two wizard screens are never composited.
+    pub(super) fn restore_installer_panel(&mut self, _screen: u8) {
+        // A step transition is infrequent; restore the complete scene so the
+        // invariant frame and masthead never inherit pixels from another step.
         self.paint_installer_background();
-        if screen == 1 {
-            self.paint_installer_welcome_masthead();
-        } else {
-            self.paint_installer_masthead();
-        }
+        self.paint_installer_masthead();
     }
 
     // ------------------------=
@@ -772,40 +772,27 @@ impl super::DisplayDevice {
         redraw_foundation: bool,
     ) {
         let modal_or_progress = screen == 7 || screen == 8;
-        let navigation_top = match screen {
-            1 => 87,
-            2 => 90,
-            _ => 89,
-        };
-        let button_top = match screen {
-            1 => 810,
-            2 => 820,
-            _ => 830,
-        };
-        let hint_top = match screen {
-            1 => 895,
-            2 => 935,
-            _ => 910,
-        };
+        let layout =
+            crate::ui::installer_layout::installer_wizard_layout(screen, self.width, self.height);
         // Rebuild the shared navigation rail when a step changes so labels do
         // not accumulate over the translucent photographic background.
         if redraw_foundation {
             // One continuous footer rail matches the reference and prevents
             // the three formerly separate foundations from looking clipped.
             self.fill_rect_alpha(
-                self.width * 8 / 100,
-                self.height * navigation_top / 100,
-                self.width * 84 / 100,
-                self.height * 4 / 100,
+                layout.navigation_rail.left,
+                layout.navigation_rail.top,
+                layout.navigation_rail.width,
+                layout.navigation_rail.height,
                 7,
                 12,
                 19,
                 232,
             );
             self.fill_rect(
-                self.width * 10 / 100,
-                self.height * navigation_top / 100,
-                self.width * 80 / 100,
+                layout.footer_rail.left,
+                layout.navigation_rail.top,
+                layout.footer_rail.width,
                 self.ui_scale(),
                 34,
                 92,
@@ -829,16 +816,8 @@ impl super::DisplayDevice {
             } else {
                 (b"BACK", b"Previous screen")
             };
-            let (button_left, button_width) = match screen {
-                1 => (145, 325),
-                2 => (135, 350),
-                _ => (190, 300),
-            };
-            self.installer_button(
-                button_left,
-                button_top,
-                button_width,
-                55,
+            self.installer_button_rect(
+                layout.back_button,
                 back,
                 back_subtitle,
                 focus == 0,
@@ -848,16 +827,8 @@ impl super::DisplayDevice {
             );
         }
         if has_primary && !modal_or_progress {
-            let (button_left, button_width) = match screen {
-                1 => (480, 350),
-                2 => (510, 350),
-                _ => (510, 300),
-            };
-            self.installer_button(
-                button_left,
-                button_top,
-                button_width,
-                55,
+            self.installer_button_rect(
+                layout.primary_button,
                 primary,
                 subtitle,
                 focus == 1,
@@ -879,7 +850,7 @@ impl super::DisplayDevice {
             let hint_width = self.installer_text_width(hint, false);
             self.installer_text(
                 self.width.saturating_sub(hint_width) / 2,
-                self.height * hint_top / 1000,
+                layout.footer_rail.top + self.height * 35 / 1000,
                 hint,
                 156,
                 174,
@@ -1291,18 +1262,12 @@ impl super::DisplayDevice {
         pressed: bool,
     ) {
         let scale = self.ui_scale();
-        let (left_percent, top_percent, width_percent, height_percent) = match screen {
-            1 => (2, 41, 96, 52),
-            2 | 3 => (2, 32, 96, 66),
-            _ => (8, 33, 84, 61),
-        };
-        let left = self.width * left_percent / 100;
-        // The reference layout uses one tall, reusable setup card beneath the
-        // brand masthead. Every step inherits this geometry so navigation does
-        // not jump while the user moves through the installer.
-        let top = self.height * top_percent / 100;
-        let width = self.width * width_percent / 100;
-        let height = self.height * height_percent / 100;
+        let frame =
+            crate::ui::installer_layout::installer_wizard_layout(screen, self.width, self.height);
+        let left = frame.panel.left;
+        let top = frame.panel.top;
+        let width = frame.panel.width;
+        let height = frame.panel.height;
         if screen == 1 {
             self.installer_welcome_panel(left, top, width, height);
             return;
@@ -1363,30 +1328,33 @@ impl super::DisplayDevice {
             11 => b"INFINITYOS SETUP HELP",
             _ => b"INFINITYOS GUIDED SETUP",
         };
-        self.text(left + 18 * scale, top + 15 * scale, title, 232, 240, 249);
+        let inset = width * 20 / 1000;
+        let header_y = top + height * 27 / 1000;
+        self.installer_text_strong(left + inset, header_y, title, 220, 230, 241);
         let section: &[u8] = if screen == 11 {
             b"HELP / F1 TO RETURN"
         } else {
             b"GUIDED SETUP"
         };
-        let section_width = self.installer_text_width(section, false);
-        self.text(
-            left + width.saturating_sub(section_width + 18 * scale),
-            top + 15 * scale,
+        let section_width = self.installer_text_width(section, true);
+        self.installer_text_strong(
+            left + width.saturating_sub(inset + section_width),
+            header_y,
             section,
-            108,
-            174,
-            216,
+            52,
+            198,
+            246,
         );
         self.fill_rect(
-            left + 18 * scale,
-            top + 30 * scale,
-            width.saturating_sub(36 * scale),
+            left + inset,
+            top + height * 86 / 1000,
+            width.saturating_sub(inset * 2),
             scale,
-            50,
-            86,
-            116,
+            20,
+            88,
+            124,
         );
+        self.installer_generic_content_frame(screen, frame.content, line_count);
         if screen == 1 {
             self.installer_welcome_top();
         }
@@ -1452,21 +1420,35 @@ impl super::DisplayDevice {
             if screen == 8 {
                 break;
             }
-            let row_spacing = if screen == 1 { 15 } else { 20 };
-            let y = top + 48 * scale + row * row_spacing * scale;
+            let y = if row == 0 {
+                frame.content.top + 12 * scale
+            } else {
+                frame.content.top + 50 * scale + (row - 1) * 24 * scale
+            };
             let color = if row == 0 {
                 (244, 248, 253)
             } else {
                 (216, 226, 237)
             };
-            self.text(
-                left + 24 * scale,
-                y,
-                &lines[row][..lengths[row]],
-                color.0,
-                color.1,
-                color.2,
-            );
+            if row == 0 {
+                self.installer_text_strong(
+                    frame.content.left + 18 * scale,
+                    y,
+                    &lines[row][..lengths[row]],
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+            } else {
+                self.installer_text(
+                    frame.content.left + 18 * scale,
+                    y,
+                    &lines[row][..lengths[row]],
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+            }
         }
         if screen == 1 {
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -1498,18 +1480,75 @@ impl super::DisplayDevice {
             };
             step[0] = b'0' + (visible_screen / 10);
             step[1] = b'0' + (visible_screen % 10);
-            let step_x = if screen == 1 {
-                self.width * 88 / 100
-            } else {
-                left + width.saturating_sub(44 * scale)
-            };
-            let step_y = if screen == 1 {
-                self.height * 79 / 100
-            } else {
-                top + height.saturating_sub(82 * scale)
-            };
+            let step_x = left + width.saturating_sub(44 * scale);
+            let step_y = self.height * 80 / 100;
             self.text(step_x, step_y, &step, 105, 154, 193);
         }
+    }
+
+    // ------------------------=
+    // FUNC: installer_generic_content_frame
+    // DESC: Gives text-led installer states a balanced glass content surface inside the shared safe area.
+    // ------------------=
+    pub(super) fn installer_generic_content_frame(
+        &mut self,
+        screen: u8,
+        content: crate::ui::installer_layout::InstallerRect,
+        line_count: usize,
+    ) {
+        if screen == 8 {
+            return;
+        }
+        let scale = self.ui_scale();
+        let (left, width) = if screen == 9 {
+            (content.left, content.width * 46 / 100)
+        } else {
+            (content.left, content.width)
+        };
+        let height = if screen == 9 {
+            content.height * 74 / 100
+        } else {
+            let copy_height = (line_count.max(3) * 21 * scale + 54 * scale)
+                .min(content.height.saturating_sub(12 * scale));
+            copy_height.max(content.height * 58 / 100)
+        };
+        self.fill_rounded_rect_alpha(left, content.top, width, height, 12 * scale, 2, 13, 24, 222);
+        self.fill_rounded_rect_alpha(
+            left + 2 * scale,
+            content.top + 2 * scale,
+            width.saturating_sub(4 * scale),
+            height * 28 / 100,
+            10 * scale,
+            21,
+            58,
+            84,
+            58,
+        );
+        let border = if screen == 10 {
+            (174, 96, 86)
+        } else {
+            (39, 119, 158)
+        };
+        self.outline_rounded_rect(
+            left,
+            content.top,
+            width,
+            height,
+            12 * scale,
+            border.0,
+            border.1,
+            border.2,
+        );
+        self.installer_corner_accents(left, content.top, width, height);
+        self.fill_rect(
+            left + 18 * scale,
+            content.top + 38 * scale,
+            width.saturating_sub(36 * scale),
+            scale,
+            border.0,
+            border.1,
+            border.2,
+        );
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -2629,11 +2668,10 @@ impl super::DisplayDevice {
             108,
         );
 
-        // The 24px Roboto body face needs a full four-line text block in the
-        // narrow overview cards. Keep the band above the navigation rail and
-        // allocate enough vertical room for descenders on the final line.
-        let cards_top = top + height * 540 / 1000;
-        let cards_height = height * 225 / 1000;
+        // Keep the lower feature row within the shared content safe area so it
+        // never competes with the invariant navigation controls.
+        let cards_top = top + height * 525 / 1000;
+        let cards_height = height * 200 / 1000;
         self.installer_mesh_overview_row(left_column, cards_top, left_width, cards_height);
         self.installer_mesh_feature_row(hero_left, cards_top, hero_width, cards_height);
     }
@@ -3584,14 +3622,46 @@ impl super::DisplayDevice {
         cursor_y: i32,
         pressed: bool,
     ) {
-        let left = self.width * nx / 1000;
-        let top = self.height * ny / 1000;
-        let width = self.width * nw / 1000;
-        let height = self.height * nh / 1000;
-        let hovered = cursor_x >= nx as i32
-            && cursor_x <= (nx + nw) as i32
-            && cursor_y >= ny as i32
-            && cursor_y <= (ny + nh) as i32;
+        self.installer_button_rect(
+            crate::ui::installer_layout::InstallerRect {
+                left: self.width * nx / 1000,
+                top: self.height * ny / 1000,
+                width: self.width * nw / 1000,
+                height: self.height * nh / 1000,
+            },
+            title,
+            subtitle,
+            focused,
+            cursor_x,
+            cursor_y,
+            pressed,
+        );
+    }
+
+    // ------------------------=
+    // FUNC: installer_button_rect
+    // DESC: Draws an installer button at a shared pixel-space layout rectangle.
+    // ------------------=
+    pub(super) fn installer_button_rect(
+        &mut self,
+        rect: crate::ui::installer_layout::InstallerRect,
+        title: &[u8],
+        subtitle: &[u8],
+        focused: bool,
+        cursor_x: i32,
+        cursor_y: i32,
+        pressed: bool,
+    ) {
+        let left = rect.left;
+        let top = rect.top;
+        let width = rect.width;
+        let height = rect.height;
+        let pointer_x = cursor_x * self.width as i32 / 1000;
+        let pointer_y = cursor_y * self.height as i32 / 1000;
+        let hovered = pointer_x >= left as i32
+            && pointer_x <= rect.right() as i32
+            && pointer_y >= top as i32
+            && pointer_y <= rect.bottom() as i32;
         let depressed = hovered && pressed;
         let (r, g, b) = if hovered && pressed {
             (48, 67, 91)
@@ -3636,7 +3706,7 @@ impl super::DisplayDevice {
         self.installer_text_strong(title_x, title_y, title, 244, 248, 255);
         self.installer_text(subtitle_x, subtitle_y, subtitle, 83, 187, 230);
         if focused || hovered {
-            let arrow_x = if nx < 480 {
+            let arrow_x = if left + width / 2 < self.width / 2 {
                 (left + 26 * scale) as i32
             } else {
                 (left + width.saturating_sub(24 * scale)) as i32
