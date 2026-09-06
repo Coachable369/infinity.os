@@ -1,4 +1,6 @@
-pub const STORE_RELATIVE_LBA: u64 = 98_304;
+// Reserve 128 MiB at the start of the native container for the installed
+// kernel and future core growth before object-store metadata begins.
+pub const STORE_RELATIVE_LBA: u64 = 262_144;
 const MINIMUM_BLOCKS: u64 = 262_144;
 const ESP_FIRST: u64 = 2_048;
 const ALIGNMENT_BLOCKS: u64 = 2_048;
