@@ -19,7 +19,9 @@ use runtime::network::profile::{NetworkProfile, ProfileKind};
 use runtime::network::types::*;
 use runtime::network::NetworkRuntime;
 use runtime::service::*;
-use ui::system_layout::{OnboardingTarget, SettingsWindowState, SystemLayout};
+use ui::system_layout::{
+    NetworkSettingsTarget, OnboardingTarget, SettingsWindowState, SystemLayout,
+};
 
 // ------------------------=
 // FUNC: identity
@@ -181,6 +183,18 @@ fn settings_dashboard_behavior() {
             let normalized_y = (card.y + card.height as i32 / 2) * 1000 / height as i32;
             assert_eq!(layout.network_profile_target(normalized_x, normalized_y, state), Some(index));
         }
+        for (index, card) in dashboard.mode_cards.iter().enumerate() {
+            assert!(card.width > 0 && card.height > 0);
+            assert!(dashboard.topology.contains(ui::geometry::Point { x: card.x, y: card.y }));
+            assert!(card.right() <= dashboard.topology.right());
+            assert!(card.bottom() <= dashboard.topology.bottom());
+            let normalized_x = (card.x + card.width as i32 / 2) * 1000 / width as i32;
+            let normalized_y = (card.y + card.height as i32 / 2) * 1000 / height as i32;
+            assert_eq!(
+                layout.network_settings_target(normalized_x, normalized_y, state),
+                Some(NetworkSettingsTarget::Mode(index))
+            );
+        }
     }
 }
 
@@ -249,6 +263,30 @@ fn management_capability_behavior() {
     assert_eq!(network.resolve_authorized(77, caller, resolve_cap, 2, 5, &capabilities), Err(NetworkError::CapabilityRevoked));
     let profile_cap = capabilities.grant(CapabilityType::NetworkProfileActivate, 0, 1, 0, issuer, caller, None, 0).unwrap();
     assert!(network.activate_profile_authorized(3, caller, profile_cap, 2, &capabilities).is_ok());
+    assert_eq!(
+        network.reconfigure_authorized(
+            NetworkSetupMode::Wired,
+            caller,
+            profile_cap,
+            2,
+            &capabilities,
+        ),
+        Ok(ConnectivityClass::Routed)
+    );
+    assert_eq!(network.setup_snapshot().selected, NetworkSetupMode::Wired);
+    assert_eq!(network.status().active_profile, 1);
+    assert_eq!(
+        network.reconfigure_authorized(
+            NetworkSetupMode::Wireless,
+            caller,
+            profile_cap,
+            2,
+            &capabilities,
+        ),
+        Err(NetworkError::InterfaceNotFound)
+    );
+    assert_eq!(network.setup_snapshot().selected, NetworkSetupMode::Wired);
+    assert_eq!(network.status().active_profile, 1);
 }
 
 // ------------------------=

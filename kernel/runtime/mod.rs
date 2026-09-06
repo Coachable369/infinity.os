@@ -1826,6 +1826,63 @@ pub fn activate_network_profile_from_settings(profile_id: u32, now: u64, correla
 }
 
 // ------------------------=
+// FUNC: reconfigure_network_from_settings
+// DESC: Applies and durably commits an explicit post-install connection mode from trusted System Settings.
+// ------------------=
+pub fn reconfigure_network_from_settings(
+    mode: network::types::NetworkSetupMode,
+    now: u64,
+    correlation_id: u64,
+) -> bool {
+    let runtime = runtime_mut();
+    let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else {
+        return false;
+    };
+    let Some(authority) = runtime.settings_network_profile_capability else {
+        return false;
+    };
+    let _previous = runtime.network.encode_state();
+    if runtime
+        .network
+        .reconfigure_authorized(mode, settings, authority, now, &runtime.capabilities)
+        .is_err()
+    {
+        return false;
+    }
+    #[cfg(target_os = "none")]
+    if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
+        let _ = runtime.network.restore_state(&_previous);
+        return false;
+    }
+    if let Some(index) = NETWORK_EVENT_TYPES
+        .iter()
+        .position(|event| *event == EVENT_NETWORK_PROFILE_ACTIVATED)
+    {
+        if let (Some(capability), Some(source)) = (
+            runtime.network_event_capabilities[index],
+            runtime.service_identity(SERVICE_NETWORK),
+        ) {
+            let state = runtime.network.encode_state();
+            let _ = runtime.events.publish(
+                EventClass::Record,
+                RoutingDomain::Network,
+                EVENT_NETWORK_PROFILE_ACTIVATED,
+                source,
+                runtime.network.profiles.active_id() as u64,
+                correlation_id,
+                correlation_id,
+                &state[..24],
+                220,
+                now,
+                &runtime.capabilities,
+                capability,
+            );
+        }
+    }
+    true
+}
+
+// ------------------------=
 // FUNC: select_network_mode_from_onboarding
 // DESC: Stages one explicit first-boot connectivity choice for shared GUI and keyboard interaction.
 // ------------------=

@@ -180,7 +180,14 @@ pub struct NetworkSettingsGeometry {
     pub topology: Rect,
     pub telemetry: Rect,
     pub profiles: Rect,
+    pub mode_cards: [Rect; 4],
     pub profile_cards: [Rect; 5],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NetworkSettingsTarget {
+    Mode(usize),
+    Profile(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1629,6 +1636,22 @@ impl SystemLayout {
                 profile_height.saturating_sub(35 * self.scale),
             );
         }
+        let mode_gap = 7 * self.scale;
+        let mode_left = left + 14 * self.scale;
+        let mode_width = topology_width
+            .saturating_sub(28 * self.scale + mode_gap * 3)
+            / 4;
+        let mode_top = middle_top + 64 * self.scale;
+        let mode_height = middle_height.saturating_sub(80 * self.scale);
+        let mut mode_cards = [rect(0, 0, 0, 0); 4];
+        for (index, card) in mode_cards.iter_mut().enumerate() {
+            *card = rect(
+                mode_left + index * (mode_width + mode_gap),
+                mode_top,
+                mode_width,
+                mode_height,
+            );
+        }
         NetworkSettingsGeometry {
             overview: rect(left, top, width, overview_height),
             topology: rect(
@@ -1644,8 +1667,35 @@ impl SystemLayout {
                 middle_height,
             ),
             profiles: rect(left, profile_top, width, profile_height),
+            mode_cards,
             profile_cards: cards,
         }
+    }
+
+    // ------------------------=
+    // FUNC: network_settings_target
+    // DESC: Resolves live post-install connection modes and operational profiles from shared dashboard geometry.
+    // ------------------=
+    pub fn network_settings_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+    ) -> Option<NetworkSettingsTarget> {
+        let point = self.point(normalized_x, normalized_y);
+        let geometry = self.network_settings_geometry(state);
+        if let Some(index) = geometry
+            .mode_cards
+            .iter()
+            .position(|card| card.contains(point))
+        {
+            return Some(NetworkSettingsTarget::Mode(index));
+        }
+        geometry
+            .profile_cards
+            .iter()
+            .position(|card| card.contains(point))
+            .map(NetworkSettingsTarget::Profile)
     }
 
     // ------------------------=

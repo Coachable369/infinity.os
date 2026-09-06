@@ -13,8 +13,8 @@ use crate::ui::app_launcher::{
 };
 use crate::ui::system_layout::{
     AppLauncherTarget, DesktopAppWindowState, DesktopAppWindowTarget, DesktopTarget,
-    EditorDialogTarget, EditorScrollTarget, OnboardingTarget, SettingsAccentTarget, SettingsTarget,
-    SettingsWindowState, SystemLayout, SystemMenuTarget,
+    EditorDialogTarget, EditorScrollTarget, NetworkSettingsTarget, OnboardingTarget,
+    SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget,
 };
 use crate::ui::text_editor::TextDocument;
 
@@ -4690,12 +4690,29 @@ impl ConsoleRuntime {
                 }
             }
             if clicked && self.system_focus == 6 {
-                if let Some(profile) = layout.network_profile_target(
+                if let Some(target) = layout.network_settings_target(
                     self.pointer_x,
                     self.pointer_y,
                     self.settings_window,
                 ) {
-                    self.activate_settings_content_row(profile);
+                    match target {
+                        NetworkSettingsTarget::Mode(index) => {
+                            let mode = match index {
+                                0 => crate::runtime::network::types::NetworkSetupMode::Automatic,
+                                1 => crate::runtime::network::types::NetworkSetupMode::Wired,
+                                2 => crate::runtime::network::types::NetworkSetupMode::Wireless,
+                                _ => crate::runtime::network::types::NetworkSetupMode::Offline,
+                            };
+                            let _ = crate::runtime::reconfigure_network_from_settings(
+                                mode,
+                                0,
+                                index as u64 + 1,
+                            );
+                        }
+                        NetworkSettingsTarget::Profile(profile) => {
+                            self.activate_settings_content_row(profile)
+                        }
+                    }
                     self.redraw();
                     return;
                 }

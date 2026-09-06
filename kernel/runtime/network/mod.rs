@@ -270,6 +270,39 @@ impl NetworkRuntime {
     }
 
     // ------------------------=
+    // FUNC: reconfigure_authorized
+    // DESC: Applies a post-install connection-mode change through trusted Settings authority with rollback on failure.
+    // ------------------=
+    pub fn reconfigure_authorized(
+        &mut self,
+        mode: NetworkSetupMode,
+        caller: SecurityIdentity,
+        capability: CapabilityId,
+        now: u64,
+        capabilities: &CapabilityManager,
+    ) -> Result<ConnectivityClass, NetworkError> {
+        validate_authority(
+            capabilities,
+            capability,
+            caller,
+            CapabilityType::NetworkProfileActivate,
+            0,
+            now,
+        )?;
+        let previous_mode = self.setup_mode;
+        let previous_profile = self.profiles.active_id();
+        self.setup_mode = mode;
+        match self.apply_setup_mode() {
+            Ok(connectivity) => Ok(connectivity),
+            Err(error) => {
+                self.setup_mode = previous_mode;
+                let _ = self.activate_profile(previous_profile);
+                Err(error)
+            }
+        }
+    }
+
+    // ------------------------=
     // FUNC: inspect_connection
     // DESC: Returns full ownership metadata only to the owner or an explicitly authorized inspector.
     // ------------------=

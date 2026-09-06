@@ -4081,9 +4081,10 @@ impl super::DisplayDevice {
                 runtime.network.status(),
                 runtime.network.topology(),
                 runtime.network.diagnostics(),
+                runtime.network.setup_snapshot(),
             )
         });
-        let Some((status, topology, diagnostics)) = snapshot else { return };
+        let Some((status, topology, diagnostics, setup)) = snapshot else { return };
         let (outline_r, outline_g, outline_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         let (selection_r, selection_g, selection_b) =
@@ -4183,26 +4184,83 @@ impl super::DisplayDevice {
 
         let topology_left = geometry.topology.x.max(0) as usize;
         let topology_top = geometry.topology.y.max(0) as usize;
-        let topology_width = geometry.topology.width as usize;
-        let topology_height = geometry.topology.height as usize;
-        self.ui_text_strong(topology_left + 17 * scale, topology_top + 15 * scale, b"LIVE TOPOLOGY", outline_r, outline_g, outline_b, 1);
-        self.ui_text(topology_left + 17 * scale, topology_top + 40 * scale, b"Typed state - no shell parsing", 132, 158, 179, 1);
-        let center_x = topology_left + topology_width / 2;
-        let center_y = topology_top + topology_height * 62 / 100;
-        let nodes = [
-            (topology_left + topology_width / 6, center_y - 25 * scale, 14usize),
-            (topology_left + topology_width * 5 / 6, center_y - 25 * scale, 12usize),
-            (topology_left + topology_width / 4, center_y + 35 * scale, 4usize),
-            (topology_left + topology_width * 3 / 4, center_y + 35 * scale, 11usize),
+        self.ui_text_strong(
+            topology_left + 17 * scale,
+            topology_top + 15 * scale,
+            b"CONNECTION MODE",
+            outline_r,
+            outline_g,
+            outline_b,
+            1,
+        );
+        self.ui_text(
+            topology_left + 17 * scale,
+            topology_top + 39 * scale,
+            b"Select a mode to apply it immediately",
+            132,
+            158,
+            179,
+            1,
+        );
+        let modes = [
+            (b"AUTO".as_slice(), crate::runtime::network::types::NetworkSetupMode::Automatic, setup.wired_available || setup.wireless_available),
+            (b"WIRED".as_slice(), crate::runtime::network::types::NetworkSetupMode::Wired, setup.wired_available),
+            (b"WI-FI".as_slice(), crate::runtime::network::types::NetworkSetupMode::Wireless, setup.wireless_available),
+            (b"OFFLINE".as_slice(), crate::runtime::network::types::NetworkSetupMode::Offline, true),
         ];
-        for (node_x, node_y, icon) in nodes {
-            self.icon_line(center_x as i32, center_y as i32, node_x as i32, node_y as i32, (outline_r, outline_g, outline_b), 1);
-            self.fill_rounded_rect_alpha(node_x.saturating_sub(20 * scale), node_y.saturating_sub(20 * scale), 40 * scale, 40 * scale, 20 * scale, 7, 28, 46, 235);
-            self.outline_rounded_rect(node_x.saturating_sub(20 * scale), node_y.saturating_sub(20 * scale), 40 * scale, 40 * scale, 20 * scale, outline_r, outline_g, outline_b);
-            self.authentication_icon(node_x, node_y, icon, 22 * scale, true);
+        for (index, card) in geometry.mode_cards.iter().enumerate() {
+            let left = card.x.max(0) as usize;
+            let top = card.y.max(0) as usize;
+            let active = setup.selected == modes[index].1;
+            let available = modes[index].2;
+            self.fill_rounded_rect_alpha(
+                left,
+                top,
+                card.width as usize,
+                card.height as usize,
+                8 * scale,
+                if active { selection_r } else { 6 },
+                if active { selection_g } else { 24 },
+                if active { selection_b } else { 39 },
+                if available { 230 } else { 150 },
+            );
+            self.outline_rounded_rect(
+                left,
+                top,
+                card.width as usize,
+                card.height as usize,
+                8 * scale,
+                if active { outline_r } else { outline_r / 2 },
+                if active { outline_g } else { outline_g / 2 },
+                if active { outline_b } else { outline_b / 2 },
+            );
+            self.ui_text_centered(
+                left,
+                top + 12 * scale,
+                card.width as usize,
+                modes[index].0,
+                if available { 231 } else { 112 },
+                if available { 241 } else { 127 },
+                if available { 248 } else { 139 },
+                1,
+            );
+            self.ui_text_centered(
+                left,
+                top + 35 * scale,
+                card.width as usize,
+                if active {
+                    b"ACTIVE".as_slice()
+                } else if available {
+                    b"SELECT".as_slice()
+                } else {
+                    b"UNAVAILABLE".as_slice()
+                },
+                outline_r,
+                outline_g,
+                outline_b,
+                1,
+            );
         }
-        self.fill_rounded_rect_alpha(center_x.saturating_sub(30 * scale), center_y.saturating_sub(30 * scale), 60 * scale, 60 * scale, 30 * scale, selection_r, selection_g, selection_b, 240);
-        self.small_infinity_mark(center_x, center_y, 38 * scale);
 
         let telemetry_left = geometry.telemetry.x.max(0) as usize;
         let telemetry_top = geometry.telemetry.y.max(0) as usize;
