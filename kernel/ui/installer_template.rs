@@ -1,7 +1,7 @@
 //! Bounded parser for installer layouts authored by InfinityOS Installer Studio.
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 2;
+const FORMAT_VERSION: u16 = 3;
 const MAX_SCREEN_COUNT: u16 = 32;
 
 #[repr(u8)]
@@ -42,6 +42,7 @@ pub struct InstallerTemplateElement<'a> {
     pub name: &'a [u8],
     pub text: &'a [u8],
     pub image_asset: &'a [u8],
+    pub crop: [u8; 4],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -286,9 +287,19 @@ impl<'a> Reader<'a> {
         let name = self.short_string()?;
         let text = self.long_string()?;
         let image_asset = self.short_string()?;
+        let crop = [self.u8()?, self.u8()?, self.u8()?, self.u8()?];
         if core::str::from_utf8(name).is_err()
             || core::str::from_utf8(text).is_err()
             || core::str::from_utf8(image_asset).is_err()
+        {
+            return Err(InstallerTemplateError::InvalidElement);
+        }
+        if crop[0] > 90
+            || crop[1] > 90
+            || crop[2] > 90
+            || crop[3] > 90
+            || crop[0] as u16 + crop[2] as u16 > 95
+            || crop[1] as u16 + crop[3] as u16 > 95
         {
             return Err(InstallerTemplateError::InvalidElement);
         }
@@ -307,6 +318,7 @@ impl<'a> Reader<'a> {
             name,
             text,
             image_asset,
+            crop,
         })
     }
 }

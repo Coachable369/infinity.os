@@ -146,7 +146,12 @@ fn assert_packaged_tree(
     packaged_root: &str,
     scratch: &Path,
 ) {
-    let destination = scratch.join("icon-tree");
+    let tree_name = packaged_root
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or("asset-tree");
+    let destination = scratch.join(format!("asset-tree-{tree_name}"));
     fs::create_dir_all(&destination).expect("tree destination must be creatable");
     let status = match container.kind {
         ContainerKind::Fat => Command::new("mcopy")
@@ -170,31 +175,31 @@ fn assert_packaged_tree(
     .expect("container tree extraction tool must run");
     assert!(
         status.success(),
-        "packaged icon hierarchy must be extractable"
+        "packaged asset hierarchy must be extractable"
     );
 
     let expected_files = collect_files(source_root);
     for source in &expected_files {
         let relative = source
             .strip_prefix(source_root)
-            .expect("icon relative path");
+            .expect("asset relative path");
         let actual = destination.join(relative);
         assert!(
             actual.is_file(),
-            "packaged icon must exist: {}",
+            "packaged asset must exist: {}",
             relative.display()
         );
         assert_eq!(
-            fs::read(&actual).expect("packaged icon must be readable"),
-            fs::read(source).expect("source icon must be readable"),
-            "packaged icon bytes must match: {}",
+            fs::read(&actual).expect("packaged asset must be readable"),
+            fs::read(source).expect("source asset must be readable"),
+            "packaged asset bytes must match: {}",
             relative.display()
         );
     }
     assert_eq!(
         collect_files(&destination).len(),
         expected_files.len(),
-        "packaged icon hierarchy must contain every and only declared asset"
+        "packaged asset hierarchy must contain every and only declared asset"
     );
 }
 
@@ -339,6 +344,12 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         );
         sequence += 1;
     }
+    assert_packaged_tree(
+        container,
+        Path::new("assets/boot/installer-assets"),
+        &format!("{}/installer-assets", container.installer_root),
+        scratch,
+    );
 
     for source in collect_files(Path::new("assets/crash")) {
         let name = source

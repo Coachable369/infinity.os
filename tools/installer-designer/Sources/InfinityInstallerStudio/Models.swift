@@ -125,6 +125,7 @@ struct StudioElement: Identifiable, Codable, Hashable {
     var frame: CanvasRect
     var text: String
     var imageAsset: String
+    var crop: ImageCrop = .none
     var fill: StudioColor
     var border: StudioColor
     var fontSize: Int
@@ -165,6 +166,62 @@ struct StudioElement: Identifiable, Codable, Hashable {
             locked: locked,
             hidden: false
         )
+    }
+}
+
+struct ImageCrop: Codable, Hashable {
+    var left: Int
+    var top: Int
+    var right: Int
+    var bottom: Int
+
+    static let none = ImageCrop(left: 0, top: 0, right: 0, bottom: 0)
+
+    // ------------------------=
+    // FUNC: clamped
+    // DESC: Constrains normalized crop edges while retaining a visible image area.
+    // ------------------=
+    func clamped() -> ImageCrop {
+        var result = ImageCrop(
+            left: left.clamped(to: 0...90),
+            top: top.clamped(to: 0...90),
+            right: right.clamped(to: 0...90),
+            bottom: bottom.clamped(to: 0...90)
+        )
+        if result.left + result.right > 95 { result.right = 95 - result.left }
+        if result.top + result.bottom > 95 { result.bottom = 95 - result.top }
+        return result
+    }
+}
+
+extension StudioElement {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, kind, role, frame, text, imageAsset, crop, fill, border
+        case fontSize, opacity, cornerRadius, zIndex, locked, hidden
+    }
+
+    // ------------------------=
+    // FUNC: init_decoder
+    // DESC: Decodes current elements while migrating pre-crop saved projects safely.
+    // ------------------=
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        kind = try values.decode(StudioElementKind.self, forKey: .kind)
+        role = try values.decode(StudioElementRole.self, forKey: .role)
+        frame = try values.decode(CanvasRect.self, forKey: .frame)
+        text = try values.decode(String.self, forKey: .text)
+        imageAsset = try values.decode(String.self, forKey: .imageAsset)
+        crop = try values.decodeIfPresent(ImageCrop.self, forKey: .crop) ?? .none
+        fill = try values.decode(StudioColor.self, forKey: .fill)
+        border = try values.decode(StudioColor.self, forKey: .border)
+        fontSize = try values.decode(Int.self, forKey: .fontSize)
+        opacity = try values.decode(Int.self, forKey: .opacity)
+        cornerRadius = try values.decode(Int.self, forKey: .cornerRadius)
+        zIndex = try values.decode(Int.self, forKey: .zIndex)
+        locked = try values.decode(Bool.self, forKey: .locked)
+        hidden = try values.decode(Bool.self, forKey: .hidden)
     }
 }
 

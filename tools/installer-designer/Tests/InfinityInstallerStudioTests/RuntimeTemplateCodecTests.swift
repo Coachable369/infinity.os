@@ -3,6 +3,71 @@ import XCTest
 
 final class RuntimeTemplateCodecTests: XCTestCase {
     // ------------------------=
+    // FUNC: testPNGImportAddsMovableResizableCroppedCanvasLayer
+    // DESC: Exercises file import, project asset materialization, canvas transforms, crop, and runtime persistence.
+    // ------------------=
+    @MainActor
+    func testPNGImportAddsMovableResizableCroppedCanvasLayer() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appending(path: "infinity-image-import-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let source = root.appending(path: "source.png")
+        let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
+        try png.write(to: source)
+        let store = TemplateStore()
+        store.projectRoot = root
+
+        let id = try store.importImageAsset(from: source)
+        XCTAssertEqual(store.selectedElementID, id)
+        XCTAssertEqual(store.inlineEditorElementID, id)
+        XCTAssertFalse(store.selectedElement!.locked)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: root.appending(path: "assets/boot/\(store.selectedElement!.imageAsset)").path
+        ))
+
+        store.snapEnabled = false
+        let original = store.selectedElement!.frame
+        store.beginGesture(elementID: id)
+        store.moveSelected(translation: CGSize(width: 20, height: 30), canvasScale: CGSize(width: 1, height: 1))
+        store.endGesture()
+        store.beginGesture(elementID: id)
+        store.resizeSelected(handle: .bottomRight, translation: CGSize(width: 40, height: 20), canvasScale: CGSize(width: 1, height: 1))
+        store.endGesture()
+        store.updateSelected { $0.crop = ImageCrop(left: 10, top: 8, right: 5, bottom: 4) }
+
+        XCTAssertEqual(store.selectedElement!.frame.x, original.x + 20)
+        XCTAssertEqual(store.selectedElement!.frame.height, original.height + 20)
+        XCTAssertEqual(store.selectedElement!.crop.left, 10)
+        XCTAssertEqual(try RuntimeTemplateCodec.decode(RuntimeTemplateCodec.encode(store.document)), store.document)
+    }
+
+    // ------------------------=
+    // FUNC: testConsolePresetsStayContainedAndEditable
+    // DESC: Exercises every canned disk layout and proves its ordinary unlocked elements fit the console content region.
+    // ------------------=
+    @MainActor
+    func testConsolePresetsStayContainedAndEditable() {
+        for preset in ConsoleLayoutPreset.allCases {
+            let store = TemplateStore()
+            store.selectScreen(3)
+            let existingIDs = Set(store.selectedScreen!.elements.map(\.id))
+            let content = store.selectedScreen!.elements.first { $0.role == .content }!.frame
+            store.applyConsoleLayout(preset)
+            let inserted = store.selectedScreen!.elements.filter { $0.name.hasPrefix("Preset • ") }
+
+            XCTAssertFalse(inserted.isEmpty, preset.title)
+            XCTAssertTrue(existingIDs.isSubset(of: Set(store.selectedScreen!.elements.map(\.id))), preset.title)
+            XCTAssertTrue(inserted.allSatisfy { !$0.locked && $0.kind != .button }, preset.title)
+            XCTAssertTrue(inserted.allSatisfy {
+                $0.frame.x >= content.x && $0.frame.y >= content.y
+                    && $0.frame.x + $0.frame.width <= content.x + content.width
+                    && $0.frame.y + $0.frame.height <= content.y + content.height
+            }, preset.title)
+        }
+    }
+
+    // ------------------------=
     // FUNC: testFactoryDocumentCoversEveryInstallerScreen
     // DESC: Verifies all runtime screens and their protected navigation controls exist.
     // ------------------=

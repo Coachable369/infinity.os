@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 struct ElementInspector: View {
@@ -161,10 +160,37 @@ struct ElementInspector: View {
                 Text(element.imageAsset.isEmpty ? "No image selected" : element.imageAsset)
                     .font(.caption.monospaced())
                     .lineLimit(2)
-                Button("Choose Image…", action: chooseImage)
-                    .disabled(element.locked)
+                HStack {
+                    Button("Replace Image…", action: store.chooseReplacementImage)
+                    Button("Reset Crop") {
+                        store.updateSelected("Crop reset") { $0.crop = .none }
+                    }
+                    .disabled(element.crop == .none)
+                }
+                Divider()
+                cropSlider("Left", keyPath: \.left, value: element.crop.left)
+                cropSlider("Top", keyPath: \.top, value: element.crop.top)
+                cropSlider("Right", keyPath: \.right, value: element.crop.right)
+                cropSlider("Bottom", keyPath: \.bottom, value: element.crop.bottom)
             }
+            .disabled(element.locked)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // ------------------------=
+    // FUNC: cropSlider
+    // DESC: Builds one precise normalized image crop-edge control.
+    // ------------------=
+    private func cropSlider(
+        _ label: String,
+        keyPath: WritableKeyPath<ImageCrop, Int>,
+        value: Int
+    ) -> some View {
+        HStack {
+            Text(label).frame(width: 48, alignment: .leading)
+            Slider(value: cropBinding(keyPath), in: 0...90, step: 1)
+            Text("\(value)%").monospacedDigit().frame(width: 34)
         }
     }
 
@@ -302,27 +328,17 @@ struct ElementInspector: View {
     }
 
     // ------------------------=
-    // FUNC: chooseImage
-    // DESC: Imports a selected image into the InfinityOS boot assets and assigns it to the active layer.
+    // FUNC: cropBinding
+    // DESC: Creates an undoable binding to one normalized image crop edge.
     // ------------------=
-    private func chooseImage() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.png, .jpeg, .bmp, .tiff]
-        guard panel.runModal() == .OK, let source = panel.url else { return }
-        guard let root = store.projectRoot else {
-            store.updateSelected("Image selected") { $0.imageAsset = source.path }
-            return
-        }
-        let directory = root.appending(path: "assets/boot", directoryHint: .isDirectory)
-        var destination = directory.appending(path: source.lastPathComponent)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            destination = directory.appending(path: "\(UUID().uuidString.prefix(8))-\(source.lastPathComponent)")
-        }
-        do {
-            try FileManager.default.copyItem(at: source, to: destination)
-            store.updateSelected("Image imported") { $0.imageAsset = destination.lastPathComponent }
-        } catch {
-            store.validationIssues = [error.localizedDescription]
-        }
+    private func cropBinding(_ keyPath: WritableKeyPath<ImageCrop, Int>) -> Binding<Double> {
+        Binding(
+            get: { Double(store.selectedElement?.crop[keyPath: keyPath] ?? 0) },
+            set: { value in
+                store.updateSelected("Image cropped") {
+                    $0.crop[keyPath: keyPath] = Int(value.rounded())
+                }
+            }
+        )
     }
 }

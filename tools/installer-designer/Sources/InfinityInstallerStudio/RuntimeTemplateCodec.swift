@@ -60,6 +60,9 @@ enum TemplateValidator {
                 else {
                     throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Element strings exceed runtime limits")
                 }
+                guard element.crop == element.crop.clamped() else {
+                    throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Image crop leaves no visible area")
+                }
             }
         }
     }
@@ -67,7 +70,7 @@ enum TemplateValidator {
 
 enum RuntimeTemplateCodec {
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 2
+    static let version: UInt16 = 3
 
     // ------------------------=
     // FUNC: encode
@@ -106,6 +109,10 @@ enum RuntimeTemplateCodec {
                 output.appendLengthPrefixed(element.name, length: .u8, limit: 63)
                 output.appendLengthPrefixed(element.text, length: .u16, limit: 512)
                 output.appendLengthPrefixed(element.imageAsset, length: .u8, limit: 127)
+                output.append(contentsOf: [
+                    UInt8(element.crop.left), UInt8(element.crop.top),
+                    UInt8(element.crop.right), UInt8(element.crop.bottom),
+                ])
             }
         }
         return output
@@ -153,6 +160,10 @@ enum RuntimeTemplateCodec {
                 let name = try reader.readString(length: .u8, limit: 63)
                 let text = try reader.readString(length: .u16, limit: 512)
                 let imageAsset = try reader.readString(length: .u8, limit: 127)
+                let crop = ImageCrop(
+                    left: Int(try reader.readUInt8()), top: Int(try reader.readUInt8()),
+                    right: Int(try reader.readUInt8()), bottom: Int(try reader.readUInt8())
+                )
                 elements.append(StudioElement(
                     id: id,
                     name: name,
@@ -161,6 +172,7 @@ enum RuntimeTemplateCodec {
                     frame: frame,
                     text: text,
                     imageAsset: imageAsset,
+                    crop: crop,
                     fill: fill,
                     border: border,
                     fontSize: fontSize,

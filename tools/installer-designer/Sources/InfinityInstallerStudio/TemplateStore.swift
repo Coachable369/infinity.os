@@ -21,6 +21,21 @@ enum ResizeHandle: CaseIterable, Identifiable {
     }
 }
 
+enum ConsoleLayoutPreset: String, CaseIterable, Identifiable {
+    case diskCards
+    case diskSplit
+    case storageMap
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .diskCards: "Disk Cards"
+        case .diskSplit: "Discovery Split"
+        case .storageMap: "Storage Map"
+        }
+    }
+}
+
 @MainActor
 final class TemplateStore: ObservableObject {
     static let minimumZoom = 0.25
@@ -280,6 +295,8 @@ final class TemplateStore: ObservableObject {
         mutation(&document.screens[location.screen].elements[location.elementIndex])
         document.screens[location.screen].elements[location.elementIndex].frame =
             document.screens[location.screen].elements[location.elementIndex].frame.clamped()
+        document.screens[location.screen].elements[location.elementIndex].crop =
+            document.screens[location.screen].elements[location.elementIndex].crop.clamped()
         status = label
     }
 
@@ -307,6 +324,143 @@ final class TemplateStore: ObservableObject {
         document.screens[screen].elements.append(element)
         selectedElementID = element.id
         status = "Added \(kind.title)"
+    }
+
+    // ------------------------=
+    // FUNC: chooseAndAddImage
+    // DESC: Selects a PNG or bitmap and immediately adds it as an editable canvas layer.
+    // ------------------=
+    func chooseAndAddImage() {
+        chooseImage(replacingSelected: false)
+    }
+
+    // ------------------------=
+    // FUNC: chooseReplacementImage
+    // DESC: Selects a PNG or bitmap to replace the active editable image layer.
+    // ------------------=
+    func chooseReplacementImage() {
+        chooseImage(replacingSelected: true)
+    }
+
+    // ------------------------=
+    // FUNC: importImageAsset
+    // DESC: Copies a validated PNG or bitmap into boot assets and creates or updates its canvas layer.
+    // ------------------=
+    @discardableResult
+    func importImageAsset(from source: URL, replacingSelected: Bool = false) throws -> UUID {
+        guard ["png", "bmp"].contains(source.pathExtension.lowercased()),
+              let image = NSImage(contentsOf: source), image.size.width > 0, image.size.height > 0
+        else {
+            throw TemplateValidationIssue.invalidDocument("Choose a valid PNG or BMP image")
+        }
+        guard let screen = selectedScreenIndex else {
+            throw TemplateValidationIssue.invalidDocument("Select an installation screen first")
+        }
+        let root = projectRoot ?? chooseProjectRoot()
+        guard let root else { throw TemplateValidationIssue.invalidDocument("An InfinityOS project is required") }
+        let directory = root.appending(path: "assets/boot/installer-assets", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = uniqueAssetDestination(for: source, in: directory)
+        if source.standardizedFileURL != destination.standardizedFileURL {
+            try FileManager.default.copyItem(at: source, to: destination)
+        }
+        let relativePath = "installer-assets/" + destination.lastPathComponent
+        recordUndo()
+        if replacingSelected, let location = selectedLocation(), location.element.kind == .image,
+           !location.element.locked
+        {
+            document.screens[location.screen].elements[location.elementIndex].imageAsset = relativePath
+            document.screens[location.screen].elements[location.elementIndex].crop = .none
+            status = "Image replaced"
+            projectRoot = root
+            return location.element.id
+        }
+        let area = editableContentFrame(in: screen)
+        let aspect = image.size.width / image.size.height
+        var width = min(460, max(160, area.width - 40))
+        var height = Int((CGFloat(width) / aspect).rounded())
+        if height > area.height - 40 {
+            height = max(100, area.height - 40)
+            width = Int((CGFloat(height) * aspect).rounded())
+        }
+        let element = StudioElement.make(
+            name: destination.deletingPathExtension().lastPathComponent,
+            kind: .image,
+            role: .image,
+            frame: CanvasRect(
+                x: area.x + max(0, (area.width - width) / 2),
+                y: area.y + max(0, (area.height - height) / 2),
+                width: width,
+                height: height
+            ).clamped(),
+            imageAsset: relativePath,
+            zIndex: nextZIndex(in: screen)
+        )
+        document.screens[screen].elements.append(element)
+        selectedElementID = element.id
+        inlineEditorElementID = element.id
+        projectRoot = root
+        status = "Image added to canvas"
+        return element.id
+    }
+
+    // ------------------------=
+    // FUNC: applyConsoleLayout
+    // DESC: Inserts a polished disk-oriented arrangement wholly inside the editable console content area.
+    // ------------------=
+    func applyConsoleLayout(_ preset: ConsoleLayoutPreset) {
+        guard let screen = selectedScreenIndex else { return }
+        let area = editableContentFrame(in: screen)
+        recordUndo()
+        document.screens[screen].elements.removeAll { $0.name.hasPrefix("Preset • ") }
+        let base = nextZIndex(in: screen)
+        let gap = 14
+        let top = area.y + 92
+        let height = max(80, area.height - 108)
+        var additions: [StudioElement] = []
+        switch preset {
+        case .diskCards:
+            let cardWidth = max(80, (area.width - gap * 4) / 3)
+            for index in 0..<3 {
+                let x = area.x + gap + index * (cardWidth + gap)
+                additions.append(.make(
+                    name: "Preset • Disk Card \(index + 1)", kind: .panel,
+                    frame: CanvasRect(x: x, y: top, width: cardWidth, height: height), zIndex: base + index
+                ))
+                additions.append(.make(
+                    name: "Preset • Disk Label \(index + 1)", kind: .text, role: .body,
+                    frame: CanvasRect(x: x + 18, y: top + 20, width: cardWidth - 36, height: 58),
+                    text: index == 0 ? "SYSTEM DISK\nReady to inspect" : "AVAILABLE DEVICE\nSelect to review",
+                    zIndex: base + 3 + index
+                ))
+            }
+        case .diskSplit:
+            let leftWidth = max(180, (area.width - gap * 3) * 2 / 5)
+            additions.append(.make(
+                name: "Preset • Device Details", kind: .panel,
+                frame: CanvasRect(x: area.x + gap, y: top, width: leftWidth, height: height), zIndex: base
+            ))
+            additions.append(.make(
+                name: "Preset • Device Summary", kind: .text, role: .body,
+                frame: CanvasRect(x: area.x + gap * 2, y: top + 22, width: leftWidth - gap * 2, height: height - 44),
+                text: "DEVICE\nConnection\nCapacity\nCurrent contents", zIndex: base + 2
+            ))
+            additions.append(.make(
+                name: "Preset • Discovery Visual", kind: .image, role: .image,
+                frame: CanvasRect(x: area.x + leftWidth + gap * 2, y: top, width: area.width - leftWidth - gap * 3, height: height),
+                imageAsset: "infinity-disk-discovery-vision-v1.png", zIndex: base + 1
+            ))
+        case .storageMap:
+            additions.append(.make(
+                name: "Preset • Storage Map", kind: .image, role: .image,
+                frame: CanvasRect(x: area.x + gap, y: top, width: area.width - gap * 2, height: height),
+                imageAsset: "infinity-installer-mesh-diagram-v1.png", zIndex: base
+            ))
+        }
+        document.screens[screen].elements.append(contentsOf: additions)
+        selectedElementID = additions.last?.id
+        inlineEditorElementID = nil
+        status = "\(preset.title) layout inserted"
     }
 
     // ------------------------=
@@ -586,6 +740,65 @@ final class TemplateStore: ObservableObject {
         selectedElementID = nil
         inlineEditorElementID = nil
         status = "Screen reset"
+    }
+
+    // ------------------------=
+    // FUNC: chooseImage
+    // DESC: Presents the native file picker and routes a selected PNG or bitmap into the project.
+    // ------------------=
+    private func chooseImage(replacingSelected: Bool) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = ["png", "bmp"].compactMap {
+            UTType(filenameExtension: $0, conformingTo: .image)
+        }
+        panel.allowsMultipleSelection = false
+        panel.prompt = replacingSelected ? "Replace Image" : "Add to Canvas"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            _ = try importImageAsset(from: url, replacingSelected: replacingSelected)
+        } catch {
+            validationIssues = [String(describing: error)]
+            status = "Image import failed"
+        }
+    }
+
+    // ------------------------=
+    // FUNC: editableContentFrame
+    // DESC: Resolves a safe preset and image placement area inside the selected console.
+    // ------------------=
+    private func editableContentFrame(in screen: Int) -> CanvasRect {
+        if let content = document.screens[screen].elements.first(where: { $0.role == .content }) {
+            return content.frame
+        }
+        if let console = document.screens[screen].elements.first(where: { $0.role == .console }) {
+            return CanvasRect(
+                x: console.frame.x + 18,
+                y: console.frame.y + 70,
+                width: max(20, console.frame.width - 36),
+                height: max(20, console.frame.height - 190)
+            ).clamped()
+        }
+        return CanvasRect(x: 40, y: 390, width: 920, height: 410)
+    }
+
+    // ------------------------=
+    // FUNC: uniqueAssetDestination
+    // DESC: Creates a safe non-destructive repository destination for one imported image.
+    // ------------------=
+    private func uniqueAssetDestination(for source: URL, in directory: URL) -> URL {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+        let cleaned = source.lastPathComponent.unicodeScalars.map { allowed.contains($0) ? Character(String($0)) : "-" }
+        let filename = String(cleaned).isEmpty ? "installer-image.\(source.pathExtension.lowercased())" : String(cleaned)
+        var destination = directory.appending(path: filename)
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: destination.path),
+              destination.standardizedFileURL != source.standardizedFileURL
+        {
+            let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
+            destination = directory.appending(path: "\(stem)-\(suffix).\(source.pathExtension.lowercased())")
+            suffix += 1
+        }
+        return destination
     }
 
     // ------------------------=

@@ -37,6 +37,7 @@ fn skip_element(data: &[u8], offset: &mut usize) -> (u8, usize) {
     *offset += text;
     let image = data[*offset] as usize;
     *offset += 1 + image;
+    *offset += 4;
     (role, kind_offset)
 }
 

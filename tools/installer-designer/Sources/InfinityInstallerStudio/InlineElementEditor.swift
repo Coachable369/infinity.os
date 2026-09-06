@@ -33,7 +33,26 @@ struct InlineElementEditor: View {
                         .padding(5)
                         .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
                 } else if element.kind == .image {
-                    TextField("Image asset", text: stringBinding(\.imageAsset))
+                    HStack {
+                        Text(element.imageAsset).font(.caption.monospaced()).lineLimit(1)
+                        Spacer()
+                        Button("Replace…", action: store.chooseReplacementImage)
+                    }
+                    Grid(alignment: .leading, horizontalSpacing: 7, verticalSpacing: 6) {
+                        GridRow {
+                            Text("Crop L")
+                            TextField("Left", value: cropBinding(\.left), format: .number)
+                            Text("T")
+                            TextField("Top", value: cropBinding(\.top), format: .number)
+                        }
+                        GridRow {
+                            Text("Crop R")
+                            TextField("Right", value: cropBinding(\.right), format: .number)
+                            Text("B")
+                            TextField("Bottom", value: cropBinding(\.bottom), format: .number)
+                        }
+                    }
+                    .textFieldStyle(.roundedBorder)
                 }
 
                 Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 7) {
@@ -160,6 +179,19 @@ struct InlineElementEditor: View {
             get: { (store.selectedElement?[keyPath: keyPath] ?? fallback).color },
             set: { value in
                 store.updateSelected("Inline appearance") { $0[keyPath: keyPath] = StudioColor(value) }
+            }
+        )
+    }
+
+    // ------------------------=
+    // FUNC: cropBinding
+    // DESC: Creates a live percentage binding to one normalized image crop edge.
+    // ------------------=
+    private func cropBinding(_ keyPath: WritableKeyPath<ImageCrop, Int>) -> Binding<Int> {
+        Binding(
+            get: { store.selectedElement?.crop[keyPath: keyPath] ?? 0 },
+            set: { value in
+                store.updateSelected("Inline crop") { $0.crop[keyPath: keyPath] = value }
             }
         )
     }

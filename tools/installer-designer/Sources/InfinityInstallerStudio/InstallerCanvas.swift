@@ -216,9 +216,10 @@ private struct CanvasElementView: View {
     @ViewBuilder
     private var imagePreview: some View {
         if let image = resolveImage() {
-            Image(nsImage: image)
+            Image(nsImage: croppedImage(image) ?? image)
                 .resizable()
-                .aspectRatio(contentMode: .fit)
+                .aspectRatio(contentMode: .fill)
+                .clipped()
         } else {
             RoundedRectangle(cornerRadius: 8 * canvasScale.height)
                 .fill(Color.cyan.opacity(0.08))
@@ -313,6 +314,27 @@ private struct CanvasElementView: View {
             }
         }
         return Bundle.module.url(forResource: element.imageAsset, withExtension: nil).flatMap(NSImage.init(contentsOf:))
+    }
+
+    // ------------------------=
+    // FUNC: croppedImage
+    // DESC: Produces a preview bitmap from the element's persisted normalized crop rectangle.
+    // ------------------=
+    private func croppedImage(_ image: NSImage) -> NSImage? {
+        let crop = element.crop.clamped()
+        guard crop != .none,
+              let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return image }
+        let width = CGFloat(source.width)
+        let height = CGFloat(source.height)
+        let rect = CGRect(
+            x: width * CGFloat(crop.left) / 100,
+            y: height * CGFloat(crop.bottom) / 100,
+            width: width * CGFloat(100 - crop.left - crop.right) / 100,
+            height: height * CGFloat(100 - crop.top - crop.bottom) / 100
+        ).integral
+        guard rect.width >= 1, rect.height >= 1, let result = source.cropping(to: rect) else { return image }
+        return NSImage(cgImage: result, size: NSSize(width: rect.width, height: rect.height))
     }
 }
 

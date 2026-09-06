@@ -55,11 +55,19 @@ private struct StudioToolbar: View {
             Menu {
                 Button("Panel") { store.addElement(kind: .panel) }
                 Button("Text") { store.addElement(kind: .text) }
-                Button("Image") { store.addElement(kind: .image) }
+                Button("Image…") { store.chooseAndAddImage() }
                 Button("Console") { store.addElement(kind: .console) }
             } label: {
                 Label("Add", systemImage: "plus")
             }
+            Menu {
+                ForEach(ConsoleLayoutPreset.allCases) { preset in
+                    Button(preset.title) { store.applyConsoleLayout(preset) }
+                }
+            } label: {
+                Label("Layouts", systemImage: "rectangle.3.group")
+            }
+            .help("Insert an editable layout inside the console area")
             Toggle(isOn: $store.showGrid) { Label("Grid", systemImage: "grid") }
                 .toggleStyle(.button)
             Toggle(isOn: $store.snapEnabled) { Label("Snap", systemImage: "magnet") }
