@@ -1290,6 +1290,7 @@ impl ConsoleRuntime {
         self.load_active_app_window();
         self.app_window_dragging = false;
         self.app_window_resizing = None;
+        let _ = self.checkpoint_desktop_layout();
     }
 
     // ------------------------=
@@ -1312,6 +1313,7 @@ impl ConsoleRuntime {
         self.output
             .write_line(b"Type help or describe what you want.");
         crate::output_text(b"[ui] desktop command window opened\n");
+        let _ = self.checkpoint_desktop_layout();
     }
 
     // ------------------------=
@@ -1330,6 +1332,7 @@ impl ConsoleRuntime {
         self.editor_scroll_dragging = false;
         self.editor_dialog = EditorDialog::None;
         self.reset_input();
+        let _ = self.checkpoint_desktop_layout();
     }
 
     // ------------------------=
@@ -1367,6 +1370,10 @@ impl ConsoleRuntime {
         self.app_window_width = state.width;
         self.app_window_height = state.height;
         self.app_window_maximized = state.maximized;
+        self.app_window_restore_x = state.x;
+        self.app_window_restore_y = state.y;
+        self.app_window_restore_width = state.width;
+        self.app_window_restore_height = state.height;
     }
 
     // ------------------------=
@@ -1382,6 +1389,7 @@ impl ConsoleRuntime {
         self.load_active_app_window();
         self.app_window_dragging = false;
         self.app_window_resizing = None;
+        let _ = self.checkpoint_desktop_layout();
     }
 
     // ------------------------=
@@ -1474,6 +1482,10 @@ impl ConsoleRuntime {
         self.home_window_height = layout.home.height;
         self.home_window_maximized = layout.home.maximized;
         self.home_window_visible = layout.home.visible;
+        self.home_window_restore_x = layout.home.x;
+        self.home_window_restore_y = layout.home.y;
+        self.home_window_restore_width = layout.home.width;
+        self.home_window_restore_height = layout.home.height;
         self.settings_window.x = layout.settings.x;
         self.settings_window.y = layout.settings.y;
         self.settings_window.width = layout.settings.width;
@@ -1517,6 +1529,52 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: restore_persisted_desktop_layout
+    // DESC: Restores the authenticated user's last durable cross-session desktop layout.
+    // ------------------=
+    fn restore_persisted_desktop_layout(&mut self) -> bool {
+        if self.current_user.is_zero() {
+            return false;
+        }
+        let Some(layout) = crate::runtime::with_runtime(|runtime| {
+            runtime.identity.user_desktop_layout(self.current_user)
+        })
+        .flatten()
+        else {
+            return false;
+        };
+        self.restore_desktop_layout(layout);
+        true
+    }
+
+    // ------------------------=
+    // FUNC: checkpoint_desktop_layout
+    // DESC: Updates the authenticated user's in-memory desktop record after a settled layout change.
+    // ------------------=
+    fn checkpoint_desktop_layout(&mut self) -> bool {
+        if self.current_user.is_zero() {
+            return false;
+        }
+        let layout = self.capture_desktop_layout();
+        let user = self.current_user;
+        crate::runtime::with_runtime(|runtime| {
+            runtime
+                .identity
+                .update_user_desktop_layout(user, user, layout)
+        })
+        .transpose()
+        .is_ok()
+    }
+
+    // ------------------------=
+    // FUNC: persist_desktop_layout
+    // DESC: Checkpoints and durably commits the user's complete layout at a session boundary.
+    // ------------------=
+    fn persist_desktop_layout(&mut self) -> bool {
+        self.checkpoint_desktop_layout() && crate::runtime::persist_identity_state()
+    }
+
+    // ------------------------=
     // FUNC: lock_session_preserving_desktop
     // DESC: Locks the active identity session only after retaining its complete desktop layout.
     // ------------------=
@@ -1533,6 +1591,7 @@ impl ConsoleRuntime {
         .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState))
         .is_ok();
         if locked {
+            let _ = self.persist_desktop_layout();
             self.locked_desktop_layout.save(layout);
             self.mode = ConsoleMode::Locked;
             self.session_idle.note_activity();
@@ -1932,6 +1991,7 @@ impl ConsoleRuntime {
         self.settings_timeout_dragging = false;
         self.settings_scroll_dragging = false;
         self.reset_input();
+        let _ = self.checkpoint_desktop_layout();
     }
 
     // ------------------------=
@@ -2598,6 +2658,7 @@ impl ConsoleRuntime {
                 let _ = self.lock_session_preserving_desktop(false);
             }
             (0, 7) => {
+                let _ = self.persist_desktop_layout();
                 let _ = crate::runtime::with_runtime(|runtime| {
                     runtime
                         .identity
@@ -2610,10 +2671,12 @@ impl ConsoleRuntime {
                 crate::output_text(b"[session] signed out; authentication surface ready\n");
             }
             (0, 8) => {
+                let _ = self.persist_desktop_layout();
                 crate::output_text(b"[shell] restart requested\n");
                 reboot(self.system.firmware_runtime_services);
             }
             (0, 9) => {
+                let _ = self.persist_desktop_layout();
                 crate::output_text(b"[shell] shutdown requested\n");
                 shutdown(self.system.firmware_runtime_services);
             }
@@ -3156,6 +3219,7 @@ impl ConsoleRuntime {
             self.current_user = user.id;
             self.current_session = session.id;
             self.enter_desktop();
+            let _ = self.restore_persisted_desktop_layout();
         } else {
             crate::output_text(b"[authentication] verification failed\n");
         }
@@ -4519,6 +4583,7 @@ impl ConsoleRuntime {
                 }
                 if released {
                     self.app_window_resizing = None;
+                    let _ = self.checkpoint_desktop_layout();
                 }
                 self.redraw();
                 return;
@@ -4531,6 +4596,7 @@ impl ConsoleRuntime {
                 }
                 if released {
                     self.app_window_dragging = false;
+                    let _ = self.checkpoint_desktop_layout();
                 }
                 self.redraw();
                 return;
@@ -4597,6 +4663,7 @@ impl ConsoleRuntime {
                                 self.app_window_restore_height = self.app_window_height;
                             }
                             self.app_window_maximized = !self.app_window_maximized;
+                            let _ = self.checkpoint_desktop_layout();
                         }
                         DesktopAppWindowTarget::NewDocument => {
                             self.editor_document.clear();
@@ -4711,6 +4778,7 @@ impl ConsoleRuntime {
                 }
                 if released {
                     self.home_window_resizing = None;
+                    let _ = self.checkpoint_desktop_layout();
                 }
             } else if let Some(item) = self.home_dragging_item {
                 if left_button
@@ -4746,6 +4814,7 @@ impl ConsoleRuntime {
                     self.home_dragging_item = None;
                     self.home_drag_from_desktop = false;
                     self.home_drag_moved = false;
+                    let _ = self.checkpoint_desktop_layout();
                 }
             } else if self.home_window_dragging {
                 if left_button {
@@ -4756,6 +4825,7 @@ impl ConsoleRuntime {
                 }
                 if released {
                     self.home_window_dragging = false;
+                    let _ = self.checkpoint_desktop_layout();
                 }
             } else if clicked {
                 match self.desktop_target(layout) {
@@ -4769,10 +4839,14 @@ impl ConsoleRuntime {
                             self.home_window_drag_offset_y = self.pointer_y - self.home_window_y;
                         }
                     }
-                    Some(DesktopTarget::HomeControl(0)) => self.home_window_visible = false,
+                    Some(DesktopTarget::HomeControl(0)) => {
+                        self.home_window_visible = false;
+                        let _ = self.checkpoint_desktop_layout();
+                    }
                     Some(DesktopTarget::HomeControl(2)) => {
                         self.home_window_visible = false;
                         self.home_selected_item = None;
+                        let _ = self.checkpoint_desktop_layout();
                     }
                     Some(DesktopTarget::HomeControl(1)) => {
                         if self.home_window_maximized {
@@ -4787,6 +4861,7 @@ impl ConsoleRuntime {
                             self.home_window_restore_height = self.home_window_height;
                         }
                         self.home_window_maximized = !self.home_window_maximized;
+                        let _ = self.checkpoint_desktop_layout();
                     }
                     Some(DesktopTarget::HomeToolbar(action)) => {
                         let _ = crate::runtime::with_runtime(|runtime| {
@@ -4864,7 +4939,10 @@ impl ConsoleRuntime {
                     Some(DesktopTarget::Dock(index)) => {
                         match DESKTOP_DOCK_ENTRIES.get(index).map(|entry| entry.action) {
                             Some(DockAction::Launcher) => self.open_app_launcher(),
-                            Some(DockAction::Files) => self.home_window_visible = true,
+                            Some(DockAction::Files) => {
+                                self.home_window_visible = true;
+                                let _ = self.checkpoint_desktop_layout();
+                            }
                             Some(DockAction::Settings) => self.open_settings(0),
                             Some(DockAction::About) => self.open_settings(8),
                             Some(DockAction::AiVoice) => self.open_settings(3),
@@ -5042,6 +5120,7 @@ impl ConsoleRuntime {
                 }
                 if released {
                     self.settings_window_resizing = None;
+                    let _ = self.checkpoint_desktop_layout();
                 }
                 self.redraw();
                 return;
@@ -5054,6 +5133,7 @@ impl ConsoleRuntime {
                 }
                 if released {
                     self.settings_window_dragging = false;
+                    let _ = self.checkpoint_desktop_layout();
                 }
                 self.redraw();
                 return;
@@ -5199,9 +5279,13 @@ impl ConsoleRuntime {
                     {
                         self.settings_window_resizing = Some(corner)
                     }
-                    SettingsTarget::WindowControl(0 | 2) if clicked => self.enter_desktop(),
+                    SettingsTarget::WindowControl(0 | 2) if clicked => {
+                        self.enter_desktop();
+                        let _ = self.checkpoint_desktop_layout();
+                    }
                     SettingsTarget::WindowControl(1) if clicked => {
-                        self.settings_window.maximized = !self.settings_window.maximized
+                        self.settings_window.maximized = !self.settings_window.maximized;
+                        let _ = self.checkpoint_desktop_layout();
                     }
                     SettingsTarget::Section(_)
                     | SettingsTarget::ContentRow(_)
@@ -6456,6 +6540,9 @@ impl ConsoleRuntime {
                         .flatten()
                     })
                     .ok_or(IdentityError::NotFound)?;
+                if session.id == self.current_session {
+                    let _ = self.persist_desktop_layout();
+                }
                 crate::runtime::with_runtime(|runtime| {
                     runtime.identity.end_session(session.id, actor)
                 })

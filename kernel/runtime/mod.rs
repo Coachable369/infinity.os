@@ -1725,12 +1725,15 @@ pub fn storage_initialized() {
         #[cfg(target_os = "none")]
         {
             let mut persisted = [0u8; identity::IDENTITY_STATE_BYTES];
-            if crate::storage::identity_state_load(&mut persisted)
-                .ok()
-                .filter(|length| *length == identity::IDENTITY_STATE_BYTES)
-                .is_some()
-            {
-                match identity::IdentitySystem::decode(&persisted) {
+            if let Some(length) = crate::storage::identity_state_load(&mut persisted).ok().filter(
+                |length| {
+                    matches!(
+                        *length,
+                        identity::LEGACY_IDENTITY_STATE_BYTES | identity::IDENTITY_STATE_BYTES
+                    )
+                },
+            ) {
+                match identity::IdentitySystem::decode(&persisted[..length]) {
                     Ok(state) => runtime.identity = state,
                     Err(_) => crate::output_text(
                         b"[identity] durable state invalid; onboarding recovery required\n",

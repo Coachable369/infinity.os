@@ -1,16 +1,22 @@
 //! Native identity, authentication, session, preference, and first-boot state.
 //! Persistent data is encoded explicitly; Rust layout is never a disk ABI.
 
+use crate::ui::session_state::{
+    DesktopSessionLayout, PersistentDesktopLayoutStore, DESKTOP_LAYOUT_STATE_BYTES,
+};
+
 pub const MAX_USERS: usize = 8;
 pub const MAX_CREDENTIALS: usize = 12;
 pub const MAX_SESSIONS: usize = 8;
-pub const IDENTITY_STATE_BYTES: usize = 4096;
-pub const IDENTITY_FORMAT_VERSION: u16 = 1;
+pub const LEGACY_IDENTITY_STATE_BYTES: usize = 4096;
+pub const IDENTITY_STATE_BYTES: usize = LEGACY_IDENTITY_STATE_BYTES + DESKTOP_LAYOUT_STATE_BYTES;
+pub const IDENTITY_FORMAT_VERSION: u16 = 2;
 pub const PASSWORD_ITERATIONS: u32 = 4096;
 pub const USER_ICON_THEME_OFFSET: usize = 4056;
 pub const USER_ACCENT_OFFSET: usize = 4064;
 pub const SYSTEM_PRIMARY_OFFSET: usize = 4088;
 pub const SYSTEM_BACKGROUND_EFFECTS_OFFSET: usize = 4091;
+pub const USER_DESKTOP_LAYOUTS_OFFSET: usize = 4092;
 pub const DEFAULT_ACCENT_RGB: u32 = 0x4da3ff;
 pub const DEFAULT_PRIMARY_RGB: u32 = 0x0d2238;
 pub const DEFAULT_BACKGROUND_OPACITY: u8 = 88;
@@ -290,6 +296,7 @@ pub struct IdentitySystem {
     primary_rgb: u32,
     background_opacity: u8,
     background_blur: u8,
+    desktop_layouts: PersistentDesktopLayoutStore,
 }
 
 impl IdentitySystem {
@@ -313,6 +320,7 @@ impl IdentitySystem {
             primary_rgb: DEFAULT_PRIMARY_RGB,
             background_opacity: DEFAULT_BACKGROUND_OPACITY,
             background_blur: DEFAULT_BACKGROUND_BLUR,
+            desktop_layouts: PersistentDesktopLayoutStore::new(),
         }
     }
 
@@ -841,6 +849,37 @@ impl IdentitySystem {
     }
 
     // ------------------------=
+    // FUNC: user_desktop_layout
+    // DESC: Reads one user's last durable desktop window and object placement state.
+    // ------------------=
+    pub fn user_desktop_layout(&self, user: StableId) -> Option<DesktopSessionLayout> {
+        self.desktop_layouts.layout(user.0)
+    }
+
+    // ------------------------=
+    // FUNC: update_user_desktop_layout
+    // DESC: Updates desktop placement state only for the authenticated owning user.
+    // ------------------=
+    pub fn update_user_desktop_layout(
+        &mut self,
+        actor: StableId,
+        user: StableId,
+        layout: DesktopSessionLayout,
+    ) -> Result<(), IdentityError> {
+        if actor != user {
+            return Err(IdentityError::AccessDenied);
+        }
+        if !self.users.iter().flatten().any(|candidate| candidate.id == user) {
+            return Err(IdentityError::NotFound);
+        }
+        if !self.desktop_layouts.save(user.0, layout) {
+            return Err(IdentityError::Full);
+        }
+        self.commit();
+        Ok(())
+    }
+
+    // ------------------------=
     // FUNC: update_user_theme
     // DESC: Updates the user-scoped appearance preference without changing system policy.
     // ------------------=
@@ -1203,6 +1242,9 @@ impl IdentitySystem {
         out[SYSTEM_PRIMARY_OFFSET + 2] = (self.primary_rgb & 0xff) as u8;
         out[SYSTEM_BACKGROUND_EFFECTS_OFFSET] =
             encode_background_effects(self.background_opacity, self.background_blur);
+        out[USER_DESKTOP_LAYOUTS_OFFSET
+            ..USER_DESKTOP_LAYOUTS_OFFSET + DESKTOP_LAYOUT_STATE_BYTES]
+            .copy_from_slice(&self.desktop_layouts.encode());
         let checksum = checksum32(&out[..IDENTITY_STATE_BYTES - 4]);
         put32(&mut out, IDENTITY_STATE_BYTES - 4, checksum);
         out
@@ -1213,12 +1255,16 @@ impl IdentitySystem {
     // DESC: Validates and restores durable identity state without restoring transient sessions.
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Result<Self, IdentityError> {
-        if bytes.len() != IDENTITY_STATE_BYTES
-            || &bytes[..8] != b"INFIDN1\0"
-            || get16(bytes, 8) != IDENTITY_FORMAT_VERSION
-            || get16(bytes, 10) as usize != IDENTITY_STATE_BYTES
-            || get32(bytes, IDENTITY_STATE_BYTES - 4)
-                != checksum32(&bytes[..IDENTITY_STATE_BYTES - 4])
+        if !matches!(bytes.len(), LEGACY_IDENTITY_STATE_BYTES | IDENTITY_STATE_BYTES) {
+            return Err(IdentityError::CorruptState);
+        }
+        let version = get16(bytes, 8);
+        let valid_shape = (version == 1 && bytes.len() == LEGACY_IDENTITY_STATE_BYTES)
+            || (version == IDENTITY_FORMAT_VERSION && bytes.len() == IDENTITY_STATE_BYTES);
+        if &bytes[..8] != b"INFIDN1\0"
+            || !valid_shape
+            || get16(bytes, 10) as usize != bytes.len()
+            || get32(bytes, bytes.len() - 4) != checksum32(&bytes[..bytes.len() - 4])
         {
             return Err(IdentityError::CorruptState);
         }
@@ -1289,6 +1335,13 @@ impl IdentitySystem {
             if bytes[offset] != 0 {
                 state.credentials[index] = Some(read_credential(bytes, offset)?);
             }
+        }
+        if version >= 2 {
+            state.desktop_layouts = PersistentDesktopLayoutStore::decode(
+                &bytes[USER_DESKTOP_LAYOUTS_OFFSET
+                    ..USER_DESKTOP_LAYOUTS_OFFSET + DESKTOP_LAYOUT_STATE_BYTES],
+            )
+            .ok_or(IdentityError::CorruptState)?;
         }
         Ok(state)
     }

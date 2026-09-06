@@ -14,3 +14,9 @@ Sessions are intentionally transient and are not restored after reboot. Native
 session IDs are not PIDs, cookies, or Unix login records. Ordinary sessions get
 only self/profile/settings/AI/voice/display authority. Cross-user mutation
 requires separately granted identity-management authority.
+
+The transient Session itself remains distinct from the user's durable desktop
+layout. After authentication, the shell restores that user's last committed
+window positions, sizes, visibility, maximized state, focus, Settings view, and
+desktop-object positions from `/system/identity/state`. Layouts never
+cross user identities.

@@ -11,3 +11,5 @@ rustc --edition=2021 -C opt-level=2 tools/window-session-state-test.rs -o build/
 build/behavior-tests/window-session-state-test
 rustc --edition=2021 -C opt-level=2 tools/file-navigator-layout-test.rs -o build/behavior-tests/file-navigator-layout-test
 build/behavior-tests/file-navigator-layout-test
+rustc --edition=2021 -C opt-level=2 tools/desktop-layout-identity-test.rs -o build/behavior-tests/desktop-layout-identity-test
+build/behavior-tests/desktop-layout-identity-test

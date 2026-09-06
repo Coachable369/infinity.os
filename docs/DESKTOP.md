@@ -27,6 +27,11 @@ the count; authoritative window state remains queryable.
 Window and surface state live in the runtime, not in the rendering backend.
 Recreating the compositor can therefore recompose retained state. An application
 context crash removes only its windows and surfaces. Unrelated windows survive.
+Settled Home, Settings, Text Editor, and Command window geometry, size,
+visibility, maximized state, focus, and desktop-object positions are also saved
+per user in the versioned `/system/identity/state` object. A later authenticated session
+restores that durable layout; lock/unlock continues to use the exact in-memory
+snapshot and also checkpoints it durably.
 
 ## Status
 
@@ -34,6 +39,8 @@ context crash removes only its windows and surfaces. Unrelated windows survive.
   typed lifecycle queue, and crash cleanup: **TESTED**.
 - Capability-validated surface create/publish and window create/move runtime
   entry points: **TESTED**.
+- Per-user desktop layout encoding, integrity validation, and cross-session
+  reconstruction: **TESTED**.
 - Live Home window bounded movement path: **IMPLEMENTED, HOST-BEHAVIOR-TESTED,
   BUT NOT ACCEPTED IN DIRECT VIRTUALBOX AUTOMATION**.
 - General application-facing window SDK: **PLANNED**.
