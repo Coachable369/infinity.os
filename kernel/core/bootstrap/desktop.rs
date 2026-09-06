@@ -3895,7 +3895,7 @@ impl super::DisplayDevice {
             )
         });
         if focus == 6 {
-            self.render_network_settings_dashboard(settings_window, scale, connectivity);
+            self.render_network_settings_dashboard(settings_window, scale, connectivity, input);
             return;
         }
         let rows: [(&[u8], &[u8]); 8] = match focus.min(8) {
@@ -4250,25 +4250,55 @@ impl super::DisplayDevice {
         settings_window: crate::ui::system_layout::SettingsWindowState,
         scale: usize,
         connectivity: &[u8],
+        input: &[u8],
     ) {
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
         let geometry = layout.network_settings_geometry(settings_window);
         let snapshot = crate::runtime::with_runtime(|runtime| {
+            let static_address = (0..runtime.network.interfaces.address_count())
+                .filter_map(|index| runtime.network.interfaces.address_nth(index))
+                .find(|value| {
+                    value.interface_id == 2
+                        && value.source == crate::runtime::network::types::AddressSource::Static
+                })
+                .copied();
+            let default_route = (0..runtime.network.interfaces.route_count())
+                .filter_map(|index| runtime.network.interfaces.route_nth(index))
+                .find(|value| value.interface_id == 2 && value.prefix_length == 0)
+                .copied();
             (
                 runtime.network.status(),
-                runtime.network.topology(),
                 runtime.network.diagnostics(),
                 runtime.network.setup_snapshot(),
+                runtime.network.interfaces.interface(2).copied(),
+                static_address,
+                default_route,
+                runtime.network.resolver.enabled(),
+                runtime.network.resolver.server(0),
+                runtime.network.resolver.server(1),
+                runtime.network.policy.default_action(),
             )
         });
-        let Some((status, topology, diagnostics, setup)) = snapshot else {
+        let Some((
+            status,
+            diagnostics,
+            setup,
+            interface,
+            static_address,
+            default_route,
+            resolver_enabled,
+            resolver_primary,
+            resolver_secondary,
+            default_policy,
+        )) = snapshot
+        else {
             return;
         };
         let (outline_r, outline_g, outline_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         let (selection_r, selection_g, selection_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
-        let cards = [geometry.overview, geometry.topology, geometry.telemetry];
+        let cards = [geometry.summary, geometry.main, geometry.sidebar];
         for card in cards {
             self.fill_rounded_rect_alpha(
                 card.x.max(0) as usize,
@@ -4293,19 +4323,64 @@ impl super::DisplayDevice {
             );
         }
 
-        let overview_left = geometry.overview.x.max(0) as usize;
-        let overview_top = geometry.overview.y.max(0) as usize;
+        let page = settings_window.expanded_row.unwrap_or(0).min(6);
+        let page_labels: [&[u8]; 7] = [
+            b"OVERVIEW",
+            b"INTERFACES",
+            b"IPv4",
+            b"DNS",
+            b"ROUTES",
+            b"PROFILES",
+            b"POLICY",
+        ];
+        for (index, tab) in geometry.tabs.iter().enumerate() {
+            let active = page == index;
+            self.fill_rounded_rect_alpha(
+                tab.x.max(0) as usize,
+                tab.y.max(0) as usize,
+                tab.width as usize,
+                tab.height as usize,
+                7 * scale,
+                if active { selection_r } else { 5 },
+                if active { selection_g } else { 20 },
+                if active { selection_b } else { 34 },
+                226,
+            );
+            self.outline_rounded_rect(
+                tab.x.max(0) as usize,
+                tab.y.max(0) as usize,
+                tab.width as usize,
+                tab.height as usize,
+                7 * scale,
+                if active { outline_r } else { outline_r / 2 },
+                if active { outline_g } else { outline_g / 2 },
+                if active { outline_b } else { outline_b / 2 },
+            );
+            self.ui_text_centered(
+                tab.x.max(0) as usize,
+                tab.width as usize,
+                tab.y.max(0) as usize + 9 * scale,
+                page_labels[index],
+                if active { 242 } else { 166 },
+                if active { 248 } else { 190 },
+                if active { 252 } else { 207 },
+                1,
+            );
+        }
+
+        let overview_left = geometry.summary.x.max(0) as usize;
+        let overview_top = geometry.summary.y.max(0) as usize;
         self.authentication_icon(
             overview_left + 36 * scale,
-            overview_top + geometry.overview.height as usize / 2,
+            overview_top + geometry.summary.height as usize / 2,
             14,
             44 * scale,
             true,
         );
         self.ui_text_strong(
             overview_left + 74 * scale,
-            overview_top + 19 * scale,
-            b"NETWORK STATUS",
+            overview_top + 14 * scale,
+            b"CONNECTIVITY",
             outline_r,
             outline_g,
             outline_b,
@@ -4313,25 +4388,12 @@ impl super::DisplayDevice {
         );
         self.ui_text_strong(
             overview_left + 74 * scale,
-            overview_top + 49 * scale,
+            overview_top + 39 * scale,
             connectivity,
             239,
             246,
             251,
             2,
-        );
-        self.ui_text(
-            overview_left + 74 * scale,
-            overview_top + 82 * scale,
-            if status.resolver_enabled {
-                b"Resolver ready - policy enforced"
-            } else {
-                b"Resolver offline - local system remains available"
-            },
-            150,
-            177,
-            198,
-            1,
         );
         let profile_name: &[u8] = match status.active_profile {
             1 => b"STANDARD",
@@ -4342,10 +4404,10 @@ impl super::DisplayDevice {
             _ => b"CUSTOM",
         };
         let pill_width = 142 * scale;
-        let pill_left = overview_left + geometry.overview.width as usize - pill_width - 18 * scale;
+        let pill_left = overview_left + geometry.summary.width as usize - pill_width - 18 * scale;
         self.fill_rounded_rect_alpha(
             pill_left,
-            overview_top + 28 * scale,
+            overview_top + 17 * scale,
             pill_width,
             48 * scale,
             24 * scale,
@@ -4356,8 +4418,8 @@ impl super::DisplayDevice {
         );
         self.ui_text_centered(
             pill_left,
-            overview_top + 44 * scale,
             pill_width,
+            overview_top + 33 * scale,
             profile_name,
             242,
             249,
@@ -4365,53 +4427,98 @@ impl super::DisplayDevice {
             1,
         );
 
-        let topology_left = geometry.topology.x.max(0) as usize;
-        let topology_top = geometry.topology.y.max(0) as usize;
-        self.ui_text_strong(
-            topology_left + 17 * scale,
-            topology_top + 15 * scale,
-            b"CONNECTION MODE",
-            outline_r,
-            outline_g,
-            outline_b,
-            1,
-        );
-        self.ui_text(
-            topology_left + 17 * scale,
-            topology_top + 39 * scale,
-            b"Select a mode to apply it immediately",
-            132,
-            158,
-            179,
-            1,
-        );
-        let modes = [
-            (
-                b"AUTO".as_slice(),
-                crate::runtime::network::types::NetworkSetupMode::Automatic,
-                setup.wired_available || setup.wireless_available,
-            ),
-            (
-                b"WIRED".as_slice(),
-                crate::runtime::network::types::NetworkSetupMode::Wired,
-                setup.wired_available,
-            ),
-            (
-                b"WI-FI".as_slice(),
-                crate::runtime::network::types::NetworkSetupMode::Wireless,
-                setup.wireless_available,
-            ),
-            (
-                b"OFFLINE".as_slice(),
-                crate::runtime::network::types::NetworkSetupMode::Offline,
-                true,
-            ),
+        let mode_labels: [&[u8]; 4] = [b"AUTOMATIC", b"WIRED", b"WI-FI", b"OFFLINE"];
+        let profile_labels: [&[u8]; 5] = [
+            b"STANDARD",
+            b"RESTRICTED",
+            b"OFFLINE",
+            b"OPERATIONS",
+            b"DEVELOPER",
         ];
-        for (index, card) in geometry.mode_cards.iter().enumerate() {
+        let control_labels: [&[u8]; 6] = match page {
+            0 => [
+                mode_labels[0],
+                mode_labels[1],
+                mode_labels[2],
+                mode_labels[3],
+                b"REFRESH STATE",
+                b"OPEN DIAGNOSTICS",
+            ],
+            1 => [
+                b"PRIMARY ADAPTER",
+                b"ENABLED",
+                b"LINK STATE",
+                b"HARDWARE ADDRESS",
+                b"MAXIMUM FRAME",
+                b"REFRESH DEVICES",
+            ],
+            2 => [
+                b"ADDRESSING MODE",
+                b"IPv4 ADDRESS",
+                b"PREFIX LENGTH",
+                b"DEFAULT GATEWAY",
+                b"ROUTE METRIC",
+                b"APPLY STATIC CONFIG",
+            ],
+            3 => [
+                b"RESOLVER",
+                b"PRIMARY DNS",
+                b"SECONDARY DNS",
+                b"CLEAR DNS SERVERS",
+                b"CACHE ENTRIES",
+                b"APPLY DNS CONFIG",
+            ],
+            4 => [
+                b"DEFAULT ROUTE",
+                b"NEXT HOP",
+                b"INTERFACE",
+                b"METRIC",
+                b"ROUTE SOURCE",
+                b"REMOVE DEFAULT ROUTE",
+            ],
+            5 => [
+                profile_labels[0],
+                profile_labels[1],
+                profile_labels[2],
+                profile_labels[3],
+                profile_labels[4],
+                b"RESTORE STANDARD",
+            ],
+            _ => [
+                b"UNMATCHED OUTBOUND",
+                b"LOCAL DISCOVERY",
+                b"INBOUND LISTENERS",
+                b"AUDIT DECISIONS",
+                b"INSTALLED RULES",
+                b"RESTORE SAFE POLICY",
+            ],
+        };
+        let (address_text, address_length) =
+            Self::network_address_text(static_address.map(|value| value.address));
+        let (gateway_text, gateway_length) =
+            Self::network_address_text(default_route.and_then(|value| value.next_hop));
+        let (primary_text, primary_length) = Self::network_address_text(resolver_primary);
+        let (secondary_text, secondary_length) = Self::network_address_text(resolver_secondary);
+        let (prefix_text, prefix_length) = Self::network_metric_text(
+            static_address
+                .map(|value| value.prefix_length as u64)
+                .unwrap_or(24),
+        );
+        let (metric_text, metric_length) = Self::network_metric_text(
+            default_route
+                .map(|value| value.metric as u64)
+                .unwrap_or(100),
+        );
+        let (mtu_text, mtu_length) = Self::network_metric_text(
+            interface
+                .map(|value| value.device.maximum_frame_size as u64)
+                .unwrap_or(0),
+        );
+        let active_profile = status.active_profile.saturating_sub(1) as usize;
+        for (index, card) in geometry.controls.iter().enumerate() {
             let left = card.x.max(0) as usize;
             let top = card.y.max(0) as usize;
-            let active = setup.selected == modes[index].1;
-            let available = modes[index].2;
+            let active = settings_window.scroll_offset.min(5) == index;
             self.fill_rounded_rect_alpha(
                 left,
                 top,
@@ -4421,7 +4528,7 @@ impl super::DisplayDevice {
                 if active { selection_r } else { 6 },
                 if active { selection_g } else { 24 },
                 if active { selection_b } else { 39 },
-                if available { 230 } else { 150 },
+                230,
             );
             self.outline_rounded_rect(
                 left,
@@ -4433,27 +4540,151 @@ impl super::DisplayDevice {
                 if active { outline_g } else { outline_g / 2 },
                 if active { outline_b } else { outline_b / 2 },
             );
-            self.ui_text_centered(
-                left,
-                top + 12 * scale,
-                card.width as usize,
-                modes[index].0,
-                if available { 231 } else { 112 },
-                if available { 241 } else { 127 },
-                if available { 248 } else { 139 },
+            self.ui_text_strong(
+                left + 15 * scale,
+                top + card.height as usize / 2 - UI_FONT_CELL_HEIGHT / 2,
+                control_labels[index],
+                if active { 240 } else { 190 },
+                if active { 247 } else { 211 },
+                if active { 251 } else { 224 },
                 1,
             );
-            self.ui_text_centered(
-                left,
-                top + 35 * scale,
-                card.width as usize,
-                if active {
-                    b"ACTIVE".as_slice()
-                } else if available {
-                    b"SELECT".as_slice()
-                } else {
-                    b"UNAVAILABLE".as_slice()
+            let value: &[u8] = match page {
+                0 if index < 4 => {
+                    let selected = index
+                        == match setup.selected {
+                            crate::runtime::network::types::NetworkSetupMode::Automatic => 0,
+                            crate::runtime::network::types::NetworkSetupMode::Wired => 1,
+                            crate::runtime::network::types::NetworkSetupMode::Wireless => 2,
+                            crate::runtime::network::types::NetworkSetupMode::Offline => 3,
+                        };
+                    if selected {
+                        b"ACTIVE"
+                    } else {
+                        b"SELECT"
+                    }
+                }
+                0 => b"RUN",
+                1 => match index {
+                    0 => {
+                        if interface.is_some() {
+                            b"network0"
+                        } else {
+                            b"Not detected"
+                        }
+                    }
+                    1 => {
+                        if interface.map(|value| value.enabled).unwrap_or(false) {
+                            b"ON"
+                        } else {
+                            b"OFF"
+                        }
+                    }
+                    2 => match interface.map(|value| value.device.link_state) {
+                        Some(crate::runtime::network::types::LinkState::Up) => b"UP",
+                        Some(crate::runtime::network::types::LinkState::Down) => b"DOWN",
+                        _ => b"UNKNOWN",
+                    },
+                    3 => {
+                        if interface
+                            .and_then(|value| value.device.hardware_address)
+                            .is_some()
+                        {
+                            b"Observed"
+                        } else {
+                            b"Unavailable"
+                        }
+                    }
+                    4 => &mtu_text[..mtu_length],
+                    _ => b"RUN",
                 },
+                2 => match index {
+                    0 => {
+                        if static_address.is_some() {
+                            b"STATIC"
+                        } else {
+                            b"DYNAMIC"
+                        }
+                    }
+                    1 => &address_text[..address_length],
+                    2 => &prefix_text[..prefix_length],
+                    3 => &gateway_text[..gateway_length],
+                    4 => &metric_text[..metric_length],
+                    _ => b"COMMIT",
+                },
+                3 => match index {
+                    0 => {
+                        if resolver_enabled {
+                            b"ON"
+                        } else {
+                            b"OFF"
+                        }
+                    }
+                    1 => &primary_text[..primary_length],
+                    2 => &secondary_text[..secondary_length],
+                    3 => b"CLEAR",
+                    4 => b"BOUNDED",
+                    _ => b"COMMIT",
+                },
+                4 => match index {
+                    0 => {
+                        if default_route.is_some() {
+                            b"INSTALLED"
+                        } else {
+                            b"NONE"
+                        }
+                    }
+                    1 => &gateway_text[..gateway_length],
+                    2 => b"network0",
+                    3 => &metric_text[..metric_length],
+                    4 => {
+                        if default_route
+                            .map(|value| {
+                                value.source == crate::runtime::network::types::RouteSource::Static
+                            })
+                            .unwrap_or(false)
+                        {
+                            b"STATIC"
+                        } else {
+                            b"DISCOVERED"
+                        }
+                    }
+                    _ => b"REMOVE",
+                },
+                5 if index < 5 => {
+                    if active_profile == index {
+                        b"ACTIVE"
+                    } else {
+                        b"SELECT"
+                    }
+                }
+                5 => b"RESTORE",
+                _ => match index {
+                    0 => match default_policy {
+                        crate::runtime::network::types::PolicyAction::Allow => b"ALLOW",
+                        crate::runtime::network::types::PolicyAction::Ask => b"ASK",
+                        _ => b"DENY",
+                    },
+                    1 => b"PROFILE CONTROLLED",
+                    2 => b"PROFILE CONTROLLED",
+                    3 => b"ON",
+                    4 => b"INSPECT",
+                    _ => b"SAFE DEFAULTS",
+                },
+            };
+            let displayed = if active
+                && !input.is_empty()
+                && matches!((page, index), (2, 1..=4) | (3, 1..=2))
+            {
+                input
+            } else {
+                value
+            };
+            let value_width = self.ui_text_width(displayed, 1);
+            self.ui_text(
+                left + card.width as usize - value_width - 18 * scale,
+                top + card.height as usize / 2 - UI_FONT_CELL_HEIGHT / 2,
+                displayed,
                 outline_r,
                 outline_g,
                 outline_b,
@@ -4461,12 +4692,12 @@ impl super::DisplayDevice {
             );
         }
 
-        let telemetry_left = geometry.telemetry.x.max(0) as usize;
-        let telemetry_top = geometry.telemetry.y.max(0) as usize;
+        let sidebar_left = geometry.sidebar.x.max(0) as usize;
+        let sidebar_top = geometry.sidebar.y.max(0) as usize;
         self.ui_text_strong(
-            telemetry_left + 17 * scale,
-            telemetry_top + 15 * scale,
-            b"OBSERVED STATE",
+            sidebar_left + 17 * scale,
+            sidebar_top + 16 * scale,
+            b"LIVE CONFIGURATION",
             outline_r,
             outline_g,
             outline_b,
@@ -4480,17 +4711,14 @@ impl super::DisplayDevice {
                 b"Connections".as_slice(),
                 diagnostics.active_connections as u64,
             ),
-            (
-                b"Discovered services".as_slice(),
-                topology.discovered_service_count as u64,
-            ),
+            (b"Policy rules".as_slice(), status.policies as u64),
         ];
         for (index, (label, value)) in metrics.iter().enumerate() {
-            let row_y = telemetry_top + (45 + index * 27) * scale;
-            self.ui_text(telemetry_left + 17 * scale, row_y, label, 169, 190, 206, 1);
+            let row_y = sidebar_top + (48 + index * 30) * scale;
+            self.ui_text(sidebar_left + 17 * scale, row_y, label, 169, 190, 206, 1);
             let (digits, length) = Self::network_metric_text(*value);
             self.ui_text_strong(
-                telemetry_left + geometry.telemetry.width as usize - (34 + length * 10) * scale,
+                sidebar_left + geometry.sidebar.width as usize - (28 + length * 10) * scale,
                 row_y,
                 &digits[..length],
                 235,
@@ -4500,67 +4728,115 @@ impl super::DisplayDevice {
             );
         }
 
-        let profiles_left = geometry.profiles.x.max(0) as usize;
-        let profiles_top = geometry.profiles.y.max(0) as usize;
+        let detail_top = sidebar_top + 220 * scale;
         self.ui_text_strong(
-            profiles_left,
-            profiles_top + 5 * scale,
-            b"OPERATIONAL MODE",
-            205,
-            218,
-            228,
+            sidebar_left + 17 * scale,
+            detail_top,
+            page_labels[page],
+            outline_r,
+            outline_g,
+            outline_b,
             1,
         );
-        let profile_labels: [&[u8]; 5] = [
-            b"STANDARD",
-            b"RESTRICTED",
-            b"OFFLINE",
-            b"OPERATIONS",
-            b"DEVELOPER",
-        ];
-        for (index, card) in geometry.profile_cards.iter().enumerate() {
-            let left = card.x.max(0) as usize;
-            let top = card.y.max(0) as usize;
-            let active = status.active_profile as usize == index + 1;
-            self.fill_rounded_rect_alpha(
-                left,
-                top,
-                card.width as usize,
-                card.height as usize,
-                9 * scale,
-                if active { selection_r } else { 5 },
-                if active { selection_g } else { 20 },
-                if active { selection_b } else { 34 },
-                226,
-            );
-            self.outline_rounded_rect(
-                left,
-                top,
-                card.width as usize,
-                card.height as usize,
-                9 * scale,
-                if active { outline_r } else { outline_r / 2 },
-                if active { outline_g } else { outline_g / 2 },
-                if active { outline_b } else { outline_b / 2 },
-            );
-            self.ui_text_centered(
-                left,
-                top + 14 * scale,
-                card.width as usize,
-                profile_labels[index],
-                if active { 245 } else { 174 },
-                if active { 250 } else { 196 },
-                if active { 253 } else { 211 },
-                1,
-            );
-            self.ui_text_centered(
-                left,
-                top + 39 * scale,
-                card.width as usize,
-                if active { b"ACTIVE" } else { b"SELECT" },
-                outline_r,
-                outline_g,
-                outline_b,
+        let state_lines: [&[u8]; 5] = match page {
+            0 => [
+                b"Choose a connection mode.",
+                b"Changes apply transactionally.",
+                if setup.wired_available {
+                    b"Wired adapter available"
+                } else {
+                    b"No wired adapter"
+                },
+                if setup.wireless_available {
+                    b"Wi-Fi adapter available"
+                } else {
+                    b"No Wi-Fi adapter"
+                },
+                b"Local services remain available offline.",
+            ],
+            1 => [
+                if interface.is_some() {
+                    b"Adapter discovered"
+                } else {
+                    b"No external adapter"
+                },
+                if interface.map(|value| value.enabled).unwrap_or(false) {
+                    b"Interface enabled"
+                } else {
+                    b"Interface disabled"
+                },
+                b"Hardware values are observed only.",
+                b"Toggle the adapter with ENABLED.",
+                b"Refresh never fabricates link state.",
+            ],
+            2 => [
+                if static_address.is_some() {
+                    b"Static IPv4 is configured."
+                } else {
+                    b"Dynamic addressing is active."
+                },
+                b"Address format: 10.0.2.15",
+                b"Prefix range: 0 through 32",
+                b"Gateway is optional.",
+                b"Apply commits address and route.",
+            ],
+            3 => [
+                if resolver_enabled {
+                    b"Resolver enabled"
+                } else {
+                    b"Resolver disabled"
+                },
+                if resolver_primary.is_some() {
+                    b"Primary server configured"
+                } else {
+                    b"Primary server automatic"
+                },
+                if resolver_secondary.is_some() {
+                    b"Secondary server configured"
+                } else {
+                    b"Secondary server not set"
+                },
+                b"Cache and queries are bounded.",
+                b"Wire DNS depends on adapter support.",
+            ],
+            4 => [
+                if default_route.is_some() {
+                    b"Default route installed"
+                } else {
+                    b"No default route"
+                },
+                b"Longest-prefix selection is active.",
+                b"Lower metric wins ties.",
+                b"Static routes persist across boot.",
+                b"Route changes are capability gated.",
+            ],
+            5 => [
+                b"Standard: ordinary connectivity",
+                b"Restricted: local-first policy",
+                b"Offline: disables external access",
+                b"Operations: controlled inbound",
+                b"Developer: broader local services",
+            ],
+            _ => [
+                match default_policy {
+                    crate::runtime::network::types::PolicyAction::Allow => b"Default: allow",
+                    crate::runtime::network::types::PolicyAction::Ask => b"Default: ask",
+                    _ => b"Default: deny",
+                },
+                b"Rules bind stable identities.",
+                b"No executable-path authority.",
+                b"Changes persist as typed state.",
+                b"Unknown applications remain denied.",
+            ],
+        };
+        for (index, line) in state_lines.iter().enumerate() {
+            self.ui_text(
+                sidebar_left + 17 * scale,
+                detail_top + (32 + index * 28) * scale,
+                line,
+                174,
+                198,
+                215,
                 1,
             );
         }
@@ -4599,6 +4875,41 @@ impl super::DisplayDevice {
         }
         for index in 0..length {
             output[index] = reverse[length - index - 1];
+        }
+        (output, length)
+    }
+
+    // ------------------------=
+    // FUNC: network_address_text
+    // DESC: Formats an optional typed IPv4 address for the Settings projection without allocating text state.
+    // ------------------=
+    fn network_address_text(
+        address: Option<crate::runtime::network::types::IpAddress>,
+    ) -> ([u8; 15], usize) {
+        let mut output = [0u8; 15];
+        let Some(crate::runtime::network::types::IpAddress::V4(octets)) = address else {
+            output[..9].copy_from_slice(b"Automatic");
+            return (output, 9);
+        };
+        let mut length = 0usize;
+        for (index, octet) in octets.iter().copied().enumerate() {
+            if index != 0 {
+                output[length] = b'.';
+                length += 1;
+            }
+            let hundreds = octet / 100;
+            let tens = (octet / 10) % 10;
+            if hundreds != 0 {
+                output[length] = b'0' + hundreds;
+                length += 1;
+                output[length] = b'0' + tens;
+                length += 1;
+            } else if tens != 0 {
+                output[length] = b'0' + tens;
+                length += 1;
+            }
+            output[length] = b'0' + octet % 10;
+            length += 1;
         }
         (output, length)
     }

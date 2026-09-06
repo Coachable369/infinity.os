@@ -50,12 +50,23 @@ runtime dependency.
 
 ## Network
 
-The Network section is a purpose-built responsive dashboard with a live status
-hero, vector topology, observed counts, and five selectable operational-mode
-cards. Profile selection calls the capability-checked transactional runtime
-path and persists before publishing its event. The GUI does not parse Console
-output. Geometry, hit targeting, profile persistence, and runtime behavior are
-**HOST-TESTED**; direct installed-VM visual acceptance remains pending.
+The Network section is a responsive seven-page editor: Overview, Interfaces,
+IPv4, DNS, Routes, Profiles, and Policy. Mouse and keyboard users can select a
+connection mode, enable or disable the discovered adapter, configure a static
+IPv4 address/prefix/default gateway/metric, return to dynamic addressing, set
+two typed DNS endpoints, remove a static default route, activate an operational
+profile, and select the unmatched outbound policy. The adjacent inspector shows
+only live observed counts and adapter state.
+
+Each mutation passes through the Settings service's scoped network capability,
+updates native typed runtime state, and commits the versioned network-state
+object on the installed system. The GUI does not parse Console output or keep a
+separate settings database. Responsive geometry, direct hit targeting, atomic
+static-address replacement, invalid-prefix rollback, and binary configuration
+round-trip are **HOST-TESTED**. Direct installed-VM visual acceptance remains
+pending. Wire DHCP, Wi-Fi association, and DNS packet exchange remain dependent
+on their respective device and protocol adapters and are not fabricated by the
+Settings surface.
 
 Unknown settings are rejected. Enabling voice changes preference only and does
 not grant microphone authority. Remote AI remains denied unless the explicit

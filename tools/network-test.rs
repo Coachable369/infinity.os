@@ -69,6 +69,86 @@ fn profile_behavior() {
 }
 
 // ------------------------=
+// FUNC: configurable_state_behavior
+// DESC: Verifies static addressing, routes, resolver configuration, interface state, and policy survive binary persistence.
+// ------------------=
+fn configurable_state_behavior() {
+    let adapter = NetworkInterface {
+        id: 2,
+        device: NetworkDevice {
+            device_id: 22,
+            driver_id: 7,
+            link_type: LinkType::Virtual,
+            hardware_address: None,
+            link_state: LinkState::Up,
+            maximum_frame_size: 1500,
+            can_receive: true,
+            can_transmit: true,
+            offload_capabilities: 0,
+            operational_state: OperationalState::Ready,
+            error_code: 0,
+        },
+        enabled: true,
+        rx_packets: 0,
+        tx_packets: 0,
+        rx_drops: 0,
+        tx_drops: 0,
+    };
+    let mut configured = NetworkRuntime::new();
+    configured.initialize().unwrap();
+    configured.interfaces.add_interface(adapter).unwrap();
+    configured.interfaces.replace_static_ipv4(
+        2,
+        IpAddress::V4([10, 20, 30, 40]),
+        24,
+        Some(IpAddress::V4([10, 20, 30, 1])),
+        75,
+    ).unwrap();
+    configured.resolver.set_enabled(false);
+    configured.resolver.set_server(0, Some(IpAddress::V4([9, 9, 9, 9]))).unwrap();
+    configured.resolver.set_server(1, Some(IpAddress::V4([1, 1, 1, 1]))).unwrap();
+    configured.policy.set_default_action(PolicyAction::Allow);
+    configured.interfaces.set_state(2, false).unwrap();
+
+    let encoded = configured.encode_state();
+    let mut restored = NetworkRuntime::new();
+    restored.initialize().unwrap();
+    restored.interfaces.add_interface(adapter).unwrap();
+    restored.restore_state(&encoded).unwrap();
+
+    let address = (0..restored.interfaces.address_count())
+        .filter_map(|index| restored.interfaces.address_nth(index))
+        .find(|value| value.interface_id == 2 && value.source == AddressSource::Static)
+        .unwrap();
+    let route = (0..restored.interfaces.route_count())
+        .filter_map(|index| restored.interfaces.route_nth(index))
+        .find(|value| value.interface_id == 2 && value.source == RouteSource::Static)
+        .unwrap();
+    assert_eq!(address.address, IpAddress::V4([10, 20, 30, 40]));
+    assert_eq!(address.prefix_length, 24);
+    assert_eq!(route.next_hop, Some(IpAddress::V4([10, 20, 30, 1])));
+    assert_eq!(route.metric, 75);
+    assert_eq!(restored.resolver.server(0), Some(IpAddress::V4([9, 9, 9, 9])));
+    assert_eq!(restored.resolver.server(1), Some(IpAddress::V4([1, 1, 1, 1])));
+    assert!(!restored.resolver.enabled());
+    assert_eq!(restored.policy.default_action(), PolicyAction::Allow);
+    assert!(!restored.interfaces.interface(2).unwrap().enabled);
+
+    assert!(restored.interfaces.replace_static_ipv4(
+        2,
+        IpAddress::V4([10, 20, 30, 50]),
+        33,
+        Some(IpAddress::V4([10, 20, 30, 1])),
+        75,
+    ).is_err());
+    let unchanged = (0..restored.interfaces.address_count())
+        .filter_map(|index| restored.interfaces.address_nth(index))
+        .find(|value| value.interface_id == 2 && value.source == AddressSource::Static)
+        .unwrap();
+    assert_eq!(unchanged.address, IpAddress::V4([10, 20, 30, 40]));
+}
+
+// ------------------------=
 // FUNC: onboarding_network_behavior
 // DESC: Verifies real interface availability, wired and wireless activation, offline persistence, and network-step hit geometry.
 // ------------------=
@@ -152,7 +232,7 @@ fn firmware_network_discovery_behavior() {
 
 // ------------------------=
 // FUNC: settings_dashboard_behavior
-// DESC: Verifies that the live network dashboard remains bounded, non-overlapping, and exposes every operational profile as a hit target.
+// DESC: Verifies that every responsive Network settings page and control remains bounded, non-overlapping, and directly interactive.
 // ------------------=
 fn settings_dashboard_behavior() {
     for (width, height) in [(1280usize, 800usize), (1920, 1080), (2560, 1440)] {
@@ -169,30 +249,32 @@ fn settings_dashboard_behavior() {
         };
         let window = layout.settings_window_geometry(state);
         let dashboard = layout.network_settings_geometry(state);
-        for panel in [dashboard.overview, dashboard.topology, dashboard.telemetry, dashboard.profiles] {
+        for panel in [dashboard.summary, dashboard.main, dashboard.sidebar] {
             assert!(window.content.contains(ui::geometry::Point { x: panel.x, y: panel.y }));
             assert!(panel.right() <= window.content.right());
             assert!(panel.bottom() <= window.content.bottom());
         }
-        assert!(dashboard.overview.bottom() <= dashboard.topology.y);
-        assert!(dashboard.topology.right() <= dashboard.telemetry.x);
-        assert!(dashboard.topology.bottom() <= dashboard.profiles.y);
-        for (index, card) in dashboard.profile_cards.iter().enumerate() {
+        assert!(dashboard.summary.bottom() <= dashboard.main.y);
+        assert!(dashboard.main.right() <= dashboard.sidebar.x);
+        for (index, card) in dashboard.tabs.iter().enumerate() {
             assert!(card.width > 0 && card.height > 0);
-            let normalized_x = (card.x + card.width as i32 / 2) * 1000 / width as i32;
-            let normalized_y = (card.y + card.height as i32 / 2) * 1000 / height as i32;
-            assert_eq!(layout.network_profile_target(normalized_x, normalized_y, state), Some(index));
-        }
-        for (index, card) in dashboard.mode_cards.iter().enumerate() {
-            assert!(card.width > 0 && card.height > 0);
-            assert!(dashboard.topology.contains(ui::geometry::Point { x: card.x, y: card.y }));
-            assert!(card.right() <= dashboard.topology.right());
-            assert!(card.bottom() <= dashboard.topology.bottom());
             let normalized_x = (card.x + card.width as i32 / 2) * 1000 / width as i32;
             let normalized_y = (card.y + card.height as i32 / 2) * 1000 / height as i32;
             assert_eq!(
                 layout.network_settings_target(normalized_x, normalized_y, state),
-                Some(NetworkSettingsTarget::Mode(index))
+                Some(NetworkSettingsTarget::Page(index))
+            );
+        }
+        for (index, card) in dashboard.controls.iter().enumerate() {
+            assert!(card.width > 0 && card.height > 0);
+            assert!(dashboard.main.contains(ui::geometry::Point { x: card.x, y: card.y }));
+            assert!(card.right() <= dashboard.main.right());
+            assert!(card.bottom() <= dashboard.main.bottom());
+            let normalized_x = (card.x + card.width as i32 / 2) * 1000 / width as i32;
+            let normalized_y = (card.y + card.height as i32 / 2) * 1000 / height as i32;
+            assert_eq!(
+                layout.network_settings_target(normalized_x, normalized_y, state),
+                Some(NetworkSettingsTarget::Control(index))
             );
         }
     }
@@ -352,4 +434,4 @@ fn service_recovery_behavior() {
 // FUNC: main
 // DESC: Runs Milestone 8 behavior-only host acceptance tests.
 // ------------------=
-fn main() { route_behavior(); profile_behavior(); onboarding_network_behavior(); firmware_network_discovery_behavior(); settings_dashboard_behavior(); policy_and_transport_behavior(); resolver_and_discovery_behavior(); management_capability_behavior(); iop_and_console_behavior(); network_event_behavior(); service_recovery_behavior(); }
+fn main() { route_behavior(); profile_behavior(); configurable_state_behavior(); onboarding_network_behavior(); firmware_network_discovery_behavior(); settings_dashboard_behavior(); policy_and_transport_behavior(); resolver_and_discovery_behavior(); management_capability_behavior(); iop_and_console_behavior(); network_event_behavior(); service_recovery_behavior(); }

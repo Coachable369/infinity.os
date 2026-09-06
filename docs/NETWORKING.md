@@ -27,9 +27,14 @@ critical, so local storage, authentication, UI, Console, and local AI continue.
   persistence; resolution-aware network-step pointer targets; UEFI Simple
   Network Protocol enumeration; and typed registration of a NAT-backed virtual
   wired adapter with observed MAC, MTU, link state, and protocol capabilities;
-  ACPI MCFG fallback discovery for VirtualBox ARM's E1000 PCI function.
+  ACPI MCFG fallback discovery for VirtualBox ARM's E1000 PCI function;
+  responsive Settings page/control hit geometry; static IPv4, prefix, gateway,
+  and metric replacement with rollback; resolver server configuration;
+  interface and default-policy configuration; and versioned binary round-trip
+  of those settings.
 - **IMPLEMENTED BUT UNTESTED IN A VM:** settings-side Network Inspector,
-  transactional built-in profile selection, native profile persistence,
+  mouse/keyboard Network editor, transactional built-in profile selection,
+  native profile and network-configuration persistence,
   the graphical post-install Network step, and System Generation bootstrap
   objects.
 - **SCAFFOLDED:** firmware-backed packet transport, secure-connection identity boundary, future NodeIdentity on

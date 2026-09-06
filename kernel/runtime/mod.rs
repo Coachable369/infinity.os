@@ -84,13 +84,21 @@ pub const EVENT_TRASH_ITEM_RESTORED: u32 = 0x9d002;
 pub const EVENT_TRASH_ITEM_DESTROYED: u32 = 0x9d003;
 
 const NETWORK_EVENT_TYPES: [u32; 15] = [
-    EVENT_NETWORK_INTERFACE_STATE_CHANGED, EVENT_NETWORK_ADDRESS_CHANGED,
-    EVENT_NETWORK_ROUTE_CHANGED, EVENT_NETWORK_CONNECTIVITY_CHANGED,
-    EVENT_NETWORK_CONNECTION_OPENED, EVENT_NETWORK_CONNECTION_CLOSED,
-    EVENT_NETWORK_CONNECTION_FAILED, EVENT_NETWORK_POLICY_CHANGED,
-    EVENT_NETWORK_PROFILE_ACTIVATED, EVENT_NETWORK_PROFILE_CHANGED,
-    EVENT_NETWORK_RESOLVER_STATE_CHANGED, EVENT_NETWORK_SERVICE_DISCOVERED,
-    EVENT_NETWORK_SERVICE_LOST, EVENT_NETWORK_DEGRADED, EVENT_NETWORK_RECOVERED,
+    EVENT_NETWORK_INTERFACE_STATE_CHANGED,
+    EVENT_NETWORK_ADDRESS_CHANGED,
+    EVENT_NETWORK_ROUTE_CHANGED,
+    EVENT_NETWORK_CONNECTIVITY_CHANGED,
+    EVENT_NETWORK_CONNECTION_OPENED,
+    EVENT_NETWORK_CONNECTION_CLOSED,
+    EVENT_NETWORK_CONNECTION_FAILED,
+    EVENT_NETWORK_POLICY_CHANGED,
+    EVENT_NETWORK_PROFILE_ACTIVATED,
+    EVENT_NETWORK_PROFILE_CHANGED,
+    EVENT_NETWORK_RESOLVER_STATE_CHANGED,
+    EVENT_NETWORK_SERVICE_DISCOVERED,
+    EVENT_NETWORK_SERVICE_LOST,
+    EVENT_NETWORK_DEGRADED,
+    EVENT_NETWORK_RECOVERED,
 ];
 
 const UI_EVENT_TYPES: [u32; 12] = [
@@ -137,6 +145,9 @@ pub struct InfinityRuntime {
     ui_event_capabilities: [Option<u64>; UI_EVENT_TYPES.len()],
     network_event_capabilities: [Option<u64>; NETWORK_EVENT_TYPES.len()],
     settings_network_profile_capability: Option<u64>,
+    settings_network_address_capability: Option<u64>,
+    settings_network_route_capability: Option<u64>,
+    settings_network_policy_capability: Option<u64>,
     onboarding_network_profile_capability: Option<u64>,
 }
 impl InfinityRuntime {
@@ -168,6 +179,9 @@ impl InfinityRuntime {
             ui_event_capabilities: [None; UI_EVENT_TYPES.len()],
             network_event_capabilities: [None; NETWORK_EVENT_TYPES.len()],
             settings_network_profile_capability: None,
+            settings_network_address_capability: None,
+            settings_network_route_capability: None,
+            settings_network_policy_capability: None,
             onboarding_network_profile_capability: None,
         }
     }
@@ -1105,7 +1119,16 @@ impl InfinityRuntime {
             [
                 OperationId::ServiceDiscoverLocal as u32,
                 OperationId::ServiceAdvertiseLocal as u32,
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
             ],
             2,
             RestartPolicy::OnFailure,
@@ -1235,30 +1258,87 @@ impl InfinityRuntime {
         }
         if self.settings_network_profile_capability.is_none() {
             if let Some(settings) = self.service_identity(SERVICE_SETTINGS) {
-                self.settings_network_profile_capability = self.capabilities.grant(
-                    CapabilityType::NetworkProfileActivate,
-                    0,
-                    1,
-                    0,
-                    runtime,
-                    settings,
-                    None,
-                    0,
-                ).ok();
+                self.settings_network_profile_capability = self
+                    .capabilities
+                    .grant(
+                        CapabilityType::NetworkProfileActivate,
+                        0,
+                        1,
+                        0,
+                        runtime,
+                        settings,
+                        None,
+                        0,
+                    )
+                    .ok();
+            }
+        }
+        if self.settings_network_address_capability.is_none() {
+            if let Some(settings) = self.service_identity(SERVICE_SETTINGS) {
+                self.settings_network_address_capability = self
+                    .capabilities
+                    .grant(
+                        CapabilityType::NetworkAddressConfigure,
+                        2,
+                        1,
+                        0,
+                        runtime,
+                        settings,
+                        None,
+                        0,
+                    )
+                    .ok();
+            }
+        }
+        if self.settings_network_route_capability.is_none() {
+            if let Some(settings) = self.service_identity(SERVICE_SETTINGS) {
+                self.settings_network_route_capability = self
+                    .capabilities
+                    .grant(
+                        CapabilityType::NetworkRouteModify,
+                        2,
+                        1,
+                        0,
+                        runtime,
+                        settings,
+                        None,
+                        0,
+                    )
+                    .ok();
+            }
+        }
+        if self.settings_network_policy_capability.is_none() {
+            if let Some(settings) = self.service_identity(SERVICE_SETTINGS) {
+                self.settings_network_policy_capability = self
+                    .capabilities
+                    .grant(
+                        CapabilityType::NetworkPolicyModify,
+                        0,
+                        1,
+                        0,
+                        runtime,
+                        settings,
+                        None,
+                        0,
+                    )
+                    .ok();
             }
         }
         if self.onboarding_network_profile_capability.is_none() {
             if let Some(onboarding) = self.service_identity(SERVICE_ONBOARDING) {
-                self.onboarding_network_profile_capability = self.capabilities.grant(
-                    CapabilityType::NetworkProfileActivate,
-                    0,
-                    1,
-                    0,
-                    runtime,
-                    onboarding,
-                    None,
-                    0,
-                ).ok();
+                self.onboarding_network_profile_capability = self
+                    .capabilities
+                    .grant(
+                        CapabilityType::NetworkProfileActivate,
+                        0,
+                        1,
+                        0,
+                        runtime,
+                        onboarding,
+                        None,
+                        0,
+                    )
+                    .ok();
             }
         }
         if self.live_profile && self.installer_authority[0].is_none() {
@@ -1641,10 +1721,11 @@ pub fn initialize() {
 // FUNC: register_firmware_network_device
 // DESC: Adds one firmware-discovered network adapter to the authoritative runtime before user setup begins.
 // ------------------=
-pub fn register_firmware_network_device(
-    device: network::types::FirmwareNetworkDevice,
-) -> bool {
-    runtime_mut().network.register_firmware_device(device).is_ok()
+pub fn register_firmware_network_device(device: network::types::FirmwareNetworkDevice) -> bool {
+    runtime_mut()
+        .network
+        .register_firmware_device(device)
+        .is_ok()
 }
 #[inline(never)]
 // ------------------------=
@@ -1696,12 +1777,10 @@ pub fn storage_initialized() {
         #[cfg(target_os = "none")]
         {
             let mut persisted = [0u8; network::NETWORK_STATE_BYTES];
-            if crate::storage::network_state_load(&mut persisted)
-                .ok()
-                .filter(|length| *length == network::NETWORK_STATE_BYTES)
-                .is_some()
-            {
-                let _ = runtime.network.restore_state(&persisted);
+            if let Ok(length) = crate::storage::network_state_load(&mut persisted) {
+                if length >= 32 {
+                    let _ = runtime.network.restore_state(&persisted[..length]);
+                }
             }
         }
         if ai::initialize_global() {
@@ -1725,14 +1804,15 @@ pub fn storage_initialized() {
         #[cfg(target_os = "none")]
         {
             let mut persisted = [0u8; identity::IDENTITY_STATE_BYTES];
-            if let Some(length) = crate::storage::identity_state_load(&mut persisted).ok().filter(
-                |length| {
+            if let Some(length) = crate::storage::identity_state_load(&mut persisted)
+                .ok()
+                .filter(|length| {
                     matches!(
                         *length,
                         identity::LEGACY_IDENTITY_STATE_BYTES | identity::IDENTITY_STATE_BYTES
                     )
-                },
-            ) {
+                })
+            {
                 match identity::IdentitySystem::decode(&persisted[..length]) {
                     Ok(state) => runtime.identity = state,
                     Err(_) => crate::output_text(
@@ -1808,21 +1888,58 @@ pub fn persist_identity_state() -> bool {
 // FUNC: activate_network_profile_from_settings
 // DESC: Performs trusted Settings profile activation, durable commit, and post-commit event publication.
 // ------------------=
-pub fn activate_network_profile_from_settings(profile_id: u32, now: u64, correlation_id: u64) -> bool {
+pub fn activate_network_profile_from_settings(
+    profile_id: u32,
+    now: u64,
+    correlation_id: u64,
+) -> bool {
     let runtime = runtime_mut();
-    let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else { return false; };
-    let Some(authority) = runtime.settings_network_profile_capability else { return false; };
+    let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else {
+        return false;
+    };
+    let Some(authority) = runtime.settings_network_profile_capability else {
+        return false;
+    };
     let _previous = runtime.network.profiles.active_id();
-    let Ok(generation) = runtime.network.activate_profile_authorized(profile_id, settings, authority, now, &runtime.capabilities) else { return false; };
+    let Ok(generation) = runtime.network.activate_profile_authorized(
+        profile_id,
+        settings,
+        authority,
+        now,
+        &runtime.capabilities,
+    ) else {
+        return false;
+    };
     #[cfg(target_os = "none")]
     if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
         let _ = runtime.network.activate_profile(_previous);
         return false;
     }
-    if let Some(index) = NETWORK_EVENT_TYPES.iter().position(|event| *event == EVENT_NETWORK_PROFILE_ACTIVATED) {
-        if let (Some(capability), Some(source)) = (runtime.network_event_capabilities[index], runtime.service_identity(SERVICE_NETWORK)) {
-            let mut payload = [0u8; 16]; payload[..4].copy_from_slice(&profile_id.to_le_bytes()); payload[8..16].copy_from_slice(&generation.to_le_bytes());
-            let _ = runtime.events.publish(EventClass::Record, RoutingDomain::Network, EVENT_NETWORK_PROFILE_ACTIVATED, source, profile_id as u64, correlation_id, correlation_id, &payload, 220, now, &runtime.capabilities, capability);
+    if let Some(index) = NETWORK_EVENT_TYPES
+        .iter()
+        .position(|event| *event == EVENT_NETWORK_PROFILE_ACTIVATED)
+    {
+        if let (Some(capability), Some(source)) = (
+            runtime.network_event_capabilities[index],
+            runtime.service_identity(SERVICE_NETWORK),
+        ) {
+            let mut payload = [0u8; 16];
+            payload[..4].copy_from_slice(&profile_id.to_le_bytes());
+            payload[8..16].copy_from_slice(&generation.to_le_bytes());
+            let _ = runtime.events.publish(
+                EventClass::Record,
+                RoutingDomain::Network,
+                EVENT_NETWORK_PROFILE_ACTIVATED,
+                source,
+                profile_id as u64,
+                correlation_id,
+                correlation_id,
+                &payload,
+                220,
+                now,
+                &runtime.capabilities,
+                capability,
+            );
         }
     }
     true
@@ -1886,12 +2003,310 @@ pub fn reconfigure_network_from_settings(
 }
 
 // ------------------------=
+// FUNC: configure_static_ipv4_from_settings
+// DESC: Applies and persists an atomic static IPv4 address, prefix, gateway, and route metric transaction.
+// ------------------=
+pub fn configure_static_ipv4_from_settings(
+    address: [u8; 4],
+    prefix: u8,
+    gateway: Option<[u8; 4]>,
+    metric: u32,
+    now: u64,
+) -> bool {
+    let runtime = runtime_mut();
+    let _previous = runtime.network.encode_state();
+    let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else {
+        return false;
+    };
+    let (Some(address_capability), Some(route_capability)) = (
+        runtime.settings_network_address_capability,
+        runtime.settings_network_route_capability,
+    ) else {
+        return false;
+    };
+    if runtime
+        .capabilities
+        .validate(
+            address_capability,
+            settings,
+            CapabilityType::NetworkAddressConfigure,
+            2,
+            1,
+            0,
+            now,
+        )
+        .is_err()
+        || runtime
+            .capabilities
+            .validate(
+                route_capability,
+                settings,
+                CapabilityType::NetworkRouteModify,
+                2,
+                1,
+                0,
+                now,
+            )
+            .is_err()
+    {
+        return false;
+    }
+    if runtime
+        .network
+        .interfaces
+        .replace_static_ipv4(
+            2,
+            network::types::IpAddress::V4(address),
+            prefix,
+            gateway.map(network::types::IpAddress::V4),
+            metric,
+        )
+        .is_err()
+    {
+        return false;
+    }
+    #[cfg(target_os = "none")]
+    if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
+        let _ = runtime.network.restore_state(&_previous);
+        return false;
+    }
+    true
+}
+
+// ------------------------=
+// FUNC: configure_dynamic_ipv4_from_settings
+// DESC: Clears persistent static IPv4 state and returns the adapter to automatic address configuration.
+// ------------------=
+pub fn configure_dynamic_ipv4_from_settings(now: u64) -> bool {
+    let runtime = runtime_mut();
+    let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else {
+        return false;
+    };
+    let (Some(address_capability), Some(route_capability)) = (
+        runtime.settings_network_address_capability,
+        runtime.settings_network_route_capability,
+    ) else {
+        return false;
+    };
+    if runtime
+        .capabilities
+        .validate(
+            address_capability,
+            settings,
+            CapabilityType::NetworkAddressConfigure,
+            2,
+            1,
+            0,
+            now,
+        )
+        .is_err()
+        || runtime
+            .capabilities
+            .validate(
+                route_capability,
+                settings,
+                CapabilityType::NetworkRouteModify,
+                2,
+                1,
+                0,
+                now,
+            )
+            .is_err()
+    {
+        return false;
+    }
+    let _previous = runtime.network.encode_state();
+    runtime.network.interfaces.remove_static_addresses(2);
+    runtime.network.interfaces.remove_static_default_routes(2);
+    runtime
+        .network
+        .select_setup_mode(network::types::NetworkSetupMode::Automatic);
+    #[cfg(target_os = "none")]
+    if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
+        let _ = runtime.network.restore_state(&_previous);
+        return false;
+    }
+    true
+}
+
+// ------------------------=
+// FUNC: remove_default_network_route_from_settings
+// DESC: Removes the configured static default route through scoped Settings authority and persists the change.
+// ------------------=
+pub fn remove_default_network_route_from_settings(now: u64) -> bool {
+    let runtime = runtime_mut();
+    let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else {
+        return false;
+    };
+    let Some(capability) = runtime.settings_network_route_capability else {
+        return false;
+    };
+    if runtime
+        .capabilities
+        .validate(
+            capability,
+            settings,
+            CapabilityType::NetworkRouteModify,
+            2,
+            1,
+            0,
+            now,
+        )
+        .is_err()
+    {
+        return false;
+    }
+    let _previous = runtime.network.encode_state();
+    runtime.network.interfaces.remove_static_default_routes(2);
+    #[cfg(target_os = "none")]
+    if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
+        let _ = runtime.network.restore_state(&_previous);
+        return false;
+    }
+    true
+}
+
+// ------------------------=
+// FUNC: configure_resolver_from_settings
+// DESC: Applies and persists enabled state and two bounded typed IPv4 resolver endpoints.
+// ------------------=
+pub fn configure_resolver_from_settings(
+    enabled: bool,
+    primary: Option<[u8; 4]>,
+    secondary: Option<[u8; 4]>,
+    now: u64,
+) -> bool {
+    let runtime = runtime_mut();
+    let _previous = runtime.network.encode_state();
+    let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else {
+        return false;
+    };
+    let Some(capability) = runtime.settings_network_policy_capability else {
+        return false;
+    };
+    if runtime
+        .capabilities
+        .validate(
+            capability,
+            settings,
+            CapabilityType::NetworkPolicyModify,
+            0,
+            1,
+            0,
+            now,
+        )
+        .is_err()
+    {
+        return false;
+    }
+    runtime.network.resolver.set_enabled(enabled);
+    if runtime
+        .network
+        .resolver
+        .set_server(0, primary.map(network::types::IpAddress::V4))
+        .is_err()
+        || runtime
+            .network
+            .resolver
+            .set_server(1, secondary.map(network::types::IpAddress::V4))
+            .is_err()
+    {
+        return false;
+    }
+    #[cfg(target_os = "none")]
+    if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
+        let _ = runtime.network.restore_state(&_previous);
+        return false;
+    }
+    true
+}
+
+// ------------------------=
+// FUNC: set_network_interface_from_settings
+// DESC: Enables or disables the discovered adapter through Settings authority and persists the result.
+// ------------------=
+pub fn set_network_interface_from_settings(enabled: bool, now: u64) -> bool {
+    let runtime = runtime_mut();
+    let _previous = runtime.network.encode_state();
+    let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else {
+        return false;
+    };
+    let Some(capability) = runtime.settings_network_profile_capability else {
+        return false;
+    };
+    if runtime
+        .capabilities
+        .validate(
+            capability,
+            settings,
+            CapabilityType::NetworkProfileActivate,
+            0,
+            1,
+            0,
+            now,
+        )
+        .is_err()
+        || runtime.network.interfaces.set_state(2, enabled).is_err()
+    {
+        return false;
+    }
+    #[cfg(target_os = "none")]
+    if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
+        let _ = runtime.network.restore_state(&_previous);
+        return false;
+    }
+    true
+}
+
+// ------------------------=
+// FUNC: set_network_default_policy_from_settings
+// DESC: Applies and persists the explicit unmatched-connection policy through scoped Settings authority.
+// ------------------=
+pub fn set_network_default_policy_from_settings(
+    action: network::types::PolicyAction,
+    now: u64,
+) -> bool {
+    let runtime = runtime_mut();
+    let _previous = runtime.network.encode_state();
+    let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else {
+        return false;
+    };
+    let Some(capability) = runtime.settings_network_policy_capability else {
+        return false;
+    };
+    if runtime
+        .capabilities
+        .validate(
+            capability,
+            settings,
+            CapabilityType::NetworkPolicyModify,
+            0,
+            1,
+            0,
+            now,
+        )
+        .is_err()
+    {
+        return false;
+    }
+    runtime.network.policy.set_default_action(action);
+    #[cfg(target_os = "none")]
+    if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
+        let _ = runtime.network.restore_state(&_previous);
+        return false;
+    }
+    true
+}
+
+// ------------------------=
 // FUNC: select_network_mode_from_onboarding
 // DESC: Stages one explicit first-boot connectivity choice for shared GUI and keyboard interaction.
 // ------------------=
 pub fn select_network_mode_from_onboarding(mode: network::types::NetworkSetupMode) -> bool {
     let runtime = runtime_mut();
-    if runtime.service_identity(SERVICE_ONBOARDING).is_none() { return false; }
+    if runtime.service_identity(SERVICE_ONBOARDING).is_none() {
+        return false;
+    }
     runtime.network.select_setup_mode(mode);
     true
 }
@@ -1902,24 +2317,68 @@ pub fn select_network_mode_from_onboarding(mode: network::types::NetworkSetupMod
 // ------------------=
 pub fn apply_network_mode_from_onboarding(now: u64, correlation_id: u64) -> bool {
     let runtime = runtime_mut();
-    let Some(onboarding) = runtime.service_identity(SERVICE_ONBOARDING) else { return false; };
-    let Some(authority) = runtime.onboarding_network_profile_capability else { return false; };
-    if runtime.capabilities.validate(authority, onboarding, CapabilityType::NetworkProfileActivate, 0, 1, 0, now).is_err() { return false; }
+    let Some(onboarding) = runtime.service_identity(SERVICE_ONBOARDING) else {
+        return false;
+    };
+    let Some(authority) = runtime.onboarding_network_profile_capability else {
+        return false;
+    };
+    if runtime
+        .capabilities
+        .validate(
+            authority,
+            onboarding,
+            CapabilityType::NetworkProfileActivate,
+            0,
+            1,
+            0,
+            now,
+        )
+        .is_err()
+    {
+        return false;
+    }
     let _previous = runtime.network.encode_state();
-    let profile_id: u32 = if runtime.network.setup_snapshot().selected == network::types::NetworkSetupMode::Offline { 3 } else { 1 };
-    if runtime.network.apply_setup_mode().is_err() { return false; }
+    let profile_id: u32 =
+        if runtime.network.setup_snapshot().selected == network::types::NetworkSetupMode::Offline {
+            3
+        } else {
+            1
+        };
+    if runtime.network.apply_setup_mode().is_err() {
+        return false;
+    }
     #[cfg(target_os = "none")]
     if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
         let _ = runtime.network.restore_state(&_previous);
         return false;
     }
-    if let Some(index) = NETWORK_EVENT_TYPES.iter().position(|event| *event == EVENT_NETWORK_PROFILE_ACTIVATED) {
-        if let (Some(capability), Some(source)) = (runtime.network_event_capabilities[index], runtime.service_identity(SERVICE_NETWORK)) {
+    if let Some(index) = NETWORK_EVENT_TYPES
+        .iter()
+        .position(|event| *event == EVENT_NETWORK_PROFILE_ACTIVATED)
+    {
+        if let (Some(capability), Some(source)) = (
+            runtime.network_event_capabilities[index],
+            runtime.service_identity(SERVICE_NETWORK),
+        ) {
             let generation = runtime.network.profiles.generation();
             let mut payload = [0u8; 16];
             payload[..4].copy_from_slice(&profile_id.to_le_bytes());
             payload[8..16].copy_from_slice(&generation.to_le_bytes());
-            let _ = runtime.events.publish(EventClass::Record, RoutingDomain::Network, EVENT_NETWORK_PROFILE_ACTIVATED, source, profile_id as u64, correlation_id, correlation_id, &payload, 220, now, &runtime.capabilities, capability);
+            let _ = runtime.events.publish(
+                EventClass::Record,
+                RoutingDomain::Network,
+                EVENT_NETWORK_PROFILE_ACTIVATED,
+                source,
+                profile_id as u64,
+                correlation_id,
+                correlation_id,
+                &payload,
+                220,
+                now,
+                &runtime.capabilities,
+                capability,
+            );
         }
     }
     true

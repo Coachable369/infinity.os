@@ -152,6 +152,57 @@ fn wrap_installer_value(value: i32, minimum: i32, maximum: i32, reverse: bool) -
     }
 }
 
+// ------------------------=
+// FUNC: parse_ipv4
+// DESC: Parses one canonical dotted IPv4 value into its typed address representation.
+// ------------------=
+fn parse_ipv4(input: &[u8]) -> Option<[u8; 4]> {
+    let mut result = [0u8; 4];
+    let mut part = 0usize;
+    let mut value = 0u16;
+    let mut digits = 0usize;
+    for byte in input.iter().copied().chain(core::iter::once(b'.')) {
+        if byte == b'.' {
+            if digits == 0 || part >= result.len() || value > 255 {
+                return None;
+            }
+            result[part] = value as u8;
+            part += 1;
+            value = 0;
+            digits = 0;
+        } else if byte.is_ascii_digit() {
+            value = value
+                .saturating_mul(10)
+                .saturating_add((byte - b'0') as u16);
+            digits += 1;
+            if digits > 3 || value > 255 {
+                return None;
+            }
+        } else {
+            return None;
+        }
+    }
+    (part == 4).then_some(result)
+}
+
+// ------------------------=
+// FUNC: parse_bounded_number
+// DESC: Parses an unsigned decimal settings value while enforcing its semantic upper bound.
+// ------------------=
+fn parse_bounded_number(input: &[u8], maximum: u32) -> Option<u32> {
+    if input.is_empty() {
+        return None;
+    }
+    let mut value = 0u32;
+    for byte in input.iter().copied() {
+        if !byte.is_ascii_digit() {
+            return None;
+        }
+        value = value.checked_mul(10)?.checked_add((byte - b'0') as u32)?;
+    }
+    (value <= maximum).then_some(value)
+}
+
 #[derive(Clone, Copy)]
 pub enum ConsoleKey {
     Character(u8),
@@ -718,7 +769,10 @@ impl ConsoleRuntime {
             };
             let mut settings_value = [0u8; 48];
             let mut settings_value_length = 0usize;
-            if self.mode == ConsoleMode::Settings && !self.settings_editing {
+            if self.mode == ConsoleMode::Settings
+                && !self.settings_editing
+                && self.system_focus != 6
+            {
                 if self.system_focus == 4 {
                     let minutes = self.user_no_activity_timeout_minutes();
                     settings_value_length = write_minutes_label(&mut settings_value, minutes);
@@ -1539,8 +1593,7 @@ impl ConsoleRuntime {
         let Some(layout) = crate::runtime::with_runtime(|runtime| {
             runtime.identity.user_desktop_layout(self.current_user)
         })
-        .flatten()
-        else {
+        .flatten() else {
             return false;
         };
         self.restore_desktop_layout(layout);
@@ -1980,7 +2033,7 @@ impl ConsoleRuntime {
             5
         };
         self.settings_editing = false;
-        self.settings_window.expanded_row = None;
+        self.settings_window.expanded_row = (self.system_focus == 6).then_some(0);
         self.settings_window.scroll_offset = 0;
         self.settings_window_dragging = false;
         self.settings_window_resizing = None;
@@ -2477,6 +2530,203 @@ impl ConsoleRuntime {
         if changed {
             let _ = crate::runtime::persist_identity_state();
             crate::output_text(b"[appearance] icon family transaction committed\n");
+        }
+    }
+
+    // ------------------------=
+    // FUNC: network_page
+    // DESC: Returns the selected Network settings page independently from sidebar focus.
+    // ------------------=
+    fn network_page(&self) -> usize {
+        self.settings_window.expanded_row.unwrap_or(0).min(6)
+    }
+
+    // ------------------------=
+    // FUNC: network_static_configuration
+    // DESC: Reads the current typed static IPv4 transaction as defaults for incremental editing.
+    // ------------------=
+    fn network_static_configuration(&self) -> ([u8; 4], u8, Option<[u8; 4]>, u32) {
+        crate::runtime::with_runtime(|runtime| {
+            let address = (0..runtime.network.interfaces.address_count())
+                .filter_map(|index| runtime.network.interfaces.address_nth(index))
+                .find(|value| {
+                    value.interface_id == 2
+                        && value.source == crate::runtime::network::types::AddressSource::Static
+                });
+            let route = (0..runtime.network.interfaces.route_count())
+                .filter_map(|index| runtime.network.interfaces.route_nth(index))
+                .find(|value| value.interface_id == 2 && value.prefix_length == 0);
+            let octets = match address.map(|value| value.address) {
+                Some(crate::runtime::network::types::IpAddress::V4(value)) => value,
+                _ => [10, 0, 2, 15],
+            };
+            let gateway = match route.and_then(|value| value.next_hop) {
+                Some(crate::runtime::network::types::IpAddress::V4(value)) => Some(value),
+                _ => None,
+            };
+            (
+                octets,
+                address.map(|value| value.prefix_length).unwrap_or(24),
+                gateway,
+                route.map(|value| value.metric).unwrap_or(100),
+            )
+        })
+        .unwrap_or(([10, 0, 2, 15], 24, None, 100))
+    }
+
+    // ------------------------=
+    // FUNC: commit_network_edit
+    // DESC: Validates and commits one edited address or resolver field through typed Settings authority.
+    // ------------------=
+    fn commit_network_edit(&mut self) -> bool {
+        let page = self.network_page();
+        let control = self.settings_window.scroll_offset.min(5);
+        let input = &self.command[..self.command_length];
+        if page == 2 {
+            let (mut address, mut prefix, mut gateway, mut metric) =
+                self.network_static_configuration();
+            match control {
+                1 => {
+                    address = match parse_ipv4(input) {
+                        Some(value) => value,
+                        None => return false,
+                    }
+                }
+                2 => {
+                    prefix = match parse_bounded_number(input, 32) {
+                        Some(value) => value as u8,
+                        None => return false,
+                    }
+                }
+                3 => {
+                    gateway = match parse_ipv4(input) {
+                        Some(value) => Some(value),
+                        None => return false,
+                    }
+                }
+                4 => {
+                    metric = match parse_bounded_number(input, 65_535) {
+                        Some(value) => value,
+                        None => return false,
+                    }
+                }
+                _ => return false,
+            }
+            return crate::runtime::configure_static_ipv4_from_settings(
+                address, prefix, gateway, metric, 0,
+            );
+        }
+        if page == 3 && matches!(control, 1 | 2) {
+            let Some(server) = parse_ipv4(input) else {
+                return false;
+            };
+            let (enabled, mut primary, mut secondary) = crate::runtime::with_runtime(|runtime| {
+                let to_v4 = |value| match value {
+                    Some(crate::runtime::network::types::IpAddress::V4(octets)) => Some(octets),
+                    _ => None,
+                };
+                (
+                    runtime.network.resolver.enabled(),
+                    to_v4(runtime.network.resolver.server(0)),
+                    to_v4(runtime.network.resolver.server(1)),
+                )
+            })
+            .unwrap_or((true, None, None));
+            if control == 1 {
+                primary = Some(server);
+            } else {
+                secondary = Some(server);
+            }
+            return crate::runtime::configure_resolver_from_settings(
+                enabled, primary, secondary, 0,
+            );
+        }
+        false
+    }
+
+    // ------------------------=
+    // FUNC: activate_network_control
+    // DESC: Executes the focused Network page control through typed runtime configuration operations.
+    // ------------------=
+    fn activate_network_control(&mut self, control: usize) {
+        self.settings_window.scroll_offset = control.min(5);
+        match (self.network_page(), control.min(5)) {
+            (0, index @ 0..=3) => {
+                let mode = [
+                    crate::runtime::network::types::NetworkSetupMode::Automatic,
+                    crate::runtime::network::types::NetworkSetupMode::Wired,
+                    crate::runtime::network::types::NetworkSetupMode::Wireless,
+                    crate::runtime::network::types::NetworkSetupMode::Offline,
+                ][index];
+                let _ =
+                    crate::runtime::reconfigure_network_from_settings(mode, 0, index as u64 + 1);
+            }
+            (1, 1) => {
+                let enabled = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .network
+                        .interfaces
+                        .interface(2)
+                        .map(|value| value.enabled)
+                })
+                .flatten()
+                .unwrap_or(false);
+                let _ = crate::runtime::set_network_interface_from_settings(!enabled, 0);
+            }
+            (2, 0) => {
+                let _ = crate::runtime::configure_dynamic_ipv4_from_settings(0);
+            }
+            (2, 1..=4) | (3, 1..=2) => {
+                self.settings_editing = true;
+                self.reset_input();
+            }
+            (3, 0) => {
+                let (enabled, primary, secondary) = crate::runtime::with_runtime(|runtime| {
+                    let to_v4 = |value| match value {
+                        Some(crate::runtime::network::types::IpAddress::V4(octets)) => Some(octets),
+                        _ => None,
+                    };
+                    (
+                        runtime.network.resolver.enabled(),
+                        to_v4(runtime.network.resolver.server(0)),
+                        to_v4(runtime.network.resolver.server(1)),
+                    )
+                })
+                .unwrap_or((true, None, None));
+                let _ = crate::runtime::configure_resolver_from_settings(
+                    !enabled, primary, secondary, 0,
+                );
+            }
+            (3, 3) => {
+                let _ = crate::runtime::configure_resolver_from_settings(true, None, None, 0);
+            }
+            (4, 5) => {
+                let _ = crate::runtime::remove_default_network_route_from_settings(0);
+            }
+            (5, index @ 0..=4) => self.activate_settings_content_row(index),
+            (5, 5) => self.activate_settings_content_row(0),
+            (6, 0) => {
+                let current =
+                    crate::runtime::with_runtime(|runtime| runtime.network.policy.default_action())
+                        .unwrap_or(crate::runtime::network::types::PolicyAction::Deny);
+                let next = match current {
+                    crate::runtime::network::types::PolicyAction::Deny => {
+                        crate::runtime::network::types::PolicyAction::Ask
+                    }
+                    crate::runtime::network::types::PolicyAction::Ask => {
+                        crate::runtime::network::types::PolicyAction::Allow
+                    }
+                    _ => crate::runtime::network::types::PolicyAction::Deny,
+                };
+                let _ = crate::runtime::set_network_default_policy_from_settings(next, 0);
+            }
+            (6, 5) => {
+                let _ = crate::runtime::set_network_default_policy_from_settings(
+                    crate::runtime::network::types::PolicyAction::Deny,
+                    0,
+                );
+            }
+            _ => {}
         }
     }
 
@@ -3279,6 +3529,25 @@ impl ConsoleRuntime {
             }
             return;
         }
+        if self.mode == ConsoleMode::Settings && self.system_focus == 6 && self.settings_editing {
+            if matches!(key, ConsoleKey::Escape) {
+                self.settings_editing = false;
+                self.reset_input();
+                return;
+            }
+            if matches!(key, ConsoleKey::Enter) {
+                if self.command_length > 0 && self.commit_network_edit() {
+                    self.settings_editing = false;
+                    self.onboarding_validation_error = false;
+                    self.reset_input();
+                } else {
+                    self.onboarding_validation_error = true;
+                }
+                return;
+            }
+            let _ = self.edit_system_text(key);
+            return;
+        }
         if self.mode == ConsoleMode::Settings && self.settings_editing {
             if self.edit_system_text(key) {
                 return;
@@ -3297,6 +3566,32 @@ impl ConsoleRuntime {
                 let _ = crate::runtime::persist_identity_state();
                 self.settings_editing = false;
                 self.reset_input();
+            }
+            return;
+        }
+        if self.mode == ConsoleMode::Settings && self.system_focus == 6 {
+            match key {
+                ConsoleKey::Escape => self.enter_desktop(),
+                ConsoleKey::Left => {
+                    self.settings_window.expanded_row = Some((self.network_page() + 6) % 7);
+                    self.settings_window.scroll_offset = 0;
+                }
+                ConsoleKey::Right => {
+                    self.settings_window.expanded_row = Some((self.network_page() + 1) % 7);
+                    self.settings_window.scroll_offset = 0;
+                }
+                ConsoleKey::Up | ConsoleKey::Tab(true) => {
+                    self.settings_window.scroll_offset =
+                        (self.settings_window.scroll_offset + 5) % 6;
+                }
+                ConsoleKey::Down | ConsoleKey::Tab(false) => {
+                    self.settings_window.scroll_offset =
+                        (self.settings_window.scroll_offset + 1) % 6;
+                }
+                ConsoleKey::Enter => {
+                    self.activate_network_control(self.settings_window.scroll_offset)
+                }
+                _ => {}
             }
             return;
         }
@@ -3322,7 +3617,7 @@ impl ConsoleRuntime {
                 } else {
                     5
                 };
-                self.settings_window.expanded_row = None;
+                self.settings_window.expanded_row = (self.system_focus == 6).then_some(0);
                 self.settings_window.scroll_offset = 0;
             }
             return;
@@ -3345,7 +3640,7 @@ impl ConsoleRuntime {
                 } else {
                     5
                 };
-                self.settings_window.expanded_row = None;
+                self.settings_window.expanded_row = (self.system_focus == 6).then_some(0);
                 self.settings_window.scroll_offset = 0;
             }
             return;
@@ -3370,12 +3665,6 @@ impl ConsoleRuntime {
                 } else {
                     self.toggle_settings_row(3);
                 }
-            }
-            if self.system_focus == 6 {
-                let active =
-                    crate::runtime::with_runtime(|runtime| runtime.network.profiles.active_id())
-                        .unwrap_or(1);
-                self.activate_settings_content_row((active % 5) as usize);
             }
             return;
         }
@@ -5209,21 +5498,14 @@ impl ConsoleRuntime {
                     self.settings_window,
                 ) {
                     match target {
-                        NetworkSettingsTarget::Mode(index) => {
-                            let mode = match index {
-                                0 => crate::runtime::network::types::NetworkSetupMode::Automatic,
-                                1 => crate::runtime::network::types::NetworkSetupMode::Wired,
-                                2 => crate::runtime::network::types::NetworkSetupMode::Wireless,
-                                _ => crate::runtime::network::types::NetworkSetupMode::Offline,
-                            };
-                            let _ = crate::runtime::reconfigure_network_from_settings(
-                                mode,
-                                0,
-                                index as u64 + 1,
-                            );
+                        NetworkSettingsTarget::Page(index) => {
+                            self.settings_window.expanded_row = Some(index.min(6));
+                            self.settings_window.scroll_offset = 0;
+                            self.settings_editing = false;
+                            self.reset_input();
                         }
-                        NetworkSettingsTarget::Profile(profile) => {
-                            self.activate_settings_content_row(profile)
+                        NetworkSettingsTarget::Control(index) => {
+                            self.activate_network_control(index)
                         }
                     }
                     self.redraw();
@@ -5244,7 +5526,7 @@ impl ConsoleRuntime {
                             5
                         };
                         self.settings_editing = false;
-                        self.settings_window.expanded_row = None;
+                        self.settings_window.expanded_row = (index == 6).then_some(0);
                         self.settings_window.scroll_offset = 0;
                         self.reset_input();
                     }

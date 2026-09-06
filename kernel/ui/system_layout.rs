@@ -198,18 +198,17 @@ pub enum SettingsTarget {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NetworkSettingsGeometry {
-    pub overview: Rect,
-    pub topology: Rect,
-    pub telemetry: Rect,
-    pub profiles: Rect,
-    pub mode_cards: [Rect; 4],
-    pub profile_cards: [Rect; 5],
+    pub tabs: [Rect; 7],
+    pub summary: Rect,
+    pub main: Rect,
+    pub sidebar: Rect,
+    pub controls: [Rect; 6],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NetworkSettingsTarget {
-    Mode(usize),
-    Profile(usize),
+    Page(usize),
+    Control(usize),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1655,71 +1654,67 @@ impl SystemLayout {
 
     // ------------------------=
     // FUNC: network_settings_geometry
-    // DESC: Derives a balanced, scalable dashboard for live topology, telemetry, and operational profile controls.
+    // DESC: Derives a bounded responsive network editor with page navigation and non-overlapping controls.
     // ------------------=
     pub fn network_settings_geometry(self, state: SettingsWindowState) -> NetworkSettingsGeometry {
         let window = self.settings_window_geometry(state);
         let content = window.content;
-        let gap = 14 * self.scale;
-        let top = content.y.max(0) as usize + 70 * self.scale;
+        let gap = 12 * self.scale;
+        let top = content.y.max(0) as usize + 68 * self.scale;
         let left = content.x.max(0) as usize;
         let width = content.width as usize;
         let available_height = (content.bottom().max(0) as usize).saturating_sub(top);
-        let overview_height = (112 * self.scale).min(available_height / 3);
-        let middle_top = top + overview_height + gap;
-        let middle_height = (190 * self.scale)
-            .min(available_height.saturating_sub(overview_height + gap) * 55 / 100);
-        let topology_width = width * 62 / 100;
-        let profile_top = middle_top + middle_height + gap;
-        let profile_height = available_height.saturating_sub(profile_top.saturating_sub(top));
-        let card_gap = 8 * self.scale;
-        let card_width = width.saturating_sub(card_gap * 4) / 5;
-        let mut cards = [rect(0, 0, 0, 0); 5];
-        for (index, card) in cards.iter_mut().enumerate() {
-            *card = rect(
-                left + index * (card_width + card_gap),
-                profile_top + 35 * self.scale,
-                card_width,
-                profile_height.saturating_sub(35 * self.scale),
+        let tab_gap = 4 * self.scale;
+        let tab_width = width.saturating_sub(tab_gap * 6) / 7;
+        let mut tabs = [rect(0, 0, 0, 0); 7];
+        for (index, tab) in tabs.iter_mut().enumerate() {
+            *tab = rect(
+                left + index * (tab_width + tab_gap),
+                top,
+                tab_width,
+                34 * self.scale,
             );
         }
-        let mode_gap = 7 * self.scale;
-        let mode_left = left + 14 * self.scale;
-        let mode_width = topology_width.saturating_sub(28 * self.scale + mode_gap * 3) / 4;
-        let mode_top = middle_top + 64 * self.scale;
-        let mode_height = middle_height.saturating_sub(80 * self.scale);
-        let mut mode_cards = [rect(0, 0, 0, 0); 4];
-        for (index, card) in mode_cards.iter_mut().enumerate() {
-            *card = rect(
-                mode_left + index * (mode_width + mode_gap),
-                mode_top,
-                mode_width,
-                mode_height,
+        let summary_top = top + 46 * self.scale;
+        let summary_height = 82 * self.scale;
+        let body_top = summary_top + summary_height + gap;
+        let body_height = available_height.saturating_sub(body_top.saturating_sub(top));
+        let main_width = width * 68 / 100;
+        let main = rect(
+            left,
+            body_top,
+            main_width.saturating_sub(gap / 2),
+            body_height,
+        );
+        let sidebar = rect(
+            left + main_width + gap / 2,
+            body_top,
+            width.saturating_sub(main_width + gap / 2),
+            body_height,
+        );
+        let control_gap = 7 * self.scale;
+        let control_height = body_height.saturating_sub(24 * self.scale + control_gap * 5) / 6;
+        let mut controls = [rect(0, 0, 0, 0); 6];
+        for (index, control) in controls.iter_mut().enumerate() {
+            *control = rect(
+                main.x.max(0) as usize + 12 * self.scale,
+                main.y.max(0) as usize + 12 * self.scale + index * (control_height + control_gap),
+                (main.width as usize).saturating_sub(24 * self.scale),
+                control_height,
             );
         }
         NetworkSettingsGeometry {
-            overview: rect(left, top, width, overview_height),
-            topology: rect(
-                left,
-                middle_top,
-                topology_width.saturating_sub(gap / 2),
-                middle_height,
-            ),
-            telemetry: rect(
-                left + topology_width + gap / 2,
-                middle_top,
-                width.saturating_sub(topology_width + gap / 2),
-                middle_height,
-            ),
-            profiles: rect(left, profile_top, width, profile_height),
-            mode_cards,
-            profile_cards: cards,
+            tabs,
+            summary: rect(left, summary_top, width, summary_height),
+            main,
+            sidebar,
+            controls,
         }
     }
 
     // ------------------------=
     // FUNC: network_settings_target
-    // DESC: Resolves live post-install connection modes and operational profiles from shared dashboard geometry.
+    // DESC: Resolves network editor page tabs and page-local controls from shared geometry.
     // ------------------=
     pub fn network_settings_target(
         self,
@@ -1729,23 +1724,19 @@ impl SystemLayout {
     ) -> Option<NetworkSettingsTarget> {
         let point = self.point(normalized_x, normalized_y);
         let geometry = self.network_settings_geometry(state);
-        if let Some(index) = geometry
-            .mode_cards
-            .iter()
-            .position(|card| card.contains(point))
-        {
-            return Some(NetworkSettingsTarget::Mode(index));
+        if let Some(index) = geometry.tabs.iter().position(|card| card.contains(point)) {
+            return Some(NetworkSettingsTarget::Page(index));
         }
         geometry
-            .profile_cards
+            .controls
             .iter()
             .position(|card| card.contains(point))
-            .map(NetworkSettingsTarget::Profile)
+            .map(NetworkSettingsTarget::Control)
     }
 
     // ------------------------=
     // FUNC: network_profile_target
-    // DESC: Resolves a pointer to one visible operational profile card using the dashboard's shared geometry.
+    // DESC: Resolves a pointer to one visible page control for compatibility with existing UI harnesses.
     // ------------------=
     pub fn network_profile_target(
         self,
@@ -1755,7 +1746,7 @@ impl SystemLayout {
     ) -> Option<usize> {
         let point = self.point(normalized_x, normalized_y);
         self.network_settings_geometry(state)
-            .profile_cards
+            .controls
             .iter()
             .position(|card| card.contains(point))
     }
