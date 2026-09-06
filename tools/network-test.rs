@@ -144,6 +144,8 @@ fn firmware_network_discovery_behavior() {
     let pci_setup = pci_only.setup_snapshot();
     assert!(pci_setup.wired_available);
     assert_eq!(pci_setup.wired_link, LinkState::Unknown);
+    pci_only.select_setup_mode(NetworkSetupMode::Wired);
+    assert!(pci_only.apply_setup_mode().is_ok());
 }
 
 // ------------------------=

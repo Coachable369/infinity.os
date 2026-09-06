@@ -15,7 +15,9 @@ runtime exposes that device as a wired interface before first-boot onboarding.
 The same loader and installed System Generation path are used by VirtualBox.
 When VirtualBox ARM omits that protocol, the loader's **TESTED** ACPI MCFG
 fallback discovers its E1000-class PCI function while leaving unavailable MAC,
-MTU, link, and transport fields explicitly unknown.
+MTU, link, and transport fields explicitly unknown. First-boot setup accepts
+that adapter as present and reports its link as unverified rather than claiming
+that hardware is absent or that routed connectivity already exists.
 
 Native PCI/virtio/e1000 DMA and interrupt drivers remain **UNSUPPORTED**. The
 firmware handoff therefore establishes honest discovery and a future packet-I/O

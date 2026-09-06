@@ -2119,7 +2119,8 @@ impl super::DisplayDevice {
         let selected = snapshot.map(|value| value.selected).unwrap_or(NetworkSetupMode::Automatic);
         let wired_detail: &[u8] = match snapshot {
             Some(value) if value.wired_available && value.wired_link == LinkState::Up => b"Connected link detected",
-            Some(value) if value.wired_available => b"Connect a network cable",
+            Some(value) if value.wired_available && value.wired_link == LinkState::Down => b"Adapter detected; connect a network cable",
+            Some(value) if value.wired_available => b"Wired adapter detected; link unverified",
             _ => b"No wired adapter detected",
         };
         let wireless_detail: &[u8] = match snapshot {

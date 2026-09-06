@@ -262,7 +262,7 @@ impl NetworkRuntime {
         } else {
             self.interfaces.setup_interface(self.setup_mode)
         }.ok_or(NetworkError::InterfaceNotFound)?;
-        if selected.device.link_state != LinkState::Up { return Err(NetworkError::LinkDown); }
+        if selected.device.link_state == LinkState::Down { return Err(NetworkError::LinkDown); }
         let id = selected.id;
         self.interfaces.set_state(id, true)?;
         self.activate_profile(1)?;
