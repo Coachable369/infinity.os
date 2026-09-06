@@ -3856,7 +3856,7 @@ impl super::DisplayDevice {
                 (b"Ambient Authority", b"Denied"),
                 (b"Microphone", b"Not granted"),
                 (b"Remote AI", b"Denied"),
-                (b"Session Auth", b"Verified"),
+                (b"No Activity Timeout", input),
                 (b"Trusted UI", b"Active"),
                 (b"", b""),
                 (b"", b""),
@@ -4052,6 +4052,18 @@ impl super::DisplayDevice {
                     self.settings_color_picker(settings_window, scale, false);
                 } else if focus == 1 && matches!(index, 4 | 5) {
                     self.settings_effect_slider(settings_window, scale, index);
+                } else if focus == 4 && index == 3 {
+                    self.settings_slider(
+                        settings_window,
+                        scale,
+                        index,
+                        parse_leading_u8(input)
+                            .unwrap_or(
+                                crate::runtime::identity::DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES,
+                            )
+                            .saturating_sub(1),
+                        crate::runtime::identity::MAX_NO_ACTIVITY_TIMEOUT_MINUTES - 1,
+                    );
                 } else {
                     let description: &[u8] = match (focus, index) {
                         (0, 0) => b"Rename this machine through the durable identity service.",
@@ -4060,6 +4072,9 @@ impl super::DisplayDevice {
                         (1, 7) => b"Cosmic Horizon is the active packaged desktop wallpaper.",
                         (3, 0) => {
                             b"Choose whether the local provider is strictly required or preferred."
+                        }
+                        (4, 3) => {
+                            b"Lock this user's session after the selected period without input."
                         }
                         _ => b"This value is read from the active System Generation.",
                     };
@@ -4413,13 +4428,28 @@ impl super::DisplayDevice {
         scale: usize,
         index: usize,
     ) {
-        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
         let (opacity, blur) = self.active_background_effects();
         let (value, maximum) = if index == 4 {
             (opacity.saturating_sub(40) / 4, 15)
         } else {
             (blur, 8)
         };
+        self.settings_slider(settings_window, scale, index, value, maximum);
+    }
+
+    // ------------------------=
+    // FUNC: settings_slider
+    // DESC: Renders the shared polished track and thumb for a bounded Settings value.
+    // ------------------=
+    fn settings_slider(
+        &mut self,
+        settings_window: crate::ui::system_layout::SettingsWindowState,
+        scale: usize,
+        index: usize,
+        value: u8,
+        maximum: u8,
+    ) {
+        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
         let geometry =
             layout.settings_effect_slider_geometry(settings_window, index, value, maximum);
         let (outline_r, outline_g, outline_b) =
@@ -7244,6 +7274,25 @@ pub fn system_ui_present(
     _editor_dialog_input: &[u8],
     _editor_dialog_focus: usize,
 ) {
+}
+
+// ------------------------=
+// FUNC: parse_leading_u8
+// DESC: Reads the bounded numeric prefix used by a Settings value label.
+// ------------------=
+fn parse_leading_u8(input: &[u8]) -> Option<u8> {
+    let mut value = 0u16;
+    let mut digits = 0usize;
+    for byte in input {
+        if !byte.is_ascii_digit() {
+            break;
+        }
+        value = value
+            .saturating_mul(10)
+            .saturating_add((byte - b'0') as u16);
+        digits += 1;
+    }
+    (digits > 0 && value <= u8::MAX as u16).then_some(value as u8)
 }
 
 // ------------------------=

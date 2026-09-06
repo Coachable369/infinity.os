@@ -1891,7 +1891,25 @@ impl SystemLayout {
         index: usize,
         maximum: u8,
     ) -> Option<u8> {
-        if state.expanded_row != Some(index) || !matches!(index, 4 | 5) {
+        if !matches!(index, 4 | 5) {
+            return None;
+        }
+        self.settings_slider_target(normalized_x, normalized_y, state, index, maximum)
+    }
+
+    // ------------------------=
+    // FUNC: settings_slider_target
+    // DESC: Hit-tests a requested expanded Settings slider and returns its bounded typed value.
+    // ------------------=
+    pub fn settings_slider_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+        index: usize,
+        maximum: u8,
+    ) -> Option<u8> {
+        if state.expanded_row != Some(index) {
             return None;
         }
         let point = self.point(normalized_x, normalized_y);
@@ -1903,7 +1921,7 @@ impl SystemLayout {
         {
             return None;
         }
-        Some(self.settings_effect_slider_drag_value(normalized_x, state, index, maximum))
+        Some(self.settings_slider_drag_value(normalized_x, state, index, maximum))
     }
 
     // ------------------------=
@@ -1911,6 +1929,20 @@ impl SystemLayout {
     // DESC: Converts captured horizontal pointer motion into a bounded typed slider value.
     // ------------------=
     pub fn settings_effect_slider_drag_value(
+        self,
+        normalized_x: i32,
+        state: SettingsWindowState,
+        index: usize,
+        maximum: u8,
+    ) -> u8 {
+        self.settings_slider_drag_value(normalized_x, state, index, maximum)
+    }
+
+    // ------------------------=
+    // FUNC: settings_slider_drag_value
+    // DESC: Converts captured horizontal pointer motion for any expanded Settings slider into a bounded value.
+    // ------------------=
+    pub fn settings_slider_drag_value(
         self,
         normalized_x: i32,
         state: SettingsWindowState,

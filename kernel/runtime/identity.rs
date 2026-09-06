@@ -15,6 +15,9 @@ pub const DEFAULT_ACCENT_RGB: u32 = 0x4da3ff;
 pub const DEFAULT_PRIMARY_RGB: u32 = 0x0d2238;
 pub const DEFAULT_BACKGROUND_OPACITY: u8 = 88;
 pub const DEFAULT_BACKGROUND_BLUR: u8 = 4;
+pub const DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES: u8 = 5;
+pub const MIN_NO_ACTIVITY_TIMEOUT_MINUTES: u8 = 1;
+pub const MAX_NO_ACTIVITY_TIMEOUT_MINUTES: u8 = 120;
 const LEGACY_DEFAULT_ACCENT_RGB: u32 = 0x20bfff;
 
 pub const SESSION_PERSONAL_READ: u64 = 1 << 0;
@@ -221,6 +224,7 @@ pub struct UserProfile {
     pub theme: ShortText,
     pub icon_theme: u8,
     pub accent_rgb: u32,
+    pub no_activity_timeout_minutes: u8,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -496,6 +500,7 @@ impl IdentitySystem {
             theme: ShortText::new(b"Cosmic Dark")?,
             icon_theme: 0,
             accent_rgb: DEFAULT_ACCENT_RGB,
+            no_activity_timeout_minutes: DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES,
         });
         self.ai_profiles[slot] = Some(AiProfile {
             user: user_id,
@@ -914,6 +919,34 @@ impl IdentitySystem {
     }
 
     // ------------------------=
+    // FUNC: update_user_no_activity_timeout
+    // DESC: Persists the owning user's bounded inactivity-lock deadline in whole minutes.
+    // ------------------=
+    pub fn update_user_no_activity_timeout(
+        &mut self,
+        actor: StableId,
+        user: StableId,
+        minutes: u8,
+    ) -> Result<UserProfile, IdentityError> {
+        if actor != user {
+            return Err(IdentityError::AccessDenied);
+        }
+        if !(MIN_NO_ACTIVITY_TIMEOUT_MINUTES..=MAX_NO_ACTIVITY_TIMEOUT_MINUTES).contains(&minutes) {
+            return Err(IdentityError::InvalidInput);
+        }
+        let profile = self
+            .profiles
+            .iter_mut()
+            .flatten()
+            .find(|profile| profile.user == user)
+            .ok_or(IdentityError::NotFound)?;
+        profile.no_activity_timeout_minutes = minutes;
+        let result = *profile;
+        self.commit();
+        Ok(result)
+    }
+
+    // ------------------------=
     // FUNC: lock_session
     // DESC: Locks an active session and makes its UI inaccessible without ending it.
     // ------------------=
@@ -1113,6 +1146,7 @@ impl IdentitySystem {
                     &mut out,
                     160 + index * 160,
                     *user,
+                    self.profiles[index],
                     self.ai_profiles[index],
                     self.voice_profiles[index],
                 );
@@ -1198,6 +1232,7 @@ impl IdentitySystem {
                     return Err(IdentityError::CorruptState);
                 }
                 if let Some(profile) = state.profiles[index].as_mut() {
+                    profile.no_activity_timeout_minutes = user.1.no_activity_timeout_minutes;
                     profile.icon_theme = icon_theme;
                     let accent_at = USER_ACCENT_OFFSET + index * 3;
                     let stored_accent = ((bytes[accent_at] as u32) << 16)
@@ -1590,6 +1625,7 @@ fn read_profile(input: &[u8], at: usize, user: StableId) -> Result<UserProfile, 
         theme: read_text(input, at + 98)?,
         icon_theme: 0,
         accent_rgb: DEFAULT_ACCENT_RGB,
+        no_activity_timeout_minutes: DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES,
     })
 }
 
@@ -1601,6 +1637,7 @@ fn write_user(
     out: &mut [u8],
     at: usize,
     user: UserIdentity,
+    profile: Option<UserProfile>,
     ai: Option<AiProfile>,
     voice: Option<VoiceProfile>,
 ) {
@@ -1614,7 +1651,11 @@ fn write_user(
     write_id(out, at + 140, user.personal_space_ref);
     out[at + 156] = ai.map(|v| v.provider_policy as u8).unwrap_or(1);
     out[at + 157] = ai.map(|v| v.remote_processing as u8).unwrap_or(0);
-    out[at + 158] = voice.map(|v| v.enabled as u8).unwrap_or(0);
+    let timeout_minutes = profile
+        .map(|value| value.no_activity_timeout_minutes)
+        .unwrap_or(DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES)
+        .clamp(MIN_NO_ACTIVITY_TIMEOUT_MINUTES, MAX_NO_ACTIVITY_TIMEOUT_MINUTES);
+    out[at + 158] = voice.map(|v| v.enabled as u8).unwrap_or(0) | (timeout_minutes << 1);
     out[at + 159] = voice.map(|v| v.activation as u8).unwrap_or(1)
 }
 
@@ -1647,6 +1688,11 @@ fn read_user(
         theme: ShortText::new(b"Cosmic Dark")?,
         icon_theme: 0,
         accent_rgb: DEFAULT_ACCENT_RGB,
+        no_activity_timeout_minutes: match input[at + 158] >> 1 {
+            0 => DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES,
+            value if value <= MAX_NO_ACTIVITY_TIMEOUT_MINUTES => value,
+            _ => return Err(IdentityError::CorruptState),
+        },
     };
     let ai = AiProfile {
         user: id,

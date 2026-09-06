@@ -1218,6 +1218,27 @@ fn installed_system_hit_geometry_test() {
         square.settings_effect_slider_drag_value(1000, opacity_expanded, 4, 15),
         15
     );
+    let timeout_expanded = SettingsWindowState {
+        expanded_row: Some(3),
+        ..settings
+    };
+    let timeout_slider = square.settings_effect_slider_geometry(timeout_expanded, 3, 44, 119);
+    let timeout_x =
+        (timeout_slider.thumb.x + (timeout_slider.thumb.width / 2) as i32) * 1000 / 1600;
+    let timeout_y =
+        (timeout_slider.thumb.y + (timeout_slider.thumb.height / 2) as i32) * 1000 / 1600;
+    assert_eq!(
+        square.settings_slider_target(timeout_x, timeout_y, timeout_expanded, 3, 119),
+        Some(44)
+    );
+    assert_eq!(
+        square.settings_slider_drag_value(0, timeout_expanded, 3, 119),
+        0
+    );
+    assert_eq!(
+        square.settings_slider_drag_value(1000, timeout_expanded, 3, 119),
+        119
+    );
     let blur_expanded = SettingsWindowState {
         expanded_row: Some(5),
         ..opacity_expanded

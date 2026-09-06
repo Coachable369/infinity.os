@@ -355,6 +355,7 @@ struct ConsoleRuntime {
     settings_primary_dirty: bool,
     settings_effects_dirty: bool,
     settings_effect_dragging: Option<usize>,
+    settings_timeout_dragging: bool,
     settings_scroll_dragging: bool,
     settings_scroll_grab_offset: i32,
     onboarding_validation_error: bool,
@@ -484,6 +485,7 @@ impl ConsoleRuntime {
             settings_primary_dirty: false,
             settings_effects_dirty: false,
             settings_effect_dragging: None,
+            settings_timeout_dragging: false,
             settings_scroll_dragging: false,
             settings_scroll_grab_offset: 0,
             onboarding_validation_error: false,
@@ -715,7 +717,10 @@ impl ConsoleRuntime {
             let mut settings_value = [0u8; 48];
             let mut settings_value_length = 0usize;
             if self.mode == ConsoleMode::Settings && !self.settings_editing {
-                if let Some(machine) =
+                if self.system_focus == 4 {
+                    let minutes = self.user_no_activity_timeout_minutes();
+                    settings_value_length = write_minutes_label(&mut settings_value, minutes);
+                } else if let Some(machine) =
                     crate::runtime::with_runtime(|runtime| runtime.identity.machine()).flatten()
                 {
                     settings_value_length = machine.display_name.as_bytes().len();
@@ -1144,6 +1149,7 @@ impl ConsoleRuntime {
         self.settings_primary_dirty = false;
         self.settings_effects_dirty = false;
         self.settings_effect_dragging = None;
+        self.settings_timeout_dragging = false;
         self.settings_scroll_dragging = false;
         self.settings_window_dragging = false;
         self.settings_window_resizing = None;
@@ -1809,6 +1815,7 @@ impl ConsoleRuntime {
         self.settings_primary_dirty = false;
         self.settings_effects_dirty = false;
         self.settings_effect_dragging = None;
+        self.settings_timeout_dragging = false;
         self.settings_scroll_dragging = false;
         self.reset_input();
     }
@@ -2042,6 +2049,60 @@ impl ConsoleRuntime {
             self.preview_background_effect(row, if blur >= 8 { 0 } else { blur + 1 });
         }
         self.commit_background_effects();
+    }
+
+    // ------------------------=
+    // FUNC: user_no_activity_timeout_minutes
+    // DESC: Reads the authenticated user's effective inactivity-lock deadline.
+    // ------------------=
+    fn user_no_activity_timeout_minutes(&self) -> u8 {
+        crate::runtime::with_runtime(|runtime| {
+            runtime
+                .identity
+                .user_profile(self.current_user)
+                .map(|profile| profile.no_activity_timeout_minutes)
+        })
+        .flatten()
+        .unwrap_or(crate::runtime::identity::DEFAULT_NO_ACTIVITY_TIMEOUT_MINUTES)
+    }
+
+    // ------------------------=
+    // FUNC: preview_user_no_activity_timeout
+    // DESC: Applies a bounded slider value to the live user profile without a durable write per pointer sample.
+    // ------------------=
+    fn preview_user_no_activity_timeout(&mut self, minutes: u8) {
+        let _ = crate::runtime::with_runtime(|runtime| {
+            runtime.identity.update_user_no_activity_timeout(
+                self.current_user,
+                self.current_user,
+                minutes,
+            )
+        });
+    }
+
+    // ------------------------=
+    // FUNC: commit_user_no_activity_timeout
+    // DESC: Commits the selected user inactivity-lock deadline once after slider capture ends.
+    // ------------------=
+    fn commit_user_no_activity_timeout(&mut self) {
+        let _ = crate::runtime::persist_identity_state();
+    }
+
+    // ------------------------=
+    // FUNC: cycle_user_no_activity_timeout
+    // DESC: Advances the inactivity deadline through practical keyboard-accessible presets.
+    // ------------------=
+    fn cycle_user_no_activity_timeout(&mut self) {
+        const PRESETS: [u8; 8] = [1, 5, 10, 15, 30, 45, 60, 120];
+        let current = self.user_no_activity_timeout_minutes();
+        let next = PRESETS
+            .iter()
+            .position(|value| *value >= current)
+            .map(|index| PRESETS[(index + 1) % PRESETS.len()])
+            .unwrap_or(PRESETS[0]);
+        self.preview_user_no_activity_timeout(next);
+        self.commit_user_no_activity_timeout();
+        self.session_idle.note_activity();
     }
 
     // ------------------------=
@@ -2298,6 +2359,7 @@ impl ConsoleRuntime {
                     let _ = crate::runtime::persist_identity_state();
                 }
             }
+            (4, 3) => self.cycle_user_no_activity_timeout(),
             (6, profile @ 0..=4) => {
                 let profile_id = profile as u32 + 1;
                 if crate::runtime::activate_network_profile_from_settings(
@@ -3091,6 +3153,13 @@ impl ConsoleRuntime {
             }
             if self.system_focus == 3 {
                 self.activate_settings_content_row(0);
+            }
+            if self.system_focus == 4 {
+                if self.settings_window.expanded_row == Some(3) {
+                    self.activate_settings_content_row(3);
+                } else {
+                    self.toggle_settings_row(3);
+                }
             }
             if self.system_focus == 6 {
                 let active = crate::runtime::with_runtime(|runtime| {
@@ -4728,7 +4797,23 @@ impl ConsoleRuntime {
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
-            if let Some(row) = self.settings_effect_dragging {
+            if self.settings_timeout_dragging {
+                if left_button {
+                    let value = layout.settings_slider_drag_value(
+                        self.pointer_x,
+                        self.settings_window,
+                        3,
+                        crate::runtime::identity::MAX_NO_ACTIVITY_TIMEOUT_MINUTES - 1,
+                    );
+                    self.preview_user_no_activity_timeout(value.saturating_add(1));
+                }
+                if released {
+                    self.settings_timeout_dragging = false;
+                    self.commit_user_no_activity_timeout();
+                }
+                self.redraw();
+                return;
+            } else if let Some(row) = self.settings_effect_dragging {
                 if left_button {
                     let maximum = if row == 4 { 15 } else { 8 };
                     let value = layout.settings_effect_slider_drag_value(
@@ -4748,6 +4833,19 @@ impl ConsoleRuntime {
                 }
                 self.redraw();
                 return;
+            } else if self.system_focus == 4 && left_button && clicked {
+                if let Some(value) = layout.settings_slider_target(
+                    self.pointer_x,
+                    self.pointer_y,
+                    self.settings_window,
+                    3,
+                    crate::runtime::identity::MAX_NO_ACTIVITY_TIMEOUT_MINUTES - 1,
+                ) {
+                    self.settings_timeout_dragging = true;
+                    self.preview_user_no_activity_timeout(value.saturating_add(1));
+                    self.redraw();
+                    return;
+                }
             } else if self.settings_scroll_dragging {
                 if left_button {
                     self.settings_window.scroll_offset = layout.settings_scroll_offset_for_thumb(
@@ -7798,9 +7896,10 @@ pub fn clock_tick() {
             ) {
                 return;
             }
+            let timeout_seconds = u32::from(runtime.user_no_activity_timeout_minutes()) * 60;
             if runtime
                 .session_idle
-                .tick(!runtime.current_session.is_zero(), 5 * 60)
+                .tick(!runtime.current_session.is_zero(), timeout_seconds)
             {
                 if runtime.lock_session_preserving_desktop(true) {
                     runtime.redraw();
@@ -7814,6 +7913,31 @@ pub fn clock_tick() {
             }
         }
     }
+}
+
+// ------------------------=
+// FUNC: write_minutes_label
+// DESC: Formats a bounded minute preference for direct use in the Settings summary row.
+// ------------------=
+fn write_minutes_label(output: &mut [u8; 48], minutes: u8) -> usize {
+    let mut reverse = [0u8; 3];
+    let mut value = minutes;
+    let mut digits = 0usize;
+    while value > 0 {
+        reverse[digits] = b'0' + value % 10;
+        value /= 10;
+        digits += 1;
+    }
+    for index in 0..digits {
+        output[index] = reverse[digits - index - 1];
+    }
+    let unit = if minutes == 1 {
+        b" minute".as_slice()
+    } else {
+        b" minutes".as_slice()
+    };
+    output[digits..digits + unit.len()].copy_from_slice(unit);
+    digits + unit.len()
 }
 
 // ------------------------=

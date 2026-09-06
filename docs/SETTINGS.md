@@ -23,6 +23,12 @@ independent preference databases. Current scopes are System, Machine, User,
 Session, and Application; Milestone 7 implements machine naming and user-scoped
 appearance, local-AI policy, and opt-in voice state.
 
+`Settings > Privacy & Security > No Activity Timeout` is a durable, user-scoped
+slider from 1 through 120 minutes. The default is 5 minutes. Keyboard activation
+cycles practical presets, while pointer input previews the exact minute and
+commits once on release. Authenticated keyboard, pointer, and wheel activity
+restart the deadline; expiry locks the session while preserving desktop layout.
+
 ## Installed theme colors
 
 `Settings > Themes & Skins` exposes adjacent `Primary` and `Secondary` rows.
