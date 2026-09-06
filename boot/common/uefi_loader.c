@@ -165,6 +165,11 @@ typedef struct {
 } EFI_BOOT_SERVICES;
 
 typedef struct {
+    EFI_GUID vendor_guid;
+    void *vendor_table;
+} EFI_CONFIGURATION_TABLE;
+
+typedef struct {
     EFI_TABLE_HEADER header;
     CHAR16 *firmware_vendor;
     uint32_t firmware_revision;
@@ -177,6 +182,8 @@ typedef struct {
     EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL *std_err;
     void *runtime_services;
     EFI_BOOT_SERVICES *boot_services;
+    size_t number_of_table_entries;
+    EFI_CONFIGURATION_TABLE *configuration_table;
 } EFI_SYSTEM_TABLE;
 
 typedef struct {
@@ -268,6 +275,68 @@ struct EFI_BLOCK_IO_PROTOCOL {
 };
 
 typedef struct {
+    uint8_t address[32];
+} EFI_MAC_ADDRESS;
+
+typedef struct {
+    uint32_t state;
+    uint32_t hw_address_size;
+    uint32_t media_header_size;
+    uint32_t max_packet_size;
+    uint32_t nvram_size;
+    uint32_t nvram_access_size;
+    uint32_t receive_filter_mask;
+    uint32_t receive_filter_setting;
+    uint32_t max_mcast_filter_count;
+    uint32_t mcast_filter_count;
+    EFI_MAC_ADDRESS mcast_filter[16];
+    EFI_MAC_ADDRESS current_address;
+    EFI_MAC_ADDRESS broadcast_address;
+    EFI_MAC_ADDRESS permanent_address;
+    uint8_t if_type;
+    uint8_t mac_address_changeable;
+    uint8_t multiple_tx_supported;
+    uint8_t media_present_supported;
+    uint8_t media_present;
+} EFI_SIMPLE_NETWORK_MODE;
+
+typedef struct {
+    uint64_t revision;
+    void *start;
+    void *stop;
+    void *initialize;
+    void *reset;
+    void *shutdown;
+    void *receive_filters;
+    void *station_address;
+    void *statistics;
+    void *mcast_ip_to_mac;
+    void *nv_data;
+    void *get_status;
+    void *transmit;
+    void *receive;
+    void *wait_for_packet;
+    EFI_SIMPLE_NETWORK_MODE *mode;
+} EFI_SIMPLE_NETWORK_PROTOCOL;
+
+typedef struct EFI_PCI_IO_PROTOCOL EFI_PCI_IO_PROTOCOL;
+typedef EFI_STATUS (EFIAPI *EFI_PCI_CONFIG_ACCESS)(EFI_PCI_IO_PROTOCOL *,
+    uint32_t, uint64_t, size_t, void *);
+typedef struct {
+    EFI_PCI_CONFIG_ACCESS read;
+    EFI_PCI_CONFIG_ACCESS write;
+} EFI_PCI_CONFIG_ACCESS_PAIR;
+struct EFI_PCI_IO_PROTOCOL {
+    void *poll_mem;
+    void *poll_io;
+    void *mem_read;
+    void *mem_write;
+    void *io_read;
+    void *io_write;
+    EFI_PCI_CONFIG_ACCESS_PAIR pci;
+};
+
+typedef struct {
     uint8_t ident[16];
     uint16_t type;
     uint16_t machine;
@@ -305,6 +374,12 @@ static const EFI_GUID graphics_output_guid = {0x9042a9de, 0x23dc, 0x4a38,
     {0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a}};
 static const EFI_GUID block_io_guid = {0x964e5b21, 0x6459, 0x11d2,
     {0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
+static const EFI_GUID simple_network_guid = {0xa19832b9, 0xac25, 0x11d3,
+    {0x9a, 0x2d, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d}};
+static const EFI_GUID pci_io_guid = {0x4cf5b200, 0x68b8, 0x4ca5,
+    {0x9e, 0xec, 0xb2, 0x3e, 0x3f, 0x50, 0x02, 0x9a}};
+static const EFI_GUID acpi20_table_guid = {0x8868e871, 0xe4f1, 0x11d3,
+    {0xbc, 0x22, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81}};
 static const uint8_t infinity_partition_type[16] =
     {0x69,0x66,0x6e,0x49,0x69,0x6e,0x79,0x74,0x53,0x54,0x4f,0x52,0x41,0x47,0x45,0x31};
 
@@ -910,6 +985,146 @@ static InfinityFirmwarePointers *gather_firmware_pointers(EFI_SYSTEM_TABLE *syst
 #endif
 
 // ------------------------=
+// FUNC: discover_acpi_network
+// DESC: Finds an Ethernet-class PCI function through the ACPI MCFG table when firmware provides no network protocol.
+// ------------------=
+static uint8_t discover_acpi_network(EFI_SYSTEM_TABLE *system, InfinityBootInfo *info) {
+    if (!system || !system->configuration_table) return 0;
+    const uint8_t rsdp_signature[8] = {'R','S','D',' ','P','T','R',' '};
+    const uint8_t mcfg_signature[4] = {'M','C','F','G'};
+    for (size_t table_index = 0; table_index < system->number_of_table_entries; ++table_index) {
+        EFI_CONFIGURATION_TABLE *entry = &system->configuration_table[table_index];
+        if (!equal_bytes((const uint8_t *)&entry->vendor_guid,
+                (const uint8_t *)&acpi20_table_guid, sizeof(EFI_GUID)) || !entry->vendor_table) continue;
+        const uint8_t *rsdp = entry->vendor_table;
+        if (!equal_bytes(rsdp, rsdp_signature, sizeof(rsdp_signature)) || rsdp[15] < 2) continue;
+        const uint8_t *xsdt = (const uint8_t *)(uintptr_t)read_u64(rsdp + 24);
+        if (!xsdt || read_u32(xsdt + 4) < 36u) continue;
+        size_t xsdt_entries = (read_u32(xsdt + 4) - 36u) / 8u;
+        for (size_t xsdt_index = 0; xsdt_index < xsdt_entries; ++xsdt_index) {
+            const uint8_t *table = (const uint8_t *)(uintptr_t)read_u64(xsdt + 36u + xsdt_index * 8u);
+            if (!table || !equal_bytes(table, mcfg_signature, sizeof(mcfg_signature)) ||
+                read_u32(table + 4) < 60u) continue;
+            size_t allocation_count = (read_u32(table + 4) - 44u) / 16u;
+            for (size_t allocation = 0; allocation < allocation_count; ++allocation) {
+                const uint8_t *descriptor = table + 44u + allocation * 16u;
+                uint64_t ecam = read_u64(descriptor);
+                uint8_t first_bus = descriptor[10];
+                uint8_t last_bus = descriptor[11];
+                for (uint32_t bus = first_bus; bus <= last_bus; ++bus) {
+                    for (uint32_t device = 0; device < 32u; ++device) {
+                        uintptr_t function = (uintptr_t)ecam +
+                            ((uintptr_t)(bus - first_bus) << 20) + ((uintptr_t)device << 15);
+                        uint32_t identity = *(volatile uint32_t *)function;
+                        if ((identity & 0xffffu) == 0xffffu) continue;
+                        uint32_t class_revision = *(volatile uint32_t *)(function + 8u);
+                        if (((class_revision >> 24) & 0xffu) != 0x02u) continue;
+                        info->firmware_network = UINT64_C(0x8000000000000000) |
+                            ((uint64_t)(identity & 0xffffu) << 16) |
+                            ((uint64_t)(identity >> 16) & 0xffffu);
+                        info->network_device_count = 1;
+                        info->network_link_state = 0u;
+                        info->network_mtu = 0u;
+                        info->network_capabilities = 0u;
+                        info->network_mac_length = 0u;
+                        info->network_reserved = 3u;
+                        serial_write("[BOOT] ACPI PCI network adapter discovered\n");
+                        return 1;
+                    }
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// ------------------------=
+// FUNC: gather_firmware_network
+// DESC: Discovers the first UEFI network adapter and copies observed link, MTU, MAC, and transport capability into the stable handoff.
+// ------------------=
+static void gather_firmware_network(EFI_SYSTEM_TABLE *system, InfinityBootInfo *info) {
+    EFI_BOOT_SERVICES *boot = system->boot_services;
+    if (!boot || !boot->locate_handle_buffer || !boot->handle_protocol) return;
+
+    if (boot->connect_controller) {
+        EFI_HANDLE *all_handles = NULL;
+        size_t all_handle_count = 0;
+        if (boot->locate_handle_buffer(EFI_ALL_HANDLES, NULL, NULL,
+                &all_handle_count, &all_handles) == EFI_SUCCESS) {
+            for (size_t index = 0; index < all_handle_count; ++index)
+                boot->connect_controller(all_handles[index], NULL, NULL, 1);
+            boot->free_pool(all_handles);
+        }
+    }
+
+    EFI_HANDLE *handles = NULL;
+    size_t handle_count = 0;
+    EFI_GUID guid = simple_network_guid;
+    if (boot->locate_handle_buffer(EFI_BY_PROTOCOL, &guid, NULL,
+            &handle_count, &handles) != EFI_SUCCESS) {
+        (void)discover_acpi_network(system, info);
+        return;
+    }
+    for (size_t index = 0; index < handle_count; ++index) {
+        EFI_SIMPLE_NETWORK_PROTOCOL *network = NULL;
+        guid = simple_network_guid;
+        if (boot->handle_protocol(handles[index], &guid, (void **)&network) != EFI_SUCCESS ||
+            !network || !network->mode) continue;
+        EFI_SIMPLE_NETWORK_MODE *mode = network->mode;
+        info->firmware_network = (uint64_t)(uintptr_t)network;
+        info->network_device_count = 1;
+        info->network_link_state = mode->media_present_supported
+            ? (mode->media_present ? 2u : 1u)
+            : 0u;
+        info->network_mtu = mode->max_packet_size;
+        info->network_capabilities = (network->receive ? 1u : 0u) |
+                                     (network->transmit ? 2u : 0u);
+        info->network_mac_length = mode->hw_address_size < sizeof(info->network_mac)
+            ? mode->hw_address_size : sizeof(info->network_mac);
+        info->network_reserved = 1u;
+        memcpy(info->network_mac, mode->current_address.address, info->network_mac_length);
+        serial_write("[BOOT] firmware network adapter ready\n");
+        break;
+    }
+    boot->free_pool(handles);
+    if (info->network_device_count != 0) return;
+
+    /* VirtualBox ARM firmware can expose the emulated Ethernet controller on
+       PCI without installing an SNP driver. Preserve that observed device as
+       a typed, link-unknown adapter so onboarding does not report no hardware. */
+    handles = NULL;
+    handle_count = 0;
+    guid = pci_io_guid;
+    if (boot->locate_handle_buffer(EFI_BY_PROTOCOL, &guid, NULL,
+            &handle_count, &handles) != EFI_SUCCESS) {
+        (void)discover_acpi_network(system, info);
+        return;
+    }
+    for (size_t index = 0; index < handle_count; ++index) {
+        EFI_PCI_IO_PROTOCOL *pci = NULL;
+        uint32_t config[4] = {0, 0, 0, 0};
+        guid = pci_io_guid;
+        if (boot->handle_protocol(handles[index], &guid, (void **)&pci) != EFI_SUCCESS ||
+            !pci || !pci->pci.read ||
+            pci->pci.read(pci, 2u, 0u, 4u, config) != EFI_SUCCESS) continue;
+        if (((config[2] >> 24) & 0xffu) != 0x02u) continue;
+        info->firmware_network = UINT64_C(0x8000000000000000) |
+            ((uint64_t)(config[0] & 0xffffu) << 16) |
+            ((uint64_t)(config[0] >> 16) & 0xffffu);
+        info->network_device_count = 1;
+        info->network_link_state = 0u;
+        info->network_mtu = 0u;
+        info->network_capabilities = 0u;
+        info->network_mac_length = 0u;
+        info->network_reserved = 2u;
+        serial_write("[BOOT] PCI network adapter discovered\n");
+        break;
+    }
+    boot->free_pool(handles);
+    if (info->network_device_count == 0) (void)discover_acpi_network(system, info);
+}
+
+// ------------------------=
 // FUNC: efi_main
 // DESC: Runs the UEFI loader entry point.
 // ------------------=
@@ -952,6 +1167,14 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     info->firmware_input = 0;
     info->firmware_pointer = 0;
     info->firmware_runtime_services = (uint64_t)(uintptr_t)system->runtime_services;
+    info->firmware_network = 0;
+    info->network_device_count = 0;
+    info->network_link_state = 0;
+    info->network_mtu = 0;
+    info->network_capabilities = 0;
+    info->network_mac_length = 0;
+    info->network_reserved = 0;
+    memset(info->network_mac, 0, sizeof(info->network_mac));
     gather_framebuffer(system, info);
 #if defined(INFINITY_AARCH64)
     if (system->con_in && system->con_in->read_key_stroke) {
@@ -968,6 +1191,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         serial_write("[BOOT] firmware pointer set ready\n");
     }
 #endif
+    gather_firmware_network(system, info);
 
     size_t map_size = 0, descriptor_size = 0;
     uint64_t map_key = 0;

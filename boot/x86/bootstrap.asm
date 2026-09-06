@@ -74,11 +74,11 @@ protected_entry:
 .segments_loaded:
     mov edi, BOOT_INFO
     xor eax, eax
-    mov ecx, 28                ; 112-byte BootInfo v4
+    mov ecx, 44                ; 176-byte BootInfo v5
     rep stosd
     mov dword [BOOT_INFO], BOOT_MAGIC_LOW
     mov dword [BOOT_INFO + 4], BOOT_MAGIC_HIGH
-    mov dword [BOOT_INFO + 8], 4
+    mov dword [BOOT_INFO + 8], 5
     mov dword [BOOT_INFO + 12], 1
     mov dword [BOOT_INFO + 32], 1
     push dword BOOT_INFO

@@ -1636,6 +1636,16 @@ pub fn initialize() {
     }
     crate::output_text(b"[runtime] execution manager online\n[runtime] capability manager online\n[iop] router online\n[event] fabric online\n");
 }
+
+// ------------------------=
+// FUNC: register_firmware_network_device
+// DESC: Adds one firmware-discovered network adapter to the authoritative runtime before user setup begins.
+// ------------------=
+pub fn register_firmware_network_device(
+    device: network::types::FirmwareNetworkDevice,
+) -> bool {
+    runtime_mut().network.register_firmware_device(device).is_ok()
+}
 #[inline(never)]
 // ------------------------=
 // FUNC: storage_initialized

@@ -120,6 +120,17 @@ pub struct NetworkDevice {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FirmwareNetworkDevice {
+    pub firmware_handle: u64,
+    pub device_id: u64,
+    pub hardware_address: Option<[u8; 6]>,
+    pub link_state: LinkState,
+    pub maximum_frame_size: u16,
+    pub can_receive: bool,
+    pub can_transmit: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct NetworkInterface {
     pub id: InterfaceId, pub device: NetworkDevice, pub enabled: bool,
     pub rx_packets: u64, pub tx_packets: u64, pub rx_drops: u64, pub tx_drops: u64,

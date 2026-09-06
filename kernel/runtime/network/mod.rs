@@ -79,6 +79,46 @@ impl NetworkRuntime {
     }
 
     // ------------------------=
+    // FUNC: register_firmware_device
+    // DESC: Registers one UEFI-discovered adapter as an explicit typed interface without inventing address or reachability state.
+    // ------------------=
+    pub fn register_firmware_device(
+        &mut self,
+        device: FirmwareNetworkDevice,
+    ) -> Result<InterfaceId, NetworkError> {
+        let interface_id = 2;
+        if self.interfaces.interface(interface_id).is_some() {
+            return Ok(interface_id);
+        }
+        self.interfaces.add_interface(NetworkInterface {
+            id: interface_id,
+            device: NetworkDevice {
+                device_id: device.device_id,
+                driver_id: 0x534e_5030,
+                link_type: LinkType::Ethernet,
+                hardware_address: device.hardware_address,
+                link_state: device.link_state,
+                maximum_frame_size: device.maximum_frame_size,
+                can_receive: device.can_receive,
+                can_transmit: device.can_transmit,
+                offload_capabilities: 0,
+                operational_state: if device.link_state == LinkState::Up {
+                    OperationalState::Ready
+                } else {
+                    OperationalState::Offline
+                },
+                error_code: 0,
+            },
+            enabled: true,
+            rx_packets: 0,
+            tx_packets: 0,
+            rx_drops: 0,
+            tx_drops: 0,
+        })?;
+        Ok(interface_id)
+    }
+
+    // ------------------------=
     // FUNC: install_bootstrap_policy
     // DESC: Installs explicit system and reference-service loopback policy rather than ambient network authority.
     // ------------------=

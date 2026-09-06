@@ -105,6 +105,48 @@ fn onboarding_network_behavior() {
 }
 
 // ------------------------=
+// FUNC: firmware_network_discovery_behavior
+// DESC: Verifies that a firmware-discovered NAT adapter becomes an available wired interface with observed properties.
+// ------------------=
+fn firmware_network_discovery_behavior() {
+    let mut network = NetworkRuntime::new();
+    network.initialize().unwrap();
+    let mac = [0x08, 0x00, 0x27, 0x12, 0x34, 0x56];
+    let interface_id = network.register_firmware_device(FirmwareNetworkDevice {
+        firmware_handle: 0x1000,
+        device_id: 0x5634_1227_0008,
+        hardware_address: Some(mac),
+        link_state: LinkState::Up,
+        maximum_frame_size: 1500,
+        can_receive: true,
+        can_transmit: true,
+    }).unwrap();
+    let interface = network.interfaces.interface(interface_id).unwrap();
+    assert_eq!(interface.device.hardware_address, Some(mac));
+    assert_eq!(interface.device.maximum_frame_size, 1500);
+    assert_eq!(interface.device.link_state, LinkState::Up);
+    assert!(interface.device.can_receive && interface.device.can_transmit);
+    let setup = network.setup_snapshot();
+    assert!(setup.wired_available);
+    assert_eq!(setup.wired_link, LinkState::Up);
+
+    let mut pci_only = NetworkRuntime::new();
+    pci_only.initialize().unwrap();
+    pci_only.register_firmware_device(FirmwareNetworkDevice {
+        firmware_handle: 0x8000_0000_8086_100e,
+        device_id: 0x8000_0000_8086_100e,
+        hardware_address: None,
+        link_state: LinkState::Unknown,
+        maximum_frame_size: 0,
+        can_receive: false,
+        can_transmit: false,
+    }).unwrap();
+    let pci_setup = pci_only.setup_snapshot();
+    assert!(pci_setup.wired_available);
+    assert_eq!(pci_setup.wired_link, LinkState::Unknown);
+}
+
+// ------------------------=
 // FUNC: settings_dashboard_behavior
 // DESC: Verifies that the live network dashboard remains bounded, non-overlapping, and exposes every operational profile as a hit target.
 // ------------------=
@@ -270,4 +312,4 @@ fn service_recovery_behavior() {
 // FUNC: main
 // DESC: Runs Milestone 8 behavior-only host acceptance tests.
 // ------------------=
-fn main() { route_behavior(); profile_behavior(); onboarding_network_behavior(); settings_dashboard_behavior(); policy_and_transport_behavior(); resolver_and_discovery_behavior(); management_capability_behavior(); iop_and_console_behavior(); network_event_behavior(); service_recovery_behavior(); }
+fn main() { route_behavior(); profile_behavior(); onboarding_network_behavior(); firmware_network_discovery_behavior(); settings_dashboard_behavior(); policy_and_transport_behavior(); resolver_and_discovery_behavior(); management_capability_behavior(); iop_and_console_behavior(); network_event_behavior(); service_recovery_behavior(); }

@@ -146,6 +146,42 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     let devices = drivers::initialize(info);
     crash::set_phase(crash::CrashPhase::Runtime);
     runtime::initialize();
+    if info.network_device_count > 0 {
+        let mut hardware_address = [0u8; 6];
+        hardware_address.copy_from_slice(&info.network_mac[..6]);
+        let _ = runtime::register_firmware_network_device(
+            runtime::network::types::FirmwareNetworkDevice {
+                firmware_handle: info.firmware_network,
+                device_id: if hardware_address == [0; 6] {
+                    0x5545_4649_4e45_5430
+                } else {
+                    u64::from_le_bytes([
+                        hardware_address[0],
+                        hardware_address[1],
+                        hardware_address[2],
+                        hardware_address[3],
+                        hardware_address[4],
+                        hardware_address[5],
+                        0,
+                        0,
+                    ])
+                },
+                hardware_address: if info.network_mac_length >= 6 {
+                    Some(hardware_address)
+                } else {
+                    None
+                },
+                link_state: match info.network_link_state {
+                    2 => runtime::network::types::LinkState::Up,
+                    1 => runtime::network::types::LinkState::Down,
+                    _ => runtime::network::types::LinkState::Unknown,
+                },
+                maximum_frame_size: info.network_mtu.min(u16::MAX as u32) as u16,
+                can_receive: info.network_capabilities & 1 != 0,
+                can_transmit: info.network_capabilities & 2 != 0,
+            },
+        );
+    }
     crash::set_phase(crash::CrashPhase::Storage);
     storage::initialize_object_store();
     runtime::storage_initialized();

@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define INFINITY_BOOT_MAGIC UINT64_C(0x494e46424f4f5430)
-#define INFINITY_BOOT_VERSION 4u
+#define INFINITY_BOOT_VERSION 5u
 #define INFINITY_ARCH_X86_64 2u
 #define INFINITY_ARCH_AARCH64 3u
 
@@ -26,8 +26,16 @@ typedef struct {
     uint64_t firmware_input;
     uint64_t firmware_pointer;
     uint64_t firmware_runtime_services;
+    uint64_t firmware_network;
+    uint32_t network_device_count;
+    uint32_t network_link_state;
+    uint32_t network_mtu;
+    uint32_t network_capabilities;
+    uint32_t network_mac_length;
+    uint32_t network_reserved;
+    uint8_t network_mac[32];
 } InfinityBootInfo;
 
-_Static_assert(sizeof(InfinityBootInfo) == 112, "BootInfo ABI changed");
+_Static_assert(sizeof(InfinityBootInfo) == 176, "BootInfo ABI changed");
 
 #endif

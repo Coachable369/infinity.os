@@ -24,15 +24,18 @@ critical, so local storage, authentication, UI, Console, and local AI continue.
   queues; resolver deadlines/cache expiry; discovery leases; Network-domain
   IEF records; Console schema mapping; service restart; first-boot wired,
   already-associated wireless, and offline selection behavior; setup-mode
-  persistence; and resolution-aware network-step pointer targets.
+  persistence; resolution-aware network-step pointer targets; UEFI Simple
+  Network Protocol enumeration; and typed registration of a NAT-backed virtual
+  wired adapter with observed MAC, MTU, link state, and protocol capabilities;
+  ACPI MCFG fallback discovery for VirtualBox ARM's E1000 PCI function.
 - **IMPLEMENTED BUT UNTESTED IN A VM:** settings-side Network Inspector,
   transactional built-in profile selection, native profile persistence,
   the graphical post-install Network step, and System Generation bootstrap
   objects.
-- **SCAFFOLDED:** secure-connection identity boundary, future NodeIdentity on
+- **SCAFFOLDED:** firmware-backed packet transport, secure-connection identity boundary, future NodeIdentity on
   connections/discovery, dynamic address sources, listener operation IDs,
   wire resolver adapter, and physical adapter registration boundary.
-- **UNSUPPORTED:** physical NIC discovery/interrupts/DMA, virtio-net,
+- **UNSUPPORTED:** native PCI NIC interrupts/DMA, native virtio-net/e1000 packet engines,
   DHCP/SLAAC exchanges, routed packet IO, DNS wire queries, TCP/UDP wire
   engines, Wi-Fi scanning/association, and production TLS/certificate
   validation. When those devices or links are unavailable, onboarding reports
