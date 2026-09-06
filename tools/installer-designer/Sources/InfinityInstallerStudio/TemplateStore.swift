@@ -6,6 +6,19 @@ import UniformTypeIdentifiers
 enum ResizeHandle: CaseIterable, Identifiable {
     case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
     var id: Self { self }
+
+    var accessibilityName: String {
+        switch self {
+        case .topLeft: "top left"
+        case .top: "top"
+        case .topRight: "top right"
+        case .right: "right"
+        case .bottomRight: "bottom right"
+        case .bottom: "bottom"
+        case .bottomLeft: "bottom left"
+        case .left: "left"
+        }
+    }
 }
 
 @MainActor
@@ -104,6 +117,20 @@ final class TemplateStore: ObservableObject {
         }
         inlineEditorElementID = id
         status = "Inline editor opened"
+    }
+
+    // ------------------------=
+    // FUNC: activateCanvasElement
+    // DESC: Selects a clicked canvas object and opens inline editing when the object is unlocked.
+    // ------------------=
+    func activateCanvasElement(_ id: UUID) {
+        selectElement(id)
+        guard selectedElement?.locked == false else {
+            inlineEditorElementID = nil
+            status = "Locked element selected for inspection"
+            return
+        }
+        presentInlineEditor(for: id)
     }
 
     // ------------------------=

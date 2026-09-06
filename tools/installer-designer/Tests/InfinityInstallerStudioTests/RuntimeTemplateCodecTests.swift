@@ -90,6 +90,61 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     }
 
     // ------------------------=
+    // FUNC: testEveryResizeHandleMutatesItsOwnedEdges
+    // DESC: Exercises all eight canvas handles and proves each changes only its corresponding edges.
+    // ------------------=
+    @MainActor
+    func testEveryResizeHandleMutatesItsOwnedEdges() {
+        let translation = CGSize(width: 20, height: 20)
+        for handle in ResizeHandle.allCases {
+            let store = TemplateStore()
+            store.snapEnabled = false
+            let body = store.selectedScreen!.elements.first { $0.role == .body }!
+            store.beginGesture(elementID: body.id)
+            let origin = store.selectedElement!.frame
+            store.resizeSelected(handle: handle, translation: translation, canvasScale: CGSize(width: 1, height: 1))
+            store.endGesture()
+            let resized = store.selectedElement!.frame
+
+            let ownsLeft = [ResizeHandle.topLeft, .left, .bottomLeft].contains(handle)
+            let ownsRight = [ResizeHandle.topRight, .right, .bottomRight].contains(handle)
+            let ownsTop = [ResizeHandle.topLeft, .top, .topRight].contains(handle)
+            let ownsBottom = [ResizeHandle.bottomLeft, .bottom, .bottomRight].contains(handle)
+            XCTAssertEqual(resized.x, origin.x + (ownsLeft ? 20 : 0), "\(handle) left edge")
+            XCTAssertEqual(resized.y, origin.y + (ownsTop ? 20 : 0), "\(handle) top edge")
+            XCTAssertEqual(resized.width, origin.width + (ownsRight ? 20 : 0) - (ownsLeft ? 20 : 0), "\(handle) width")
+            XCTAssertEqual(resized.height, origin.height + (ownsBottom ? 20 : 0) - (ownsTop ? 20 : 0), "\(handle) height")
+        }
+    }
+
+    // ------------------------=
+    // FUNC: testResizeHandleTargetsRemainEasyToGrab
+    // DESC: Verifies resize handles expose a larger interactive target than their visual marker.
+    // ------------------=
+    func testResizeHandleTargetsRemainEasyToGrab() {
+        XCTAssertGreaterThanOrEqual(CanvasInteractionMetrics.resizeHandleHitSize, 28)
+        XCTAssertGreaterThan(CanvasInteractionMetrics.resizeHandleHitSize, CanvasInteractionMetrics.resizeHandleVisualSize)
+    }
+
+    // ------------------------=
+    // FUNC: testCanvasActivationSelectsObjectsAndHonorsLocks
+    // DESC: Exercises direct canvas selection with inline editing for unlocked objects and inspection-only locks.
+    // ------------------=
+    @MainActor
+    func testCanvasActivationSelectsObjectsAndHonorsLocks() {
+        let store = TemplateStore()
+        let body = store.selectedScreen!.elements.first { $0.role == .body }!
+        store.activateCanvasElement(body.id)
+        XCTAssertEqual(store.selectedElementID, body.id)
+        XCTAssertEqual(store.inlineEditorElementID, body.id)
+
+        let primary = store.selectedScreen!.elements.first { $0.role == .primaryButton }!
+        store.activateCanvasElement(primary.id)
+        XCTAssertEqual(store.selectedElementID, primary.id)
+        XCTAssertNil(store.inlineEditorElementID)
+    }
+
+    // ------------------------=
     // FUNC: testLockedButtonIgnoresEditorMutations
     // DESC: Proves button selection remains inspectable while every editor mutation is refused.
     // ------------------=

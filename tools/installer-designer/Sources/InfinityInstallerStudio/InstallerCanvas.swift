@@ -29,6 +29,7 @@ struct InstallerCanvas: View {
                         }
                     }
                     .frame(width: 1000 * canvasScale.width, height: 1000 * canvasScale.height)
+                    .coordinateSpace(name: CanvasInteractionMetrics.coordinateSpaceName)
                     .overlay {
                         RoundedRectangle(cornerRadius: 2)
                             .stroke(Color.white.opacity(0.24), lineWidth: 1)
@@ -139,26 +140,22 @@ private struct CanvasElementView: View {
     var isSelected: Bool { store.selectedElementID == element.id }
 
     var body: some View {
-        elementBody
-            .frame(
-                width: CGFloat(element.frame.width) * canvasScale.width,
-                height: CGFloat(element.frame.height) * canvasScale.height
-            )
-            .opacity(Double(element.opacity) / 100)
-            .overlay { selectionOverlay }
+        ZStack {
+            elementBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(Double(element.opacity) / 100)
+                .contentShape(Rectangle())
+                .gesture(elementInteractionGesture)
+            selectionOverlay
+        }
+        .frame(
+            width: CGFloat(element.frame.width) * canvasScale.width,
+            height: CGFloat(element.frame.height) * canvasScale.height
+        )
             .position(
                 x: CGFloat(element.frame.x) * canvasScale.width + CGFloat(element.frame.width) * canvasScale.width / 2,
                 y: CGFloat(element.frame.y) * canvasScale.height + CGFloat(element.frame.height) * canvasScale.height / 2
             )
-            .contentShape(Rectangle())
-            .onTapGesture {
-                if element.locked {
-                    store.selectElement(element.id)
-                } else {
-                    store.presentInlineEditor(for: element.id)
-                }
-            }
-            .gesture(moveGesture)
     }
 
     @ViewBuilder
@@ -243,6 +240,7 @@ private struct CanvasElementView: View {
             ZStack {
                 Rectangle()
                     .stroke(element.locked ? Color.orange : Color.cyan, style: StrokeStyle(lineWidth: 2, dash: element.locked ? [5, 4] : []))
+                    .allowsHitTesting(false)
                 if element.locked {
                     VStack {
                         HStack {
@@ -257,23 +255,43 @@ private struct CanvasElementView: View {
                         Spacer()
                     }
                     .padding(4)
+                    .allowsHitTesting(false)
                 } else {
                     ForEach(ResizeHandle.allCases) { handle in
-                        ResizeHandleView(handle: handle, store: store, canvasScale: canvasScale)
+                        ResizeHandleView(
+                            handle: handle,
+                            elementID: element.id,
+                            elementFrame: element.frame,
+                            store: store,
+                            canvasScale: canvasScale
+                        )
                     }
                 }
             }
         }
     }
 
-    private var moveGesture: some Gesture {
-        DragGesture(minimumDistance: 2)
+    // ------------------------=
+    // FUNC: elementInteractionGesture
+    // DESC: Distinguishes a direct selection click from a canvas move without competing recognizers.
+    // ------------------=
+    private var elementInteractionGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(CanvasInteractionMetrics.coordinateSpaceName))
             .onChanged { value in
                 guard !element.locked else { return }
+                let distance = max(abs(value.translation.width), abs(value.translation.height))
+                guard distance >= CanvasInteractionMetrics.dragThreshold else { return }
                 store.beginGesture(elementID: element.id)
                 store.moveSelected(translation: value.translation, canvasScale: canvasScale)
             }
-            .onEnded { _ in store.endGesture() }
+            .onEnded { value in
+                let distance = max(abs(value.translation.width), abs(value.translation.height))
+                if distance < CanvasInteractionMetrics.dragThreshold {
+                    store.activateCanvasElement(element.id)
+                } else {
+                    store.endGesture()
+                }
+            }
     }
 
     // ------------------------=
@@ -300,38 +318,63 @@ private struct CanvasElementView: View {
 
 private struct ResizeHandleView: View {
     let handle: ResizeHandle
+    let elementID: UUID
+    let elementFrame: CanvasRect
     @ObservedObject var store: TemplateStore
     let canvasScale: CGSize
 
     var body: some View {
-        Circle()
-            .fill(Color.white)
-            .overlay(Circle().stroke(Color.cyan, lineWidth: 2))
-            .frame(width: 11, height: 11)
-            .position(handlePosition)
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        store.beginGesture()
-                        store.resizeSelected(handle: handle, translation: value.translation, canvasScale: canvasScale)
-                    }
-                    .onEnded { _ in store.endGesture() }
-            )
+        ZStack {
+            Rectangle()
+                .fill(Color.clear)
+            Circle()
+                .fill(Color.white)
+                .overlay(Circle().stroke(Color.cyan, lineWidth: 2))
+                .frame(
+                    width: CanvasInteractionMetrics.resizeHandleVisualSize,
+                    height: CanvasInteractionMetrics.resizeHandleVisualSize
+                )
+                .allowsHitTesting(false)
+        }
+        .frame(
+            width: CanvasInteractionMetrics.resizeHandleHitSize,
+            height: CanvasInteractionMetrics.resizeHandleHitSize
+        )
+        .contentShape(Rectangle())
+        .position(handlePosition)
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .named(CanvasInteractionMetrics.coordinateSpaceName))
+                .onChanged { value in
+                    store.beginGesture(elementID: elementID)
+                    store.resizeSelected(handle: handle, translation: value.translation, canvasScale: canvasScale)
+                }
+                .onEnded { _ in store.endGesture() }
+        )
+        .accessibilityLabel("Resize \(handle.accessibilityName)")
+        .accessibilityHint("Drag to resize the selected element")
     }
 
     private var handlePosition: CGPoint {
-        guard let element = store.selectedElement else { return .zero }
-        let width = CGFloat(element.frame.width) * canvasScale.width
-        let height = CGFloat(element.frame.height) * canvasScale.height
+        let width = CGFloat(elementFrame.width) * canvasScale.width
+        let height = CGFloat(elementFrame.height) * canvasScale.height
+        let insetX = min(CanvasInteractionMetrics.resizeHandleVisualSize / 2, width / 2)
+        let insetY = min(CanvasInteractionMetrics.resizeHandleVisualSize / 2, height / 2)
         return switch handle {
-        case .topLeft: CGPoint(x: 0, y: 0)
-        case .top: CGPoint(x: width / 2, y: 0)
-        case .topRight: CGPoint(x: width, y: 0)
-        case .right: CGPoint(x: width, y: height / 2)
-        case .bottomRight: CGPoint(x: width, y: height)
-        case .bottom: CGPoint(x: width / 2, y: height)
-        case .bottomLeft: CGPoint(x: 0, y: height)
-        case .left: CGPoint(x: 0, y: height / 2)
+        case .topLeft: CGPoint(x: insetX, y: insetY)
+        case .top: CGPoint(x: width / 2, y: insetY)
+        case .topRight: CGPoint(x: width - insetX, y: insetY)
+        case .right: CGPoint(x: width - insetX, y: height / 2)
+        case .bottomRight: CGPoint(x: width - insetX, y: height - insetY)
+        case .bottom: CGPoint(x: width / 2, y: height - insetY)
+        case .bottomLeft: CGPoint(x: insetX, y: height - insetY)
+        case .left: CGPoint(x: insetX, y: height / 2)
         }
     }
+}
+
+enum CanvasInteractionMetrics {
+    static let coordinateSpaceName = "installer-canvas"
+    static let resizeHandleVisualSize: CGFloat = 12
+    static let resizeHandleHitSize: CGFloat = 30
+    static let dragThreshold: CGFloat = 2
 }
