@@ -42,12 +42,10 @@ enum TemplateValidator {
             guard back.count == 1, primary.count == 1 else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Canonical Back and Primary buttons are required")
             }
-            guard back[0].locked, primary[0].locked,
-                  back[0].kind == .button, primary[0].kind == .button,
-                  back[0].frame == CanvasRect(x: 135, y: 820, width: 350, height: 55),
-                  primary[0].frame == CanvasRect(x: 510, y: 820, width: 350, height: 55)
+            guard back[0].kind == .button, primary[0].kind == .button,
+                  !back[0].hidden, !primary[0].hidden
             else {
-                throw TemplateValidationIssue.invalidScreen(screen.id, "Navigation buttons are immutable")
+                throw TemplateValidationIssue.invalidScreen(screen.id, "Visible Back and Primary button actions are required")
             }
             guard screen.elements.contains(where: { $0.role == .console }) else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "A console frame is required")

@@ -109,13 +109,13 @@ impl<'a> InstallerTemplate<'a> {
                 }
                 if element.role == InstallerTemplateRole::BackButton as u8 {
                     back_count = back_count.saturating_add(1);
-                    if !canonical_button(&element, false) {
+                    if !functional_button(&element) {
                         return Err(InstallerTemplateError::InvalidNavigation);
                     }
                 }
                 if element.role == InstallerTemplateRole::PrimaryButton as u8 {
                     primary_count = primary_count.saturating_add(1);
-                    if !canonical_button(&element, true) {
+                    if !functional_button(&element) {
                         return Err(InstallerTemplateError::InvalidNavigation);
                     }
                 }
@@ -323,13 +323,9 @@ fn element_is_bounded(frame: InstallerTemplateRect) -> bool {
 }
 
 // ------------------------=
-// FUNC: canonical_button
-// DESC: Enforces immutable button type, state, and gold-standard geometry.
+// FUNC: functional_button
+// DESC: Preserves a visible installer navigation action while allowing authored lock and geometry state.
 // ------------------=
-fn canonical_button(element: &InstallerTemplateElement<'_>, primary: bool) -> bool {
-    let expected_x = if primary { 510 } else { 135 };
-    element.kind == 5
-        && element.locked
-        && !element.hidden
-        && element.frame == (InstallerTemplateRect { x: expected_x, y: 820, width: 350, height: 55 })
+fn functional_button(element: &InstallerTemplateElement<'_>) -> bool {
+    element.kind == 5 && !element.hidden
 }

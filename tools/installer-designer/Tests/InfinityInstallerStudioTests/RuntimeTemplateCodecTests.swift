@@ -33,15 +33,22 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     }
 
     // ------------------------=
-    // FUNC: testNavigationButtonsCannotBeChangedInSavedTemplates
-    // DESC: Proves validation rejects edits to protected navigation geometry and state.
+    // FUNC: testNavigationActionsSurviveUnlockedAuthoredAppearance
+    // DESC: Proves buttons retain required action roles while lock state and geometry persist.
     // ------------------=
-    func testNavigationButtonsCannotBeChangedInSavedTemplates() {
+    func testNavigationActionsSurviveUnlockedAuthoredAppearance() throws {
         var document = InstallerStudioDocument.factoryDefault()
         let button = document.screens[0].elements.firstIndex { $0.role == .primaryButton }!
         document.screens[0].elements[button].frame.x += 10
         document.screens[0].elements[button].locked = false
 
+        let decoded = try RuntimeTemplateCodec.decode(RuntimeTemplateCodec.encode(document))
+
+        XCTAssertEqual(decoded.screens[0].elements[button].role, .primaryButton)
+        XCTAssertFalse(decoded.screens[0].elements[button].locked)
+        XCTAssertEqual(decoded.screens[0].elements[button].frame.x, 520)
+
+        document.screens[0].elements[button].role = .decoration
         XCTAssertThrowsError(try RuntimeTemplateCodec.encode(document))
     }
 
@@ -101,6 +108,32 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     }
 
     // ------------------------=
+    // FUNC: testEveryElementCanToggleLockAndInlineEditingRequiresUnlock
+    // DESC: Exercises persisted lock control and the canvas inline-editor gate for every element kind.
+    // ------------------=
+    @MainActor
+    func testEveryElementCanToggleLockAndInlineEditingRequiresUnlock() {
+        let store = TemplateStore()
+        let elements = store.selectedScreen!.elements
+
+        for element in elements {
+            store.selectElement(element.id)
+            if !store.selectedElement!.locked {
+                store.toggleElementLock(element.id)
+            }
+            store.presentInlineEditor(for: element.id)
+            XCTAssertNil(store.inlineEditorElementID)
+
+            store.toggleElementLock(element.id)
+            store.presentInlineEditor(for: element.id)
+            XCTAssertEqual(store.inlineEditorElementID, element.id)
+            store.updateSelected("Inline edit") { $0.name += " Edited" }
+            XCTAssertTrue(store.selectedElement!.name.hasSuffix(" Edited"))
+            store.dismissInlineEditor()
+        }
+    }
+
+    // ------------------------=
     // FUNC: testSaveWritesEditableAndRuntimeTemplatesAtomically
     // DESC: Exercises the editor save path and decodes the resulting runtime artifact.
     // ------------------=
@@ -111,13 +144,22 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = TemplateStore()
         store.projectRoot = root
+        let masthead = store.selectedScreen!.elements.first { $0.role == .masthead }!
+        store.toggleElementLock(masthead.id)
+        store.presentInlineEditor(for: masthead.id)
+        store.updateSelected("Inline edit") { $0.name = "Editable Masthead" }
 
         store.save()
 
         let editableURL = root.appending(path: "assets/boot/installer-screens.infinityui")
         let runtimeURL = root.appending(path: "assets/boot/installer-screens.iuit")
         XCTAssertTrue(FileManager.default.fileExists(atPath: editableURL.path))
+        let editable = try JSONDecoder().decode(
+            InstallerStudioDocument.self,
+            from: Data(contentsOf: editableURL)
+        )
         let runtime = try Data(contentsOf: runtimeURL)
+        XCTAssertEqual(editable, store.document)
         XCTAssertEqual(try RuntimeTemplateCodec.decode(runtime), store.document)
         XCTAssertEqual(store.status, "Saved editable and runtime templates")
     }

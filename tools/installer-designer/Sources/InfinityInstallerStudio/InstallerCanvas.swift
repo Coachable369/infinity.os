@@ -6,42 +6,51 @@ struct InstallerCanvas: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ScrollView([.horizontal, .vertical]) {
-                let fit = max(0.24, min(
-                    (proxy.size.width - 80) / 1600,
-                    (proxy.size.height - 80) / 1000
-                ))
-                let unitScale = fit * store.zoom
-                let canvasScale = CGSize(width: unitScale * 1.6, height: unitScale)
-                ZStack(alignment: .topLeading) {
-                    artboardBackground(scale: canvasScale)
-                        .contentShape(Rectangle())
-                        .onTapGesture { store.selectElement(nil) }
-                    if store.showGrid {
-                        SnapGrid(gridSize: store.gridSize, scale: canvasScale)
-                    }
-                    ForEach((store.selectedScreen?.elements ?? []).sorted(by: layerOrder)) { element in
-                        if !element.hidden {
-                            CanvasElementView(element: element, store: store, canvasScale: canvasScale)
-                                .zIndex(Double(element.zIndex))
+            ZStack(alignment: .topTrailing) {
+                ScrollView([.horizontal, .vertical]) {
+                    let fit = max(0.24, min(
+                        (proxy.size.width - 80) / 1600,
+                        (proxy.size.height - 80) / 1000
+                    ))
+                    let unitScale = fit * store.zoom
+                    let canvasScale = CGSize(width: unitScale * 1.6, height: unitScale)
+                    ZStack(alignment: .topLeading) {
+                        artboardBackground(scale: canvasScale)
+                            .contentShape(Rectangle())
+                            .onTapGesture { store.selectElement(nil) }
+                        if store.showGrid {
+                            SnapGrid(gridSize: store.gridSize, scale: canvasScale)
+                        }
+                        ForEach((store.selectedScreen?.elements ?? []).sorted(by: layerOrder)) { element in
+                            if !element.hidden {
+                                CanvasElementView(element: element, store: store, canvasScale: canvasScale)
+                                    .zIndex(Double(element.zIndex))
+                            }
                         }
                     }
+                    .frame(width: 1000 * canvasScale.width, height: 1000 * canvasScale.height)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(Color.white.opacity(0.24), lineWidth: 1)
+                    }
+                    .shadow(color: .black.opacity(0.65), radius: 28, y: 12)
+                    .padding(32)
                 }
-                .frame(width: 1000 * canvasScale.width, height: 1000 * canvasScale.height)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 2)
-                        .stroke(Color.white.opacity(0.24), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.65), radius: 28, y: 12)
-                .padding(32)
-            }
-            .background(
-                LinearGradient(
-                    colors: [Color(nsColor: .windowBackgroundColor), Color.black.opacity(0.88)],
-                    startPoint: .top,
-                    endPoint: .bottom
+                .background(
+                    LinearGradient(
+                        colors: [Color(nsColor: .windowBackgroundColor), Color.black.opacity(0.88)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 )
-            )
+                if store.inlineEditorElementID != nil {
+                    InlineElementEditor(store: store)
+                        .padding(16)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                        .zIndex(50_000)
+                }
+            }
+            .animation(.easeOut(duration: 0.16), value: store.inlineEditorElementID)
         }
     }
 
@@ -142,7 +151,13 @@ private struct CanvasElementView: View {
                 y: CGFloat(element.frame.y) * canvasScale.height + CGFloat(element.frame.height) * canvasScale.height / 2
             )
             .contentShape(Rectangle())
-            .onTapGesture { store.selectElement(element.id) }
+            .onTapGesture {
+                if element.locked {
+                    store.selectElement(element.id)
+                } else {
+                    store.presentInlineEditor(for: element.id)
+                }
+            }
             .gesture(moveGesture)
     }
 

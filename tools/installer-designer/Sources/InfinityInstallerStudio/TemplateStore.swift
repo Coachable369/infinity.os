@@ -15,6 +15,7 @@ final class TemplateStore: ObservableObject {
     @Published var document: InstallerStudioDocument
     @Published var selectedScreenID = 1
     @Published var selectedElementID: UUID?
+    @Published var inlineEditorElementID: UUID?
     @Published var gridSize = 10
     @Published var snapEnabled = true
     @Published var showGrid = true
@@ -75,6 +76,7 @@ final class TemplateStore: ObservableObject {
     func selectScreen(_ id: Int) {
         selectedScreenID = id
         selectedElementID = nil
+        inlineEditorElementID = nil
         status = "Screen \(id) selected"
     }
 
@@ -83,7 +85,52 @@ final class TemplateStore: ObservableObject {
     // DESC: Selects an editable or locked element for canvas and inspector feedback.
     // ------------------=
     func selectElement(_ id: UUID?) {
+        if selectedElementID != id {
+            inlineEditorElementID = nil
+        }
         selectedElementID = id
+    }
+
+    // ------------------------=
+    // FUNC: presentInlineEditor
+    // DESC: Opens the canvas-attached editor only for the selected unlocked element.
+    // ------------------=
+    func presentInlineEditor(for id: UUID) {
+        selectElement(id)
+        guard selectedElement?.locked == false else {
+            inlineEditorElementID = nil
+            status = "Unlock this element to edit it"
+            return
+        }
+        inlineEditorElementID = id
+        status = "Inline editor opened"
+    }
+
+    // ------------------------=
+    // FUNC: dismissInlineEditor
+    // DESC: Closes the canvas-attached editor without changing the current selection.
+    // ------------------=
+    func dismissInlineEditor() {
+        inlineEditorElementID = nil
+    }
+
+    // ------------------------=
+    // FUNC: toggleElementLock
+    // DESC: Toggles the persisted lock state for any element on the selected screen.
+    // ------------------=
+    func toggleElementLock(_ id: UUID) {
+        guard let screen = selectedScreenIndex,
+              let element = document.screens[screen].elements.firstIndex(where: { $0.id == id })
+        else { return }
+        recordUndo()
+        document.screens[screen].elements[element].locked.toggle()
+        selectedElementID = id
+        if document.screens[screen].elements[element].locked {
+            inlineEditorElementID = nil
+            status = "Element locked"
+        } else {
+            status = "Element unlocked"
+        }
     }
 
     // ------------------------=
@@ -104,6 +151,7 @@ final class TemplateStore: ObservableObject {
         reindexScreens()
         selectedScreenID = insertion + 1
         selectedElementID = nil
+        inlineEditorElementID = nil
         status = "Screen added"
     }
 
@@ -124,6 +172,7 @@ final class TemplateStore: ObservableObject {
         reindexScreens()
         selectedScreenID = index + 2
         selectedElementID = nil
+        inlineEditorElementID = nil
         status = "Screen duplicated"
     }
 
@@ -141,6 +190,7 @@ final class TemplateStore: ObservableObject {
         reindexScreens()
         selectedScreenID = min(index + 1, document.screens.count)
         selectedElementID = nil
+        inlineEditorElementID = nil
         status = "Screen removed"
     }
 
@@ -156,6 +206,7 @@ final class TemplateStore: ObservableObject {
         reindexScreens()
         restoreScreenSelection(marker: selectedMarker)
         selectedElementID = nil
+        inlineEditorElementID = nil
         status = "Screens reordered"
     }
 
@@ -174,6 +225,7 @@ final class TemplateStore: ObservableObject {
         reindexScreens()
         restoreScreenSelection(marker: selectedMarker)
         selectedElementID = nil
+        inlineEditorElementID = nil
         status = "Screen moved"
     }
 
@@ -194,7 +246,7 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     func updateSelected(_ label: String = "Edit Element", mutation: (inout StudioElement) -> Void) {
         guard let location = selectedLocation(), !location.element.locked else {
-            status = "Navigation and system elements are locked"
+            status = "Unlock this element to edit it"
             return
         }
         recordUndo()
@@ -242,6 +294,7 @@ final class TemplateStore: ObservableObject {
         recordUndo()
         document.screens[location.screen].elements.remove(at: location.elementIndex)
         selectedElementID = nil
+        inlineEditorElementID = nil
         status = "Element deleted"
     }
 
@@ -285,6 +338,7 @@ final class TemplateStore: ObservableObject {
         if let elementID, selectedElementID != elementID {
             selectedElementID = elementID
         }
+        inlineEditorElementID = nil
         guard gestureBaseline == nil, let element = selectedElement, !element.locked else { return }
         gestureBaseline = document
         gestureFrame = element.frame
@@ -396,6 +450,7 @@ final class TemplateStore: ObservableObject {
         redoStack.append(document)
         document = previous
         selectedElementID = nil
+        inlineEditorElementID = nil
         status = "Undo"
     }
 
@@ -408,6 +463,7 @@ final class TemplateStore: ObservableObject {
         undoStack.append(document)
         document = next
         selectedElementID = nil
+        inlineEditorElementID = nil
         status = "Redo"
     }
 
@@ -446,6 +502,9 @@ final class TemplateStore: ObservableObject {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             let editable = try encoder.encode(document)
             let runtime = try RuntimeTemplateCodec.encode(document)
+            guard try RuntimeTemplateCodec.decode(runtime) == document else {
+                throw TemplateValidationIssue.invalidDocument("Generated runtime artifact failed round-trip verification")
+            }
             try editable.write(to: assetDirectory.appending(path: "installer-screens.infinityui"), options: .atomic)
             try runtime.write(to: assetDirectory.appending(path: "installer-screens.iuit"), options: .atomic)
             projectRoot = root
@@ -479,6 +538,7 @@ final class TemplateStore: ObservableObject {
             document = imported
             selectedScreenID = 1
             selectedElementID = nil
+            inlineEditorElementID = nil
             status = "Imported \(url.lastPathComponent)"
         } catch {
             validationIssues = [String(describing: error)]
@@ -497,6 +557,7 @@ final class TemplateStore: ObservableObject {
         recordUndo()
         document.screens[index] = factory
         selectedElementID = nil
+        inlineEditorElementID = nil
         status = "Screen reset"
     }
 

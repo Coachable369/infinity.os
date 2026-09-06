@@ -17,22 +17,30 @@ struct ElementInspector: View {
             .buttonStyle(.plain)
             .padding(12)
             List((store.selectedScreen?.elements ?? []).sorted { $0.zIndex > $1.zIndex }) { element in
-                Button(action: { store.selectElement(element.id) }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: icon(for: element.kind))
-                            .foregroundStyle(element.locked ? .orange : .cyan)
-                            .frame(width: 18)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(element.name).lineLimit(1)
-                            Text(element.role.title).font(.caption2).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Button(action: { store.selectElement(element.id) }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: icon(for: element.kind))
+                                .foregroundStyle(element.locked ? .orange : .cyan)
+                                .frame(width: 18)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(element.name).lineLimit(1)
+                                Text(element.role.title).font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if element.hidden { Image(systemName: "eye.slash").foregroundStyle(.secondary) }
                         }
-                        Spacer()
-                        if element.hidden { Image(systemName: "eye.slash").foregroundStyle(.secondary) }
-                        if element.locked { Image(systemName: "lock.fill").foregroundStyle(.orange) }
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    Button(action: { store.toggleElementLock(element.id) }) {
+                        Image(systemName: element.locked ? "lock.fill" : "lock.open")
+                            .foregroundStyle(element.locked ? .orange : .secondary)
+                            .frame(width: 18)
+                    }
+                    .buttonStyle(.borderless)
+                    .help(element.locked ? "Unlock Element" : "Lock Element")
                 }
-                .buttonStyle(.plain)
                 .listRowBackground(element.id == store.selectedElementID ? Color.cyan.opacity(0.12) : Color.clear)
             }
             .listStyle(.inset)
@@ -76,18 +84,22 @@ struct ElementInspector: View {
                 Label(element.kind.title, systemImage: icon(for: element.kind))
                     .font(.headline)
                 Spacer()
-                if element.locked {
-                    Label("Protected", systemImage: "lock.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.orange)
+                Button(action: { store.toggleElementLock(element.id) }) {
+                    Label(
+                        element.locked ? "Unlock" : "Lock",
+                        systemImage: element.locked ? "lock.fill" : "lock.open"
+                    )
                 }
+                .buttonStyle(.bordered)
+                .tint(element.locked ? .orange : .cyan)
+                .controlSize(.small)
             }
             TextField("Layer name", text: stringBinding(\.name))
                 .disabled(element.locked)
             Picker("Role", selection: enumBinding(\.role, fallback: element.role)) {
                 ForEach(StudioElementRole.allCases) { role in Text(role.title).tag(role) }
             }
-            .disabled(element.locked)
+            .disabled(element.locked || element.kind == .button)
         }
     }
 
