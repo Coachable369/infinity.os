@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 enum TemplateValidationIssue: Error, Equatable, CustomStringConvertible {
@@ -70,13 +71,13 @@ enum TemplateValidator {
 
 enum RuntimeTemplateCodec {
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 3
+    static let version: UInt16 = 4
 
     // ------------------------=
     // FUNC: encode
     // DESC: Encodes a validated editor document into the deterministic InfinityOS runtime format.
     // ------------------=
-    static func encode(_ document: InstallerStudioDocument) throws -> Data {
+    static func encode(_ document: InstallerStudioDocument, assetRoot: URL? = nil) throws -> Data {
         try TemplateValidator.validate(document)
         var output = Data()
         output.append(magic)
@@ -115,7 +116,58 @@ enum RuntimeTemplateCodec {
                 ])
             }
         }
+        let assetNames = Array(Set(document.screens.flatMap { screen in
+            screen.elements.compactMap { element in
+                element.kind == .image && !element.imageAsset.isEmpty ? element.imageAsset : nil
+            }
+        })).sorted()
+        var packagedAssets: [(String, Data)] = []
+        if let assetRoot {
+            for name in assetNames where !isBuiltInImage(name) {
+                if let bitmap = try runtimeBitmap(named: name, root: assetRoot) {
+                    packagedAssets.append((name, bitmap))
+                }
+            }
+        }
+        output.appendLittleEndian(UInt16(packagedAssets.count))
+        for (name, bytes) in packagedAssets {
+            output.appendLengthPrefixed(name, length: .u8, limit: 127)
+            output.appendLittleEndian(UInt32(bytes.count))
+            output.append(bytes)
+        }
         return output
+    }
+
+    // ------------------------=
+    // FUNC: runtimeBitmap
+    // DESC: Resolves an editor image and converts it to the kernel's deterministic 24-bit BMP payload.
+    // ------------------=
+    private static func runtimeBitmap(named name: String, root: URL) throws -> Data? {
+        let candidates = [root.appending(path: name), root.appending(path: "assets/boot/\(name)")]
+        guard let source = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
+            if isBuiltInImage(name) {
+                return nil
+            }
+            throw TemplateValidationIssue.invalidDocument("Image asset cannot be packaged: \(name)")
+        }
+        guard let image = NSImage(contentsOf: source),
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let data = bitmap.representation(using: .bmp, properties: [:])
+        else {
+            throw TemplateValidationIssue.invalidDocument("Image asset cannot be packaged: \(name)")
+        }
+        return data
+    }
+
+    // ------------------------=
+    // FUNC: isBuiltInImage
+    // DESC: Identifies artwork already compiled once into both installer and installed kernels.
+    // ------------------=
+    private static func isBuiltInImage(_ name: String) -> Bool {
+        name.hasSuffix("infinity-installer-masthead-v2.png")
+            || name.hasSuffix("infinity-installer-masthead-v1.png")
+            || name.hasSuffix("infinity-onboarding-wallpaper-v1.png")
     }
 
     // ------------------------=
@@ -189,6 +241,12 @@ enum RuntimeTemplateCodec {
                 elements: elements
             ))
         }
+        let assetCount = Int(try reader.readUInt16())
+        for _ in 0..<assetCount {
+            _ = try reader.readString(length: .u8, limit: 127)
+            let byteCount = Int(try reader.readUInt32())
+            _ = try reader.readData(count: byteCount)
+        }
         guard reader.isAtEnd else {
             throw TemplateValidationIssue.invalidDocument("Trailing runtime-template bytes")
         }
@@ -248,6 +306,15 @@ private struct DataReader {
     mutating func readUInt16() throws -> UInt16 {
         let bytes = try readBytes(count: 2)
         return UInt16(bytes[0]) | UInt16(bytes[1]) << 8
+    }
+
+    // ------------------------=
+    // FUNC: readUInt32
+    // DESC: Reads one little-endian unsigned 32-bit value.
+    // ------------------=
+    mutating func readUInt32() throws -> UInt32 {
+        let bytes = try readBytes(count: 4)
+        return UInt32(bytes[0]) | UInt32(bytes[1]) << 8 | UInt32(bytes[2]) << 16 | UInt32(bytes[3]) << 24
     }
 
     // ------------------------=

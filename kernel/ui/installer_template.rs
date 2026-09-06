@@ -1,8 +1,9 @@
 //! Bounded parser for installer layouts authored by InfinityOS Installer Studio.
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 3;
+const FORMAT_VERSION: u16 = 4;
 const MAX_SCREEN_COUNT: u16 = 32;
+const MAX_ASSET_COUNT: u16 = 128;
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,6 +30,7 @@ pub struct InstallerTemplateRect {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InstallerTemplateElement<'a> {
+    pub id: [u8; 16],
     pub kind: u8,
     pub role: u8,
     pub locked: bool,
@@ -61,6 +63,7 @@ pub enum InstallerTemplateError {
 pub struct InstallerTemplate<'a> {
     data: &'a [u8],
     screen_count: u16,
+    asset_count: u16,
 }
 
 impl<'a> InstallerTemplate<'a> {
@@ -134,10 +137,25 @@ impl<'a> InstallerTemplate<'a> {
         if seen_screens != expected_screens {
             return Err(InstallerTemplateError::InvalidScreenSet);
         }
+        let asset_count = reader.u16()?;
+        if asset_count > MAX_ASSET_COUNT {
+            return Err(InstallerTemplateError::InvalidElement);
+        }
+        for _ in 0..asset_count {
+            let name = reader.short_string()?;
+            let bytes = reader.long_bytes()?;
+            if name.is_empty()
+                || core::str::from_utf8(name).is_err()
+                || bytes.len() < 54
+                || &bytes[0..2] != b"BM"
+            {
+                return Err(InstallerTemplateError::InvalidElement);
+            }
+        }
         if !reader.is_at_end() {
             return Err(InstallerTemplateError::TrailingData);
         }
-        Ok(Self { data, screen_count })
+        Ok(Self { data, screen_count, asset_count })
     }
 
     // ------------------------=
@@ -149,10 +167,43 @@ impl<'a> InstallerTemplate<'a> {
     }
 
     // ------------------------=
+    // FUNC: asset
+    // DESC: Returns a packaged image by its editor-visible asset path.
+    // ------------------=
+    pub fn asset(&self, target_name: &[u8]) -> Option<&'a [u8]> {
+        let mut reader = Reader::new(self.data);
+        reader.take(8).ok()?;
+        for _ in 0..self.screen_count {
+            reader.u8().ok()?;
+            reader.short_string().ok()?;
+            let count = reader.u16().ok()?;
+            for _ in 0..count {
+                reader.element().ok()?;
+            }
+        }
+        let count = reader.u16().ok()?;
+        if count != self.asset_count {
+            return None;
+        }
+        for _ in 0..count {
+            let name = reader.short_string().ok()?;
+            let bytes = reader.long_bytes().ok()?;
+            if name == target_name {
+                return Some(bytes);
+            }
+        }
+        None
+    }
+
+    // ------------------------=
     // FUNC: element
     // DESC: Finds a role in one validated screen without allocation.
     // ------------------=
-    pub fn element(&self, target_screen: u8, target_role: InstallerTemplateRole) -> Option<InstallerTemplateElement<'a>> {
+    pub fn element(
+        &self,
+        target_screen: u8,
+        target_role: InstallerTemplateRole,
+    ) -> Option<InstallerTemplateElement<'a>> {
         let mut reader = Reader::new(self.data);
         reader.take(8).ok()?;
         for _ in 0..self.screen_count {
@@ -164,6 +215,83 @@ impl<'a> InstallerTemplate<'a> {
                 if screen == target_screen && element.role == target_role as u8 {
                     return Some(element);
                 }
+            }
+        }
+        None
+    }
+
+    // ------------------------=
+    // FUNC: element_count
+    // DESC: Reports the number of saved layers in one validated screen.
+    // ------------------=
+    pub fn element_count(&self, target_screen: u8) -> Option<u16> {
+        let mut reader = Reader::new(self.data);
+        reader.take(8).ok()?;
+        for _ in 0..self.screen_count {
+            let screen = reader.u8().ok()?;
+            reader.short_string().ok()?;
+            let count = reader.u16().ok()?;
+            if screen == target_screen {
+                return Some(count);
+            }
+            for _ in 0..count {
+                reader.element().ok()?;
+            }
+        }
+        None
+    }
+
+    // ------------------------=
+    // FUNC: element_at
+    // DESC: Returns one saved screen layer by document order without allocation.
+    // ------------------=
+    pub fn element_at(
+        &self,
+        target_screen: u8,
+        target_index: u16,
+    ) -> Option<InstallerTemplateElement<'a>> {
+        let mut reader = Reader::new(self.data);
+        reader.take(8).ok()?;
+        for _ in 0..self.screen_count {
+            let screen = reader.u8().ok()?;
+            reader.short_string().ok()?;
+            let count = reader.u16().ok()?;
+            for index in 0..count {
+                let element = reader.element().ok()?;
+                if screen == target_screen && index == target_index {
+                    return Some(element);
+                }
+            }
+        }
+        None
+    }
+
+    // ------------------------=
+    // FUNC: layer_at
+    // DESC: Returns a screen layer in the same z-index and UUID order used by the visual editor.
+    // ------------------=
+    pub fn layer_at(
+        &self,
+        target_screen: u8,
+        target_layer: u16,
+    ) -> Option<InstallerTemplateElement<'a>> {
+        let count = self.element_count(target_screen)?;
+        if target_layer >= count {
+            return None;
+        }
+        for candidate_index in 0..count {
+            let candidate = self.element_at(target_screen, candidate_index)?;
+            let mut earlier = 0u16;
+            for comparison_index in 0..count {
+                let comparison = self.element_at(target_screen, comparison_index)?;
+                if comparison.z_index < candidate.z_index
+                    || (comparison.z_index == candidate.z_index && comparison.id < candidate.id)
+                {
+                    earlier = earlier.saturating_add(1);
+                }
+            }
+            if earlier == target_layer {
+                return Some(candidate);
             }
         }
         None
@@ -197,7 +325,10 @@ impl<'a> Reader<'a> {
     // DESC: Returns the next bounded byte slice and advances the cursor.
     // ------------------=
     fn take(&mut self, count: usize) -> Result<&'a [u8], InstallerTemplateError> {
-        let end = self.offset.checked_add(count).ok_or(InstallerTemplateError::Truncated)?;
+        let end = self
+            .offset
+            .checked_add(count)
+            .ok_or(InstallerTemplateError::Truncated)?;
         if end > self.data.len() {
             return Err(InstallerTemplateError::Truncated);
         }
@@ -221,6 +352,15 @@ impl<'a> Reader<'a> {
     fn u16(&mut self) -> Result<u16, InstallerTemplateError> {
         let value = self.take(2)?;
         Ok(u16::from_le_bytes([value[0], value[1]]))
+    }
+
+    // ------------------------=
+    // FUNC: u32
+    // DESC: Reads one little-endian unsigned 32-bit value.
+    // ------------------=
+    fn u32(&mut self) -> Result<u32, InstallerTemplateError> {
+        let value = self.take(4)?;
+        Ok(u32::from_le_bytes([value[0], value[1], value[2], value[3]]))
     }
 
     // ------------------------=
@@ -259,11 +399,22 @@ impl<'a> Reader<'a> {
     }
 
     // ------------------------=
+    // FUNC: long_bytes
+    // DESC: Reads a four-byte length-prefixed binary asset.
+    // ------------------=
+    fn long_bytes(&mut self) -> Result<&'a [u8], InstallerTemplateError> {
+        let count = self.u32()? as usize;
+        self.take(count)
+    }
+
+    // ------------------------=
     // FUNC: element
     // DESC: Decodes one bounded element record from the runtime template.
     // ------------------=
     fn element(&mut self) -> Result<InstallerTemplateElement<'a>, InstallerTemplateError> {
-        self.take(16)?;
+        let id_bytes = self.take(16)?;
+        let mut id = [0u8; 16];
+        id.copy_from_slice(id_bytes);
         let kind = self.u8()?;
         let role = self.u8()?;
         let flags = self.u8()?;
@@ -306,6 +457,7 @@ impl<'a> Reader<'a> {
             return Err(InstallerTemplateError::InvalidElement);
         }
         Ok(InstallerTemplateElement {
+            id,
             kind,
             role,
             locked: flags & 1 != 0,

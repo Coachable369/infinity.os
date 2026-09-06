@@ -293,28 +293,24 @@ Runtime Rendering
 -----------------
 
 At runtime, `kernel/ui/installer_template.rs` parses and validates the embedded
-binary. `kernel/ui/installer_layout.rs` resolves elements by screen and semantic
-role, then scales normalized rectangles to the active display.
+binary, enumerates every saved layer in editor z-order, and resolves packaged
+image data. `kernel/core/bootstrap/template_compositor.rs` paints that complete
+layer stack. Geometry, visibility, fill and border RGBA, element opacity,
+corner radius, font size, text, image crop, image opacity, and layer order are
+therefore shared by the editor preview and the OS renderer.
 
-The installation renderer in `kernel/core/bootstrap/installer.rs` consumes the
-installation template for wizard layout and authored Title and Body content.
+The compiler converts referenced images to deterministic 24-bit BMP data and
+embeds one copy of each asset into the `.iuit`. Imported editor images therefore
+remain self-contained in both the live installer and installed configuration
+kernel; they do not depend on a host path at boot.
 
-The installed desktop/onboarding renderer in
-`kernel/core/bootstrap/desktop.rs` consumes the configuration template for
-Console, Title, Body, Input, Back Button, and Primary Button roles. The same
-role-derived rectangles are used by `kernel/ui/system_layout.rs` for pointer
-hit-testing, so visual placement and interaction geometry remain aligned.
-
-Runtime code supplies live state such as discovered disks, validation errors,
-progress, typed input, focus, and button actions. The current OS renderers
-actively consume role-based geometry and authored Title and Body copy. The
-binary parser also exposes fill, border, opacity, corner radius, font size,
-image asset, crop, z-order, lock, and hidden metadata, and the build packages
-referenced image files. However, the present screen-specific renderers still
-draw much of their visual styling and imagery in Rust. Those serialized style
-fields form the established runtime contract, but they are not yet all applied
-by a generic element-by-element compositor. The templates do not replace the
-installer or onboarding state machines.
+Runtime code supplies only live state such as discovered disks, validation
+errors, progress, typed input, focus, and button actions. Those values are
+painted into semantic Content, Input, Back Button, and Primary Button slots
+without replacing authored appearance. `kernel/ui/system_layout.rs` uses the
+same role-derived rectangles for pointer hit-testing, keeping visible controls
+and interaction geometry aligned. Invalid templates continue to use the safe
+compiled fallback renderer.
 
 
 Recommended Production Procedure

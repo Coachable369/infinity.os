@@ -26,7 +26,7 @@ case "$arch" in
     log=$(mktemp -t infinityos-boot.XXXXXX)
     trap 'rm -f "$log"' EXIT INT TERM
     set +e
-    timeout 25 qemu-system-x86_64 -machine q35 -m 256M \
+    timeout 25 qemu-system-x86_64 -machine q35 -m 1024M \
       -drive if=pflash,format=raw,readonly=on,file="$firmware" \
       -cdrom build/infinity-x86_64.iso \
       -serial stdio -display none -no-reboot >"$log" 2>&1

@@ -170,16 +170,10 @@ private struct CanvasElementView: View {
                 }
         case .console:
             RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                .fill(
-                    LinearGradient(
-                        colors: [element.fill.color.opacity(0.96), Color.black.opacity(0.92)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .fill(element.fill.color)
                 .overlay {
                     RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                        .stroke(element.border.color.opacity(0.85), lineWidth: max(1, canvasScale.height))
+                        .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
                 }
         case .text:
             Text(element.text)
@@ -191,22 +185,13 @@ private struct CanvasElementView: View {
             imagePreview
         case .button:
             RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(red: 0.08, green: 0.18, blue: 0.28), element.fill.color],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .fill(element.fill.color)
                 .overlay {
                     RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                        .stroke(Color.cyan.opacity(0.7), lineWidth: max(1, canvasScale.height))
+                        .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
                 }
                 .overlay {
-                    HStack(spacing: 5) {
-                        Image(systemName: "lock.fill")
-                        Text(element.text).fontWeight(.semibold)
-                    }
+                    Text(element.text).fontWeight(.semibold)
                     .font(.system(size: max(8, CGFloat(element.fontSize) * canvasScale.height)))
                     .foregroundStyle(.white)
                 }

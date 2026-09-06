@@ -242,7 +242,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -504,7 +504,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -766,7 +766,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -1028,7 +1028,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -1290,7 +1290,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -1552,7 +1552,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -1814,7 +1814,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -2076,7 +2076,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -2338,7 +2338,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -2600,7 +2600,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -2862,7 +2862,7 @@
             "green" : 230,
             "red" : 220
           },
-          "fontSize" : 24,
+          "fontSize" : 19,
           "frame" : {
             "height" : 40,
             "width" : 800,

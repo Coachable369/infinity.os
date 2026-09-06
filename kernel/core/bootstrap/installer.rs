@@ -500,6 +500,142 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: template_text_width
+    // DESC: Measures template text at its authored pixel size using the packaged installer face.
+    // ------------------=
+    pub(super) fn template_text_width(&self, text: &[u8], pixels: usize, semibold: bool) -> usize {
+        let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
+        let metrics = if semibold { INSTALLER_FONT_SEMIBOLD_METRICS } else { INSTALLER_FONT_METRICS };
+        let kerning = if semibold { INSTALLER_FONT_SEMIBOLD_KERN } else { INSTALLER_FONT_KERN };
+        let mut width = 0usize;
+        let mut previous = None;
+        for byte in text {
+            if *byte == b'\n' {
+                break;
+            }
+            if !(32..=126).contains(byte) {
+                previous = None;
+                continue;
+            }
+            width = Self::font_position_advance(
+                width,
+                font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)),
+            );
+            width = width.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
+            previous = Some(*byte);
+        }
+        width
+    }
+
+    // ------------------------=
+    // FUNC: template_text
+    // DESC: Alpha-rasterizes template text at an arbitrary authored size.
+    // ------------------=
+    pub(super) fn template_text(
+        &mut self,
+        mut x: usize,
+        mut y: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+        opacity: u8,
+        pixels: usize,
+        semibold: bool,
+    ) {
+        let line_start = x;
+        let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
+        let atlas = if semibold { INSTALLER_FONT_SEMIBOLD_ATLAS } else { INSTALLER_FONT_ATLAS };
+        let metrics = if semibold { INSTALLER_FONT_SEMIBOLD_METRICS } else { INSTALLER_FONT_METRICS };
+        let kerning = if semibold { INSTALLER_FONT_SEMIBOLD_KERN } else { INSTALLER_FONT_KERN };
+        let glyph_width = font_size.scale_usize(INSTALLER_FONT_CELL_WIDTH).max(1);
+        let glyph_height = font_size.scale_usize(INSTALLER_FONT_CELL_HEIGHT).max(1);
+        let line_advance = glyph_height.saturating_add(font_size.scale_usize(4));
+        let mut previous = None;
+        for byte in text {
+            if *byte == b'\n' {
+                x = line_start;
+                y = y.saturating_add(line_advance);
+                previous = None;
+                continue;
+            }
+            if !(32..=126).contains(byte) {
+                previous = None;
+                continue;
+            }
+            x = Self::font_position_advance(
+                x,
+                font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)),
+            );
+            let glyph = (*byte as usize - 32) * INSTALLER_FONT_CELL_WIDTH;
+            for row in 0..glyph_height {
+                let source_row = font_size.source_index(row).min(INSTALLER_FONT_CELL_HEIGHT - 1);
+                for column in 0..glyph_width {
+                    let source_column = font_size.source_index(column).min(INSTALLER_FONT_CELL_WIDTH - 1);
+                    let atlas_alpha = atlas[source_row * INSTALLER_FONT_CELL_WIDTH * 95 + glyph + source_column];
+                    let alpha = (atlas_alpha as u16 * opacity as u16 / 255) as u8;
+                    if alpha != 0 {
+                        self.blend_color((x + column) as i32, (y + row) as i32, red, green, blue, alpha);
+                    }
+                }
+            }
+            x = x.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
+            previous = Some(*byte);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: template_text_wrapped
+    // DESC: Wraps authored template copy to its frame while preserving explicit line breaks.
+    // ------------------=
+    pub(super) fn template_text_wrapped(
+        &mut self,
+        x: usize,
+        y: usize,
+        max_width: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+        opacity: u8,
+        pixels: usize,
+        semibold: bool,
+    ) {
+        let mut start = 0usize;
+        let mut line = 0usize;
+        let line_advance = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1))
+            .scale_usize(INSTALLER_FONT_CELL_HEIGHT + 4);
+        while start < text.len() {
+            while start < text.len() && text[start] == b' ' {
+                start += 1;
+            }
+            if start >= text.len() {
+                break;
+            }
+            let explicit_end = text[start..].iter().position(|byte| *byte == b'\n').map(|value| start + value);
+            let paragraph_end = explicit_end.unwrap_or(text.len());
+            let mut end = start + 1;
+            let mut last_space = None;
+            while end <= paragraph_end {
+                if end < paragraph_end && text[end] == b' ' {
+                    last_space = Some(end);
+                }
+                if self.template_text_width(&text[start..end], pixels, semibold) > max_width {
+                    end = last_space.unwrap_or(end.saturating_sub(1).max(start + 1));
+                    break;
+                }
+                if end == paragraph_end {
+                    break;
+                }
+                end += 1;
+            }
+            self.template_text(x, y + line * line_advance, &text[start..end], red, green, blue, opacity, pixels, semibold);
+            line += 1;
+            start = if end == paragraph_end && explicit_end.is_some() { end + 1 } else { end };
+        }
+    }
+
+    // ------------------------=
     // FUNC: installer_text_wrapped
     // DESC: Wraps installer copy into a bounded card using the reference's compact line rhythm.
     // ------------------=
@@ -771,6 +907,9 @@ impl super::DisplayDevice {
         pressed: bool,
         redraw_foundation: bool,
     ) {
+        if self.installer_template_navigation(screen, focus, has_primary) {
+            return;
+        }
         let modal_or_progress = screen == 7 || screen == 8;
         let layout =
             crate::ui::installer_layout::installer_wizard_layout(screen, self.width, self.height);
@@ -1261,6 +1400,17 @@ impl super::DisplayDevice {
         cursor_y: i32,
         pressed: bool,
     ) {
+        if self.installer_template_screen(screen) {
+            self.installer_template_live_content(
+                lines,
+                lengths,
+                line_count,
+                prompt,
+                command,
+                screen,
+            );
+            return;
+        }
         let scale = self.ui_scale();
         let frame =
             crate::ui::installer_layout::installer_wizard_layout(screen, self.width, self.height);
@@ -1492,6 +1642,67 @@ impl super::DisplayDevice {
             let step_x = left + width.saturating_sub(44 * scale);
             let step_y = self.height * 80 / 100;
             self.text(step_x, step_y, &step, 105, 154, 193);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: installer_template_live_content
+    // DESC: Places live installer state inside the authored content slot without restyling template layers.
+    // ------------------=
+    pub(super) fn installer_template_live_content(
+        &mut self,
+        lines: &[[u8; 96]; 6],
+        lengths: &[usize; 6],
+        line_count: usize,
+        prompt: &[u8],
+        command: &[u8],
+        screen: u8,
+    ) {
+        if matches!(screen, 1 | 2 | 9 | 11) {
+            return;
+        }
+        let Some(content) = crate::ui::installer_template::InstallerTemplate::parse(
+            crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES,
+        )
+        .ok()
+        .and_then(|template| {
+            template.element(
+                screen,
+                crate::ui::installer_template::InstallerTemplateRole::Content,
+            )
+        }) else {
+            return;
+        };
+        let rect = crate::ui::installer_layout::scale_template_rect(
+            content.frame,
+            self.width,
+            self.height,
+        );
+        let scale = self.ui_scale().max(1);
+        let start_row = if line_count > 1 { 1 } else { 0 };
+        let mut y = rect.top + rect.height * 42 / 100;
+        for row in start_row..line_count.min(6) {
+            self.installer_text(
+                rect.left + 18 * scale,
+                y,
+                &lines[row][..lengths[row]],
+                216,
+                226,
+                237,
+            );
+            y = y.saturating_add(30 * scale);
+        }
+        if !prompt.is_empty() {
+            self.installer_text(rect.left + 18 * scale, y, prompt, 216, 226, 237);
+            let prompt_width = self.installer_text_width(prompt, false);
+            self.installer_text(
+                rect.left + 18 * scale + prompt_width,
+                y,
+                command,
+                255,
+                255,
+                255,
+            );
         }
     }
 

@@ -70,6 +70,16 @@ fn main() {
     let template = InstallerTemplate::parse(FACTORY_TEMPLATE).expect("factory template must load");
     assert_eq!(template.screen_count(), 11);
     for screen in 1..=template.screen_count() as u8 {
+        let count = template.element_count(screen).expect("screen layers must enumerate");
+        assert!(count >= 8);
+        let mut previous = None;
+        for layer in 0..count {
+            let element = template.layer_at(screen, layer).expect("saved layer must resolve");
+            if let Some((z_index, id)) = previous {
+                assert!(element.z_index > z_index || (element.z_index == z_index && element.id > id));
+            }
+            previous = Some((element.z_index, element.id));
+        }
         assert!(template.element(screen, InstallerTemplateRole::Console).is_some());
         assert!(template.element(screen, InstallerTemplateRole::Content).is_some());
         assert!(!template.element(screen, InstallerTemplateRole::Title).unwrap().text.is_empty());
@@ -77,6 +87,9 @@ fn main() {
     }
     let content = template.element(2, InstallerTemplateRole::Content).unwrap();
     assert_eq!((content.frame.x, content.frame.y, content.frame.width, content.frame.height), (38, 396, 924, 404));
+    let masthead = template.element(1, InstallerTemplateRole::Masthead).unwrap();
+    assert!(masthead.image_asset.ends_with(b"infinity-installer-masthead-v2.png"));
+    assert!(template.asset(masthead.image_asset).is_none());
 
     let configuration =
         InstallerTemplate::parse(CONFIGURATION_TEMPLATE).expect("configuration template must load");
@@ -86,6 +99,9 @@ fn main() {
         assert!(configuration.element(screen, InstallerTemplateRole::Title).is_some());
         assert!(configuration.element(screen, InstallerTemplateRole::Body).is_some());
     }
+    let background = configuration.element(1, InstallerTemplateRole::Masthead).unwrap();
+    assert!(background.image_asset.ends_with(b"infinity-onboarding-wallpaper-v1.png"));
+    assert!(configuration.asset(background.image_asset).is_none());
     for screen in 2..=5 {
         let input = configuration
             .element(screen, InstallerTemplateRole::Input)

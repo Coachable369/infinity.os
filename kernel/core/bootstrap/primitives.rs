@@ -993,6 +993,55 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: outline_rounded_rect_alpha
+    // DESC: Draws a translucent one-pixel rounded border for template-authored appearance.
+    // ------------------=
+    pub(super) fn outline_rounded_rect_alpha(
+        &mut self,
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+        radius: usize,
+        red: u8,
+        green: u8,
+        blue: u8,
+        alpha: u8,
+    ) {
+        let radius = radius.min(width / 2).min(height / 2).max(1);
+        let outer = (radius * radius) as i64;
+        let inner_radius = radius.saturating_sub(1);
+        let inner = (inner_radius * inner_radius) as i64;
+        let right = left.saturating_add(width).min(self.width);
+        let bottom = top.saturating_add(height).min(self.height);
+        for y in top..bottom {
+            for x in left..right {
+                let edge = x == left || y == top || x + 1 == left + width || y + 1 == top + height;
+                let dx = if x < left + radius {
+                    left + radius - x
+                } else if x >= left + width.saturating_sub(radius) {
+                    x.saturating_sub(left + width.saturating_sub(radius) - 1)
+                } else {
+                    0
+                };
+                let dy = if y < top + radius {
+                    top + radius - y
+                } else if y >= top + height.saturating_sub(radius) {
+                    y.saturating_sub(top + height.saturating_sub(radius) - 1)
+                } else {
+                    0
+                };
+                let distance = (dx * dx + dy * dy) as i64;
+                if (edge && (dx == 0 || dy == 0))
+                    || (dx > 0 && dy > 0 && distance <= outer && distance >= inner)
+                {
+                    self.blend_color(x as i32, y as i32, red, green, blue, alpha);
+                }
+            }
+        }
+    }
+
+    // ------------------------=
     // FUNC: outline_rect
     // DESC: Draws a one-pixel rectangular border in the requested RGB color.
     // ------------------=
@@ -1403,6 +1452,69 @@ impl super::DisplayDevice {
                     bitmap[index + 2],
                     bitmap[index + 1],
                     bitmap[index],
+                );
+            }
+        }
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: paint_bitmap_template_rect
+    // DESC: Paints a cropped aspect-fill template image with authored layer opacity.
+    // ------------------=
+    pub(super) fn paint_bitmap_template_rect(
+        &mut self,
+        bitmap: &[u8],
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+        crop: [u8; 4],
+        opacity: u8,
+    ) {
+        if bitmap.len() < 54 || &bitmap[0..2] != b"BM" || le16(bitmap, 28) != 24 || width == 0 || height == 0 {
+            return;
+        }
+        let offset = le32(bitmap, 10) as usize;
+        let source_width = le32(bitmap, 18) as usize;
+        let signed_height = le32(bitmap, 22) as i32;
+        let source_height = signed_height.unsigned_abs() as usize;
+        if source_width == 0 || source_height == 0 {
+            return;
+        }
+        let mut crop_left = source_width * crop[0] as usize / 100;
+        let mut crop_top = source_height * crop[1] as usize / 100;
+        let mut sampled_width = source_width * (100usize.saturating_sub(crop[0] as usize + crop[2] as usize)) / 100;
+        let mut sampled_height = source_height * (100usize.saturating_sub(crop[1] as usize + crop[3] as usize)) / 100;
+        if sampled_width == 0 || sampled_height == 0 {
+            return;
+        }
+        if sampled_width * height > sampled_height * width {
+            let fitted_width = sampled_height * width / height;
+            crop_left += sampled_width.saturating_sub(fitted_width) / 2;
+            sampled_width = fitted_width;
+        } else {
+            let fitted_height = sampled_width * height / width;
+            crop_top += sampled_height.saturating_sub(fitted_height) / 2;
+            sampled_height = fitted_height;
+        }
+        let row_bytes = (source_width * 3 + 3) & !3;
+        for y in 0..height.min(self.height.saturating_sub(top)) {
+            let logical_y = crop_top + y * sampled_height / height;
+            let source_y = if signed_height < 0 { logical_y } else { source_height - 1 - logical_y };
+            for x in 0..width.min(self.width.saturating_sub(left)) {
+                let source_x = crop_left + x * sampled_width / width;
+                let index = offset + source_y * row_bytes + source_x * 3;
+                if index + 2 >= bitmap.len() {
+                    return;
+                }
+                self.blend_color(
+                    (left + x) as i32,
+                    (top + y) as i32,
+                    bitmap[index + 2],
+                    bitmap[index + 1],
+                    bitmap[index],
+                    opacity,
                 );
             }
         }

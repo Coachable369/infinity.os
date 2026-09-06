@@ -40,6 +40,10 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         XCTAssertEqual(store.selectedElement!.frame.height, original.height + 20)
         XCTAssertEqual(store.selectedElement!.crop.left, 10)
         XCTAssertEqual(try RuntimeTemplateCodec.decode(RuntimeTemplateCodec.encode(store.document)), store.document)
+        let unpackaged = try RuntimeTemplateCodec.encode(store.document)
+        let packaged = try RuntimeTemplateCodec.encode(store.document, assetRoot: root)
+        XCTAssertGreaterThan(packaged.count, unpackaged.count + 54)
+        XCTAssertEqual(try RuntimeTemplateCodec.decode(packaged), store.document)
     }
 
     // ------------------------=

@@ -24,7 +24,7 @@ struct InfinityInstallerStudioApp: App {
                     at: destination.deletingLastPathComponent(),
                     withIntermediateDirectories: true
                 )
-                try RuntimeTemplateCodec.encode(document).write(to: destination, options: .atomic)
+                try RuntimeTemplateCodec.encode(document, assetRoot: source.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()).write(to: destination, options: .atomic)
                 print("Compiled \(source.path) to \(destination.path)")
                 Darwin.exit(0)
             } catch {
@@ -44,7 +44,7 @@ struct InfinityInstallerStudioApp: App {
                     to: directory.appending(path: "installer-screens.infinityui"),
                     options: .atomic
                 )
-                try RuntimeTemplateCodec.encode(document).write(
+                try RuntimeTemplateCodec.encode(document, assetRoot: directory.deletingLastPathComponent().deletingLastPathComponent()).write(
                     to: directory.appending(path: "installer-screens.iuit"),
                     options: .atomic
                 )
@@ -52,7 +52,7 @@ struct InfinityInstallerStudioApp: App {
                     to: directory.appending(path: "configuration-screens.infinityui"),
                     options: .atomic
                 )
-                try RuntimeTemplateCodec.encode(configuration).write(
+                try RuntimeTemplateCodec.encode(configuration, assetRoot: directory.deletingLastPathComponent().deletingLastPathComponent()).write(
                     to: directory.appending(path: "configuration-screens.iuit"),
                     options: .atomic
                 )

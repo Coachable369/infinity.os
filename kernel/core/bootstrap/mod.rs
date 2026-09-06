@@ -7,6 +7,7 @@ mod crash;
 mod desktop;
 mod installer;
 mod primitives;
+mod template_compositor;
 
 use self::primitives::*;
 

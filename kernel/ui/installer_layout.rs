@@ -65,7 +65,14 @@ pub fn installer_wizard_layout(
     display_height: usize,
 ) -> InstallerWizardLayout {
     if let Ok(template) = InstallerTemplate::parse(INSTALLER_TEMPLATE_BYTES) {
-        if let (Some(masthead), Some(panel), Some(content), Some(back), Some(primary), Some(footer)) = (
+        if let (
+            Some(masthead),
+            Some(panel),
+            Some(content),
+            Some(back),
+            Some(primary),
+            Some(footer),
+        ) = (
             template.element(screen, InstallerTemplateRole::Masthead),
             template.element(screen, InstallerTemplateRole::Console),
             template.element(screen, InstallerTemplateRole::Content),
@@ -137,7 +144,7 @@ pub fn configuration_template_rect(
 // FUNC: scale_template_rect
 // DESC: Scales normalized editor geometry into the active display dimensions.
 // ------------------=
-fn scale_template_rect(
+pub fn scale_template_rect(
     frame: InstallerTemplateRect,
     display_width: usize,
     display_height: usize,

@@ -761,9 +761,9 @@ final class TemplateStore: ObservableObject {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             let editable = try encoder.encode(document)
-            let runtime = try RuntimeTemplateCodec.encode(document)
+            let runtime = try RuntimeTemplateCodec.encode(document, assetRoot: root)
             let configurationEditable = try encoder.encode(configurationDocument)
-            let configurationRuntime = try RuntimeTemplateCodec.encode(configurationDocument)
+            let configurationRuntime = try RuntimeTemplateCodec.encode(configurationDocument, assetRoot: root)
             guard try RuntimeTemplateCodec.decode(runtime) == document else {
                 throw TemplateValidationIssue.invalidDocument("Generated runtime artifact failed round-trip verification")
             }

@@ -2007,6 +2007,16 @@ impl super::DisplayDevice {
         focus: usize,
         validation_error: bool,
     ) {
+        if self.configuration_template_screen(step) {
+            self.configuration_template_live_content(
+                step,
+                input,
+                masked,
+                focus,
+                validation_error,
+            );
+            return;
+        }
         let scale = self.ui_scale().max(1);
         let top_bar = self.system_identity_bar();
         let fallback_card_width = (self.width * 34 / 100).clamp(500, 600 * scale);
@@ -2334,6 +2344,75 @@ impl super::DisplayDevice {
         }
 
         self.onboarding_actions(step, focus);
+    }
+
+    // ------------------------=
+    // FUNC: configuration_template_live_content
+    // DESC: Binds typed fields, network state, validation, and focus to the authored first-boot scene.
+    // ------------------=
+    pub(super) fn configuration_template_live_content(
+        &mut self,
+        step: usize,
+        input: &[u8],
+        masked: bool,
+        focus: usize,
+        validation_error: bool,
+    ) {
+        if (1..=4).contains(&step) {
+            if let Some(frame) = crate::ui::installer_layout::configuration_template_rect(
+                step,
+                crate::ui::installer_template::InstallerTemplateRole::Input,
+                self.width,
+                self.height,
+            ) {
+                let placeholder = crate::ui::installer_layout::configuration_template_text(
+                    step,
+                    crate::ui::installer_template::InstallerTemplateRole::Input,
+                )
+                .unwrap_or(b"");
+                self.onboarding_input_field(
+                    frame.left,
+                    frame.top,
+                    frame.width,
+                    frame.height,
+                    input,
+                    masked,
+                    focus == 1,
+                    placeholder,
+                );
+                if validation_error {
+                    self.ui_text(
+                        frame.left,
+                        frame.bottom().saturating_add(8 * self.ui_scale().max(1)),
+                        if step == 4 {
+                            b"Use at least eight characters."
+                        } else {
+                            b"This field is required before continuing."
+                        },
+                        255,
+                        118,
+                        126,
+                        1,
+                    );
+                }
+            }
+        } else if step == 6 {
+            if let Some(content) = crate::ui::installer_layout::configuration_template_rect(
+                step,
+                crate::ui::installer_template::InstallerTemplateRole::Content,
+                self.width,
+                self.height,
+            ) {
+                self.onboarding_network_rows(
+                    content.left + 12 * self.ui_scale().max(1),
+                    content.top + content.height * 42 / 100,
+                    content.width.saturating_sub(24 * self.ui_scale().max(1)),
+                    focus,
+                    validation_error,
+                );
+            }
+        }
+        self.configuration_template_navigation(step, focus);
     }
 
     // ------------------------=
