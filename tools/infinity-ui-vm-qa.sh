@@ -104,6 +104,11 @@ done
 
 sleep 1
 capture_frame desktop-polish
+monitor_command 'sendkey slash' 0.8
+capture_frame app-launcher-initial
+monitor_command 'sendkey right' 0.5
+capture_frame app-launcher-focus
+monitor_command 'sendkey esc' 0.5
 monitor_command 'sendkey ret' 0.8
 capture_frame system-menu-polish
 monitor_command 'sendkey down' 0.3

@@ -48,4 +48,6 @@ for family in $families; do
     build_runtime_atlas "$family" actions 5x3
 done
 
+python3 tools/build-launcher-icon-atlases.py
+
 echo "Built three 60-icon InfinityOS families at 24, 32, 48, 64, 96, 128, and 256 pixels."

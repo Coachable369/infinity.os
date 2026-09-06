@@ -2,6 +2,7 @@
 """Validate installed icon-family dimensions, semantic coverage, and transparency."""
 
 import csv
+import struct
 from pathlib import Path
 
 from PIL import Image
@@ -39,6 +40,31 @@ def validate_icon(path: Path, size: int) -> None:
 
 
 # ------------------------=
+# FUNC: validate_launcher_atlas
+# DESC: Verifies the installed launcher uses native 256px alpha cells rather than the compact UI atlas.
+# ------------------=
+def validate_launcher_atlas(path: Path) -> None:
+    payload = path.read_bytes()
+    assert payload[:2] == b"BM", f"launcher atlas is not a bitmap: {path}"
+    offset = struct.unpack_from("<I", payload, 10)[0]
+    width, height = struct.unpack_from("<ii", payload, 18)
+    bits_per_pixel = struct.unpack_from("<H", payload, 28)[0]
+    assert (width, abs(height), bits_per_pixel) == (1024, 1024, 32), (
+        f"wrong launcher atlas format: {path}"
+    )
+    alpha = payload[offset + 3 :: 4]
+    assert min(alpha) == 0 and max(alpha) == 255, f"launcher atlas lost alpha: {path}"
+    for index in range(14):
+        cell_x = (index % 4) * 256
+        cell_y = (index // 4) * 256
+        assert any(
+            alpha[(abs(height) - 1 - (cell_y + y)) * width + cell_x + x]
+            for y in range(256)
+            for x in range(256)
+        ), f"launcher atlas cell {index} is empty: {path}"
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Validates every semantic icon in every installed family and supported pixel tier.
 # ------------------=
@@ -62,6 +88,7 @@ def main() -> None:
                 for path in files:
                     validate_icon(path, size)
                     checked += 1
+        validate_launcher_atlas(root / "runtime" / f"{family}-launcher-256.bmp")
     assert checked == len(FAMILIES) * len(SIZES) * sum(GROUP_COUNTS.values())
     print(f"PASS icon assets: {checked} semantic PNGs have exact dimensions and alpha")
 
