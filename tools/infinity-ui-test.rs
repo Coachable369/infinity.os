@@ -1087,9 +1087,10 @@ fn installed_system_hit_geometry_test() {
         square.desktop_target(30, 20, 30, 500, true, false),
         Some(DesktopTarget::InfinityMenu)
     );
+    assert_eq!(square.desktop_target(200, 15, 30, 500, true, false), None);
     assert_eq!(
-        square.desktop_target(200, 15, 30, 500, true, false),
-        Some(DesktopTarget::TopMenu(1))
+        square.desktop_target(400, 15, 30, 500, true, false),
+        Some(DesktopTarget::TopMenu(5))
     );
     assert_eq!(
         square.desktop_target(805, 15, 30, 500, true, false),

@@ -669,24 +669,15 @@ impl SystemLayout {
         {
             return Some(DesktopTarget::InfinityMenu);
         }
-        let menu_bounds = [
-            (300usize, 60usize),
-            (360, 60),
-            (420, 62),
-            (482, 84),
-            (610, 62),
-        ];
-        for (index, (left, width)) in menu_bounds.iter().enumerate() {
-            if rect(
-                left * self.scale,
-                4 * self.scale,
-                width * self.scale,
-                top_bar.saturating_sub(8 * self.scale),
-            )
-            .contains(point)
-            {
-                return Some(DesktopTarget::TopMenu(index + 1));
-            }
+        if rect(
+            610 * self.scale,
+            4 * self.scale,
+            62 * self.scale,
+            top_bar.saturating_sub(8 * self.scale),
+        )
+        .contains(point)
+        {
+            return Some(DesktopTarget::TopMenu(5));
         }
         let status_width = 32 * self.scale;
         let clock_width = 104 * self.scale;

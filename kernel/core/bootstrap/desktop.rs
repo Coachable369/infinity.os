@@ -1279,28 +1279,22 @@ impl super::DisplayDevice {
         self.top_bar_infinity_icon(36 * scale, content_y, 68 * scale);
         self.ui_text(76 * scale, text_y, b"I N F I N I T Y O S", 221, 229, 239, 1);
 
-        let menu_positions = [300usize, 360, 420, 482, 610];
-        for (index, label) in [b"File".as_slice(), b"Edit", b"View", b"Window", b"Help"]
-            .iter()
-            .enumerate()
-        {
-            let menu_x = menu_positions[index] * scale;
-            if active_menu == Some(index + 1) {
-                let active_width = self.ui_text_width(label, 1) + 18 * scale;
-                self.fill_rounded_rect_alpha(
-                    menu_x.saturating_sub(9 * scale),
-                    4 * scale,
-                    active_width,
-                    height.saturating_sub(8 * scale),
-                    7 * scale,
-                    selection_r,
-                    selection_g,
-                    selection_b,
-                    210,
-                );
-            }
-            self.ui_text(menu_x, text_y, label, 213, 222, 231, 1);
+        let help_x = 610 * scale;
+        if active_menu == Some(5) {
+            let active_width = self.ui_text_width(b"Help", 1) + 18 * scale;
+            self.fill_rounded_rect_alpha(
+                help_x.saturating_sub(9 * scale),
+                4 * scale,
+                active_width,
+                height.saturating_sub(8 * scale),
+                7 * scale,
+                selection_r,
+                selection_g,
+                selection_b,
+                210,
+            );
         }
+        self.ui_text(help_x, text_y, b"Help", 213, 222, 231, 1);
 
         let icon_size = 18 * scale;
         let status_y = content_y;
