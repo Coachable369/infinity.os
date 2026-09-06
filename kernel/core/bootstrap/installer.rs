@@ -1315,7 +1315,7 @@ impl super::DisplayDevice {
             88,
             128,
         );
-        let title: &[u8] = match screen {
+        let fallback_title: &[u8] = match screen {
             1 => b"WELCOME TO INFINITYOS",
             2 => b"HOW INFINITY POOL WORKS",
             3 => b"CHOOSE INSTALLATION DISK",
@@ -1328,6 +1328,11 @@ impl super::DisplayDevice {
             11 => b"INFINITYOS SETUP HELP",
             _ => b"INFINITYOS GUIDED SETUP",
         };
+        let title = crate::ui::installer_layout::installer_template_text(
+            screen,
+            crate::ui::installer_template::InstallerTemplateRole::Title,
+        )
+        .unwrap_or(fallback_title);
         let inset = width * 20 / 1000;
         let header_y = top + height * 27 / 1000;
         self.installer_text_strong(left + inset, header_y, title, 220, 230, 241);
@@ -1416,6 +1421,10 @@ impl super::DisplayDevice {
                 104,
             );
         }
+        let authored_body = crate::ui::installer_layout::installer_template_text(
+            screen,
+            crate::ui::installer_template::InstallerTemplateRole::Body,
+        );
         for row in 0..line_count.min(6) {
             if screen == 8 {
                 break;
@@ -1434,7 +1443,7 @@ impl super::DisplayDevice {
                 self.installer_text_strong(
                     frame.content.left + 18 * scale,
                     y,
-                    &lines[row][..lengths[row]],
+                    authored_body.unwrap_or(&lines[row][..lengths[row]]),
                     color.0,
                     color.1,
                     color.2,
@@ -1581,10 +1590,15 @@ impl super::DisplayDevice {
         self.installer_corner_accents(left, top, width, height);
 
         let header_y = top + height * 27 / 1000;
+        let screen_title = crate::ui::installer_layout::installer_template_text(
+            2,
+            crate::ui::installer_template::InstallerTemplateRole::Title,
+        )
+        .unwrap_or(b"HOW INFINITY POOL WORKS");
         self.installer_text_strong(
             left + inset,
             header_y,
-            b"HOW INFINITY POOL WORKS",
+            screen_title,
             220,
             230,
             241,
@@ -1668,16 +1682,21 @@ impl super::DisplayDevice {
         );
 
         let body_y = copy_rule_y + 15;
-        for (index, line) in [
-            b"The Infinity Pool organizes your disk into four".as_slice(),
-            b"protected areas that keep your data safe, isolated,",
-            b"and easy to recover.",
-        ]
-        .iter()
-        .enumerate()
-        {
-            self.installer_text(copy_x, body_y + index * 26, line, 193, 207, 222);
-        }
+        let body = crate::ui::installer_layout::installer_template_text(
+            2,
+            crate::ui::installer_template::InstallerTemplateRole::Body,
+        )
+        .unwrap_or(b"The Infinity Pool organizes your disk into four protected areas that keep your data safe, isolated, and easy to recover.");
+        self.installer_text_wrapped(
+            copy_x,
+            body_y,
+            left_width.saturating_sub(width * 50 / 1000),
+            body,
+            193,
+            207,
+            222,
+            3,
+        );
         let taxonomy_y = body_y + 3 * 26 + 2;
         self.installer_text_strong(
             copy_x,
@@ -2006,7 +2025,12 @@ impl super::DisplayDevice {
         self.installer_corner_accents(left, top, width, height);
 
         let header_y = top + height * 27 / 1000;
-        self.installer_text_strong(left + inset, header_y, b"DISKS DISCOVERED", 220, 230, 241);
+        let screen_title = crate::ui::installer_layout::installer_template_text(
+            3,
+            crate::ui::installer_template::InstallerTemplateRole::Title,
+        )
+        .unwrap_or(b"DISKS DISCOVERED");
+        self.installer_text_strong(left + inset, header_y, screen_title, 220, 230, 241);
         let section = b"GUIDED SETUP";
         let section_width = self.installer_text_width(section, true);
         self.installer_text_strong(
@@ -2083,10 +2107,15 @@ impl super::DisplayDevice {
             207,
             249,
         );
+        let body = crate::ui::installer_layout::installer_template_text(
+            3,
+            crate::ui::installer_template::InstallerTemplateRole::Body,
+        )
+        .unwrap_or(b"Select a disk to add to the Infinity Pool.");
         self.installer_compact_text(
             left_panel + panel_inset,
             available_y + INSTALLER_FONT_CELL_HEIGHT,
-            b"Select a disk to add to the Infinity Pool.",
+            body,
             183,
             207,
             232,
@@ -2613,10 +2642,15 @@ impl super::DisplayDevice {
         self.installer_corner_accents(left, top, width, height);
 
         let header_y = top + height * 24 / 1000;
+        let screen_title = crate::ui::installer_layout::installer_template_text(
+            1,
+            crate::ui::installer_template::InstallerTemplateRole::Title,
+        )
+        .unwrap_or(b"WELCOME TO INFINITYOS");
         self.installer_text_strong(
             left + inset,
             header_y,
-            b"WELCOME TO INFINITYOS",
+            screen_title,
             220,
             230,
             241,
@@ -2749,26 +2783,21 @@ impl super::DisplayDevice {
         );
         let body_x = left + 43;
         let body_y = top + 55;
-        for (index, line) in [
-            b"InfinityOS is a distributed operating system.".as_slice(),
-            b"One simple home for your system, your apps,",
-            b"and everything you create.",
-            b"",
-            b"We'll guide you through every choice.",
-            b"Nothing changes until you approve it.",
-        ]
-        .iter()
-        .enumerate()
-        {
-            self.installer_text(
-                body_x,
-                body_y + index * (INSTALLER_FONT_CELL_HEIGHT + 2),
-                line,
-                193,
-                207,
-                222,
-            );
-        }
+        let body = crate::ui::installer_layout::installer_template_text(
+            1,
+            crate::ui::installer_template::InstallerTemplateRole::Body,
+        )
+        .unwrap_or(b"InfinityOS is a distributed operating system. One simple home for your system, your apps, and everything you create. We'll guide you through every choice. Nothing changes until you approve it.");
+        self.installer_text_wrapped(
+            body_x,
+            body_y,
+            width.saturating_sub(86),
+            body,
+            193,
+            207,
+            222,
+            6,
+        );
         self.installer_text(
             body_x,
             top + height.saturating_sub(39),
@@ -3286,7 +3315,12 @@ impl super::DisplayDevice {
 
         let inset = width * 20 / 1000;
         let header_y = top + height * 27 / 1000;
-        self.installer_text_strong(left + inset, header_y, b"DATE & TIME", 220, 230, 241);
+        let screen_title = crate::ui::installer_layout::installer_template_text(
+            5,
+            crate::ui::installer_template::InstallerTemplateRole::Title,
+        )
+        .unwrap_or(b"DATE & TIME");
+        self.installer_text_strong(left + inset, header_y, screen_title, 220, 230, 241);
         let section = b"GUIDED SETUP";
         let section_width = self.installer_text_width(section, true);
         self.installer_text_strong(
@@ -3332,13 +3366,20 @@ impl super::DisplayDevice {
             249,
             254,
         );
-        self.installer_text(
+        let body = crate::ui::installer_layout::installer_template_text(
+            5,
+            crate::ui::installer_template::InstallerTemplateRole::Body,
+        )
+        .unwrap_or(b"Used by your clock, calendar, events, and activity history.");
+        self.installer_text_wrapped(
             form_left + 20 * scale,
             form_top + 58 * scale,
-            b"Used by your clock, calendar, events, and activity history.",
+            form_width.saturating_sub(40 * scale),
+            body,
             172,
             195,
             215,
+            2,
         );
 
         let mut date = *b"0000-00-00";

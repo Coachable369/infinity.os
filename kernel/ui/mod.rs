@@ -15,6 +15,7 @@ pub mod icon_theme;
 pub mod input;
 pub mod input_router;
 pub mod installer_layout;
+pub mod installer_template;
 pub mod localization;
 pub mod platform;
 pub mod redraw;

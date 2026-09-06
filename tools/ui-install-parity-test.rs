@@ -321,9 +321,11 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         sequence += 1;
     }
 
-    for source in [Path::new(
-        "assets/boot/infinity-installer-mesh-diagram-v1.png",
-    )] {
+    for source in [
+        Path::new("assets/boot/infinity-installer-mesh-diagram-v1.png"),
+        Path::new("assets/boot/installer-screens.infinityui"),
+        Path::new("assets/boot/installer-screens.iuit"),
+    ] {
         let name = source
             .file_name()
             .and_then(OsStr::to_str)

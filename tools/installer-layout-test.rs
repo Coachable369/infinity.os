@@ -1,3 +1,6 @@
+#[path = "../kernel/ui/installer_template.rs"]
+mod installer_template;
+
 #[path = "../kernel/ui/installer_layout.rs"]
 mod installer_layout;
 

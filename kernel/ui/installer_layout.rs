@@ -1,5 +1,10 @@
 //! Shared, architecture-neutral geometry for every InfinityOS installer step.
 
+use super::installer_template::{InstallerTemplate, InstallerTemplateRect, InstallerTemplateRole};
+
+pub const INSTALLER_TEMPLATE_BYTES: &[u8] =
+    include_bytes!("../../assets/boot/installer-screens.iuit");
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InstallerRect {
     pub left: usize,
@@ -53,7 +58,80 @@ impl InstallerRect {
 // DESC: Resolves the invariant gold-standard installer frame for any wizard screen.
 // ------------------=
 pub fn installer_wizard_layout(
-    _screen: u8,
+    screen: u8,
+    display_width: usize,
+    display_height: usize,
+) -> InstallerWizardLayout {
+    if let Ok(template) = InstallerTemplate::parse(INSTALLER_TEMPLATE_BYTES) {
+        if let (Some(masthead), Some(panel), Some(content), Some(back), Some(primary), Some(footer)) = (
+            template.element(screen, InstallerTemplateRole::Masthead),
+            template.element(screen, InstallerTemplateRole::Console),
+            template.element(screen, InstallerTemplateRole::Content),
+            template.element(screen, InstallerTemplateRole::BackButton),
+            template.element(screen, InstallerTemplateRole::PrimaryButton),
+            template.element(screen, InstallerTemplateRole::Footer),
+        ) {
+            return InstallerWizardLayout {
+                masthead: scale_template_rect(masthead.frame, display_width, display_height),
+                panel: scale_template_rect(panel.frame, display_width, display_height),
+                content: scale_template_rect(content.frame, display_width, display_height),
+                navigation_rail: InstallerRect {
+                    left: display_width * 8 / 100,
+                    top: display_height * 90 / 100,
+                    width: display_width * 84 / 100,
+                    height: display_height * 4 / 100,
+                },
+                back_button: scale_template_rect(back.frame, display_width, display_height),
+                primary_button: scale_template_rect(primary.frame, display_width, display_height),
+                footer_rail: scale_template_rect(footer.frame, display_width, display_height),
+            };
+        }
+    }
+    fallback_installer_wizard_layout(display_width, display_height)
+}
+
+// ------------------------=
+// FUNC: installer_template_text
+// DESC: Returns authored copy for a validated installer screen role.
+// ------------------=
+pub fn installer_template_text(screen: u8, role: InstallerTemplateRole) -> Option<&'static [u8]> {
+    InstallerTemplate::parse(INSTALLER_TEMPLATE_BYTES)
+        .ok()?
+        .element(screen, role)
+        .map(|element| element.text)
+}
+
+// ------------------------=
+// FUNC: scale_template_rect
+// DESC: Scales normalized editor geometry into the active display dimensions.
+// ------------------=
+fn scale_template_rect(
+    frame: InstallerTemplateRect,
+    display_width: usize,
+    display_height: usize,
+) -> InstallerRect {
+    let left = display_width * frame.x as usize / 1000;
+    let top = display_height * frame.y as usize / 1000;
+    let right = display_width * (frame.x as usize + frame.width as usize) / 1000;
+    let bottom = display_height * (frame.y as usize + frame.height as usize) / 1000;
+    let width = if frame.x as usize * 2 + frame.width as usize == 1000 {
+        display_width.saturating_sub(left * 2)
+    } else {
+        right.saturating_sub(left)
+    };
+    InstallerRect {
+        left,
+        top,
+        width,
+        height: bottom.saturating_sub(top),
+    }
+}
+
+// ------------------------=
+// FUNC: fallback_installer_wizard_layout
+// DESC: Provides safe compiled geometry when persisted template validation fails.
+// ------------------=
+fn fallback_installer_wizard_layout(
     display_width: usize,
     display_height: usize,
 ) -> InstallerWizardLayout {

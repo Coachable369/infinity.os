@@ -1,0 +1,2889 @@
+{
+  "canvasHeight" : 1000,
+  "canvasWidth" : 1000,
+  "screens" : [
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-0001-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-0001-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-0001-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "WELCOME TO INFINITYOS",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-0001-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-0001-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "InfinityOS is a distributed operating system. One simple home for your system, your apps, and everything you create. We'll guide you through every choice. Nothing changes until you approve it.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0001-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0001-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-0001-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 1,
+      "title" : "Welcome"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-0002-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-0002-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-0002-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "HOW INFINITY POOL WORKS",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-0002-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-0002-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "The Infinity Pool organizes your disk into four protected areas that keep your data safe, isolated, and easy to recover.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0002-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0002-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-0002-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 2,
+      "title" : "Infinity Pool"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-0003-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-0003-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-0003-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "DISKS DISCOVERED",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-0003-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-0003-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Select a disk to add to the Infinity Pool.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0003-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0003-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-0003-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 3,
+      "title" : "Disk Discovery"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-0004-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-0004-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-0004-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "REVIEW SELECTED DISK",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-0004-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-0004-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Confirm the selected device, connection, capacity, and current contents.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0004-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0004-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-0004-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 4,
+      "title" : "Disk Review"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-0005-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-0005-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-0005-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "DATE & TIME",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-0005-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-0005-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Set the local date, time, and time zone saved into the installed system.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0005-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0005-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-0005-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 5,
+      "title" : "Date & Time"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-0006-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-0006-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-0006-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "REVIEW INSTALLATION",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-0006-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-0006-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Review the immutable installation plan before final approval.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0006-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0006-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-0006-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 6,
+      "title" : "Plan Review"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-0007-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-0007-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-0007-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "REVIEW INSTALLATION",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-0007-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-0007-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "The selected disk will be erased only after explicit confirmation.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0007-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0007-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-0007-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 7,
+      "title" : "Confirmation"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-0008-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-0008-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-0008-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "INSTALLING INFINITYOS",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-0008-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-0008-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "InfinityOS is creating and verifying the new System Generation.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0008-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0008-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-0008-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 8,
+      "title" : "Installing"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-0009-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-0009-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-0009-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "INSTALLATION COMPLETE",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-0009-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-0009-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Installation is verified and ready to boot.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0009-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-0009-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-0009-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 9,
+      "title" : "Complete"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-000A-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-000A-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-000A-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "INSTALLATION NEEDS ATTENTION",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-000A-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-000A-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Installation stopped safely before activation.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-000A-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-000A-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-000A-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 10,
+      "title" : "Attention"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 300,
+            "width" : 540,
+            "x" : 230,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "49554954-000B-0001-8000-000000000001",
+          "imageAsset" : "infinity-installer-masthead-v2.png",
+          "kind" : 2,
+          "locked" : true,
+          "name" : "InfinityOS Masthead",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 660,
+            "width" : 960,
+            "x" : 20,
+            "y" : 320
+          },
+          "hidden" : false,
+          "id" : "49554954-000B-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Installer Console",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 560,
+            "x" : 40,
+            "y" : 342
+          },
+          "hidden" : false,
+          "id" : "49554954-000B-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "INFINITYOS SETUP HELP",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 404,
+            "width" : 924,
+            "x" : 38,
+            "y" : 396
+          },
+          "hidden" : false,
+          "id" : "49554954-000B-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Panel",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 120,
+            "width" : 540,
+            "x" : 70,
+            "y" : 430
+          },
+          "hidden" : false,
+          "id" : "49554954-000B-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Use Tab or arrows to move, Enter to select, and Escape to return.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 135,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-000B-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 55,
+            "width" : 350,
+            "x" : 510,
+            "y" : 820
+          },
+          "hidden" : false,
+          "id" : "49554954-000B-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 40,
+            "width" : 800,
+            "x" : 100,
+            "y" : 920
+          },
+          "hidden" : false,
+          "id" : "49554954-000B-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : true,
+          "name" : "Keyboard Footer",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 11,
+      "title" : "Help"
+    }
+  ],
+  "version" : 1
+}

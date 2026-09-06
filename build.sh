@@ -14,6 +14,7 @@ make aarch64
 make crash-screen-test
 make component-manifest-test
 make settings-color-test
+make installer-template-test
 make milestone-7x-test
 make ai-test
 make object-test
