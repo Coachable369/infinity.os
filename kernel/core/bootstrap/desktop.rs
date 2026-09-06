@@ -2009,12 +2009,29 @@ impl super::DisplayDevice {
     ) {
         let scale = self.ui_scale().max(1);
         let top_bar = self.system_identity_bar();
-        let card_width = (self.width * 34 / 100).clamp(500, 600 * scale);
-        let card_height = (self.height * 68 / 100)
+        let fallback_card_width = (self.width * 34 / 100).clamp(500, 600 * scale);
+        let fallback_card_height = (self.height * 68 / 100)
             .clamp(560, 680 * scale)
             .min(self.height.saturating_sub(top_bar + 24));
-        let card_left = self.width * 4 / 100;
-        let card_top = top_bar + self.height.saturating_sub(top_bar + card_height) / 2;
+        let fallback_card_left = self.width * 4 / 100;
+        let fallback_card_top =
+            top_bar + self.height.saturating_sub(top_bar + fallback_card_height) / 2;
+        let (card_left, card_top, card_width, card_height) =
+            if let Some(card) = crate::ui::installer_layout::configuration_template_rect(
+                step,
+                crate::ui::installer_template::InstallerTemplateRole::Console,
+                self.width,
+                self.height,
+            ) {
+                (card.left, card.top, card.width, card.height)
+            } else {
+                (
+                    fallback_card_left,
+                    fallback_card_top,
+                    fallback_card_width,
+                    fallback_card_height,
+                )
+            };
         self.onboarding_glass_panel(card_left, card_top, card_width, card_height);
 
         let inner_left = card_left + 32 * scale;
@@ -2052,21 +2069,47 @@ impl super::DisplayDevice {
         };
         let content_top = card_top + 94 * scale;
         self.ui_text_strong(inner_left, content_top, eyebrow, 72, 196, 238, 1);
+        let authored_title = crate::ui::installer_layout::configuration_template_text(
+            step,
+            crate::ui::installer_template::InstallerTemplateRole::Title,
+        )
+        .unwrap_or(title);
+        let authored_description = crate::ui::installer_layout::configuration_template_text(
+            step,
+            crate::ui::installer_template::InstallerTemplateRole::Body,
+        )
+        .unwrap_or(description);
+        let title_frame = crate::ui::installer_layout::configuration_template_rect(
+            step,
+            crate::ui::installer_template::InstallerTemplateRole::Title,
+            self.width,
+            self.height,
+        );
+        let body_frame = crate::ui::installer_layout::configuration_template_rect(
+            step,
+            crate::ui::installer_template::InstallerTemplateRole::Body,
+            self.width,
+            self.height,
+        );
         self.ui_text_fit_strong(
-            inner_left,
-            content_top + 35 * scale,
-            inner_width,
-            title,
+            title_frame.map(|frame| frame.left).unwrap_or(inner_left),
+            title_frame
+                .map(|frame| frame.top)
+                .unwrap_or(content_top + 35 * scale),
+            title_frame.map(|frame| frame.width).unwrap_or(inner_width),
+            authored_title,
             245,
             248,
             251,
             if self.width >= 1500 { 2 } else { 1 },
         );
         self.ui_text_wrapped(
-            inner_left,
-            content_top + 82 * scale,
-            inner_width,
-            description,
+            body_frame.map(|frame| frame.left).unwrap_or(inner_left),
+            body_frame
+                .map(|frame| frame.top)
+                .unwrap_or(content_top + 82 * scale),
+            body_frame.map(|frame| frame.width).unwrap_or(inner_width),
+            authored_description,
             178,
             190,
             204,
@@ -2132,9 +2175,30 @@ impl super::DisplayDevice {
                 );
             }
         } else if (1..=4).contains(&step) {
+            let authored_input = crate::ui::installer_layout::configuration_template_rect(
+                step,
+                crate::ui::installer_template::InstallerTemplateRole::Input,
+                self.width,
+                self.height,
+            );
+            let input_left = authored_input.map(|frame| frame.left).unwrap_or(inner_left);
+            let input_top = authored_input
+                .map(|frame| frame.top)
+                .unwrap_or(body_top + 28 * scale);
+            let input_width = authored_input.map(|frame| frame.width).unwrap_or(inner_width);
+            let input_height = authored_input
+                .map(|frame| frame.height)
+                .unwrap_or(50 * scale);
+            let authored_placeholder =
+                crate::ui::installer_layout::configuration_template_text(
+                    step,
+                    crate::ui::installer_template::InstallerTemplateRole::Input,
+                )
+                .filter(|value| !value.is_empty())
+                .unwrap_or(placeholder);
             self.ui_text_strong(
-                inner_left,
-                body_top,
+                input_left,
+                input_top.saturating_sub(28 * scale),
                 if step == 4 {
                     b"PASSWORD"
                 } else {
@@ -2146,14 +2210,14 @@ impl super::DisplayDevice {
                 1,
             );
             self.onboarding_input_field(
-                inner_left,
-                body_top + 28 * scale,
-                inner_width,
-                50 * scale,
+                input_left,
+                input_top,
+                input_width,
+                input_height,
                 input,
                 masked,
                 focus == 1,
-                placeholder,
+                authored_placeholder,
             );
             let helper = if validation_error {
                 if step == 4 {
@@ -2167,8 +2231,8 @@ impl super::DisplayDevice {
                 b"You can revise this value from Settings later.".as_slice()
             };
             self.ui_text(
-                inner_left,
-                body_top + 88 * scale,
+                input_left,
+                input_top + input_height + 10 * scale,
                 helper,
                 if validation_error { 255 } else { 132 },
                 if validation_error { 118 } else { 151 },
@@ -2437,40 +2501,74 @@ impl super::DisplayDevice {
         let inner_width = card_width.saturating_sub(64 * scale);
         let button_height = crate::ui::system_layout::UI_STANDARD_ACTION_HEIGHT * scale;
         let button_top = card_top + card_height.saturating_sub(72 * scale);
+        let authored_back = crate::ui::installer_layout::configuration_template_rect(
+            step,
+            crate::ui::installer_template::InstallerTemplateRole::BackButton,
+            self.width,
+            self.height,
+        );
+        let authored_primary = crate::ui::installer_layout::configuration_template_rect(
+            step,
+            crate::ui::installer_template::InstallerTemplateRole::PrimaryButton,
+            self.width,
+            self.height,
+        );
+        let primary_label = crate::ui::installer_layout::configuration_template_text(
+            step,
+            crate::ui::installer_template::InstallerTemplateRole::PrimaryButton,
+        )
+        .filter(|value| !value.is_empty())
+        .unwrap_or(if step >= 7 { b"Enter InfinityOS" } else { b"Continue" });
         if step > 0 {
             let back_width = inner_width * 30 / 100;
+            let back_left = authored_back.map(|frame| frame.left).unwrap_or(inner_left);
+            let back_top = authored_back.map(|frame| frame.top).unwrap_or(button_top);
+            let back_width = authored_back.map(|frame| frame.width).unwrap_or(back_width);
+            let back_height = authored_back.map(|frame| frame.height).unwrap_or(button_height);
             self.polished_button(
-                inner_left,
-                button_top,
+                back_left,
+                back_top,
                 back_width,
-                button_height,
+                back_height,
                 b"Back",
                 false,
                 focus == 0,
             );
-            let primary_left =
+            let fallback_primary_left =
                 inner_left + back_width + crate::ui::system_layout::UI_CONTROL_GAP * scale;
+            let primary_left = authored_primary
+                .map(|frame| frame.left)
+                .unwrap_or(fallback_primary_left);
+            let primary_top = authored_primary.map(|frame| frame.top).unwrap_or(button_top);
+            let primary_width = authored_primary.map(|frame| frame.width).unwrap_or_else(|| {
+                inner_width
+                    .saturating_sub(back_width + crate::ui::system_layout::UI_CONTROL_GAP * scale)
+            });
+            let primary_height = authored_primary
+                .map(|frame| frame.height)
+                .unwrap_or(button_height);
             self.polished_button(
                 primary_left,
-                button_top,
-                inner_width
-                    .saturating_sub(back_width + crate::ui::system_layout::UI_CONTROL_GAP * scale),
-                button_height,
-                if step >= 7 {
-                    b"Enter InfinityOS"
-                } else {
-                    b"Continue"
-                },
+                primary_top,
+                primary_width,
+                primary_height,
+                primary_label,
                 true,
                 focus == 1,
             );
         } else {
+            let primary_left = authored_primary.map(|frame| frame.left).unwrap_or(inner_left);
+            let primary_top = authored_primary.map(|frame| frame.top).unwrap_or(button_top);
+            let primary_width = authored_primary.map(|frame| frame.width).unwrap_or(inner_width);
+            let primary_height = authored_primary
+                .map(|frame| frame.height)
+                .unwrap_or(button_height);
             self.polished_button(
-                inner_left,
-                button_top,
-                inner_width,
-                button_height,
-                b"Continue",
+                primary_left,
+                primary_top,
+                primary_width,
+                primary_height,
+                primary_label,
                 true,
                 true,
             );
@@ -2507,15 +2605,33 @@ impl super::DisplayDevice {
                 4 => b"Create a password",
                 _ => b"",
             };
+            let authored_placeholder =
+                crate::ui::installer_layout::configuration_template_text(
+                    step,
+                    crate::ui::installer_template::InstallerTemplateRole::Input,
+                )
+                .filter(|value| !value.is_empty())
+                .unwrap_or(placeholder);
+            let authored_input =
+                crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                    .onboarding_input_geometry(step);
             self.onboarding_input_field(
-                inner_left,
-                body_top + 28 * scale,
-                inner_width,
-                50 * scale,
+                authored_input
+                    .map(|frame| frame.x.max(0) as usize)
+                    .unwrap_or(inner_left),
+                authored_input
+                    .map(|frame| frame.y.max(0) as usize)
+                    .unwrap_or(body_top + 28 * scale),
+                authored_input
+                    .map(|frame| frame.width.max(0) as usize)
+                    .unwrap_or(inner_width),
+                authored_input
+                    .map(|frame| frame.height.max(0) as usize)
+                    .unwrap_or(50 * scale),
                 input,
                 masked,
                 focus == 1,
-                placeholder,
+                authored_placeholder,
             );
         } else if step == 6 {
             let scale = self.ui_scale().max(1);

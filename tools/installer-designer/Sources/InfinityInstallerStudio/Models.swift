@@ -31,6 +31,7 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case backButton = 7
     case primaryButton = 8
     case footer = 9
+    case input = 10
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -45,6 +46,20 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .backButton: "Back Button"
         case .primaryButton: "Primary Button"
         case .footer: "Footer"
+        case .input: "Input Field"
+        }
+    }
+}
+
+enum ScreenCollection: String, CaseIterable, Identifiable {
+    case installation
+    case configuration
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .installation: "Installation Screens"
+        case .configuration: "OS Configuration Screens"
         }
     }
 }
@@ -288,11 +303,179 @@ struct InstallerStudioDocument: Codable, Hashable {
     }
 
     // ------------------------=
+    // FUNC: factoryConfiguration
+    // DESC: Builds the eight-screen post-install configuration document used by the real first-boot flow.
+    // ------------------=
+    static func factoryConfiguration() -> InstallerStudioDocument {
+        let names = [
+            "Welcome", "Node Name", "Profile Name", "Display Name", "Password",
+            "Privacy & Appearance", "Network", "Ready",
+        ]
+        let headings = [
+            "Welcome to InfinityOS", "Name your Infinity Node", "Choose your profile name",
+            "How should we address you?", "Secure your account", "Private by default",
+            "Connect this Infinity Node", "Your Infinity begins here",
+        ]
+        let body = [
+            "A private system shaped around you.",
+            "Choose a friendly name for this device. You can change it later.",
+            "Your profile name identifies your Personal Space without exposing your full name.",
+            "Use the display name you want InfinityOS to show across your local experience.",
+            "Use at least eight characters. Your password remains local to this system.",
+            "Local AI is ready. Remote processing and microphone access begin disabled.",
+            "Choose wired, Wi-Fi, or continue offline. You can change this later.",
+            "Your identity, Personal Space, privacy policy, and appearance are ready.",
+        ]
+        let placeholders = [
+            "", "InfinityNode", "your-profile", "Display name", "Create a password", "", "", "",
+        ]
+        let screens = names.indices.map { index in
+            var elements = configurationElements(
+                step: index,
+                title: headings[index],
+                body: body[index],
+                placeholder: placeholders[index],
+                primary: index == names.count - 1 ? "ENTER INFINITYOS" : "CONTINUE"
+            )
+            for elementIndex in elements.indices {
+                elements[elementIndex].id = configurationElementID(
+                    screen: index + 1,
+                    element: elementIndex + 1
+                )
+            }
+            return InstallerScreenTemplate(id: index + 1, title: names[index], elements: elements)
+        }
+        return InstallerStudioDocument(
+            version: currentVersion,
+            canvasWidth: 1000,
+            canvasHeight: 1000,
+            screens: screens
+        )
+    }
+
+    // ------------------------=
     // FUNC: factoryElementID
     // DESC: Creates a stable identifier so factory template exports are reproducible.
     // ------------------=
     private static func factoryElementID(screen: Int, element: Int) -> UUID {
         UUID(uuidString: String(format: "49554954-%04X-%04X-8000-000000000001", screen, element))!
+    }
+
+    // ------------------------=
+    // FUNC: configurationElementID
+    // DESC: Creates stable non-colliding identifiers for factory OS configuration layers.
+    // ------------------=
+    private static func configurationElementID(screen: Int, element: Int) -> UUID {
+        UUID(uuidString: String(format: "4F534346-%04X-%04X-8000-000000000001", screen, element))!
+    }
+
+    // ------------------------=
+    // FUNC: configurationElements
+    // DESC: Creates the editable first-boot card, semantic copy, input, and protected actions.
+    // ------------------=
+    private static func configurationElements(
+        step: Int,
+        title: String,
+        body: String,
+        placeholder: String,
+        primary: String
+    ) -> [StudioElement] {
+        var elements: [StudioElement] = [
+            .make(
+                name: "First-Boot Background", kind: .image, role: .masthead,
+                frame: CanvasRect(x: 0, y: 0, width: 1000, height: 1000),
+                imageAsset: "assets/desktop/infinity-onboarding-wallpaper-v1.png", zIndex: 0
+            ),
+            .make(
+                name: "Configuration Card", kind: .console, role: .console,
+                frame: CanvasRect(x: 40, y: 185, width: 340, height: 664), zIndex: 1
+            ),
+            .make(
+                name: "Configuration Content", kind: .panel, role: .content,
+                frame: CanvasRect(x: 60, y: 276, width: 299, height: 430), zIndex: 2
+            ),
+            .make(
+                name: "Screen Title", kind: .text, role: .title,
+                frame: CanvasRect(x: 60, y: 310, width: 299, height: 52),
+                text: title, zIndex: 4
+            ),
+            .make(
+                name: "Body Copy", kind: .text, role: .body,
+                frame: CanvasRect(x: 60, y: 370, width: 299, height: 72),
+                text: body, zIndex: 4
+            ),
+            .make(
+                name: "Configuration Input", kind: .panel, role: .input,
+                frame: CanvasRect(x: 60, y: 475, width: 299, height: 49),
+                text: placeholder, zIndex: 5
+            ),
+            lockedButton(
+                name: "Back", role: .backButton,
+                frame: CanvasRect(x: 60, y: 778, width: 89, height: 47),
+                text: "BACK", zIndex: 8
+            ),
+            lockedButton(
+                name: "Primary", role: .primaryButton,
+                frame: CanvasRect(x: 158, y: 778, width: 201, height: 47),
+                text: primary, zIndex: 8
+            ),
+            .make(
+                name: "Privacy Mark", kind: .text, role: .footer,
+                frame: CanvasRect(x: 275, y: 209, width: 84, height: 28),
+                text: "LOCAL | PRIVATE", zIndex: 6
+            ),
+        ]
+        if placeholder.isEmpty {
+            elements[5].hidden = true
+        } else {
+            elements.append(.make(
+                name: "Input Placeholder", kind: .text,
+                frame: CanvasRect(x: 73, y: 489, width: 270, height: 24),
+                text: placeholder, zIndex: 6
+            ))
+        }
+        if step == 0 {
+            for (index, copy) in [
+                "Yours from the start\nIdentity and Personal Space are built in.",
+                "Private by design\nExplicit capability controls stay local.",
+                "Ready to grow\nObjects, apps, and AI share one system.",
+            ].enumerated() {
+                elements.append(.make(
+                    name: "Welcome Benefit \(index + 1)", kind: .text,
+                    frame: CanvasRect(x: 72, y: 455 + index * 68, width: 275, height: 54),
+                    text: copy, zIndex: 6 + index
+                ))
+            }
+        } else if step == 5 {
+            for (index, copy) in [
+                "Local AI                                      ON",
+                "Remote processing                         OFF",
+                "Voice and microphone                    OFF",
+                "Appearance                 Default Dark",
+            ].enumerated() {
+                elements.append(.make(
+                    name: "Privacy Setting \(index + 1)", kind: .text,
+                    frame: CanvasRect(x: 72, y: 455 + index * 54, width: 275, height: 42),
+                    text: copy, zIndex: 6 + index
+                ))
+            }
+        } else if step == 6 {
+            for (index, copy) in ["WIRED", "WI-FI", "CONTINUE OFFLINE"].enumerated() {
+                elements.append(.make(
+                    name: "Network Choice \(index + 1)", kind: .text,
+                    frame: CanvasRect(x: 72, y: 455 + index * 58, width: 275, height: 46),
+                    text: copy, zIndex: 6 + index
+                ))
+            }
+        } else if step == 7 {
+            elements.append(.make(
+                name: "Ready Summary", kind: .text,
+                frame: CanvasRect(x: 72, y: 455, width: 275, height: 150),
+                text: "IDENTITY READY\nPERSONAL SPACE READY\nPRIVACY DEFAULTS APPLIED\nAPPEARANCE READY",
+                zIndex: 6
+            ))
+        }
+        return elements
     }
 
     // ------------------------=

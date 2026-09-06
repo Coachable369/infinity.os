@@ -37,6 +37,7 @@ struct InfinityInstallerStudioApp: App {
                 let directory = URL(fileURLWithPath: arguments[2], isDirectory: true)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let document = InstallerStudioDocument.factoryDefault()
+                let configuration = InstallerStudioDocument.factoryConfiguration()
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
                 try encoder.encode(document).write(
@@ -47,7 +48,15 @@ struct InfinityInstallerStudioApp: App {
                     to: directory.appending(path: "installer-screens.iuit"),
                     options: .atomic
                 )
-                print("Exported InfinityOS installer templates to \(directory.path)")
+                try encoder.encode(configuration).write(
+                    to: directory.appending(path: "configuration-screens.infinityui"),
+                    options: .atomic
+                )
+                try RuntimeTemplateCodec.encode(configuration).write(
+                    to: directory.appending(path: "configuration-screens.iuit"),
+                    options: .atomic
+                )
+                print("Exported InfinityOS installer and OS configuration templates to \(directory.path)")
                 Darwin.exit(0)
             } catch {
                 fputs("Template export failed: \(error)\n", stderr)

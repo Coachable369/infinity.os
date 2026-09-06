@@ -11,8 +11,10 @@ icon is the application identity.
 ## Window topology
 
 - Toolbar: screen picker, undo/redo, grid controls, preview, validate, and save.
-- Left rail (248 pt): all eleven installation screens with number, title, and
-  changed/valid state.
+- Left rail (248 pt): independently expandable Installation Screens and OS
+  Configuration Screens collections. Every row is selectable and shows its
+  flow-local number, title, and layer count. The selected collection owns all
+  add, duplicate, reorder, rename, remove, reset, and canvas operations.
 - Center stage: scalable 1000 × 1000 normalized artboard on a graphite pasteboard.
 - Right inspector (300 pt): element identity, geometry, content, appearance,
   image source, lock state, and layer ordering.
@@ -38,21 +40,24 @@ icon is the application identity.
 - Drag moves; eight handles resize; arrow keys nudge; Shift-arrow moves by grid.
 - Grid snapping is on by default and can be disabled from the toolbar.
 - Command-Z/Shift-Command-Z undo and redo all document mutations.
-- Command-S validates and atomically saves both the editable template and the
-  runtime template consumed by InfinityOS.
+- Command-S validates and atomically saves editable and runtime templates for
+  both the installer and post-install OS configuration flow.
 - Delete removes editable elements only. Command-D duplicates editable elements.
 - New Panel, Text, Image, and Console commands create real elements at the
   current viewport center.
 
 ## Template contract
 
-The editable document is versioned JSON (`installer-screens.infinityui`). The
-runtime export is a compact, deterministic binary (`installer-screens.iuit`)
-with normalized integer geometry, bounded UTF-8 strings, stable element IDs,
-kind/role enums, z-order, appearance tokens, image asset identifiers, and lock
-flags. Both contain eleven screens. Every screen must retain exactly one locked
-Back button and one locked Primary button matching the canonical navigation
-geometry.
+The installer editable document is versioned JSON
+(`installer-screens.infinityui`) and its compact runtime export is
+`installer-screens.iuit`. The OS configuration collection uses the parallel
+`configuration-screens.infinityui` and `configuration-screens.iuit` artifacts.
+Both formats retain normalized integer geometry, bounded UTF-8 strings, stable
+element IDs, kind/role enums, z-order, appearance tokens, image asset
+identifiers, crop state, and lock flags. The installer contains eleven factory
+screens; OS configuration contains eight factory screens matching the actual
+first-boot state machine. Every screen retains one locked Back action and one
+locked Primary action; all non-button layers remain unlockable and editable.
 
 The InfinityOS kernel parses the embedded runtime template through a typed API.
 Invalid data, an unknown version, missing screens, malformed rectangles, or a

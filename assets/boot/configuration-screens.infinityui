@@ -1,0 +1,3361 @@
+{
+  "canvasHeight" : 1000,
+  "canvasWidth" : 1000,
+  "screens" : [
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0001-8000-000000000001",
+          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "First-Boot Background",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 664,
+            "width" : 340,
+            "x" : 40,
+            "y" : 185
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Configuration Card",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 430,
+            "width" : 299,
+            "x" : 60,
+            "y" : 276
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Content",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 52,
+            "width" : 299,
+            "x" : 60,
+            "y" : 310
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Welcome to InfinityOS",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 72,
+            "width" : 299,
+            "x" : 60,
+            "y" : 370
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "A private system shaped around you.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 49,
+            "width" : 299,
+            "x" : 60,
+            "y" : 475
+          },
+          "hidden" : true,
+          "id" : "4F534346-0001-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Input",
+          "opacity" : 100,
+          "role" : 10,
+          "text" : "",
+          "zIndex" : 5
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 89,
+            "x" : 60,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 201,
+            "x" : 158,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 28,
+            "width" : 84,
+            "x" : 275,
+            "y" : 209
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0009-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Mark",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "LOCAL | PRIVATE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 54,
+            "width" : 275,
+            "x" : 72,
+            "y" : 455
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-000A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Welcome Benefit 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Yours from the start\nIdentity and Personal Space are built in.",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 54,
+            "width" : 275,
+            "x" : 72,
+            "y" : 523
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-000B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Welcome Benefit 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Private by design\nExplicit capability controls stay local.",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 54,
+            "width" : 275,
+            "x" : 72,
+            "y" : 591
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-000C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Welcome Benefit 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Ready to grow\nObjects, apps, and AI share one system.",
+          "zIndex" : 8
+        }
+      ],
+      "id" : 1,
+      "title" : "Welcome"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0001-8000-000000000001",
+          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "First-Boot Background",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 664,
+            "width" : 340,
+            "x" : 40,
+            "y" : 185
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Configuration Card",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 430,
+            "width" : 299,
+            "x" : 60,
+            "y" : 276
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Content",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 52,
+            "width" : 299,
+            "x" : 60,
+            "y" : 310
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Name your Infinity Node",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 72,
+            "width" : 299,
+            "x" : 60,
+            "y" : 370
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Choose a friendly name for this device. You can change it later.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 49,
+            "width" : 299,
+            "x" : 60,
+            "y" : 475
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Input",
+          "opacity" : 100,
+          "role" : 10,
+          "text" : "InfinityNode",
+          "zIndex" : 5
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 89,
+            "x" : 60,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 201,
+            "x" : 158,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 28,
+            "width" : 84,
+            "x" : 275,
+            "y" : 209
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0009-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Mark",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "LOCAL | PRIVATE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 24,
+            "width" : 270,
+            "x" : 73,
+            "y" : 489
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-000A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Input Placeholder",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "InfinityNode",
+          "zIndex" : 6
+        }
+      ],
+      "id" : 2,
+      "title" : "Node Name"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0001-8000-000000000001",
+          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "First-Boot Background",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 664,
+            "width" : 340,
+            "x" : 40,
+            "y" : 185
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Configuration Card",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 430,
+            "width" : 299,
+            "x" : 60,
+            "y" : 276
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Content",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 52,
+            "width" : 299,
+            "x" : 60,
+            "y" : 310
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Choose your profile name",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 72,
+            "width" : 299,
+            "x" : 60,
+            "y" : 370
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Your profile name identifies your Personal Space without exposing your full name.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 49,
+            "width" : 299,
+            "x" : 60,
+            "y" : 475
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Input",
+          "opacity" : 100,
+          "role" : 10,
+          "text" : "your-profile",
+          "zIndex" : 5
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 89,
+            "x" : 60,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 201,
+            "x" : 158,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 28,
+            "width" : 84,
+            "x" : 275,
+            "y" : 209
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0009-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Mark",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "LOCAL | PRIVATE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 24,
+            "width" : 270,
+            "x" : 73,
+            "y" : 489
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-000A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Input Placeholder",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "your-profile",
+          "zIndex" : 6
+        }
+      ],
+      "id" : 3,
+      "title" : "Profile Name"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0001-8000-000000000001",
+          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "First-Boot Background",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 664,
+            "width" : 340,
+            "x" : 40,
+            "y" : 185
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Configuration Card",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 430,
+            "width" : 299,
+            "x" : 60,
+            "y" : 276
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Content",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 52,
+            "width" : 299,
+            "x" : 60,
+            "y" : 310
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "How should we address you?",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 72,
+            "width" : 299,
+            "x" : 60,
+            "y" : 370
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Use the display name you want InfinityOS to show across your local experience.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 49,
+            "width" : 299,
+            "x" : 60,
+            "y" : 475
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Input",
+          "opacity" : 100,
+          "role" : 10,
+          "text" : "Display name",
+          "zIndex" : 5
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 89,
+            "x" : 60,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 201,
+            "x" : 158,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 28,
+            "width" : 84,
+            "x" : 275,
+            "y" : 209
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0009-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Mark",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "LOCAL | PRIVATE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 24,
+            "width" : 270,
+            "x" : 73,
+            "y" : 489
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-000A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Input Placeholder",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Display name",
+          "zIndex" : 6
+        }
+      ],
+      "id" : 4,
+      "title" : "Display Name"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0001-8000-000000000001",
+          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "First-Boot Background",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 664,
+            "width" : 340,
+            "x" : 40,
+            "y" : 185
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Configuration Card",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 430,
+            "width" : 299,
+            "x" : 60,
+            "y" : 276
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Content",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 52,
+            "width" : 299,
+            "x" : 60,
+            "y" : 310
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Secure your account",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 72,
+            "width" : 299,
+            "x" : 60,
+            "y" : 370
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Use at least eight characters. Your password remains local to this system.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 49,
+            "width" : 299,
+            "x" : 60,
+            "y" : 475
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Input",
+          "opacity" : 100,
+          "role" : 10,
+          "text" : "Create a password",
+          "zIndex" : 5
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 89,
+            "x" : 60,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 201,
+            "x" : 158,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 28,
+            "width" : 84,
+            "x" : 275,
+            "y" : 209
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0009-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Mark",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "LOCAL | PRIVATE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 24,
+            "width" : 270,
+            "x" : 73,
+            "y" : 489
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-000A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Input Placeholder",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Create a password",
+          "zIndex" : 6
+        }
+      ],
+      "id" : 5,
+      "title" : "Password"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0001-8000-000000000001",
+          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "First-Boot Background",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 664,
+            "width" : 340,
+            "x" : 40,
+            "y" : 185
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Configuration Card",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 430,
+            "width" : 299,
+            "x" : 60,
+            "y" : 276
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Content",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 52,
+            "width" : 299,
+            "x" : 60,
+            "y" : 310
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Private by default",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 72,
+            "width" : 299,
+            "x" : 60,
+            "y" : 370
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Local AI is ready. Remote processing and microphone access begin disabled.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 49,
+            "width" : 299,
+            "x" : 60,
+            "y" : 475
+          },
+          "hidden" : true,
+          "id" : "4F534346-0006-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Input",
+          "opacity" : 100,
+          "role" : 10,
+          "text" : "",
+          "zIndex" : 5
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 89,
+            "x" : 60,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 201,
+            "x" : 158,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 28,
+            "width" : 84,
+            "x" : 275,
+            "y" : 209
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0009-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Mark",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "LOCAL | PRIVATE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 275,
+            "x" : 72,
+            "y" : 455
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-000A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Setting 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Local AI                                      ON",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 275,
+            "x" : 72,
+            "y" : 509
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-000B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Setting 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Remote processing                         OFF",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 275,
+            "x" : 72,
+            "y" : 563
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-000C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Setting 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Voice and microphone                    OFF",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 42,
+            "width" : 275,
+            "x" : 72,
+            "y" : 617
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-000D-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Setting 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Appearance                 Default Dark",
+          "zIndex" : 9
+        }
+      ],
+      "id" : 6,
+      "title" : "Privacy & Appearance"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0001-8000-000000000001",
+          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "First-Boot Background",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 664,
+            "width" : 340,
+            "x" : 40,
+            "y" : 185
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Configuration Card",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 430,
+            "width" : 299,
+            "x" : 60,
+            "y" : 276
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Content",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 52,
+            "width" : 299,
+            "x" : 60,
+            "y" : 310
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Connect this Infinity Node",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 72,
+            "width" : 299,
+            "x" : 60,
+            "y" : 370
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Choose wired, Wi-Fi, or continue offline. You can change this later.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 49,
+            "width" : 299,
+            "x" : 60,
+            "y" : 475
+          },
+          "hidden" : true,
+          "id" : "4F534346-0007-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Input",
+          "opacity" : 100,
+          "role" : 10,
+          "text" : "",
+          "zIndex" : 5
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 89,
+            "x" : 60,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 201,
+            "x" : 158,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "CONTINUE",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 28,
+            "width" : 84,
+            "x" : 275,
+            "y" : 209
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0009-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Mark",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "LOCAL | PRIVATE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 46,
+            "width" : 275,
+            "x" : 72,
+            "y" : 455
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-000A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Network Choice 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "WIRED",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 46,
+            "width" : 275,
+            "x" : 72,
+            "y" : 513
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-000B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Network Choice 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "WI-FI",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 46,
+            "width" : 275,
+            "x" : 72,
+            "y" : 571
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-000C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Network Choice 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "CONTINUE OFFLINE",
+          "zIndex" : 8
+        }
+      ],
+      "id" : 7,
+      "title" : "Network"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 1000,
+            "width" : 1000,
+            "x" : 0,
+            "y" : 0
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0001-8000-000000000001",
+          "imageAsset" : "assets/desktop/infinity-onboarding-wallpaper-v1.png",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "First-Boot Background",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 6,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 664,
+            "width" : 340,
+            "x" : 40,
+            "y" : 185
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0002-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Configuration Card",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 430,
+            "width" : 299,
+            "x" : 60,
+            "y" : 276
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0003-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Content",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 2
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 52,
+            "width" : 299,
+            "x" : 60,
+            "y" : 310
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0004-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Screen Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Your Infinity begins here",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 72,
+            "width" : 299,
+            "x" : 60,
+            "y" : 370
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0005-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Body Copy",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Your identity, Personal Space, privacy policy, and appearance are ready.",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 232,
+            "blue" : 18,
+            "green" : 10,
+            "red" : 2
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 49,
+            "width" : 299,
+            "x" : 60,
+            "y" : 475
+          },
+          "hidden" : true,
+          "id" : "4F534346-0008-0006-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Configuration Input",
+          "opacity" : 100,
+          "role" : 10,
+          "text" : "",
+          "zIndex" : 5
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 89,
+            "x" : 60,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0007-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Back",
+          "opacity" : 100,
+          "role" : 7,
+          "text" : "BACK",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 9,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 44,
+            "green" : 28,
+            "red" : 14
+          },
+          "fontSize" : 20,
+          "frame" : {
+            "height" : 47,
+            "width" : 201,
+            "x" : 158,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0008-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 5,
+          "locked" : true,
+          "name" : "Primary",
+          "opacity" : 100,
+          "role" : 8,
+          "text" : "ENTER INFINITYOS",
+          "zIndex" : 8
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 28,
+            "width" : 84,
+            "x" : 275,
+            "y" : 209
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0009-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Privacy Mark",
+          "opacity" : 100,
+          "role" : 9,
+          "text" : "LOCAL | PRIVATE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 246,
+            "green" : 198,
+            "red" : 52
+          },
+          "cornerRadius" : 12,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 241,
+            "green" : 230,
+            "red" : 220
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 275,
+            "x" : 72,
+            "y" : 455
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-000A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Ready Summary",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "IDENTITY READY\nPERSONAL SPACE READY\nPRIVACY DEFAULTS APPLIED\nAPPEARANCE READY",
+          "zIndex" : 6
+        }
+      ],
+      "id" : 8,
+      "title" : "Ready"
+    }
+  ],
+  "version" : 1
+}

@@ -32,4 +32,7 @@ iconutil -c icns "$iconset_dir" -o "$contents_dir/Resources/InstallerStudioIcon.
 codesign --force --deep --sign - "$app_dir" >/dev/null
 
 "$script_dir/compile-template.sh"
+"$script_dir/compile-template.sh" \
+    "$repo_dir/assets/boot/configuration-screens.infinityui" \
+    "$repo_dir/assets/boot/configuration-screens.iuit"
 echo "$app_dir"

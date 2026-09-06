@@ -4,6 +4,8 @@ use super::installer_template::{InstallerTemplate, InstallerTemplateRect, Instal
 
 pub const INSTALLER_TEMPLATE_BYTES: &[u8] =
     include_bytes!("../../assets/boot/installer-screens.iuit");
+pub const CONFIGURATION_TEMPLATE_BYTES: &[u8] =
+    include_bytes!("../../assets/boot/configuration-screens.iuit");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InstallerRect {
@@ -99,6 +101,36 @@ pub fn installer_template_text(screen: u8, role: InstallerTemplateRole) -> Optio
         .ok()?
         .element(screen, role)
         .map(|element| element.text)
+}
+
+// ------------------------=
+// FUNC: configuration_template_text
+// DESC: Returns authored copy for one validated post-install OS configuration screen role.
+// ------------------=
+pub fn configuration_template_text(
+    step: usize,
+    role: InstallerTemplateRole,
+) -> Option<&'static [u8]> {
+    InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES)
+        .ok()?
+        .element(step.saturating_add(1) as u8, role)
+        .map(|element| element.text)
+}
+
+// ------------------------=
+// FUNC: configuration_template_rect
+// DESC: Scales an authored first-boot element into the active installed-system display.
+// ------------------=
+pub fn configuration_template_rect(
+    step: usize,
+    role: InstallerTemplateRole,
+    display_width: usize,
+    display_height: usize,
+) -> Option<InstallerRect> {
+    let element = InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES)
+        .ok()?
+        .element(step.saturating_add(1) as u8, role)?;
+    (!element.hidden).then(|| scale_template_rect(element.frame, display_width, display_height))
 }
 
 // ------------------------=

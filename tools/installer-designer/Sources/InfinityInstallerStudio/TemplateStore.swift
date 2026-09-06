@@ -36,11 +36,18 @@ enum ConsoleLayoutPreset: String, CaseIterable, Identifiable {
     }
 }
 
+private struct ProjectSnapshot {
+    var installation: InstallerStudioDocument
+    var configuration: InstallerStudioDocument
+}
+
 @MainActor
 final class TemplateStore: ObservableObject {
     static let minimumZoom = 0.25
     static let maximumZoom = 3.0
     @Published var document: InstallerStudioDocument
+    @Published var configurationDocument: InstallerStudioDocument
+    @Published var selectedCollection = ScreenCollection.installation
     @Published var selectedScreenID = 1
     @Published var selectedElementID: UUID?
     @Published var inlineEditorElementID: UUID?
@@ -52,18 +59,33 @@ final class TemplateStore: ObservableObject {
     @Published var validationIssues: [String] = []
     @Published var projectRoot: URL?
 
-    private var undoStack: [InstallerStudioDocument] = []
-    private var redoStack: [InstallerStudioDocument] = []
-    private var gestureBaseline: InstallerStudioDocument?
+    private var undoStack: [ProjectSnapshot] = []
+    private var redoStack: [ProjectSnapshot] = []
+    private var gestureBaseline: ProjectSnapshot?
     private var gestureFrame: CanvasRect?
 
+    var activeScreens: [InstallerScreenTemplate] {
+        selectedCollection == .installation ? document.screens : configurationDocument.screens
+    }
+
+    private var activeDocument: InstallerStudioDocument {
+        get { selectedCollection == .installation ? document : configurationDocument }
+        set {
+            if selectedCollection == .installation {
+                document = newValue
+            } else {
+                configurationDocument = newValue
+            }
+        }
+    }
+
     var selectedScreenIndex: Int? {
-        document.screens.firstIndex(where: { $0.id == selectedScreenID })
+        activeScreens.firstIndex(where: { $0.id == selectedScreenID })
     }
 
     var selectedScreen: InstallerScreenTemplate? {
         guard let index = selectedScreenIndex else { return nil }
-        return document.screens[index]
+        return activeScreens[index]
     }
 
     var selectedElement: StudioElement? {
@@ -75,8 +97,8 @@ final class TemplateStore: ObservableObject {
 
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
-    var canAddScreen: Bool { document.screens.count < InstallerStudioDocument.maximumScreenCount }
-    var canRemoveScreen: Bool { document.screens.count > InstallerStudioDocument.minimumScreenCount }
+    var canAddScreen: Bool { activeScreens.count < InstallerStudioDocument.maximumScreenCount }
+    var canRemoveScreen: Bool { activeScreens.count > InstallerStudioDocument.minimumScreenCount }
 
     // ------------------------=
     // FUNC: init
@@ -85,6 +107,17 @@ final class TemplateStore: ObservableObject {
     init() {
         let root = Self.findProjectRoot()
         projectRoot = root
+        let configuration = root.flatMap { root in
+            try? Data(contentsOf: root.appending(path: "assets/boot/configuration-screens.infinityui"))
+        }.flatMap { data in
+            try? JSONDecoder().decode(InstallerStudioDocument.self, from: data)
+        }
+        configurationDocument = if let configuration,
+                                   (try? TemplateValidator.validate(configuration)) != nil {
+            configuration
+        } else {
+            .factoryConfiguration()
+        }
         if let root,
            let data = try? Data(contentsOf: root.appending(path: "assets/boot/installer-screens.infinityui")),
            let decoded = try? JSONDecoder().decode(InstallerStudioDocument.self, from: data),
@@ -98,6 +131,15 @@ final class TemplateStore: ObservableObject {
     }
 
     // ------------------------=
+    // FUNC: selectScreenCollection
+    // DESC: Activates one sidebar screen collection and selects its requested screen.
+    // ------------------=
+    func selectScreenCollection(_ collection: ScreenCollection, screen id: Int = 1) {
+        selectedCollection = collection
+        selectScreen(id)
+    }
+
+    // ------------------------=
     // FUNC: selectScreen
     // DESC: Selects one installer screen and clears an element selection that does not belong to it.
     // ------------------=
@@ -105,7 +147,7 @@ final class TemplateStore: ObservableObject {
         selectedScreenID = id
         selectedElementID = nil
         inlineEditorElementID = nil
-        status = "Screen \(id) selected"
+        status = "\(selectedCollection.title) · Screen \(id) selected"
     }
 
     // ------------------------=
@@ -162,12 +204,12 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     func toggleElementLock(_ id: UUID) {
         guard let screen = selectedScreenIndex,
-              let element = document.screens[screen].elements.firstIndex(where: { $0.id == id })
+              let element = activeDocument.screens[screen].elements.firstIndex(where: { $0.id == id })
         else { return }
         recordUndo()
-        document.screens[screen].elements[element].locked.toggle()
+        activeDocument.screens[screen].elements[element].locked.toggle()
         selectedElementID = id
-        if document.screens[screen].elements[element].locked {
+        if activeDocument.screens[screen].elements[element].locked {
             inlineEditorElementID = nil
             status = "Element locked"
         } else {
@@ -185,11 +227,14 @@ final class TemplateStore: ObservableObject {
             return
         }
         recordUndo()
-        let insertion = min((selectedScreenIndex ?? (document.screens.count - 1)) + 1, document.screens.count)
-        var screen = selectedScreen ?? InstallerStudioDocument.factoryDefault().screens[0]
+        let insertion = min((selectedScreenIndex ?? (activeScreens.count - 1)) + 1, activeScreens.count)
+        let factory = selectedCollection == .installation
+            ? InstallerStudioDocument.factoryDefault()
+            : InstallerStudioDocument.factoryConfiguration()
+        var screen = selectedScreen ?? factory.screens[0]
         screen.title = "New Screen"
         screen.elements = clonedElements(screen.elements)
-        document.screens.insert(screen, at: insertion)
+        activeDocument.screens.insert(screen, at: insertion)
         reindexScreens()
         selectedScreenID = insertion + 1
         selectedElementID = nil
@@ -207,10 +252,10 @@ final class TemplateStore: ObservableObject {
             return
         }
         recordUndo()
-        var screen = document.screens[index]
+        var screen = activeDocument.screens[index]
         screen.title += " Copy"
         screen.elements = clonedElements(screen.elements)
-        document.screens.insert(screen, at: index + 1)
+        activeDocument.screens.insert(screen, at: index + 1)
         reindexScreens()
         selectedScreenID = index + 2
         selectedElementID = nil
@@ -228,9 +273,9 @@ final class TemplateStore: ObservableObject {
             return
         }
         recordUndo()
-        document.screens.remove(at: index)
+        activeDocument.screens.remove(at: index)
         reindexScreens()
-        selectedScreenID = min(index + 1, document.screens.count)
+        selectedScreenID = min(index + 1, activeScreens.count)
         selectedElementID = nil
         inlineEditorElementID = nil
         status = "Screen removed"
@@ -244,7 +289,7 @@ final class TemplateStore: ObservableObject {
         guard !fromOffsets.isEmpty else { return }
         let selectedMarker = selectedScreen?.elements.first?.id
         recordUndo()
-        document.screens.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        activeDocument.screens.move(fromOffsets: fromOffsets, toOffset: toOffset)
         reindexScreens()
         restoreScreenSelection(marker: selectedMarker)
         selectedElementID = nil
@@ -253,17 +298,46 @@ final class TemplateStore: ObservableObject {
     }
 
     // ------------------------=
+    // FUNC: moveScreensInCollection
+    // DESC: Activates and reorders one explicit sidebar collection from native list drag positions.
+    // ------------------=
+    func moveScreensInCollection(
+        _ collection: ScreenCollection,
+        fromOffsets: IndexSet,
+        toOffset: Int
+    ) {
+        if selectedCollection != collection {
+            selectedCollection = collection
+            selectedScreenID = activeScreens.first?.id ?? 1
+            selectedElementID = nil
+            inlineEditorElementID = nil
+        }
+        moveScreens(fromOffsets: fromOffsets, toOffset: toOffset)
+    }
+
+    // ------------------------=
+    // FUNC: addScreenToCollection
+    // DESC: Activates one collection before inserting a new editable screen into it.
+    // ------------------=
+    func addScreenToCollection(_ collection: ScreenCollection) {
+        if selectedCollection != collection {
+            selectScreenCollection(collection)
+        }
+        addScreen()
+    }
+
+    // ------------------------=
     // FUNC: moveScreen
     // DESC: Moves the selected screen one position for precise keyboard and button reordering.
     // ------------------=
     func moveScreen(_ delta: Int) {
         guard let index = selectedScreenIndex else { return }
-        let destination = (index + delta).clamped(to: 0...(document.screens.count - 1))
+        let destination = (index + delta).clamped(to: 0...(activeScreens.count - 1))
         guard destination != index else { return }
         let selectedMarker = selectedScreen?.elements.first?.id
         recordUndo()
-        let screen = document.screens.remove(at: index)
-        document.screens.insert(screen, at: destination)
+        let screen = activeDocument.screens.remove(at: index)
+        activeDocument.screens.insert(screen, at: destination)
         reindexScreens()
         restoreScreenSelection(marker: selectedMarker)
         selectedElementID = nil
@@ -276,9 +350,9 @@ final class TemplateStore: ObservableObject {
     // DESC: Updates the selected screen's editor label as one undoable document change.
     // ------------------=
     func renameSelectedScreen(_ title: String) {
-        guard let index = selectedScreenIndex, document.screens[index].title != title else { return }
+        guard let index = selectedScreenIndex, activeDocument.screens[index].title != title else { return }
         recordUndo()
-        document.screens[index].title = String(title.prefix(63))
+        activeDocument.screens[index].title = String(title.prefix(63))
         status = "Screen renamed"
     }
 
@@ -292,11 +366,11 @@ final class TemplateStore: ObservableObject {
             return
         }
         recordUndo()
-        mutation(&document.screens[location.screen].elements[location.elementIndex])
-        document.screens[location.screen].elements[location.elementIndex].frame =
-            document.screens[location.screen].elements[location.elementIndex].frame.clamped()
-        document.screens[location.screen].elements[location.elementIndex].crop =
-            document.screens[location.screen].elements[location.elementIndex].crop.clamped()
+        mutation(&activeDocument.screens[location.screen].elements[location.elementIndex])
+        activeDocument.screens[location.screen].elements[location.elementIndex].frame =
+            activeDocument.screens[location.screen].elements[location.elementIndex].frame.clamped()
+        activeDocument.screens[location.screen].elements[location.elementIndex].crop =
+            activeDocument.screens[location.screen].elements[location.elementIndex].crop.clamped()
         status = label
     }
 
@@ -307,7 +381,7 @@ final class TemplateStore: ObservableObject {
     func addElement(kind: StudioElementKind) {
         guard kind != .button, let screen = selectedScreenIndex else { return }
         recordUndo()
-        let offset = document.screens[screen].elements.count % 6 * 12
+        let offset = activeDocument.screens[screen].elements.count % 6 * 12
         let element = StudioElement.make(
             name: "New \(kind.title)",
             kind: kind,
@@ -321,7 +395,7 @@ final class TemplateStore: ObservableObject {
             text: kind == .text ? "Editable text" : "",
             zIndex: nextZIndex(in: screen)
         )
-        document.screens[screen].elements.append(element)
+        activeDocument.screens[screen].elements.append(element)
         selectedElementID = element.id
         status = "Added \(kind.title)"
     }
@@ -369,8 +443,8 @@ final class TemplateStore: ObservableObject {
         if replacingSelected, let location = selectedLocation(), location.element.kind == .image,
            !location.element.locked
         {
-            document.screens[location.screen].elements[location.elementIndex].imageAsset = relativePath
-            document.screens[location.screen].elements[location.elementIndex].crop = .none
+            activeDocument.screens[location.screen].elements[location.elementIndex].imageAsset = relativePath
+            activeDocument.screens[location.screen].elements[location.elementIndex].crop = .none
             status = "Image replaced"
             projectRoot = root
             return location.element.id
@@ -396,7 +470,7 @@ final class TemplateStore: ObservableObject {
             imageAsset: relativePath,
             zIndex: nextZIndex(in: screen)
         )
-        document.screens[screen].elements.append(element)
+        activeDocument.screens[screen].elements.append(element)
         selectedElementID = element.id
         inlineEditorElementID = element.id
         projectRoot = root
@@ -412,7 +486,7 @@ final class TemplateStore: ObservableObject {
         guard let screen = selectedScreenIndex else { return }
         let area = editableContentFrame(in: screen)
         recordUndo()
-        document.screens[screen].elements.removeAll { $0.name.hasPrefix("Preset • ") }
+        activeDocument.screens[screen].elements.removeAll { $0.name.hasPrefix("Preset • ") }
         let base = nextZIndex(in: screen)
         let gap = 14
         let top = area.y + 92
@@ -457,7 +531,7 @@ final class TemplateStore: ObservableObject {
                 imageAsset: "infinity-installer-mesh-diagram-v1.png", zIndex: base
             ))
         }
-        document.screens[screen].elements.append(contentsOf: additions)
+        activeDocument.screens[screen].elements.append(contentsOf: additions)
         selectedElementID = additions.last?.id
         inlineEditorElementID = nil
         status = "\(preset.title) layout inserted"
@@ -473,7 +547,7 @@ final class TemplateStore: ObservableObject {
             return
         }
         recordUndo()
-        document.screens[location.screen].elements.remove(at: location.elementIndex)
+        activeDocument.screens[location.screen].elements.remove(at: location.elementIndex)
         selectedElementID = nil
         inlineEditorElementID = nil
         status = "Element deleted"
@@ -496,7 +570,7 @@ final class TemplateStore: ObservableObject {
         copy.frame.y += gridSize
         copy.frame = copy.frame.clamped()
         copy.zIndex = nextZIndex(in: location.screen)
-        document.screens[location.screen].elements.append(copy)
+        activeDocument.screens[location.screen].elements.append(copy)
         selectedElementID = copy.id
         status = "Element duplicated"
     }
@@ -521,7 +595,7 @@ final class TemplateStore: ObservableObject {
         }
         inlineEditorElementID = nil
         guard gestureBaseline == nil, let element = selectedElement, !element.locked else { return }
-        gestureBaseline = document
+        gestureBaseline = projectSnapshot()
         gestureFrame = element.frame
     }
 
@@ -538,7 +612,7 @@ final class TemplateStore: ObservableObject {
         var frame = origin
         frame.x = snap(origin.x + dx)
         frame.y = snap(origin.y + dy)
-        document.screens[location.screen].elements[location.elementIndex].frame = frame.clamped()
+        activeDocument.screens[location.screen].elements[location.elementIndex].frame = frame.clamped()
     }
 
     // ------------------------=
@@ -565,7 +639,7 @@ final class TemplateStore: ObservableObject {
         if bottom - top < 20 {
             if [.topLeft, .top, .topRight].contains(handle) { top = bottom - 20 } else { bottom = top + 20 }
         }
-        document.screens[location.screen].elements[location.elementIndex].frame =
+        activeDocument.screens[location.screen].elements[location.elementIndex].frame =
             CanvasRect(x: left, y: top, width: right - left, height: bottom - top).clamped()
     }
 
@@ -574,7 +648,9 @@ final class TemplateStore: ObservableObject {
     // DESC: Commits a completed canvas gesture as one undo operation.
     // ------------------=
     func endGesture() {
-        if let baseline = gestureBaseline, baseline != document {
+        if let baseline = gestureBaseline,
+           baseline.installation != document || baseline.configuration != configurationDocument
+        {
             undoStack.append(baseline)
             redoStack.removeAll()
             status = "Layout updated"
@@ -628,8 +704,9 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     func undo() {
         guard let previous = undoStack.popLast() else { return }
-        redoStack.append(document)
-        document = previous
+        redoStack.append(projectSnapshot())
+        document = previous.installation
+        configurationDocument = previous.configuration
         selectedElementID = nil
         inlineEditorElementID = nil
         status = "Undo"
@@ -641,8 +718,9 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     func redo() {
         guard let next = redoStack.popLast() else { return }
-        undoStack.append(document)
-        document = next
+        undoStack.append(projectSnapshot())
+        document = next.installation
+        configurationDocument = next.configuration
         selectedElementID = nil
         inlineEditorElementID = nil
         status = "Redo"
@@ -656,8 +734,9 @@ final class TemplateStore: ObservableObject {
     func validate() -> Bool {
         do {
             try TemplateValidator.validate(document)
+            try TemplateValidator.validate(configurationDocument)
             validationIssues = []
-            status = "All " + String(document.screens.count) + " screens are valid"
+            status = "Validated \(document.screens.count) installation and \(configurationDocument.screens.count) configuration screens"
             return true
         } catch {
             validationIssues = [String(describing: error)]
@@ -683,13 +762,24 @@ final class TemplateStore: ObservableObject {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             let editable = try encoder.encode(document)
             let runtime = try RuntimeTemplateCodec.encode(document)
+            let configurationEditable = try encoder.encode(configurationDocument)
+            let configurationRuntime = try RuntimeTemplateCodec.encode(configurationDocument)
             guard try RuntimeTemplateCodec.decode(runtime) == document else {
                 throw TemplateValidationIssue.invalidDocument("Generated runtime artifact failed round-trip verification")
             }
+            guard try RuntimeTemplateCodec.decode(configurationRuntime) == configurationDocument else {
+                throw TemplateValidationIssue.invalidDocument("Generated configuration artifact failed round-trip verification")
+            }
             try editable.write(to: assetDirectory.appending(path: "installer-screens.infinityui"), options: .atomic)
             try runtime.write(to: assetDirectory.appending(path: "installer-screens.iuit"), options: .atomic)
+            try configurationEditable.write(
+                to: assetDirectory.appending(path: "configuration-screens.infinityui"), options: .atomic
+            )
+            try configurationRuntime.write(
+                to: assetDirectory.appending(path: "configuration-screens.iuit"), options: .atomic
+            )
             projectRoot = root
-            status = "Saved editable and runtime templates"
+            status = "Saved installation and OS configuration templates"
         } catch {
             validationIssues = [error.localizedDescription]
             status = "Save failed"
@@ -716,7 +806,7 @@ final class TemplateStore: ObservableObject {
             }
             try TemplateValidator.validate(imported)
             recordUndo()
-            document = imported
+            activeDocument = imported
             selectedScreenID = 1
             selectedElementID = nil
             inlineEditorElementID = nil
@@ -733,10 +823,13 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     func resetScreen() {
         guard let index = selectedScreenIndex,
-              let factory = InstallerStudioDocument.factoryDefault().screens.first(where: { $0.id == selectedScreenID })
+              let factory = (selectedCollection == .installation
+                  ? InstallerStudioDocument.factoryDefault()
+                  : InstallerStudioDocument.factoryConfiguration())
+                  .screens.first(where: { $0.id == selectedScreenID })
         else { return }
         recordUndo()
-        document.screens[index] = factory
+        activeDocument.screens[index] = factory
         selectedElementID = nil
         inlineEditorElementID = nil
         status = "Screen reset"
@@ -767,10 +860,10 @@ final class TemplateStore: ObservableObject {
     // DESC: Resolves a safe preset and image placement area inside the selected console.
     // ------------------=
     private func editableContentFrame(in screen: Int) -> CanvasRect {
-        if let content = document.screens[screen].elements.first(where: { $0.role == .content }) {
+        if let content = activeDocument.screens[screen].elements.first(where: { $0.role == .content }) {
             return content.frame
         }
-        if let console = document.screens[screen].elements.first(where: { $0.role == .console }) {
+        if let console = activeDocument.screens[screen].elements.first(where: { $0.role == .console }) {
             return CanvasRect(
                 x: console.frame.x + 18,
                 y: console.frame.y + 70,
@@ -808,9 +901,9 @@ final class TemplateStore: ObservableObject {
     private func selectedLocation() -> (screen: Int, elementIndex: Int, element: StudioElement)? {
         guard let screen = selectedScreenIndex,
               let id = selectedElementID,
-              let elementIndex = document.screens[screen].elements.firstIndex(where: { $0.id == id })
+              let elementIndex = activeDocument.screens[screen].elements.firstIndex(where: { $0.id == id })
         else { return nil }
-        return (screen, elementIndex, document.screens[screen].elements[elementIndex])
+        return (screen, elementIndex, activeDocument.screens[screen].elements[elementIndex])
     }
 
     // ------------------------=
@@ -830,8 +923,8 @@ final class TemplateStore: ObservableObject {
     // DESC: Keeps persisted screen identifiers contiguous and aligned with visible ordering.
     // ------------------=
     private func reindexScreens() {
-        for index in document.screens.indices {
-            document.screens[index].id = index + 1
+        for index in activeDocument.screens.indices {
+            activeDocument.screens[index].id = index + 1
         }
     }
 
@@ -841,11 +934,11 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     private func restoreScreenSelection(marker: UUID?) {
         guard let marker,
-              let screen = document.screens.first(where: { screen in
+              let screen = activeScreens.first(where: { screen in
                   screen.elements.contains(where: { $0.id == marker })
               })
         else {
-            selectedScreenID = document.screens.first?.id ?? 1
+            selectedScreenID = activeScreens.first?.id ?? 1
             return
         }
         selectedScreenID = screen.id
@@ -856,7 +949,7 @@ final class TemplateStore: ObservableObject {
     // DESC: Records one document snapshot and invalidates redo history.
     // ------------------=
     private func recordUndo() {
-        undoStack.append(document)
+        undoStack.append(projectSnapshot())
         if undoStack.count > 100 { undoStack.removeFirst() }
         redoStack.removeAll()
     }
@@ -875,7 +968,15 @@ final class TemplateStore: ObservableObject {
     // DESC: Returns the next frontmost editable layer index for one screen.
     // ------------------=
     private func nextZIndex(in screen: Int) -> Int {
-        (document.screens[screen].elements.map(\.zIndex).max() ?? 0) + 1
+        (activeDocument.screens[screen].elements.map(\.zIndex).max() ?? 0) + 1
+    }
+
+    // ------------------------=
+    // FUNC: projectSnapshot
+    // DESC: Captures both editable screen collections as one atomic undo state.
+    // ------------------=
+    private func projectSnapshot() -> ProjectSnapshot {
+        ProjectSnapshot(installation: document, configuration: configurationDocument)
     }
 
     // ------------------------=

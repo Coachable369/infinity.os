@@ -330,6 +330,8 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         Path::new("assets/boot/infinity-installer-mesh-diagram-v1.png"),
         Path::new("assets/boot/installer-screens.infinityui"),
         Path::new("assets/boot/installer-screens.iuit"),
+        Path::new("assets/boot/configuration-screens.infinityui"),
+        Path::new("assets/boot/configuration-screens.iuit"),
     ] {
         let name = source
             .file_name()

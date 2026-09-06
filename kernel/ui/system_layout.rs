@@ -6,6 +6,7 @@
 //! desktop, menu, and Settings surfaces.
 
 use super::geometry::{Point, Rect};
+use super::installer_template::InstallerTemplateRole;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OnboardingTarget {
@@ -521,17 +522,47 @@ impl SystemLayout {
         normalized_y: i32,
     ) -> Option<OnboardingTarget> {
         let point = self.point(normalized_x, normalized_y);
+        let authored_card = self.onboarding_template_rect(step, InstallerTemplateRole::Console);
+        if let Some(field) = self.onboarding_template_rect(step, InstallerTemplateRole::Input) {
+            if field.contains(point) {
+                return Some(OnboardingTarget::Input);
+            }
+        }
+        if step > 0 {
+            if let Some(back) = self.onboarding_template_rect(step, InstallerTemplateRole::BackButton) {
+                if back.contains(point) {
+                    return Some(OnboardingTarget::Back);
+                }
+            }
+        }
+        if let Some(primary) =
+            self.onboarding_template_rect(step, InstallerTemplateRole::PrimaryButton)
+        {
+            if primary.contains(point) {
+                return Some(OnboardingTarget::Primary);
+            }
+        }
         let top_bar = self.top_bar_height();
-        let card_width = (self.width * 34 / 100).clamp(500, 600 * self.scale);
-        let card_height = (self.height * 68 / 100)
+        let fallback_card_width = (self.width * 34 / 100).clamp(500, 600 * self.scale);
+        let fallback_card_height = (self.height * 68 / 100)
             .clamp(560, 680 * self.scale)
             .min(self.height.saturating_sub(top_bar + 24));
-        let card_left = self.width * 4 / 100;
-        let card_top = top_bar + self.height.saturating_sub(top_bar + card_height) / 2;
+        let card_width = authored_card
+            .map(|frame| frame.width.max(0) as usize)
+            .unwrap_or(fallback_card_width);
+        let card_height = authored_card
+            .map(|frame| frame.height.max(0) as usize)
+            .unwrap_or(fallback_card_height);
+        let card_left = authored_card
+            .map(|frame| frame.x.max(0) as usize)
+            .unwrap_or(self.width * 4 / 100);
+        let card_top = authored_card
+            .map(|frame| frame.y.max(0) as usize)
+            .unwrap_or(top_bar + self.height.saturating_sub(top_bar + card_height) / 2);
         let inner_left = card_left + 32 * self.scale;
         let inner_width = card_width.saturating_sub(64 * self.scale);
 
-        if (1..=4).contains(&step) {
+        if authored_card.is_none() && (1..=4).contains(&step) {
             let field_top = card_top + (94 + 132 + 28) * self.scale;
             if rect(inner_left, field_top, inner_width, 50 * self.scale).contains(point) {
                 return Some(OnboardingTarget::Input);
@@ -551,6 +582,10 @@ impl SystemLayout {
                     return Some(OnboardingTarget::NetworkChoice(index));
                 }
             }
+        }
+
+        if authored_card.is_some() {
+            return None;
         }
 
         let button_top = card_top + card_height.saturating_sub(72 * self.scale);
@@ -594,6 +629,9 @@ impl SystemLayout {
         if !(1..=4).contains(&step) {
             return None;
         }
+        if let Some(input) = self.onboarding_template_rect(step, InstallerTemplateRole::Input) {
+            return Some(input);
+        }
         let top_bar = self.top_bar_height();
         let card_width = (self.width * 34 / 100).clamp(500, 600 * self.scale);
         let card_height = (self.height * 68 / 100)
@@ -607,6 +645,24 @@ impl SystemLayout {
             card_width.saturating_sub(64 * self.scale),
             50 * self.scale,
         ))
+    }
+
+    // ------------------------=
+    // FUNC: onboarding_template_rect
+    // DESC: Resolves one saved OS configuration element into shared framebuffer hit geometry.
+    // ------------------=
+    fn onboarding_template_rect(
+        self,
+        step: usize,
+        role: InstallerTemplateRole,
+    ) -> Option<Rect> {
+        let authored = crate::ui::installer_layout::configuration_template_rect(
+            step,
+            role,
+            self.width,
+            self.height,
+        )?;
+        Some(rect(authored.left, authored.top, authored.width, authored.height))
     }
 
     // ------------------------=

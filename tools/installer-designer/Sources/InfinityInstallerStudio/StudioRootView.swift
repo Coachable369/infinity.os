@@ -107,49 +107,22 @@ private struct StudioToolbar: View {
 
 private struct ScreenSidebar: View {
     @ObservedObject var store: TemplateStore
+    @State private var installationExpanded = true
+    @State private var configurationExpanded = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("INSTALLATION SCREENS")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(action: store.addScreen) {
-                    Image(systemName: "plus")
-                }
-                .buttonStyle(.borderless)
-                .disabled(!store.canAddScreen)
-                .help("Add Screen")
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
             List {
-                ForEach(store.document.screens) { screen in
-                    Button(action: { store.selectScreen(screen.id) }) {
-                        HStack(spacing: 10) {
-                            Text(String(format: "%02d", screen.id))
-                                .font(.system(.caption, design: .monospaced).weight(.bold))
-                                .foregroundStyle(screen.id == store.selectedScreenID ? .black : .cyan)
-                                .frame(width: 28, height: 28)
-                                .background(screen.id == store.selectedScreenID ? Color.cyan : Color.cyan.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 7))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(screen.title).font(.callout.weight(.medium))
-                                Text("\(screen.elements.count) layers")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(
-                        screen.id == store.selectedScreenID ? Color.cyan.opacity(0.13) : Color.clear
-                    )
+                DisclosureGroup(isExpanded: $installationExpanded) {
+                    screenRows(for: .installation, screens: store.document.screens)
+                } label: {
+                    collectionHeader(.installation)
                 }
-                .onMove(perform: store.moveScreens)
+                DisclosureGroup(isExpanded: $configurationExpanded) {
+                    screenRows(for: .configuration, screens: store.configurationDocument.screens)
+                } label: {
+                    collectionHeader(.configuration)
+                }
             }
             .listStyle(.sidebar)
             Divider()
@@ -180,7 +153,7 @@ private struct ScreenSidebar: View {
                             Image(systemName: "arrow.down")
                         }
                         .help("Move Screen Down")
-                        .disabled(store.selectedScreenIndex == store.document.screens.count - 1)
+                        .disabled(store.selectedScreenIndex == store.activeScreens.count - 1)
                         Spacer()
                         Button(role: .destructive, action: store.removeScreen) {
                             Image(systemName: "trash")
@@ -201,6 +174,66 @@ private struct ScreenSidebar: View {
             .padding(14)
         }
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.7))
+    }
+
+    // ------------------------=
+    // FUNC: collectionHeader
+    // DESC: Renders an expandable collection heading with a scoped add-screen action.
+    // ------------------=
+    private func collectionHeader(_ collection: ScreenCollection) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: collection == .installation ? "shippingbox" : "person.crop.rectangle.stack")
+                .foregroundStyle(store.selectedCollection == collection ? .cyan : .secondary)
+            Text(collection.title.uppercased())
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(store.selectedCollection == collection ? .primary : .secondary)
+            Spacer()
+            Button(action: { store.addScreenToCollection(collection) }) {
+                Image(systemName: "plus")
+            }
+            .buttonStyle(.borderless)
+            .disabled(store.selectedCollection == collection && !store.canAddScreen)
+            .help("Add \(collection.title.dropLast())")
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { store.selectScreenCollection(collection) }
+    }
+
+    // ------------------------=
+    // FUNC: screenRows
+    // DESC: Renders selectable, reorderable rows for one independently numbered screen flow.
+    // ------------------=
+    @ViewBuilder
+    private func screenRows(
+        for collection: ScreenCollection,
+        screens: [InstallerScreenTemplate]
+    ) -> some View {
+        ForEach(screens) { screen in
+            let selected = collection == store.selectedCollection && screen.id == store.selectedScreenID
+            Button(action: { store.selectScreenCollection(collection, screen: screen.id) }) {
+                HStack(spacing: 10) {
+                    Text(String(format: "%02d", screen.id))
+                        .font(.system(.caption, design: .monospaced).weight(.bold))
+                        .foregroundStyle(selected ? .black : .cyan)
+                        .frame(width: 28, height: 28)
+                        .background(selected ? Color.cyan : Color.cyan.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(screen.title).font(.callout.weight(.medium))
+                        Text("\(screen.elements.count) layers")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(selected ? Color.cyan.opacity(0.13) : Color.clear)
+        }
+        .onMove { offsets, destination in
+            store.moveScreensInCollection(collection, fromOffsets: offsets, toOffset: destination)
+        }
     }
 }
 

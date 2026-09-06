@@ -16,6 +16,7 @@ pub enum InstallerTemplateRole {
     BackButton = 7,
     PrimaryButton = 8,
     Footer = 9,
+    Input = 10,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -266,7 +267,8 @@ impl<'a> Reader<'a> {
         let kind = self.u8()?;
         let role = self.u8()?;
         let flags = self.u8()?;
-        if !(1..=5).contains(&kind) || role > InstallerTemplateRole::Footer as u8 || flags & !3 != 0 {
+        if !(1..=5).contains(&kind) || role > InstallerTemplateRole::Input as u8 || flags & !3 != 0
+        {
             return Err(InstallerTemplateError::InvalidElement);
         }
         let z_index = self.i16()?;

@@ -303,7 +303,73 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         let runtime = try Data(contentsOf: runtimeURL)
         XCTAssertEqual(editable, store.document)
         XCTAssertEqual(try RuntimeTemplateCodec.decode(runtime), store.document)
-        XCTAssertEqual(store.status, "Saved editable and runtime templates")
+        let configurationEditableURL = root.appending(path: "assets/boot/configuration-screens.infinityui")
+        let configurationRuntimeURL = root.appending(path: "assets/boot/configuration-screens.iuit")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: configurationEditableURL.path))
+        let configurationEditable = try JSONDecoder().decode(
+            InstallerStudioDocument.self,
+            from: Data(contentsOf: configurationEditableURL)
+        )
+        let configurationRuntime = try Data(contentsOf: configurationRuntimeURL)
+        XCTAssertEqual(configurationEditable, store.configurationDocument)
+        XCTAssertEqual(try RuntimeTemplateCodec.decode(configurationRuntime), store.configurationDocument)
+        XCTAssertEqual(store.status, "Saved installation and OS configuration templates")
+    }
+
+    // ------------------------=
+    // FUNC: testConfigurationCollectionMatchesFirstBootFlowAndProtectsActions
+    // DESC: Verifies all real post-install steps exist with editable layers and immutable navigation actions.
+    // ------------------=
+    @MainActor
+    func testConfigurationCollectionMatchesFirstBootFlowAndProtectsActions() throws {
+        let configuration = InstallerStudioDocument.factoryConfiguration()
+
+        XCTAssertEqual(configuration.screens.map(\.title), [
+            "Welcome", "Node Name", "Profile Name", "Display Name", "Password",
+            "Privacy & Appearance", "Network", "Ready",
+        ])
+        XCTAssertEqual(configuration.screens.map(\.id), Array(1...8))
+        for screen in configuration.screens {
+            XCTAssertEqual(screen.elements.filter { $0.role == .backButton && $0.locked }.count, 1)
+            XCTAssertEqual(screen.elements.filter { $0.role == .primaryButton && $0.locked }.count, 1)
+            XCTAssertTrue(screen.elements.filter { $0.kind != .button }.allSatisfy { !$0.locked })
+        }
+        XCTAssertEqual(
+            configuration.screens.filter { screen in
+                screen.elements.contains { $0.role == .input && !$0.hidden }
+            }.map(\.id),
+            [2, 3, 4, 5]
+        )
+        XCTAssertNoThrow(try TemplateValidator.validate(configuration))
+        XCTAssertEqual(
+            try RuntimeTemplateCodec.decode(RuntimeTemplateCodec.encode(configuration)),
+            configuration
+        )
+    }
+
+    // ------------------------=
+    // FUNC: testConfigurationSelectionScopesCanvasEditsAndScreenLifecycle
+    // DESC: Exercises selection, element editing, addition, and ordering without mutating installer screens.
+    // ------------------=
+    @MainActor
+    func testConfigurationSelectionScopesCanvasEditsAndScreenLifecycle() {
+        let store = TemplateStore()
+        let installerBefore = store.document
+        store.selectScreenCollection(.configuration, screen: 3)
+        let title = store.selectedScreen!.elements.first { $0.role == .title }!
+        store.selectElement(title.id)
+        store.updateSelected("Configuration title changed") { $0.text = "Choose a local profile" }
+        store.addScreen()
+        store.renameSelectedScreen("Recovery Options")
+        store.moveScreen(-1)
+
+        XCTAssertEqual(store.selectedCollection, .configuration)
+        XCTAssertEqual(store.document, installerBefore)
+        XCTAssertEqual(store.configurationDocument.screens.count, 9)
+        XCTAssertTrue(store.configurationDocument.screens.contains { $0.title == "Recovery Options" })
+        XCTAssertTrue(store.configurationDocument.screens[2].elements.contains {
+            $0.role == .title && $0.text == "Choose a local profile"
+        })
     }
 
     // ------------------------=

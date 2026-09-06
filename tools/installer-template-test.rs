@@ -4,6 +4,7 @@ mod installer_template;
 use installer_template::{InstallerTemplate, InstallerTemplateRole};
 
 const FACTORY_TEMPLATE: &[u8] = include_bytes!("../assets/boot/installer-screens.iuit");
+const CONFIGURATION_TEMPLATE: &[u8] = include_bytes!("../assets/boot/configuration-screens.iuit");
 
 // ------------------------=
 // FUNC: little_u16
@@ -76,6 +77,21 @@ fn main() {
     }
     let content = template.element(2, InstallerTemplateRole::Content).unwrap();
     assert_eq!((content.frame.x, content.frame.y, content.frame.width, content.frame.height), (38, 396, 924, 404));
+
+    let configuration =
+        InstallerTemplate::parse(CONFIGURATION_TEMPLATE).expect("configuration template must load");
+    assert_eq!(configuration.screen_count(), 8);
+    for screen in 1..=configuration.screen_count() as u8 {
+        assert!(configuration.element(screen, InstallerTemplateRole::Console).is_some());
+        assert!(configuration.element(screen, InstallerTemplateRole::Title).is_some());
+        assert!(configuration.element(screen, InstallerTemplateRole::Body).is_some());
+    }
+    for screen in 2..=5 {
+        let input = configuration
+            .element(screen, InstallerTemplateRole::Input)
+            .expect("profile and credential steps need an authored input field");
+        assert!(!input.hidden);
+    }
 
     let mut altered = FACTORY_TEMPLATE.to_vec();
     let primary_kind = first_primary_kind_offset(&altered);
