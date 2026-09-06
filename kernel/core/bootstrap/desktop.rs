@@ -5471,6 +5471,7 @@ impl super::DisplayDevice {
         desktop_item_positions: &[[i32; 2]; 7],
         launcher_open: bool,
     ) {
+        self.desktop_widgets(scale);
         for (index, (name, kind)) in [
             (b"Documents".as_slice(), 0),
             (b"Downloads", 1),
@@ -6223,7 +6224,6 @@ impl super::DisplayDevice {
             }
         }
 
-        self.desktop_widgets(scale);
         self.desktop_dock(scale, launcher_open);
     }
 

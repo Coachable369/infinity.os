@@ -188,6 +188,11 @@ fn object_reference_behavior() {
             b"/home/default/demo/report",
         )
         .unwrap();
+    let bootstrap_namespace = store.resolve(b"/home/default").unwrap();
+    let (namespace_metadata, namespace_references) = store.inspect(bootstrap_namespace).unwrap();
+    assert_eq!(namespace_metadata.kind, ObjectType::NamespaceNode);
+    assert_eq!(namespace_metadata.current_version, 0);
+    assert_eq!(namespace_references, 1);
     store
         .move_entry(b"/home/default/demo/report", b"/home/default/demo/renamed")
         .unwrap();
@@ -254,6 +259,52 @@ fn object_reference_behavior() {
     );
     store.destroy_explicit(disposable, true).unwrap();
     assert!(!store.object_exists(disposable));
+}
+
+// ------------------------=
+// FUNC: folder_navigation_behavior
+// DESC: Verifies Finder-style folder duplicate and move operations preserve the complete descendant hierarchy.
+// ------------------=
+fn folder_navigation_behavior() {
+    let sectors = storage::object::STORE_RELATIVE_LBA as usize + 32_768;
+    let disk = MemoryDisk::new(sectors);
+    let mut store = ObjectStore::format(disk, 0, sectors as u64, [0x52; 16]).unwrap();
+    let namespace = store
+        .create_attached(
+            b"demo",
+            ObjectType::NamespaceNode,
+            Space::Personal,
+            b"",
+            b"/home/default/demo",
+        )
+        .unwrap();
+    let source = store
+        .create_attached(
+            b"report",
+            ObjectType::Text,
+            Space::Personal,
+            b"version one",
+            b"/home/default/demo/report",
+        )
+        .unwrap();
+    let copied_namespace = store
+        .copy_path_attached(b"/home/default/demo", b"/home/default/demo copy")
+        .unwrap();
+    assert_ne!(copied_namespace, namespace);
+    let copied_report = store.resolve(b"/home/default/demo copy/report").unwrap();
+    assert_ne!(copied_report, source);
+    let mut copied_content = [0u8; 32];
+    let copied_length = store
+        .read(copied_report, None, &mut copied_content)
+        .unwrap();
+    assert_eq!(&copied_content[..copied_length], b"version one");
+    store
+        .move_entry(b"/home/default/demo copy", b"/home/default/moved demo")
+        .unwrap();
+    assert!(store.resolve(b"/home/default/demo copy").is_err());
+    assert!(store.resolve(b"/home/default/demo copy/report").is_err());
+    assert!(store.resolve(b"/home/default/moved demo").is_ok());
+    assert!(store.resolve(b"/home/default/moved demo/report").is_ok());
 }
 
 // ------------------------=
@@ -368,6 +419,7 @@ fn main() {
     navigation_context_behavior();
     shell_profile_behavior();
     object_reference_behavior();
+    folder_navigation_behavior();
     file_navigator_behavior();
     operation_registry_behavior();
     println!("PASS Milestone 8 native Object navigation, File Navigator, Shell Profiles, identity semantics, Trash, security, persistence, and bounded large-result behavior");

@@ -720,7 +720,15 @@ pub fn namespace_create(path: &[u8]) -> Result<object::ObjectId, object::ObjectE
     }
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        with_store(|store| store.create_attached(name, object::ObjectType::NamespaceNode, object::Space::Personal, b"", path))
+        with_store(|store| {
+            store.create_attached(
+                name,
+                object::ObjectType::NamespaceNode,
+                object::Space::Personal,
+                b"",
+                path,
+            )
+        })
     }
     #[cfg(target_arch = "x86")]
     {
@@ -749,13 +757,13 @@ pub fn namespace_delete(path: &[u8]) -> Result<object::ObjectId, object::ObjectE
 // FUNC: object_copy_path
 // DESC: Creates a new logical Object identity while preserving source content and metadata.
 // ------------------=
-pub fn object_copy_path(source: &[u8], destination: &[u8]) -> Result<object::ObjectId, object::ObjectError> {
+pub fn object_copy_path(
+    source: &[u8],
+    destination: &[u8],
+) -> Result<object::ObjectId, object::ObjectError> {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
-        with_store(|store| {
-            let source = store.resolve(source)?;
-            store.copy_attached(source, destination)
-        })
+        with_store(|store| store.copy_path_attached(source, destination))
     }
     #[cfg(target_arch = "x86")]
     {
@@ -768,7 +776,10 @@ pub fn object_copy_path(source: &[u8], destination: &[u8]) -> Result<object::Obj
 // FUNC: object_destroy_explicit
 // DESC: Dispatches an explicit capability-confirmed underlying Object destruction request.
 // ------------------=
-pub fn object_destroy_explicit(reference: &[u8], authorized: bool) -> Result<(), object::ObjectError> {
+pub fn object_destroy_explicit(
+    reference: &[u8],
+    authorized: bool,
+) -> Result<(), object::ObjectError> {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
         with_store(|store| {
@@ -924,10 +935,7 @@ pub fn object_inspect_path(
     {
         with_store(|s| {
             let id = s.resolve(path)?;
-            let metadata = s.metadata(id)?;
-            let mut content = [0u8; object::MAX_CONTENT];
-            s.read(id, None, &mut content)?;
-            Ok((metadata, s.namespace_refs(id)))
+            s.inspect(id)
         })
     }
     #[cfg(target_arch = "x86")]

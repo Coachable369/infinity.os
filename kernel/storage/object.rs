@@ -905,35 +905,123 @@ impl<D: BlockDevice> ObjectStore<D> {
         source: ObjectId,
         destination: &[u8],
     ) -> Result<ObjectId, ObjectError> {
+        let before = self.begin()?;
+        let result = self.copy_record_attached(source, destination);
+        self.finish(before, result)
+    }
+
+    // ------------------------=
+    // FUNC: copy_path_attached
+    // DESC: Atomically duplicates one namespace entry and every descendant beneath a new path.
+    // ------------------=
+    pub fn copy_path_attached(
+        &mut self,
+        source_path: &[u8],
+        destination: &[u8],
+    ) -> Result<ObjectId, ObjectError> {
+        validate_path(source_path)?;
+        validate_path(destination)?;
+        if source_path == destination
+            || (destination.starts_with(source_path)
+                && destination.get(source_path.len()) == Some(&b'/'))
+        {
+            return Err(ObjectError::InvalidPath);
+        }
+        let source = self.resolve(source_path)?;
+        for entry in self.state.entries.iter().filter(|entry| entry.used) {
+            let path = entry.path();
+            if path != source_path
+                && !(path.starts_with(source_path) && path.get(source_path.len()) == Some(&b'/'))
+            {
+                continue;
+            }
+            let suffix = &path[source_path.len()..];
+            if destination.len() + suffix.len() > MAX_PATH {
+                return Err(ObjectError::InvalidPath);
+            }
+            let mut candidate = [0u8; MAX_PATH];
+            candidate[..destination.len()].copy_from_slice(destination);
+            candidate[destination.len()..destination.len() + suffix.len()].copy_from_slice(suffix);
+            let candidate = &candidate[..destination.len() + suffix.len()];
+            if self
+                .state
+                .entries
+                .iter()
+                .any(|current| current.used && current.path() == candidate)
+            {
+                return Err(ObjectError::NameConflict);
+            }
+        }
+
+        let before = self.begin()?;
+        let result = (|| {
+            let root = self.copy_record_attached(source, destination)?;
+            for index in 0..MAX_ENTRIES {
+                let entry = self.state.entries[index];
+                if !entry.used {
+                    continue;
+                }
+                let path = entry.path();
+                if path == source_path
+                    || !path.starts_with(source_path)
+                    || path.get(source_path.len()) != Some(&b'/')
+                {
+                    continue;
+                }
+                let suffix = &path[source_path.len()..];
+                let mut target = [0u8; MAX_PATH];
+                target[..destination.len()].copy_from_slice(destination);
+                target[destination.len()..destination.len() + suffix.len()].copy_from_slice(suffix);
+                self.copy_record_attached(
+                    entry.target,
+                    &target[..destination.len() + suffix.len()],
+                )?;
+            }
+            Ok(root)
+        })();
+        self.finish(before, result)
+    }
+
+    // ------------------------=
+    // FUNC: copy_record_attached
+    // DESC: Copies one object record inside an existing transaction, including versionless namespace nodes.
+    // ------------------=
+    fn copy_record_attached(
+        &mut self,
+        source: ObjectId,
+        destination: &[u8],
+    ) -> Result<ObjectId, ObjectError> {
         let source_index = self.object_index(source)?;
         let source_record = self.state.objects[source_index];
         if source_record.tombstone {
             return Err(ObjectError::NotFound);
         }
         let mut content = [0u8; MAX_CONTENT];
-        let content_length = self.read(source, None, &mut content)?;
-        let before = self.begin()?;
-        let result = (|| {
-            let name = destination
-                .rsplit(|byte| *byte == b'/')
-                .next()
-                .unwrap_or(&[]);
-            let id = self.create_record(
-                name,
-                type_from_u8(source_record.kind)?,
-                space_from_u8(source_record.space)?,
-            )?;
-            let target_index = self.object_index(id)?;
-            self.state.objects[target_index].owner = source_record.owner;
-            self.state.objects[target_index].flags = source_record.flags;
-            self.state.objects[target_index].content_type = source_record.content_type;
-            self.state.objects[target_index].tags_len = source_record.tags_len;
-            self.state.objects[target_index].tags = source_record.tags;
+        let content_length = if source_record.current_version == 0 {
+            0
+        } else {
+            self.read(source, None, &mut content)?
+        };
+        let name = destination
+            .rsplit(|byte| *byte == b'/')
+            .next()
+            .unwrap_or(&[]);
+        let id = self.create_record(
+            name,
+            type_from_u8(source_record.kind)?,
+            space_from_u8(source_record.space)?,
+        )?;
+        let target_index = self.object_index(id)?;
+        self.state.objects[target_index].owner = source_record.owner;
+        self.state.objects[target_index].flags = source_record.flags;
+        self.state.objects[target_index].content_type = source_record.content_type;
+        self.state.objects[target_index].tags_len = source_record.tags_len;
+        self.state.objects[target_index].tags = source_record.tags;
+        if source_record.current_version != 0 {
             self.write_record(id, &content[..content_length])?;
-            self.attach_record(destination, id)?;
-            Ok(id)
-        })();
-        self.finish(before, result)
+        }
+        self.attach_record(destination, id)?;
+        Ok(id)
     }
 
     // ------------------------=
@@ -1164,20 +1252,56 @@ impl<D: BlockDevice> ObjectStore<D> {
     pub fn move_entry(&mut self, from: &[u8], to: &[u8]) -> Result<(), ObjectError> {
         let before = self.begin()?;
         let result = (|| {
+            validate_path(from)?;
             validate_path(to)?;
-            if self.state.entries.iter().any(|x| x.used && x.path() == to) {
-                return Err(ObjectError::NameConflict);
+            if from == to || (to.starts_with(from) && to.get(from.len()) == Some(&b'/')) {
+                return Err(ObjectError::InvalidPath);
             }
-            let slot = self
+            if !self
                 .state
                 .entries
                 .iter()
-                .position(|x| x.used && x.path() == from)
-                .ok_or(ObjectError::NamespaceNotFound)?;
-            let mut path = [0u8; MAX_PATH];
-            path[..to.len()].copy_from_slice(to);
-            self.state.entries[slot].path = path;
-            self.state.entries[slot].path_len = to.len() as u8;
+                .any(|entry| entry.used && entry.path() == from)
+            {
+                return Err(ObjectError::NamespaceNotFound);
+            }
+            for entry in self.state.entries.iter().filter(|entry| entry.used) {
+                let path = entry.path();
+                if path != from && !(path.starts_with(from) && path.get(from.len()) == Some(&b'/'))
+                {
+                    continue;
+                }
+                let suffix = &path[from.len()..];
+                if to.len() + suffix.len() > MAX_PATH {
+                    return Err(ObjectError::InvalidPath);
+                }
+                let mut candidate = [0u8; MAX_PATH];
+                candidate[..to.len()].copy_from_slice(to);
+                candidate[to.len()..to.len() + suffix.len()].copy_from_slice(suffix);
+                let candidate = &candidate[..to.len() + suffix.len()];
+                if self.state.entries.iter().any(|current| {
+                    current.used
+                        && current.path() != path
+                        && !(current.path().starts_with(from)
+                            && current.path().get(from.len()) == Some(&b'/'))
+                        && current.path() == candidate
+                }) {
+                    return Err(ObjectError::NameConflict);
+                }
+            }
+            for entry in self.state.entries.iter_mut().filter(|entry| entry.used) {
+                let path = entry.path();
+                if path != from && !(path.starts_with(from) && path.get(from.len()) == Some(&b'/'))
+                {
+                    continue;
+                }
+                let suffix_length = path.len() - from.len();
+                let mut moved = [0u8; MAX_PATH];
+                moved[..to.len()].copy_from_slice(to);
+                moved[to.len()..to.len() + suffix_length].copy_from_slice(&path[from.len()..]);
+                entry.path = moved;
+                entry.path_len = (to.len() + suffix_length) as u8;
+            }
             Ok(())
         })();
         self.finish(before, result)
@@ -1297,6 +1421,14 @@ impl<D: BlockDevice> ObjectStore<D> {
             tags: o.tags,
             tags_len: o.tags_len,
         })
+    }
+
+    // ------------------------=
+    // FUNC: inspect
+    // DESC: Returns metadata and reference count without requiring a content version.
+    // ------------------=
+    pub fn inspect(&self, id: ObjectId) -> Result<(ObjectMetadata, usize), ObjectError> {
+        Ok((self.metadata(id)?, self.namespace_refs(id)))
     }
 
     // ------------------------=
