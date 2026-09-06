@@ -5957,8 +5957,11 @@ impl super::DisplayDevice {
                 .unwrap_or_else(|| {
                     crate::runtime::object_navigation::ByteText::new(b"/home/default").unwrap()
                 });
-            let child_count =
+            let object_count =
                 crate::storage::namespace_child_count(active_path.as_bytes()).unwrap_or(0);
+            let child_count = object_count.saturating_add(
+                crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT,
+            );
             let selected_index = navigator_state
                 .map(|state| state.selected_index)
                 .unwrap_or(crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION);
@@ -6007,26 +6010,48 @@ impl super::DisplayDevice {
                 extent,
             );
             for index in first..end {
-                let Ok(Some(entry)) = crate::storage::namespace_child_nth_sorted(
-                    active_path.as_bytes(),
-                    index,
-                    navigator_state
-                        .map(|state| state.sort_descending)
-                        .unwrap_or(false),
-                ) else {
-                    continue;
+                let navigation_name: Option<&[u8]> = match index {
+                    0 => Some(b"."),
+                    1 => Some(b".."),
+                    _ => None,
                 };
-                let path = &entry.path[..entry.path_len as usize];
-                let metadata = crate::storage::object_inspect_path(path)
+                let entry = if navigation_name.is_none() {
+                    crate::storage::namespace_child_nth_sorted(
+                        active_path.as_bytes(),
+                        index.saturating_sub(
+                            crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT,
+                        ),
+                        navigator_state
+                            .map(|state| state.sort_descending)
+                            .unwrap_or(false),
+                    )
                     .ok()
+                    .flatten()
+                } else {
+                    None
+                };
+                if navigation_name.is_none() && entry.is_none() {
+                    continue;
+                }
+                let path = entry
+                    .as_ref()
+                    .map(|value| &value.path[..value.path_len as usize]);
+                let metadata = path
+                    .and_then(|value| crate::storage::object_inspect_path(value).ok())
                     .map(|value| value.0);
-                let kind = metadata.map(|value| value.kind);
+                let kind = if navigation_name.is_some() {
+                    Some(crate::storage::object::ObjectType::NamespaceNode)
+                } else {
+                    metadata.map(|value| value.kind)
+                };
                 let icon_role = if kind == Some(crate::storage::object::ObjectType::NamespaceNode) {
                     3
                 } else {
                     4
                 };
-                let base_name = crate::runtime::object_navigation::namespace_basename(path);
+                let base_name = navigation_name.unwrap_or_else(|| {
+                    crate::runtime::object_navigation::namespace_basename(path.unwrap_or(b"/"))
+                });
                 let name = if navigator_state
                     .map(|state| state.rename_editing && state.selected_index as usize == index)
                     .unwrap_or(false)
@@ -6152,7 +6177,7 @@ impl super::DisplayDevice {
                 220,
             );
             let mut count_text = [0u8; 24];
-            let count_len = navigator_decimal(&mut count_text, child_count);
+            let count_len = navigator_decimal(&mut count_text, object_count);
             self.ui_text(
                 browser_left + sidebar_w + 14 * scale,
                 status_top + 5 * scale,
@@ -6165,7 +6190,7 @@ impl super::DisplayDevice {
             self.ui_text(
                 browser_left + sidebar_w + (14 + count_len * 8) * scale,
                 status_top + 5 * scale,
-                if child_count == 1 {
+                if object_count == 1 {
                     b" item"
                 } else {
                     b" items"

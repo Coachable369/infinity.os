@@ -11,6 +11,7 @@ pub const PROFILE_STATE_BYTES: usize = 16_384;
 pub const PROFILE_STATE_MAGIC: &[u8; 8] = b"INFSHL01";
 const PROFILE_STATE_VERSION: u16 = 1;
 pub const FILE_NAVIGATOR_APPLICATION_ID: &[u8] = b"app.infinity.file-navigator";
+pub const FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT: usize = 2;
 pub const FILE_NAVIGATOR_DEFAULT_SIZE: (u32, u32) = (780, 560);
 pub const FILE_NAVIGATOR_MINIMUM_SIZE: (u32, u32) = (640, 420);
 pub const FILE_NAVIGATOR_INTENTS: &[&[u8]] = &[b"BrowseNamespace", b"RevealObject", b"OpenObject"];
@@ -980,6 +981,23 @@ impl FileNavigatorState {
             self.context_menu_open = false;
         }
         Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: navigate_navigation_entry
+    // DESC: Applies traditional current and parent directory behavior for the virtual dot rows.
+    // ------------------=
+    pub fn navigate_navigation_entry(
+        &mut self,
+        index: usize,
+    ) -> Result<bool, NavigationError> {
+        let destination = match index {
+            0 => self.active_namespace_ref,
+            1 => parent_path(self.active_namespace_ref.as_bytes())?,
+            _ => return Ok(false),
+        };
+        self.navigate(destination.as_bytes())?;
+        Ok(true)
     }
 
     // ------------------------=

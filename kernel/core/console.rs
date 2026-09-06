@@ -989,6 +989,16 @@ impl ConsoleRuntime {
         let Some(state) = state else {
             return;
         };
+        if (state.selected_index as usize)
+            < crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT
+        {
+            let _ = crate::runtime::with_runtime(|runtime| {
+                runtime.file_navigator.as_mut().map(|navigator| {
+                    navigator.navigate_navigation_entry(state.selected_index as usize)
+                })
+            });
+            return;
+        }
         let Some(entry) = navigator_child_nth(
             state.active_namespace_ref.as_bytes(),
             state.selected_index as usize,
@@ -3744,6 +3754,21 @@ impl ConsoleRuntime {
     ) {
         let selected =
             state.context_item != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION;
+        if selected
+            && (state.context_item as usize)
+                < crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT
+        {
+            if action == 0 {
+                self.open_file_navigator_selection();
+            }
+            let _ = crate::runtime::with_runtime(|runtime| {
+                runtime
+                    .file_navigator
+                    .as_mut()
+                    .map(|navigator| navigator.context_menu_open = false)
+            });
+            return;
+        }
         let entry = if selected {
             navigator_child_nth(
                 state.active_namespace_ref.as_bytes(),
@@ -4957,6 +4982,11 @@ impl ConsoleRuntime {
                 prefix = path;
             }
             let mut shown = 0usize;
+            if !tree {
+                self.output.write_line(b".");
+                self.output.write_line(b"..");
+                shown = crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT;
+            }
             for index in 0..32usize {
                 let entry = match crate::storage::namespace_list_nth(prefix, index) {
                     Ok(Some(entry)) => entry,
@@ -7051,6 +7081,9 @@ fn navigator_child_nth(
     parent: &[u8],
     requested: usize,
 ) -> Option<crate::storage::object::NamespaceListResult> {
+    let requested = requested.checked_sub(
+        crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT,
+    )?;
     let descending = crate::runtime::with_runtime(|runtime| {
         runtime
             .file_navigator
@@ -7068,7 +7101,9 @@ fn navigator_child_nth(
 // DESC: Counts direct children for File Navigator status and bounded keyboard selection.
 // ------------------=
 fn navigator_child_count(parent: &[u8]) -> usize {
-    crate::storage::namespace_child_count(parent).unwrap_or(0)
+    crate::storage::namespace_child_count(parent)
+        .unwrap_or(0)
+        .saturating_add(crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT)
 }
 
 // ------------------------=

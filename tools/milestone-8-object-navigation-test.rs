@@ -89,9 +89,12 @@ fn navigation_context_behavior() {
         b"/home/alice/demo"
     );
     assert_eq!(second.path(), b"/home/alice");
+    assert_eq!(first.navigate(b".", visible).unwrap(), b"/home/alice/demo");
     assert_eq!(first.navigate(b"..", visible).unwrap(), b"/home/alice");
     assert_eq!(first.navigate(b"-", visible).unwrap(), b"/home/alice/demo");
     assert_eq!(first.navigate(b"~", visible).unwrap(), b"/home/alice");
+    let mut root = ConsoleNavigationContext::new(3, 11, b"/").unwrap();
+    assert_eq!(root.navigate(b"..", visible).unwrap(), b"/");
     assert!(is_native_command(b"cd"));
     assert!(is_native_command(b"idir"));
     assert!(is_native_command(b"path"));
@@ -320,6 +323,11 @@ fn file_navigator_behavior() {
     assert_eq!(FILE_NAVIGATOR_MINIMUM_SIZE, (640, 420));
     assert_eq!(FILE_NAVIGATOR_INTENTS.len(), 3);
     let mut navigator = FileNavigatorState::new(b"/home/default").unwrap();
+    assert!(navigator.navigate_navigation_entry(0).unwrap());
+    assert_eq!(navigator.active_namespace_ref.as_bytes(), b"/home/default");
+    assert!(navigator.navigate_navigation_entry(1).unwrap());
+    assert_eq!(navigator.active_namespace_ref.as_bytes(), b"/home");
+    navigator.navigate(b"/home/default").unwrap();
     navigator.navigate(b"/home/default/projects").unwrap();
     navigator
         .navigate(b"/home/default/projects/active")
@@ -360,6 +368,10 @@ fn file_navigator_behavior() {
     assert_eq!(navigator.scroll_offset, 2_240);
     navigator.scroll_by(-50_000, 100, 560, 28);
     assert_eq!(navigator.scroll_offset, 0);
+    let mut root_navigator = FileNavigatorState::new(b"/").unwrap();
+    assert!(root_navigator.navigate_navigation_entry(1).unwrap());
+    assert_eq!(root_navigator.active_namespace_ref.as_bytes(), b"/");
+    assert!(!root_navigator.navigate_navigation_entry(2).unwrap());
     assert!(is_immediate_namespace_child(
         b"/home/default",
         b"/home/default/projects"
