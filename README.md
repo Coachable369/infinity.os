@@ -24,8 +24,10 @@ validates each ISO boot catalog, and writes release artifacts and checksums to
 
 ### VirtualBox on this Mac
 
-Create a new VM with type `Other/Unknown (ARM 64-bit)`, 512 MB or more memory,
-EFI firmware, VMSVGA graphics, xHCI enabled, and a USB Tablet. Attach
+Create a new VM with type `Other/Unknown (ARM 64-bit)`. The core boot path remains
+usable at 512 MB, while the reference AI workstation profile uses 8 GB memory,
+6 virtual CPUs, and a 16 GB dynamically allocated disk. Configure EFI firmware,
+VMSVGA graphics, xHCI, and a USB Tablet. Attach
 `builds/InfinityOS-aarch64.iso` as the VirtioSCSI optical disk. Put the writable
 virtual hard disk on a separate NVMe controller: VirtualBox ARM currently marks
 multi-target VirtioSCSI boot support as unimplemented, so a hard disk beside the

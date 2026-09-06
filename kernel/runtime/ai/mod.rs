@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod broker;
 pub mod chat;
+pub mod generation;
 pub mod intent;
 pub mod model;
 pub mod provider;
@@ -10,8 +11,12 @@ pub mod voice;
 use agent::AgentManager;
 use broker::{ContextBroker, CONTEXT_SYSTEM_STATE};
 use chat::ChatRuntime;
+use generation::{CREATIVE_MODEL_ID, DIALOGUE_MODEL_ID};
 use intent::{ConsequencePolicy, IntentPlan};
-use model::{local_model_descriptor, LocalCpuBackend, ModelRegistry, LOCAL_INTENT_MODEL_ID};
+use model::{
+    conversation_model_descriptor, local_model_descriptor, LocalCpuBackend, ModelRegistry,
+    LOCAL_INTENT_MODEL_ID,
+};
 use provider::{local_provider, ProviderRouter};
 use types::*;
 use voice::VoiceService;
@@ -64,11 +69,34 @@ impl AiRuntime {
     // DESC: Initializes the local provider and binds its descriptor to a verified native model Object ID.
     // ------------------=
     pub fn initialize_with_object_ref(&mut self, object_ref: [u8; 16]) -> Result<(), AiError> {
+        self.initialize_with_model_refs(object_ref, [0; 16], [0; 16])
+    }
+
+    // ------------------------=
+    // FUNC: initialize_with_model_refs
+    // DESC: Registers and loads the complete verified default local model set from native Object identities.
+    // ------------------=
+    pub fn initialize_with_model_refs(
+        &mut self,
+        intent_ref: [u8; 16],
+        dialogue_ref: [u8; 16],
+        creative_ref: [u8; 16],
+    ) -> Result<(), AiError> {
         self.providers.register(local_provider())?;
         let mut descriptor = local_model_descriptor();
-        descriptor.object_ref = object_ref;
+        descriptor.object_ref = intent_ref;
         self.models.register(descriptor)?;
         self.models.load(LOCAL_INTENT_MODEL_ID, 128 * 1024)?;
+        self.models.register(conversation_model_descriptor(
+            DIALOGUE_MODEL_ID,
+            dialogue_ref,
+        ))?;
+        self.models.register(conversation_model_descriptor(
+            CREATIVE_MODEL_ID,
+            creative_ref,
+        ))?;
+        self.models.load(DIALOGUE_MODEL_ID, 8 * 1024 * 1024)?;
+        self.models.load(CREATIVE_MODEL_ID, 8 * 1024 * 1024)?;
         self.initialized = true;
         Ok(())
     }
@@ -231,8 +259,12 @@ pub fn with_ai_runtime<T>(f: impl FnOnce(&mut AiRuntime) -> T) -> T {
 // ------------------=
 pub fn initialize_global() -> bool {
     #[cfg(target_os = "none")]
-    let object_ref = crate::storage::local_ai_model_object_ref().unwrap_or([0; 16]);
+    let refs = crate::storage::local_ai_model_object_refs().unwrap_or([[0; 16]; 3]);
     #[cfg(not(target_os = "none"))]
-    let object_ref = [0; 16];
-    with_ai_runtime(|runtime| runtime.initialize_with_object_ref(object_ref).is_ok())
+    let refs = [[0; 16]; 3];
+    with_ai_runtime(|runtime| {
+        runtime
+            .initialize_with_model_refs(refs[0], refs[1], refs[2])
+            .is_ok()
+    })
 }

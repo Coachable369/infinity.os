@@ -68,11 +68,23 @@ fn model_and_provider() {
     let caller = identity(1);
     let mut ai = AiRuntime::new();
     ai.initialize().unwrap();
+    assert_eq!(ai.models.count(), 3);
+    assert_eq!(
+        ai.models.inspect(runtime::ai::generation::DIALOGUE_MODEL_ID).unwrap().install_state,
+        InstallState::Loaded
+    );
     assert!(model_object_bytes().len() > 64);
     assert!(model_object_valid(&model_object_bytes()));
     let mut corrupted = model_object_bytes();
     corrupted[100] ^= 1;
     assert!(!model_object_valid(&corrupted));
+    let dialogue = runtime::ai::generation::model_object_bytes(
+        runtime::ai::generation::DIALOGUE_MODEL_ID,
+    );
+    assert!(runtime::ai::generation::model_object_valid(
+        runtime::ai::generation::DIALOGUE_MODEL_ID,
+        &dialogue
+    ));
     let cases: [(&[u8], IntentClass); 5] = [
         (
             b"what's going on with this machine?",
@@ -173,6 +185,52 @@ fn model_and_provider() {
     println!(
         "MEASURE host local intent inference average={}ns (1000 warm requests)",
         started.elapsed().as_nanos() / 1000
+    );
+
+    let optional = ModelDescriptor {
+        id: 0x4149_2001,
+        version: 1,
+        provider: LOCAL_PROVIDER_ID,
+        adapter: RuntimeAdapter::InfinityNative,
+        capabilities: CAP_REASONING,
+        size: 4096,
+        requirements: ModelRequirements {
+            memory_bytes: 8 * 1024 * 1024,
+            backend: BackendClass::Cpu,
+            minimum_backend_version: 1,
+        },
+        trust: TrustState::UserApproved,
+        object_ref: [9; 16],
+        install_state: InstallState::Available,
+        install_class: InstallClass::SystemOptional,
+        checksum: 0x1357_2468,
+        private_data_eligible: true,
+    };
+    let before = ai.models.count();
+    assert_eq!(ai.models.install(optional, 1024), Err(AiError::ModelInvalid));
+    assert_eq!(ai.models.count(), before);
+    ai.models.install(optional, 16 * 1024 * 1024).unwrap();
+    assert_eq!(ai.models.count(), before + 1);
+    assert_eq!(ai.models.inspect(optional.id).unwrap().install_state, InstallState::Loaded);
+    let mut upgrade = optional;
+    upgrade.version = 2;
+    upgrade.object_ref = [10; 16];
+    upgrade.checksum = 0x2468_1357;
+    ai.models.upgrade(upgrade, 16 * 1024 * 1024).unwrap();
+    assert_eq!(ai.models.inspect(optional.id).unwrap().version, 2);
+    let mut invalid_upgrade = upgrade;
+    invalid_upgrade.version = 3;
+    invalid_upgrade.object_ref = [0; 16];
+    assert_eq!(
+        ai.models.upgrade(invalid_upgrade, 16 * 1024 * 1024),
+        Err(AiError::ModelInvalid)
+    );
+    assert_eq!(ai.models.inspect(optional.id).unwrap().version, 2);
+    ai.models.remove(optional.id).unwrap();
+    assert_eq!(ai.models.count(), before);
+    assert_eq!(
+        ai.models.remove(runtime::ai::generation::DIALOGUE_MODEL_ID),
+        Err(AiError::AccessDenied)
     );
     println!("PASS AI model/provider: verified native object, real CPU inference, offline privacy, deadline, cancellation, bounded queue");
 }
@@ -474,9 +532,16 @@ fn desktop_chat() {
     assert_eq!(chat.message(0).unwrap().role, ChatRole::User);
     assert_eq!(chat.message(1).unwrap().role, ChatRole::Assistant);
     assert!(chat.input().is_empty());
+    let first_response = *chat.message(1).unwrap();
+    assert!(chat.submit(b"compare orbital gardens with ocean research laboratories"));
+    let novel_response = *chat.message(3).unwrap();
+    assert_ne!(first_response.text(), novel_response.text());
     let first_model = chat.selected_model();
     assert_eq!(chat.select_next_model(), 1);
     assert_ne!(chat.selected_model(), first_model);
+    assert!(chat.submit(b"compare orbital gardens with ocean research laboratories"));
+    let creative_response = *chat.message(5).unwrap();
+    assert_ne!(novel_response.text(), creative_response.text());
     assert!(!chat.select_model_index(CHAT_MODELS.len()));
     for _ in 0..CHAT_MESSAGE_CAPACITY {
         assert!(chat.submit(b"system status"));

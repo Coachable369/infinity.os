@@ -29,7 +29,9 @@ share one untyped state bag.
 |---|---|---|
 | Native model object and integrity check | TESTED | Versioned `INFMLM1` binary object, parameter count and CRC-32 validated. |
 | CPU intent inference | TESTED | Quantized multinomial model tokenizes arbitrary text and computes class scores locally. |
-| Model registry/load/capability metadata | TESTED | Bounded registry exposes typed descriptors; the bootstrap model is loadable without network access. |
+| Native dialogue generation | TESTED (host) | Two bounded prompt-conditioned compositional models generate distinct local responses for novel prompts. They are not transformer language models. |
+| Model registry/install/upgrade/remove | TESTED (host) | Package installation and upgrade are atomic, validate identity/integrity/resource requirements, preserve prior state on failure, and protect CORE models. |
+| Model registry/load/capability metadata | TESTED | Bounded registry exposes typed descriptors; all three bootstrap models load without network access. |
 | Provider routing/privacy | TESTED | Local is selected for local-only/private requests even when a remote test provider advertises higher quality. |
 | Remote provider execution | SCAFFOLDED | Provider-neutral descriptor and policy exist; production registers no remote provider, credentials, or networking. |
 | Context Broker | TESTED | Requested context classes must be a subset of the caller's explicitly authorized classes. |
@@ -44,19 +46,32 @@ share one untyped state bag.
 
 ## Model objects and registry
 
-The default `local-intent-v1` native System object contains its versioned model
-metadata and serialized quantized feature parameters. It is not a host file,
-pathname-backed model, JSON document, subprocess, or embedded response table.
-Its Object ID and parameter checksum are referenced by `/system/ai/bootstrap`;
-boot validation follows that reference, recomputes the serialized-parameter
-checksum, and rejects corruption. Installed runtime registration binds the
-model descriptor to that resolved 128-bit Object ID.
+The default System Generation contains three versioned model entries:
+`local-intent-v1`, `infinity-dialogue-v1`, and `infinity-creative-v1`.
+`local-intent-v1` has its own native System object. The two conversational model
+payloads are packed into the native `/system/ai/bootstrap` System object to
+preserve the bounded bootstrap object table. They are not host files,
+pathname-backed models, JSON documents, or subprocesses. Boot validation checks
+every embedded model identity and checksum and rejects corruption. Installed
+runtime registration binds each descriptor to its resolved 128-bit Object ID.
+
+The two dialogue engines construct bounded responses from the prompt topic and
+independently selected response components. This proves the local conversation,
+model selection, packaging, and lifecycle contracts without pretending a large
+neural model or GGUF transformer backend exists. Neural GGUF/ONNX execution,
+tokenizers, tensor storage, and accelerator execution remain UNSUPPORTED.
 
 `ModelDescriptor` records a stable numeric model ID, native Object ID,
 capabilities, runtime adapter, backend class, integrity checksum, memory budget,
 and trust/install state. Current model operations have stable IOP identifiers:
 `Model.List`, `Model.Inspect`, `Model.Load`, `Model.Unload`,
 `Model.Capabilities`, and `Model.Infer`.
+
+The registry's typed package lifecycle supports atomic install, upgrade, and
+optional-model removal. A failed memory admission or invalid package leaves the
+previous registry state unchanged. Download/catalog UX and cryptographic
+third-party package signatures remain PLANNED; an untrusted package cannot be
+installed through the current API.
 
 The CPU backend has a bounded request queue. Each request carries workload,
 locality/privacy requirements, memory budget, deadline, correlation and
@@ -110,7 +125,7 @@ locality. No performance number is documented unless produced by a test run.
 
 Both profiles use the same runtime modules. The native service registry contains
 Local ML, Infinity AI, Voice, and Agent services. A clean installation writes
-and verifies the model object, AI bootstrap/policy object, voice framework
-object, agent policy object, and updated service registry. No network download
-is required. Installed-disk boot must resolve these objects from System Space
-with the ISO detached.
+and verifies the three model entries across two native System objects, their AI
+bootstrap references, the voice framework object, agent policy object, and
+updated service registry. No network download is required. Installed-disk boot
+must resolve these objects from System Space with the ISO detached.

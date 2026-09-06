@@ -1183,17 +1183,19 @@ fn namespace_name_order(left: &[u8], right: &[u8]) -> core::cmp::Ordering {
 }
 
 // ------------------------=
-// FUNC: local_ai_model_object_ref
-// DESC: Resolves the installed native model identity for Model Registry binding.
+// FUNC: local_ai_model_object_refs
+// DESC: Resolves all installed native model identities for Model Registry binding.
 // ------------------=
-pub fn local_ai_model_object_ref() -> Option<[u8; 16]> {
+pub fn local_ai_model_object_refs() -> Option<[[u8; 16]; 3]> {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     unsafe {
-        OBJECT_STORE
-            .as_ref()?
-            .resolve(b"/system/models/local-intent-v1")
-            .ok()
-            .map(|identity| identity.0)
+        let store = OBJECT_STORE.as_ref()?;
+        let conversation_pack = store.resolve(b"/system/ai/bootstrap").ok()?.0;
+        Some([
+            store.resolve(b"/system/models/local-intent-v1").ok()?.0,
+            conversation_pack,
+            conversation_pack,
+        ])
     }
     #[cfg(target_arch = "x86")]
     {

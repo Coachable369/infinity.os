@@ -1,9 +1,10 @@
+use super::generation::{generate, CREATIVE_MODEL_ID, DIALOGUE_MODEL_ID, MAX_GENERATED_BYTES};
 use super::types::ModelId;
 
 pub const CHAT_MESSAGE_CAPACITY: usize = 8;
 pub const CHAT_TEXT_CAPACITY: usize = 192;
 pub const CHAT_INPUT_CAPACITY: usize = 96;
-pub const SYSTEM_ASSISTANT_MODEL_ID: ModelId = 0x4943_4801;
+pub const SYSTEM_ASSISTANT_MODEL_ID: ModelId = DIALOGUE_MODEL_ID;
 pub const INTENT_ASSISTANT_MODEL_ID: ModelId = super::model::LOCAL_INTENT_MODEL_ID;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,11 +53,16 @@ pub struct ChatModel {
     pub description: &'static [u8],
 }
 
-pub const CHAT_MODELS: [ChatModel; 2] = [
+pub const CHAT_MODELS: [ChatModel; 3] = [
     ChatModel {
         id: SYSTEM_ASSISTANT_MODEL_ID,
-        name: b"Infinity System Assistant",
-        description: b"Local system help and status",
+        name: b"Infinity Dialogue v1",
+        description: b"Local conversational reasoning",
+    },
+    ChatModel {
+        id: CREATIVE_MODEL_ID,
+        name: b"Infinity Creative v1",
+        description: b"Local creative conversation",
     },
     ChatModel {
         id: INTENT_ASSISTANT_MODEL_ID,
@@ -252,12 +258,16 @@ impl ChatRuntime {
             return false;
         }
         self.push(ChatMessage::new(ChatRole::User, trimmed));
-        let response = if self.selected_model == INTENT_ASSISTANT_MODEL_ID {
-            intent_response(trimmed)
+        if self.selected_model == INTENT_ASSISTANT_MODEL_ID {
+            self.push(ChatMessage::new(
+                ChatRole::Assistant,
+                intent_response(trimmed),
+            ));
         } else {
-            system_response(trimmed)
-        };
-        self.push(ChatMessage::new(ChatRole::Assistant, response));
+            let mut response = [0u8; MAX_GENERATED_BYTES];
+            let length = generate(self.selected_model, trimmed, &mut response);
+            self.push(ChatMessage::new(ChatRole::Assistant, &response[..length]));
+        }
         true
     }
 
@@ -327,18 +337,6 @@ fn contains_ascii_case_insensitive(input: &[u8], needle: &[u8]) -> bool {
 // FUNC: system_response
 // DESC: Produces useful offline system-assistant replies without claiming open-ended generation.
 // ------------------=
-fn system_response(input: &[u8]) -> &'static [u8] {
-    if contains_ascii_case_insensitive(input, b"network") {
-        b"I can inspect connectivity, profiles, routes, and policy. Open Network Settings for live controls."
-    } else if contains_ascii_case_insensitive(input, b"storage") {
-        b"Infinity Pool is the native storage surface. I can help inspect System, Personal, Applications, and Recovery spaces."
-    } else if contains_ascii_case_insensitive(input, b"help") {
-        b"Ask about system status, devices, memory, networking, storage, or boot health. I stay local by default."
-    } else {
-        b"I can help with this InfinityOS system. For now, try asking about status, devices, memory, networking, or storage."
-    }
-}
-
 // ------------------------=
 // FUNC: intent_response
 // DESC: Projects the bundled intent model's supported operation classes into a conversational result.

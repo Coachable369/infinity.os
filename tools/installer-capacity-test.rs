@@ -4,7 +4,7 @@
 mod layout;
 
 const BLOCKS_512_MIB: u64 = 512 * 1024 * 1024 / 512;
-const REPROVISION_DISK_BLOCKS: u64 = 4_240 * 1024 * 1024 / 512;
+const REPROVISION_DISK_BLOCKS: u64 = 16 * 1024 * 1024 * 1024 / 512;
 
 // ------------------------=
 // FUNC: image_blocks

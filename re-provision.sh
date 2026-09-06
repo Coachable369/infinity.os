@@ -4,9 +4,9 @@ set -eu
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 vm_name=${1:-infinityos-4}
 iso_input=${2:-$project_root/builds/InfinityOS-aarch64.iso}
-memory_mb=${INFINITY_VM_MEMORY_MB:-6161}
+memory_mb=${INFINITY_VM_MEMORY_MB:-8192}
 cpu_count=${INFINITY_VM_CPU_COUNT:-6}
-disk_size_mb=${INFINITY_VM_DISK_SIZE_MB:-4240}
+disk_size_mb=${INFINITY_VM_DISK_SIZE_MB:-16384}
 
 # ------------------------=
 # FUNC: die

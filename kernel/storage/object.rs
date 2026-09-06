@@ -4,6 +4,8 @@
 use super::organization;
 use super::{BlockDevice, DateTimeConfiguration};
 
+#[path = "../runtime/ai/generation.rs"]
+mod ai_generation_asset;
 #[path = "../ai_model_asset.rs"]
 mod ai_model_asset;
 
@@ -17,7 +19,7 @@ pub const ROOT_B: u64 = 1;
 pub const BANK_A: u64 = 8;
 pub const BANK_B: u64 = 40;
 const CONTENT: u64 = 80;
-pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 13;
+pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 14;
 // Eight object-table sectors fit in each 32-sector metadata bank. Keeping the
 // table capacity derived from its serialized geometry prevents bootstrap
 // System objects from consuming the user-visible object budget by accident.
@@ -587,16 +589,35 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.attach_record(b"/system/models/local-intent-v1", model)?;
         let ai_service =
             self.create_record(b"ai-bootstrap", ObjectType::SystemComponent, Space::System)?;
-        let mut ai_bootstrap = [0u8; 96];
+        let dialogue = ai_service;
+        let creative = ai_service;
+        let mut ai_bootstrap = [0u8; 96 + ai_generation_asset::CONVERSATION_MODEL_OBJECT_BYTES * 2];
         ai_bootstrap[..8].copy_from_slice(b"INFAI1\0\0");
-        ai_bootstrap[8..12].copy_from_slice(&1u32.to_le_bytes());
-        ai_bootstrap[12..16].copy_from_slice(&1u32.to_le_bytes());
+        ai_bootstrap[8..12].copy_from_slice(&2u32.to_le_bytes());
+        ai_bootstrap[12..16].copy_from_slice(&3u32.to_le_bytes());
         ai_bootstrap[16..32].copy_from_slice(&model.0);
         ai_bootstrap[32..36].copy_from_slice(&ai_model_asset::LOCAL_INTENT_MODEL_ID.to_le_bytes());
         ai_bootstrap[36..40].copy_from_slice(&ai_model_asset::local_model_checksum().to_le_bytes());
-        ai_bootstrap[40..48].copy_from_slice(b"LOCAL\0\0\0");
-        ai_bootstrap[48..64].copy_from_slice(b"PRIVATE-LOCAL\0\0\0");
-        ai_bootstrap[64..80].copy_from_slice(b"NO-AMBIENT-AUTH\0");
+        ai_bootstrap[40..56].copy_from_slice(&dialogue.0);
+        ai_bootstrap[56..60].copy_from_slice(&ai_generation_asset::DIALOGUE_MODEL_ID.to_le_bytes());
+        ai_bootstrap[60..64].copy_from_slice(
+            &ai_generation_asset::model_checksum(ai_generation_asset::DIALOGUE_MODEL_ID)
+                .to_le_bytes(),
+        );
+        ai_bootstrap[64..80].copy_from_slice(&creative.0);
+        ai_bootstrap[80..84].copy_from_slice(&ai_generation_asset::CREATIVE_MODEL_ID.to_le_bytes());
+        ai_bootstrap[84..88].copy_from_slice(
+            &ai_generation_asset::model_checksum(ai_generation_asset::CREATIVE_MODEL_ID)
+                .to_le_bytes(),
+        );
+        let dialogue_at = 96;
+        let creative_at = dialogue_at + ai_generation_asset::CONVERSATION_MODEL_OBJECT_BYTES;
+        ai_bootstrap[dialogue_at..creative_at].copy_from_slice(
+            &ai_generation_asset::model_object_bytes(ai_generation_asset::DIALOGUE_MODEL_ID),
+        );
+        ai_bootstrap[creative_at..].copy_from_slice(&ai_generation_asset::model_object_bytes(
+            ai_generation_asset::CREATIVE_MODEL_ID,
+        ));
         self.write_record(ai_service, &ai_bootstrap)?;
         self.attach_record(b"/system/ai/bootstrap", ai_service)?;
         let voice = self.create_record(
@@ -704,14 +725,43 @@ impl<D: BlockDevice> ObjectStore<D> {
         let Ok(model_id) = self.resolve(b"/system/models/local-intent-v1") else {
             return false;
         };
-        let mut bootstrap = [0u8; 96];
+        let dialogue_id = bootstrap_id;
+        let creative_id = bootstrap_id;
+        let mut bootstrap = [0u8; MAX_CONTENT];
         let Ok(length) = self.read(bootstrap_id, None, &mut bootstrap) else {
             return false;
         };
-        if length < 40
+        let dialogue_valid = ai_generation_asset::model_object_valid(
+            ai_generation_asset::DIALOGUE_MODEL_ID,
+            bootstrap
+                .get(96..96 + ai_generation_asset::CONVERSATION_MODEL_OBJECT_BYTES)
+                .unwrap_or(&[]),
+        );
+        let creative_valid = ai_generation_asset::model_object_valid(
+            ai_generation_asset::CREATIVE_MODEL_ID,
+            bootstrap
+                .get(
+                    96 + ai_generation_asset::CONVERSATION_MODEL_OBJECT_BYTES
+                        ..96 + ai_generation_asset::CONVERSATION_MODEL_OBJECT_BYTES * 2,
+                )
+                .unwrap_or(&[]),
+        );
+        if length < 88
+            || !dialogue_valid
+            || !creative_valid
             || bootstrap[16..32] != model_id.0
             || u32::from_le_bytes(bootstrap[36..40].try_into().unwrap_or([0; 4]))
                 != ai_model_asset::local_model_checksum()
+            || bootstrap[40..56] != dialogue_id.0
+            || u32::from_le_bytes(bootstrap[56..60].try_into().unwrap_or([0; 4]))
+                != ai_generation_asset::DIALOGUE_MODEL_ID
+            || u32::from_le_bytes(bootstrap[60..64].try_into().unwrap_or([0; 4]))
+                != ai_generation_asset::model_checksum(ai_generation_asset::DIALOGUE_MODEL_ID)
+            || bootstrap[64..80] != creative_id.0
+            || u32::from_le_bytes(bootstrap[80..84].try_into().unwrap_or([0; 4]))
+                != ai_generation_asset::CREATIVE_MODEL_ID
+            || u32::from_le_bytes(bootstrap[84..88].try_into().unwrap_or([0; 4]))
+                != ai_generation_asset::model_checksum(ai_generation_asset::CREATIVE_MODEL_ID)
         {
             return false;
         }

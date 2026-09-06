@@ -2,6 +2,9 @@ use super::types::*;
 
 #[path = "../../ai_model_asset.rs"]
 pub mod asset;
+use super::generation::{
+    model_checksum as conversation_checksum, CREATIVE_MODEL_ID, DIALOGUE_MODEL_ID,
+};
 pub use asset::{local_model_checksum, model_object_bytes, LOCAL_INTENT_MODEL_ID};
 use asset::{CLASS_COUNT, INTENT_WEIGHTS};
 
@@ -32,6 +35,12 @@ impl ModelRegistry {
     // ------------------=
     pub fn register(&mut self, descriptor: ModelDescriptor) -> Result<(), AiError> {
         if descriptor.id == LOCAL_INTENT_MODEL_ID && descriptor.checksum != local_model_checksum() {
+            return Err(AiError::ModelInvalid);
+        }
+        if descriptor.version == 1
+            && matches!(descriptor.id, DIALOGUE_MODEL_ID | CREATIVE_MODEL_ID)
+            && descriptor.checksum != conversation_checksum(descriptor.id)
+        {
             return Err(AiError::ModelInvalid);
         }
         if let Some(existing) = self
@@ -72,6 +81,63 @@ impl ModelRegistry {
     }
 
     // ------------------------=
+    // FUNC: install
+    // DESC: Atomically validates, registers, and loads a model package without exposing partial state.
+    // ------------------=
+    pub fn install(
+        &mut self,
+        descriptor: ModelDescriptor,
+        memory_limit: u64,
+    ) -> Result<(), AiError> {
+        if descriptor.object_ref == [0; 16]
+            || descriptor.size == 0
+            || descriptor.checksum == 0
+            || descriptor.trust == TrustState::Untrusted
+        {
+            return Err(AiError::ModelInvalid);
+        }
+        let mut staged = *self;
+        staged.register(descriptor)?;
+        staged.load(descriptor.id, memory_limit)?;
+        *self = staged;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: upgrade
+    // DESC: Atomically replaces an installed model with a newer verified package and preserves rollback state on failure.
+    // ------------------=
+    pub fn upgrade(
+        &mut self,
+        descriptor: ModelDescriptor,
+        memory_limit: u64,
+    ) -> Result<(), AiError> {
+        let current = self.inspect(descriptor.id).ok_or(AiError::ModelUnknown)?;
+        if descriptor.version <= current.version {
+            return Err(AiError::InvalidRequest);
+        }
+        self.install(descriptor, memory_limit)
+    }
+
+    // ------------------------=
+    // FUNC: remove
+    // DESC: Removes an optional model package while protecting core System Generation models.
+    // ------------------=
+    pub fn remove(&mut self, id: ModelId) -> Result<(), AiError> {
+        let index = self
+            .entries
+            .iter()
+            .position(|entry| entry.is_some_and(|model| model.id == id))
+            .ok_or(AiError::ModelUnknown)?;
+        if self.entries[index].is_some_and(|model| model.install_class == InstallClass::Core) {
+            return Err(AiError::AccessDenied);
+        }
+        self.entries[index] = None;
+        self.count = self.count.saturating_sub(1);
+        Ok(())
+    }
+
+    // ------------------------=
     // FUNC: unload
     // DESC: Releases a loaded model from the local inference backend.
     // ------------------=
@@ -108,6 +174,32 @@ impl ModelRegistry {
     // ------------------=
     pub const fn count(&self) -> usize {
         self.count
+    }
+}
+
+// ------------------------=
+// FUNC: conversation_model_descriptor
+// DESC: Describes one bundled local conversational model and its native Object identity.
+// ------------------=
+pub fn conversation_model_descriptor(id: ModelId, object_ref: [u8; 16]) -> ModelDescriptor {
+    ModelDescriptor {
+        id,
+        version: 1,
+        provider: LOCAL_PROVIDER_ID,
+        adapter: RuntimeAdapter::InfinityNative,
+        capabilities: CAP_REASONING,
+        size: super::generation::CONVERSATION_MODEL_OBJECT_BYTES as u32,
+        requirements: ModelRequirements {
+            memory_bytes: 4 * 1024 * 1024,
+            backend: BackendClass::Cpu,
+            minimum_backend_version: 1,
+        },
+        trust: TrustState::SystemVerified,
+        object_ref,
+        install_state: InstallState::Available,
+        install_class: InstallClass::Core,
+        checksum: conversation_checksum(id),
+        private_data_eligible: true,
     }
 }
 

@@ -3,7 +3,9 @@
 The x86_64 live installer profile requires at least 512 MiB of RAM. The live
 kernel carries the verified installed System Generation so installation can
 complete without a network or host dependency. Installed-disk boot remains
-valid in the 256 MiB automated profile.
+valid in the 256 MiB compatibility profile. The reference AI workstation
+profile uses 8 GiB RAM, six virtual CPUs, and a 16 GiB dynamically allocated
+disk; core boot remains deliberately independent of that larger profile.
 
 ## x86_64 — implemented and QEMU-tested
 

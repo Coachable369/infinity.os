@@ -14,7 +14,7 @@ boot_log=build/installed-boot.log
 boot_installed() {
     : > "$boot_log"
     set +e
-    timeout 35 qemu-system-x86_64 -machine pc -m 256M \
+    timeout 35 qemu-system-x86_64 -machine pc -m 4096M \
         -drive if=pflash,format=raw,readonly=on,file="$firmware" \
         -drive if=ide,index=0,format=raw,file="$disk" -boot order=c \
         -serial file:"$boot_log" -display none -no-reboot
@@ -69,7 +69,7 @@ if test "$mode" = --boot-only; then
     exit 0
 fi
 
-dd if=/dev/zero of="$disk" bs=1M count=512 status=none
+dd if=/dev/zero of="$disk" bs=1M count=0 seek=16384 status=none
 : > "$install_log"
 test_dir=$(mktemp -d -t infinityos-install.XXXXXX)
 monitor="$test_dir/monitor.sock"
@@ -86,7 +86,7 @@ trap cleanup EXIT INT TERM
 
 # The live installer kernel carries the complete multi-architecture generation
 # payload and requires enough contiguous firmware pages before ExitBootServices.
-qemu-system-x86_64 -machine pc -m 1024M \
+qemu-system-x86_64 -machine pc -m 4096M \
     -drive if=pflash,format=raw,readonly=on,file="$firmware" \
     -drive if=ide,index=0,format=raw,file="$disk" \
     -drive if=ide,index=2,media=cdrom,readonly=on,file=build/infinity-x86_64.iso \

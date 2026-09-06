@@ -174,7 +174,7 @@ x86_64: check-tools $(BUILD)/infinity-x86_64.iso
 	@echo "Built VMware/QEMU boot image: $(BUILD)/infinity-x86_64.iso"
 
 run-x86_64: x86_64
-	$(QEMU_X64) -machine q35 -m 512M -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+	$(QEMU_X64) -machine q35 -m 4096M -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-cdrom $(BUILD)/infinity-x86_64.iso -serial stdio -display none -no-reboot
 
 test-x86_64: x86_64
@@ -253,12 +253,12 @@ test-mouse-menu: x86_64 aarch64
 test: test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety
 
 vm-disk:
-	@test -s $(BUILD)/infinity-test-disk.raw || dd if=/dev/zero of=$(BUILD)/infinity-test-disk.raw bs=1M count=512 status=none
+	@test -s $(BUILD)/infinity-test-disk.raw || dd if=/dev/zero of=$(BUILD)/infinity-test-disk.raw bs=1M count=0 seek=16384 status=none
 	@echo "Disposable InfinityOS test disk: $(BUILD)/infinity-test-disk.raw"
 
 reset-test-disk:
 	@mkdir -p $(BUILD)
-	dd if=/dev/zero of=$(BUILD)/infinity-test-disk.raw bs=1M count=512 status=none
+	dd if=/dev/zero of=$(BUILD)/infinity-test-disk.raw bs=1M count=0 seek=16384 status=none
 	@echo "Reset only known test artifact: $(BUILD)/infinity-test-disk.raw"
 
 install-test: x86_64
@@ -423,7 +423,7 @@ run-x86: x86
 	qemu-system-i386 -machine pc -m 128M -cdrom $(BUILD)/infinity-x86.iso \
 		-boot d -serial stdio -display none -no-reboot
 run-aarch64: aarch64
-	$(QEMU_AARCH64) -machine virt -cpu cortex-a72 -m 512M -bios $(AAVMF_CODE) \
+	$(QEMU_AARCH64) -machine virt -cpu cortex-a72 -m 4096M -bios $(AAVMF_CODE) \
 		-device ramfb -device virtio-scsi-pci -drive if=none,id=cd,format=raw,media=cdrom,file=$(BUILD)/infinity-aarch64-qemu.iso \
 		-device scsi-cd,drive=cd,bootindex=0 -serial stdio -display none -no-reboot
 

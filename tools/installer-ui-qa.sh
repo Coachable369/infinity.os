@@ -45,10 +45,10 @@ capture_frame() {
 cd "$project_root"
 test -s build/infinity-x86_64.iso
 mkdir -p builds
-dd if=/dev/zero of="$disk" bs=1M count=512 status=none
+dd if=/dev/zero of="$disk" bs=1M count=0 seek=16384 status=none
 : > "$log"
 
-qemu-system-x86_64 -machine pc -m 1024M \
+qemu-system-x86_64 -machine pc -m 4096M \
     -drive if=pflash,format=raw,readonly=on,file="$firmware" \
     -drive if=ide,index=0,format=raw,file="$disk" \
     -drive if=ide,index=2,media=cdrom,readonly=on,file=build/infinity-x86_64.iso \
