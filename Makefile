@@ -18,7 +18,9 @@ FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt)
 ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
 	assets/icons/runtime/luminous-obsidian-base.bmp assets/icons/runtime/luminous-obsidian-actions.bmp \
-	assets/icons/runtime/frosted-quartz-base.bmp assets/icons/runtime/frosted-quartz-actions.bmp
+	assets/icons/runtime/frosted-quartz-base.bmp assets/icons/runtime/frosted-quartz-actions.bmp \
+	assets/icons/runtime/aurora-harmony-base.bmp assets/icons/runtime/aurora-harmony-actions.bmp \
+	assets/icons/runtime/aurora-harmony-launcher-256.bmp
 WALLPAPER_ASSETS := assets/desktop/infinity-default-dark-wallpaper-v2.png \
 	assets/desktop/infinity-shell-wallpaper-v3.png \
 	assets/desktop/infinity-onboarding-wallpaper-v1.png

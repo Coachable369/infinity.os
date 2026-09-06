@@ -1844,7 +1844,7 @@ impl SystemLayout {
 
     // ------------------------=
     // FUNC: settings_icon_theme_target
-    // DESC: Hit-tests the three explicit icon-family preview cards inside the Icon Set detail well.
+    // DESC: Hit-tests every installed icon-family preview card inside the Icon Set detail well.
     // ------------------=
     pub fn settings_icon_theme_target(
         self,
@@ -1857,8 +1857,9 @@ impl SystemLayout {
         }
         let point = self.point(normalized_x, normalized_y);
         let row = self.settings_row_geometry(state, 1);
-        let preview_gap = row.detail.width as usize / 3;
-        for theme in 0..3usize {
+        let theme_count = super::icon_theme::ICON_THEME_COUNT as usize;
+        let preview_gap = row.detail.width as usize / theme_count;
+        for theme in 0..theme_count {
             if rect(
                 row.detail.x.max(0) as usize + theme * preview_gap + 4 * self.scale,
                 row.detail.y.max(0) as usize + 8 * self.scale,

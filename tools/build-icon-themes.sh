@@ -4,13 +4,18 @@ set -eu
 cd "$(dirname "$0")/.."
 
 sizes="24 32 48 64 96 128 256"
-families="crystal-blue-glass luminous-obsidian frosted-quartz"
+families="crystal-blue-glass luminous-obsidian frosted-quartz aurora-harmony"
 base_names="home user folder folder-open documents downloads pictures music videos projects trash-empty trash-full drive-internal drive-external optical-disc usb-drive cloud-drive network server computer display printer camera microphone headphones terminal settings search information help lock unlock shield key power restart sleep wifi bluetooth battery volume clipboard mail calendar clock"
 action_names="back forward up refresh new-file new-folder save cut copy paste undo redo add remove close"
 
 if [ ! -f assets/icons/luminous-obsidian/master-base-v2.png ] || \
    [ ! -f assets/icons/luminous-obsidian/master-actions-v2.png ]; then
     python3 tools/assemble-luminous-obsidian-v2.py
+fi
+
+if [ ! -f assets/icons/aurora-harmony/master-base-v1.png ] || \
+   [ ! -f assets/icons/aurora-harmony/master-actions-v1.png ]; then
+    python3 tools/assemble-aurora-harmony.py
 fi
 
 # ------------------------=
@@ -25,6 +30,8 @@ build_group() {
     master="assets/icons/$family/master-$group.png"
     if test -s "assets/icons/$family/master-$group-v2.png"; then
         master="assets/icons/$family/master-$group-v2.png"
+    elif test -s "assets/icons/$family/master-$group-v1.png"; then
+        master="assets/icons/$family/master-$group-v1.png"
     fi
     python3 tools/slice-icon-atlas.py \
         "$master" "assets/icons/$family" "$group" "$rows" "$(printf '%s' "$sizes" | tr ' ' ',')"
@@ -55,4 +62,4 @@ done
 
 python3 tools/build-launcher-icon-atlases.py
 
-echo "Built three 60-icon InfinityOS families at 24, 32, 48, 64, 96, 128, and 256 pixels."
+echo "Built four 60-icon InfinityOS families at 24, 32, 48, 64, 96, 128, and 256 pixels."

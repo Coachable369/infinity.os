@@ -7,7 +7,12 @@ from PIL import Image
 
 
 ROOT = Path(__file__).resolve().parent.parent
-FAMILIES = ("crystal-blue-glass", "luminous-obsidian", "frosted-quartz")
+FAMILIES = (
+    "crystal-blue-glass",
+    "luminous-obsidian",
+    "frosted-quartz",
+    "aurora-harmony",
+)
 SOURCES = (
     "base/00-home.png",
     "base/01-user.png",

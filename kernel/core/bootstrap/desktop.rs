@@ -68,6 +68,24 @@ pub(super) const LUMINOUS_OBSIDIAN_LAUNCHER_BMP: &[u8] =
 ))]
 pub(super) const FROSTED_QUARTZ_LAUNCHER_BMP: &[u8] =
     include_bytes!("../../../assets/icons/runtime/frosted-quartz-launcher-256.bmp");
+#[cfg(all(
+    not(feature = "installer"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const AURORA_HARMONY_BASE_BMP: &[u8] =
+    include_bytes!("../../../assets/icons/runtime/aurora-harmony-base.bmp");
+#[cfg(all(
+    not(feature = "installer"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const AURORA_HARMONY_ACTIONS_BMP: &[u8] =
+    include_bytes!("../../../assets/icons/runtime/aurora-harmony-actions.bmp");
+#[cfg(all(
+    not(feature = "installer"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+pub(super) const AURORA_HARMONY_LAUNCHER_BMP: &[u8] =
+    include_bytes!("../../../assets/icons/runtime/aurora-harmony-launcher-256.bmp");
 
 impl super::DisplayDevice {
     // ------------------------=
@@ -152,6 +170,8 @@ impl super::DisplayDevice {
             (1, true) => LUMINOUS_OBSIDIAN_ACTIONS_BMP,
             (2, false) => FROSTED_QUARTZ_BASE_BMP,
             (2, true) => FROSTED_QUARTZ_ACTIONS_BMP,
+            (3, false) => AURORA_HARMONY_BASE_BMP,
+            (3, true) => AURORA_HARMONY_ACTIONS_BMP,
             (_, false) => CRYSTAL_BLUE_GLASS_BASE_BMP,
             (_, true) => CRYSTAL_BLUE_GLASS_ACTIONS_BMP,
         };
@@ -188,6 +208,7 @@ impl super::DisplayDevice {
         let bitmap = match self.active_icon_theme() {
             1 => LUMINOUS_OBSIDIAN_LAUNCHER_BMP,
             2 => FROSTED_QUARTZ_LAUNCHER_BMP,
+            3 => AURORA_HARMONY_LAUNCHER_BMP,
             _ => CRYSTAL_BLUE_GLASS_LAUNCHER_BMP,
         };
         self.paint_bitmap_alpha_atlas_cell(
@@ -219,6 +240,7 @@ impl super::DisplayDevice {
         let bitmap = match theme {
             1 => LUMINOUS_OBSIDIAN_BASE_BMP,
             2 => FROSTED_QUARTZ_BASE_BMP,
+            3 => AURORA_HARMONY_BASE_BMP,
             _ => CRYSTAL_BLUE_GLASS_BASE_BMP,
         };
         self.paint_bitmap_alpha_atlas_cell(
@@ -4136,8 +4158,9 @@ impl super::DisplayDevice {
                     outline_b / 2,
                 );
                 if focus == 1 && index == 1 {
-                    let card_width = detail_width / 3;
-                    for theme in 0..3usize {
+                    let theme_count = crate::ui::icon_theme::ICON_THEME_COUNT as usize;
+                    let card_width = detail_width / theme_count;
+                    for theme in 0..theme_count {
                         let card_left = detail_left + theme * card_width + 5 * scale;
                         let selected = self.active_icon_theme() as usize == theme;
                         self.fill_rounded_rect_alpha(

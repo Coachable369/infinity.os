@@ -1,6 +1,6 @@
 //! Typed system-wide desktop icon theme selection and semantic icon catalog.
 
-pub const ICON_THEME_COUNT: u8 = 3;
+pub const ICON_THEME_COUNT: u8 = 4;
 pub const ICON_ROLE_COUNT: usize = 60;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -9,6 +9,7 @@ pub enum IconThemeId {
     CrystalBlueGlass = 0,
     LuminousObsidian = 1,
     FrostedQuartz = 2,
+    AuroraHarmony = 3,
 }
 
 impl IconThemeId {
@@ -21,6 +22,7 @@ impl IconThemeId {
             0 => Some(Self::CrystalBlueGlass),
             1 => Some(Self::LuminousObsidian),
             2 => Some(Self::FrostedQuartz),
+            3 => Some(Self::AuroraHarmony),
             _ => None,
         }
     }
@@ -34,6 +36,7 @@ impl IconThemeId {
             Self::CrystalBlueGlass => b"Crystal Blue Glass",
             Self::LuminousObsidian => b"Luminous Obsidian",
             Self::FrostedQuartz => b"Frosted Quartz",
+            Self::AuroraHarmony => b"Aurora Harmony",
         }
     }
 
@@ -45,7 +48,8 @@ impl IconThemeId {
         match self {
             Self::CrystalBlueGlass => Self::LuminousObsidian,
             Self::LuminousObsidian => Self::FrostedQuartz,
-            Self::FrostedQuartz => Self::CrystalBlueGlass,
+            Self::FrostedQuartz => Self::AuroraHarmony,
+            Self::AuroraHarmony => Self::CrystalBlueGlass,
         }
     }
 }

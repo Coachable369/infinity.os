@@ -8,7 +8,12 @@ from pathlib import Path
 from PIL import Image
 
 
-FAMILIES = ("crystal-blue-glass", "luminous-obsidian", "frosted-quartz")
+FAMILIES = (
+    "crystal-blue-glass",
+    "luminous-obsidian",
+    "frosted-quartz",
+    "aurora-harmony",
+)
 SIZES = (24, 32, 48, 64, 96, 128, 256)
 GROUP_COUNTS = {"base": 45, "actions": 15}
 
@@ -107,6 +112,8 @@ def main() -> None:
         validate_launcher_atlas(root / "runtime" / f"{family}-launcher-256.bmp")
     validate_generated_master(root / "luminous-obsidian" / "master-base-v2.png", 9)
     validate_generated_master(root / "luminous-obsidian" / "master-actions-v2.png", 3)
+    validate_generated_master(root / "aurora-harmony" / "master-base-v1.png", 9)
+    validate_generated_master(root / "aurora-harmony" / "master-actions-v1.png", 3)
     assert checked == len(FAMILIES) * len(SIZES) * sum(GROUP_COUNTS.values())
     print(f"PASS icon assets: {checked} semantic PNGs have exact dimensions and alpha")
 
