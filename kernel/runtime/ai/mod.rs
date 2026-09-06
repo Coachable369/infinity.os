@@ -3,6 +3,7 @@ pub mod broker;
 pub mod chat;
 pub mod generation;
 pub mod intent;
+pub mod memory;
 pub mod model;
 pub mod provider;
 pub mod types;

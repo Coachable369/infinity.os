@@ -1,6 +1,7 @@
 //! Native identity, authentication, session, preference, and first-boot state.
 //! Persistent data is encoded explicitly; Rust layout is never a disk ABI.
 
+use crate::runtime::ai::memory::{AiMemory, AI_MEMORY_SLOT_BYTES, AI_MEMORY_STATE_BYTES};
 use crate::ui::session_state::{
     DesktopSessionLayout, PersistentDesktopLayoutStore, DESKTOP_LAYOUT_STATE_BYTES,
 };
@@ -9,8 +10,10 @@ pub const MAX_USERS: usize = 8;
 pub const MAX_CREDENTIALS: usize = 12;
 pub const MAX_SESSIONS: usize = 8;
 pub const LEGACY_IDENTITY_STATE_BYTES: usize = 4096;
-pub const IDENTITY_STATE_BYTES: usize = LEGACY_IDENTITY_STATE_BYTES + DESKTOP_LAYOUT_STATE_BYTES;
-pub const IDENTITY_FORMAT_VERSION: u16 = 2;
+pub const V2_IDENTITY_STATE_BYTES: usize = LEGACY_IDENTITY_STATE_BYTES + DESKTOP_LAYOUT_STATE_BYTES;
+pub const USER_AI_MEMORY_OFFSET: usize = V2_IDENTITY_STATE_BYTES - 4;
+pub const IDENTITY_STATE_BYTES: usize = USER_AI_MEMORY_OFFSET + AI_MEMORY_STATE_BYTES + 4;
+pub const IDENTITY_FORMAT_VERSION: u16 = 3;
 pub const PASSWORD_ITERATIONS: u32 = 4096;
 pub const USER_ICON_THEME_OFFSET: usize = 4056;
 pub const USER_ACCENT_OFFSET: usize = 4064;
@@ -297,6 +300,7 @@ pub struct IdentitySystem {
     background_opacity: u8,
     background_blur: u8,
     desktop_layouts: PersistentDesktopLayoutStore,
+    ai_memories: [AiMemory; MAX_USERS],
 }
 
 impl IdentitySystem {
@@ -321,6 +325,7 @@ impl IdentitySystem {
             background_opacity: DEFAULT_BACKGROUND_OPACITY,
             background_blur: DEFAULT_BACKGROUND_BLUR,
             desktop_layouts: PersistentDesktopLayoutStore::new(),
+            ai_memories: [AiMemory::new(); MAX_USERS],
         }
     }
 
@@ -519,6 +524,7 @@ impl IdentitySystem {
             chat_enabled: true,
             chat_model_index: 0,
         });
+        self.ai_memories[slot] = AiMemory::new();
         self.voice_profiles[slot] = Some(VoiceProfile {
             user: user_id,
             enabled: false,
@@ -1120,6 +1126,49 @@ impl IdentitySystem {
     }
 
     // ------------------------=
+    // FUNC: read_ai_memory
+    // DESC: Reads durable semantic AI memory only for its owning user.
+    // ------------------=
+    pub fn read_ai_memory(
+        &self,
+        actor: StableId,
+        user: StableId,
+    ) -> Result<AiMemory, IdentityError> {
+        if actor != user {
+            return Err(IdentityError::AccessDenied);
+        }
+        let slot = self
+            .users
+            .iter()
+            .position(|candidate| candidate.map(|value| value.id) == Some(user))
+            .ok_or(IdentityError::NotFound)?;
+        Ok(self.ai_memories[slot])
+    }
+
+    // ------------------------=
+    // FUNC: update_ai_memory
+    // DESC: Replaces the owning user's bounded durable semantic AI memory.
+    // ------------------=
+    pub fn update_ai_memory(
+        &mut self,
+        actor: StableId,
+        user: StableId,
+        memory: AiMemory,
+    ) -> Result<AiMemory, IdentityError> {
+        if actor != user {
+            return Err(IdentityError::AccessDenied);
+        }
+        let slot = self
+            .users
+            .iter()
+            .position(|candidate| candidate.map(|value| value.id) == Some(user))
+            .ok_or(IdentityError::NotFound)?;
+        self.ai_memories[slot] = memory;
+        self.commit();
+        Ok(memory)
+    }
+
+    // ------------------------=
     // FUNC: voice_profile
     // DESC: Reads one user's scoped voice and microphone preference.
     // ------------------=
@@ -1245,6 +1294,13 @@ impl IdentitySystem {
         out[USER_DESKTOP_LAYOUTS_OFFSET
             ..USER_DESKTOP_LAYOUTS_OFFSET + DESKTOP_LAYOUT_STATE_BYTES]
             .copy_from_slice(&self.desktop_layouts.encode());
+        out[USER_AI_MEMORY_OFFSET..USER_AI_MEMORY_OFFSET + 8].copy_from_slice(b"INFAIM1\0");
+        out[USER_AI_MEMORY_OFFSET + 8..USER_AI_MEMORY_OFFSET + 10]
+            .copy_from_slice(&1u16.to_le_bytes());
+        for index in 0..MAX_USERS {
+            let at = USER_AI_MEMORY_OFFSET + 16 + index * AI_MEMORY_SLOT_BYTES;
+            let _ = self.ai_memories[index].encode_into(&mut out[at..at + AI_MEMORY_SLOT_BYTES]);
+        }
         let checksum = checksum32(&out[..IDENTITY_STATE_BYTES - 4]);
         put32(&mut out, IDENTITY_STATE_BYTES - 4, checksum);
         out
@@ -1255,11 +1311,15 @@ impl IdentitySystem {
     // DESC: Validates and restores durable identity state without restoring transient sessions.
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Result<Self, IdentityError> {
-        if !matches!(bytes.len(), LEGACY_IDENTITY_STATE_BYTES | IDENTITY_STATE_BYTES) {
+        if !matches!(
+            bytes.len(),
+            LEGACY_IDENTITY_STATE_BYTES | V2_IDENTITY_STATE_BYTES | IDENTITY_STATE_BYTES
+        ) {
             return Err(IdentityError::CorruptState);
         }
         let version = get16(bytes, 8);
         let valid_shape = (version == 1 && bytes.len() == LEGACY_IDENTITY_STATE_BYTES)
+            || (version == 2 && bytes.len() == V2_IDENTITY_STATE_BYTES)
             || (version == IDENTITY_FORMAT_VERSION && bytes.len() == IDENTITY_STATE_BYTES);
         if &bytes[..8] != b"INFIDN1\0"
             || !valid_shape
@@ -1342,6 +1402,22 @@ impl IdentitySystem {
                     ..USER_DESKTOP_LAYOUTS_OFFSET + DESKTOP_LAYOUT_STATE_BYTES],
             )
             .ok_or(IdentityError::CorruptState)?;
+        }
+        if version >= 3 {
+            if &bytes[USER_AI_MEMORY_OFFSET..USER_AI_MEMORY_OFFSET + 8] != b"INFAIM1\0"
+                || get16(bytes, USER_AI_MEMORY_OFFSET + 8) != 1
+            {
+                return Err(IdentityError::CorruptState);
+            }
+            for index in 0..MAX_USERS {
+                if state.users[index].is_none() {
+                    continue;
+                }
+                let at = USER_AI_MEMORY_OFFSET + 16 + index * AI_MEMORY_SLOT_BYTES;
+                state.ai_memories[index] =
+                    AiMemory::decode_from(&bytes[at..at + AI_MEMORY_SLOT_BYTES])
+                        .ok_or(IdentityError::CorruptState)?;
+            }
         }
         Ok(state)
     }

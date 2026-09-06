@@ -70,7 +70,10 @@ fn model_and_provider() {
     ai.initialize().unwrap();
     assert_eq!(ai.models.count(), 3);
     assert_eq!(
-        ai.models.inspect(runtime::ai::generation::DIALOGUE_MODEL_ID).unwrap().install_state,
+        ai.models
+            .inspect(runtime::ai::generation::DIALOGUE_MODEL_ID)
+            .unwrap()
+            .install_state,
         InstallState::Loaded
     );
     assert!(model_object_bytes().len() > 64);
@@ -78,9 +81,8 @@ fn model_and_provider() {
     let mut corrupted = model_object_bytes();
     corrupted[100] ^= 1;
     assert!(!model_object_valid(&corrupted));
-    let dialogue = runtime::ai::generation::model_object_bytes(
-        runtime::ai::generation::DIALOGUE_MODEL_ID,
-    );
+    let dialogue =
+        runtime::ai::generation::model_object_bytes(runtime::ai::generation::DIALOGUE_MODEL_ID);
     assert!(runtime::ai::generation::model_object_valid(
         runtime::ai::generation::DIALOGUE_MODEL_ID,
         &dialogue
@@ -207,11 +209,17 @@ fn model_and_provider() {
         private_data_eligible: true,
     };
     let before = ai.models.count();
-    assert_eq!(ai.models.install(optional, 1024), Err(AiError::ModelInvalid));
+    assert_eq!(
+        ai.models.install(optional, 1024),
+        Err(AiError::ModelInvalid)
+    );
     assert_eq!(ai.models.count(), before);
     ai.models.install(optional, 16 * 1024 * 1024).unwrap();
     assert_eq!(ai.models.count(), before + 1);
-    assert_eq!(ai.models.inspect(optional.id).unwrap().install_state, InstallState::Loaded);
+    assert_eq!(
+        ai.models.inspect(optional.id).unwrap().install_state,
+        InstallState::Loaded
+    );
     let mut upgrade = optional;
     upgrade.version = 2;
     upgrade.object_ref = [10; 16];
@@ -589,7 +597,46 @@ fn desktop_chat() {
     let preferences = restored.ai_profile(user.id).unwrap();
     assert!(!preferences.chat_enabled);
     assert_eq!(preferences.chat_model_index, 1);
-    println!("PASS desktop AI chat: bounded turns, installed model selection, minimize, close, and restore state");
+    let other = identities
+        .create_user(b"other-user", b"Other User", 2)
+        .unwrap();
+    assert!(chat.submit(b"set your name to Nova"));
+    assert_eq!(
+        chat.last_memory_response(),
+        Some(runtime::ai::memory::MemoryResponseKind::NameStored)
+    );
+    assert!(chat.submit(b"remember that my favorite color is violet"));
+    assert_eq!(chat.memory().name(), b"Nova");
+    assert_eq!(chat.memory().fact_count(), 1);
+    let memory = chat.take_memory_update().unwrap();
+    identities
+        .update_ai_memory(user.id, user.id, memory)
+        .unwrap();
+    assert_eq!(
+        identities.read_ai_memory(other.id, user.id),
+        Err(runtime::identity::IdentityError::AccessDenied)
+    );
+    let encoded = identities.encode();
+    let restored = runtime::identity::IdentitySystem::decode(&encoded).unwrap();
+    let durable_memory = restored.read_ai_memory(user.id, user.id).unwrap();
+    assert_eq!(durable_memory.name(), b"Nova");
+    assert_eq!(
+        durable_memory.fact(0),
+        Some(b"my favorite color is violet".as_slice())
+    );
+    let mut resumed_chat = ChatRuntime::new();
+    resumed_chat.set_memory(durable_memory);
+    assert!(resumed_chat.submit(b"what is your name?"));
+    assert_eq!(
+        resumed_chat.last_memory_response(),
+        Some(runtime::ai::memory::MemoryResponseKind::NameRecalled)
+    );
+    assert!(resumed_chat.submit(b"what is my favorite color?"));
+    assert_eq!(
+        resumed_chat.last_memory_response(),
+        Some(runtime::ai::memory::MemoryResponseKind::FactRecalled)
+    );
+    println!("PASS desktop AI chat: bounded turns, model selection, per-user durable semantic memory, isolation, and recall after reconstruction");
 }
 
 // ------------------------=

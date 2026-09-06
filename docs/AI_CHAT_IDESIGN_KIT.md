@@ -26,3 +26,5 @@ The desktop AI surface extends the existing right-side AI Status glass card. It 
 ## Resource limits
 
 Conversation history is fixed-capacity and oldest-first evicted. Input and response buffers are bounded. Chat models are selected by typed identifiers and do not gain ambient system authority.
+
+Semantic memory is separate from the visible timeline. Each authenticated user has an isolated assistant name and six explicitly saved important facts. Memory changes are committed immediately to the native Identity object and restored at the next authenticated desktop session; the assistant never imports another user's memory.

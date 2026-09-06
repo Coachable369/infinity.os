@@ -30,6 +30,7 @@ share one untyped state bag.
 | Native model object and integrity check | TESTED | Versioned `INFMLM1` binary object, parameter count and CRC-32 validated. |
 | CPU intent inference | TESTED | Quantized multinomial model tokenizes arbitrary text and computes class scores locally. |
 | Native dialogue generation | TESTED (host) | Typed conversational classification produces coherent bounded replies and declines questions the installed model cannot answer reliably. It is not a transformer language model. |
+| User-scoped semantic chat memory | TESTED (host) | Each user can assign the assistant a name and explicitly save up to six important facts. The checksummed native Identity object restores that memory after sign-out, restart, or power loss without exposing it to another user. |
 | Model registry/install/upgrade/remove | TESTED (host) | Package installation and upgrade are atomic, validate identity/integrity/resource requirements, preserve prior state on failure, and protect CORE models. |
 | Model registry/load/capability metadata | TESTED | Bounded registry exposes typed descriptors; all three bootstrap models load without network access. |
 | Provider routing/privacy | TESTED | Local is selected for local-only/private requests even when a remote test provider advertises higher quality. |
@@ -61,6 +62,14 @@ requests receive bounded prompt-conditioned composition, and unsupported
 questions are declined instead of receiving invented or arbitrary prose. This
 proves the local conversation, model selection, packaging, and lifecycle
 contracts without pretending a large neural model or GGUF transformer backend
+
+The desktop chat recognizes direct memory statements such as `set your name to
+Nova` and `remember that my favorite color is violet`. Name questions, memory
+summaries, and questions sharing meaningful terms with a stored fact use the
+authenticated user's durable semantic memory. The visible eight-message
+timeline remains intentionally session-bounded; durable memory stores concise
+facts rather than an unbounded transcript. Memory is encoded in the same native
+Identity state shipped and restored by fresh installations.
 exists. Neural GGUF/ONNX execution, tokenizers, tensor storage, and accelerator
 execution remain UNSUPPORTED.
 

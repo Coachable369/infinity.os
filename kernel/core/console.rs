@@ -930,7 +930,7 @@ impl ConsoleRuntime {
             ConsoleKey::Enter => match self.ai_chat_focus {
                 1 => self.select_next_chat_model(),
                 2 | 3 => {
-                    crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.submit_input());
+                    self.submit_ai_chat_input();
                     self.ai_chat_focus = 2;
                 }
                 4 => crate::runtime::ai::with_ai_runtime(|runtime| {
@@ -1278,12 +1278,47 @@ impl ConsoleRuntime {
             crate::runtime::with_runtime(|runtime| runtime.identity.ai_profile(self.current_user))
                 .flatten();
         if let Some(profile) = preferences {
+            let memory = crate::runtime::with_runtime(|runtime| {
+                runtime
+                    .identity
+                    .read_ai_memory(self.current_user, self.current_user)
+                    .ok()
+            })
+            .flatten();
             crate::runtime::ai::with_ai_runtime(|runtime| {
                 runtime.chat.set_enabled(profile.chat_enabled);
                 runtime
                     .chat
                     .select_model_index(profile.chat_model_index as usize);
+                if let Some(memory) = memory {
+                    runtime.chat.set_memory(memory);
+                }
             });
+        }
+    }
+
+    // ------------------------=
+    // FUNC: submit_ai_chat_input
+    // DESC: Submits one chat turn and durably checkpoints any semantic-memory change.
+    // ------------------=
+    fn submit_ai_chat_input(&mut self) {
+        let memory = crate::runtime::ai::with_ai_runtime(|runtime| {
+            if !runtime.chat.submit_input() {
+                return None;
+            }
+            runtime.chat.take_memory_update()
+        });
+        let Some(memory) = memory else {
+            return;
+        };
+        let user = self.current_user;
+        let updated = crate::runtime::with_runtime(|runtime| {
+            runtime.identity.update_ai_memory(user, user, memory)
+        })
+        .transpose()
+        .is_ok();
+        if updated {
+            let _ = crate::runtime::persist_identity_state();
         }
     }
 
@@ -4788,9 +4823,7 @@ impl ConsoleRuntime {
                         AiChatTarget::Composer => self.ai_chat_focus = 2,
                         AiChatTarget::Send => {
                             self.ai_chat_focus = 3;
-                            crate::runtime::ai::with_ai_runtime(|runtime| {
-                                runtime.chat.submit_input()
-                            });
+                            self.submit_ai_chat_input();
                         }
                         AiChatTarget::Minimize => {
                             self.ai_chat_focus = 4;

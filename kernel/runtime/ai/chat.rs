@@ -1,6 +1,7 @@
 use super::generation::{
     classify, generate, ResponseKind, CREATIVE_MODEL_ID, DIALOGUE_MODEL_ID, MAX_GENERATED_BYTES,
 };
+use super::memory::{AiMemory, MemoryResponseKind};
 use super::types::ModelId;
 
 pub const CHAT_MESSAGE_CAPACITY: usize = 8;
@@ -83,6 +84,9 @@ pub struct ChatRuntime {
     input: [u8; CHAT_INPUT_CAPACITY],
     input_length: usize,
     last_response_kind: Option<ResponseKind>,
+    memory: AiMemory,
+    memory_dirty: bool,
+    last_memory_response: Option<MemoryResponseKind>,
 }
 
 impl ChatRuntime {
@@ -100,6 +104,9 @@ impl ChatRuntime {
             input: [0; CHAT_INPUT_CAPACITY],
             input_length: 0,
             last_response_kind: None,
+            memory: AiMemory::new(),
+            memory_dirty: false,
+            last_memory_response: None,
         }
     }
 
@@ -220,6 +227,43 @@ impl ChatRuntime {
     }
 
     // ------------------------=
+    // FUNC: set_memory
+    // DESC: Restores the authenticated user's durable semantic memory into the chat session.
+    // ------------------=
+    pub fn set_memory(&mut self, memory: AiMemory) {
+        self.memory = memory;
+        self.memory_dirty = false;
+    }
+
+    // ------------------------=
+    // FUNC: memory
+    // DESC: Returns the active user's bounded semantic memory.
+    // ------------------=
+    pub const fn memory(&self) -> AiMemory {
+        self.memory
+    }
+
+    // ------------------------=
+    // FUNC: last_memory_response
+    // DESC: Returns the typed semantic-memory behavior used for the latest turn.
+    // ------------------=
+    pub const fn last_memory_response(&self) -> Option<MemoryResponseKind> {
+        self.last_memory_response
+    }
+
+    // ------------------------=
+    // FUNC: take_memory_update
+    // DESC: Returns a changed memory snapshot exactly once for durable checkpointing.
+    // ------------------=
+    pub fn take_memory_update(&mut self) -> Option<AiMemory> {
+        if !self.memory_dirty {
+            return None;
+        }
+        self.memory_dirty = false;
+        Some(self.memory)
+    }
+
+    // ------------------------=
     // FUNC: push_input
     // DESC: Appends one printable character to the bounded composer.
     // ------------------=
@@ -270,7 +314,14 @@ impl ChatRuntime {
             return false;
         }
         self.push(ChatMessage::new(ChatRole::User, trimmed));
-        if self.selected_model == INTENT_ASSISTANT_MODEL_ID {
+        let mut response = [0u8; MAX_GENERATED_BYTES];
+        self.last_memory_response = None;
+        if let Some((length, changed, kind)) = self.memory.respond(trimmed, &mut response) {
+            self.last_response_kind = None;
+            self.last_memory_response = Some(kind);
+            self.memory_dirty |= changed;
+            self.push(ChatMessage::new(ChatRole::Assistant, &response[..length]));
+        } else if self.selected_model == INTENT_ASSISTANT_MODEL_ID {
             self.last_response_kind = None;
             self.push(ChatMessage::new(
                 ChatRole::Assistant,
@@ -278,7 +329,6 @@ impl ChatRuntime {
             ));
         } else {
             self.last_response_kind = Some(classify(trimmed));
-            let mut response = [0u8; MAX_GENERATED_BYTES];
             let length = generate(self.selected_model, trimmed, &mut response);
             self.push(ChatMessage::new(ChatRole::Assistant, &response[..length]));
         }
@@ -303,6 +353,9 @@ impl ChatRuntime {
         }
         for message in self.messages.iter().flatten() {
             value = value.rotate_left(5) ^ message.length as u64 ^ message.role as u64;
+            for byte in message.text() {
+                value = value.rotate_left(7) ^ u64::from(*byte);
+            }
         }
         value
     }

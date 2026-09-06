@@ -1809,7 +1809,9 @@ pub fn storage_initialized() {
                 .filter(|length| {
                     matches!(
                         *length,
-                        identity::LEGACY_IDENTITY_STATE_BYTES | identity::IDENTITY_STATE_BYTES
+                        identity::LEGACY_IDENTITY_STATE_BYTES
+                            | identity::V2_IDENTITY_STATE_BYTES
+                            | identity::IDENTITY_STATE_BYTES
                     )
                 })
             {

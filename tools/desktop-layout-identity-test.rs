@@ -27,7 +27,12 @@ fn layout() -> DesktopSessionLayout {
         editor: WindowPlacement::new(227, 163, 548, 612, false, true),
         command: WindowPlacement::new(281, 219, 501, 477, false, false),
         desktop_item_positions: [
-            [81, 141], [164, 177], [249, 213], [336, 251], [425, 289], [516, 329],
+            [81, 141],
+            [164, 177],
+            [249, 213],
+            [336, 251],
+            [425, 289],
+            [516, 329],
             [609, 371],
         ],
         focused_surface: DesktopResumeSurface::Settings,
@@ -57,7 +62,9 @@ fn checksum(bytes: &[u8]) -> u32 {
 fn main() {
     let mut identities = IdentitySystem::new();
     identities.begin_onboarding().unwrap();
-    identities.create_machine(b"LayoutNode", 0x8664, 1, 1).unwrap();
+    identities
+        .create_machine(b"LayoutNode", 0x8664, 1, 1)
+        .unwrap();
     let owner = identities.create_user(b"owner", b"Owner", 2).unwrap();
     let guest = identities.create_user(b"guest", b"Guest", 3).unwrap();
     let expected = layout();
@@ -77,6 +84,23 @@ fn main() {
     assert_eq!(restored.user_desktop_layout(guest.id), None);
     assert!(restored.session_nth(0).is_none());
 
+    let mut version_two = [0u8; runtime::identity::V2_IDENTITY_STATE_BYTES];
+    let version_two_end = version_two.len();
+    version_two[..version_two_end - 4].copy_from_slice(&encoded[..version_two_end - 4]);
+    version_two[8..10].copy_from_slice(&2u16.to_le_bytes());
+    version_two[10..12].copy_from_slice(&(version_two_end as u16).to_le_bytes());
+    let version_two_checksum = checksum(&version_two[..version_two_end - 4]);
+    version_two[version_two_end - 4..].copy_from_slice(&version_two_checksum.to_le_bytes());
+    let migrated_v2 = IdentitySystem::decode(&version_two).unwrap();
+    assert_eq!(migrated_v2.user_desktop_layout(owner.id), Some(expected));
+    assert_eq!(
+        migrated_v2
+            .read_ai_memory(owner.id, owner.id)
+            .unwrap()
+            .name(),
+        b"Infinity"
+    );
+
     let mut legacy = [0u8; runtime::identity::LEGACY_IDENTITY_STATE_BYTES];
     let legacy_end = legacy.len();
     legacy[..legacy_end - 4].copy_from_slice(&encoded[..legacy_end - 4]);
@@ -87,5 +111,7 @@ fn main() {
     let migrated = IdentitySystem::decode(&legacy).unwrap();
     assert!(migrated.user_profile(owner.id).is_some());
     assert_eq!(migrated.user_desktop_layout(owner.id), None);
-    println!("PASS desktop layout identity: exact per-user geometry survives session reconstruction");
+    println!(
+        "PASS desktop layout identity: exact per-user geometry survives session reconstruction"
+    );
 }
