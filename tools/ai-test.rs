@@ -532,16 +532,35 @@ fn desktop_chat() {
     assert_eq!(chat.message(0).unwrap().role, ChatRole::User);
     assert_eq!(chat.message(1).unwrap().role, ChatRole::Assistant);
     assert!(chat.input().is_empty());
-    let first_response = *chat.message(1).unwrap();
+    assert_eq!(
+        runtime::ai::generation::classify(b"hi"),
+        runtime::ai::generation::ResponseKind::Greeting
+    );
+    assert_eq!(
+        runtime::ai::generation::classify(b"what causes ocean tides?"),
+        runtime::ai::generation::ResponseKind::UnsupportedQuestion
+    );
+    assert_eq!(
+        runtime::ai::generation::classify(b"show network status"),
+        runtime::ai::generation::ResponseKind::Network
+    );
+    assert_eq!(
+        chat.last_response_kind(),
+        Some(runtime::ai::generation::ResponseKind::Greeting)
+    );
     assert!(chat.submit(b"compare orbital gardens with ocean research laboratories"));
-    let novel_response = *chat.message(3).unwrap();
-    assert_ne!(first_response.text(), novel_response.text());
+    assert_eq!(
+        chat.last_response_kind(),
+        Some(runtime::ai::generation::ResponseKind::Comparison)
+    );
     let first_model = chat.selected_model();
     assert_eq!(chat.select_next_model(), 1);
     assert_ne!(chat.selected_model(), first_model);
     assert!(chat.submit(b"compare orbital gardens with ocean research laboratories"));
-    let creative_response = *chat.message(5).unwrap();
-    assert_ne!(novel_response.text(), creative_response.text());
+    assert_eq!(
+        chat.last_response_kind(),
+        Some(runtime::ai::generation::ResponseKind::Comparison)
+    );
     assert!(!chat.select_model_index(CHAT_MODELS.len()));
     for _ in 0..CHAT_MESSAGE_CAPACITY {
         assert!(chat.submit(b"system status"));

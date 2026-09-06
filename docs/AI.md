@@ -29,7 +29,7 @@ share one untyped state bag.
 |---|---|---|
 | Native model object and integrity check | TESTED | Versioned `INFMLM1` binary object, parameter count and CRC-32 validated. |
 | CPU intent inference | TESTED | Quantized multinomial model tokenizes arbitrary text and computes class scores locally. |
-| Native dialogue generation | TESTED (host) | Two bounded prompt-conditioned compositional models generate distinct local responses for novel prompts. They are not transformer language models. |
+| Native dialogue generation | TESTED (host) | Typed conversational classification produces coherent bounded replies and declines questions the installed model cannot answer reliably. It is not a transformer language model. |
 | Model registry/install/upgrade/remove | TESTED (host) | Package installation and upgrade are atomic, validate identity/integrity/resource requirements, preserve prior state on failure, and protect CORE models. |
 | Model registry/load/capability metadata | TESTED | Bounded registry exposes typed descriptors; all three bootstrap models load without network access. |
 | Provider routing/privacy | TESTED | Local is selected for local-only/private requests even when a remote test provider advertises higher quality. |
@@ -55,11 +55,14 @@ pathname-backed models, JSON documents, or subprocesses. Boot validation checks
 every embedded model identity and checksum and rejects corruption. Installed
 runtime registration binds each descriptor to its resolved 128-bit Object ID.
 
-The two dialogue engines construct bounded responses from the prompt topic and
-independently selected response components. This proves the local conversation,
-model selection, packaging, and lifecycle contracts without pretending a large
-neural model or GGUF transformer backend exists. Neural GGUF/ONNX execution,
-tokenizers, tensor storage, and accelerator execution remain UNSUPPORTED.
+The dialogue engines classify each turn into a typed response policy. Known
+InfinityOS subjects receive coherent local guidance, creative and comparison
+requests receive bounded prompt-conditioned composition, and unsupported
+questions are declined instead of receiving invented or arbitrary prose. This
+proves the local conversation, model selection, packaging, and lifecycle
+contracts without pretending a large neural model or GGUF transformer backend
+exists. Neural GGUF/ONNX execution, tokenizers, tensor storage, and accelerator
+execution remain UNSUPPORTED.
 
 `ModelDescriptor` records a stable numeric model ID, native Object ID,
 capabilities, runtime adapter, backend class, integrity checksum, memory budget,

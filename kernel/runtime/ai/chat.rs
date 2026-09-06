@@ -1,4 +1,6 @@
-use super::generation::{generate, CREATIVE_MODEL_ID, DIALOGUE_MODEL_ID, MAX_GENERATED_BYTES};
+use super::generation::{
+    classify, generate, ResponseKind, CREATIVE_MODEL_ID, DIALOGUE_MODEL_ID, MAX_GENERATED_BYTES,
+};
 use super::types::ModelId;
 
 pub const CHAT_MESSAGE_CAPACITY: usize = 8;
@@ -80,6 +82,7 @@ pub struct ChatRuntime {
     minimized: bool,
     input: [u8; CHAT_INPUT_CAPACITY],
     input_length: usize,
+    last_response_kind: Option<ResponseKind>,
 }
 
 impl ChatRuntime {
@@ -96,6 +99,7 @@ impl ChatRuntime {
             minimized: false,
             input: [0; CHAT_INPUT_CAPACITY],
             input_length: 0,
+            last_response_kind: None,
         }
     }
 
@@ -121,6 +125,14 @@ impl ChatRuntime {
     // ------------------=
     pub const fn selected_model(&self) -> ModelId {
         self.selected_model
+    }
+
+    // ------------------------=
+    // FUNC: last_response_kind
+    // DESC: Returns the typed response policy used for the most recent conversational turn.
+    // ------------------=
+    pub const fn last_response_kind(&self) -> Option<ResponseKind> {
+        self.last_response_kind
     }
 
     // ------------------------=
@@ -259,11 +271,13 @@ impl ChatRuntime {
         }
         self.push(ChatMessage::new(ChatRole::User, trimmed));
         if self.selected_model == INTENT_ASSISTANT_MODEL_ID {
+            self.last_response_kind = None;
             self.push(ChatMessage::new(
                 ChatRole::Assistant,
                 intent_response(trimmed),
             ));
         } else {
+            self.last_response_kind = Some(classify(trimmed));
             let mut response = [0u8; MAX_GENERATED_BYTES];
             let length = generate(self.selected_model, trimmed, &mut response);
             self.push(ChatMessage::new(ChatRole::Assistant, &response[..length]));
@@ -280,6 +294,10 @@ impl ChatRuntime {
             ^ ((self.minimized as u64) << 63)
             ^ ((self.enabled as u64) << 62);
         value ^= (self.count as u64) << 48;
+        value ^= self
+            .last_response_kind
+            .map(|kind| (kind as u64) << 32)
+            .unwrap_or(0);
         for byte in &self.input[..self.input_length] {
             value = value.rotate_left(7) ^ u64::from(*byte);
         }
@@ -333,10 +351,6 @@ fn contains_ascii_case_insensitive(input: &[u8], needle: &[u8]) -> bool {
     })
 }
 
-// ------------------------=
-// FUNC: system_response
-// DESC: Produces useful offline system-assistant replies without claiming open-ended generation.
-// ------------------=
 // ------------------------=
 // FUNC: intent_response
 // DESC: Projects the bundled intent model's supported operation classes into a conversational result.
