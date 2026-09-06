@@ -14,6 +14,8 @@ pub const FILE_NAVIGATOR_APPLICATION_ID: &[u8] = b"app.infinity.file-navigator";
 pub const FILE_NAVIGATOR_DEFAULT_SIZE: (u32, u32) = (780, 560);
 pub const FILE_NAVIGATOR_MINIMUM_SIZE: (u32, u32) = (640, 420);
 pub const FILE_NAVIGATOR_INTENTS: &[&[u8]] = &[b"BrowseNamespace", b"RevealObject", b"OpenObject"];
+pub const FILE_NAVIGATOR_HISTORY_CAPACITY: usize = 12;
+pub const FILE_NAVIGATOR_NO_SELECTION: u16 = u16::MAX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavigationError {
@@ -93,6 +95,42 @@ impl<const N: usize> ByteText<N> {
     // ------------------=
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes[..self.length as usize]
+    }
+
+    // ------------------------=
+    // FUNC: replace
+    // DESC: Replaces a bounded UTF-8 value without exposing its backing storage.
+    // ------------------=
+    pub fn replace(&mut self, value: &[u8]) -> Result<(), ()> {
+        *self = Self::new(value)?;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: push_ascii
+    // DESC: Appends one printable ASCII byte when bounded capacity permits it.
+    // ------------------=
+    pub fn push_ascii(&mut self, value: u8) -> bool {
+        let length = self.length as usize;
+        if !(0x20..=0x7e).contains(&value) || length >= N {
+            return false;
+        }
+        self.bytes[length] = value;
+        self.length += 1;
+        true
+    }
+
+    // ------------------------=
+    // FUNC: pop
+    // DESC: Removes the final byte from an ASCII-backed bounded editor value.
+    // ------------------=
+    pub fn pop(&mut self) -> bool {
+        if self.length == 0 {
+            return false;
+        }
+        self.length -= 1;
+        self.bytes[self.length as usize] = 0;
+        true
     }
 }
 
@@ -866,6 +904,18 @@ pub struct FileNavigatorState {
     pub selected_reference_id: u64,
     pub scroll_offset: usize,
     pub sort_key: u8,
+    pub sort_descending: bool,
+    pub selected_index: u16,
+    pub location_editing: bool,
+    pub rename_editing: bool,
+    pub editor_text: ByteText<MAX_NAMESPACE_PATH>,
+    pub context_menu_open: bool,
+    pub context_x: i32,
+    pub context_y: i32,
+    pub context_item: u16,
+    history: [ByteText<MAX_NAMESPACE_PATH>; FILE_NAVIGATOR_HISTORY_CAPACITY],
+    history_length: u8,
+    history_cursor: u8,
 }
 
 impl FileNavigatorState {
@@ -874,8 +924,11 @@ impl FileNavigatorState {
     // DESC: Creates native File Navigator UI state around an explicit NamespaceRef.
     // ------------------=
     pub fn new(path: &[u8]) -> Result<Self, NavigationError> {
+        let path = normalize_absolute_path(path)?;
+        let mut history = [ByteText::empty(); FILE_NAVIGATOR_HISTORY_CAPACITY];
+        history[0] = path;
         Ok(Self {
-            active_namespace_ref: normalize_absolute_path(path)?,
+            active_namespace_ref: path,
             back_namespace_ref: ByteText::empty(),
             forward_namespace_ref: ByteText::empty(),
             view_mode: ViewMode::List,
@@ -883,6 +936,18 @@ impl FileNavigatorState {
             selected_reference_id: 0,
             scroll_offset: 0,
             sort_key: 0,
+            sort_descending: false,
+            selected_index: FILE_NAVIGATOR_NO_SELECTION,
+            location_editing: false,
+            rename_editing: false,
+            editor_text: ByteText::empty(),
+            context_menu_open: false,
+            context_x: 0,
+            context_y: 0,
+            context_item: FILE_NAVIGATOR_NO_SELECTION,
+            history,
+            history_length: 1,
+            history_cursor: 0,
         })
     }
 
@@ -894,10 +959,25 @@ impl FileNavigatorState {
         let path = normalize_absolute_path(path)?;
         if path != self.active_namespace_ref {
             self.back_namespace_ref = self.active_namespace_ref;
+            let next = self.history_cursor as usize + 1;
+            self.history_length = next.min(FILE_NAVIGATOR_HISTORY_CAPACITY - 1) as u8;
+            if next < FILE_NAVIGATOR_HISTORY_CAPACITY {
+                self.history[next] = path;
+                self.history_cursor = next as u8;
+                self.history_length = (next + 1) as u8;
+            } else {
+                self.history
+                    .copy_within(1..FILE_NAVIGATOR_HISTORY_CAPACITY, 0);
+                self.history[FILE_NAVIGATOR_HISTORY_CAPACITY - 1] = path;
+                self.history_cursor = (FILE_NAVIGATOR_HISTORY_CAPACITY - 1) as u8;
+                self.history_length = FILE_NAVIGATOR_HISTORY_CAPACITY as u8;
+            }
             self.active_namespace_ref = path;
             self.forward_namespace_ref = ByteText::empty();
             self.selected_reference_id = 0;
+            self.selected_index = FILE_NAVIGATOR_NO_SELECTION;
             self.scroll_offset = 0;
+            self.context_menu_open = false;
         }
         Ok(())
     }
@@ -907,12 +987,24 @@ impl FileNavigatorState {
     // DESC: Swaps the active and previous explicit Namespace references.
     // ------------------=
     pub fn back(&mut self) -> Result<(), NavigationError> {
-        if self.back_namespace_ref.as_bytes().is_empty() {
+        if self.history_cursor == 0 {
             return Err(NavigationError::NoPreviousNamespace);
         }
         self.forward_namespace_ref = self.active_namespace_ref;
-        self.active_namespace_ref = self.back_namespace_ref;
-        self.back_namespace_ref = ByteText::empty();
+        self.history_cursor -= 1;
+        self.active_namespace_ref = if self.history_cursor == 0 {
+            self.back_namespace_ref
+        } else {
+            self.history[self.history_cursor as usize]
+        };
+        self.back_namespace_ref = if self.history_cursor == 0 {
+            ByteText::empty()
+        } else if self.history_cursor == 1 {
+            self.history[0]
+        } else {
+            self.history[self.history_cursor as usize - 1]
+        };
+        self.selected_index = FILE_NAVIGATOR_NO_SELECTION;
         Ok(())
     }
 
@@ -921,13 +1013,72 @@ impl FileNavigatorState {
     // DESC: Restores the explicit Namespace reference most recently left by Back.
     // ------------------=
     pub fn forward(&mut self) -> Result<(), NavigationError> {
-        if self.forward_namespace_ref.as_bytes().is_empty() {
+        if self.history_cursor as usize + 1 >= self.history_length as usize {
             return Err(NavigationError::NoPreviousNamespace);
         }
         self.back_namespace_ref = self.active_namespace_ref;
-        self.active_namespace_ref = self.forward_namespace_ref;
-        self.forward_namespace_ref = ByteText::empty();
+        self.history_cursor += 1;
+        self.active_namespace_ref = self.history[self.history_cursor as usize];
+        self.forward_namespace_ref =
+            if self.history_cursor as usize + 1 < self.history_length as usize {
+                self.history[self.history_cursor as usize + 1]
+            } else {
+                ByteText::empty()
+            };
+        self.selected_index = FILE_NAVIGATOR_NO_SELECTION;
         Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: begin_location_edit
+    // DESC: Focuses the location editor with the active NamespaceRef selected for editing.
+    // ------------------=
+    pub fn begin_location_edit(&mut self) {
+        self.editor_text = self.active_namespace_ref;
+        self.location_editing = true;
+        self.rename_editing = false;
+        self.context_menu_open = false;
+    }
+
+    // ------------------------=
+    // FUNC: begin_rename
+    // DESC: Focuses the bounded inline rename editor for one selected namespace entry.
+    // ------------------=
+    pub fn begin_rename(&mut self, name: &[u8]) -> bool {
+        let Ok(text) = ByteText::new(name) else {
+            return false;
+        };
+        self.editor_text = text;
+        self.rename_editing = true;
+        self.location_editing = false;
+        self.context_menu_open = false;
+        true
+    }
+
+    // ------------------------=
+    // FUNC: cancel_edit
+    // DESC: Cancels any location or rename edit without changing namespace state.
+    // ------------------=
+    pub fn cancel_edit(&mut self) {
+        self.location_editing = false;
+        self.rename_editing = false;
+        self.editor_text = ByteText::empty();
+    }
+
+    // ------------------------=
+    // FUNC: open_context_menu
+    // DESC: Opens the native context menu at a compositor-relative pointer location.
+    // ------------------=
+    pub fn open_context_menu(&mut self, x: i32, y: i32, item: Option<usize>) {
+        self.context_menu_open = true;
+        self.context_x = x;
+        self.context_y = y;
+        self.context_item = item
+            .and_then(|value| u16::try_from(value).ok())
+            .unwrap_or(FILE_NAVIGATOR_NO_SELECTION);
+        self.selected_index = self.context_item;
+        self.location_editing = false;
+        self.rename_editing = false;
     }
 
     // ------------------------=
@@ -945,6 +1096,51 @@ impl FileNavigatorState {
         let visible = viewport.saturating_add(extent - 1) / extent + 2;
         (first, first.saturating_add(visible).min(total))
     }
+}
+
+// ------------------------=
+// FUNC: is_immediate_namespace_child
+// DESC: Reports whether a candidate NamespaceRef is one direct child of a parent.
+// ------------------=
+pub fn is_immediate_namespace_child(parent: &[u8], candidate: &[u8]) -> bool {
+    if candidate == parent || !candidate.starts_with(parent) {
+        return false;
+    }
+    let remainder = if parent == b"/" {
+        &candidate[1..]
+    } else {
+        if candidate.get(parent.len()) != Some(&b'/') {
+            return false;
+        }
+        &candidate[parent.len() + 1..]
+    };
+    !remainder.is_empty() && !remainder.contains(&b'/')
+}
+
+// ------------------------=
+// FUNC: namespace_basename
+// DESC: Returns the final human-readable component of an absolute NamespaceRef.
+// ------------------=
+pub fn namespace_basename(path: &[u8]) -> &[u8] {
+    path.iter()
+        .rposition(|value| *value == b'/')
+        .map(|index| &path[index + 1..])
+        .filter(|value| !value.is_empty())
+        .unwrap_or(b"/")
+}
+
+// ------------------------=
+// FUNC: namespace_child_path
+// DESC: Builds and validates an absolute child NamespaceRef from a parent and leaf name.
+// ------------------=
+pub fn namespace_child_path(
+    parent: &[u8],
+    name: &[u8],
+) -> Result<ByteText<MAX_NAMESPACE_PATH>, NavigationError> {
+    if name.is_empty() || name.contains(&b'/') || matches!(name, b"." | b"..") {
+        return Err(NavigationError::InvalidPath);
+    }
+    join_path(parent, name)
 }
 
 pub const NATIVE_COMMANDS: &[&[u8]] = &[

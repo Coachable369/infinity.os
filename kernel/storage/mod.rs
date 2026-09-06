@@ -1058,6 +1058,123 @@ pub fn namespace_list_nth(
 }
 
 // ------------------------=
+// FUNC: namespace_child_nth
+// DESC: Returns one direct child projection without leaking deeper descendants into a navigator view.
+// ------------------=
+pub fn namespace_child_nth(
+    parent: &[u8],
+    requested: usize,
+) -> Result<Option<object::NamespaceListResult>, object::ObjectError> {
+    let mut visible = 0usize;
+    for source_index in 0..256usize {
+        let Some(entry) = namespace_list_nth(parent, source_index)? else {
+            break;
+        };
+        let path = &entry.path[..entry.path_len as usize];
+        if crate::runtime::object_navigation::is_immediate_namespace_child(parent, path) {
+            if visible == requested {
+                return Ok(Some(entry));
+            }
+            visible += 1;
+        }
+    }
+    Ok(None)
+}
+
+// ------------------------=
+// FUNC: namespace_child_count
+// DESC: Counts direct children for native collection views and their status regions.
+// ------------------=
+pub fn namespace_child_count(parent: &[u8]) -> Result<usize, object::ObjectError> {
+    let mut count = 0usize;
+    for source_index in 0..256usize {
+        let Some(entry) = namespace_list_nth(parent, source_index)? else {
+            break;
+        };
+        if crate::runtime::object_navigation::is_immediate_namespace_child(
+            parent,
+            &entry.path[..entry.path_len as usize],
+        ) {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+// ------------------------=
+// FUNC: namespace_child_nth_sorted
+// DESC: Returns one direct child in deterministic case-insensitive name order without heap allocation.
+// ------------------=
+pub fn namespace_child_nth_sorted(
+    parent: &[u8],
+    requested: usize,
+    descending: bool,
+) -> Result<Option<object::NamespaceListResult>, object::ObjectError> {
+    let mut previous: Option<object::NamespaceListResult> = None;
+    for _ in 0..=requested {
+        let mut best: Option<object::NamespaceListResult> = None;
+        for source_index in 0..256usize {
+            let Some(candidate) = namespace_list_nth(parent, source_index)? else {
+                break;
+            };
+            let candidate_path = &candidate.path[..candidate.path_len as usize];
+            if !crate::runtime::object_navigation::is_immediate_namespace_child(
+                parent,
+                candidate_path,
+            ) {
+                continue;
+            }
+            if let Some(prior) = previous {
+                let prior_path = &prior.path[..prior.path_len as usize];
+                let ordering = namespace_name_order(candidate_path, prior_path);
+                if (!descending && ordering != core::cmp::Ordering::Greater)
+                    || (descending && ordering != core::cmp::Ordering::Less)
+                {
+                    continue;
+                }
+            }
+            let replace = best
+                .map(|current| {
+                    let current_path = &current.path[..current.path_len as usize];
+                    let ordering = namespace_name_order(candidate_path, current_path);
+                    if descending {
+                        ordering == core::cmp::Ordering::Greater
+                    } else {
+                        ordering == core::cmp::Ordering::Less
+                    }
+                })
+                .unwrap_or(true);
+            if replace {
+                best = Some(candidate);
+            }
+        }
+        let Some(next) = best else {
+            return Ok(None);
+        };
+        previous = Some(next);
+    }
+    Ok(previous)
+}
+
+// ------------------------=
+// FUNC: namespace_name_order
+// DESC: Compares final NamespaceRef components using stable ASCII case folding.
+// ------------------=
+fn namespace_name_order(left: &[u8], right: &[u8]) -> core::cmp::Ordering {
+    let left = crate::runtime::object_navigation::namespace_basename(left);
+    let right = crate::runtime::object_navigation::namespace_basename(right);
+    for index in 0..left.len().min(right.len()) {
+        let a = left[index].to_ascii_lowercase();
+        let b = right[index].to_ascii_lowercase();
+        match a.cmp(&b) {
+            core::cmp::Ordering::Equal => {}
+            ordering => return ordering,
+        }
+    }
+    left.len().cmp(&right.len())
+}
+
+// ------------------------=
 // FUNC: local_ai_model_object_ref
 // DESC: Resolves the installed native model identity for Model Registry binding.
 // ------------------=

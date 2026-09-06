@@ -44,3 +44,12 @@
 - Border softness: 10–14 px panels, 8–10 px fields, one-pixel white-blue edge; no heavy teal slabs.
 - Typography: title 18 px strong, toolbar 13 px, row title 14 px strong, metadata 12 px, section label 11 px tracked.
 - Icon consistency: generated application icon for launcher/manifest; installed theme roles for semantic objects and actions.
+
+## Implemented Finder-style extension
+
+- The navigation strip uses themed left, right, and parent arrows with disabled-state treatment and a directly editable NamespaceRef field.
+- List and grid views enumerate live direct children, virtualize scrolling, expose Name, Kind, and Size, and use the selected installed icon family.
+- File selection supports pointer and keyboard navigation. Namespace nodes open in place; UTF-8 objects open in the native Text Editor.
+- Native secondary-click menus provide Open, Rename, Duplicate, Move to Trash, Get Info, New Folder, view selection, name sorting, and inspector control.
+- Secondary, back, and forward mouse buttons are preserved end-to-end by the pointer input path.
+- Navigator state changes repaint only the navigator window damage region; applications retain no direct global framebuffer access.

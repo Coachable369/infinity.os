@@ -318,6 +318,7 @@ struct ConsoleRuntime {
     pointer_x_remainder: i32,
     pointer_y_remainder: i32,
     pointer_pressed: bool,
+    pointer_buttons: u8,
     installer_step: InstallerStep,
     installer_return_step: InstallerStep,
     storage_device: Option<StorageDevice>,
@@ -435,6 +436,7 @@ impl ConsoleRuntime {
             pointer_x_remainder: 0,
             pointer_y_remainder: 0,
             pointer_pressed: false,
+            pointer_buttons: 0,
             installer_step: InstallerStep::Welcome,
             installer_return_step: InstallerStep::Welcome,
             storage_device: None,
@@ -586,6 +588,7 @@ impl ConsoleRuntime {
         self.pointer_x_remainder = 0;
         self.pointer_y_remainder = 0;
         self.pointer_pressed = false;
+        self.pointer_buttons = 0;
         crate::output_text(b" --[ NODE 01 ]-- SYSTEM ONLINE -- SELECT OPERATION -->\n");
         crate::output_text(
             b"[mouse menu] Install InfinityOS | Repair installation | Recovery console\n",
@@ -806,6 +809,10 @@ impl ConsoleRuntime {
                 self.redraw();
                 return;
             }
+            if self.home_window_visible && self.input_file_navigator(key) {
+                self.redraw();
+                return;
+            }
         }
         match self.mode {
             ConsoleMode::Installer => self.input_installer(key),
@@ -819,6 +826,221 @@ impl ConsoleRuntime {
             ConsoleMode::Authentication | ConsoleMode::Locked => self.input_authentication(key),
         }
         self.redraw();
+    }
+
+    // ------------------------=
+    // FUNC: input_file_navigator
+    // DESC: Handles native File Navigator location editing, inline rename, selection, and keyboard navigation.
+    // ------------------=
+    fn input_file_navigator(&mut self, key: ConsoleKey) -> bool {
+        let state = crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
+        let Some(state) = state else {
+            return false;
+        };
+        if state.location_editing || state.rename_editing {
+            match key {
+                ConsoleKey::Character(value) => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime
+                            .file_navigator
+                            .as_mut()
+                            .map(|navigator| navigator.editor_text.push_ascii(value))
+                    });
+                }
+                ConsoleKey::Backspace => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime
+                            .file_navigator
+                            .as_mut()
+                            .map(|navigator| navigator.editor_text.pop())
+                    });
+                }
+                ConsoleKey::Escape => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime
+                            .file_navigator
+                            .as_mut()
+                            .map(|navigator| navigator.cancel_edit())
+                    });
+                }
+                ConsoleKey::Enter => self.commit_file_navigator_edit(state),
+                _ => {}
+            }
+            return true;
+        }
+        match key {
+            ConsoleKey::Up | ConsoleKey::Down => {
+                let count = navigator_child_count(state.active_namespace_ref.as_bytes());
+                let current = if state.selected_index
+                    == crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION
+                {
+                    0
+                } else {
+                    state.selected_index as usize
+                };
+                let next = if matches!(key, ConsoleKey::Up) {
+                    current.saturating_sub(1)
+                } else {
+                    current.saturating_add(1).min(count.saturating_sub(1))
+                };
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.selected_index = next as u16)
+                });
+                true
+            }
+            ConsoleKey::Enter => {
+                self.open_file_navigator_selection();
+                true
+            }
+            ConsoleKey::Backspace => {
+                self.navigate_file_navigator_parent();
+                true
+            }
+            ConsoleKey::Left => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.back())
+                });
+                true
+            }
+            ConsoleKey::Right => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.forward())
+                });
+                true
+            }
+            ConsoleKey::Escape if state.context_menu_open => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.context_menu_open = false)
+                });
+                true
+            }
+            _ => false,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: commit_file_navigator_edit
+    // DESC: Resolves an edited location or atomically renames the selected NamespaceRef.
+    // ------------------=
+    fn commit_file_navigator_edit(
+        &mut self,
+        state: crate::runtime::object_navigation::FileNavigatorState,
+    ) {
+        if state.location_editing {
+            let path = state.editor_text.as_bytes();
+            if crate::storage::namespace_resolve(path).is_ok() {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime.file_navigator.as_mut().map(|navigator| {
+                        let result = navigator.navigate(path);
+                        navigator.cancel_edit();
+                        result
+                    })
+                });
+            }
+            return;
+        }
+        if state.rename_editing {
+            if let Some(entry) = navigator_child_nth(
+                state.active_namespace_ref.as_bytes(),
+                state.selected_index as usize,
+            ) {
+                if let Ok(destination) = crate::runtime::object_navigation::namespace_child_path(
+                    state.active_namespace_ref.as_bytes(),
+                    state.editor_text.as_bytes(),
+                ) {
+                    let _ = crate::storage::namespace_move(
+                        &entry.path[..entry.path_len as usize],
+                        destination.as_bytes(),
+                    );
+                }
+            }
+            let _ = crate::runtime::with_runtime(|runtime| {
+                runtime
+                    .file_navigator
+                    .as_mut()
+                    .map(|navigator| navigator.cancel_edit())
+            });
+        }
+    }
+
+    // ------------------------=
+    // FUNC: navigate_file_navigator_parent
+    // DESC: Navigates the File Navigator to its explicit parent NamespaceRef.
+    // ------------------=
+    fn navigate_file_navigator_parent(&mut self) {
+        let _ = crate::runtime::with_runtime(|runtime| {
+            let navigator = runtime.file_navigator.as_mut()?;
+            let parent = crate::runtime::object_navigation::parent_path(
+                navigator.active_namespace_ref.as_bytes(),
+            )
+            .ok()?;
+            navigator.navigate(parent.as_bytes()).ok()
+        });
+    }
+
+    // ------------------------=
+    // FUNC: open_file_navigator_selection
+    // DESC: Opens a selected namespace node or loads a selected UTF-8 object in Text Editor.
+    // ------------------=
+    fn open_file_navigator_selection(&mut self) {
+        let state = crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
+        let Some(state) = state else {
+            return;
+        };
+        let Some(entry) = navigator_child_nth(
+            state.active_namespace_ref.as_bytes(),
+            state.selected_index as usize,
+        ) else {
+            return;
+        };
+        let path = &entry.path[..entry.path_len as usize];
+        if let Ok((metadata, _)) = crate::storage::object_inspect_path(path) {
+            if metadata.kind == crate::storage::object::ObjectType::NamespaceNode {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.navigate(path))
+                });
+            } else if metadata.content_type == crate::storage::object::ContentType::Utf8Text {
+                self.open_text_editor_path(path);
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: open_text_editor_path
+    // DESC: Loads one selected UTF-8 NamespaceRef into the native Text Editor window.
+    // ------------------=
+    fn open_text_editor_path(&mut self, path: &[u8]) {
+        let mut content = [0u8; crate::ui::text_editor::DOCUMENT_CAPACITY];
+        let Ok((_, length)) = crate::storage::object_read_path(path, None, &mut content) else {
+            return;
+        };
+        if !self.editor_document.open(&content[..length]) {
+            return;
+        }
+        let path_length = path.len().min(self.editor_document_path.len());
+        self.editor_document_path[..path_length].copy_from_slice(&path[..path_length]);
+        self.editor_document_path_length = path_length;
+        let name = crate::runtime::object_navigation::namespace_basename(path);
+        let name_length = name.len().min(self.editor_document_name.len());
+        self.editor_document_name[..name_length].copy_from_slice(&name[..name_length]);
+        self.editor_document_name_length = name_length;
+        self.editor_scroll_row = 0;
+        self.open_text_editor();
     }
 
     // ------------------------=
@@ -1351,7 +1573,7 @@ impl ConsoleRuntime {
     // DESC: Resolves a pointer target from the same live Home bounds used by the renderer.
     // ------------------=
     fn desktop_target(&self, layout: SystemLayout) -> Option<DesktopTarget> {
-        layout.desktop_target_sized(
+        let target = layout.desktop_target_sized(
             self.pointer_x,
             self.pointer_y,
             self.home_window_x,
@@ -1360,7 +1582,64 @@ impl ConsoleRuntime {
             self.home_window_height,
             self.home_window_visible,
             self.home_window_maximized,
-        )
+        );
+        if matches!(
+            target,
+            Some(DesktopTarget::HomeItem(_)) | Some(DesktopTarget::HomeContent)
+        ) {
+            return self
+                .file_navigator_item_at_pointer(layout)
+                .map(DesktopTarget::HomeItem)
+                .or(Some(DesktopTarget::HomeContent));
+        }
+        target
+    }
+
+    // ------------------------=
+    // FUNC: file_navigator_item_at_pointer
+    // DESC: Maps live list or grid geometry to a direct-child index in the active NamespaceRef.
+    // ------------------=
+    fn file_navigator_item_at_pointer(&self, layout: SystemLayout) -> Option<usize> {
+        let state = crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten()?;
+        let (left, top, width, height) = layout.home_window_geometry_sized(
+            self.home_window_x,
+            self.home_window_y,
+            self.home_window_width,
+            self.home_window_height,
+            self.home_window_maximized,
+        );
+        let scale = (self.system.framebuffer_width as usize / 1000).max(1);
+        let point_x =
+            self.system.framebuffer_width as usize * self.pointer_x.max(0) as usize / 1000;
+        let point_y =
+            self.system.framebuffer_height as usize * self.pointer_y.max(0) as usize / 1000;
+        let sidebar = width * 27 / 100;
+        let content_left = left + sidebar;
+        let content_top = top + 34 * scale + 38 * scale;
+        if point_x < content_left
+            || point_x >= left + width
+            || point_y < content_top
+            || point_y >= top + height
+        {
+            return None;
+        }
+        let grid_x = left + sidebar + 28 * scale;
+        let grid_y = top + 34 * scale + 58 * scale;
+        if point_x < grid_x.saturating_sub(18 * scale) || point_y < grid_y.saturating_sub(8 * scale)
+        {
+            return None;
+        }
+        let count = navigator_child_count(state.active_namespace_ref.as_bytes());
+        let index = if state.view_mode == crate::runtime::object_navigation::ViewMode::List {
+            state.scroll_offset / (34 * scale) + (point_y - grid_y) / (34 * scale)
+        } else {
+            let gap = width.saturating_sub(sidebar + 55 * scale) / 4;
+            let tile_step = (self.system.framebuffer_height as usize / 23).max(34) + 40 * scale;
+            let column = ((point_x - grid_x) / gap.max(1)).min(3);
+            let row = (point_y - grid_y) / tile_step.max(1);
+            state.scroll_offset / tile_step.max(1) * 4 + row * 4 + column
+        };
+        (index < count).then_some(index)
     }
 
     // ------------------------=
@@ -3354,11 +3633,11 @@ impl ConsoleRuntime {
     // FUNC: pointer
     // DESC: Implements the pointer operation.
     // ------------------=
-    fn pointer(&mut self, delta_x: i16, delta_y: i16, left_button: bool) {
+    fn pointer(&mut self, delta_x: i16, delta_y: i16, buttons: u8) {
         if matches!(self.mode, ConsoleMode::Console | ConsoleMode::Repair) {
             return;
         }
-        let button_changed = left_button != self.pointer_pressed;
+        let button_changed = buttons != self.pointer_buttons;
         if delta_x == 0 && delta_y == 0 && !button_changed {
             return;
         }
@@ -3407,7 +3686,7 @@ impl ConsoleRuntime {
         // Keep only a small edge inset so the cursor remains visible.
         self.pointer_x = (self.pointer_x + accelerated_x).clamp(8, 992);
         self.pointer_y = (self.pointer_y + accelerated_y).clamp(8, 992);
-        self.pointer_interaction(left_button);
+        self.pointer_interaction(buttons);
     }
 
     // ------------------------=
@@ -3428,24 +3707,208 @@ impl ConsoleRuntime {
             self.redraw();
             return true;
         }
+        if self.mode == ConsoleMode::Desktop && self.home_window_visible {
+            let _ = crate::runtime::with_runtime(|runtime| {
+                runtime.file_navigator.as_mut().map(|navigator| {
+                    if vertical < 0 {
+                        navigator.scroll_offset = navigator.scroll_offset.saturating_sub(28);
+                    } else {
+                        navigator.scroll_offset = navigator.scroll_offset.saturating_add(28);
+                    }
+                })
+            });
+            self.redraw();
+            return true;
+        }
         false
+    }
+
+    // ------------------------=
+    // FUNC: activate_file_navigator_context
+    // DESC: Dispatches object and background context actions through typed storage operations.
+    // ------------------=
+    fn activate_file_navigator_context(
+        &mut self,
+        action: usize,
+        state: crate::runtime::object_navigation::FileNavigatorState,
+    ) {
+        let selected =
+            state.context_item != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION;
+        let entry = if selected {
+            navigator_child_nth(
+                state.active_namespace_ref.as_bytes(),
+                state.context_item as usize,
+            )
+        } else {
+            None
+        };
+        if let Some(entry) = entry {
+            let path = &entry.path[..entry.path_len as usize];
+            match action {
+                0 => self.open_file_navigator_selection(),
+                1 => {
+                    let name = crate::runtime::object_navigation::namespace_basename(path);
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime
+                            .file_navigator
+                            .as_mut()
+                            .map(|navigator| navigator.begin_rename(name))
+                    });
+                    return;
+                }
+                2 => self.copy_file_navigator_entry(path, state.active_namespace_ref.as_bytes()),
+                3 => {
+                    let _ = crate::storage::trash_move(path);
+                }
+                4 => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime
+                            .file_navigator
+                            .as_mut()
+                            .map(|navigator| navigator.inspector_open = true)
+                    });
+                }
+                _ => {}
+            }
+        } else {
+            match action {
+                0 => self.create_file_navigator_folder(state.active_namespace_ref.as_bytes()),
+                1 => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime.file_navigator.as_mut().map(|navigator| {
+                            navigator.view_mode = crate::runtime::object_navigation::ViewMode::List
+                        })
+                    });
+                }
+                2 => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime.file_navigator.as_mut().map(|navigator| {
+                            navigator.view_mode = crate::runtime::object_navigation::ViewMode::Grid
+                        })
+                    });
+                }
+                3 => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime.file_navigator.as_mut().map(|navigator| {
+                            navigator.sort_key = 0;
+                            navigator.sort_descending = !navigator.sort_descending;
+                        })
+                    });
+                }
+                4 => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime
+                            .file_navigator
+                            .as_mut()
+                            .map(|navigator| navigator.inspector_open = !navigator.inspector_open)
+                    });
+                }
+                _ => {}
+            }
+        }
+        let _ = crate::runtime::with_runtime(|runtime| {
+            runtime
+                .file_navigator
+                .as_mut()
+                .map(|navigator| navigator.context_menu_open = false)
+        });
+    }
+
+    // ------------------------=
+    // FUNC: create_file_navigator_folder
+    // DESC: Creates a collision-free New Folder namespace in the visible location.
+    // ------------------=
+    fn create_file_navigator_folder(&mut self, parent: &[u8]) {
+        for suffix in 0..100usize {
+            let mut name = [0u8; 24];
+            let length = if suffix == 0 {
+                name[..10].copy_from_slice(b"New Folder");
+                10
+            } else {
+                name[..11].copy_from_slice(b"New Folder ");
+                11 + write_decimal(&mut name[11..], suffix)
+            };
+            let Ok(path) =
+                crate::runtime::object_navigation::namespace_child_path(parent, &name[..length])
+            else {
+                return;
+            };
+            if crate::storage::namespace_create(path.as_bytes()).is_ok() {
+                return;
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: copy_file_navigator_entry
+    // DESC: Copies an object beside its source with a collision-free Finder-style suffix.
+    // ------------------=
+    fn copy_file_navigator_entry(&mut self, source: &[u8], parent: &[u8]) {
+        let leaf = crate::runtime::object_navigation::namespace_basename(source);
+        for suffix in 0..100usize {
+            let mut name = [0u8; 64];
+            let base = leaf.len().min(48);
+            name[..base].copy_from_slice(&leaf[..base]);
+            let mut length = base;
+            let marker = if suffix == 0 {
+                b" copy".as_slice()
+            } else {
+                b" copy ".as_slice()
+            };
+            name[length..length + marker.len()].copy_from_slice(marker);
+            length += marker.len();
+            if suffix != 0 {
+                length += write_decimal(&mut name[length..], suffix);
+            }
+            let Ok(destination) =
+                crate::runtime::object_navigation::namespace_child_path(parent, &name[..length])
+            else {
+                return;
+            };
+            if crate::storage::object_copy_path(source, destination.as_bytes()).is_ok() {
+                return;
+            }
+        }
     }
 
     // ------------------------=
     // FUNC: pointer_interaction
     // DESC: Handles pointer interaction input or state transitions.
     // ------------------=
-    fn pointer_interaction(&mut self, left_button: bool) {
+    fn pointer_interaction(&mut self, buttons: u8) {
         // Activate on the press edge. VirtualBox can consume the release packet
         // used to capture a relative USB pointer, so release-edge activation
         // makes a visibly moving mouse appear unable to click.
-        let clicked = left_button && !self.pointer_pressed;
+        let left_button = buttons & crate::drivers::input::pointer::BUTTON_LEFT != 0;
+        let right_button = buttons & crate::drivers::input::pointer::BUTTON_RIGHT != 0;
+        let clicked =
+            left_button && self.pointer_buttons & crate::drivers::input::pointer::BUTTON_LEFT == 0;
+        let right_clicked = right_button
+            && self.pointer_buttons & crate::drivers::input::pointer::BUTTON_RIGHT == 0;
+        let back_clicked = buttons & crate::drivers::input::pointer::BUTTON_BACK != 0
+            && self.pointer_buttons & crate::drivers::input::pointer::BUTTON_BACK == 0;
+        let forward_clicked = buttons & crate::drivers::input::pointer::BUTTON_FORWARD != 0
+            && self.pointer_buttons & crate::drivers::input::pointer::BUTTON_FORWARD == 0;
         let released = !left_button && self.pointer_pressed;
         self.pointer_pressed = left_button;
+        self.pointer_buttons = buttons;
         let layout = SystemLayout::new(
             self.system.framebuffer_width,
             self.system.framebuffer_height,
         );
+        if self.mode == ConsoleMode::Desktop && (back_clicked || forward_clicked) {
+            let _ = crate::runtime::with_runtime(|runtime| {
+                runtime.file_navigator.as_mut().map(|navigator| {
+                    if back_clicked {
+                        navigator.back()
+                    } else {
+                        navigator.forward()
+                    }
+                })
+            });
+            self.redraw();
+            return;
+        }
         if self.mode == ConsoleMode::Startup && clicked {
             if (180..=820).contains(&self.pointer_x) && (710..=758).contains(&self.pointer_y) {
                 crate::output_text(b"[mouse] Installer selected\n");
@@ -3767,6 +4230,57 @@ impl ConsoleRuntime {
                     return;
                 }
             }
+            let navigator_context = crate::runtime::with_runtime(|runtime| runtime.file_navigator)
+                .flatten()
+                .filter(|state| state.context_menu_open);
+            if clicked {
+                if let Some(context) = navigator_context {
+                    let row = if self.pointer_x >= context.context_x
+                        && self.pointer_x <= context.context_x + 190
+                        && self.pointer_y >= context.context_y
+                        && self.pointer_y < context.context_y + 196
+                    {
+                        Some(((self.pointer_y - context.context_y) / 28) as usize)
+                    } else {
+                        None
+                    };
+                    if let Some(action) = row {
+                        self.activate_file_navigator_context(action, context);
+                    } else {
+                        let _ = crate::runtime::with_runtime(|runtime| {
+                            runtime
+                                .file_navigator
+                                .as_mut()
+                                .map(|navigator| navigator.context_menu_open = false)
+                        });
+                    }
+                    self.redraw();
+                    return;
+                }
+            }
+            if right_clicked && self.home_window_visible {
+                let target = self.desktop_target(layout);
+                if matches!(
+                    target,
+                    Some(DesktopTarget::HomeItem(_)) | Some(DesktopTarget::HomeContent)
+                ) {
+                    let item = match target {
+                        Some(DesktopTarget::HomeItem(index)) => Some(index),
+                        _ => None,
+                    };
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime.file_navigator.as_mut().map(|navigator| {
+                            navigator.open_context_menu(
+                                self.pointer_x.min(800),
+                                self.pointer_y.min(780),
+                                item,
+                            )
+                        })
+                    });
+                    self.redraw();
+                    return;
+                }
+            }
             if let Some(corner) = self.home_window_resizing {
                 if left_button {
                     let resized = crate::ui::system_layout::resize_home_window(
@@ -3800,9 +4314,8 @@ impl ConsoleRuntime {
                             self.desktop_item_positions[item] =
                                 [self.pointer_x.clamp(35, 950), self.pointer_y.clamp(90, 880)];
                         }
-                    } else if !self.home_drag_moved && item < 6 {
-                        self.home_previous_location = self.home_location;
-                        self.home_location = item + 2;
+                    } else if !self.home_drag_moved {
+                        self.open_file_navigator_selection();
                     } else if self.home_drag_moved {
                         match target {
                             Some(DesktopTarget::HomeSidebar(location)) if item == 6 => {
@@ -3865,36 +4378,67 @@ impl ConsoleRuntime {
                     }
                     Some(DesktopTarget::HomeToolbar(action)) => {
                         let _ = crate::runtime::with_runtime(|runtime| {
-                            let Some(navigator) = runtime.file_navigator.as_mut() else { return; };
+                            let Some(navigator) = runtime.file_navigator.as_mut() else {
+                                return;
+                            };
                             match action {
-                                0 => { let _ = navigator.back(); }
-                                1 => { let _ = navigator.forward(); }
+                                0 => {
+                                    let _ = navigator.back();
+                                }
+                                1 => {
+                                    let _ = navigator.forward();
+                                }
                                 2 => {
-                                    if let Ok(parent) = crate::runtime::object_navigation::parent_path(
-                                        navigator.active_namespace_ref.as_bytes(),
-                                    ) {
+                                    if let Ok(parent) =
+                                        crate::runtime::object_navigation::parent_path(
+                                            navigator.active_namespace_ref.as_bytes(),
+                                        )
+                                    {
                                         let _ = navigator.navigate(parent.as_bytes());
                                     }
                                 }
-                                3 => navigator.view_mode = crate::runtime::object_navigation::ViewMode::List,
-                                4 => navigator.view_mode = crate::runtime::object_navigation::ViewMode::Grid,
+                                3 => {
+                                    navigator.view_mode =
+                                        crate::runtime::object_navigation::ViewMode::List
+                                }
+                                4 => {
+                                    navigator.view_mode =
+                                        crate::runtime::object_navigation::ViewMode::Grid
+                                }
                                 5 => navigator.inspector_open = !navigator.inspector_open,
                                 _ => {}
                             }
                         });
                         self.home_selected_item = None;
                     }
+                    Some(DesktopTarget::HomeLocation) => {
+                        let _ = crate::runtime::with_runtime(|runtime| {
+                            runtime
+                                .file_navigator
+                                .as_mut()
+                                .map(|navigator| navigator.begin_location_edit())
+                        });
+                    }
                     Some(DesktopTarget::HomeSidebar(location)) => {
                         self.home_previous_location = self.home_location;
                         self.home_location = location;
                         let path = home_location_path(location);
                         let _ = crate::runtime::with_runtime(|runtime| {
-                            runtime.file_navigator.as_mut().map(|navigator| navigator.navigate(path))
+                            runtime
+                                .file_navigator
+                                .as_mut()
+                                .map(|navigator| navigator.navigate(path))
                         });
                         self.home_selected_item = None;
                     }
                     Some(DesktopTarget::HomeItem(item)) => {
                         self.home_selected_item = Some(item);
+                        let _ = crate::runtime::with_runtime(|runtime| {
+                            runtime.file_navigator.as_mut().map(|navigator| {
+                                navigator.selected_index = item as u16;
+                                navigator.context_menu_open = false;
+                            })
+                        });
                         self.home_dragging_item = Some(item);
                         self.home_drag_from_desktop = false;
                         self.home_drag_origin_x = self.pointer_x;
@@ -3922,6 +4466,16 @@ impl ConsoleRuntime {
                             }
                             None => {}
                         }
+                    }
+                    Some(DesktopTarget::HomeContent) => {
+                        self.home_selected_item = None;
+                        let _ = crate::runtime::with_runtime(|runtime| {
+                            runtime.file_navigator.as_mut().map(|navigator| {
+                                navigator.selected_index =
+                                    crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION;
+                                navigator.context_menu_open = false;
+                            })
+                        });
                     }
                     None => {
                         if let Some(item) = self.desktop_item_at_pointer() {
@@ -4204,12 +4758,13 @@ impl ConsoleRuntime {
     // FUNC: pointer_absolute
     // DESC: Handles pointer absolute input or state transitions.
     // ------------------=
-    fn pointer_absolute(&mut self, x: i32, y: i32, left_button: bool) {
+    fn pointer_absolute(&mut self, x: i32, y: i32, buttons: u8) {
         if matches!(self.mode, ConsoleMode::Console | ConsoleMode::Repair) {
             return;
         }
         let next_x = x.clamp(0, 1000);
         let next_y = y.clamp(0, 1000);
+        let left_button = buttons & crate::drivers::input::pointer::BUTTON_LEFT != 0;
         if !crate::drivers::input::pointer::absolute_pointer_state_changed(
             self.pointer_x,
             self.pointer_y,
@@ -4223,7 +4778,7 @@ impl ConsoleRuntime {
         crate::bootstrap::note_pointer_activity();
         self.pointer_x = next_x;
         self.pointer_y = next_y;
-        self.pointer_interaction(left_button);
+        self.pointer_interaction(buttons);
     }
 
     // ------------------------=
@@ -6465,6 +7020,56 @@ fn immediate_namespace_child(parent: &[u8], candidate: &[u8]) -> bool {
 }
 
 // ------------------------=
+// FUNC: navigator_child_nth
+// DESC: Resolves one direct child from the active namespace without exposing descendants as rows.
+// ------------------=
+fn navigator_child_nth(
+    parent: &[u8],
+    requested: usize,
+) -> Option<crate::storage::object::NamespaceListResult> {
+    let descending = crate::runtime::with_runtime(|runtime| {
+        runtime
+            .file_navigator
+            .map(|navigator| navigator.sort_descending)
+    })
+    .flatten()
+    .unwrap_or(false);
+    crate::storage::namespace_child_nth_sorted(parent, requested, descending)
+        .ok()
+        .flatten()
+}
+
+// ------------------------=
+// FUNC: navigator_child_count
+// DESC: Counts direct children for File Navigator status and bounded keyboard selection.
+// ------------------=
+fn navigator_child_count(parent: &[u8]) -> usize {
+    crate::storage::namespace_child_count(parent).unwrap_or(0)
+}
+
+// ------------------------=
+// FUNC: write_decimal
+// DESC: Writes a positive decimal suffix into a bounded File Navigator name buffer.
+// ------------------=
+fn write_decimal(destination: &mut [u8], mut value: usize) -> usize {
+    let mut reversed = [0u8; 20];
+    let mut length = 0usize;
+    loop {
+        reversed[length] = b'0' + (value % 10) as u8;
+        length += 1;
+        value /= 10;
+        if value == 0 || length == reversed.len() {
+            break;
+        }
+    }
+    let written = length.min(destination.len());
+    for index in 0..written {
+        destination[index] = reversed[length - index - 1];
+    }
+    written
+}
+
+// ------------------------=
 // FUNC: ascii_contains_case_insensitive
 // DESC: Performs bounded capability-safe ASCII search matching without locale ambiguity.
 // ------------------=
@@ -6918,10 +7523,18 @@ pub fn input(key: ConsoleKey) {
 // DESC: Implements the pointer operation.
 // ------------------=
 pub fn pointer(delta_x: i16, delta_y: i16, left_button: bool) {
+    pointer_buttons(delta_x, delta_y, u8::from(left_button));
+}
+
+// ------------------------=
+// FUNC: pointer_buttons
+// DESC: Routes complete relative pointer button state, including native secondary clicks.
+// ------------------=
+pub fn pointer_buttons(delta_x: i16, delta_y: i16, buttons: u8) {
     unsafe {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
-            runtime.pointer(delta_x, delta_y, left_button);
+            runtime.pointer(delta_x, delta_y, buttons);
         }
     }
 }
@@ -6945,10 +7558,18 @@ pub fn pointer_scroll(vertical: i8) -> bool {
 // DESC: Handles pointer absolute input or state transitions.
 // ------------------=
 pub fn pointer_absolute(x: i32, y: i32, left_button: bool) {
+    pointer_absolute_buttons(x, y, u8::from(left_button));
+}
+
+// ------------------------=
+// FUNC: pointer_absolute_buttons
+// DESC: Routes complete absolute pointer button state, including native secondary clicks.
+// ------------------=
+pub fn pointer_absolute_buttons(x: i32, y: i32, buttons: u8) {
     unsafe {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
-            runtime.pointer_absolute(x, y, left_button);
+            runtime.pointer_absolute(x, y, buttons);
         }
     }
 }

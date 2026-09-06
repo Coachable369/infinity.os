@@ -365,6 +365,7 @@ struct ConsoleSurface {
     last_home_selected_item: Option<usize>,
     last_home_dragging_item: Option<usize>,
     last_home_note_location: usize,
+    last_file_navigator_state: Option<crate::runtime::object_navigation::FileNavigatorState>,
     last_desktop_items: u8,
     last_desktop_item_positions: [[i32; 2]; 7],
     last_system_clock: crate::storage::DateTimeConfiguration,

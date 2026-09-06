@@ -24,8 +24,10 @@ pub enum DesktopTarget {
     HomeControl(usize),
     HomeResize(usize),
     HomeToolbar(usize),
+    HomeLocation,
     HomeSidebar(usize),
     HomeItem(usize),
+    HomeContent,
     Dock(usize),
 }
 
@@ -613,10 +615,28 @@ impl SystemLayout {
                     return Some(DesktopTarget::HomeToolbar(index));
                 }
             }
+            let location_left = browser_left + 100 * self.scale;
+            let mode_controls_width = 142 * self.scale;
+            let location_width =
+                browser_width.saturating_sub(154 * self.scale + mode_controls_width);
+            if rect(
+                location_left,
+                tool_top + 4 * self.scale,
+                location_width,
+                30 * self.scale,
+            )
+            .contains(point)
+            {
+                return Some(DesktopTarget::HomeLocation);
+            }
             for index in 0..3usize {
-                let control_left = browser_left
-                    + browser_width.saturating_sub((146 - index * 46) * self.scale);
-                let control_width = if index == 2 { 54 * self.scale } else { 42 * self.scale };
+                let control_left =
+                    browser_left + browser_width.saturating_sub((146 - index * 46) * self.scale);
+                let control_width = if index == 2 {
+                    54 * self.scale
+                } else {
+                    42 * self.scale
+                };
                 if rect(
                     control_left,
                     tool_top + 4 * self.scale,
@@ -659,6 +679,16 @@ impl SystemLayout {
                 {
                     return Some(DesktopTarget::HomeItem(index));
                 }
+            }
+            if rect(
+                browser_left + sidebar_width,
+                tool_top + 38 * self.scale,
+                browser_width.saturating_sub(sidebar_width),
+                browser_height.saturating_sub(title_height + 38 * self.scale),
+            )
+            .contains(point)
+            {
+                return Some(DesktopTarget::HomeContent);
             }
         }
 
@@ -1547,7 +1577,8 @@ impl SystemLayout {
         let available_height = (content.bottom().max(0) as usize).saturating_sub(top);
         let overview_height = (112 * self.scale).min(available_height / 3);
         let middle_top = top + overview_height + gap;
-        let middle_height = (190 * self.scale).min(available_height.saturating_sub(overview_height + gap) * 55 / 100);
+        let middle_height = (190 * self.scale)
+            .min(available_height.saturating_sub(overview_height + gap) * 55 / 100);
         let topology_width = width * 62 / 100;
         let profile_top = middle_top + middle_height + gap;
         let profile_height = available_height.saturating_sub(profile_top.saturating_sub(top));
@@ -1564,7 +1595,12 @@ impl SystemLayout {
         }
         NetworkSettingsGeometry {
             overview: rect(left, top, width, overview_height),
-            topology: rect(left, middle_top, topology_width.saturating_sub(gap / 2), middle_height),
+            topology: rect(
+                left,
+                middle_top,
+                topology_width.saturating_sub(gap / 2),
+                middle_height,
+            ),
             telemetry: rect(
                 left + topology_width + gap / 2,
                 middle_top,

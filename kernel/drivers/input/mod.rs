@@ -88,7 +88,7 @@ pub fn dispatch(event: InputEvent) {
 // DESC: Handles dispatch pointer input or state transitions.
 // ------------------=
 pub fn dispatch_pointer(event: PointerEvent) {
-    crate::console::pointer(event.delta_x, event.delta_y, event.left_button());
+    crate::console::pointer_buttons(event.delta_x, event.delta_y, event.buttons);
     dispatch_pointer_wheel(event.wheel_x, event.wheel_y);
 }
 
@@ -97,7 +97,7 @@ pub fn dispatch_pointer(event: PointerEvent) {
 // DESC: Handles dispatch pointer absolute input or state transitions.
 // ------------------=
 pub fn dispatch_pointer_absolute(event: AbsolutePointerEvent) {
-    crate::console::pointer_absolute(event.x, event.y, event.left_button());
+    crate::console::pointer_absolute_buttons(event.x, event.y, event.buttons);
     dispatch_pointer_wheel(event.wheel_x, event.wheel_y);
 }
 

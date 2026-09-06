@@ -5465,7 +5465,7 @@ impl super::DisplayDevice {
         home_location: usize,
         selected_item: Option<usize>,
         dragging_item: Option<usize>,
-        note_location: usize,
+        _note_location: usize,
         desktop_items: u8,
         desktop_item_positions: &[[i32; 2]; 7],
         launcher_open: bool,
@@ -5643,27 +5643,65 @@ impl super::DisplayDevice {
                 27,
                 216,
             );
-            self.authentication_icon(
-                browser_left + 20 * scale,
-                tool_top + 19 * scale,
-                3,
-                15 * scale,
-                false,
-            );
-            self.authentication_icon(
-                browser_left + 48 * scale,
-                tool_top + 19 * scale,
-                4,
-                15 * scale,
-                false,
-            );
-            self.authentication_icon(
-                browser_left + 76 * scale,
-                tool_top + 19 * scale,
-                15,
-                15 * scale,
-                false,
-            );
+            for (index, role) in [45usize, 46, 47].iter().enumerate() {
+                let enabled = navigator_state
+                    .map(|state| match index {
+                        0 => !state.back_namespace_ref.as_bytes().is_empty(),
+                        1 => !state.forward_namespace_ref.as_bytes().is_empty(),
+                        _ => state.active_namespace_ref.as_bytes() != b"/",
+                    })
+                    .unwrap_or(false);
+                if !self.themed_icon(
+                    browser_left + (20 + index * 28) * scale,
+                    tool_top + 19 * scale,
+                    *role,
+                    18 * scale,
+                ) {
+                    let center_x = (browser_left + (20 + index * 28) * scale) as i32;
+                    let center_y = (tool_top + 19 * scale) as i32;
+                    let color = if enabled {
+                        (184, 224, 245)
+                    } else {
+                        (66, 91, 109)
+                    };
+                    if index == 2 {
+                        self.icon_line(
+                            center_x - 5 * scale as i32,
+                            center_y,
+                            center_x,
+                            center_y - 5 * scale as i32,
+                            color,
+                            18 * scale,
+                        );
+                        self.icon_line(
+                            center_x,
+                            center_y - 5 * scale as i32,
+                            center_x + 5 * scale as i32,
+                            center_y,
+                            color,
+                            18 * scale,
+                        );
+                    } else {
+                        let direction = if index == 0 { -1 } else { 1 };
+                        self.icon_line(
+                            center_x,
+                            center_y - 5 * scale as i32,
+                            center_x + direction * 5 * scale as i32,
+                            center_y,
+                            color,
+                            18 * scale,
+                        );
+                        self.icon_line(
+                            center_x + direction * 5 * scale as i32,
+                            center_y,
+                            center_x,
+                            center_y + 5 * scale as i32,
+                            color,
+                            18 * scale,
+                        );
+                    }
+                }
+            }
             let location_left = browser_left + 100 * scale;
             let mode_controls_width = 142 * scale;
             let location_width = browser_width.saturating_sub(154 * scale + mode_controls_width);
@@ -5678,15 +5716,18 @@ impl super::DisplayDevice {
                 27,
                 238,
             );
+            let location_editing = navigator_state
+                .map(|state| state.location_editing)
+                .unwrap_or(false);
             self.outline_rounded_rect(
                 location_left,
                 tool_top + 5 * scale,
                 location_width,
                 28 * scale,
                 8 * scale,
-                38,
-                62,
-                81,
+                if location_editing { 74 } else { 38 },
+                if location_editing { 190 } else { 62 },
+                if location_editing { 235 } else { 81 },
             );
             let location_names: [&[u8]; 9] = [
                 b"/home/default",
@@ -5704,15 +5745,40 @@ impl super::DisplayDevice {
                 tool_top + 9 * scale,
                 navigator_state
                     .as_ref()
-                    .map(|state| state.active_namespace_ref.as_bytes())
+                    .map(|state| {
+                        if state.location_editing {
+                            state.editor_text.as_bytes()
+                        } else {
+                            state.active_namespace_ref.as_bytes()
+                        }
+                    })
                     .unwrap_or(location_names[home_location.min(8)]),
                 193,
                 211,
                 224,
                 1,
             );
-            for (index, label) in [b"List".as_slice(), b"Grid", b"Inspector"].iter().enumerate() {
-                let control_left = browser_left + browser_width.saturating_sub((146 - index * 46) * scale);
+            if location_editing {
+                let text_width = navigator_state
+                    .map(|state| state.editor_text.as_bytes().len() * UI_FONT_CELL_WIDTH)
+                    .unwrap_or(0);
+                self.fill_rect(
+                    (location_left + 14 * scale + text_width)
+                        .min(location_left + location_width.saturating_sub(10 * scale)),
+                    tool_top + 10 * scale,
+                    scale.max(1),
+                    15 * scale,
+                    112,
+                    221,
+                    255,
+                );
+            }
+            for (index, label) in [b"List".as_slice(), b"Grid", b"Inspector"]
+                .iter()
+                .enumerate()
+            {
+                let control_left =
+                    browser_left + browser_width.saturating_sub((146 - index * 46) * scale);
                 let control_width = if index == 2 { 54 * scale } else { 42 * scale };
                 let selected = (index == 0 && navigator_list_view)
                     || (index == 1 && !navigator_list_view)
@@ -5826,26 +5892,95 @@ impl super::DisplayDevice {
             let grid_y = tool_top + 58 * scale;
             let gap = (browser_width.saturating_sub(sidebar_w + 55 * scale)) / 4;
             let tile_step = (self.height / 23).max(34) + 40 * scale;
-            for (index, (name, kind)) in [
-                (b"Documents".as_slice(), 0),
-                (b"Downloads", 1),
-                (b"Pictures", 0),
-                (b"Music", 0),
-                (b"Videos", 0),
-                (b"Projects", 2),
-                (b"notes.txt", 3),
-            ]
-            .iter()
-            .enumerate()
-            {
-                if (index < 6 && home_location != 0)
-                    || (index == 6 && note_location != home_location)
-                {
+            let active_path = navigator_state
+                .map(|state| state.active_namespace_ref)
+                .unwrap_or_else(|| {
+                    crate::runtime::object_navigation::ByteText::new(b"/home/default").unwrap()
+                });
+            let child_count =
+                crate::storage::namespace_child_count(active_path.as_bytes()).unwrap_or(0);
+            let selected_index = navigator_state
+                .map(|state| state.selected_index)
+                .unwrap_or(crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION);
+            let scroll_offset = navigator_state
+                .map(|state| state.scroll_offset)
+                .unwrap_or(0);
+            if navigator_list_view {
+                self.ui_text_strong(
+                    grid_x,
+                    grid_y.saturating_sub(22 * scale),
+                    b"NAME",
+                    132,
+                    180,
+                    207,
+                    1,
+                );
+                self.ui_text_strong(
+                    grid_x + gap * 2,
+                    grid_y.saturating_sub(22 * scale),
+                    b"KIND",
+                    132,
+                    180,
+                    207,
+                    1,
+                );
+                self.ui_text_strong(
+                    grid_x + gap * 3,
+                    grid_y.saturating_sub(22 * scale),
+                    b"SIZE",
+                    132,
+                    180,
+                    207,
+                    1,
+                );
+            }
+            let viewport = browser_height.saturating_sub(150 * scale);
+            let extent = if navigator_list_view {
+                34 * scale
+            } else {
+                tile_step
+            };
+            let (first, end) = crate::runtime::object_navigation::FileNavigatorState::visible_range(
+                child_count,
+                scroll_offset,
+                viewport,
+                extent,
+            );
+            for index in first..end {
+                let Ok(Some(entry)) = crate::storage::namespace_child_nth_sorted(
+                    active_path.as_bytes(),
+                    index,
+                    navigator_state
+                        .map(|state| state.sort_descending)
+                        .unwrap_or(false),
+                ) else {
                     continue;
-                }
+                };
+                let path = &entry.path[..entry.path_len as usize];
+                let metadata = crate::storage::object_inspect_path(path)
+                    .ok()
+                    .map(|value| value.0);
+                let kind = metadata.map(|value| value.kind);
+                let icon_role = if kind == Some(crate::storage::object::ObjectType::NamespaceNode) {
+                    3
+                } else {
+                    4
+                };
+                let base_name = crate::runtime::object_navigation::namespace_basename(path);
+                let name = if navigator_state
+                    .map(|state| state.rename_editing && state.selected_index as usize == index)
+                    .unwrap_or(false)
+                {
+                    navigator_state
+                        .as_ref()
+                        .map(|state| state.editor_text.as_bytes())
+                        .unwrap_or(base_name)
+                } else {
+                    base_name
+                };
                 let column = index % 4;
-                let row = index / 4;
-                if selected_item == Some(index) {
+                let row = (index - first) / 4;
+                if selected_index as usize == index {
                     self.fill_rounded_rect_alpha(
                         grid_x + column * gap.saturating_sub(6 * scale),
                         grid_y + row * tile_step.saturating_sub(8 * scale),
@@ -5859,23 +5994,107 @@ impl super::DisplayDevice {
                     );
                 }
                 if navigator_list_view {
-                    let row_y = grid_y + index * 34 * scale;
+                    let row_y = grid_y + (index - first) * 34 * scale;
                     self.fill_rect_alpha(
                         grid_x.saturating_sub(18 * scale),
                         row_y.saturating_sub(7 * scale),
-                        browser_width.saturating_sub(sidebar_w + if navigator_inspector_open { browser_width * 25 / 100 + 36 * scale } else { 48 * scale }),
+                        browser_width.saturating_sub(
+                            sidebar_w
+                                + if navigator_inspector_open {
+                                    browser_width * 25 / 100 + 36 * scale
+                                } else {
+                                    48 * scale
+                                },
+                        ),
                         30 * scale,
                         8,
                         28,
                         44,
                         if index % 2 == 0 { 170 } else { 105 },
                     );
-                    let _ = self.themed_icon(grid_x, row_y + 7 * scale, if *kind == 3 { 4 } else { 3 }, 22 * scale);
+                    let _ = self.themed_icon(grid_x, row_y + 7 * scale, icon_role, 22 * scale);
                     self.ui_text(grid_x + 22 * scale, row_y, name, 215, 229, 238, 1);
+                    let kind_name = match kind {
+                        Some(crate::storage::object::ObjectType::NamespaceNode) => {
+                            b"Folder".as_slice()
+                        }
+                        Some(crate::storage::object::ObjectType::Text) => {
+                            b"Text document".as_slice()
+                        }
+                        Some(crate::storage::object::ObjectType::Project) => b"Project".as_slice(),
+                        Some(crate::storage::object::ObjectType::Collection) => {
+                            b"Collection".as_slice()
+                        }
+                        _ => b"Object".as_slice(),
+                    };
+                    self.ui_text(grid_x + gap * 2, row_y, kind_name, 164, 190, 205, 1);
+                    let mut size_text = [0u8; 16];
+                    let size_len = navigator_decimal(
+                        &mut size_text,
+                        metadata
+                            .map(|value| value.logical_size as usize)
+                            .unwrap_or(0),
+                    );
+                    self.ui_text(
+                        grid_x + gap * 3,
+                        row_y,
+                        &size_text[..size_len],
+                        164,
+                        190,
+                        205,
+                        1,
+                    );
                 } else {
-                    self.desktop_icon(grid_x + column * gap, grid_y + row * tile_step, name, *kind);
+                    let center_x = grid_x + column * gap;
+                    let center_y = grid_y + row * tile_step;
+                    let _ = self.themed_icon(center_x, center_y, icon_role, 52 * scale);
+                    self.ui_text_centered(
+                        center_x.saturating_sub(gap / 2),
+                        gap,
+                        center_y + 34 * scale,
+                        name,
+                        215,
+                        229,
+                        238,
+                        1,
+                    );
                 }
             }
+            let status_top = browser_top + browser_height.saturating_sub(24 * scale);
+            self.fill_rect_alpha(
+                browser_left + sidebar_w,
+                status_top,
+                browser_width.saturating_sub(sidebar_w),
+                24 * scale,
+                4,
+                15,
+                27,
+                220,
+            );
+            let mut count_text = [0u8; 24];
+            let count_len = navigator_decimal(&mut count_text, child_count);
+            self.ui_text(
+                browser_left + sidebar_w + 14 * scale,
+                status_top + 5 * scale,
+                &count_text[..count_len],
+                142,
+                185,
+                210,
+                1,
+            );
+            self.ui_text(
+                browser_left + sidebar_w + (14 + count_len * 8) * scale,
+                status_top + 5 * scale,
+                if child_count == 1 {
+                    b" item"
+                } else {
+                    b" items"
+                },
+                142,
+                185,
+                210,
+                1,
+            );
             if dragging_item == Some(6) {
                 self.ui_text(
                     browser_left + sidebar_w + 28 * scale,
@@ -5939,6 +6158,64 @@ impl super::DisplayDevice {
                         169,
                         190,
                         205,
+                        1,
+                    );
+                }
+            }
+            if let Some(context) = navigator_state.filter(|state| state.context_menu_open) {
+                let menu_left = (self.width * context.context_x.max(0) as usize / 1000)
+                    .min(self.width.saturating_sub(210 * scale));
+                let menu_top = (self.height * context.context_y.max(0) as usize / 1000)
+                    .min(self.height.saturating_sub(180 * scale));
+                let object_menu = context.context_item
+                    != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION;
+                let labels: [&[u8]; 5] = if object_menu {
+                    [
+                        b"Open",
+                        b"Rename",
+                        b"Duplicate",
+                        b"Move to Trash",
+                        b"Get Info",
+                    ]
+                } else {
+                    [
+                        b"New Folder",
+                        b"List View",
+                        b"Grid View",
+                        b"Sort by Name",
+                        b"Show / Hide Inspector",
+                    ]
+                };
+                self.fill_rounded_rect_alpha(
+                    menu_left,
+                    menu_top,
+                    190 * scale,
+                    148 * scale,
+                    8 * scale,
+                    5,
+                    18,
+                    31,
+                    246,
+                );
+                self.outline_rounded_rect(
+                    menu_left,
+                    menu_top,
+                    190 * scale,
+                    148 * scale,
+                    8 * scale,
+                    73,
+                    180,
+                    229,
+                );
+                for (index, label) in labels.iter().enumerate() {
+                    let row_top = menu_top + (6 + index * 28) * scale;
+                    self.ui_text(
+                        menu_left + 14 * scale,
+                        row_top + 5 * scale,
+                        label,
+                        215,
+                        231,
+                        241,
                         1,
                     );
                 }
@@ -6221,6 +6498,28 @@ impl super::DisplayDevice {
     }
 }
 
+// ------------------------=
+// FUNC: navigator_decimal
+// DESC: Formats a bounded unsigned File Navigator metadata value for framebuffer text.
+// ------------------=
+fn navigator_decimal(destination: &mut [u8], mut value: usize) -> usize {
+    let mut reversed = [0u8; 20];
+    let mut length = 0usize;
+    loop {
+        reversed[length] = b'0' + (value % 10) as u8;
+        length += 1;
+        value /= 10;
+        if value == 0 || length == reversed.len() {
+            break;
+        }
+    }
+    let written = length.min(destination.len());
+    for index in 0..written {
+        destination[index] = reversed[length - index - 1];
+    }
+    written
+}
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 // ------------------------=
 // FUNC: system_ui_present
@@ -6307,6 +6606,9 @@ pub fn system_ui_present(
             let (background_opacity, background_blur) = console.display.active_background_effects();
             let background_effects_changed = console.last_background_opacity != background_opacity
                 || console.last_background_blur != background_blur;
+            let file_navigator_state =
+                crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
+            let file_navigator_changed = console.last_file_navigator_state != file_navigator_state;
             let layout = crate::ui::system_layout::SystemLayout::new(
                 console.display.width,
                 console.display.height,
@@ -6355,8 +6657,6 @@ pub fn system_ui_present(
                 || console.last_system_validation_error != validation_error
                 || console.last_home_window_visible != window_visible
                 || console.last_home_window_maximized != window_maximized
-                || console.last_home_location != home_location
-                || console.last_home_selected_item != selected_item
                 || console.last_home_dragging_item != dragging_item
                 || console.last_home_note_location != note_location
                 || console.last_desktop_items != desktop_items
@@ -6370,6 +6670,11 @@ pub fn system_ui_present(
                 console.last_home_window_x != window_x || console.last_home_window_y != window_y;
             let window_resized = console.last_home_window_width != window_width
                 || console.last_home_window_height != window_height;
+            let navigator_surface_changed = screen == 2
+                && window_visible
+                && (file_navigator_changed
+                    || console.last_home_location != home_location
+                    || console.last_home_selected_item != selected_item);
             let previous_window_rect = console.display.desktop_window_rect(
                 console.last_home_window_x,
                 console.last_home_window_y,
@@ -6391,6 +6696,7 @@ pub fn system_ui_present(
                     && (window_moved || window_resized)
                     && window_visible
                     && !window_maximized)
+                    || navigator_surface_changed
                     || (matches!(screen, 8 | 9) && app_window_geometry_changed)
                     || (screen == 4 && settings_geometry_changed));
             let mut full_surface_redrawn = false;
@@ -6409,7 +6715,7 @@ pub fn system_ui_present(
                     clock,
                 );
             } else if bounded_scene_geometry_change {
-                let damage = if screen == 2 {
+                let damage = if screen == 2 && (window_moved || window_resized) {
                     let current = console.display.desktop_window_rect(
                         window_x,
                         window_y,
@@ -6432,6 +6738,19 @@ pub fn system_ui_present(
                         display_rect,
                         (16 * layout.scale()) as u32,
                     )
+                } else if screen == 2 {
+                    let current = console.display.desktop_window_rect(
+                        window_x,
+                        window_y,
+                        window_width,
+                        window_height,
+                    );
+                    crate::ui::geometry::Rect {
+                        x: current.0 as i32,
+                        y: current.1 as i32,
+                        width: current.2 as u32,
+                        height: current.3 as u32,
+                    }
                 } else if screen == 4 {
                     crate::ui::system_layout::window_transition_damage(
                         layout
@@ -6681,6 +7000,7 @@ pub fn system_ui_present(
             console.last_home_selected_item = selected_item;
             console.last_home_dragging_item = dragging_item;
             console.last_home_note_location = note_location;
+            console.last_file_navigator_state = file_navigator_state;
             console.last_desktop_items = desktop_items;
             console.last_desktop_item_positions = *desktop_item_positions;
             console.last_system_clock = clock;

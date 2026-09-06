@@ -69,6 +69,8 @@ fn ps2_protocols() {
     assert_eq!(standard.delta_x, 5);
     assert_eq!(standard.delta_y, 3);
     assert_eq!(standard.buttons, BUTTON_LEFT | BUTTON_RIGHT);
+    assert!(standard.left_button());
+    assert!(standard.right_button());
 
     let wheel = decode_ps2_packet(&[0x0c, 0xff, 2, 0x01], 3).expect("wheel packet");
     assert_eq!(wheel.delta_x, -1);
@@ -103,6 +105,8 @@ fn usb_hid_protocols() {
     assert_eq!(absolute.x, 1000);
     assert!((499..=501).contains(&absolute.y));
     assert_eq!(absolute.buttons, BUTTON_LEFT | BUTTON_RIGHT);
+    assert!(absolute.left_button());
+    assert!(absolute.right_button());
     assert_eq!(absolute.wheel_y, 1);
     assert_eq!(absolute.wheel_x, 1);
 }

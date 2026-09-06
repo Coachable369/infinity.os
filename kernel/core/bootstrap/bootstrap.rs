@@ -836,6 +836,7 @@ fn activate_console(display: DisplayDevice) {
             last_home_selected_item: None,
             last_home_dragging_item: None,
             last_home_note_location: usize::MAX,
+            last_file_navigator_state: None,
             last_desktop_items: 0,
             last_desktop_item_positions: [[i32::MIN; 2]; 7],
             last_system_clock: crate::storage::DateTimeConfiguration::utc_default(),

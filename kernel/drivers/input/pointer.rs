@@ -122,6 +122,14 @@ impl PointerEvent {
     pub const fn left_button(self) -> bool {
         self.buttons & BUTTON_LEFT != 0
     }
+
+    // ------------------------=
+    // FUNC: right_button
+    // DESC: Reports whether the secondary pointer button is currently pressed.
+    // ------------------=
+    pub const fn right_button(self) -> bool {
+        self.buttons & BUTTON_RIGHT != 0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -140,6 +148,14 @@ impl AbsolutePointerEvent {
     // ------------------=
     pub const fn left_button(self) -> bool {
         self.buttons & BUTTON_LEFT != 0
+    }
+
+    // ------------------------=
+    // FUNC: right_button
+    // DESC: Reports whether the secondary button on an absolute pointer is pressed.
+    // ------------------=
+    pub const fn right_button(self) -> bool {
+        self.buttons & BUTTON_RIGHT != 0
     }
 }
 

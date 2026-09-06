@@ -270,6 +270,14 @@ fn file_navigator_behavior() {
     assert_eq!(FILE_NAVIGATOR_INTENTS.len(), 3);
     let mut navigator = FileNavigatorState::new(b"/home/default").unwrap();
     navigator.navigate(b"/home/default/projects").unwrap();
+    navigator
+        .navigate(b"/home/default/projects/active")
+        .unwrap();
+    navigator.back().unwrap();
+    assert_eq!(
+        navigator.active_namespace_ref.as_bytes(),
+        b"/home/default/projects"
+    );
     navigator.back().unwrap();
     assert_eq!(navigator.active_namespace_ref.as_bytes(), b"/home/default");
     navigator.forward().unwrap();
@@ -277,6 +285,28 @@ fn file_navigator_behavior() {
         navigator.active_namespace_ref.as_bytes(),
         b"/home/default/projects"
     );
+    navigator.forward().unwrap();
+    assert_eq!(
+        navigator.active_namespace_ref.as_bytes(),
+        b"/home/default/projects/active"
+    );
+    navigator.begin_location_edit();
+    assert!(navigator.location_editing);
+    assert!(navigator.editor_text.push_ascii(b'/'));
+    assert!(navigator.editor_text.pop());
+    navigator.cancel_edit();
+    navigator.open_context_menu(400, 500, Some(3));
+    assert!(navigator.context_menu_open);
+    assert_eq!(navigator.context_item, 3);
+    assert!(is_immediate_namespace_child(
+        b"/home/default",
+        b"/home/default/projects"
+    ));
+    assert!(!is_immediate_namespace_child(
+        b"/home/default",
+        b"/home/default/projects/active"
+    ));
+    assert_eq!(namespace_basename(b"/home/default/projects"), b"projects");
     let (first, end) = FileNavigatorState::visible_range(10_000, 9_940 * 28, 560, 28);
     assert!(first >= 9_940);
     assert_eq!(end, 9_962);
