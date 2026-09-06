@@ -349,6 +349,17 @@ fn file_navigator_behavior() {
     navigator.open_context_menu(400, 500, Some(3));
     assert!(navigator.context_menu_open);
     assert_eq!(navigator.context_item, 3);
+    assert_eq!(navigator.selected_index, 3);
+    navigator.selected_index = FILE_NAVIGATOR_NO_SELECTION;
+    navigator.move_selection(4, false);
+    assert_eq!(navigator.selected_index, 0);
+    navigator.selected_index = FILE_NAVIGATOR_NO_SELECTION;
+    navigator.move_selection(4, true);
+    assert_eq!(navigator.selected_index, 3);
+    navigator.scroll_by(50_000, 100, 560, 28);
+    assert_eq!(navigator.scroll_offset, 2_240);
+    navigator.scroll_by(-50_000, 100, 560, 28);
+    assert_eq!(navigator.scroll_offset, 0);
     assert!(is_immediate_namespace_child(
         b"/home/default",
         b"/home/default/projects"

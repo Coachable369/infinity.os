@@ -871,23 +871,13 @@ impl ConsoleRuntime {
         match key {
             ConsoleKey::Up | ConsoleKey::Down => {
                 let count = navigator_child_count(state.active_namespace_ref.as_bytes());
-                let current = if state.selected_index
-                    == crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION
-                {
-                    0
-                } else {
-                    state.selected_index as usize
-                };
-                let next = if matches!(key, ConsoleKey::Up) {
-                    current.saturating_sub(1)
-                } else {
-                    current.saturating_add(1).min(count.saturating_sub(1))
-                };
                 let _ = crate::runtime::with_runtime(|runtime| {
                     runtime
                         .file_navigator
                         .as_mut()
-                        .map(|navigator| navigator.selected_index = next as u16)
+                        .map(|navigator| {
+                            navigator.move_selection(count, matches!(key, ConsoleKey::Up))
+                        })
                 });
                 true
             }
@@ -1631,7 +1621,8 @@ impl ConsoleRuntime {
         }
         let count = navigator_child_count(state.active_namespace_ref.as_bytes());
         let index = if state.view_mode == crate::runtime::object_navigation::ViewMode::List {
-            state.scroll_offset / (34 * scale) + (point_y - grid_y) / (34 * scale)
+            state.scroll_offset / (34 * scale)
+                + point_y.saturating_sub(grid_y) / (34 * scale)
         } else {
             let gap = width.saturating_sub(sidebar + 55 * scale) / 4;
             let tile_step = (self.system.framebuffer_height as usize / 23).max(34) + 40 * scale;
@@ -3708,13 +3699,32 @@ impl ConsoleRuntime {
             return true;
         }
         if self.mode == ConsoleMode::Desktop && self.home_window_visible {
+            let state = crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
+            let Some(state) = state else {
+                return false;
+            };
+            let scale = (self.system.framebuffer_width as usize / 1000).max(1);
+            let (_, _, _, height) = crate::ui::system_layout::SystemLayout::new(
+                self.system.framebuffer_width,
+                self.system.framebuffer_height,
+            )
+            .home_window_geometry_sized(
+                self.home_window_x,
+                self.home_window_y,
+                self.home_window_width,
+                self.home_window_height,
+                self.home_window_maximized,
+            );
+            let total = navigator_child_count(state.active_namespace_ref.as_bytes());
+            let extent = if state.view_mode == crate::runtime::object_navigation::ViewMode::List {
+                34 * scale
+            } else {
+                (self.system.framebuffer_height / 23).max(34) + 40 * scale
+            };
+            let viewport = height.saturating_sub(150 * scale);
             let _ = crate::runtime::with_runtime(|runtime| {
                 runtime.file_navigator.as_mut().map(|navigator| {
-                    if vertical < 0 {
-                        navigator.scroll_offset = navigator.scroll_offset.saturating_sub(28);
-                    } else {
-                        navigator.scroll_offset = navigator.scroll_offset.saturating_add(28);
-                    }
+                    navigator.scroll_by(vertical.signum() as isize * 28, total, viewport, extent);
                 })
             });
             self.redraw();
@@ -4235,15 +4245,12 @@ impl ConsoleRuntime {
                 .filter(|state| state.context_menu_open);
             if clicked {
                 if let Some(context) = navigator_context {
-                    let row = if self.pointer_x >= context.context_x
-                        && self.pointer_x <= context.context_x + 190
-                        && self.pointer_y >= context.context_y
-                        && self.pointer_y < context.context_y + 196
-                    {
-                        Some(((self.pointer_y - context.context_y) / 28) as usize)
-                    } else {
-                        None
-                    };
+                    let row = layout.file_navigator_context_action(
+                        context.context_x,
+                        context.context_y,
+                        self.pointer_x,
+                        self.pointer_y,
+                    );
                     if let Some(action) = row {
                         self.activate_file_navigator_context(action, context);
                     } else {

@@ -5982,19 +5982,6 @@ impl super::DisplayDevice {
                 };
                 let column = index % 4;
                 let row = (index - first) / 4;
-                if selected_index as usize == index {
-                    self.fill_rounded_rect_alpha(
-                        grid_x + column * gap.saturating_sub(6 * scale),
-                        grid_y + row * tile_step.saturating_sub(8 * scale),
-                        gap.max(44 * scale),
-                        tile_step.max(54 * scale),
-                        8 * scale,
-                        selection_r,
-                        selection_g,
-                        selection_b,
-                        190,
-                    );
-                }
                 if navigator_list_view {
                     let row_y = grid_y + (index - first) * 34 * scale;
                     self.fill_rect_alpha(
@@ -6014,6 +6001,26 @@ impl super::DisplayDevice {
                         44,
                         if index % 2 == 0 { 170 } else { 105 },
                     );
+                    if selected_index as usize == index {
+                        self.fill_rounded_rect_alpha(
+                            grid_x.saturating_sub(18 * scale),
+                            row_y.saturating_sub(7 * scale),
+                            browser_width.saturating_sub(
+                                sidebar_w
+                                    + if navigator_inspector_open {
+                                        browser_width * 25 / 100 + 36 * scale
+                                    } else {
+                                        48 * scale
+                                    },
+                            ),
+                            30 * scale,
+                            6 * scale,
+                            selection_r,
+                            selection_g,
+                            selection_b,
+                            190,
+                        );
+                    }
                     let _ = self.themed_icon(grid_x, row_y + 7 * scale, icon_role, 22 * scale);
                     self.ui_text(grid_x + 22 * scale, row_y, name, 215, 229, 238, 1);
                     let kind_name = match kind {
@@ -6049,6 +6056,19 @@ impl super::DisplayDevice {
                 } else {
                     let center_x = grid_x + column * gap;
                     let center_y = grid_y + row * tile_step;
+                    if selected_index as usize == index {
+                        self.fill_rounded_rect_alpha(
+                            center_x.saturating_sub(6 * scale),
+                            center_y.saturating_sub(8 * scale),
+                            gap.max(44 * scale),
+                            tile_step.max(54 * scale),
+                            8 * scale,
+                            selection_r,
+                            selection_g,
+                            selection_b,
+                            190,
+                        );
+                    }
                     let _ = self.themed_icon(center_x, center_y, icon_role, 52 * scale);
                     self.ui_text_centered(
                         center_x.saturating_sub(gap / 2),
@@ -6165,10 +6185,10 @@ impl super::DisplayDevice {
                 }
             }
             if let Some(context) = navigator_state.filter(|state| state.context_menu_open) {
-                let menu_left = (self.width * context.context_x.max(0) as usize / 1000)
-                    .min(self.width.saturating_sub(210 * scale));
-                let menu_top = (self.height * context.context_y.max(0) as usize / 1000)
-                    .min(self.height.saturating_sub(180 * scale));
+                let menu = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                    .file_navigator_context_geometry(context.context_x, context.context_y);
+                let menu_left = menu.x.max(0) as usize;
+                let menu_top = menu.y.max(0) as usize;
                 let object_menu = context.context_item
                     != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION;
                 let labels: [&[u8]; 5] = if object_menu {

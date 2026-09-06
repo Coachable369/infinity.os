@@ -1075,6 +1075,15 @@ fn installed_system_hit_geometry_test() {
         square.desktop_target_sized(629, 699, 30, 200, 600, 500, true, false),
         Some(DesktopTarget::HomeResize(3))
     );
+    let context = square.file_navigator_context_geometry(950, 950);
+    assert!(context.x + context.width as i32 <= 1600);
+    assert!(context.y + context.height as i32 <= 1600);
+    let context_row_x = ((context.x + 20) * 1000 / 1600) as i32;
+    let context_row_y = ((context.y + 6 + 28 * 3 + 10) * 1000 / 1600) as i32;
+    assert_eq!(
+        square.file_navigator_context_action(950, 950, context_row_x, context_row_y),
+        Some(3)
+    );
     assert_eq!(
         resize_home_window(100, 200, 430, 380, 3, 700, 800),
         (100, 200, 600, 600)

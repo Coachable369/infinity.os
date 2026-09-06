@@ -1082,6 +1082,45 @@ impl FileNavigatorState {
     }
 
     // ------------------------=
+    // FUNC: move_selection
+    // DESC: Moves list selection without skipping the first item when no row is selected.
+    // ------------------=
+    pub fn move_selection(&mut self, count: usize, previous: bool) {
+        if count == 0 {
+            self.selected_index = FILE_NAVIGATOR_NO_SELECTION;
+            return;
+        }
+        let next = if self.selected_index == FILE_NAVIGATOR_NO_SELECTION {
+            if previous { count - 1 } else { 0 }
+        } else if previous {
+            (self.selected_index as usize).saturating_sub(1)
+        } else {
+            (self.selected_index as usize + 1).min(count - 1)
+        };
+        self.selected_index = next as u16;
+    }
+
+    // ------------------------=
+    // FUNC: scroll_by
+    // DESC: Applies bounded File Navigator scrolling so wheel input cannot move beyond the final visible page.
+    // ------------------=
+    pub fn scroll_by(
+        &mut self,
+        delta: isize,
+        total: usize,
+        viewport: usize,
+        item_extent: usize,
+    ) {
+        let content_height = total.saturating_mul(item_extent.max(1));
+        let maximum = content_height.saturating_sub(viewport);
+        self.scroll_offset = if delta < 0 {
+            self.scroll_offset.saturating_sub(delta.unsigned_abs())
+        } else {
+            self.scroll_offset.saturating_add(delta as usize).min(maximum)
+        };
+    }
+
+    // ------------------------=
     // FUNC: visible_range
     // DESC: Computes a bounded virtualized result window for arbitrarily large namespaces.
     // ------------------=

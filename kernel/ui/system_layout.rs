@@ -313,6 +313,42 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: file_navigator_context_geometry
+    // DESC: Returns the exact clamped pixel bounds used by the native File Navigator context menu.
+    // ------------------=
+    pub fn file_navigator_context_geometry(self, normalized_x: i32, normalized_y: i32) -> Rect {
+        let left = (self.width * normalized_x.max(0) as usize / 1000)
+            .min(self.width.saturating_sub(210 * self.scale));
+        let top = (self.height * normalized_y.max(0) as usize / 1000)
+            .min(self.height.saturating_sub(180 * self.scale));
+        rect(left, top, 190 * self.scale, 148 * self.scale)
+    }
+
+    // ------------------------=
+    // FUNC: file_navigator_context_action
+    // DESC: Resolves a context-menu click from the same scaled and clamped pixel geometry used for rendering.
+    // ------------------=
+    pub fn file_navigator_context_action(
+        self,
+        context_x: i32,
+        context_y: i32,
+        pointer_x: i32,
+        pointer_y: i32,
+    ) -> Option<usize> {
+        let menu = self.file_navigator_context_geometry(context_x, context_y);
+        let point = self.point(pointer_x, pointer_y);
+        if !menu.contains(point) {
+            return None;
+        }
+        let row_top = menu.y + (6 * self.scale) as i32;
+        if point.y < row_top {
+            return None;
+        }
+        let row = (point.y - row_top) as usize / (28 * self.scale).max(1);
+        (row < 5).then_some(row)
+    }
+
+    // ------------------------=
     // FUNC: desktop_foreground_layers_for_rect
     // DESC: Reports which persistent desktop chrome layers intersect a damaged framebuffer region.
     // ------------------=
