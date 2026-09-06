@@ -101,7 +101,10 @@ pub fn generate(model: ModelId, input: &[u8], output: &mut [u8; MAX_GENERATED_BY
 pub fn classify(input: &[u8]) -> ResponseKind {
     if has_any_word(input, &[b"hello", b"hi", b"hey", b"greetings"]) {
         ResponseKind::Greeting
-    } else if contains_ascii(input, b"who are you") || contains_ascii(input, b"what are you") {
+    } else if contains_ascii(input, b"who are you")
+        || contains_ascii(input, b"what are you")
+        || contains_ascii(input, b"your name")
+    {
         ResponseKind::Identity
     } else if contains_ascii(input, b"what can you do")
         || contains_ascii(input, b"your capabilities")

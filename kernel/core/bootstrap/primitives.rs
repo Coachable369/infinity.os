@@ -484,21 +484,7 @@ impl super::DisplayDevice {
             if start >= text.len() {
                 break;
             }
-            let mut end = start + 1;
-            let mut last_space = None;
-            while end <= text.len() {
-                if end < text.len() && text[end] == b' ' {
-                    last_space = Some(end);
-                }
-                if self.ui_text_width(&text[start..end], 1) > max_width {
-                    end = last_space.unwrap_or(end.saturating_sub(1).max(start + 1));
-                    break;
-                }
-                if end == text.len() {
-                    break;
-                }
-                end += 1;
-            }
+            let end = self.ui_text_wrap_line_end(text, start, max_width);
             self.ui_text(
                 x,
                 y + line * (UI_FONT_CELL_HEIGHT + 4) * self.ui_scale(),
@@ -511,6 +497,54 @@ impl super::DisplayDevice {
             start = end.saturating_add((end < text.len() && text[end] == b' ') as usize);
             line += 1;
         }
+    }
+
+    // ------------------------=
+    // FUNC: ui_text_wrapped_line_count
+    // DESC: Measures the number of proportional word-wrapped lines without allocating or drawing.
+    // ------------------=
+    pub(super) fn ui_text_wrapped_line_count(
+        &self,
+        max_width: usize,
+        text: &[u8],
+        max_lines: usize,
+    ) -> usize {
+        let mut start = 0usize;
+        let mut lines = 0usize;
+        while start < text.len() && lines < max_lines {
+            while start < text.len() && text[start] == b' ' {
+                start += 1;
+            }
+            if start >= text.len() {
+                break;
+            }
+            let end = self.ui_text_wrap_line_end(text, start, max_width);
+            start = end.saturating_add((end < text.len() && text[end] == b' ') as usize);
+            lines += 1;
+        }
+        lines
+    }
+
+    // ------------------------=
+    // FUNC: ui_text_wrap_line_end
+    // DESC: Finds the final byte for one measured word-wrapped proportional text line.
+    // ------------------=
+    fn ui_text_wrap_line_end(&self, text: &[u8], start: usize, max_width: usize) -> usize {
+        let mut end = start + 1;
+        let mut last_space = None;
+        while end <= text.len() {
+            if end < text.len() && text[end] == b' ' {
+                last_space = Some(end);
+            }
+            if self.ui_text_width(&text[start..end], 1) > max_width {
+                return last_space.unwrap_or(end.saturating_sub(1).max(start + 1));
+            }
+            if end == text.len() {
+                break;
+            }
+            end += 1;
+        }
+        end
     }
 
     // ------------------------=

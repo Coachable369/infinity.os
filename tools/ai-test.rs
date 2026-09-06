@@ -541,6 +541,10 @@ fn desktop_chat() {
         runtime::ai::generation::ResponseKind::UnsupportedQuestion
     );
     assert_eq!(
+        runtime::ai::generation::classify(b"What is your name?"),
+        runtime::ai::generation::ResponseKind::Identity
+    );
+    assert_eq!(
         runtime::ai::generation::classify(b"show network status"),
         runtime::ai::generation::ResponseKind::Network
     );

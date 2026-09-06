@@ -6772,39 +6772,60 @@ impl super::DisplayDevice {
                 1,
             );
         } else {
-            let visible = (timeline_height / (48 * scale).max(1)).max(1).min(4);
-            let start = chat.message_count().saturating_sub(visible);
+            let bubble_width = timeline_width.saturating_sub(35 * scale);
+            let text_width = bubble_width.saturating_sub(20 * scale);
+            let line_height = (UI_FONT_CELL_HEIGHT + 4) * scale;
+            let max_lines = (timeline_height.saturating_sub(27 * scale) / line_height).max(1);
+            let mut start = chat.message_count();
+            let mut used_height = 7 * scale;
+            while start > 0 {
+                let Some(message) = chat.message(start - 1) else {
+                    break;
+                };
+                let lines = self
+                    .ui_text_wrapped_line_count(text_width, message.text(), max_lines)
+                    .max(1);
+                let bubble_height = lines * line_height + 12 * scale;
+                let row_height = bubble_height + 8 * scale;
+                if used_height + row_height > timeline_height && start < chat.message_count() {
+                    break;
+                }
+                used_height += row_height;
+                start -= 1;
+            }
+            let mut row_top = timeline_top + 7 * scale;
             for index in start..chat.message_count() {
                 let Some(message) = chat.message(index) else {
                     continue;
                 };
-                let row = index - start;
-                let row_top = timeline_top + 7 * scale + row * 48 * scale;
                 let user = message.role == crate::runtime::ai::chat::ChatRole::User;
                 let inset = if user { 28 * scale } else { 7 * scale };
+                let lines = self
+                    .ui_text_wrapped_line_count(text_width, message.text(), max_lines)
+                    .max(1);
+                let bubble_height = lines * line_height + 12 * scale;
                 self.fill_rounded_rect_alpha(
                     timeline_left + inset,
                     row_top,
-                    timeline_width.saturating_sub(35 * scale),
-                    40 * scale,
+                    bubble_width,
+                    bubble_height,
                     8 * scale,
                     if user { accent_r / 3 } else { 8 },
                     if user { accent_g / 3 } else { 27 },
                     if user { accent_b / 3 } else { 42 },
                     224,
                 );
-                let maximum =
-                    (timeline_width / self.ui_text_width(b"M", 1).max(1)).saturating_sub(8);
-                let text = &message.text()[..message.text().len().min(maximum)];
-                self.ui_text(
+                self.ui_text_wrapped(
                     timeline_left + inset + 10 * scale,
-                    row_top + 12 * scale,
-                    text,
+                    row_top + 8 * scale,
+                    text_width,
+                    message.text(),
                     218,
                     231,
                     240,
-                    1,
+                    max_lines,
                 );
+                row_top += bubble_height + 8 * scale;
             }
         }
         let composer_left = geometry.composer.x.max(0) as usize;
