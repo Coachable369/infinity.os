@@ -90,6 +90,28 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     }
 
     // ------------------------=
+    // FUNC: testUnlockedCanvasElementMovesAtDisplayedScale
+    // DESC: Exercises free canvas movement through scaled pointer translation while preserving element size.
+    // ------------------=
+    @MainActor
+    func testUnlockedCanvasElementMovesAtDisplayedScale() {
+        let store = TemplateStore()
+        store.snapEnabled = false
+        let body = store.selectedScreen!.elements.first { $0.role == .body }!
+        store.beginGesture(elementID: body.id)
+        store.moveSelected(
+            translation: CGSize(width: 48, height: -24),
+            canvasScale: CGSize(width: 0.8, height: 0.4)
+        )
+        store.endGesture()
+
+        XCTAssertEqual(store.selectedElement!.frame.x, body.frame.x + 60)
+        XCTAssertEqual(store.selectedElement!.frame.y, body.frame.y - 60)
+        XCTAssertEqual(store.selectedElement!.frame.width, body.frame.width)
+        XCTAssertEqual(store.selectedElement!.frame.height, body.frame.height)
+    }
+
+    // ------------------------=
     // FUNC: testEveryResizeHandleMutatesItsOwnedEdges
     // DESC: Exercises all eight canvas handles and proves each changes only its corresponding edges.
     // ------------------=

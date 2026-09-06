@@ -145,7 +145,7 @@ private struct CanvasElementView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .opacity(Double(element.opacity) / 100)
                 .contentShape(Rectangle())
-                .gesture(elementInteractionGesture)
+                .highPriorityGesture(elementInteractionGesture)
             selectionOverlay
         }
         .frame(
@@ -342,7 +342,7 @@ private struct ResizeHandleView: View {
         )
         .contentShape(Rectangle())
         .position(handlePosition)
-        .gesture(
+        .highPriorityGesture(
             DragGesture(minimumDistance: 0, coordinateSpace: .named(CanvasInteractionMetrics.coordinateSpaceName))
                 .onChanged { value in
                     store.beginGesture(elementID: elementID)
