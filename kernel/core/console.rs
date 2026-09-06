@@ -4156,14 +4156,6 @@ impl ConsoleRuntime {
                 3 => {
                     let _ = crate::storage::trash_move(path);
                 }
-                4 => {
-                    let _ = crate::runtime::with_runtime(|runtime| {
-                        runtime
-                            .file_navigator
-                            .as_mut()
-                            .map(|navigator| navigator.inspector_open = true)
-                    });
-                }
                 _ => {}
             }
         } else {
@@ -4189,14 +4181,6 @@ impl ConsoleRuntime {
                             navigator.sort_key = 0;
                             navigator.sort_descending = !navigator.sort_descending;
                         })
-                    });
-                }
-                4 => {
-                    let _ = crate::runtime::with_runtime(|runtime| {
-                        runtime
-                            .file_navigator
-                            .as_mut()
-                            .map(|navigator| navigator.inspector_open = !navigator.inspector_open)
                     });
                 }
                 _ => {}
@@ -4833,7 +4817,6 @@ impl ConsoleRuntime {
                                     navigator.view_mode =
                                         crate::runtime::object_navigation::ViewMode::Grid
                                 }
-                                5 => navigator.inspector_open = !navigator.inspector_open,
                                 _ => {}
                             }
                         });

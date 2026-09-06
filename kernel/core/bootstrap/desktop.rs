@@ -5822,7 +5822,7 @@ impl super::DisplayDevice {
         window_visible: bool,
         window_maximized: bool,
         home_location: usize,
-        selected_item: Option<usize>,
+        _selected_item: Option<usize>,
         dragging_item: Option<usize>,
         _note_location: usize,
         desktop_items: u8,
@@ -5855,9 +5855,6 @@ impl super::DisplayDevice {
                 crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
             let navigator_list_view = navigator_state
                 .map(|state| state.view_mode == crate::runtime::object_navigation::ViewMode::List)
-                .unwrap_or(true);
-            let navigator_inspector_open = navigator_state
-                .map(|state| state.inspector_open)
                 .unwrap_or(true);
             let (browser_left, browser_top, browser_width, browser_height) = if window_maximized {
                 let left = 10 * scale;
@@ -6063,7 +6060,7 @@ impl super::DisplayDevice {
                 }
             }
             let location_left = browser_left + 100 * scale;
-            let mode_controls_width = 142 * scale;
+            let mode_controls_width = 96 * scale;
             let location_width = browser_width.saturating_sub(154 * scale + mode_controls_width);
             self.fill_rounded_rect_alpha(
                 location_left,
@@ -6133,16 +6130,12 @@ impl super::DisplayDevice {
                     255,
                 );
             }
-            for (index, label) in [b"List".as_slice(), b"Grid", b"Inspector"]
-                .iter()
-                .enumerate()
-            {
+            for (index, label) in [b"List".as_slice(), b"Grid"].iter().enumerate() {
                 let control_left =
-                    browser_left + browser_width.saturating_sub((146 - index * 46) * scale);
-                let control_width = if index == 2 { 54 * scale } else { 42 * scale };
-                let selected = (index == 0 && navigator_list_view)
-                    || (index == 1 && !navigator_list_view)
-                    || (index == 2 && navigator_inspector_open);
+                    browser_left + browser_width.saturating_sub((100 - index * 46) * scale);
+                let control_width = 42 * scale;
+                let selected =
+                    (index == 0 && navigator_list_view) || (index == 1 && !navigator_list_view);
                 self.fill_rounded_rect_alpha(
                     control_left,
                     tool_top + 6 * scale,
@@ -6370,14 +6363,7 @@ impl super::DisplayDevice {
                     self.fill_rect_alpha(
                         grid_x.saturating_sub(18 * scale),
                         row_y.saturating_sub(7 * scale),
-                        browser_width.saturating_sub(
-                            sidebar_w
-                                + if navigator_inspector_open {
-                                    browser_width * 25 / 100 + 36 * scale
-                                } else {
-                                    48 * scale
-                                },
-                        ),
+                        browser_width.saturating_sub(sidebar_w + 48 * scale),
                         30 * scale,
                         8,
                         28,
@@ -6388,14 +6374,7 @@ impl super::DisplayDevice {
                         self.fill_rounded_rect_alpha(
                             grid_x.saturating_sub(18 * scale),
                             row_y.saturating_sub(7 * scale),
-                            browser_width.saturating_sub(
-                                sidebar_w
-                                    + if navigator_inspector_open {
-                                        browser_width * 25 / 100 + 36 * scale
-                                    } else {
-                                        48 * scale
-                                    },
-                            ),
+                            browser_width.saturating_sub(sidebar_w + 48 * scale),
                             30 * scale,
                             6 * scale,
                             selection_r,
@@ -6511,74 +6490,6 @@ impl super::DisplayDevice {
                     1,
                 );
             }
-            if navigator_inspector_open && browser_width >= 700 * scale {
-                let inspector_width = browser_width * 25 / 100;
-                let inspector_left = browser_left + browser_width - inspector_width;
-                let inspector_top = tool_top + 38 * scale;
-                self.fill_rect_alpha(
-                    inspector_left,
-                    inspector_top,
-                    inspector_width,
-                    browser_height.saturating_sub(title_h + 38 * scale),
-                    5,
-                    18,
-                    31,
-                    224,
-                );
-                self.outline_rect(
-                    inspector_left,
-                    inspector_top,
-                    inspector_width,
-                    browser_height.saturating_sub(title_h + 38 * scale),
-                    74,
-                    139,
-                    176,
-                );
-                self.ui_text_strong(
-                    inspector_left + 14 * scale,
-                    inspector_top + 16 * scale,
-                    b"INSPECTOR",
-                    214,
-                    237,
-                    249,
-                    1,
-                );
-                for (index, heading) in [
-                    b"IDENTITY".as_slice(),
-                    b"METADATA",
-                    b"STORAGE",
-                    b"SECURITY",
-                    b"REFERENCES",
-                    b"VERSIONS",
-                    b"RELATIONSHIPS",
-                ]
-                .iter()
-                .enumerate()
-                {
-                    self.ui_text(
-                        inspector_left + 14 * scale,
-                        inspector_top + (52 + index * 42) * scale,
-                        heading,
-                        92,
-                        202,
-                        248,
-                        1,
-                    );
-                    self.ui_text(
-                        inspector_left + 14 * scale,
-                        inspector_top + (70 + index * 42) * scale,
-                        if selected_item.is_some() {
-                            b"Available".as_slice()
-                        } else {
-                            b"Select an object".as_slice()
-                        },
-                        169,
-                        190,
-                        205,
-                        1,
-                    );
-                }
-            }
             if let Some(context) = navigator_state.filter(|state| state.context_menu_open) {
                 let menu = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                     .file_navigator_context_geometry(context.context_x, context.context_y);
@@ -6586,28 +6497,16 @@ impl super::DisplayDevice {
                 let menu_top = menu.y.max(0) as usize;
                 let object_menu = context.context_item
                     != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION;
-                let labels: [&[u8]; 5] = if object_menu {
-                    [
-                        b"Open",
-                        b"Rename",
-                        b"Duplicate",
-                        b"Move to Trash",
-                        b"Get Info",
-                    ]
+                let labels: [&[u8]; 4] = if object_menu {
+                    [b"Open", b"Rename", b"Duplicate", b"Move to Trash"]
                 } else {
-                    [
-                        b"New Folder",
-                        b"List View",
-                        b"Grid View",
-                        b"Sort by Name",
-                        b"Show / Hide Inspector",
-                    ]
+                    [b"New Folder", b"List View", b"Grid View", b"Sort by Name"]
                 };
                 self.fill_rounded_rect_alpha(
                     menu_left,
                     menu_top,
                     190 * scale,
-                    148 * scale,
+                    120 * scale,
                     8 * scale,
                     5,
                     18,

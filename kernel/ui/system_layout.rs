@@ -454,8 +454,8 @@ impl SystemLayout {
         let left = (self.width * normalized_x.max(0) as usize / 1000)
             .min(self.width.saturating_sub(210 * self.scale));
         let top = (self.height * normalized_y.max(0) as usize / 1000)
-            .min(self.height.saturating_sub(180 * self.scale));
-        rect(left, top, 190 * self.scale, 148 * self.scale)
+            .min(self.height.saturating_sub(150 * self.scale));
+        rect(left, top, 190 * self.scale, 120 * self.scale)
     }
 
     // ------------------------=
@@ -479,7 +479,7 @@ impl SystemLayout {
             return None;
         }
         let row = (point.y - row_top) as usize / (28 * self.scale).max(1);
-        (row < 5).then_some(row)
+        (row < 4).then_some(row)
     }
 
     // ------------------------=
@@ -766,7 +766,7 @@ impl SystemLayout {
                 }
             }
             let location_left = browser_left + 100 * self.scale;
-            let mode_controls_width = 142 * self.scale;
+            let mode_controls_width = 96 * self.scale;
             let location_width =
                 browser_width.saturating_sub(154 * self.scale + mode_controls_width);
             if rect(
@@ -779,14 +779,10 @@ impl SystemLayout {
             {
                 return Some(DesktopTarget::HomeLocation);
             }
-            for index in 0..3usize {
+            for index in 0..2usize {
                 let control_left =
-                    browser_left + browser_width.saturating_sub((146 - index * 46) * self.scale);
-                let control_width = if index == 2 {
-                    54 * self.scale
-                } else {
-                    42 * self.scale
-                };
+                    browser_left + browser_width.saturating_sub((100 - index * 46) * self.scale);
+                let control_width = 42 * self.scale;
                 if rect(
                     control_left,
                     tool_top + 4 * self.scale,

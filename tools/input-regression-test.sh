@@ -9,3 +9,5 @@ rustc --edition=2021 -C opt-level=2 tools/ui-redraw-policy-test.rs -o build/beha
 build/behavior-tests/ui-redraw-policy-test
 rustc --edition=2021 -C opt-level=2 tools/window-session-state-test.rs -o build/behavior-tests/window-session-state-test
 build/behavior-tests/window-session-state-test
+rustc --edition=2021 -C opt-level=2 tools/file-navigator-layout-test.rs -o build/behavior-tests/file-navigator-layout-test
+build/behavior-tests/file-navigator-layout-test
