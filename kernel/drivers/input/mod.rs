@@ -268,6 +268,9 @@ fn console_key(usage: u16, shift: bool) -> Option<crate::console::ConsoleKey> {
         0x50 => return Some(ConsoleKey::Left),
         0x51 => return Some(ConsoleKey::Down),
         0x52 => return Some(ConsoleKey::Up),
+        0x4a => return Some(ConsoleKey::Home),
+        0x4d => return Some(ConsoleKey::End),
+        0x4c => return Some(ConsoleKey::Delete),
         0x3a => return Some(ConsoleKey::Help),
         _ => return None,
     };

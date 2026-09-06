@@ -133,6 +133,38 @@ impl<const N: usize> ByteText<N> {
         self.bytes[self.length as usize] = 0;
         true
     }
+
+    // ------------------------=
+    // FUNC: edit
+    // DESC: Applies insertion, deletion, and movement at an explicit bounded caret.
+    // ------------------=
+    pub fn edit(&mut self, caret: &mut usize, key: crate::console::ConsoleKey) -> bool {
+        let mut length = self.length as usize;
+        let changed = match key {
+            crate::console::ConsoleKey::Character(value) => {
+                crate::ui::text_input::insert_ascii(&mut self.bytes, &mut length, caret, value)
+            }
+            crate::console::ConsoleKey::Backspace => {
+                crate::ui::text_input::backspace(&mut self.bytes, &mut length, caret)
+            }
+            crate::console::ConsoleKey::Delete => {
+                crate::ui::text_input::delete(&mut self.bytes, &mut length, caret)
+            }
+            crate::console::ConsoleKey::Left => {
+                crate::ui::text_input::move_caret(caret, length, -1)
+            }
+            crate::console::ConsoleKey::Right => {
+                crate::ui::text_input::move_caret(caret, length, 1)
+            }
+            crate::console::ConsoleKey::Home => {
+                crate::ui::text_input::move_caret(caret, length, -2)
+            }
+            crate::console::ConsoleKey::End => crate::ui::text_input::move_caret(caret, length, 2),
+            _ => false,
+        };
+        self.length = length as u8;
+        changed
+    }
 }
 
 impl<const N: usize> Default for ByteText<N> {
@@ -910,6 +942,7 @@ pub struct FileNavigatorState {
     pub location_editing: bool,
     pub rename_editing: bool,
     pub editor_text: ByteText<MAX_NAMESPACE_PATH>,
+    pub editor_cursor: usize,
     pub context_menu_open: bool,
     pub context_x: i32,
     pub context_y: i32,
@@ -942,6 +975,7 @@ impl FileNavigatorState {
             location_editing: false,
             rename_editing: false,
             editor_text: ByteText::empty(),
+            editor_cursor: 0,
             context_menu_open: false,
             context_x: 0,
             context_y: 0,
@@ -1053,6 +1087,7 @@ impl FileNavigatorState {
     // ------------------=
     pub fn begin_location_edit(&mut self) {
         self.editor_text = self.active_namespace_ref;
+        self.editor_cursor = self.editor_text.as_bytes().len();
         self.location_editing = true;
         self.rename_editing = false;
         self.context_menu_open = false;
@@ -1067,6 +1102,7 @@ impl FileNavigatorState {
             return false;
         };
         self.editor_text = text;
+        self.editor_cursor = self.editor_text.as_bytes().len();
         self.rename_editing = true;
         self.location_editing = false;
         self.context_menu_open = false;
@@ -1081,6 +1117,7 @@ impl FileNavigatorState {
         self.location_editing = false;
         self.rename_editing = false;
         self.editor_text = ByteText::empty();
+        self.editor_cursor = 0;
     }
 
     // ------------------------=

@@ -554,6 +554,48 @@ fn app_launcher_behavior_test() {
     assert!(document.open(b"persisted\ntext"));
     assert_eq!(document.bytes(), b"persisted\ntext");
     assert!(document.is_saved());
+    assert!(document.move_cursor_to_line_edge(false));
+    assert!(document.insert(b'X'));
+    assert_eq!(document.bytes(), b"persisted\nXtext");
+    assert!(document.move_cursor(-1));
+    assert!(document.delete());
+    assert_eq!(document.bytes(), b"persisted\ntext");
+    assert!(document.move_cursor_vertical(true));
+
+    let mut field = [0u8; 12];
+    field[..4].copy_from_slice(b"acde");
+    let mut field_length = 4usize;
+    let mut caret = 1usize;
+    assert!(ui::text_input::insert_ascii(
+        &mut field,
+        &mut field_length,
+        &mut caret,
+        b'b'
+    ));
+    assert_eq!(&field[..field_length], b"abcde");
+    assert!(ui::text_input::move_caret(&mut caret, field_length, 1));
+    assert!(ui::text_input::backspace(
+        &mut field,
+        &mut field_length,
+        &mut caret
+    ));
+    assert_eq!(&field[..field_length], b"abde");
+    assert!(ui::text_input::delete(
+        &mut field,
+        &mut field_length,
+        &mut caret
+    ));
+    assert_eq!(&field[..field_length], b"abe");
+    assert_eq!(ui::text_input::caret_from_x(18, 9, field_length), 2);
+
+    ui::text_input::set_presentation(true, true, 2, 7, true);
+    assert_eq!(ui::text_input::caret(7), Some((true, 2)));
+    assert!(ui::text_input::pointer_is_text());
+    let visible_presentation = ui::text_input::presentation_hash();
+    ui::text_input::set_presentation(true, false, 2, 7, false);
+    assert_eq!(ui::text_input::caret(7), Some((false, 2)));
+    assert!(!ui::text_input::pointer_is_text());
+    assert_ne!(visible_presentation, ui::text_input::presentation_hash());
 
     let wrapped = b"abcdef\nghijkl";
     assert_eq!(visual_line_count(wrapped, 3), 6);

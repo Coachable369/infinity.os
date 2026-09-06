@@ -744,6 +744,10 @@ impl super::DisplayDevice {
         let x = self.width as i32 * cursor_x / 1000;
         let y = self.height as i32 * cursor_y / 1000;
         let scale = self.ui_scale();
+        if crate::ui::text_input::pointer_is_text() {
+            self.pointer_text_cursor(x, y, scale);
+            return;
+        }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
             let offset = le32(CURSOR_BMP, 10) as usize;
@@ -785,6 +789,67 @@ impl super::DisplayDevice {
                 self.pixel(x + column, y + row, 248, 250, 255);
             }
         }
+    }
+
+    // ------------------------=
+    // FUNC: pointer_text_cursor
+    // DESC: Draws a high-contrast I-beam pointer centered over editable text controls.
+    // ------------------=
+    fn pointer_text_cursor(&mut self, x: i32, y: i32, scale: usize) {
+        let scale = scale.max(1) as i32;
+        let center_x = x + 7 * scale;
+        let top = y + 2 * scale;
+        let bottom = y + 22 * scale;
+        for offset in -1..=1 {
+            self.icon_line(
+                center_x + offset,
+                top,
+                center_x + offset,
+                bottom,
+                (5, 14, 24),
+                28 * scale as usize,
+            );
+        }
+        self.icon_line(
+            center_x - 5 * scale,
+            top,
+            center_x + 5 * scale,
+            top,
+            (5, 14, 24),
+            28 * scale as usize,
+        );
+        self.icon_line(
+            center_x - 5 * scale,
+            bottom,
+            center_x + 5 * scale,
+            bottom,
+            (5, 14, 24),
+            28 * scale as usize,
+        );
+        self.icon_line(
+            center_x,
+            top,
+            center_x,
+            bottom,
+            (226, 247, 255),
+            28 * scale as usize,
+        );
+        self.icon_line(
+            center_x - 4 * scale,
+            top,
+            center_x + 4 * scale,
+            top,
+            (226, 247, 255),
+            28 * scale as usize,
+        );
+        self.icon_line(
+            center_x - 4 * scale,
+            bottom,
+            center_x + 4 * scale,
+            bottom,
+            (226, 247, 255),
+            28 * scale as usize,
+        );
     }
 
     // ------------------------=

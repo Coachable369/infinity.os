@@ -587,6 +587,29 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: onboarding_input_geometry
+    // DESC: Returns the exact editable first-boot field rectangle for click-to-caret placement.
+    // ------------------=
+    pub fn onboarding_input_geometry(self, step: usize) -> Option<Rect> {
+        if !(1..=4).contains(&step) {
+            return None;
+        }
+        let top_bar = self.top_bar_height();
+        let card_width = (self.width * 34 / 100).clamp(500, 600 * self.scale);
+        let card_height = (self.height * 68 / 100)
+            .clamp(560, 680 * self.scale)
+            .min(self.height.saturating_sub(top_bar + 24));
+        let card_left = self.width * 4 / 100;
+        let card_top = top_bar + self.height.saturating_sub(top_bar + card_height) / 2;
+        Some(rect(
+            card_left + 32 * self.scale,
+            card_top + (94 + 132 + 28) * self.scale,
+            card_width.saturating_sub(64 * self.scale),
+            50 * self.scale,
+        ))
+    }
+
+    // ------------------------=
     // FUNC: authentication_target
     // DESC: Resolves account, credential, recovery, and session utility controls exactly.
     // ------------------=
@@ -638,6 +661,29 @@ impl SystemLayout {
             }
         }
         None
+    }
+
+    // ------------------------=
+    // FUNC: authentication_password_geometry
+    // DESC: Returns the exact secure text field rectangle for click-to-caret placement.
+    // ------------------=
+    pub fn authentication_password_geometry(self) -> Rect {
+        let fit = (self.width.saturating_mul(1000) / 1536)
+            .min(self.height.saturating_mul(1000) / 1024)
+            .max(1);
+        let content_width = 1536usize.saturating_mul(fit) / 1000;
+        let content_height = 1024usize.saturating_mul(fit) / 1000;
+        let offset_x = self.width.saturating_sub(content_width) / 2;
+        let offset_y = self.height.saturating_sub(content_height) / 2;
+        let card_x = offset_x + 54usize.saturating_mul(fit) / 1000;
+        let card_y = offset_y + 123usize.saturating_mul(fit) / 1000;
+        let card_w = 521usize.saturating_mul(fit) / 1000;
+        rect(
+            card_x + 49usize.saturating_mul(fit) / 1000,
+            card_y + 356usize.saturating_mul(fit) / 1000,
+            card_w.saturating_sub(98usize.saturating_mul(fit) / 1000),
+            57usize.saturating_mul(fit) / 1000,
+        )
     }
 
     // ------------------------=

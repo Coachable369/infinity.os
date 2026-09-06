@@ -83,6 +83,7 @@ pub struct ChatRuntime {
     minimized: bool,
     input: [u8; CHAT_INPUT_CAPACITY],
     input_length: usize,
+    input_cursor: usize,
     last_response_kind: Option<ResponseKind>,
     memory: AiMemory,
     memory_dirty: bool,
@@ -103,6 +104,7 @@ impl ChatRuntime {
             minimized: false,
             input: [0; CHAT_INPUT_CAPACITY],
             input_length: 0,
+            input_cursor: 0,
             last_response_kind: None,
             memory: AiMemory::new(),
             memory_dirty: false,
@@ -227,6 +229,60 @@ impl ChatRuntime {
     }
 
     // ------------------------=
+    // FUNC: input_cursor
+    // DESC: Returns the current bounded composer insertion position.
+    // ------------------=
+    pub const fn input_cursor(&self) -> usize {
+        self.input_cursor
+    }
+
+    // ------------------------=
+    // FUNC: set_input_cursor
+    // DESC: Places the composer caret at one bounded pointer-derived insertion index.
+    // ------------------=
+    pub fn set_input_cursor(&mut self, index: usize) {
+        self.input_cursor = index.min(self.input_length);
+    }
+
+    // ------------------------=
+    // FUNC: edit_input
+    // DESC: Applies standard printable insertion, deletion, and caret navigation to the composer.
+    // ------------------=
+    pub fn edit_input(&mut self, key: crate::console::ConsoleKey) -> bool {
+        match key {
+            crate::console::ConsoleKey::Character(value) => crate::ui::text_input::insert_ascii(
+                &mut self.input,
+                &mut self.input_length,
+                &mut self.input_cursor,
+                value,
+            ),
+            crate::console::ConsoleKey::Backspace => crate::ui::text_input::backspace(
+                &mut self.input,
+                &mut self.input_length,
+                &mut self.input_cursor,
+            ),
+            crate::console::ConsoleKey::Delete => crate::ui::text_input::delete(
+                &mut self.input,
+                &mut self.input_length,
+                &mut self.input_cursor,
+            ),
+            crate::console::ConsoleKey::Left => {
+                crate::ui::text_input::move_caret(&mut self.input_cursor, self.input_length, -1)
+            }
+            crate::console::ConsoleKey::Right => {
+                crate::ui::text_input::move_caret(&mut self.input_cursor, self.input_length, 1)
+            }
+            crate::console::ConsoleKey::Home => {
+                crate::ui::text_input::move_caret(&mut self.input_cursor, self.input_length, -2)
+            }
+            crate::console::ConsoleKey::End => {
+                crate::ui::text_input::move_caret(&mut self.input_cursor, self.input_length, 2)
+            }
+            _ => false,
+        }
+    }
+
+    // ------------------------=
     // FUNC: set_memory
     // DESC: Restores the authenticated user's durable semantic memory into the chat session.
     // ------------------=
@@ -268,12 +324,12 @@ impl ChatRuntime {
     // DESC: Appends one printable character to the bounded composer.
     // ------------------=
     pub fn push_input(&mut self, byte: u8) -> bool {
-        if !(b' '..=b'~').contains(&byte) || self.input_length == CHAT_INPUT_CAPACITY {
-            return false;
-        }
-        self.input[self.input_length] = byte;
-        self.input_length += 1;
-        true
+        crate::ui::text_input::insert_ascii(
+            &mut self.input,
+            &mut self.input_length,
+            &mut self.input_cursor,
+            byte,
+        )
     }
 
     // ------------------------=
@@ -281,12 +337,11 @@ impl ChatRuntime {
     // DESC: Removes one character from the active composer.
     // ------------------=
     pub fn pop_input(&mut self) -> bool {
-        if self.input_length == 0 {
-            return false;
-        }
-        self.input_length -= 1;
-        self.input[self.input_length] = 0;
-        true
+        crate::ui::text_input::backspace(
+            &mut self.input,
+            &mut self.input_length,
+            &mut self.input_cursor,
+        )
     }
 
     // ------------------------=
@@ -301,6 +356,7 @@ impl ChatRuntime {
         }
         self.input.fill(0);
         self.input_length = 0;
+        self.input_cursor = 0;
         true
     }
 

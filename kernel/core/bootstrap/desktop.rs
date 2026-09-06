@@ -873,6 +873,39 @@ impl super::DisplayDevice {
             height / 3,
             focused,
         );
+        self.text_field_caret(x + height, y, height, input, focused, 1);
+    }
+
+    // ------------------------=
+    // FUNC: text_field_caret
+    // DESC: Draws the shared blinking insertion caret at the active bounded text index.
+    // ------------------=
+    fn text_field_caret(
+        &mut self,
+        text_left: usize,
+        top: usize,
+        height: usize,
+        input: &[u8],
+        focused: bool,
+        kind: usize,
+    ) {
+        let Some((visible, index)) = crate::ui::text_input::caret(kind) else {
+            return;
+        };
+        if !focused || !visible {
+            return;
+        }
+        let index = index.min(input.len());
+        let x = text_left + self.ui_text_width(&input[..index], 1);
+        self.fill_rect(
+            x,
+            top + height / 2 - 10,
+            self.ui_scale().max(1),
+            20,
+            112,
+            221,
+            255,
+        );
     }
 
     // ------------------------=
@@ -1952,6 +1985,14 @@ impl super::DisplayDevice {
             color.2,
             1,
         );
+        self.text_field_caret(
+            left + crate::ui::system_layout::UI_GUTTER * self.ui_scale().max(1),
+            top,
+            height,
+            &shown[..shown_len],
+            focused,
+            1,
+        );
     }
 
     // ------------------------=
@@ -2784,7 +2825,6 @@ impl super::DisplayDevice {
             let scroll_row = editor_scroll_row.min(maximum_scroll);
             let mut start =
                 crate::ui::text_editor::visual_line_start(input, columns.max(1), scroll_row);
-            let mut caret_width = 0usize;
             while start < input.len() && row * line_height + 36 * scale < content_height {
                 let remaining = &input[start..];
                 let explicit_end = remaining
@@ -2801,21 +2841,28 @@ impl super::DisplayDevice {
                     241,
                     1,
                 );
-                caret_width = self.ui_text_width(&remaining[..take], 1);
                 start += take;
                 if take == explicit_end && start < input.len() && input[start] == b'\n' {
                     start += 1;
-                    caret_width = 0;
                     row += 1;
                 }
                 if take < explicit_end {
                     row += 1;
                 }
             }
-            let caret_x = content_left + 20 * scale + caret_width;
-            let caret_y = content_top + 18 * scale + row * line_height;
-            if scroll_row == maximum_scroll {
-                self.fill_rect(caret_x, caret_y, 2 * scale, 18 * scale, 111, 220, 255);
+            if let Some((visible, cursor)) = crate::ui::text_input::caret(4) {
+                let caret_row =
+                    crate::ui::text_editor::visual_cursor_row(input, columns.max(1), cursor);
+                if visible && caret_row >= scroll_row && caret_row < scroll_row + visible_rows {
+                    let line_start =
+                        crate::ui::text_editor::visual_line_start(input, columns.max(1), caret_row);
+                    let caret_end = cursor.min(input.len());
+                    let caret_width =
+                        self.ui_text_width(&input[line_start.min(caret_end)..caret_end], 1);
+                    let caret_x = content_left + 20 * scale + caret_width;
+                    let caret_y = content_top + 18 * scale + (caret_row - scroll_row) * line_height;
+                    self.fill_rect(caret_x, caret_y, 2 * scale, 18 * scale, 111, 220, 255);
+                }
             }
             let scroll = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                 .desktop_editor_scroll_geometry(
@@ -2896,6 +2943,14 @@ impl super::DisplayDevice {
                 1,
             );
             self.ui_text(content_left + 74 * scale, prompt_y, input, 232, 242, 248, 1);
+            self.text_field_caret(
+                content_left + 74 * scale,
+                prompt_y.saturating_sub(8 * scale),
+                34 * scale,
+                input,
+                true,
+                1,
+            );
         }
     }
 
@@ -3015,6 +3070,14 @@ impl super::DisplayDevice {
                 231,
                 241,
                 247,
+                1,
+            );
+            self.text_field_caret(
+                left + 40 * scale,
+                top + 72 * scale,
+                46 * scale,
+                name_input,
+                true,
                 1,
             );
         }
@@ -4090,6 +4153,16 @@ impl super::DisplayDevice {
                     240,
                     1,
                 );
+                if focus == 0 && index == 0 {
+                    self.text_field_caret(
+                        summary_left + summary_width.saturating_sub(value_width + 40 * scale),
+                        summary_top,
+                        row.summary.height as usize,
+                        value,
+                        true,
+                        1,
+                    );
+                }
                 let twiddle_x = summary_left + summary_width.saturating_sub(20 * scale);
                 let twiddle_y = summary_top + 23 * scale;
                 if expanded {
@@ -4739,6 +4812,16 @@ impl super::DisplayDevice {
                 outline_b,
                 1,
             );
+            if active && matches!((page, index), (2, 1..=4) | (3, 1..=2)) {
+                self.text_field_caret(
+                    left + card.width as usize - value_width - 18 * scale,
+                    top,
+                    card.height as usize,
+                    input,
+                    true,
+                    1,
+                );
+            }
         }
 
         let sidebar_left = geometry.sidebar.x.max(0) as usize;
@@ -5996,6 +6079,14 @@ impl super::DisplayDevice {
             if query.is_empty() { 177 } else { 247 },
             1,
         );
+        self.text_field_caret(
+            search_left + 50 * scale,
+            search_top,
+            search_height,
+            query,
+            focus == 0,
+            1,
+        );
         let shortcut = b"/ SEARCH";
         let shortcut_width = self.ui_text_width(shortcut, 1);
         self.fill_rounded_rect_alpha(
@@ -6470,18 +6561,17 @@ impl super::DisplayDevice {
                 1,
             );
             if location_editing {
-                let text_width = navigator_state
-                    .map(|state| state.editor_text.as_bytes().len() * UI_FONT_CELL_WIDTH)
-                    .unwrap_or(0);
-                self.fill_rect(
-                    (location_left + 14 * scale + text_width)
-                        .min(location_left + location_width.saturating_sub(10 * scale)),
-                    tool_top + 10 * scale,
-                    scale.max(1),
-                    15 * scale,
-                    112,
-                    221,
-                    255,
+                let editing_text = navigator_state
+                    .as_ref()
+                    .map(|state| state.editor_text.as_bytes())
+                    .unwrap_or(b"");
+                self.text_field_caret(
+                    location_left + 14 * scale,
+                    tool_top + 5 * scale,
+                    28 * scale,
+                    editing_text,
+                    true,
+                    2,
                 );
             }
             for (index, label) in [b"List".as_slice(), b"Grid"].iter().enumerate() {
@@ -6699,10 +6789,10 @@ impl super::DisplayDevice {
                 let base_name = navigation_name.unwrap_or_else(|| {
                     crate::runtime::object_navigation::namespace_basename(path.unwrap_or(b"/"))
                 });
-                let name = if navigator_state
+                let is_renaming = navigator_state
                     .map(|state| state.rename_editing && state.selected_index as usize == index)
-                    .unwrap_or(false)
-                {
+                    .unwrap_or(false);
+                let name = if is_renaming {
                     navigator_state
                         .as_ref()
                         .map(|state| state.editor_text.as_bytes())
@@ -6739,6 +6829,16 @@ impl super::DisplayDevice {
                     }
                     let _ = self.themed_icon(grid_x, row_y + 7 * scale, icon_role, 22 * scale);
                     self.ui_text(grid_x + 22 * scale, row_y, name, 215, 229, 238, 1);
+                    if is_renaming {
+                        self.text_field_caret(
+                            grid_x + 22 * scale,
+                            row_y.saturating_sub(7 * scale),
+                            30 * scale,
+                            name,
+                            true,
+                            2,
+                        );
+                    }
                     let kind_name = match kind {
                         Some(crate::storage::object::ObjectType::NamespaceNode) => {
                             b"Folder".as_slice()
@@ -6796,6 +6896,17 @@ impl super::DisplayDevice {
                         238,
                         1,
                     );
+                    if is_renaming {
+                        let name_width = self.ui_text_width(name, 1);
+                        self.text_field_caret(
+                            center_x.saturating_sub(name_width / 2),
+                            center_y + 28 * scale,
+                            28 * scale,
+                            name,
+                            true,
+                            2,
+                        );
+                    }
                 }
             }
             let status_top = browser_top + browser_height.saturating_sub(24 * scale);
@@ -7219,6 +7330,14 @@ impl super::DisplayDevice {
             if composer_text.is_empty() { 168 } else { 243 },
             1,
         );
+        self.text_field_caret(
+            composer_left + 12 * scale,
+            composer_top,
+            geometry.composer.height as usize,
+            composer_text,
+            true,
+            3,
+        );
         self.fill_rounded_rect_alpha(
             geometry.send.x.max(0) as usize,
             geometry.send.y.max(0) as usize,
@@ -7499,7 +7618,7 @@ pub fn system_ui_present(
             ) ^ crate::runtime::ai::with_ai_runtime(|runtime| {
                 let hash = runtime.chat.state_hash();
                 hash as u32 ^ (hash >> 32) as u32
-            });
+            }) ^ crate::ui::text_input::presentation_hash();
             let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
             let focus_changed = console.last_system_focus != focus;
             let clock_changed = console.last_system_clock != clock;
@@ -7803,7 +7922,7 @@ pub fn system_ui_present(
                 console
                     .display
                     .authentication_focus_controls(screen == 6, step, input, focus);
-            } else if screen == 7 && focus_changed && !content_changed {
+            } else if screen == 7 && (focus_changed || content_changed) {
                 console.display.app_launcher_content_update(
                     console.display.ui_scale().max(1),
                     input,

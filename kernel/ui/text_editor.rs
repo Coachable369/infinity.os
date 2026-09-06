@@ -80,10 +80,19 @@ pub fn visual_line_start(content: &[u8], columns: usize, target_row: usize) -> u
     content.len()
 }
 
+// ------------------------=
+// FUNC: visual_cursor_row
+// DESC: Resolves a bounded insertion index to its wrapped visual row.
+// ------------------=
+pub fn visual_cursor_row(content: &[u8], columns: usize, cursor: usize) -> usize {
+    visual_line_count(&content[..cursor.min(content.len())], columns).saturating_sub(1)
+}
+
 #[derive(Clone, Copy)]
 pub struct TextDocument {
     bytes: [u8; DOCUMENT_CAPACITY],
     length: usize,
+    cursor: usize,
     saved_length: usize,
     revision: u32,
     saved_revision: u32,
@@ -98,6 +107,7 @@ impl TextDocument {
         Self {
             bytes: [0; DOCUMENT_CAPACITY],
             length: 0,
+            cursor: 0,
             saved_length: 0,
             revision: 0,
             saved_revision: 0,
@@ -113,6 +123,22 @@ impl TextDocument {
     }
 
     // ------------------------=
+    // FUNC: cursor
+    // DESC: Returns the current bounded document insertion position.
+    // ------------------=
+    pub const fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    // ------------------------=
+    // FUNC: set_cursor
+    // DESC: Places the document caret at one bounded pointer-derived byte index.
+    // ------------------=
+    pub fn set_cursor(&mut self, index: usize) {
+        self.cursor = index.min(self.length);
+    }
+
+    // ------------------------=
     // FUNC: insert
     // DESC: Appends one printable byte or newline and records a document revision.
     // ------------------=
@@ -120,8 +146,12 @@ impl TextDocument {
         if self.length >= DOCUMENT_CAPACITY || (!(32..=126).contains(&byte) && byte != b'\n') {
             return false;
         }
-        self.bytes[self.length] = byte;
+        self.cursor = self.cursor.min(self.length);
+        self.bytes
+            .copy_within(self.cursor..self.length, self.cursor + 1);
+        self.bytes[self.cursor] = byte;
         self.length += 1;
+        self.cursor += 1;
         self.revision = self.revision.wrapping_add(1);
         true
     }
@@ -131,12 +161,104 @@ impl TextDocument {
     // DESC: Removes the last byte when present and records a document revision.
     // ------------------=
     pub fn backspace(&mut self) -> bool {
-        if self.length == 0 {
+        self.cursor = self.cursor.min(self.length);
+        if self.cursor == 0 {
             return false;
         }
+        self.bytes
+            .copy_within(self.cursor..self.length, self.cursor - 1);
         self.length -= 1;
+        self.cursor -= 1;
+        self.bytes[self.length] = 0;
         self.revision = self.revision.wrapping_add(1);
         true
+    }
+
+    // ------------------------=
+    // FUNC: delete
+    // DESC: Deletes the document byte under the caret and preserves its insertion position.
+    // ------------------=
+    pub fn delete(&mut self) -> bool {
+        if self.cursor >= self.length {
+            return false;
+        }
+        self.bytes
+            .copy_within(self.cursor + 1..self.length, self.cursor);
+        self.length -= 1;
+        self.bytes[self.length] = 0;
+        self.revision = self.revision.wrapping_add(1);
+        true
+    }
+
+    // ------------------------=
+    // FUNC: move_cursor
+    // DESC: Applies standard horizontal, home, and end navigation to the document caret.
+    // ------------------=
+    pub fn move_cursor(&mut self, movement: i8) -> bool {
+        crate::ui::text_input::move_caret(&mut self.cursor, self.length, movement)
+    }
+
+    // ------------------------=
+    // FUNC: move_cursor_to_line_edge
+    // DESC: Moves the document caret to the beginning or end of its current explicit line.
+    // ------------------=
+    pub fn move_cursor_to_line_edge(&mut self, end: bool) -> bool {
+        let original = self.cursor.min(self.length);
+        self.cursor = if end {
+            self.bytes[original..self.length]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map(|offset| original + offset)
+                .unwrap_or(self.length)
+        } else {
+            self.bytes[..original]
+                .iter()
+                .rposition(|byte| *byte == b'\n')
+                .map(|index| index + 1)
+                .unwrap_or(0)
+        };
+        self.cursor != original
+    }
+
+    // ------------------------=
+    // FUNC: move_cursor_vertical
+    // DESC: Moves the caret to the nearest column on the preceding or following explicit text line.
+    // ------------------=
+    pub fn move_cursor_vertical(&mut self, previous: bool) -> bool {
+        let original = self.cursor.min(self.length);
+        let line_start = self.bytes[..original]
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map(|index| index + 1)
+            .unwrap_or(0);
+        let column = original - line_start;
+        if previous {
+            if line_start == 0 {
+                return false;
+            }
+            let prior_end = line_start - 1;
+            let prior_start = self.bytes[..prior_end]
+                .iter()
+                .rposition(|byte| *byte == b'\n')
+                .map(|index| index + 1)
+                .unwrap_or(0);
+            self.cursor = (prior_start + column).min(prior_end);
+        } else {
+            let Some(relative_end) = self.bytes[original..self.length]
+                .iter()
+                .position(|byte| *byte == b'\n')
+            else {
+                return false;
+            };
+            let next_start = original + relative_end + 1;
+            let next_end = self.bytes[next_start..self.length]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map(|offset| next_start + offset)
+                .unwrap_or(self.length);
+            self.cursor = (next_start + column).min(next_end);
+        }
+        self.cursor != original
     }
 
     // ------------------------=
@@ -145,6 +267,7 @@ impl TextDocument {
     // ------------------=
     pub fn clear(&mut self) {
         self.length = 0;
+        self.cursor = 0;
         self.saved_length = 0;
         self.revision = self.revision.wrapping_add(1);
         self.saved_revision = self.revision;
@@ -164,6 +287,7 @@ impl TextDocument {
         }
         self.bytes[..content.len()].copy_from_slice(content);
         self.length = content.len();
+        self.cursor = content.len();
         self.saved_length = content.len();
         self.revision = self.revision.wrapping_add(1);
         self.saved_revision = self.revision;

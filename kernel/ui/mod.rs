@@ -25,6 +25,7 @@ pub mod skin;
 pub mod surface;
 pub mod system_layout;
 pub mod text_editor;
+pub mod text_input;
 pub mod trusted;
 pub mod vector;
 pub mod window;

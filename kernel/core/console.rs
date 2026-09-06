@@ -214,6 +214,9 @@ pub enum ConsoleKey {
     Down,
     Left,
     Right,
+    Home,
+    End,
+    Delete,
     Help,
 }
 
@@ -364,6 +367,8 @@ struct ConsoleRuntime {
     output: ConsoleOutput,
     command: [u8; COMMAND_CAPACITY],
     command_length: usize,
+    command_cursor: usize,
+    caret_visible: bool,
     intent: IntentRuntime,
     language_session: crate::runtime::console_language::ConsoleSession,
     navigation_context: crate::runtime::object_navigation::ConsoleNavigationContext,
@@ -481,6 +486,8 @@ impl ConsoleRuntime {
             output: ConsoleOutput::new(),
             command: [0; COMMAND_CAPACITY],
             command_length: 0,
+            command_cursor: 0,
+            caret_visible: true,
             intent: IntentRuntime::new(),
             language_session: crate::runtime::console_language::ConsoleSession::new(),
             navigation_context: crate::runtime::object_navigation::ConsoleNavigationContext::new(
@@ -628,6 +635,188 @@ impl ConsoleRuntime {
     fn reset_input(&mut self) {
         self.command = [0; COMMAND_CAPACITY];
         self.command_length = 0;
+        self.command_cursor = 0;
+    }
+
+    // ------------------------=
+    // FUNC: text_input_focused
+    // DESC: Reports whether the current native surface owns an editable text caret.
+    // ------------------=
+    fn text_input_focused(&self) -> bool {
+        match self.mode {
+            ConsoleMode::Onboarding => {
+                (1..=4).contains(&self.system_step) && self.system_focus == 1
+            }
+            ConsoleMode::Authentication | ConsoleMode::Locked => self.system_focus == 1,
+            ConsoleMode::AppLauncher => self.system_focus == 0,
+            ConsoleMode::Settings => self.settings_editing,
+            ConsoleMode::Desktop => {
+                self.ai_chat_focus == 2
+                    || self.desktop_app == DesktopAppKind::CommandWindow
+                    || self.desktop_app == DesktopAppKind::TextEditor
+                    || self.editor_dialog == EditorDialog::SaveAs
+                    || crate::runtime::with_runtime(|runtime| {
+                        runtime
+                            .file_navigator
+                            .map(|state| state.location_editing || state.rename_editing)
+                    })
+                    .flatten()
+                    .unwrap_or(false)
+            }
+            ConsoleMode::Console | ConsoleMode::Repair | ConsoleMode::Startup => true,
+            _ => false,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: pointer_over_text_input
+    // DESC: Resolves text-hover affordance from the same typed hit geometry used for activation.
+    // ------------------=
+    fn pointer_over_text_input(&self) -> bool {
+        let layout = SystemLayout::new(
+            self.system.framebuffer_width,
+            self.system.framebuffer_height,
+        );
+        match self.mode {
+            ConsoleMode::Onboarding => matches!(
+                layout.onboarding_target(self.system_step, self.pointer_x, self.pointer_y),
+                Some(OnboardingTarget::Input)
+            ),
+            ConsoleMode::Authentication | ConsoleMode::Locked => {
+                layout.authentication_target(self.pointer_x, self.pointer_y) == Some(1)
+            }
+            ConsoleMode::AppLauncher => matches!(
+                layout.app_launcher_target(
+                    self.pointer_x,
+                    self.pointer_y,
+                    launcher_visible_count(&self.command[..self.command_length])
+                ),
+                AppLauncherTarget::Search
+            ),
+            ConsoleMode::Desktop => {
+                let chat = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat);
+                if chat.enabled()
+                    && matches!(
+                        layout.ai_chat_target(self.pointer_x, self.pointer_y, chat.minimized()),
+                        Some(AiChatTarget::Composer)
+                    )
+                {
+                    return true;
+                }
+                if self.home_window_visible
+                    && matches!(
+                        self.desktop_target(layout),
+                        Some(DesktopTarget::HomeLocation)
+                    )
+                {
+                    return true;
+                }
+                if self.editor_dialog == EditorDialog::SaveAs {
+                    return matches!(
+                        layout.desktop_editor_dialog_target(
+                            self.pointer_x,
+                            self.pointer_y,
+                            self.app_window_x,
+                            self.app_window_y,
+                            self.app_window_width,
+                            self.app_window_height,
+                            self.app_window_maximized,
+                            false,
+                            0,
+                        ),
+                        Some(EditorDialogTarget::NameField)
+                    );
+                }
+                let window = if self.desktop_app == DesktopAppKind::TextEditor {
+                    self.editor_window
+                } else {
+                    self.command_window
+                };
+                let target = layout.desktop_app_window_target(
+                    self.pointer_x,
+                    self.pointer_y,
+                    window.x,
+                    window.y,
+                    window.width,
+                    window.height,
+                    window.maximized,
+                    self.desktop_app == DesktopAppKind::TextEditor,
+                );
+                if target != DesktopAppWindowTarget::Content {
+                    return false;
+                }
+                if self.desktop_app == DesktopAppKind::TextEditor {
+                    return true;
+                }
+                let geometry = layout.desktop_app_window_geometry(
+                    window.x,
+                    window.y,
+                    window.width,
+                    window.height,
+                    window.maximized,
+                );
+                let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+                pointer_y >= geometry.content.bottom() - (50 * layout.scale()) as i32
+            }
+            ConsoleMode::Settings if self.settings_editing => matches!(
+                layout.settings_target(self.pointer_x, self.pointer_y, self.settings_window),
+                Some(SettingsTarget::ExpandedAction | SettingsTarget::ContentRow(_))
+            ),
+            _ => false,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: publish_text_input_presentation
+    // DESC: Publishes focused caret and I-beam state immediately before framebuffer composition.
+    // ------------------=
+    fn publish_text_input_presentation(&self) {
+        let (cursor, kind) = if self.ai_chat_focus == 2 {
+            (
+                crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.input_cursor()),
+                3,
+            )
+        } else if self.desktop_app == DesktopAppKind::TextEditor
+            && self.editor_dialog == EditorDialog::None
+        {
+            (self.editor_document.cursor(), 4)
+        } else {
+            let file_cursor = crate::runtime::with_runtime(|runtime| {
+                runtime.file_navigator.and_then(|state| {
+                    (state.location_editing || state.rename_editing).then_some(state.editor_cursor)
+                })
+            })
+            .flatten();
+            file_cursor
+                .map(|cursor| (cursor, 2))
+                .unwrap_or((self.command_cursor, 1))
+        };
+        crate::ui::text_input::set_presentation(
+            self.text_input_focused(),
+            self.caret_visible,
+            cursor,
+            kind,
+            self.pointer_over_text_input(),
+        );
+    }
+
+    // ------------------------=
+    // FUNC: clicked_caret_index
+    // DESC: Converts the current normalized pointer into a nearest insertion point inside a rendered field.
+    // ------------------=
+    fn clicked_caret_index(
+        &self,
+        field: crate::ui::geometry::Rect,
+        text_inset: usize,
+        length: usize,
+    ) -> usize {
+        let pointer_x = self.system.framebuffer_width as i32 * self.pointer_x / 1000;
+        let scale = (self.system.framebuffer_width as usize / 1000).max(1);
+        crate::ui::text_input::caret_from_x(
+            pointer_x - field.x - text_inset as i32,
+            9 * scale,
+            length,
+        )
     }
 
     // ------------------------=
@@ -743,6 +932,7 @@ impl ConsoleRuntime {
     // DESC: Implements the redraw operation.
     // ------------------=
     fn redraw(&self) {
+        self.publish_text_input_presentation();
         if matches!(
             self.mode,
             ConsoleMode::Onboarding
@@ -868,6 +1058,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
         self.session_idle.note_activity();
+        self.caret_visible = true;
         if self.mode == ConsoleMode::Desktop {
             if self.ai_chat_focus != 0 && self.input_ai_chat(key) {
                 self.redraw();
@@ -908,11 +1099,16 @@ impl ConsoleRuntime {
     // ------------------=
     fn input_ai_chat(&mut self, key: ConsoleKey) -> bool {
         match key {
-            ConsoleKey::Character(byte) if self.ai_chat_focus == 2 => {
-                crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.push_input(byte));
-            }
-            ConsoleKey::Backspace if self.ai_chat_focus == 2 => {
-                crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.pop_input());
+            ConsoleKey::Character(_)
+            | ConsoleKey::Backspace
+            | ConsoleKey::Delete
+            | ConsoleKey::Left
+            | ConsoleKey::Right
+            | ConsoleKey::Home
+            | ConsoleKey::End
+                if self.ai_chat_focus == 2 =>
+            {
+                crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.edit_input(key));
             }
             ConsoleKey::Tab(reverse) => {
                 self.ai_chat_focus = if reverse {
@@ -956,20 +1152,19 @@ impl ConsoleRuntime {
         };
         if state.location_editing || state.rename_editing {
             match key {
-                ConsoleKey::Character(value) => {
+                ConsoleKey::Character(_)
+                | ConsoleKey::Backspace
+                | ConsoleKey::Delete
+                | ConsoleKey::Left
+                | ConsoleKey::Right
+                | ConsoleKey::Home
+                | ConsoleKey::End => {
                     let _ = crate::runtime::with_runtime(|runtime| {
-                        runtime
-                            .file_navigator
-                            .as_mut()
-                            .map(|navigator| navigator.editor_text.push_ascii(value))
-                    });
-                }
-                ConsoleKey::Backspace => {
-                    let _ = crate::runtime::with_runtime(|runtime| {
-                        runtime
-                            .file_navigator
-                            .as_mut()
-                            .map(|navigator| navigator.editor_text.pop())
+                        runtime.file_navigator.as_mut().map(|navigator| {
+                            navigator
+                                .editor_text
+                                .edit(&mut navigator.editor_cursor, key)
+                        })
                     });
                 }
                 ConsoleKey::Escape => {
@@ -1163,17 +1358,10 @@ impl ConsoleRuntime {
     // ------------------=
     fn input_text_editor(&mut self, key: ConsoleKey) {
         if self.editor_dialog != EditorDialog::None {
+            if self.editor_dialog == EditorDialog::SaveAs && self.edit_system_text(key) {
+                return;
+            }
             match (self.editor_dialog, key) {
-                (EditorDialog::SaveAs, ConsoleKey::Character(character))
-                    if (32..=126).contains(&character)
-                        && self.command_length < crate::ui::text_editor::DOCUMENT_NAME_CAPACITY =>
-                {
-                    self.command[self.command_length] = character;
-                    self.command_length += 1;
-                }
-                (EditorDialog::SaveAs, ConsoleKey::Backspace) => {
-                    self.command_length = self.command_length.saturating_sub(1)
-                }
                 (EditorDialog::SaveAs, ConsoleKey::Enter) => self.save_editor_document_as(),
                 (EditorDialog::Open, ConsoleKey::Up) => {
                     self.system_focus = self.system_focus.saturating_sub(1)
@@ -1203,6 +1391,27 @@ impl ConsoleRuntime {
             ConsoleKey::Backspace => {
                 let _ = self.editor_document.backspace();
                 self.editor_scroll_row = self.editor_scroll_geometry().maximum_scroll;
+            }
+            ConsoleKey::Delete => {
+                let _ = self.editor_document.delete();
+            }
+            ConsoleKey::Left => {
+                let _ = self.editor_document.move_cursor(-1);
+            }
+            ConsoleKey::Right => {
+                let _ = self.editor_document.move_cursor(1);
+            }
+            ConsoleKey::Home => {
+                let _ = self.editor_document.move_cursor_to_line_edge(false);
+            }
+            ConsoleKey::End => {
+                let _ = self.editor_document.move_cursor_to_line_edge(true);
+            }
+            ConsoleKey::Up => {
+                let _ = self.editor_document.move_cursor_vertical(true);
+            }
+            ConsoleKey::Down => {
+                let _ = self.editor_document.move_cursor_vertical(false);
             }
             ConsoleKey::Escape => self.close_desktop_app(),
             _ => {}
@@ -3084,17 +3293,33 @@ impl ConsoleRuntime {
     // ------------------=
     fn edit_system_text(&mut self, key: ConsoleKey) -> bool {
         match key {
-            ConsoleKey::Character(character)
-                if self.command_length < COMMAND_CAPACITY && character >= 0x20 =>
-            {
-                self.command[self.command_length] = character;
-                self.command_length += 1;
-                true
+            ConsoleKey::Character(character) => crate::ui::text_input::insert_ascii(
+                &mut self.command,
+                &mut self.command_length,
+                &mut self.command_cursor,
+                character,
+            ),
+            ConsoleKey::Backspace => crate::ui::text_input::backspace(
+                &mut self.command,
+                &mut self.command_length,
+                &mut self.command_cursor,
+            ),
+            ConsoleKey::Delete => crate::ui::text_input::delete(
+                &mut self.command,
+                &mut self.command_length,
+                &mut self.command_cursor,
+            ),
+            ConsoleKey::Left => {
+                crate::ui::text_input::move_caret(&mut self.command_cursor, self.command_length, -1)
             }
-            ConsoleKey::Backspace if self.command_length > 0 => {
-                self.command_length -= 1;
-                self.command[self.command_length] = 0;
-                true
+            ConsoleKey::Right => {
+                crate::ui::text_input::move_caret(&mut self.command_cursor, self.command_length, 1)
+            }
+            ConsoleKey::Home => {
+                crate::ui::text_input::move_caret(&mut self.command_cursor, self.command_length, -2)
+            }
+            ConsoleKey::End => {
+                crate::ui::text_input::move_caret(&mut self.command_cursor, self.command_length, 2)
             }
             _ => false,
         }
@@ -3163,6 +3388,13 @@ impl ConsoleRuntime {
                 return;
             }
         }
+        if (1..=4).contains(&self.system_step)
+            && self.system_focus == 1
+            && self.edit_system_text(key)
+        {
+            self.onboarding_validation_error = false;
+            return;
+        }
         if matches!(
             key,
             ConsoleKey::Tab(_) | ConsoleKey::Left | ConsoleKey::Right
@@ -3181,13 +3413,6 @@ impl ConsoleRuntime {
             } else {
                 1
             };
-            return;
-        }
-        if (1..=4).contains(&self.system_step)
-            && self.system_focus == 1
-            && self.edit_system_text(key)
-        {
-            self.onboarding_validation_error = false;
             return;
         }
         if matches!(key, ConsoleKey::Escape) && self.system_step > 0 {
@@ -3378,6 +3603,7 @@ impl ConsoleRuntime {
         let copied = length.min(COMMAND_CAPACITY).min(source.len());
         self.command[..copied].copy_from_slice(&source[..copied]);
         self.command_length = copied;
+        self.command_cursor = copied;
     }
 
     // ------------------------=
@@ -3524,7 +3750,18 @@ impl ConsoleRuntime {
                 self.system_focus = 0;
                 return;
             }
-            if matches!(key, ConsoleKey::Character(_) | ConsoleKey::Backspace) {
+            if self.system_focus == 0
+                && matches!(
+                    key,
+                    ConsoleKey::Character(_)
+                        | ConsoleKey::Backspace
+                        | ConsoleKey::Delete
+                        | ConsoleKey::Left
+                        | ConsoleKey::Right
+                        | ConsoleKey::Home
+                        | ConsoleKey::End
+                )
+            {
                 if self.edit_system_text(key) {
                     self.system_focus =
                         if launcher_visible_count(&self.command[..self.command_length]) > 0 {
@@ -4288,20 +4525,7 @@ impl ConsoleRuntime {
     // DESC: Implements the edit input operation.
     // ------------------=
     fn edit_input(&mut self, key: ConsoleKey) -> bool {
-        match key {
-            ConsoleKey::Backspace => {
-                self.command_length = self.command_length.saturating_sub(1);
-                true
-            }
-            ConsoleKey::Character(character) if (32..=126).contains(&character) => {
-                if self.command_length < COMMAND_CAPACITY {
-                    self.command[self.command_length] = character;
-                    self.command_length += 1;
-                }
-                true
-            }
-            _ => false,
-        }
+        self.edit_system_text(key)
     }
 
     // ------------------------=
@@ -4791,6 +5015,14 @@ impl ConsoleRuntime {
             if self.mode == ConsoleMode::Authentication || self.mode == ConsoleMode::Locked {
                 if let Some(target) = layout.authentication_target(self.pointer_x, self.pointer_y) {
                     self.system_focus = target;
+                    if clicked && target == 1 {
+                        let field = layout.authentication_password_geometry();
+                        self.command_cursor = self.clicked_caret_index(
+                            field,
+                            field.height as usize,
+                            self.command_length,
+                        );
+                    }
                     if clicked && target != 1 {
                         self.input_authentication(ConsoleKey::Enter);
                     }
@@ -4802,6 +5034,15 @@ impl ConsoleRuntime {
                     OnboardingTarget::Back => self.system_focus = 0,
                     OnboardingTarget::Primary | OnboardingTarget::Input => self.system_focus = 1,
                     OnboardingTarget::NetworkChoice(index) => self.system_focus = index + 2,
+                }
+                if clicked && matches!(target, OnboardingTarget::Input) {
+                    if let Some(field) = layout.onboarding_input_geometry(self.system_step) {
+                        self.command_cursor = self.clicked_caret_index(
+                            field,
+                            16 * layout.scale(),
+                            self.command_length,
+                        );
+                    }
                 }
                 if clicked && !matches!(target, OnboardingTarget::Input) {
                     self.input_onboarding(ConsoleKey::Enter);
@@ -4820,7 +5061,18 @@ impl ConsoleRuntime {
                             self.ai_chat_focus = 1;
                             self.select_next_chat_model();
                         }
-                        AiChatTarget::Composer => self.ai_chat_focus = 2,
+                        AiChatTarget::Composer => {
+                            self.ai_chat_focus = 2;
+                            let field = layout.ai_chat_geometry(chat_state.1).composer;
+                            let length = crate::runtime::ai::with_ai_runtime(|runtime| {
+                                runtime.chat.input().len()
+                            });
+                            let cursor =
+                                self.clicked_caret_index(field, 12 * layout.scale(), length);
+                            crate::runtime::ai::with_ai_runtime(|runtime| {
+                                runtime.chat.set_input_cursor(cursor)
+                            });
+                        }
                         AiChatTarget::Send => {
                             self.ai_chat_focus = 3;
                             self.submit_ai_chat_input();
@@ -4865,7 +5117,36 @@ impl ConsoleRuntime {
                                     self.save_editor_document_as();
                                 }
                             }
-                            EditorDialogTarget::NameField => {}
+                            EditorDialogTarget::NameField => {
+                                let content = layout
+                                    .desktop_app_window_geometry(
+                                        self.app_window_x,
+                                        self.app_window_y,
+                                        self.app_window_width,
+                                        self.app_window_height,
+                                        self.app_window_maximized,
+                                    )
+                                    .content;
+                                let scale = layout.scale();
+                                let sheet_width = (420 * scale)
+                                    .min((content.width as usize).saturating_sub(40 * scale));
+                                let sheet_height = 220 * scale;
+                                let left = content.x.max(0) as usize
+                                    + (content.width as usize).saturating_sub(sheet_width) / 2;
+                                let top = content.y.max(0) as usize
+                                    + (content.height as usize).saturating_sub(sheet_height) / 2;
+                                let field = crate::ui::geometry::Rect {
+                                    x: (left + 24 * scale) as i32,
+                                    y: (top + 72 * scale) as i32,
+                                    width: sheet_width.saturating_sub(48 * scale) as u32,
+                                    height: (46 * scale) as u32,
+                                };
+                                self.command_cursor = self.clicked_caret_index(
+                                    field,
+                                    16 * scale,
+                                    self.command_length,
+                                );
+                            }
                         }
                     }
                 }
@@ -5018,9 +5299,67 @@ impl ConsoleRuntime {
                                 }
                             }
                         }
-                        DesktopAppWindowTarget::Content
-                        | DesktopAppWindowTarget::Title
-                        | DesktopAppWindowTarget::Resize(_) => {}
+                        DesktopAppWindowTarget::Content => {
+                            if self.desktop_app == DesktopAppKind::TextEditor {
+                                let geometry = layout.desktop_app_window_geometry(
+                                    self.app_window_x,
+                                    self.app_window_y,
+                                    self.app_window_width,
+                                    self.app_window_height,
+                                    self.app_window_maximized,
+                                );
+                                let scale = layout.scale().max(1);
+                                let pointer_x =
+                                    self.system.framebuffer_width as i32 * self.pointer_x / 1000;
+                                let pointer_y =
+                                    self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+                                let row = self.editor_scroll_row
+                                    + pointer_y
+                                        .saturating_sub(geometry.content.y + (18 * scale) as i32)
+                                        as usize
+                                        / (24 * scale);
+                                let columns = (geometry.content.width as usize)
+                                    .saturating_sub(52 * scale)
+                                    / (9 * scale);
+                                let start = crate::ui::text_editor::visual_line_start(
+                                    self.editor_document.bytes(),
+                                    columns.max(1),
+                                    row,
+                                );
+                                let end = crate::ui::text_editor::visual_line_start(
+                                    self.editor_document.bytes(),
+                                    columns.max(1),
+                                    row + 1,
+                                );
+                                let column = crate::ui::text_input::caret_from_x(
+                                    pointer_x - geometry.content.x - (20 * scale) as i32,
+                                    9 * scale,
+                                    end.saturating_sub(start),
+                                );
+                                self.editor_document.set_cursor((start + column).min(end));
+                            } else if self.desktop_app == DesktopAppKind::CommandWindow {
+                                let geometry = layout.desktop_app_window_geometry(
+                                    self.app_window_x,
+                                    self.app_window_y,
+                                    self.app_window_width,
+                                    self.app_window_height,
+                                    self.app_window_maximized,
+                                );
+                                let scale = layout.scale();
+                                let field = crate::ui::geometry::Rect {
+                                    x: geometry.content.x + (74 * scale) as i32,
+                                    y: geometry.content.bottom() - (50 * scale) as i32,
+                                    width: geometry
+                                        .content
+                                        .width
+                                        .saturating_sub((92 * scale) as u32),
+                                    height: (42 * scale) as u32,
+                                };
+                                self.command_cursor =
+                                    self.clicked_caret_index(field, 0, self.command_length);
+                            }
+                        }
+                        DesktopAppWindowTarget::Title | DesktopAppWindowTarget::Resize(_) => {}
                     }
                     if app_target != DesktopAppWindowTarget::None {
                         self.redraw();
@@ -5220,11 +5559,33 @@ impl ConsoleRuntime {
                         self.home_selected_item = None;
                     }
                     Some(DesktopTarget::HomeLocation) => {
-                        let _ = crate::runtime::with_runtime(|runtime| {
+                        let (left, top, width, _) = layout.home_window_geometry_sized(
+                            self.home_window_x,
+                            self.home_window_y,
+                            self.home_window_width,
+                            self.home_window_height,
+                            self.home_window_maximized,
+                        );
+                        let scale = layout.scale();
+                        let field = crate::ui::geometry::Rect {
+                            x: (left + 100 * scale) as i32,
+                            y: (top + 34 * scale + 5 * scale) as i32,
+                            width: width.saturating_sub(250 * scale) as u32,
+                            height: (28 * scale) as u32,
+                        };
+                        let length = crate::runtime::with_runtime(|runtime| {
                             runtime
                                 .file_navigator
-                                .as_mut()
-                                .map(|navigator| navigator.begin_location_edit())
+                                .map(|navigator| navigator.active_namespace_ref.as_bytes().len())
+                        })
+                        .flatten()
+                        .unwrap_or(0);
+                        let cursor = self.clicked_caret_index(field, 14 * scale, length);
+                        let _ = crate::runtime::with_runtime(|runtime| {
+                            runtime.file_navigator.as_mut().map(|navigator| {
+                                navigator.begin_location_edit();
+                                navigator.editor_cursor = cursor;
+                            })
                         });
                     }
                     Some(DesktopTarget::HomeSidebar(location)) => {
@@ -5303,7 +5664,17 @@ impl ConsoleRuntime {
         } else if self.mode == ConsoleMode::AppLauncher {
             let visible = launcher_visible_count(&self.command[..self.command_length]);
             match layout.app_launcher_target(self.pointer_x, self.pointer_y, visible) {
-                AppLauncherTarget::Search => self.system_focus = 0,
+                AppLauncherTarget::Search => {
+                    self.system_focus = 0;
+                    if clicked {
+                        let field = layout.app_launcher_geometry().search;
+                        self.command_cursor = self.clicked_caret_index(
+                            field,
+                            50 * layout.scale(),
+                            self.command_length,
+                        );
+                    }
+                }
                 AppLauncherTarget::App(index) => {
                     self.system_focus = index + 1;
                     if clicked {
@@ -8649,15 +9020,27 @@ pub fn clock_tick() {
         if let Some(runtime) = (*slot).as_mut() {
             if !matches!(
                 runtime.mode,
-                ConsoleMode::Desktop
+                ConsoleMode::Onboarding
+                    | ConsoleMode::Authentication
+                    | ConsoleMode::Locked
+                    | ConsoleMode::Desktop
                     | ConsoleMode::AppLauncher
                     | ConsoleMode::SystemMenu
                     | ConsoleMode::Settings
             ) {
                 return;
             }
+            if runtime.text_input_focused() {
+                runtime.caret_visible = !runtime.caret_visible;
+            }
             let timeout_seconds = u32::from(runtime.user_no_activity_timeout_minutes()) * 60;
-            if runtime
+            if matches!(
+                runtime.mode,
+                ConsoleMode::Desktop
+                    | ConsoleMode::AppLauncher
+                    | ConsoleMode::SystemMenu
+                    | ConsoleMode::Settings
+            ) && runtime
                 .session_idle
                 .tick(!runtime.current_session.is_zero(), timeout_seconds)
             {
@@ -8667,7 +9050,7 @@ pub fn clock_tick() {
                 return;
             }
             let next = firmware_date_time(runtime.system.firmware_runtime_services);
-            if next != runtime.desktop_clock {
+            if next != runtime.desktop_clock || runtime.text_input_focused() {
                 runtime.desktop_clock = next;
                 runtime.redraw();
             }
