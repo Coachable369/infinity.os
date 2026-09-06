@@ -615,14 +615,23 @@ impl super::DisplayDevice {
             inner_x,
             sign_y,
             inner_w,
-            sw(56),
+            sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT),
             sw(13),
             7,
             48,
             79,
             if focus == 2 { 248 } else { 226 },
         );
-        self.outline_rounded_rect(inner_x, sign_y, inner_w, sw(56), sw(13), 34, 182, 235);
+        self.outline_rounded_rect(
+            inner_x,
+            sign_y,
+            inner_w,
+            sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT),
+            sw(13),
+            34,
+            182,
+            235,
+        );
         self.ui_text_centered(
             inner_x,
             inner_w,
@@ -669,7 +678,7 @@ impl super::DisplayDevice {
             inner_x,
             key_y,
             inner_w,
-            sw(55),
+            sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT),
             sw(13),
             5,
             16,
@@ -680,7 +689,7 @@ impl super::DisplayDevice {
             inner_x,
             key_y,
             inner_w,
-            sw(55),
+            sw(crate::ui::system_layout::UI_HERO_ACTION_HEIGHT),
             sw(13),
             if focus == 3 { 34 } else { 37 },
             if focus == 3 { 182 } else { 59 },
@@ -1836,6 +1845,37 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: polished_toolbar_button
+    // DESC: Draws one equal-size icon-and-label toolbar action with the shared compact gutters.
+    // ------------------=
+    pub(super) fn polished_toolbar_button(
+        &mut self,
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+        label: &[u8],
+        role: usize,
+    ) {
+        let scale = self.ui_scale().max(1);
+        let radius = (8 * scale).min(height / 2);
+        self.fill_rounded_rect_alpha(left, top, width, height, radius, 7, 27, 45, 218);
+        self.outline_rounded_rect(left, top, width, height, radius, 35, 76, 102);
+        let icon_center_x = left + 16 * scale;
+        let icon_center_y = top + height / 2;
+        let _ = self.themed_icon(icon_center_x, icon_center_y, role, 20 * scale);
+        self.ui_text(
+            left + 32 * scale,
+            top + height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
+            label,
+            213,
+            232,
+            243,
+            1,
+        );
+    }
+
+    // ------------------------=
     // FUNC: onboarding_input_field
     // DESC: Draws one polished first-boot text field with placeholder, focus, and secure masking.
     // ------------------=
@@ -1882,7 +1922,7 @@ impl super::DisplayDevice {
             (239, 245, 250)
         };
         self.ui_text(
-            left + 16,
+            left + crate::ui::system_layout::UI_GUTTER * self.ui_scale().max(1),
             top + height / 2 - 10,
             display,
             color.0,
@@ -2332,7 +2372,7 @@ impl super::DisplayDevice {
         let card_top = top_bar + self.height.saturating_sub(top_bar + card_height) / 2;
         let inner_left = card_left + 32 * scale;
         let inner_width = card_width.saturating_sub(64 * scale);
-        let button_height = 48 * scale;
+        let button_height = crate::ui::system_layout::UI_STANDARD_ACTION_HEIGHT * scale;
         let button_top = card_top + card_height.saturating_sub(72 * scale);
         if step > 0 {
             let back_width = inner_width * 30 / 100;
@@ -2345,11 +2385,13 @@ impl super::DisplayDevice {
                 false,
                 focus == 0,
             );
-            let primary_left = inner_left + back_width + 12 * scale;
+            let primary_left =
+                inner_left + back_width + crate::ui::system_layout::UI_CONTROL_GAP * scale;
             self.polished_button(
                 primary_left,
                 button_top,
-                inner_width.saturating_sub(back_width + 12 * scale),
+                inner_width
+                    .saturating_sub(back_width + crate::ui::system_layout::UI_CONTROL_GAP * scale),
                 button_height,
                 if step >= 7 {
                     b"Enter InfinityOS"
@@ -2600,6 +2642,8 @@ impl super::DisplayDevice {
                 224,
             );
             if screen == 9 {
+                let toolbar = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                    .desktop_toolbar_geometry(geometry);
                 for (index, (label, role)) in [
                     (b"New".as_slice(), 49usize),
                     (b"Open", 50),
@@ -2610,28 +2654,24 @@ impl super::DisplayDevice {
                 .iter()
                 .enumerate()
                 {
-                    let button_left = toolbar_left + 8 * scale + index * 82 * scale;
-                    let _ = self.themed_icon(
-                        button_left + 13 * scale,
-                        toolbar_top + 21 * scale,
-                        *role,
-                        24 * scale,
-                    );
-                    self.ui_text(
-                        button_left + 31 * scale,
-                        toolbar_top + 13 * scale,
+                    let action = toolbar.actions[index];
+                    self.polished_toolbar_button(
+                        action.x.max(0) as usize,
+                        action.y.max(0) as usize,
+                        action.width as usize,
+                        action.height as usize,
                         label,
-                        202,
-                        225,
-                        239,
-                        1,
+                        *role,
                     );
                 }
                 let status: &[u8] = if editor_saved { b"Saved" } else { b"Modified" };
                 let status_width = self.ui_text_width(status, 1);
                 self.ui_text(
-                    left + width.saturating_sub(status_width + 18 * scale),
-                    toolbar_top + 13 * scale,
+                    toolbar.status.x.max(0) as usize
+                        + (toolbar.status.width as usize).saturating_sub(status_width) / 2,
+                    toolbar_top
+                        + (geometry.toolbar.height as usize).saturating_sub(UI_FONT_CELL_HEIGHT)
+                            / 2,
                     status,
                     if editor_saved { 108 } else { 102 },
                     if editor_saved { 221 } else { 195 },
@@ -2652,19 +2692,22 @@ impl super::DisplayDevice {
         } else if screen == 9 {
             let status: &[u8] = if editor_saved { b"Saved" } else { b"Modified" };
             let status_width = self.ui_text_width(status, 1);
-            let status_left = left + width.saturating_sub(150 * scale);
+            let toolbar = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .desktop_toolbar_geometry(geometry);
+            let status_left = toolbar.status.x.max(0) as usize;
             self.fill_rect(
                 status_left,
                 toolbar_top,
-                150 * scale,
+                toolbar.status.width as usize,
                 geometry.toolbar.height as usize,
                 5,
                 22,
                 38,
             );
             self.ui_text(
-                left + width.saturating_sub(status_width + 18 * scale),
-                toolbar_top + 13 * scale,
+                status_left + (toolbar.status.width as usize).saturating_sub(status_width) / 2,
+                toolbar_top
+                    + (geometry.toolbar.height as usize).saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
                 status,
                 if editor_saved { 108 } else { 102 },
                 if editor_saved { 221 } else { 195 },
@@ -2953,22 +2996,22 @@ impl super::DisplayDevice {
                 1,
             );
         }
-        let button_top = top + sheet_height.saturating_sub(58 * scale);
+        let button_top = top + sheet_height.saturating_sub(60 * scale);
         let button_width = (sheet_width.saturating_sub(60 * scale)) / 2;
         self.polished_button(
             left + 24 * scale,
             button_top,
             button_width,
-            38 * scale,
+            crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT * scale,
             b"CANCEL",
             false,
             false,
         );
         self.polished_button(
-            left + 36 * scale + button_width,
+            left + (24 + crate::ui::system_layout::UI_CONTROL_GAP) * scale + button_width,
             button_top,
             button_width,
-            38 * scale,
+            crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT * scale,
             if open_picker { b"OPEN" } else { b"SAVE" },
             true,
             false,
@@ -3353,48 +3396,23 @@ impl super::DisplayDevice {
             }
             let button_y = panel_top + panel_height - 76 * scale;
             let button_width = panel_width.saturating_sub(60 * scale);
-            self.fill_rect_alpha(
+            self.polished_button(
                 x,
                 button_y,
                 button_width,
-                46 * scale,
-                if focus == 1 { 22 } else { 8 },
-                if focus == 1 { 75 } else { 28 },
-                if focus == 1 { 105 } else { 42 },
-                235,
+                crate::ui::system_layout::UI_STANDARD_ACTION_HEIGHT * scale,
+                if screen == 5 {
+                    b"START SESSION"
+                } else if screen == 6 {
+                    b"UNLOCK"
+                } else if step >= 6 {
+                    b"ENTER INFINITYOS"
+                } else {
+                    b"CONTINUE"
+                },
+                true,
+                focus == 1,
             );
-            self.outline_rect(x, button_y, button_width, 46 * scale, 89, 211, 250);
-            let label: &[u8] = if screen == 5 {
-                b"START SESSION"
-            } else if screen == 6 {
-                b"UNLOCK"
-            } else if step >= 6 {
-                b"ENTER INFINITYOS"
-            } else {
-                b"CONTINUE"
-            };
-            if smooth_system_text {
-                self.ui_text(
-                    x + 18 * scale,
-                    button_y + 13 * scale,
-                    label,
-                    246,
-                    252,
-                    255,
-                    1,
-                );
-            } else {
-                self.text_scaled(
-                    x + 18 * scale,
-                    button_y + 14 * scale,
-                    label,
-                    246,
-                    252,
-                    255,
-                    scale,
-                    true,
-                );
-            }
         } else if screen == 3 {
             self.system_menu_panel(menu_kind, focus, scale);
         } else if screen == 4 {
@@ -4032,7 +4050,7 @@ impl super::DisplayDevice {
                     if expanded { outline_b } else { outline_b / 2 },
                 );
                 self.ui_text_strong(
-                    summary_left + 16 * scale,
+                    summary_left + crate::ui::system_layout::UI_GUTTER * scale,
                     summary_top + 13 * scale,
                     label,
                     190,
@@ -4173,8 +4191,8 @@ impl super::DisplayDevice {
                         _ => b"This value is read from the active System Generation.",
                     };
                     self.ui_text(
-                        detail_left + 14 * scale,
-                        detail_top + 13 * scale,
+                        detail_left + crate::ui::system_layout::UI_GUTTER * scale,
+                        detail_top + crate::ui::system_layout::UI_GUTTER * scale,
                         description,
                         167,
                         188,
@@ -4189,10 +4207,18 @@ impl super::DisplayDevice {
                     };
                     if let Some(action) = action {
                         self.polished_button(
-                            detail_left + 14 * scale,
-                            detail_top + detail_height.saturating_sub(42 * scale),
-                            (170 * scale).min(detail_width.saturating_sub(28 * scale)),
-                            32 * scale,
+                            detail_left + crate::ui::system_layout::UI_GUTTER * scale,
+                            detail_top
+                                + detail_height.saturating_sub(
+                                    (crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT + 10)
+                                        * scale,
+                                ),
+                            (170 * scale).min(
+                                detail_width.saturating_sub(
+                                    crate::ui::system_layout::UI_GUTTER * 2 * scale,
+                                ),
+                            ),
+                            crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT * scale,
                             action,
                             true,
                             false,

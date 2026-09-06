@@ -106,6 +106,19 @@ pub struct DesktopAppWindowGeometry {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DesktopToolbarGeometry {
+    pub actions: [Rect; 5],
+    pub status: Rect,
+}
+
+pub const UI_GUTTER: usize = 16;
+pub const UI_CONTROL_GAP: usize = 12;
+pub const UI_TOOLBAR_ACTION_HEIGHT: usize = 34;
+pub const UI_COMPACT_ACTION_HEIGHT: usize = 40;
+pub const UI_STANDARD_ACTION_HEIGHT: usize = 48;
+pub const UI_HERO_ACTION_HEIGHT: usize = 56;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EditorScrollGeometry {
     pub track: Rect,
     pub thumb: Rect,
@@ -542,20 +555,32 @@ impl SystemLayout {
 
         let button_top = card_top + card_height.saturating_sub(72 * self.scale);
         if step == 0 {
-            return rect(inner_left, button_top, inner_width, 48 * self.scale)
-                .contains(point)
-                .then_some(OnboardingTarget::Primary);
+            return rect(
+                inner_left,
+                button_top,
+                inner_width,
+                UI_STANDARD_ACTION_HEIGHT * self.scale,
+            )
+            .contains(point)
+            .then_some(OnboardingTarget::Primary);
         }
         let back_width = inner_width * 30 / 100;
-        if rect(inner_left, button_top, back_width, 48 * self.scale).contains(point) {
+        if rect(
+            inner_left,
+            button_top,
+            back_width,
+            UI_STANDARD_ACTION_HEIGHT * self.scale,
+        )
+        .contains(point)
+        {
             return Some(OnboardingTarget::Back);
         }
-        let primary_left = inner_left + back_width + 12 * self.scale;
+        let primary_left = inner_left + back_width + UI_CONTROL_GAP * self.scale;
         rect(
             primary_left,
             button_top,
-            inner_width.saturating_sub(back_width + 12 * self.scale),
-            48 * self.scale,
+            inner_width.saturating_sub(back_width + UI_CONTROL_GAP * self.scale),
+            UI_STANDARD_ACTION_HEIGHT * self.scale,
         )
         .contains(point)
         .then_some(OnboardingTarget::Primary)
@@ -586,8 +611,8 @@ impl SystemLayout {
         for (focus, top, height) in [
             (0usize, card_y + sw(253), sw(86)),
             (1, card_y + sw(356), sw(57)),
-            (2, card_y + sw(439), sw(56)),
-            (3, card_y + sw(557), sw(55)),
+            (2, card_y + sw(439), sw(UI_HERO_ACTION_HEIGHT)),
+            (3, card_y + sw(557), sw(UI_HERO_ACTION_HEIGHT)),
         ] {
             if rect(inner_x, top, inner_w, height).contains(point) {
                 return Some(focus);
@@ -1041,6 +1066,48 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: desktop_toolbar_geometry
+    // DESC: Derives five equal toolbar actions and a protected trailing status well from shared control metrics.
+    // ------------------=
+    pub fn desktop_toolbar_geometry(
+        self,
+        window: DesktopAppWindowGeometry,
+    ) -> DesktopToolbarGeometry {
+        let toolbar_left = window.toolbar.x.max(0) as usize;
+        let toolbar_top = window.toolbar.y.max(0) as usize;
+        let toolbar_width = window.toolbar.width as usize;
+        let outer_gutter = 8 * self.scale;
+        let gap = 4 * self.scale;
+        let status_width = (112 * self.scale).min(toolbar_width / 4);
+        let available = toolbar_width
+            .saturating_sub(outer_gutter * 2 + status_width + 8 * self.scale + gap * 4);
+        let action_width = (104 * self.scale).min(available / 5).max(1);
+        let action_height = UI_TOOLBAR_ACTION_HEIGHT * self.scale;
+        let action_top =
+            toolbar_top + (window.toolbar.height as usize).saturating_sub(action_height) / 2;
+        let mut actions = [rect(0, 0, 0, 0); 5];
+        let mut index = 0usize;
+        while index < actions.len() {
+            actions[index] = rect(
+                toolbar_left + outer_gutter + index * (action_width + gap),
+                action_top,
+                action_width,
+                action_height,
+            );
+            index += 1;
+        }
+        DesktopToolbarGeometry {
+            actions,
+            status: rect(
+                toolbar_left + toolbar_width.saturating_sub(outer_gutter + status_width),
+                toolbar_top,
+                status_width,
+                window.toolbar.height as usize,
+            ),
+        }
+    }
+
+    // ------------------------=
     // FUNC: desktop_app_window_target
     // DESC: Resolves native app title, controls, toolbar actions, and content using rendered geometry.
     // ------------------=
@@ -1089,21 +1156,17 @@ impl SystemLayout {
             return DesktopAppWindowTarget::Title;
         }
         if text_editor && geometry.toolbar.contains(point) {
-            let relative = point.x.saturating_sub(geometry.toolbar.x) as usize;
-            if relative < 82 * self.scale {
-                return DesktopAppWindowTarget::NewDocument;
-            }
-            if relative < 164 * self.scale {
-                return DesktopAppWindowTarget::OpenDocument;
-            }
-            if relative < 246 * self.scale {
-                return DesktopAppWindowTarget::SaveDocument;
-            }
-            if relative < 352 * self.scale {
-                return DesktopAppWindowTarget::SaveAsDocument;
-            }
-            if relative < 434 * self.scale {
-                return DesktopAppWindowTarget::DeleteDocument;
+            let toolbar = self.desktop_toolbar_geometry(geometry);
+            for (index, action) in toolbar.actions.iter().enumerate() {
+                if action.contains(point) {
+                    return [
+                        DesktopAppWindowTarget::NewDocument,
+                        DesktopAppWindowTarget::OpenDocument,
+                        DesktopAppWindowTarget::SaveDocument,
+                        DesktopAppWindowTarget::SaveAsDocument,
+                        DesktopAppWindowTarget::DeleteDocument,
+                    ][index];
+                }
             }
         }
         if geometry.content.contains(point) {
@@ -1289,23 +1352,23 @@ impl SystemLayout {
         {
             return Some(EditorDialogTarget::NameField);
         }
-        let button_top = top + sheet_height.saturating_sub(58 * self.scale);
+        let button_top = top + sheet_height.saturating_sub(60 * self.scale);
         let button_width = (sheet_width.saturating_sub(60 * self.scale)) / 2;
         if rect(
             left + 24 * self.scale,
             button_top,
             button_width,
-            38 * self.scale,
+            UI_COMPACT_ACTION_HEIGHT * self.scale,
         )
         .contains(point)
         {
             return Some(EditorDialogTarget::Cancel);
         }
         if rect(
-            left + 36 * self.scale + button_width,
+            left + (24 + UI_CONTROL_GAP) * self.scale + button_width,
             button_top,
             button_width,
-            38 * self.scale,
+            UI_COMPACT_ACTION_HEIGHT * self.scale,
         )
         .contains(point)
         {
@@ -1635,14 +1698,15 @@ impl SystemLayout {
             }
             if state.expanded_row == Some(index) && row.detail.contains(point) {
                 let action = rect(
-                    row.detail.x.max(0) as usize + 14 * self.scale,
+                    row.detail.x.max(0) as usize + UI_GUTTER * self.scale,
                     row.detail
                         .bottom()
-                        .saturating_sub((42 * self.scale) as i32)
+                        .saturating_sub(((UI_COMPACT_ACTION_HEIGHT + 10) * self.scale) as i32)
                         .max(0) as usize,
-                    (170 * self.scale)
-                        .min((row.detail.width as usize).saturating_sub(28 * self.scale)),
-                    32 * self.scale,
+                    (170 * self.scale).min(
+                        (row.detail.width as usize).saturating_sub(UI_GUTTER * 2 * self.scale),
+                    ),
+                    UI_COMPACT_ACTION_HEIGHT * self.scale,
                 );
                 if action.contains(point) {
                     return Some(SettingsTarget::ExpandedAction);

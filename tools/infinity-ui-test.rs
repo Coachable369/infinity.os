@@ -473,46 +473,70 @@ fn app_launcher_behavior_test() {
             target
         );
     }
-    let (new_x, toolbar_y) = normalized(
-        app_window.toolbar.x + 40,
-        app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
-    );
-    let (open_x, _) = normalized(
-        app_window.toolbar.x + 150,
-        app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
-    );
-    let (save_x, _) = normalized(
-        app_window.toolbar.x + 240,
-        app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
-    );
-    let (save_as_x, _) = normalized(
-        app_window.toolbar.x + 300,
-        app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
-    );
-    let (delete_x, _) = normalized(
-        app_window.toolbar.x + 390,
-        app_window.toolbar.y + app_window.toolbar.height as i32 / 2,
-    );
-    assert_eq!(
-        layout.desktop_app_window_target(new_x, toolbar_y, 190, 160, 600, 620, false, true),
-        DesktopAppWindowTarget::NewDocument
-    );
-    assert_eq!(
-        layout.desktop_app_window_target(open_x, toolbar_y, 190, 160, 600, 620, false, true),
-        DesktopAppWindowTarget::OpenDocument
-    );
-    assert_eq!(
-        layout.desktop_app_window_target(save_x, toolbar_y, 190, 160, 600, 620, false, true),
-        DesktopAppWindowTarget::SaveDocument
-    );
-    assert_eq!(
-        layout.desktop_app_window_target(save_as_x, toolbar_y, 190, 160, 600, 620, false, true),
-        DesktopAppWindowTarget::SaveAsDocument
-    );
-    assert_eq!(
-        layout.desktop_app_window_target(delete_x, toolbar_y, 190, 160, 600, 620, false, true),
-        DesktopAppWindowTarget::DeleteDocument
-    );
+    let toolbar = layout.desktop_toolbar_geometry(app_window);
+    let toolbar_targets = [
+        DesktopAppWindowTarget::NewDocument,
+        DesktopAppWindowTarget::OpenDocument,
+        DesktopAppWindowTarget::SaveDocument,
+        DesktopAppWindowTarget::SaveAsDocument,
+        DesktopAppWindowTarget::DeleteDocument,
+    ];
+    for (index, action) in toolbar.actions.iter().enumerate() {
+        assert_eq!(action.width, toolbar.actions[0].width);
+        assert_eq!(action.height, toolbar.actions[0].height);
+        assert_eq!(
+            action.height as usize,
+            ui::system_layout::UI_TOOLBAR_ACTION_HEIGHT * layout.scale()
+        );
+        assert!(app_window.toolbar.contains(Point {
+            x: action.x,
+            y: action.y,
+        }));
+        assert!(action.right() <= toolbar.status.x);
+        let (action_x, action_y) = normalized(
+            action.x + action.width as i32 / 2,
+            action.y + action.height as i32 / 2,
+        );
+        assert_eq!(
+            layout.desktop_app_window_target(action_x, action_y, 190, 160, 600, 620, false, true,),
+            toolbar_targets[index]
+        );
+    }
+    assert!(toolbar.status.right() <= app_window.toolbar.right());
+
+    let sheet_width = 420;
+    let sheet_height = 220;
+    let sheet_left =
+        app_window.content.x + (app_window.content.width as i32 - sheet_width as i32) / 2;
+    let sheet_top =
+        app_window.content.y + (app_window.content.height as i32 - sheet_height as i32) / 2;
+    let sheet_button_top = sheet_top + sheet_height as i32 - 60;
+    let sheet_button_width = (sheet_width - 60) / 2;
+    for (target, center_x) in [
+        (
+            EditorDialogTarget::Cancel,
+            sheet_left + 24 + sheet_button_width as i32 / 2,
+        ),
+        (
+            EditorDialogTarget::Accept,
+            sheet_left
+                + 24
+                + ui::system_layout::UI_CONTROL_GAP as i32
+                + sheet_button_width as i32
+                + sheet_button_width as i32 / 2,
+        ),
+    ] {
+        let (action_x, action_y) = normalized(
+            center_x,
+            sheet_button_top + ui::system_layout::UI_COMPACT_ACTION_HEIGHT as i32 / 2,
+        );
+        assert_eq!(
+            layout.desktop_editor_dialog_target(
+                action_x, action_y, 190, 160, 600, 620, false, false, 0,
+            ),
+            Some(target)
+        );
+    }
 
     let mut document = TextDocument::new();
     assert!(document.is_saved());
@@ -1187,6 +1211,24 @@ fn installed_system_hit_geometry_test() {
     assert_eq!(
         square.settings_target(row_point.0, row_point.1, settings),
         Some(SettingsTarget::ContentRow(0))
+    );
+    let actionable_settings = SettingsWindowState {
+        expanded_row: Some(0),
+        ..settings
+    };
+    let action_detail = square.settings_row_geometry(actionable_settings, 0).detail;
+    let action_point = (
+        (action_detail.x + (ui::system_layout::UI_GUTTER + 60) as i32 * square.scale() as i32)
+            * 1000
+            / 1600,
+        (action_detail.bottom()
+            - ((ui::system_layout::UI_COMPACT_ACTION_HEIGHT / 2 + 10) * square.scale()) as i32)
+            * 1000
+            / 1600,
+    );
+    assert_eq!(
+        square.settings_target(action_point.0, action_point.1, actionable_settings),
+        Some(SettingsTarget::ExpandedAction)
     );
     let resize_point = (
         (settings_geometry.window.right() - 4) * 1000 / 1600,
