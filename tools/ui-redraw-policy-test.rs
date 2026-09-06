@@ -74,11 +74,11 @@ fn ordinary_desktop_pointer_motion_is_cursor_only() {
 }
 
 // ------------------------=
-// FUNC: desktop_drag_uses_bounded_damage
-// DESC: Verifies ordinary visible-window motion avoids a structural redraw while unsupported states retain the safe fallback.
+// FUNC: desktop_drag_reconstructs_the_scene
+// DESC: Verifies every visible translucent-window move reconstructs the scene so stale content cannot trail behind it.
 // ------------------=
-fn desktop_drag_uses_bounded_damage() {
-    assert!(!desktop_window_move_requires_structural_redraw(
+fn desktop_drag_reconstructs_the_scene() {
+    assert!(desktop_window_move_requires_structural_redraw(
         2, true, true, false
     ));
     assert!(desktop_window_move_requires_structural_redraw(
@@ -105,5 +105,5 @@ fn main() {
     visible_clock_updates_are_damage_limited();
     launcher_updates_are_damage_limited();
     ordinary_desktop_pointer_motion_is_cursor_only();
-    desktop_drag_uses_bounded_damage();
+    desktop_drag_reconstructs_the_scene();
 }

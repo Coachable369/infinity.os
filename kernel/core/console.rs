@@ -16,6 +16,10 @@ use crate::ui::system_layout::{
     EditorDialogTarget, EditorScrollTarget, NetworkSettingsTarget, OnboardingTarget,
     SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget,
 };
+use crate::ui::session_state::{
+    DesktopResumeSurface, DesktopSessionLayout, LockedDesktopState, SessionIdleState,
+    WindowPlacement,
+};
 use crate::ui::text_editor::TextDocument;
 
 const OUTPUT_ROWS: usize = 6;
@@ -407,6 +411,8 @@ struct ConsoleRuntime {
     editor_scroll_grab_offset: i32,
     editor_window: DesktopAppWindowState,
     command_window: DesktopAppWindowState,
+    session_idle: SessionIdleState,
+    locked_desktop_layout: LockedDesktopState,
 }
 
 impl ConsoleRuntime {
@@ -542,6 +548,8 @@ impl ConsoleRuntime {
             editor_scroll_grab_offset: 0,
             editor_window: DesktopAppWindowState::new(190, 160, 600, 620),
             command_window: DesktopAppWindowState::new(240, 210, 600, 620),
+            session_idle: SessionIdleState::new(),
+            locked_desktop_layout: LockedDesktopState::new(),
         }
     }
 
@@ -798,6 +806,7 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        self.session_idle.note_activity();
         if self.mode == ConsoleMode::Desktop {
             if self.desktop_app == DesktopAppKind::CommandWindow {
                 self.input_console(key);
@@ -1281,6 +1290,145 @@ impl ConsoleRuntime {
             DesktopAppKind::None => {}
         }
         (editor, command)
+    }
+
+    // ------------------------=
+    // FUNC: capture_desktop_layout
+    // DESC: Captures every desktop window and object position before the authenticated surface is hidden.
+    // ------------------=
+    fn capture_desktop_layout(&mut self) -> DesktopSessionLayout {
+        self.store_active_app_window();
+        let focused_surface = if self.mode == ConsoleMode::Settings {
+            DesktopResumeSurface::Settings
+        } else {
+            match self.desktop_app {
+                DesktopAppKind::TextEditor => DesktopResumeSurface::TextEditor,
+                DesktopAppKind::CommandWindow => DesktopResumeSurface::CommandWindow,
+                DesktopAppKind::None => DesktopResumeSurface::Workspace,
+            }
+        };
+        DesktopSessionLayout {
+            home: WindowPlacement::new(
+                self.home_window_x,
+                self.home_window_y,
+                self.home_window_width,
+                self.home_window_height,
+                self.home_window_maximized,
+                self.home_window_visible,
+            ),
+            settings: WindowPlacement::new(
+                self.settings_window.x,
+                self.settings_window.y,
+                self.settings_window.width,
+                self.settings_window.height,
+                self.settings_window.maximized,
+                self.mode == ConsoleMode::Settings,
+            ),
+            editor: WindowPlacement::new(
+                self.editor_window.x,
+                self.editor_window.y,
+                self.editor_window.width,
+                self.editor_window.height,
+                self.editor_window.maximized,
+                self.editor_window.visible,
+            ),
+            command: WindowPlacement::new(
+                self.command_window.x,
+                self.command_window.y,
+                self.command_window.width,
+                self.command_window.height,
+                self.command_window.maximized,
+                self.command_window.visible,
+            ),
+            desktop_item_positions: self.desktop_item_positions,
+            focused_surface,
+            settings_section: self.system_focus,
+            settings_expanded_row: self.settings_window.expanded_row,
+            settings_scroll_offset: self.settings_window.scroll_offset,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: restore_desktop_layout
+    // DESC: Restores the exact pre-lock window geometry, desktop positions, visibility, and focus.
+    // ------------------=
+    fn restore_desktop_layout(&mut self, layout: DesktopSessionLayout) {
+        self.home_window_x = layout.home.x;
+        self.home_window_y = layout.home.y;
+        self.home_window_width = layout.home.width;
+        self.home_window_height = layout.home.height;
+        self.home_window_maximized = layout.home.maximized;
+        self.home_window_visible = layout.home.visible;
+        self.settings_window.x = layout.settings.x;
+        self.settings_window.y = layout.settings.y;
+        self.settings_window.width = layout.settings.width;
+        self.settings_window.height = layout.settings.height;
+        self.settings_window.maximized = layout.settings.maximized;
+        self.settings_window.expanded_row = layout.settings_expanded_row;
+        self.settings_window.scroll_offset = layout.settings_scroll_offset;
+        self.editor_window = DesktopAppWindowState {
+            x: layout.editor.x,
+            y: layout.editor.y,
+            width: layout.editor.width,
+            height: layout.editor.height,
+            maximized: layout.editor.maximized,
+            visible: layout.editor.visible,
+        };
+        self.command_window = DesktopAppWindowState {
+            x: layout.command.x,
+            y: layout.command.y,
+            width: layout.command.width,
+            height: layout.command.height,
+            maximized: layout.command.maximized,
+            visible: layout.command.visible,
+        };
+        self.desktop_item_positions = layout.desktop_item_positions;
+        match layout.focused_surface {
+            DesktopResumeSurface::Workspace => self.desktop_app = DesktopAppKind::None,
+            DesktopResumeSurface::Settings => {
+                self.desktop_app = DesktopAppKind::None;
+                self.mode = ConsoleMode::Settings;
+                self.system_focus = layout.settings_section;
+            }
+            DesktopResumeSurface::TextEditor => {
+                self.desktop_app = DesktopAppKind::TextEditor;
+                self.load_active_app_window();
+            }
+            DesktopResumeSurface::CommandWindow => {
+                self.desktop_app = DesktopAppKind::CommandWindow;
+                self.load_active_app_window();
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: lock_session_preserving_desktop
+    // DESC: Locks the active identity session only after retaining its complete desktop layout.
+    // ------------------=
+    fn lock_session_preserving_desktop(&mut self, inactive: bool) -> bool {
+        if self.current_session.is_zero() {
+            return false;
+        }
+        let layout = self.capture_desktop_layout();
+        let locked = crate::runtime::with_runtime(|runtime| {
+            runtime
+                .identity
+                .lock_session(self.current_session, self.current_user)
+        })
+        .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState))
+        .is_ok();
+        if locked {
+            self.locked_desktop_layout.save(layout);
+            self.mode = ConsoleMode::Locked;
+            self.session_idle.note_activity();
+            self.reset_input();
+            crate::output_text(if inactive {
+                b"[session] locked after inactivity; desktop layout retained\n"
+            } else {
+                b"[session] locked; desktop layout retained\n"
+            });
+        }
+        locked
     }
 
     // ------------------------=
@@ -2263,13 +2411,7 @@ impl ConsoleRuntime {
             (0, 4) => self.open_settings(6),
             (0, 5) => self.open_settings(4),
             (0, 6) => {
-                let _ = crate::runtime::with_runtime(|runtime| {
-                    runtime
-                        .identity
-                        .lock_session(self.current_session, self.current_user)
-                });
-                self.mode = ConsoleMode::Locked;
-                self.reset_input();
+                let _ = self.lock_session_preserving_desktop(false);
             }
             (0, 7) => {
                 let _ = crate::runtime::with_runtime(|runtime| {
@@ -2792,6 +2934,9 @@ impl ConsoleRuntime {
             self.reset_input();
             if result.is_ok() {
                 self.enter_desktop();
+                if let Some(layout) = self.locked_desktop_layout.restore() {
+                    self.restore_desktop_layout(layout);
+                }
             } else {
                 crate::output_text(b"[authentication] verification failed\n");
             }
@@ -3642,6 +3787,7 @@ impl ConsoleRuntime {
         if delta_x == 0 && delta_y == 0 && !button_changed {
             return;
         }
+        self.session_idle.note_activity();
         if delta_x != 0 || delta_y != 0 || button_changed {
             crate::bootstrap::note_pointer_activity();
         }
@@ -3698,6 +3844,7 @@ impl ConsoleRuntime {
         if vertical == 0 {
             return false;
         }
+        self.session_idle.note_activity();
         if self.mode == ConsoleMode::Settings {
             self.scroll_settings(vertical);
             self.redraw();
@@ -4824,6 +4971,7 @@ impl ConsoleRuntime {
         ) {
             return;
         }
+        self.session_idle.note_activity();
         crate::bootstrap::note_pointer_activity();
         self.pointer_x = next_x;
         self.pointer_y = next_y;
@@ -7648,6 +7796,15 @@ pub fn clock_tick() {
                     | ConsoleMode::SystemMenu
                     | ConsoleMode::Settings
             ) {
+                return;
+            }
+            if runtime
+                .session_idle
+                .tick(!runtime.current_session.is_zero(), 5 * 60)
+            {
+                if runtime.lock_session_preserving_desktop(true) {
+                    runtime.redraw();
+                }
                 return;
             }
             let next = firmware_date_time(runtime.system.firmware_runtime_services);

@@ -18,6 +18,7 @@ pub mod localization;
 pub mod platform;
 pub mod redraw;
 pub mod scene;
+pub mod session_state;
 pub mod skin;
 pub mod surface;
 pub mod system_layout;

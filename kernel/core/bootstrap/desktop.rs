@@ -6796,13 +6796,9 @@ pub fn system_ui_present(
             let bounded_scene_geometry_change = !structural_change_without_window
                 && !content_changed
                 && console.last_system_screen == screen
-                && ((screen == 2
-                    && (window_moved || window_resized)
-                    && window_visible
-                    && !window_maximized)
-                    || navigator_surface_changed
-                    || (matches!(screen, 8 | 9) && app_window_geometry_changed)
-                    || (screen == 4 && settings_geometry_changed));
+                && navigator_surface_changed
+                && !window_moved
+                && !window_resized;
             let mut full_surface_redrawn = false;
             if bounded_menu_change
                 && !structural_change_without_window
@@ -6938,6 +6934,8 @@ pub fn system_ui_present(
             } else if structural_change_without_window
                 || window_move_requires_structural_redraw
                 || window_resized
+                || settings_geometry_changed
+                || app_window_geometry_changed
             {
                 console.menu_saved = false;
                 console.display.system_ui_frame(

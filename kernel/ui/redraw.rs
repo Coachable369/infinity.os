@@ -52,7 +52,7 @@ pub const fn appearance_change_requires_structural_redraw(
 
 // ------------------------=
 // FUNC: desktop_window_move_requires_structural_redraw
-// DESC: Determines whether a window move cannot be satisfied by framebuffer relocation and exposed-region repair.
+// DESC: Requires coherent scene reconstruction for translucent window geometry transitions.
 // ------------------=
 pub const fn desktop_window_move_requires_structural_redraw(
     screen: u8,
@@ -60,7 +60,7 @@ pub const fn desktop_window_move_requires_structural_redraw(
     window_visible: bool,
     window_maximized: bool,
 ) -> bool {
-    window_moved && !(screen == 2 && window_visible && !window_maximized)
+    window_moved && (screen != 0 || window_visible || window_maximized)
 }
 
 // ------------------------=
