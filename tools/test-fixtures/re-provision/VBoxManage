@@ -1,0 +1,64 @@
+#!/bin/sh
+set -eu
+
+command_name=$1
+shift
+
+case "$command_name" in
+    showvminfo)
+        if test -f "$TEST_STATE_PATH/vm-state"; then
+            vm_state=$(sed -n '1p' "$TEST_STATE_PATH/vm-state")
+        else
+            exit 1
+        fi
+        if test "${2:-}" = "--machinereadable"; then
+            printf 'VMState="poweroff"\n'
+            printf 'CfgFile="%s/infinityos-4.vbox"\n' "$TEST_VM_DIRECTORY"
+            if test "$vm_state" = new; then
+                printf 'platformArchitecture="ARM"\n'
+                printf 'ostype="Other/Unknown (ARM 64-bit)"\n'
+                printf 'memory=8192\n'
+                printf 'cpus=6\n'
+                printf 'usb="off"\n'
+                printf 'xhci="on"\n'
+                printf 'dvd="%s"\n' "$TEST_ISO_PATH"
+            fi
+        else
+            printf 'Pointing Device:             USB Tablet\n'
+            printf 'Keyboard Device:             USB Keyboard\n'
+            printf 'xHCI USB:                    enabled\n'
+        fi
+        ;;
+    unregistervm)
+        : > "$TEST_STATE_PATH/unregistered"
+        rm -f "$TEST_STATE_PATH/vm-state"
+        ;;
+    createvm)
+        printf 'new\n' > "$TEST_STATE_PATH/vm-state"
+        ;;
+    showmediuminfo)
+        : > "$TEST_STATE_PATH/medium-inspected"
+        test "$TEST_MEDIUM_MODE" = attached
+        ;;
+    closemedium)
+        : > "$TEST_STATE_PATH/close-attempted"
+        exit 1
+        ;;
+    createmedium)
+        while test "$#" -gt 0; do
+            if test "$1" = "--filename"; then
+                shift
+                disk_path=$1
+                break
+            fi
+            shift
+        done
+        test ! -e "$disk_path" || exit 1
+        printf 'fresh\n' > "$disk_path"
+        ;;
+    controlvm|modifyvm|setextradata|storagectl|storageattach)
+        ;;
+    *)
+        exit 2
+        ;;
+esac

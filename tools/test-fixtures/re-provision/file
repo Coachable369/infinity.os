@@ -1,0 +1,2 @@
+#!/bin/sh
+printf '%s: ISO 9660 bootable image\n' "$1"

@@ -7,6 +7,7 @@ iso_input=${2:-$project_root/builds/InfinityOS-aarch64.iso}
 memory_mb=${INFINITY_VM_MEMORY_MB:-8192}
 cpu_count=${INFINITY_VM_CPU_COUNT:-6}
 disk_size_mb=${INFINITY_VM_DISK_SIZE_MB:-16384}
+vboxmanage=${INFINITY_VBOXMANAGE:-VBoxManage}
 
 # ------------------------=
 # FUNC: die
@@ -33,7 +34,7 @@ machine_value() {
 wait_for_poweroff() {
     attempts=0
     while test "$attempts" -lt 30; do
-        current_info=$(VBoxManage showvminfo "$vm_name" --machinereadable 2>/dev/null || true)
+        current_info=$("$vboxmanage" showvminfo "$vm_name" --machinereadable 2>/dev/null || true)
         current_state=$(machine_value VMState "$current_info")
         if test "$current_state" = "poweroff"; then
             return 0
@@ -49,20 +50,20 @@ wait_for_poweroff() {
 # DESC: Power off and permanently remove only the exact VM selected for reprovisioning.
 # ------------------=
 delete_existing_vm() {
-    existing_info=$(VBoxManage showvminfo "$vm_name" --machinereadable 2>/dev/null || true)
+    existing_info=$("$vboxmanage" showvminfo "$vm_name" --machinereadable 2>/dev/null || true)
     test -n "$existing_info" || return 0
 
     existing_state=$(machine_value VMState "$existing_info")
     if test "$existing_state" != "poweroff"; then
         printf 'Powering off existing VM: %s\n' "$vm_name"
-        VBoxManage controlvm "$vm_name" poweroff >/dev/null
+        "$vboxmanage" controlvm "$vm_name" poweroff >/dev/null
         wait_for_poweroff
     fi
 
     printf 'Deleting existing VM and its virtual disks: %s\n' "$vm_name"
     attempts=0
     while test "$attempts" -lt 30; do
-        if delete_output=$(VBoxManage unregistervm "$vm_name" --delete 2>&1); then
+        if delete_output=$("$vboxmanage" unregistervm "$vm_name" --delete 2>&1); then
             return 0
         fi
         if ! printf '%s\n' "$delete_output" | grep -Fq 'while it is locked'; then
@@ -76,17 +77,39 @@ delete_existing_vm() {
 }
 
 # ------------------------=
+# FUNC: remove_stale_disk
+# DESC: Remove only the replacement VM's exact leftover VDI when it is safe to do so.
+# ------------------=
+remove_stale_disk() {
+    test -L "$disk_path" && die "Refusing to replace a symbolic-link disk path: $disk_path"
+    test -e "$disk_path" || return 0
+    test -f "$disk_path" || die "The replacement disk path is not a regular file: $disk_path"
+
+    if "$vboxmanage" showmediuminfo disk "$disk_path" >/dev/null 2>&1; then
+        printf 'Deleting registered leftover virtual disk: %s\n' "$disk_path"
+        if ! "$vboxmanage" closemedium disk "$disk_path" --delete; then
+            die "The existing disk is still registered or attached; detach it in VirtualBox before retrying: $disk_path"
+        fi
+    else
+        printf 'Deleting unregistered leftover virtual disk: %s\n' "$disk_path"
+        unlink "$disk_path" || die "Could not remove the stale virtual disk: $disk_path"
+    fi
+
+    test ! -e "$disk_path" || die "VirtualBox retained the stale virtual disk: $disk_path"
+}
+
+# ------------------------=
 # FUNC: create_arm64_vm
 # DESC: Create a fresh EFI ARM64 VM, blank system disk, and mounted InfinityOS ISO.
 # ------------------=
 create_arm64_vm() {
-    VBoxManage createvm \
+    "$vboxmanage" createvm \
         --name "$vm_name" \
         --platform-architecture arm \
         --ostype Other_arm64 \
         --register
 
-    VBoxManage modifyvm "$vm_name" \
+    "$vboxmanage" modifyvm "$vm_name" \
         --memory "$memory_mb" \
         --cpus "$cpu_count" \
         --cpu-profile host \
@@ -109,30 +132,31 @@ create_arm64_vm() {
         --audio-controller hda \
         --audio-enabled on
 
-    VBoxManage setextradata "$vm_name" VBoxInternal2/EfiGraphicsResolution 2560x1440
-    VBoxManage storagectl "$vm_name" \
+    "$vboxmanage" setextradata "$vm_name" VBoxInternal2/EfiGraphicsResolution 2560x1440
+    "$vboxmanage" storagectl "$vm_name" \
         --name VirtioSCSI \
         --add virtio-scsi \
         --portcount 2 \
         --bootable on
 
-    created_info=$(VBoxManage showvminfo "$vm_name" --machinereadable)
+    created_info=$("$vboxmanage" showvminfo "$vm_name" --machinereadable)
     config_file=$(machine_value CfgFile "$created_info")
     test -n "$config_file" || die "VirtualBox did not report the new VM configuration path."
     vm_directory=${config_file%/*}
     disk_path=$vm_directory/$vm_name.vdi
+    remove_stale_disk
 
-    VBoxManage createmedium disk \
+    "$vboxmanage" createmedium disk \
         --filename "$disk_path" \
         --size "$disk_size_mb" \
         --format VDI
-    VBoxManage storageattach "$vm_name" \
+    "$vboxmanage" storageattach "$vm_name" \
         --storagectl VirtioSCSI \
         --port 0 \
         --device 0 \
         --type hdd \
         --medium "$disk_path"
-    VBoxManage storageattach "$vm_name" \
+    "$vboxmanage" storageattach "$vm_name" \
         --storagectl VirtioSCSI \
         --port 1 \
         --device 0 \
@@ -145,8 +169,8 @@ create_arm64_vm() {
 # DESC: Confirm the new VM is ARM64, correctly configured, ISO-backed, and powered off.
 # ------------------=
 verify_vm() {
-    final_info=$(VBoxManage showvminfo "$vm_name" --machinereadable)
-    final_human_info=$(VBoxManage showvminfo "$vm_name")
+    final_info=$("$vboxmanage" showvminfo "$vm_name" --machinereadable)
+    final_human_info=$("$vboxmanage" showvminfo "$vm_name")
 
     printf '%s\n' "$final_info" | grep -Fq 'platformArchitecture="ARM"' || die "The replacement VM is not ARM64."
     printf '%s\n' "$final_info" | grep -Fq 'ostype="Other/Unknown (ARM 64-bit)"' || die "The replacement VM has the wrong guest type."
@@ -169,7 +193,7 @@ verify_vm() {
     printf '  State:     powered off\n'
 }
 
-command -v VBoxManage >/dev/null 2>&1 || die "VBoxManage was not found. Install VirtualBox first."
+command -v "$vboxmanage" >/dev/null 2>&1 || die "VBoxManage was not found. Install VirtualBox first."
 test "$(uname -m)" = "arm64" || die "This reprovisioner is restricted to an ARM64 Mac host."
 
 case "$vm_name" in
