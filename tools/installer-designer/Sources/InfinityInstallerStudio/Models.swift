@@ -1,6 +1,22 @@
 import Foundation
 import SwiftUI
 
+enum ConfigurationNetworkLayout {
+    // ------------------------=
+    // FUNC: row
+    // DESC: Matches the runtime network row geometry relative to the authored content panel.
+    // ------------------=
+    static func row(in content: CanvasRect, index: Int) -> CanvasRect {
+        let gutter = content.width * 4 / 100
+        return CanvasRect(
+            x: content.x + gutter,
+            y: content.y + content.height * 42 / 100 + index * (content.height * 12 / 100),
+            width: content.width - 2 * gutter,
+            height: max(1, content.height * 10 / 100)
+        )
+    }
+}
+
 enum StudioElementKind: UInt8, Codable, CaseIterable, Identifiable {
     case panel = 1
     case image = 2

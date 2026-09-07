@@ -732,10 +732,31 @@ impl SystemLayout {
     ) -> Option<OnboardingTarget> {
         let point = self.point(normalized_x, normalized_y);
         let authored_card = self.onboarding_template_rect(step, InstallerTemplateRole::Console);
-        if let Some(field) = self.onboarding_template_rect(step, InstallerTemplateRole::Input) {
-            if field.contains(point) {
-                return Some(OnboardingTarget::Input);
+        if step != 6 {
+            if let Some(field) = self.onboarding_template_rect(step, InstallerTemplateRole::Input) {
+                if field.contains(point) {
+                    return Some(OnboardingTarget::Input);
+                }
             }
+        }
+        if step == 6 && authored_card.is_some() {
+            return (0..3).find_map(|index| {
+                let row = crate::ui::installer_layout::configuration_network_row_rect(
+                    index, self.width, self.height,
+                )?;
+                rect(row.left, row.top, row.width, row.height)
+                    .contains(point)
+                    .then_some(OnboardingTarget::NetworkChoice(index))
+            }).or_else(|| {
+                [
+                    (InstallerTemplateRole::BackButton, OnboardingTarget::Back),
+                    (InstallerTemplateRole::PrimaryButton, OnboardingTarget::Primary),
+                ].into_iter().find_map(|(role, target)| {
+                    self.onboarding_template_rect(step, role)
+                        .filter(|frame| frame.contains(point))
+                        .map(|_| target)
+                })
+            });
         }
         if step > 0 {
             if let Some(back) =

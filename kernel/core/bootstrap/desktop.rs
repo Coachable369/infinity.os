@@ -2396,22 +2396,7 @@ impl super::DisplayDevice {
                 }
             }
         } else if step == 6 {
-            if let Some(content) = crate::ui::installer_layout::configuration_template_rect(
-                step,
-                crate::ui::installer_template::InstallerTemplateRole::Content,
-                self.width,
-                self.height,
-            ) {
-                self.onboarding_network_rows(
-                    content.left + crate::ui::system_layout::UI_GUTTER * self.ui_scale().max(1),
-                    content.top + content.height * 42 / 100,
-                    content.width.saturating_sub(
-                        crate::ui::system_layout::UI_GUTTER * 2 * self.ui_scale().max(1),
-                    ),
-                    focus,
-                    validation_error,
-                );
-            }
+            self.onboarding_network_rows(0, 0, 0, focus, validation_error);
         }
         self.configuration_template_navigation(step, focus);
     }
@@ -2475,7 +2460,24 @@ impl super::DisplayDevice {
             ),
         ];
         for (index, (label, detail, icon, mode)) in rows.iter().enumerate() {
-            let row_top = top + index * 58 * scale;
+            let authored = crate::ui::installer_layout::configuration_network_row_rect(
+                index, self.width, self.height,
+            );
+            if width == 0 && authored.is_none() {
+                continue;
+            }
+            let left = authored.map(|frame| frame.left).unwrap_or(left);
+            let width = authored.map(|frame| frame.width).unwrap_or(width);
+            let row_top = authored.map(|frame| frame.top).unwrap_or(top + index * 58 * scale);
+            let row_height = authored.map(|frame| frame.height).unwrap_or(48 * scale);
+            let unit = |value: usize| {
+                if authored.is_some() { (value * self.height / 1000).max(1) } else { value * scale }
+            };
+            let radius = unit(10);
+            let inset = unit(12);
+            let icon_size = unit(20);
+            let label_left = left + unit(42);
+            let font_size = unit(14);
             let is_selected = *mode == selected
                 || (selected == NetworkSetupMode::Automatic
                     && index
@@ -2495,8 +2497,8 @@ impl super::DisplayDevice {
                 left,
                 row_top,
                 width,
-                48 * scale,
-                10 * scale,
+                row_height,
+                radius,
                 if is_focused { 9 } else { 5 },
                 if is_focused { 44 } else { 20 },
                 if is_focused { 68 } else { 34 },
@@ -2506,42 +2508,43 @@ impl super::DisplayDevice {
                 left,
                 row_top,
                 width,
-                48 * scale,
-                10 * scale,
+                row_height,
+                radius,
                 if is_focused || is_selected { 55 } else { 31 },
                 if is_focused || is_selected { 194 } else { 74 },
                 if is_focused || is_selected { 238 } else { 98 },
             );
             self.authentication_icon(
-                left + 22 * scale,
-                row_top + 24 * scale,
+                left + inset + icon_size / 2,
+                row_top + row_height / 2,
                 *icon,
-                20 * scale,
+                icon_size,
                 is_selected,
             );
-            self.ui_text_strong(
-                left + 46 * scale,
-                row_top + 7 * scale,
+            self.template_text(
+                label_left,
+                row_top + row_height * 14 / 100,
                 label,
                 226,
                 237,
                 245,
-                1,
+                255,
+                font_size,
+                true,
             );
-            self.ui_text(
-                left + 46 * scale,
-                row_top + 27 * scale,
+            self.template_text(
+                label_left,
+                row_top + row_height * 54 / 100,
                 detail,
                 133,
                 157,
                 177,
-                1,
+                255,
+                font_size,
+                false,
             );
             if is_selected {
-                self.ui_text(
-                    left + width.saturating_sub(72 * scale),
-                    row_top + 16 * scale,
-                    if snapshot
+                let status: &[u8] = if snapshot
                         .map(|value| value.connectivity != ConnectivityClass::Offline)
                         .unwrap_or(false)
                         && index < 2
@@ -2549,18 +2552,28 @@ impl super::DisplayDevice {
                         b"ACTIVE"
                     } else {
                         b"SELECTED"
-                    },
+                    };
+                let status_width = self.template_text_width(status, font_size, false);
+                self.template_text(
+                    left + width.saturating_sub(inset + status_width),
+                    row_top + row_height.saturating_sub(font_size) / 2,
+                    status,
                     88,
                     207,
                     244,
-                    1,
+                    255,
+                    font_size,
+                    false,
                 );
             }
         }
         if validation_error {
+            let last = crate::ui::installer_layout::configuration_network_row_rect(
+                2, self.width, self.height,
+            );
             self.ui_text(
-                left,
-                top + 178 * scale,
+                last.map(|frame| frame.left).unwrap_or(left),
+                last.map(|frame| frame.bottom() + 8 * scale).unwrap_or(top + 178 * scale),
                 b"That connection is unavailable. Connect hardware or choose Offline.",
                 255,
                 118,
@@ -2688,7 +2701,14 @@ impl super::DisplayDevice {
         input: &[u8],
         masked: bool,
         focus: usize,
+        validation_error: bool,
     ) {
+        // Recompose the same authored scene on focus changes so translucent surfaces
+        // and live controls cannot leave stale pixels at legacy coordinates.
+        if self.configuration_template_screen(step) {
+            self.configuration_template_live_content(step, input, masked, focus, validation_error);
+            return;
+        }
         if crate::ui::installer_layout::configuration_template_input_variable(step)
             != crate::ui::installer_template::InstallerTemplateVariable::None
         {
@@ -10077,7 +10097,7 @@ pub fn system_ui_present(
             ) {
                 console
                     .display
-                    .onboarding_focus_controls(step, input, masked, focus);
+                    .onboarding_focus_controls(step, input, masked, focus, validation_error);
             } else if crate::ui::redraw::authentication_controls_require_repaint(
                 screen,
                 pointer_changed,

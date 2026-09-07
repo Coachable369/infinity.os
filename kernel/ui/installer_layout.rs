@@ -7,6 +7,33 @@ use super::installer_template::{
 
 pub const INSTALLER_TEMPLATE_BYTES: &[u8] =
     include_bytes!("../../assets/boot/installer-screens.iuit");
+
+// ------------------------=
+// FUNC: configuration_network_row_rect
+// DESC: Derives each network choice from the saved content panel for painting and hit testing.
+// ------------------=
+pub fn configuration_network_row_rect(
+    index: usize,
+    width: usize,
+    height: usize,
+) -> Option<InstallerRect> {
+    if index >= 3 {
+        return None;
+    }
+    let template = InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES).ok()?;
+    let content = template.element(7, InstallerTemplateRole::Content)?;
+    if content.hidden {
+        return None;
+    }
+    let frame = content.frame;
+    let gutter = frame.width * 4 / 100;
+    Some(scale_template_rect(InstallerTemplateRect {
+        x: frame.x + gutter,
+        y: frame.y + frame.height * 42 / 100 + index as u16 * (frame.height * 12 / 100),
+        width: frame.width.saturating_sub(2 * gutter),
+        height: (frame.height * 10 / 100).max(1),
+    }, width, height))
+}
 pub const CONFIGURATION_TEMPLATE_BYTES: &[u8] =
     include_bytes!("../../assets/boot/configuration-screens.iuit");
 

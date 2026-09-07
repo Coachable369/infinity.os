@@ -1,7 +1,58 @@
 import XCTest
+import SwiftUI
 @testable import InfinityInstallerStudio
 
 final class RuntimeTemplateCodecTests: XCTestCase {
+    // ------------------------=
+    // FUNC: testNetworkPreviewRendersThreeSeparatedCards
+    // DESC: Renders the real canvas network component and checks opaque card interiors and transparent gutters.
+    // ------------------=
+    @MainActor func testNetworkPreviewRendersThreeSeparatedCards() throws {
+        let content = CanvasRect(x: 61, y: 222, width: 298, height: 504)
+        let view = ConfigurationNetworkPreview(
+            canvasScale: CGSize(width: 1.6, height: 1), content: content,
+            projectRoot: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent()
+        ).frame(width: 1600, height: 1000, alignment: .topLeading)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 1
+        let image = try XCTUnwrap(renderer.cgImage)
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        for index in 0..<3 {
+            let row = ConfigurationNetworkLayout.row(in: content, index: index)
+            let x = Int(Double(row.x + row.width / 2) * 1.6)
+            XCTAssertGreaterThan(try XCTUnwrap(bitmap.colorAt(x: x, y: row.y + row.height - 5)).alphaComponent, 0.9)
+            XCTAssertLessThan(try XCTUnwrap(bitmap.colorAt(x: x, y: row.y - 3)).alphaComponent, 0.1)
+        }
+        if let destination = ProcessInfo.processInfo.environment["INFINITY_NETWORK_PREVIEW_PATH"] {
+            try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                .write(to: URL(fileURLWithPath: destination))
+        }
+    }
+
+    // ------------------------=
+    // FUNC: testNetworkRowsFollowAuthoredContentThroughSave
+    // DESC: Exercises a moved and resized network panel through serialization and verifies contained, separated live choices.
+    // ------------------=
+    func testNetworkRowsFollowAuthoredContentThroughSave() throws {
+        var document = InstallerStudioDocument.factoryConfiguration()
+        let index = try XCTUnwrap(document.screens[6].elements.firstIndex { $0.role == .content })
+        let original = ConfigurationNetworkLayout.row(in: document.screens[6].elements[index].frame, index: 0)
+        document.screens[6].elements[index].frame = CanvasRect(x: 120, y: 180, width: 380, height: 560)
+        let restored = try RuntimeTemplateCodec.decode(RuntimeTemplateCodec.encode(document))
+        let content = restored.screens[6].elements[index].frame
+        let rows = (0..<3).map { ConfigurationNetworkLayout.row(in: content, index: $0) }
+        XCTAssertNotEqual(rows[0], original)
+        for row in rows {
+            XCTAssertGreaterThan(row.x, content.x)
+            XCTAssertLessThanOrEqual(row.x + row.width, content.x + content.width)
+            XCTAssertLessThanOrEqual(row.y + row.height, content.y + content.height)
+        }
+        XCTAssertLessThan(rows[0].y + rows[0].height, rows[1].y)
+        XCTAssertLessThan(rows[1].y + rows[1].height, rows[2].y)
+    }
+
     // ------------------------=
     // FUNC: testInstallingScreenExposesRuntimeProgressControls
     // DESC: Proves Studio screen eight models the live hero, progress bar, footer, and hidden navigation composition.

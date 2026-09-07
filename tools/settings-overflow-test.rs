@@ -12,6 +12,7 @@ use ui::system_layout::{
 // DESC: Verifies bounded Settings navigation, dashboard scrolling, and draggable scrollbar geometry.
 // ------------------=
 fn main() {
+    verify_configuration_network_targets();
     let layout = SystemLayout::new(2560, 1440);
     let state = SettingsWindowState {
         x: 145,
@@ -131,4 +132,42 @@ fn main() {
     let minimum_window = SystemLayout::new(1920, 1080)
         .settings_window_geometry_for_section(minimum, SETTINGS_NETWORK_SECTION);
     assert!(minimum_window.maximum_scroll > 0);
+}
+
+// ------------------------=
+// FUNC: verify_configuration_network_targets
+// DESC: Exercises network hit targets and empty gutters at the actual authored row positions across display scales.
+// ------------------=
+fn verify_configuration_network_targets() {
+    use ui::installer_layout::{configuration_network_row_rect, configuration_template_rect};
+    use ui::installer_template::InstallerTemplateRole;
+    use ui::system_layout::OnboardingTarget;
+    for (width, height) in [(1024, 768), (1600, 1000), (2560, 1440)] {
+        let layout = SystemLayout::new(width, height);
+        let content = configuration_template_rect(6, InstallerTemplateRole::Content, width, height).unwrap();
+        for index in 0..3 {
+            let row = configuration_network_row_rect(index, width, height).unwrap();
+            assert!(content.contains(row));
+            for fraction in [1, 2, 3] {
+                let x = ((row.left + row.width * fraction / 4) * 1000 / width) as i32;
+                let y = ((row.top + row.height / 2) * 1000 / height) as i32;
+                assert_eq!(layout.onboarding_target(6, x, y), Some(OnboardingTarget::NetworkChoice(index)));
+            }
+            if index < 2 {
+                let next = configuration_network_row_rect(index + 1, width, height).unwrap();
+                assert!(row.bottom() < next.top);
+                let x = ((row.left + row.width / 2) * 1000 / width) as i32;
+                let y = (((row.bottom() + next.top) / 2) * 1000 / height) as i32;
+                assert_eq!(layout.onboarding_target(6, x, y), None);
+            }
+        }
+        assert!(configuration_network_row_rect(3, width, height).is_none());
+        for (role, expected) in [(InstallerTemplateRole::BackButton, OnboardingTarget::Back),
+                                 (InstallerTemplateRole::PrimaryButton, OnboardingTarget::Primary)] {
+            let row = configuration_template_rect(6, role, width, height).unwrap();
+            assert_eq!(layout.onboarding_target(6,
+                ((row.left + row.width / 2) * 1000 / width) as i32,
+                ((row.top + row.height / 2) * 1000 / height) as i32), Some(expected));
+        }
+    }
 }

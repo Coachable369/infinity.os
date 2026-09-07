@@ -32,9 +32,10 @@ struct InstallerCanvas: View {
                             }
                         }
                         if store.selectedCollection == .configuration,
-                           store.selectedScreenID == 7
+                           store.selectedScreenID == 7,
+                           let content = store.selectedScreen?.elements.first(where: { $0.role == .content && !$0.hidden })
                         {
-                            ConfigurationNetworkPreview(canvasScale: canvasScale)
+                            ConfigurationNetworkPreview(canvasScale: canvasScale, content: content.frame, projectRoot: store.projectRoot)
                                 .zIndex(7_500)
                         }
                         if store.marqueeSelectionEnabled {
@@ -706,43 +707,50 @@ private struct TimeZoneMapSelectionPreview: View {
     }
 }
 
-private struct ConfigurationNetworkPreview: View {
+struct ConfigurationNetworkPreview: View {
     let canvasScale: CGSize
-    private let labels = ["WIRED", "WI-FI", "CONTINUE OFFLINE"]
+    let content: CanvasRect
+    let projectRoot: URL?
+    private let labels = ["Wired network", "Wi-Fi", "Continue offline"]
+    private let details = ["Wired adapter detected", "No wireless adapter detected", "Set up networking later in Settings"]
+    private let icons = ["actions/01-forward.png", "actions/02-up.png", "base/26-settings.png"]
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
-                let frame = CanvasRect(x: 72, y: 434 + index * 58, width: 276, height: 46)
+                let frame = ConfigurationNetworkLayout.row(in: content, index: index)
                 RoundedRectangle(cornerRadius: CGFloat(10) * canvasScale.height)
-                    .fill(InfinityUIKit.Palette.panelRaised.color)
+                    .fill(Color(red: 5 / 255, green: 20 / 255, blue: 34 / 255))
                     .overlay {
                         RoundedRectangle(cornerRadius: CGFloat(10) * canvasScale.height)
                             .stroke(
                                 index == 0
-                                    ? InfinityUIKit.Palette.accent.color
-                                    : InfinityUIKit.Palette.border.color,
+                                    ? Color(red: 55 / 255, green: 194 / 255, blue: 238 / 255)
+                                    : Color(red: 31 / 255, green: 74 / 255, blue: 98 / 255),
                                 lineWidth: max(1, canvasScale.height)
                             )
                     }
                     .overlay(alignment: .leading) {
                         HStack(spacing: CGFloat(10) * canvasScale.height) {
-                            Circle()
-                                .fill(index == 0
-                                    ? InfinityUIKit.Palette.accent.color
-                                    : InfinityUIKit.Palette.border.color)
-                                .frame(
-                                    width: CGFloat(8) * canvasScale.height,
-                                    height: CGFloat(8) * canvasScale.height
-                                )
-                            Text(label)
-                                .font(.system(
-                                    size: max(8, CGFloat(15) * canvasScale.height),
-                                    weight: .semibold
-                                ))
-                                .foregroundStyle(InfinityUIKit.Palette.nativeTextPrimary)
+                            if let root = projectRoot,
+                               let icon = NSImage(contentsOf: root.appending(path: "assets/icons/crystal-blue-glass/32/\(icons[index])")) {
+                                Image(nsImage: icon).resizable().scaledToFit()
+                                    .frame(width: 20 * canvasScale.height, height: 20 * canvasScale.height)
+                            }
+                            VStack(alignment: .leading, spacing: 5 * canvasScale.height) {
+                                Text(label).font(.system(size: max(6, 14 * canvasScale.height), weight: .semibold))
+                                Text(details[index]).font(.system(size: max(6, 14 * canvasScale.height)))
+                                    .foregroundStyle(Color(red: 133 / 255, green: 157 / 255, blue: 177 / 255))
+                            }
+                            .foregroundStyle(InfinityUIKit.Palette.nativeTextPrimary)
+                            Spacer(minLength: 0)
+                            if index == 0 {
+                                Text("SELECTED")
+                                    .font(.system(size: max(6, 14 * canvasScale.height)))
+                                    .foregroundStyle(InfinityUIKit.Palette.nativeAccent)
+                            }
                         }
-                        .padding(.leading, CGFloat(16) * canvasScale.height)
+                        .padding(.horizontal, CGFloat(12) * canvasScale.height)
                     }
                     .frame(
                         width: CGFloat(frame.width) * canvasScale.width,
