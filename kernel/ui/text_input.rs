@@ -6,7 +6,17 @@ static CARET_ACTIVE: AtomicBool = AtomicBool::new(false);
 static CARET_VISIBLE: AtomicBool = AtomicBool::new(true);
 static CARET_INDEX: AtomicUsize = AtomicUsize::new(0);
 static CARET_KIND: AtomicUsize = AtomicUsize::new(0);
-static POINTER_TEXT: AtomicBool = AtomicBool::new(false);
+static POINTER_SHAPE: AtomicUsize = AtomicUsize::new(PointerShape::Default as usize);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerShape {
+    Default = 0,
+    Text = 1,
+    ResizeNorthWestSouthEast = 2,
+    ResizeNorthEastSouthWest = 3,
+    ResizeVertical = 4,
+    ResizeHorizontal = 5,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextEditKey {
@@ -117,7 +127,14 @@ pub fn set_presentation(
     CARET_VISIBLE.store(visible, Ordering::Relaxed);
     CARET_INDEX.store(index, Ordering::Relaxed);
     CARET_KIND.store(kind, Ordering::Relaxed);
-    POINTER_TEXT.store(pointer_text, Ordering::Relaxed);
+    POINTER_SHAPE.store(
+        if pointer_text {
+            PointerShape::Text
+        } else {
+            PointerShape::Default
+        } as usize,
+        Ordering::Relaxed,
+    );
 }
 
 // ------------------------=
@@ -140,7 +157,44 @@ pub fn caret(kind: usize) -> Option<(bool, usize)> {
 // DESC: Reports whether the pointer should render as an I-beam over editable text.
 // ------------------=
 pub fn pointer_is_text() -> bool {
-    POINTER_TEXT.load(Ordering::Relaxed)
+    pointer_shape() == PointerShape::Text
+}
+
+// ------------------------=
+// FUNC: set_pointer_shape
+// DESC: Publishes a directional pointer shape for window-edge hover and captured resize operations.
+// ------------------=
+pub fn set_pointer_shape(shape: PointerShape) {
+    POINTER_SHAPE.store(shape as usize, Ordering::Relaxed);
+}
+
+// ------------------------=
+// FUNC: pointer_shape
+// DESC: Returns the pointer shape currently requested by the active interaction surface.
+// ------------------=
+pub fn pointer_shape() -> PointerShape {
+    match POINTER_SHAPE.load(Ordering::Relaxed) {
+        1 => PointerShape::Text,
+        2 => PointerShape::ResizeNorthWestSouthEast,
+        3 => PointerShape::ResizeNorthEastSouthWest,
+        4 => PointerShape::ResizeVertical,
+        5 => PointerShape::ResizeHorizontal,
+        _ => PointerShape::Default,
+    }
+}
+
+// ------------------------=
+// FUNC: pointer_shape_for_resize_handle
+// DESC: Maps the shared window resize handle contract to its matching directional pointer.
+// ------------------=
+pub const fn pointer_shape_for_resize_handle(handle: usize) -> Option<PointerShape> {
+    match handle {
+        0 | 3 => Some(PointerShape::ResizeNorthWestSouthEast),
+        1 | 2 => Some(PointerShape::ResizeNorthEastSouthWest),
+        4 => Some(PointerShape::ResizeVertical),
+        5 | 6 => Some(PointerShape::ResizeHorizontal),
+        _ => None,
+    }
 }
 
 // ------------------------=
@@ -152,4 +206,5 @@ pub fn presentation_hash() -> u32 {
         | ((CARET_VISIBLE.load(Ordering::Relaxed) as u32) << 1)
         | ((CARET_INDEX.load(Ordering::Relaxed) as u32) << 2)
             ^ ((CARET_KIND.load(Ordering::Relaxed) as u32) << 24)
+            ^ ((POINTER_SHAPE.load(Ordering::Relaxed) as u32) << 29)
 }

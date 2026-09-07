@@ -1084,15 +1084,6 @@ impl SystemLayout {
                     window_height,
                     window_maximized,
                 );
-            if !window_maximized {
-                if let Some(handle) = native_window_resize_target(
-                    rect(browser_left, browser_top, browser_width, browser_height),
-                    point,
-                    self.scale,
-                ) {
-                    return Some(DesktopTarget::HomeResize(handle));
-                }
-            }
             let title_height = 34 * self.scale;
             for index in 0..3usize {
                 let control_left = browser_left
@@ -1106,6 +1097,15 @@ impl SystemLayout {
                 .contains(point)
                 {
                     return Some(DesktopTarget::HomeControl(index));
+                }
+            }
+            if !window_maximized {
+                if let Some(handle) = native_window_resize_target(
+                    rect(browser_left, browser_top, browser_width, browser_height),
+                    point,
+                    self.scale,
+                ) {
+                    return Some(DesktopTarget::HomeResize(handle));
                 }
             }
             if rect(browser_left, browser_top, browser_width, title_height).contains(point) {
@@ -2760,27 +2760,16 @@ const fn settings_detail_height(index: usize) -> usize {
 
 // ------------------------=
 // FUNC: native_window_resize_target
-// DESC: Resolves four corner grips and a forgiving full-width bottom resize border.
+// DESC: Resolves four corner grips plus left, right, and bottom resize borders without making the top edge resizable.
 // ------------------=
 pub fn native_window_resize_target(window: Rect, point: Point, scale: usize) -> Option<usize> {
-    let top_grip = (12 * scale.max(1)) as i32;
-    for (handle, x) in [(0usize, window.x), (1, window.right() - top_grip)] {
-        if (Rect {
-            x,
-            y: window.y,
-            width: top_grip as u32,
-            height: top_grip as u32,
-        })
-        .contains(point)
-        {
-            return Some(handle);
-        }
-    }
     let grip = (18 * scale.max(1)) as i32;
     let halo = (6 * scale.max(1)) as i32;
     let corner_size = (grip + halo * 2).max(1) as u32;
     for (handle, x, y) in [
-        (2usize, window.x - halo, window.bottom() - grip - halo),
+        (0usize, window.x - halo, window.y - halo),
+        (1, window.right() - grip - halo, window.y - halo),
+        (2, window.x - halo, window.bottom() - grip - halo),
         (
             3,
             window.right() - grip - halo,
@@ -2792,6 +2781,20 @@ pub fn native_window_resize_target(window: Rect, point: Point, scale: usize) -> 
             y,
             width: corner_size,
             height: corner_size,
+        })
+        .contains(point)
+        {
+            return Some(handle);
+        }
+    }
+    let side_top = window.y + grip;
+    let side_height = window.height.saturating_sub((grip * 2).max(0) as u32);
+    for (handle, x) in [(5usize, window.x - halo), (6, window.right() - halo)] {
+        if (Rect {
+            x,
+            y: side_top,
+            width: (halo * 2 + 1) as u32,
+            height: side_height,
         })
         .contains(point)
         {
@@ -2831,7 +2834,7 @@ pub fn resize_home_window(
 
 // ------------------------=
 // FUNC: resize_native_window
-// DESC: Applies corner or bottom-edge resizing while preserving the minimum usable area.
+// DESC: Applies corner, side, or bottom-edge resizing while preserving the minimum usable area.
 // ------------------=
 pub fn resize_native_window(
     x: i32,
@@ -2846,10 +2849,10 @@ pub fn resize_native_window(
 ) -> (i32, i32, i32, i32) {
     let right = x.saturating_add(width);
     let bottom = y.saturating_add(height);
-    let (next_x, next_width) = if matches!(corner, 0 | 2) {
+    let (next_x, next_width) = if matches!(corner, 0 | 2 | 5) {
         let next_x = pointer_x.clamp(0, right.saturating_sub(minimum_width));
         (next_x, right.saturating_sub(next_x))
-    } else if matches!(corner, 1 | 3) {
+    } else if matches!(corner, 1 | 3 | 6) {
         (
             x,
             pointer_x
@@ -2862,13 +2865,15 @@ pub fn resize_native_window(
     let (next_y, next_height) = if matches!(corner, 0 | 1) {
         let next_y = pointer_y.clamp(50, bottom.saturating_sub(minimum_height));
         (next_y, bottom.saturating_sub(next_y))
-    } else {
+    } else if matches!(corner, 2 | 3 | 4) {
         (
             y,
             pointer_y
                 .saturating_sub(y)
                 .clamp(minimum_height, 920i32.saturating_sub(y)),
         )
+    } else {
+        (y, height)
     };
     (next_x, next_y, next_width, next_height)
 }

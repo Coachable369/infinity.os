@@ -25,13 +25,14 @@ use ui::skin::{
 };
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
-    resize_home_window, resize_native_window, window_motion_damage_regions,
-    window_transition_damage, AiChatTarget, AppLauncherTarget, DesktopAppWindowTarget,
-    DesktopTarget, EditorDialogTarget, EditorScrollTarget, OnboardingTarget, SettingsAccentTarget,
-    SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK,
-    DESKTOP_FOREGROUND_WIDGETS,
+    native_window_resize_target, resize_home_window, resize_native_window,
+    window_motion_damage_regions, window_transition_damage, AiChatTarget, AppLauncherTarget,
+    DesktopAppWindowTarget, DesktopTarget, EditorDialogTarget, EditorScrollTarget,
+    OnboardingTarget, SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout,
+    SystemMenuTarget, DESKTOP_FOREGROUND_DOCK, DESKTOP_FOREGROUND_WIDGETS,
 };
 use ui::text_editor::{document_path, visual_line_count, visual_line_start, TextDocument};
+use ui::text_input::{pointer_shape_for_resize_handle, PointerShape};
 use ui::trusted::{TrustedSurface, TrustedUiError};
 use ui::vector::{
     semantic_name, validate, IconId, VectorCommand, VectorError, VectorIcon, MAX_VECTOR_COMMANDS,
@@ -1517,6 +1518,58 @@ fn installed_system_hit_geometry_test() {
     assert_eq!(
         resize_native_window(160, 210, 680, 620, 4, 500, 900, 600, 420),
         (160, 210, 680, 690)
+    );
+    assert_eq!(
+        resize_native_window(160, 210, 680, 620, 5, 100, 500, 600, 420),
+        (100, 210, 740, 620),
+        "left-edge resize must preserve vertical geometry"
+    );
+    assert_eq!(
+        resize_native_window(160, 210, 680, 620, 6, 900, 500, 600, 420),
+        (160, 210, 740, 620),
+        "right-edge resize must preserve vertical geometry"
+    );
+    let resize_window = Rect {
+        x: 200,
+        y: 240,
+        width: 700,
+        height: 520,
+    };
+    for (point, handle) in [
+        (Point { x: 200, y: 240 }, 0usize),
+        (Point { x: 899, y: 240 }, 1),
+        (Point { x: 200, y: 759 }, 2),
+        (Point { x: 899, y: 759 }, 3),
+        (Point { x: 500, y: 759 }, 4),
+        (Point { x: 200, y: 500 }, 5),
+        (Point { x: 899, y: 500 }, 6),
+    ] {
+        assert_eq!(
+            native_window_resize_target(resize_window, point, 1),
+            Some(handle),
+            "every supported window edge and corner must expose its resize handle"
+        );
+    }
+    assert_eq!(
+        native_window_resize_target(resize_window, Point { x: 500, y: 240 }, 1),
+        None,
+        "the top edge must remain drag-only"
+    );
+    assert_eq!(
+        pointer_shape_for_resize_handle(0),
+        Some(PointerShape::ResizeNorthWestSouthEast)
+    );
+    assert_eq!(
+        pointer_shape_for_resize_handle(2),
+        Some(PointerShape::ResizeNorthEastSouthWest)
+    );
+    assert_eq!(
+        pointer_shape_for_resize_handle(4),
+        Some(PointerShape::ResizeVertical)
+    );
+    assert_eq!(
+        pointer_shape_for_resize_handle(6),
+        Some(PointerShape::ResizeHorizontal)
     );
     assert_eq!(
         square.desktop_app_window_target(699, 749, 210, 260, 490, 490, false, false),

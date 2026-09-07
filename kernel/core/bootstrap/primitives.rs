@@ -792,9 +792,19 @@ impl super::DisplayDevice {
         let x = self.width as i32 * cursor_x / 1000;
         let y = self.height as i32 * cursor_y / 1000;
         let scale = self.ui_scale();
-        if crate::ui::text_input::pointer_is_text() {
-            self.pointer_text_cursor(x, y, scale);
-            return;
+        match crate::ui::text_input::pointer_shape() {
+            crate::ui::text_input::PointerShape::Text => {
+                self.pointer_text_cursor(x, y, scale);
+                return;
+            }
+            crate::ui::text_input::PointerShape::ResizeNorthWestSouthEast
+            | crate::ui::text_input::PointerShape::ResizeNorthEastSouthWest
+            | crate::ui::text_input::PointerShape::ResizeVertical
+            | crate::ui::text_input::PointerShape::ResizeHorizontal => {
+                self.pointer_resize_cursor(x, y, scale, crate::ui::text_input::pointer_shape());
+                return;
+            }
+            crate::ui::text_input::PointerShape::Default => {}
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
@@ -835,6 +845,185 @@ impl super::DisplayDevice {
             for column in 0..=(row / 2) {
                 self.pixel(x + column + 2, y + row + 3, 20, 24, 32);
                 self.pixel(x + column, y + row, 248, 250, 255);
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: pointer_resize_cursor
+    // DESC: Draws a high-contrast double-headed pointer matching the hovered resize direction.
+    // ------------------=
+    fn pointer_resize_cursor(
+        &mut self,
+        x: i32,
+        y: i32,
+        scale: usize,
+        shape: crate::ui::text_input::PointerShape,
+    ) {
+        let scale = scale.max(1) as i32;
+        let (start_x, start_y, end_x, end_y) = match shape {
+            crate::ui::text_input::PointerShape::ResizeHorizontal => (2, 14, 26, 14),
+            crate::ui::text_input::PointerShape::ResizeVertical => (14, 2, 14, 26),
+            crate::ui::text_input::PointerShape::ResizeNorthWestSouthEast => (3, 3, 25, 25),
+            _ => (25, 3, 3, 25),
+        };
+        let start_x = x + start_x * scale;
+        let start_y = y + start_y * scale;
+        let end_x = x + end_x * scale;
+        let end_y = y + end_y * scale;
+        self.icon_line(
+            start_x + scale,
+            start_y + scale,
+            end_x + scale,
+            end_y + scale,
+            (2, 8, 18),
+            28 * scale as usize,
+        );
+        self.icon_line(
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+            (225, 247, 255),
+            28 * scale as usize,
+        );
+        let arrow = 6 * scale;
+        match shape {
+            crate::ui::text_input::PointerShape::ResizeHorizontal => {
+                self.icon_line(
+                    start_x,
+                    start_y,
+                    start_x + arrow,
+                    start_y - arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    start_x,
+                    start_y,
+                    start_x + arrow,
+                    start_y + arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    end_x,
+                    end_y,
+                    end_x - arrow,
+                    end_y - arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    end_x,
+                    end_y,
+                    end_x - arrow,
+                    end_y + arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+            }
+            crate::ui::text_input::PointerShape::ResizeVertical => {
+                self.icon_line(
+                    start_x,
+                    start_y,
+                    start_x - arrow,
+                    start_y + arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    start_x,
+                    start_y,
+                    start_x + arrow,
+                    start_y + arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    end_x,
+                    end_y,
+                    end_x - arrow,
+                    end_y - arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    end_x,
+                    end_y,
+                    end_x + arrow,
+                    end_y - arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+            }
+            crate::ui::text_input::PointerShape::ResizeNorthWestSouthEast => {
+                self.icon_line(
+                    start_x,
+                    start_y,
+                    start_x + arrow,
+                    start_y,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    start_x,
+                    start_y,
+                    start_x,
+                    start_y + arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    end_x,
+                    end_y,
+                    end_x - arrow,
+                    end_y,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    end_x,
+                    end_y,
+                    end_x,
+                    end_y - arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+            }
+            _ => {
+                self.icon_line(
+                    start_x,
+                    start_y,
+                    start_x - arrow,
+                    start_y,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    start_x,
+                    start_y,
+                    start_x,
+                    start_y + arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    end_x,
+                    end_y,
+                    end_x + arrow,
+                    end_y,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
+                self.icon_line(
+                    end_x,
+                    end_y,
+                    end_x,
+                    end_y - arrow,
+                    (73, 199, 255),
+                    28 * scale as usize,
+                );
             }
         }
     }

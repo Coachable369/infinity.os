@@ -2949,18 +2949,9 @@ impl super::DisplayDevice {
                 );
             }
             if !maximized {
-                let (outline_r, outline_g, outline_b) =
+                let outline =
                     self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-                for offset in [5usize, 9, 13] {
-                    self.icon_line(
-                        (left + width - offset * scale) as i32,
-                        (top + height - 3 * scale) as i32,
-                        (left + width - 3 * scale) as i32,
-                        (top + height - offset * scale) as i32,
-                        (outline_r, outline_g, outline_b),
-                        16 * scale,
-                    );
-                }
+                self.window_resize_affordances(left, top, width, height, scale, outline);
             }
             self.fill_rect_alpha(
                 toolbar_left,
@@ -3270,6 +3261,113 @@ impl super::DisplayDevice {
         }
         if app_menu == 20 {
             self.desktop_native_performance_menu(left, top, screen, scale);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: window_resize_affordances
+    // DESC: Draws bright edge bars and corner brackets for every supported window resize direction.
+    // ------------------=
+    fn window_resize_affordances(
+        &mut self,
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+        scale: usize,
+        outline: (u8, u8, u8),
+    ) {
+        let scale = scale.max(1);
+        let (red, green, blue) = outline;
+        let thickness = 3 * scale;
+        let edge_length = (44 * scale).min(height.saturating_sub(24 * scale));
+        let corner_length = (15 * scale).min(width / 4).min(height / 4);
+        let right = left.saturating_add(width);
+        let bottom = top.saturating_add(height);
+        let side_top = top.saturating_add(height.saturating_sub(edge_length) / 2);
+        let bottom_left = left.saturating_add(width.saturating_sub(edge_length) / 2);
+        self.fill_rounded_rect_alpha(
+            left.saturating_add(scale),
+            side_top,
+            thickness,
+            edge_length,
+            thickness / 2,
+            red,
+            green,
+            blue,
+            238,
+        );
+        self.fill_rounded_rect_alpha(
+            right.saturating_sub(thickness + scale),
+            side_top,
+            thickness,
+            edge_length,
+            thickness / 2,
+            red,
+            green,
+            blue,
+            238,
+        );
+        self.fill_rounded_rect_alpha(
+            bottom_left,
+            bottom.saturating_sub(thickness + scale),
+            edge_length,
+            thickness,
+            thickness / 2,
+            red,
+            green,
+            blue,
+            238,
+        );
+        for x in [
+            left.saturating_add(scale),
+            right.saturating_sub(corner_length + scale),
+        ] {
+            self.fill_rect_alpha(
+                x,
+                top + scale,
+                corner_length,
+                thickness,
+                red,
+                green,
+                blue,
+                225,
+            );
+            self.fill_rect_alpha(
+                x,
+                bottom.saturating_sub(thickness + scale),
+                corner_length,
+                thickness,
+                red,
+                green,
+                blue,
+                225,
+            );
+        }
+        for y in [
+            top.saturating_add(scale),
+            bottom.saturating_sub(corner_length + scale),
+        ] {
+            self.fill_rect_alpha(
+                left + scale,
+                y,
+                thickness,
+                corner_length,
+                red,
+                green,
+                blue,
+                225,
+            );
+            self.fill_rect_alpha(
+                right.saturating_sub(thickness + scale),
+                y,
+                thickness,
+                corner_length,
+                red,
+                green,
+                blue,
+                225,
+            );
         }
     }
 
@@ -5366,16 +5464,14 @@ impl super::DisplayDevice {
             );
         }
         if !settings_window.maximized {
-            for offset in [5usize, 9, 13] {
-                self.icon_line(
-                    (left + width - offset * scale) as i32,
-                    (top + height - 3 * scale) as i32,
-                    (left + width - 3 * scale) as i32,
-                    (top + height - offset * scale) as i32,
-                    (outline_r, outline_g, outline_b),
-                    16 * scale,
-                );
-            }
+            self.window_resize_affordances(
+                left,
+                top,
+                width,
+                height,
+                scale,
+                (outline_r, outline_g, outline_b),
+            );
         }
     }
 
@@ -6344,18 +6440,14 @@ impl super::DisplayDevice {
         }
         if !settings_window.maximized {
             let window = layout.settings_window_geometry(settings_window).window;
-            let right = window.right().max(0) as usize;
-            let bottom = window.bottom().max(0) as usize;
-            for offset in [5usize, 9, 13] {
-                self.icon_line(
-                    (right - offset * scale) as i32,
-                    (bottom - 3 * scale) as i32,
-                    (right - 3 * scale) as i32,
-                    (bottom - offset * scale) as i32,
-                    (outline_r, outline_g, outline_b),
-                    16 * scale,
-                );
-            }
+            self.window_resize_affordances(
+                window.x.max(0) as usize,
+                window.y.max(0) as usize,
+                window.width as usize,
+                window.height as usize,
+                scale,
+                (outline_r, outline_g, outline_b),
+            );
         }
     }
 
@@ -7819,6 +7911,11 @@ impl super::DisplayDevice {
                 1,
             );
             self.outline_rounded_rect(left, top, width, height, 10 * scale, 94, 184, 239);
+            if !navigator.maximized {
+                let outline =
+                    self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+                self.window_resize_affordances(left, top, width, height, scale, outline);
+            }
         }
         if window_visible {
             let bounds = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
@@ -7963,18 +8060,15 @@ impl super::DisplayDevice {
             );
         }
         if !window_maximized {
-            let (outline_r, outline_g, outline_b) =
-                self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-            for offset in [5usize, 9, 13] {
-                self.icon_line(
-                    (browser_left + browser_width - offset * scale) as i32,
-                    (browser_top + browser_height - 3 * scale) as i32,
-                    (browser_left + browser_width - 3 * scale) as i32,
-                    (browser_top + browser_height - offset * scale) as i32,
-                    (outline_r, outline_g, outline_b),
-                    16 * scale,
-                );
-            }
+            let outline = self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+            self.window_resize_affordances(
+                browser_left,
+                browser_top,
+                browser_width,
+                browser_height,
+                scale,
+                outline,
+            );
         }
         let tool_top = browser_top + title_h;
         self.fill_rect_alpha(

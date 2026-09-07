@@ -838,6 +838,71 @@ impl ConsoleRuntime {
             kind,
             self.pointer_over_text_input(),
         );
+        if let Some(shape) = self.resize_pointer_shape() {
+            crate::ui::text_input::set_pointer_shape(shape);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: resize_pointer_shape
+    // DESC: Resolves the directional resize pointer for the captured or hovered active window handle.
+    // ------------------=
+    fn resize_pointer_shape(&self) -> Option<crate::ui::text_input::PointerShape> {
+        let layout = crate::ui::system_layout::SystemLayout::new(
+            self.system.framebuffer_width as usize,
+            self.system.framebuffer_height as usize,
+        );
+        let handle = match self.mode {
+            ConsoleMode::Desktop => self
+                .app_window_resizing
+                .or(self.home_window_resizing)
+                .or_else(|| {
+                    let app_target = (self.desktop_app != DesktopAppKind::None)
+                        .then(|| {
+                            layout.desktop_app_window_target(
+                                self.pointer_x,
+                                self.pointer_y,
+                                self.app_window_x,
+                                self.app_window_y,
+                                self.app_window_width,
+                                self.app_window_height,
+                                self.app_window_maximized,
+                                self.desktop_app == DesktopAppKind::TextEditor,
+                            )
+                        })
+                        .unwrap_or(DesktopAppWindowTarget::None);
+                    match app_target {
+                        DesktopAppWindowTarget::Resize(handle) if !self.app_window_maximized => {
+                            Some(handle)
+                        }
+                        DesktopAppWindowTarget::None
+                            if self.home_window_visible && !self.home_window_maximized =>
+                        {
+                            match self.desktop_target(layout) {
+                                Some(DesktopTarget::HomeResize(handle)) => Some(handle),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    }
+                }),
+            ConsoleMode::Settings => self.settings_window_resizing.or_else(|| {
+                (!self.settings_window.maximized)
+                    .then(|| {
+                        match layout.settings_target(
+                            self.pointer_x,
+                            self.pointer_y,
+                            self.settings_window,
+                        ) {
+                            Some(SettingsTarget::Resize(handle)) => Some(handle),
+                            _ => None,
+                        }
+                    })
+                    .flatten()
+            }),
+            _ => None,
+        }?;
+        crate::ui::text_input::pointer_shape_for_resize_handle(handle)
     }
 
     // ------------------------=
