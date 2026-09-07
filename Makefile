@@ -96,6 +96,14 @@ performance-test:
 	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release \
 		--manifest-path tools/behavior-harness/Cargo.toml --bin performance-test
 
+.PHONY: active-painter-test
+active-painter-test:
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -C opt-level=z -Awarnings tools/memory-throughput-test.rs -o build/behavior-tests/memory-throughput-test
+	@build/behavior-tests/memory-throughput-test
+	@rustc --edition=2021 -C opt-level=z -Awarnings tools/active-painter-test.rs -o build/behavior-tests/active-painter-test
+	@build/behavior-tests/active-painter-test
+
 icon-theme-test:
 	@tools/icon-theme-test.sh
 

@@ -313,6 +313,15 @@ impl super::DisplayDevice {
         {
             return;
         }
+        self.write_rgb_unchecked(x as usize, y as usize, red, green, blue);
+        self.mark_dirty_rect(x as usize, y as usize, 1, 1);
+    }
+
+    // ------------------------=
+    // FUNC: write_rgb_unchecked
+    // DESC: Stores an already-bounded pixel without repeating per-pixel damage bookkeeping.
+    // ------------------=
+    fn write_rgb_unchecked(&mut self, x: usize, y: usize, red: u8, green: u8, blue: u8) {
         let color = if self.format == 0 {
             red as u32 | (green as u32) << 8 | (blue as u32) << 16
         } else {
@@ -324,7 +333,6 @@ impl super::DisplayDevice {
                 color,
             );
         }
-        self.mark_dirty_rect(x as usize, y as usize, 1, 1);
     }
 
     // ------------------------=
@@ -356,6 +364,30 @@ impl super::DisplayDevice {
         {
             return;
         }
+        self.blend_color_unchecked(
+            x as usize,
+            y as usize,
+            target_red,
+            target_green,
+            target_blue,
+            alpha,
+        );
+        self.mark_dirty_rect(x as usize, y as usize, 1, 1);
+    }
+
+    // ------------------------=
+    // FUNC: blend_color_unchecked
+    // DESC: Blends one already-clipped pixel; batch callers record damage once per primitive.
+    // ------------------=
+    fn blend_color_unchecked(
+        &mut self,
+        x: usize,
+        y: usize,
+        target_red: u8,
+        target_green: u8,
+        target_blue: u8,
+        alpha: u8,
+    ) {
         let address = unsafe { self.buffer.add(y as usize * self.stride + x as usize) };
         let color = unsafe { read_volatile(address) };
         let (red, green, blue) = if self.format == 0 {
@@ -374,13 +406,17 @@ impl super::DisplayDevice {
         let mix = |value: u8, target: u8| {
             ((value as u16 * (255 - alpha as u16) + target as u16 * alpha as u16) / 255) as u8
         };
-        self.pixel(
-            x,
-            y,
-            mix(red, target_red),
-            mix(green, target_green),
-            mix(blue, target_blue),
-        );
+        let red = mix(red, target_red) as u32;
+        let green = mix(green, target_green) as u32;
+        let blue = mix(blue, target_blue) as u32;
+        let packed = if self.format == 0 {
+            red | green << 8 | blue << 16
+        } else {
+            blue | green << 8 | red << 16
+        };
+        unsafe {
+            write_volatile(address, packed);
+        }
     }
 
     // ------------------------=
@@ -869,11 +905,24 @@ impl super::DisplayDevice {
         let Some(region) = self.clipped_render_region(left, top, width, height) else {
             return;
         };
+        let color = if self.format == 0 {
+            red as u32 | (green as u32) << 8 | (blue as u32) << 16
+        } else {
+            blue as u32 | (green as u32) << 8 | (red as u32) << 16
+        };
         for y in region.top..region.bottom {
             for x in region.left..region.right {
-                self.pixel(x as i32, y as i32, red, green, blue);
+                unsafe {
+                    write_volatile(self.buffer.add(y * self.stride + x), color);
+                }
             }
         }
+        self.mark_dirty_rect(
+            region.left,
+            region.top,
+            region.right - region.left,
+            region.bottom - region.top,
+        );
     }
 
     // ------------------------=
@@ -896,9 +945,15 @@ impl super::DisplayDevice {
         };
         for y in region.top..region.bottom {
             for x in region.left..region.right {
-                self.blend_color(x as i32, y as i32, red, green, blue, alpha);
+                self.blend_color_unchecked(x, y, red, green, blue, alpha);
             }
         }
+        self.mark_dirty_rect(
+            region.left,
+            region.top,
+            region.right - region.left,
+            region.bottom - region.top,
+        );
     }
 
     // ------------------------=
@@ -918,11 +973,12 @@ impl super::DisplayDevice {
         alpha: u8,
     ) {
         let radius = radius.min(width / 2).min(height / 2).max(1);
-        let right = left.saturating_add(width).min(self.width);
-        let bottom = top.saturating_add(height).min(self.height);
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
         let radius_squared = (radius * radius) as i64;
-        for y in top..bottom {
-            for x in left..right {
+        for y in region.top..region.bottom {
+            for x in region.left..region.right {
                 let dx = if x < left + radius {
                     left + radius - x
                 } else if x >= left + width.saturating_sub(radius) {
@@ -938,10 +994,16 @@ impl super::DisplayDevice {
                     0
                 };
                 if dx == 0 || dy == 0 || (dx * dx + dy * dy) as i64 <= radius_squared {
-                    self.blend_color(x as i32, y as i32, red, green, blue, alpha);
+                    self.blend_color_unchecked(x, y, red, green, blue, alpha);
                 }
             }
         }
+        self.mark_dirty_rect(
+            region.left,
+            region.top,
+            region.right - region.left,
+            region.bottom - region.top,
+        );
     }
 
     // ------------------------=
@@ -963,10 +1025,11 @@ impl super::DisplayDevice {
         let outer = (radius * radius) as i64;
         let inner_radius = radius.saturating_sub(1);
         let inner = (inner_radius * inner_radius) as i64;
-        let right = left.saturating_add(width).min(self.width);
-        let bottom = top.saturating_add(height).min(self.height);
-        for y in top..bottom {
-            for x in left..right {
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
+        for y in region.top..region.bottom {
+            for x in region.left..region.right {
                 let edge = x == left || y == top || x + 1 == left + width || y + 1 == top + height;
                 let dx = if x < left + radius {
                     left + radius - x
@@ -1012,10 +1075,11 @@ impl super::DisplayDevice {
         let outer = (radius * radius) as i64;
         let inner_radius = radius.saturating_sub(1);
         let inner = (inner_radius * inner_radius) as i64;
-        let right = left.saturating_add(width).min(self.width);
-        let bottom = top.saturating_add(height).min(self.height);
-        for y in top..bottom {
-            for x in left..right {
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
+        for y in region.top..region.bottom {
+            for x in region.left..region.right {
                 let edge = x == left || y == top || x + 1 == left + width || y + 1 == top + height;
                 let dx = if x < left + radius {
                     left + radius - x
@@ -1433,14 +1497,17 @@ impl super::DisplayDevice {
             return;
         }
         let row_bytes = (source_width * 3 + 3) & !3;
-        for y in 0..height.min(self.height.saturating_sub(top)) {
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
+        for y in region.top - top..region.bottom - top {
             let sy = y * source_height / height;
             let source_y = if signed_height < 0 {
                 sy
             } else {
                 source_height - 1 - sy
             };
-            for x in 0..width.min(self.width.saturating_sub(left)) {
+            for x in region.left - left..region.right - left {
                 let sx = x * source_width / width;
                 let index = offset + source_y * row_bytes + sx * 3;
                 if index + 2 >= bitmap.len() {
@@ -1488,8 +1555,8 @@ impl super::DisplayDevice {
             .destination_height
             .min(self.height.saturating_sub(draw_top))
         {
-            let source_y = placement.source_top
-                + y * placement.source_height / placement.destination_height;
+            let source_y =
+                placement.source_top + y * placement.source_height / placement.destination_height;
             for x in 0..placement
                 .destination_width
                 .min(self.width.saturating_sub(draw_left))
@@ -1542,14 +1609,17 @@ impl super::DisplayDevice {
             return;
         }
         let row_bytes = (source_width * 3 + 3) & !3;
-        for y in 0..height.min(self.height.saturating_sub(top)) {
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
+        for y in region.top - top..region.bottom - top {
             let sy = inset + y * sampled_height / height;
             let source_y = if signed_height < 0 {
                 sy
             } else {
                 source_height - 1 - sy
             };
-            for x in 0..width.min(self.width.saturating_sub(left)) {
+            for x in region.left - left..region.right - left {
                 let sx = inset + x * sampled_width / width;
                 let index = offset + source_y * row_bytes + sx * 3;
                 if index + 2 >= bitmap.len() {
@@ -1590,14 +1660,17 @@ impl super::DisplayDevice {
             return;
         }
         let row_bytes = source_width * 4;
-        for y in 0..height.min(self.height.saturating_sub(top)) {
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
+        for y in region.top - top..region.bottom - top {
             let sy = y * source_height / height;
             let source_y = if signed_height < 0 {
                 sy
             } else {
                 source_height - 1 - sy
             };
-            for x in 0..width.min(self.width.saturating_sub(left)) {
+            for x in region.left - left..region.right - left {
                 let sx = x * source_width / width;
                 let index = offset + source_y * row_bytes + sx * 4;
                 if index + 3 >= bitmap.len() {
@@ -1726,14 +1799,17 @@ impl super::DisplayDevice {
                     cropped_height,
                 )
             };
-        for y in 0..height.min(self.height.saturating_sub(top)) {
+        let Some(region) = self.clipped_render_region(left, top, width, height) else {
+            return;
+        };
+        for y in region.top - top..region.bottom - top {
             let sy = crop_y + y * crop_height / height;
             let source_y = if signed_height < 0 {
                 sy
             } else {
                 source_height - 1 - sy
             };
-            for x in 0..width.min(self.width.saturating_sub(left)) {
+            for x in region.left - left..region.right - left {
                 let sx = crop_x + x * crop_width / width;
                 let index = offset + source_y * row_bytes + sx * 3;
                 if index + 2 >= bitmap.len() {

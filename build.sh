@@ -24,6 +24,7 @@ else
 fi
 make x86_64
 make aarch64
+make active-painter-test
 make crash-screen-test
 make component-manifest-test
 make settings-color-test

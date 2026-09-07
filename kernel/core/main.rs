@@ -8,6 +8,7 @@ mod crash;
 #[path = "../drivers/mod.rs"]
 mod drivers;
 mod intent;
+mod memory;
 #[cfg(target_arch = "x86")]
 #[path = "../arch/x86/output.rs"]
 mod output;
@@ -38,14 +39,7 @@ pub unsafe extern "C" fn memcpy(
     source: *const c_void,
     count: usize,
 ) -> *mut c_void {
-    let destination_bytes = destination.cast::<u8>();
-    let source_bytes = source.cast::<u8>();
-    for index in 0..count {
-        core::ptr::write_volatile(
-            destination_bytes.add(index),
-            core::ptr::read_volatile(source_bytes.add(index)),
-        );
-    }
+    memory::copy(destination.cast(), source.cast(), count);
     destination
 }
 
@@ -59,23 +53,7 @@ pub unsafe extern "C" fn memmove(
     source: *const c_void,
     count: usize,
 ) -> *mut c_void {
-    let destination_bytes = destination.cast::<u8>();
-    let source_bytes = source.cast::<u8>();
-    if (destination_bytes as usize) <= (source_bytes as usize) {
-        for index in 0..count {
-            core::ptr::write_volatile(
-                destination_bytes.add(index),
-                core::ptr::read_volatile(source_bytes.add(index)),
-            );
-        }
-    } else {
-        for index in (0..count).rev() {
-            core::ptr::write_volatile(
-                destination_bytes.add(index),
-                core::ptr::read_volatile(source_bytes.add(index)),
-            );
-        }
-    }
+    memory::move_bytes(destination.cast(), source.cast(), count);
     destination
 }
 
@@ -85,10 +63,7 @@ pub unsafe extern "C" fn memmove(
 // DESC: Implements the memset operation.
 // ------------------=
 pub unsafe extern "C" fn memset(destination: *mut c_void, value: i32, count: usize) -> *mut c_void {
-    let destination_bytes = destination.cast::<u8>();
-    for index in 0..count {
-        core::ptr::write_volatile(destination_bytes.add(index), value as u8);
-    }
+    memory::fill(destination.cast(), value as u8, count);
     destination
 }
 
