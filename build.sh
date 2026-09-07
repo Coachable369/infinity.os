@@ -35,6 +35,9 @@ make milestone-7x-test
 make ai-test
 make object-test
 make network-test
+make milestone-9-test
+make performance-test
+make resource-policy-test
 tools/ui-install-parity-test.sh \
     build/infinity-x86_64.img \
     build/infinity-aarch64.img \

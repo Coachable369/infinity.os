@@ -171,10 +171,15 @@ impl NodeRuntime {
     // DESC: Opens a short-lived explicit-verification pairing transaction for a discovered peer.
     // ------------------=
     pub fn begin_pairing(&mut self, peer: NodeId, now: u64) -> Result<Pairing, NodeError> {
+        self.expire_pairings(now);
         let node_index = self.discovered.iter().position(|node| node.map(|value| value.id == peer).unwrap_or(false)).ok_or(NodeError::UnknownNode)?;
         let node = self.discovered[node_index].ok_or(NodeError::UnknownNode)?;
         if matches!(node.trust, TrustState::Blocked | TrustState::Revoked) { return Err(NodeError::Blocked); }
-        let slot = self.pairings.iter().position(Option::is_none).ok_or(NodeError::ResourceLimit)?;
+        if matches!(node.trust, TrustState::Trusted | TrustState::Restricted) { return Err(NodeError::NotTrusted); }
+        if self.pairings.iter().flatten().any(|pairing| pairing.peer == peer && pairing.state == PairingState::AwaitingConfirmation && now < pairing.expires_at) {
+            return Err(NodeError::ResourceLimit);
+        }
+        let slot = self.pairings.iter().position(|entry| entry.map(|pairing| pairing.state != PairingState::AwaitingConfirmation || now >= pairing.expires_at).unwrap_or(true)).ok_or(NodeError::ResourceLimit)?;
         let id = self.take_id();
         let fingerprint = fingerprint(&node.public_key);
         let verification_code = u32::from_le_bytes([fingerprint[0], fingerprint[5], fingerprint[10], fingerprint[15]]) % 1_000_000;
@@ -190,15 +195,20 @@ impl NodeRuntime {
     // ------------------=
     pub fn confirm_pairing(&mut self, pairing_id: u64, code: u32, human_approved: bool, now: u64, correlation_id: u64) -> Result<(), NodeError> {
         if !human_approved { return Err(NodeError::HumanApprovalRequired); }
+        self.expire_pairings(now);
         let pairing = self.pairings.iter_mut().flatten().find(|pairing| pairing.id == pairing_id).ok_or(NodeError::PairingNotFound)?;
         if pairing.state != PairingState::AwaitingConfirmation {
             return Err(if pairing.state == PairingState::Expired { NodeError::PairingExpired } else { NodeError::PairingNotFound });
         }
         if now >= pairing.expires_at { pairing.state = PairingState::Expired; return Err(NodeError::PairingExpired); }
         if pairing.verification_code != code { return Err(NodeError::VerificationMismatch); }
-        pairing.state = PairingState::Confirmed;
         let peer = pairing.peer;
-        self.discovered.iter_mut().flatten().find(|node| node.id == peer).ok_or(NodeError::UnknownNode)?.trust = TrustState::Trusted;
+        let node = self.discovered.iter_mut().flatten().find(|node| node.id == peer).ok_or(NodeError::UnknownNode)?;
+        if node.trust != TrustState::PairingPending { return Err(NodeError::NotTrusted); }
+        if fingerprint(&node.public_key) != pairing.fingerprint { return Err(NodeError::IdentityMismatch); }
+        if node.protocol_min > NODE_PROTOCOL_VERSION || node.protocol_max < NODE_PROTOCOL_VERSION { return Err(NodeError::UnsupportedVersion); }
+        pairing.state = PairingState::Confirmed;
+        node.trust = TrustState::Trusted;
         self.record(AUDIT_NODE_PAIRED, peer, now, correlation_id, 1);
         Ok(())
     }
@@ -209,6 +219,7 @@ impl NodeRuntime {
     // ------------------=
     pub fn revoke_trust(&mut self, peer: NodeId, now: u64, correlation_id: u64) -> Result<(), NodeError> {
         self.discovered.iter_mut().flatten().find(|node| node.id == peer).ok_or(NodeError::UnknownNode)?.trust = TrustState::Revoked;
+        self.cancel_pending_pairings(peer);
         for session in self.sessions.iter_mut().flatten().filter(|session| session.peer == peer) { session.state = SessionState::Closed; session.key.zeroize(); }
         for grant in self.grants.iter_mut().flatten().filter(|grant| grant.peer == peer) { grant.revoked = true; }
         self.record(AUDIT_NODE_REVOKED, peer, now, correlation_id, 1);
@@ -221,9 +232,17 @@ impl NodeRuntime {
     // ------------------=
     pub fn set_trust(&mut self, peer: NodeId, state: TrustState, now: u64, correlation_id: u64) -> Result<(), NodeError> {
         let node = self.discovered.iter_mut().flatten().find(|node| node.id == peer).ok_or(NodeError::UnknownNode)?;
+        if matches!(state, TrustState::Trusted | TrustState::Restricted)
+            && !matches!(node.trust, TrustState::Trusted | TrustState::Restricted) {
+            return Err(NodeError::HumanApprovalRequired);
+        }
+        if matches!(state, TrustState::PairingPending | TrustState::Discovered | TrustState::Incompatible) {
+            return Err(NodeError::CapabilityDenied);
+        }
         node.trust = state;
+        self.cancel_pending_pairings(peer);
         let event = if state == TrustState::Blocked { AUDIT_NODE_BLOCKED } else if matches!(state, TrustState::Untrusted | TrustState::Discovered) { AUDIT_NODE_UNBLOCKED } else { AUDIT_POLICY_CHANGED };
-        if matches!(state, TrustState::Blocked | TrustState::Revoked) {
+        if state != TrustState::Trusted {
             for session in self.sessions.iter_mut().flatten().filter(|session| session.peer == peer) { session.state = SessionState::Closed; session.key.zeroize(); }
             for grant in self.grants.iter_mut().flatten().filter(|grant| grant.peer == peer) { grant.revoked = true; }
         }
@@ -248,9 +267,35 @@ impl NodeRuntime {
     // ------------------=
     pub fn cancel_pairing(&mut self, pairing_id: u64) -> Result<(), NodeError> {
         let pairing = self.pairings.iter_mut().flatten().find(|pairing| pairing.id == pairing_id).ok_or(NodeError::PairingNotFound)?;
+        if pairing.state != PairingState::AwaitingConfirmation { return Err(NodeError::PairingNotFound); }
         pairing.state = PairingState::Cancelled;
-        if let Some(node) = self.discovered.iter_mut().flatten().find(|node| node.id == pairing.peer) { node.trust = TrustState::Untrusted; }
+        if let Some(node) = self.discovered.iter_mut().flatten().find(|node| node.id == pairing.peer && node.trust == TrustState::PairingPending) { node.trust = TrustState::Untrusted; }
         Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: cancel_pending_pairings
+    // DESC: Invalidates pending approvals when an explicit trust decision supersedes them.
+    // ------------------=
+    fn cancel_pending_pairings(&mut self, peer: NodeId) {
+        for pairing in self.pairings.iter_mut().flatten().filter(|pairing| pairing.peer == peer && pairing.state == PairingState::AwaitingConfirmation) {
+            pairing.state = PairingState::Cancelled;
+        }
+    }
+
+    // ------------------------=
+    // FUNC: expire_pairings
+    // DESC: Expires approvals and their pending trust projection together without granting authority.
+    // ------------------=
+    fn expire_pairings(&mut self, now: u64) {
+        for pairing in self.pairings.iter_mut().flatten() {
+            if pairing.state == PairingState::AwaitingConfirmation && now >= pairing.expires_at {
+                pairing.state = PairingState::Expired;
+                if let Some(node) = self.discovered.iter_mut().flatten().find(|node| node.id == pairing.peer && node.trust == TrustState::PairingPending) {
+                    node.trust = TrustState::Untrusted;
+                }
+            }
+        }
     }
 
     // ------------------------=
@@ -318,6 +363,7 @@ impl NodeRuntime {
         let grant = self.grants.iter().flatten().find(|grant| grant.id == grant_id).ok_or(NodeError::CapabilityDenied)?;
         if grant.revoked { return Err(NodeError::CapabilityRevoked); }
         if now >= grant.expires_at { return Err(NodeError::CapabilityExpired); }
+        if !self.discovered.iter().flatten().any(|node| node.id == peer && node.trust == TrustState::Trusted) { return Err(NodeError::NotTrusted); }
         if grant.peer != peer || grant.operation != operation || grant.scope != scope || rights & !grant.rights != 0 { return Err(NodeError::CapabilityDenied); }
         Ok(())
     }
@@ -388,7 +434,7 @@ impl NodeRuntime {
     // ------------------=
     pub fn sweep(&mut self, now: u64) {
         for node in self.discovered.iter_mut().flatten() { if now.saturating_sub(node.last_seen) > DISCOVERY_LEASE_TICKS { node.reachability = Reachability::Offline; } }
-        for pairing in self.pairings.iter_mut().flatten() { if pairing.state == PairingState::AwaitingConfirmation && now >= pairing.expires_at { pairing.state = PairingState::Expired; } }
+        self.expire_pairings(now);
         for session in self.sessions.iter_mut().flatten() { if session.state == SessionState::Established && now >= session.expires_at { session.state = SessionState::Closed; session.key.zeroize(); } }
     }
 

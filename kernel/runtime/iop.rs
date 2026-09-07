@@ -433,7 +433,7 @@ pub fn execute_node_operation(
 // ------------------=
 pub fn dispatch_node_operation(
     router: &mut IopRouter,
-    _capabilities: &CapabilityManager,
+    capabilities: &CapabilityManager,
     nodes: &mut super::node::NodeRuntime,
     operation: OperationId,
     service_endpoint: u16,
@@ -448,6 +448,16 @@ pub fn dispatch_node_operation(
         return Err(IopError::InvalidPayload);
     }
     let decoded = NodeOperationV1::decode(request.bytes())?;
+    // Authority may have expired or been revoked while this request was queued.
+    capabilities.validate(
+        request.header.capability_ref,
+        request.header.caller_identity,
+        CapabilityType::ServiceCall,
+        operation.machine_id() as u64,
+        1,
+        0,
+        now,
+    )?;
     let response = execute_node_operation(
         nodes,
         operation,

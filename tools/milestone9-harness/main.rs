@@ -13,6 +13,7 @@ mod event;
 
 use node::types::{MeshRole, NodeError, TrustState};
 use node::NodeRuntime;
+mod pairing_acceptance;
 
 // ------------------------=
 // FUNC: dispatch_request
@@ -141,6 +142,14 @@ fn iop_node_management_operations() {
     let mut reserved = valid;
     reserved[79] = 1;
     assert_eq!(NodeOperationV1::decode(&reserved), Err(IopError::InvalidPayload));
+
+    let revoke_request = node_request(remote_id, OperationId::NodeRevokeTrust);
+    let queued_capability = capabilities.grant(CapabilityType::ServiceCall, OperationId::NodeRevokeTrust.machine_id() as u64, 1, 0, caller, caller, Some(60), 0).unwrap();
+    let queued = IopMessage::request(OperationId::NodeRevokeTrust, 111, caller, queued_capability, 60, 111, &revoke_request.encode()).unwrap();
+    router.send(2, queued, &capabilities, 12).unwrap();
+    capabilities.revoke(queued_capability).unwrap();
+    assert_eq!(iop::dispatch_node_operation(&mut router, &capabilities, &mut local, OperationId::NodeRevokeTrust, 2, 1, SecurityIdentity([0x52; 16]), 13), Err(IopError::AccessDenied));
+    assert_eq!(local.discovered_nodes()[0].unwrap().trust, TrustState::Trusted);
 
     dispatch_request(&mut router, &mut capabilities, &mut local, OperationId::NodeRevokeTrust, node_request(remote_id, OperationId::NodeRevokeTrust), 110, 13).unwrap();
     assert_eq!(local.discovered_nodes()[0].unwrap().trust, TrustState::Revoked);
@@ -278,6 +287,7 @@ fn paired_nodes() -> (NodeRuntime, NodeRuntime, node::types::NodeId, node::types
 // DESC: Exercises node identity, discovery, trust, secure sessions, remote authority, membership, persistence, and bounds through behavior.
 // ------------------=
 fn main() {
+    pairing_acceptance::run();
     iop_pairing_round_trip();
     iop_node_management_operations();
     node_event_delivery_after_commit();
