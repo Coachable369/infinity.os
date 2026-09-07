@@ -71,6 +71,21 @@ The 1536 x 1024 reference composition uses a 521 x 754 px configuration card,
 progress, title, body, content, and navigation anchors. Dynamic input and
 network state overlays exactly replace their design-time preview surfaces.
 
+## Date and Time component parity
+
+The Date & Time kit is represented by semantic, independently selectable
+layers: section label, date field, time field, time-zone selector, UTC offset
+badge, time-zone map, metadata, Back, and Primary. Fields use the field token
+with a top-edge glass lift; the badge uses bright cyan metadata; the map adds a
+bounded longitude band and luminous marker. Hover, focus, and pressed states
+change fill lift, edge luminance, and glow without changing element geometry.
+
+The macOS canvas and kernel framebuffer compositor resolve the same roles and
+authored base colors. The map remains a built-in runtime asset, so saving the
+project records its editable geometry and crop without duplicating the bitmap
+inside the runtime template. Installer and installed-system images package the
+same generated `.iuit` artifact.
+
 ## Interaction contract
 
 - Click selects; Shift-click toggles selection.
