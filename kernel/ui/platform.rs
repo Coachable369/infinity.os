@@ -117,6 +117,45 @@ pub struct FrameClock {
     pub dropped_frames: u32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct MotionFrameCoalescer {
+    pending: bool,
+}
+
+impl MotionFrameCoalescer {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates an empty continuous-pointer frame queue.
+    // ------------------=
+    pub const fn new() -> Self {
+        Self { pending: false }
+    }
+
+    // ------------------------=
+    // FUNC: request
+    // DESC: Queues held motion while requiring release state to present immediately.
+    // ------------------=
+    pub fn request(&mut self, released: bool) -> bool {
+        if released {
+            self.pending = false;
+            true
+        } else {
+            self.pending = true;
+            false
+        }
+    }
+
+    // ------------------------=
+    // FUNC: take_for_tick
+    // DESC: Collapses every queued motion sample into one animation-clock presentation.
+    // ------------------=
+    pub fn take_for_tick(&mut self) -> bool {
+        let pending = self.pending;
+        self.pending = false;
+        pending
+    }
+}
+
 impl FrameClock {
     // ------------------------=
     // FUNC: new

@@ -12,7 +12,9 @@ use ui::geometry::{fit_cover, Insets, Point, Rect, Scale, Size};
 use ui::input::{ElementId, FocusManager, PointerAccelerator};
 use ui::input_router::{InputDestination, InputRouter};
 use ui::localization::{resolve, StringId, EN_US};
-use ui::platform::{AdaptiveQualityController, CacheBudget, FrameClock, QualityLevel};
+use ui::platform::{
+    AdaptiveQualityController, CacheBudget, FrameClock, MotionFrameCoalescer, QualityLevel,
+};
 use ui::scene::{
     linear_layout, AccessibilityRole, Axis, DamageClass, DamageRecord, DamageTracker, ElementKind,
     ElementState, SemanticElement, MAX_DAMAGE_REGIONS,
@@ -23,11 +25,11 @@ use ui::skin::{
 };
 use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityClass};
 use ui::system_layout::{
-    resize_home_window, resize_native_window, window_transition_damage, AiChatTarget,
-    AppLauncherTarget, DesktopAppWindowTarget, DesktopTarget, EditorDialogTarget,
-    EditorScrollTarget, OnboardingTarget, SettingsAccentTarget, SettingsTarget,
-    SettingsWindowState, SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK,
-    DESKTOP_FOREGROUND_WIDGETS,
+    resize_home_window, resize_native_window, window_motion_damage_regions,
+    window_transition_damage, AiChatTarget, AppLauncherTarget, DesktopAppWindowTarget,
+    DesktopTarget, EditorDialogTarget, EditorScrollTarget, OnboardingTarget,
+    SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget,
+    DESKTOP_FOREGROUND_DOCK, DESKTOP_FOREGROUND_WIDGETS,
 };
 use ui::text_editor::{document_path, visual_line_count, visual_line_start, TextDocument};
 use ui::trusted::{TrustedSurface, TrustedUiError};
@@ -52,6 +54,7 @@ fn main() {
     desktop_foreground_damage_test();
     desktop_ai_chat_layout_test();
     window_move_composition_test();
+    continuous_motion_coalescing_test();
     independent_window_state_test();
     scene_and_damage_test();
     surface_and_compositor_test();
@@ -62,6 +65,21 @@ fn main() {
     drag_path_test();
     service_foundation_test();
     println!("InfinityUI native runtime: PASS");
+}
+
+// ------------------------=
+// FUNC: continuous_motion_coalescing_test
+// DESC: Verifies many held-pointer samples collapse into one clocked frame and release remains immediate.
+// ------------------=
+fn continuous_motion_coalescing_test() {
+    let mut frames = MotionFrameCoalescer::new();
+    for _ in 0..64 {
+        assert!(!frames.request(false));
+    }
+    assert!(frames.take_for_tick());
+    assert!(!frames.take_for_tick());
+    assert!(frames.request(true));
+    assert!(!frames.take_for_tick());
 }
 
 // ------------------------=
@@ -157,6 +175,22 @@ fn window_move_composition_test() {
         }
     );
     assert!(damage_rect.width < display.width || damage_rect.height < display.height);
+    let distant = Rect {
+        x: 7,
+        y: 1,
+        width: 4,
+        height: 3,
+    };
+    let distant_union = window_transition_damage(old, distant, display, 0);
+    let motion_damage = window_motion_damage_regions(old, distant, display, 0);
+    let motion_pixels = motion_damage
+        .iter()
+        .map(|region| region.width as usize * region.height as usize)
+        .sum::<usize>();
+    let union_pixels = distant_union.width as usize * distant_union.height as usize;
+    assert!(motion_pixels < union_pixels);
+    assert!(motion_damage[0].contains(Point { x: 1, y: 1 }));
+    assert!(motion_damage[1].contains(Point { x: 10, y: 3 }));
 
     let mut surfaces = SurfaceRegistry::new(1024);
     let app_id = surfaces

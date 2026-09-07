@@ -32,6 +32,7 @@ pub struct DisplayDevice {
     full_frame_fallbacks: u32,
     damage_collapses: u32,
     render_clip: Option<PresentRegion>,
+    fast_motion_frame: bool,
 }
 
 const MAX_PRESENT_REGIONS: usize = 8;
@@ -160,6 +161,7 @@ impl DisplayDevice {
             full_frame_fallbacks: 0,
             damage_collapses: 0,
             render_clip: None,
+            fast_motion_frame: false,
         })
     }
 

@@ -211,6 +211,22 @@ pub fn window_transition_damage(old: Rect, new: Rect, display: Rect, padding: u3
 }
 
 // ------------------------=
+// FUNC: window_motion_damage_regions
+// DESC: Returns separate padded old and new regions so distant window movement never repaints the space between them.
+// ------------------=
+pub fn window_motion_damage_regions(
+    old: Rect,
+    new: Rect,
+    display: Rect,
+    padding: u32,
+) -> [Rect; 2] {
+    [
+        window_transition_damage(old, old, display, padding),
+        window_transition_damage(new, new, display, padding),
+    ]
+}
+
+// ------------------------=
 // FUNC: eased_scroll_offset
 // DESC: Advances a logical scroll position toward a bounded target with a short decelerating step.
 // ------------------=

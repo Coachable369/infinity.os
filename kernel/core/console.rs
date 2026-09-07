@@ -398,6 +398,8 @@ struct ConsoleRuntime {
     pointer_y_remainder: i32,
     pointer_pressed: bool,
     pointer_buttons: u8,
+    continuous_motion_frames: crate::ui::platform::MotionFrameCoalescer,
+    presenting_fast_motion_frame: bool,
     installer_step: InstallerStep,
     installer_return_step: InstallerStep,
     storage_device: Option<StorageDevice>,
@@ -529,6 +531,8 @@ impl ConsoleRuntime {
             pointer_y_remainder: 0,
             pointer_pressed: false,
             pointer_buttons: 0,
+            continuous_motion_frames: crate::ui::platform::MotionFrameCoalescer::new(),
+            presenting_fast_motion_frame: false,
             installer_step: InstallerStep::Welcome,
             installer_return_step: InstallerStep::Welcome,
             storage_device: None,
@@ -1064,6 +1068,7 @@ impl ConsoleRuntime {
                 self.editor_dialog as u8,
                 &self.command[..self.command_length],
                 self.system_focus,
+                self.presenting_fast_motion_frame,
             );
             return;
         }
@@ -6103,6 +6108,16 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: present_continuous_motion
+    // DESC: Coalesces held-pointer visual updates onto the display clock while presenting release state immediately.
+    // ------------------=
+    fn present_continuous_motion(&mut self, released: bool) {
+        if self.continuous_motion_frames.request(released) {
+            self.redraw();
+        }
+    }
+
+    // ------------------------=
     // FUNC: pointer_interaction
     // DESC: Handles pointer interaction input or state transitions.
     // ------------------=
@@ -6413,7 +6428,7 @@ impl ConsoleRuntime {
                 if released {
                     self.editor_scroll_dragging = false;
                 }
-                self.redraw();
+                self.present_continuous_motion(released);
                 return;
             } else if let Some(corner) = self.app_window_resizing {
                 if left_button {
@@ -6443,7 +6458,7 @@ impl ConsoleRuntime {
                     self.app_window_resizing = None;
                     let _ = self.checkpoint_desktop_layout();
                 }
-                self.redraw();
+                self.present_continuous_motion(released);
                 return;
             } else if self.app_window_dragging {
                 if left_button {
@@ -6456,7 +6471,7 @@ impl ConsoleRuntime {
                     self.app_window_dragging = false;
                     let _ = self.checkpoint_desktop_layout();
                 }
-                self.redraw();
+                self.present_continuous_motion(released);
                 return;
             } else if self.desktop_app != DesktopAppKind::None {
                 if clicked {
@@ -6714,6 +6729,8 @@ impl ConsoleRuntime {
                     self.checkpoint_active_file_navigator();
                     let _ = self.checkpoint_desktop_layout();
                 }
+                self.present_continuous_motion(released);
+                return;
             } else if let Some(item) = self.home_dragging_item {
                 if left_button
                     && ((self.pointer_x - self.home_drag_origin_x).abs() > 7
@@ -6750,6 +6767,8 @@ impl ConsoleRuntime {
                     self.home_drag_moved = false;
                     let _ = self.checkpoint_desktop_layout();
                 }
+                self.present_continuous_motion(released);
+                return;
             } else if self.home_window_dragging {
                 if left_button {
                     self.home_window_x = (self.pointer_x - self.home_window_drag_offset_x)
@@ -6762,6 +6781,8 @@ impl ConsoleRuntime {
                     self.checkpoint_active_file_navigator();
                     let _ = self.checkpoint_desktop_layout();
                 }
+                self.present_continuous_motion(released);
+                return;
             } else if clicked {
                 let target = self.desktop_target(layout);
                 if !matches!(
@@ -7052,7 +7073,7 @@ impl ConsoleRuntime {
                         crate::ui::app_launcher::LauncherRelease::None => {}
                     }
                 }
-                self.redraw();
+                self.present_continuous_motion(released);
                 return;
             }
             if self.launcher_scroll_dragging {
@@ -7080,7 +7101,7 @@ impl ConsoleRuntime {
                 if released {
                     self.launcher_scroll_dragging = false;
                 }
-                self.redraw();
+                self.present_continuous_motion(released);
                 return;
             }
             match target {
@@ -7196,7 +7217,7 @@ impl ConsoleRuntime {
                     self.settings_timeout_dragging = false;
                     self.commit_user_no_activity_timeout();
                 }
-                self.redraw();
+                self.present_continuous_motion(released);
                 return;
             } else if let Some(row) = self.settings_effect_dragging {
                 if left_button {
@@ -7216,7 +7237,7 @@ impl ConsoleRuntime {
                     self.settings_effect_dragging = None;
                     self.commit_background_effects();
                 }
-                self.redraw();
+                self.present_continuous_motion(released);
                 return;
             } else if self.system_focus == 4 && left_button && clicked {
                 if let Some(value) = layout.settings_slider_target(
@@ -7245,7 +7266,7 @@ impl ConsoleRuntime {
                 if released {
                     self.settings_scroll_dragging = false;
                 }
-                self.redraw();
+                self.present_continuous_motion(released);
                 return;
             } else if let Some(corner) = self.settings_window_resizing {
                 if left_button {
@@ -7269,7 +7290,7 @@ impl ConsoleRuntime {
                     self.settings_window_resizing = None;
                     let _ = self.checkpoint_desktop_layout();
                 }
-                self.redraw();
+                self.present_continuous_motion(released);
                 return;
             } else if self.settings_window_dragging {
                 if left_button {
@@ -7282,7 +7303,7 @@ impl ConsoleRuntime {
                     self.settings_window_dragging = false;
                     let _ = self.checkpoint_desktop_layout();
                 }
-                self.redraw();
+                self.present_continuous_motion(released);
                 return;
             } else if self.system_focus == 1 && left_button {
                 if clicked {
@@ -7315,7 +7336,7 @@ impl ConsoleRuntime {
                     self.settings_window,
                 ) {
                     self.adjust_primary(target);
-                    self.redraw();
+                    self.present_continuous_motion(false);
                     return;
                 }
                 if let Some(target) = layout.settings_accent_target(
@@ -7324,7 +7345,7 @@ impl ConsoleRuntime {
                     self.settings_window,
                 ) {
                     self.adjust_accent(target);
-                    self.redraw();
+                    self.present_continuous_motion(false);
                     return;
                 }
             }
@@ -11132,6 +11153,8 @@ pub fn ui_animation_tick() -> bool {
         let Some(runtime) = (*slot).as_mut() else {
             return false;
         };
+        let motion_frame = runtime.continuous_motion_frames.take_for_tick();
+        let mut frame_changed = motion_frame;
         if runtime.mode == ConsoleMode::Settings {
             let layout = SystemLayout::new(
                 runtime.system.framebuffer_width,
@@ -11151,13 +11174,22 @@ pub fn ui_animation_tick() -> bool {
             );
             if next != runtime.settings_window.scroll_offset {
                 runtime.settings_window.scroll_offset = next;
-                runtime.redraw();
-                return true;
+                frame_changed = true;
             }
-            return false;
+            if frame_changed {
+                runtime.presenting_fast_motion_frame = motion_frame;
+                runtime.redraw();
+                runtime.presenting_fast_motion_frame = false;
+            }
+            return frame_changed;
         }
         if runtime.mode != ConsoleMode::AppLauncher {
-            return false;
+            if frame_changed {
+                runtime.presenting_fast_motion_frame = motion_frame;
+                runtime.redraw();
+                runtime.presenting_fast_motion_frame = false;
+            }
+            return frame_changed;
         }
         let layout = SystemLayout::new(
             runtime.system.framebuffer_width,
@@ -11172,10 +11204,14 @@ pub fn ui_animation_tick() -> bool {
             return true;
         }
         if tick.changed {
-            runtime.redraw();
-            return true;
+            frame_changed = true;
         }
-        false
+        if frame_changed {
+            runtime.presenting_fast_motion_frame = motion_frame;
+            runtime.redraw();
+            runtime.presenting_fast_motion_frame = false;
+        }
+        frame_changed
     }
 }
 

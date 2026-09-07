@@ -4056,7 +4056,6 @@ impl super::DisplayDevice {
         }
 
         if screen == 7 {
-            self.blur_framebuffer(4);
             let launcher_clip = self.render_clip;
             let reveal = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                 .app_launcher_visible_region();
@@ -6665,7 +6664,7 @@ impl super::DisplayDevice {
     ) {
         let radius = (width.min(height) / 12).clamp(8, 18);
         let (opacity, blur) = self.active_background_effects();
-        if blur >= 2 && opacity < 100 {
+        if blur >= 2 && opacity < 100 && !self.fast_motion_frame {
             self.blur_framebuffer_region(left, top, width, height, blur as usize);
         }
         if self.skin_visual_mode() == 1 {
@@ -9515,10 +9514,12 @@ pub fn system_ui_present(
     editor_dialog: u8,
     editor_dialog_input: &[u8],
     editor_dialog_focus: usize,
+    fast_motion_frame: bool,
 ) {
     unsafe {
         let slot = &raw mut CONSOLE;
         if let Some(console) = (*slot).as_mut() {
+            console.display.fast_motion_frame = fast_motion_frame;
             console.system_ui_active = true;
             console.restore_cursor();
             let content = system_content_hash(
@@ -9863,54 +9864,55 @@ pub fn system_ui_present(
                 );
                 console.display.clear_render_clip();
             } else if bounded_scene_geometry_change {
-                let damage = if screen == 2 && (window_moved || window_resized) {
-                    let current = console.display.desktop_window_rect(
-                        window_x,
-                        window_y,
-                        window_width,
-                        window_height,
-                    );
-                    crate::ui::system_layout::window_transition_damage(
-                        crate::ui::geometry::Rect {
-                            x: previous_window_rect.0 as i32,
-                            y: previous_window_rect.1 as i32,
-                            width: previous_window_rect.2 as u32,
-                            height: previous_window_rect.3 as u32,
-                        },
-                        crate::ui::geometry::Rect {
+                let (previous_damage_window, current_damage_window, split_motion_damage) =
+                    if screen == 2 && (window_moved || window_resized) {
+                        let current = console.display.desktop_window_rect(
+                            window_x,
+                            window_y,
+                            window_width,
+                            window_height,
+                        );
+                        (
+                            crate::ui::geometry::Rect {
+                                x: previous_window_rect.0 as i32,
+                                y: previous_window_rect.1 as i32,
+                                width: previous_window_rect.2 as u32,
+                                height: previous_window_rect.3 as u32,
+                            },
+                            crate::ui::geometry::Rect {
+                                x: current.0 as i32,
+                                y: current.1 as i32,
+                                width: current.2 as u32,
+                                height: current.3 as u32,
+                            },
+                            window_moved && !window_resized,
+                        )
+                    } else if screen == 2 {
+                        let current = console.display.desktop_window_rect(
+                            window_x,
+                            window_y,
+                            window_width,
+                            window_height,
+                        );
+                        let rect = crate::ui::geometry::Rect {
                             x: current.0 as i32,
                             y: current.1 as i32,
                             width: current.2 as u32,
                             height: current.3 as u32,
-                        },
-                        display_rect,
-                        (16 * layout.scale()) as u32,
-                    )
-                } else if screen == 2 {
-                    let current = console.display.desktop_window_rect(
-                        window_x,
-                        window_y,
-                        window_width,
-                        window_height,
-                    );
-                    crate::ui::geometry::Rect {
-                        x: current.0 as i32,
-                        y: current.1 as i32,
-                        width: current.2 as u32,
-                        height: current.3 as u32,
-                    }
-                } else if screen == 4 {
-                    crate::ui::system_layout::window_transition_damage(
-                        layout
+                        };
+                        (rect, rect, false)
+                    } else if screen == 4 {
+                        let previous = layout
                             .settings_window_geometry(console.last_settings_window)
-                            .window,
-                        layout.settings_window_geometry(settings_window).window,
-                        display_rect,
-                        (16 * layout.scale()) as u32,
-                    )
-                } else {
-                    crate::ui::system_layout::window_transition_damage(
-                        layout
+                            .window;
+                        let current = layout.settings_window_geometry(settings_window).window;
+                        (
+                            previous,
+                            current,
+                            previous.width == current.width && previous.height == current.height,
+                        )
+                    } else {
+                        let previous = layout
                             .desktop_app_window_geometry(
                                 console.last_app_window_x,
                                 console.last_app_window_y,
@@ -9918,8 +9920,8 @@ pub fn system_ui_present(
                                 console.last_app_window_height,
                                 console.last_app_window_maximized,
                             )
-                            .window,
-                        layout
+                            .window;
+                        let current = layout
                             .desktop_app_window_geometry(
                                 app_window_x,
                                 app_window_y,
@@ -9927,18 +9929,56 @@ pub fn system_ui_present(
                                 app_window_height,
                                 app_window_maximized,
                             )
-                            .window,
+                            .window;
+                        (
+                            previous,
+                            current,
+                            previous.width == current.width && previous.height == current.height,
+                        )
+                    };
+                let padding = (16 * layout.scale()) as u32;
+                let mut damages = [
+                    crate::ui::system_layout::window_transition_damage(
+                        previous_damage_window,
+                        current_damage_window,
                         display_rect,
-                        (16 * layout.scale()) as u32,
-                    )
-                };
-                console.display.set_render_clip(
-                    damage.x.max(0) as usize,
-                    damage.y.max(0) as usize,
-                    damage.width as usize,
-                    damage.height as usize,
+                        padding,
+                    ),
+                    crate::ui::geometry::Rect {
+                        x: 0,
+                        y: 0,
+                        width: 0,
+                        height: 0,
+                    },
+                ];
+                let split_damages = crate::ui::system_layout::window_motion_damage_regions(
+                    previous_damage_window,
+                    current_damage_window,
+                    display_rect,
+                    padding,
                 );
-                console.display.system_ui_frame(
+                let union_pixels = damages[0].width as u64 * damages[0].height as u64;
+                let split_pixels = split_damages
+                    .iter()
+                    .map(|region| region.width as u64 * region.height as u64)
+                    .sum::<u64>();
+                let damage_count = if split_motion_damage
+                    && previous_damage_window != current_damage_window
+                    && split_pixels < union_pixels
+                {
+                    damages = split_damages;
+                    2
+                } else {
+                    1
+                };
+                for damage in damages.iter().take(damage_count) {
+                    console.display.set_render_clip(
+                        damage.x.max(0) as usize,
+                        damage.y.max(0) as usize,
+                        damage.width as usize,
+                        damage.height as usize,
+                    );
+                    console.display.system_ui_frame(
                     screen,
                     step,
                     input,
@@ -9978,7 +10018,8 @@ pub fn system_ui_present(
                     editor_dialog,
                     editor_dialog_input,
                     editor_dialog_focus,
-                );
+                    );
+                }
                 console.display.clear_render_clip();
             } else if structural_change_without_window
                 || window_move_requires_structural_redraw
@@ -10274,6 +10315,7 @@ pub fn system_ui_present(
     _editor_dialog: u8,
     _editor_dialog_input: &[u8],
     _editor_dialog_focus: usize,
+    _fast_motion_frame: bool,
 ) {
 }
 
