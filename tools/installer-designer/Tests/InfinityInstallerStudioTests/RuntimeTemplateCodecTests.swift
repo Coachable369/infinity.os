@@ -181,6 +181,89 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     }
 
     // ------------------------=
+    // FUNC: testMarqueeSelectionFiltersElementsAndSupportsAdditiveSelection
+    // DESC: Exercises rectangle hit testing, lock and visibility exclusion, replacement, and Shift-style additive selection.
+    // ------------------=
+    @MainActor
+    func testMarqueeSelectionFiltersElementsAndSupportsAdditiveSelection() {
+        let store = TemplateStore()
+        let indexes = Array(store.document.screens[0].elements.indices.prefix(4))
+        XCTAssertEqual(indexes.count, 4)
+        for index in store.document.screens[0].elements.indices {
+            store.document.screens[0].elements[index].hidden = true
+        }
+        store.document.screens[0].elements[indexes[0]].hidden = false
+        store.document.screens[0].elements[indexes[0]].locked = false
+        store.document.screens[0].elements[indexes[0]].frame = CanvasRect(x: 100, y: 100, width: 60, height: 60)
+        store.document.screens[0].elements[indexes[1]].hidden = false
+        store.document.screens[0].elements[indexes[1]].locked = false
+        store.document.screens[0].elements[indexes[1]].frame = CanvasRect(x: 180, y: 120, width: 60, height: 60)
+        store.document.screens[0].elements[indexes[2]].hidden = false
+        store.document.screens[0].elements[indexes[2]].locked = true
+        store.document.screens[0].elements[indexes[2]].frame = CanvasRect(x: 130, y: 130, width: 40, height: 40)
+        store.document.screens[0].elements[indexes[3]].hidden = false
+        store.document.screens[0].elements[indexes[3]].locked = false
+        store.document.screens[0].elements[indexes[3]].frame = CanvasRect(x: 500, y: 500, width: 50, height: 50)
+
+        let first = store.document.screens[0].elements[indexes[0]].id
+        let second = store.document.screens[0].elements[indexes[1]].id
+        let locked = store.document.screens[0].elements[indexes[2]].id
+        let outside = store.document.screens[0].elements[indexes[3]].id
+        store.selectElements(in: CanvasRect(x: 90, y: 90, width: 170, height: 110))
+
+        XCTAssertEqual(store.selectedElementIDs, Set([first, second]))
+        XCTAssertFalse(store.selectedElementIDs.contains(locked))
+
+        store.selectElements(in: CanvasRect(x: 490, y: 490, width: 80, height: 80), additive: true)
+        XCTAssertEqual(store.selectedElementIDs, Set([first, second, outside]))
+
+        store.selectElements(in: CanvasRect(x: 700, y: 700, width: 40, height: 40))
+        XCTAssertTrue(store.selectedElementIDs.isEmpty)
+        XCTAssertNil(store.selectedElementID)
+    }
+
+    // ------------------------=
+    // FUNC: testMarqueeSelectionMovesAsOneBoundedGroup
+    // DESC: Proves group dragging preserves relative spacing and applies one artboard-constrained delta to every selected layer.
+    // ------------------=
+    @MainActor
+    func testMarqueeSelectionMovesAsOneBoundedGroup() {
+        let store = TemplateStore()
+        store.snapEnabled = false
+        let indexes = Array(store.document.screens[0].elements.indices.prefix(2))
+        for index in store.document.screens[0].elements.indices {
+            store.document.screens[0].elements[index].hidden = true
+        }
+        store.document.screens[0].elements[indexes[0]].hidden = false
+        store.document.screens[0].elements[indexes[0]].locked = false
+        store.document.screens[0].elements[indexes[0]].frame = CanvasRect(x: 10, y: 20, width: 50, height: 50)
+        store.document.screens[0].elements[indexes[1]].hidden = false
+        store.document.screens[0].elements[indexes[1]].locked = false
+        store.document.screens[0].elements[indexes[1]].frame = CanvasRect(x: 900, y: 200, width: 80, height: 50)
+
+        let first = store.document.screens[0].elements[indexes[0]].id
+        let second = store.document.screens[0].elements[indexes[1]].id
+        store.selectElements(in: CanvasRect(x: 0, y: 0, width: 1000, height: 300))
+        store.beginGesture(elementID: first)
+        store.moveSelected(
+            translation: CGSize(width: 100, height: -50),
+            canvasScale: CGSize(width: 1, height: 1)
+        )
+        store.endGesture()
+
+        let firstFrame = store.selectedScreen!.elements.first { $0.id == first }!.frame
+        let secondFrame = store.selectedScreen!.elements.first { $0.id == second }!.frame
+        XCTAssertEqual(firstFrame, CanvasRect(x: 30, y: 0, width: 50, height: 50))
+        XCTAssertEqual(secondFrame, CanvasRect(x: 920, y: 180, width: 80, height: 50))
+        XCTAssertEqual(secondFrame.x - firstFrame.x, 890)
+        XCTAssertEqual(secondFrame.y - firstFrame.y, 180)
+
+        store.undo()
+        XCTAssertEqual(store.selectedScreen!.elements.first { $0.id == first }!.frame.x, 10)
+        XCTAssertEqual(store.selectedScreen!.elements.first { $0.id == second }!.frame.x, 900)
+    }
+
+    // ------------------------=
     // FUNC: testEveryResizeHandleMutatesItsOwnedEdges
     // DESC: Exercises all eight canvas handles and proves each changes only its corresponding edges.
     // ------------------=
@@ -215,6 +298,41 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     func testResizeHandleTargetsRemainEasyToGrab() {
         XCTAssertGreaterThanOrEqual(CanvasInteractionMetrics.resizeHandleHitSize, 28)
         XCTAssertGreaterThan(CanvasInteractionMetrics.resizeHandleHitSize, CanvasInteractionMetrics.resizeHandleVisualSize)
+    }
+
+    // ------------------------=
+    // FUNC: testMarqueeToggleControlsResizeHandleVisibility
+    // DESC: Proves resize handles exist only for one unlocked selection while the Marquee tool is enabled.
+    // ------------------=
+    @MainActor
+    func testMarqueeToggleControlsResizeHandleVisibility() {
+        let store = TemplateStore()
+        let body = store.selectedScreen!.elements.first { $0.role == .body }!
+        store.selectElement(body.id)
+        XCTAssertFalse(store.resizeHandlesVisible)
+
+        store.marqueeSelectionEnabled = true
+        XCTAssertTrue(store.resizeHandlesVisible)
+
+        let second = store.selectedScreen!.elements.first { $0.role == .title }!
+        store.selectElements(in: CanvasRect(
+            x: min(body.frame.x, second.frame.x),
+            y: min(body.frame.y, second.frame.y),
+            width: max(body.frame.x + body.frame.width, second.frame.x + second.frame.width)
+                - min(body.frame.x, second.frame.x),
+            height: max(body.frame.y + body.frame.height, second.frame.y + second.frame.height)
+                - min(body.frame.y, second.frame.y)
+        ))
+        XCTAssertGreaterThan(store.selectedElementIDs.count, 1)
+        XCTAssertFalse(store.resizeHandlesVisible)
+
+        let primary = store.selectedScreen!.elements.first { $0.role == .primaryButton }!
+        store.selectElement(primary.id)
+        XCTAssertFalse(store.resizeHandlesVisible)
+
+        store.selectElement(body.id)
+        store.marqueeSelectionEnabled = false
+        XCTAssertFalse(store.resizeHandlesVisible)
     }
 
     // ------------------------=
@@ -289,6 +407,8 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             .appending(path: "infinity-installer-studio-\(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = TemplateStore()
+        store.document = .factoryDefault()
+        store.configurationDocument = .factoryConfiguration()
         store.projectRoot = root
         let masthead = store.selectedScreen!.elements.first { $0.role == .masthead }!
         store.toggleElementLock(masthead.id)

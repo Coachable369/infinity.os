@@ -3,6 +3,7 @@ import SwiftUI
 
 struct InstallerCanvas: View {
     @ObservedObject var store: TemplateStore
+    @State private var marqueeDisplayRect: CGRect?
 
     var body: some View {
         GeometryReader { proxy in
@@ -17,7 +18,7 @@ struct InstallerCanvas: View {
                     ZStack(alignment: .topLeading) {
                         artboardBackground(scale: canvasScale)
                             .contentShape(Rectangle())
-                            .onTapGesture { store.selectElement(nil) }
+                            .gesture(backgroundInteractionGesture(canvasScale: canvasScale))
                         if store.showGrid {
                             SnapGrid(gridSize: store.gridSize, scale: canvasScale)
                         }
@@ -32,6 +33,21 @@ struct InstallerCanvas: View {
                         {
                             ConfigurationNetworkPreview(canvasScale: canvasScale)
                                 .zIndex(7_500)
+                        }
+                        if let marqueeDisplayRect {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(InfinityUIKit.Palette.nativeAccent.opacity(0.13))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(
+                                            InfinityUIKit.Palette.nativeAccentBright,
+                                            style: StrokeStyle(lineWidth: 1.5, dash: [7, 4])
+                                        )
+                                }
+                                .frame(width: marqueeDisplayRect.width, height: marqueeDisplayRect.height)
+                                .position(x: marqueeDisplayRect.midX, y: marqueeDisplayRect.midY)
+                                .allowsHitTesting(false)
+                                .zIndex(40_000)
                         }
                     }
                     .frame(width: 1000 * canvasScale.width, height: 1000 * canvasScale.height)
@@ -91,6 +107,72 @@ struct InstallerCanvas: View {
         if lhs.zIndex != rhs.zIndex { return lhs.zIndex < rhs.zIndex }
         return lhs.id.uuidString < rhs.id.uuidString
     }
+
+    // ------------------------=
+    // FUNC: backgroundInteractionGesture
+    // DESC: Clears selection on an empty click or performs visible marquee selection in rectangle-tool mode.
+    // ------------------=
+    private func backgroundInteractionGesture(canvasScale: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(CanvasInteractionMetrics.coordinateSpaceName))
+            .onChanged { value in
+                guard store.marqueeSelectionEnabled else { return }
+                store.dismissInlineEditor()
+                marqueeDisplayRect = clippedDisplayRect(
+                    from: value.startLocation,
+                    to: value.location,
+                    canvasScale: canvasScale
+                )
+            }
+            .onEnded { value in
+                defer { marqueeDisplayRect = nil }
+                let distance = max(abs(value.translation.width), abs(value.translation.height))
+                guard store.marqueeSelectionEnabled,
+                      distance >= CanvasInteractionMetrics.dragThreshold,
+                      let displayRect = clippedDisplayRect(
+                          from: value.startLocation,
+                          to: value.location,
+                          canvasScale: canvasScale
+                      ),
+                      displayRect.width > 0,
+                      displayRect.height > 0
+                else {
+                    store.selectElement(nil)
+                    return
+                }
+                store.selectElements(
+                    in: normalizedRect(from: displayRect, canvasScale: canvasScale),
+                    additive: NSEvent.modifierFlags.contains(.shift)
+                )
+            }
+    }
+
+    // ------------------------=
+    // FUNC: clippedDisplayRect
+    // DESC: Standardizes a pointer rectangle and clips it to the currently scaled artboard.
+    // ------------------=
+    private func clippedDisplayRect(from start: CGPoint, to end: CGPoint, canvasScale: CGSize) -> CGRect? {
+        let pointerRect = CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        let artboard = CGRect(x: 0, y: 0, width: 1000 * canvasScale.width, height: 1000 * canvasScale.height)
+        let clipped = pointerRect.intersection(artboard)
+        return clipped.isNull ? nil : clipped
+    }
+
+    // ------------------------=
+    // FUNC: normalizedRect
+    // DESC: Converts a displayed marquee into the integer coordinate system persisted by Studio templates.
+    // ------------------=
+    private func normalizedRect(from displayRect: CGRect, canvasScale: CGSize) -> CanvasRect {
+        let left = Int(floor(displayRect.minX / canvasScale.width))
+        let top = Int(floor(displayRect.minY / canvasScale.height))
+        let right = Int(ceil(displayRect.maxX / canvasScale.width))
+        let bottom = Int(ceil(displayRect.maxY / canvasScale.height))
+        return CanvasRect(x: left, y: top, width: max(1, right - left), height: max(1, bottom - top))
+    }
 }
 
 private struct SnapGrid: View {
@@ -143,7 +225,7 @@ private struct CanvasElementView: View {
     @ObservedObject var store: TemplateStore
     let canvasScale: CGSize
 
-    var isSelected: Bool { store.selectedElementID == element.id }
+    var isSelected: Bool { store.selectedElementIDs.contains(element.id) }
 
     var body: some View {
         ZStack {
@@ -259,7 +341,7 @@ private struct CanvasElementView: View {
                     }
                     .padding(4)
                     .allowsHitTesting(false)
-                } else {
+                } else if store.resizeHandlesVisible, store.selectedElementID == element.id {
                     ForEach(ResizeHandle.allCases) { handle in
                         ResizeHandleView(
                             handle: handle,

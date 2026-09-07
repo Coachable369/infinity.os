@@ -73,6 +73,11 @@ private struct StudioToolbar: View {
                 .toggleStyle(.button)
             Toggle(isOn: $store.snapEnabled) { Label("Snap", systemImage: "magnet") }
                 .toggleStyle(.button)
+            Toggle(isOn: $store.marqueeSelectionEnabled) {
+                Label("Marquee", systemImage: "rectangle.dashed")
+            }
+            .toggleStyle(.button)
+            .help("Drag across empty canvas space to select multiple unlocked elements; hold Shift to add")
             Picker("Grid", selection: $store.gridSize) {
                 Text("5").tag(5)
                 Text("10").tag(10)
@@ -252,7 +257,12 @@ private struct StudioStatusBar: View {
                 .fill(store.validationIssues.isEmpty ? Color.green : Color.orange)
                 .frame(width: 7, height: 7)
             Text(store.status).lineLimit(1)
-            if let element = store.selectedElement {
+            if store.selectedElementIDs.count > 1 {
+                Divider().frame(height: 14)
+                Text("\(store.selectedElementIDs.count) elements")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(InfinityUIKit.Palette.nativeAccent)
+            } else if let element = store.selectedElement {
                 Divider().frame(height: 14)
                 Text("\(element.frame.x), \(element.frame.y)   \(element.frame.width) × \(element.frame.height)")
                     .font(.system(.caption, design: .monospaced))

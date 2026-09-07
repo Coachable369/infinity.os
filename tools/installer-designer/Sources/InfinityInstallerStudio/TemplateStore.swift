@@ -49,8 +49,20 @@ final class TemplateStore: ObservableObject {
     @Published var configurationDocument: InstallerStudioDocument
     @Published var selectedCollection = ScreenCollection.installation
     @Published var selectedScreenID = 1
-    @Published var selectedElementID: UUID?
+    @Published var selectedElementID: UUID? {
+        didSet {
+            guard let selectedElementID else {
+                selectedElementIDs = []
+                return
+            }
+            if !selectedElementIDs.contains(selectedElementID) {
+                selectedElementIDs = [selectedElementID]
+            }
+        }
+    }
+    @Published var selectedElementIDs: Set<UUID> = []
     @Published var inlineEditorElementID: UUID?
+    @Published var marqueeSelectionEnabled = false
     @Published var gridSize = 10
     @Published var snapEnabled = true
     @Published var showGrid = true
@@ -62,7 +74,7 @@ final class TemplateStore: ObservableObject {
     private var undoStack: [ProjectSnapshot] = []
     private var redoStack: [ProjectSnapshot] = []
     private var gestureBaseline: ProjectSnapshot?
-    private var gestureFrame: CanvasRect?
+    private var gestureFrames: [UUID: CanvasRect] = [:]
 
     var activeScreens: [InstallerScreenTemplate] {
         selectedCollection == .installation ? document.screens : configurationDocument.screens
@@ -99,6 +111,9 @@ final class TemplateStore: ObservableObject {
     var canRedo: Bool { !redoStack.isEmpty }
     var canAddScreen: Bool { activeScreens.count < InstallerStudioDocument.maximumScreenCount }
     var canRemoveScreen: Bool { activeScreens.count > InstallerStudioDocument.minimumScreenCount }
+    var resizeHandlesVisible: Bool {
+        marqueeSelectionEnabled && selectedElementIDs.count == 1 && selectedElement?.locked == false
+    }
 
     // ------------------------=
     // FUNC: init
@@ -158,7 +173,39 @@ final class TemplateStore: ObservableObject {
         if selectedElementID != id {
             inlineEditorElementID = nil
         }
+        selectedElementIDs = id.map { [$0] } ?? []
         selectedElementID = id
+    }
+
+    // ------------------------=
+    // FUNC: selectElements
+    // DESC: Selects every visible unlocked element intersecting a marquee, optionally extending the current set.
+    // ------------------=
+    func selectElements(in marquee: CanvasRect, additive: Bool = false) {
+        guard let screen = selectedScreen else {
+            selectElement(nil)
+            return
+        }
+        let hits = screen.elements.filter { element in
+            !element.hidden && !element.locked && framesIntersect(element.frame, marquee)
+        }
+        var nextSelection = additive ? selectedElementIDs : []
+        nextSelection.formUnion(hits.map(\.id))
+        selectedElementIDs = nextSelection
+        inlineEditorElementID = nil
+
+        if nextSelection.isEmpty {
+            selectedElementID = nil
+            status = "No elements selected"
+            return
+        }
+        if !additive || selectedElementID == nil || !nextSelection.contains(selectedElementID!) {
+            selectedElementID = hits.max { lhs, rhs in
+                if lhs.zIndex != rhs.zIndex { return lhs.zIndex < rhs.zIndex }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }?.id ?? nextSelection.first
+        }
+        status = nextSelection.count == 1 ? "1 element selected" : "\(nextSelection.count) elements selected"
     }
 
     // ------------------------=
@@ -590,29 +637,45 @@ final class TemplateStore: ObservableObject {
     // DESC: Captures one undo baseline and geometry origin for a canvas drag or resize.
     // ------------------=
     func beginGesture(elementID: UUID? = nil) {
-        if let elementID, selectedElementID != elementID {
-            selectedElementID = elementID
+        if let elementID {
+            if !selectedElementIDs.contains(elementID) {
+                selectElement(elementID)
+            } else {
+                selectedElementID = elementID
+            }
         }
         inlineEditorElementID = nil
-        guard gestureBaseline == nil, let element = selectedElement, !element.locked else { return }
+        guard gestureBaseline == nil, let screen = selectedScreen else { return }
+        let movable = screen.elements.filter { selectedElementIDs.contains($0.id) && !$0.locked }
+        guard !movable.isEmpty else { return }
         gestureBaseline = projectSnapshot()
-        gestureFrame = element.frame
+        gestureFrames = Dictionary(uniqueKeysWithValues: movable.map { ($0.id, $0.frame) })
     }
 
     // ------------------------=
     // FUNC: moveSelected
-    // DESC: Moves the selected element from its gesture origin with optional grid snapping.
+    // DESC: Moves every selected element uniformly from its gesture origin with optional grid snapping.
     // ------------------=
     func moveSelected(translation: CGSize, canvasScale: CGSize) {
-        guard let location = selectedLocation(), !location.element.locked,
-              let origin = gestureFrame
+        guard let screen = selectedScreenIndex, !gestureFrames.isEmpty,
+              canvasScale.width > 0, canvasScale.height > 0
         else { return }
-        let dx = Int((translation.width / canvasScale.width).rounded())
-        let dy = Int((translation.height / canvasScale.height).rounded())
-        var frame = origin
-        frame.x = snap(origin.x + dx)
-        frame.y = snap(origin.y + dy)
-        activeDocument.screens[location.screen].elements[location.elementIndex].frame = frame.clamped()
+        let anchor = selectedElementID.flatMap { gestureFrames[$0] } ?? gestureFrames.values.first!
+        let rawDX = Int((translation.width / canvasScale.width).rounded())
+        let rawDY = Int((translation.height / canvasScale.height).rounded())
+        let requestedDX = snap(anchor.x + rawDX) - anchor.x
+        let requestedDY = snap(anchor.y + rawDY) - anchor.y
+        let translation = boundedGroupTranslation(
+            frames: Array(gestureFrames.values),
+            requestedDX: requestedDX,
+            requestedDY: requestedDY
+        )
+        applyGroupTranslation(
+            origins: gestureFrames,
+            dx: translation.dx,
+            dy: translation.dy,
+            screen: screen
+        )
     }
 
     // ------------------------=
@@ -621,7 +684,7 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     func resizeSelected(handle: ResizeHandle, translation: CGSize, canvasScale: CGSize) {
         guard let location = selectedLocation(), !location.element.locked,
-              let origin = gestureFrame
+              gestureFrames.count == 1, let origin = gestureFrames[location.element.id]
         else { return }
         let dx = Int((translation.width / canvasScale.width).rounded())
         let dy = Int((translation.height / canvasScale.height).rounded())
@@ -656,19 +719,37 @@ final class TemplateStore: ObservableObject {
             status = "Layout updated"
         }
         gestureBaseline = nil
-        gestureFrame = nil
+        gestureFrames = [:]
     }
 
     // ------------------------=
     // FUNC: nudgeSelected
-    // DESC: Moves the selected element by one unit or one configured grid interval.
+    // DESC: Moves all selected unlocked elements uniformly by one unit or one configured grid interval.
     // ------------------=
     func nudgeSelected(dx: Int, dy: Int, byGrid: Bool) {
+        guard let screen = selectedScreenIndex else { return }
         let distance = byGrid ? gridSize : 1
-        updateSelected("Element nudged") {
-            $0.frame.x += dx * distance
-            $0.frame.y += dy * distance
+        let selectedFrames = Dictionary(uniqueKeysWithValues: activeDocument.screens[screen].elements.compactMap {
+            selectedElementIDs.contains($0.id) && !$0.locked ? ($0.id, $0.frame) : nil
+        })
+        guard !selectedFrames.isEmpty else {
+            status = "Unlock an element to move it"
+            return
         }
+        let translation = boundedGroupTranslation(
+            frames: Array(selectedFrames.values),
+            requestedDX: dx * distance,
+            requestedDY: dy * distance
+        )
+        guard translation.dx != 0 || translation.dy != 0 else { return }
+        recordUndo()
+        applyGroupTranslation(
+            origins: selectedFrames,
+            dx: translation.dx,
+            dy: translation.dy,
+            screen: screen
+        )
+        status = selectedFrames.count == 1 ? "Element nudged" : "Selection nudged"
     }
 
     // ------------------------=
@@ -904,6 +985,56 @@ final class TemplateStore: ObservableObject {
               let elementIndex = activeDocument.screens[screen].elements.firstIndex(where: { $0.id == id })
         else { return nil }
         return (screen, elementIndex, activeDocument.screens[screen].elements[elementIndex])
+    }
+
+    // ------------------------=
+    // FUNC: framesIntersect
+    // DESC: Tests positive-area overlap between an element frame and a normalized marquee rectangle.
+    // ------------------=
+    private func framesIntersect(_ element: CanvasRect, _ marquee: CanvasRect) -> Bool {
+        element.x < marquee.x + marquee.width
+            && element.x + element.width > marquee.x
+            && element.y < marquee.y + marquee.height
+            && element.y + element.height > marquee.y
+    }
+
+    // ------------------------=
+    // FUNC: boundedGroupTranslation
+    // DESC: Constrains one shared translation so the complete selected group remains inside the artboard.
+    // ------------------=
+    private func boundedGroupTranslation(
+        frames: [CanvasRect],
+        requestedDX: Int,
+        requestedDY: Int
+    ) -> (dx: Int, dy: Int) {
+        guard let minX = frames.map(\.x).min(),
+              let minY = frames.map(\.y).min(),
+              let maxX = frames.map({ $0.x + $0.width }).max(),
+              let maxY = frames.map({ $0.y + $0.height }).max()
+        else { return (0, 0) }
+        return (
+            requestedDX.clamped(to: -minX...(1000 - maxX)),
+            requestedDY.clamped(to: -minY...(1000 - maxY))
+        )
+    }
+
+    // ------------------------=
+    // FUNC: applyGroupTranslation
+    // DESC: Applies one identical bounded delta to every selected origin without changing relative spacing.
+    // ------------------=
+    private func applyGroupTranslation(
+        origins: [UUID: CanvasRect],
+        dx: Int,
+        dy: Int,
+        screen: Int
+    ) {
+        for index in activeDocument.screens[screen].elements.indices {
+            let id = activeDocument.screens[screen].elements[index].id
+            guard var frame = origins[id] else { continue }
+            frame.x += dx
+            frame.y += dy
+            activeDocument.screens[screen].elements[index].frame = frame
+        }
     }
 
     // ------------------------=

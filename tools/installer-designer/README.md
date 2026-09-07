@@ -1,6 +1,6 @@
 # InfinityOS Installer Studio
 
-A native macOS visual editor for all eleven InfinityOS installation screens and all eight post-install OS configuration screens. Its two expandable screen collections share the zoomable snapping artboard, layer ordering, eight-handle resizing, image import, editable copy, undo/redo, validation, and atomic JSON/runtime-template saving. Navigation buttons are visible but immutable.
+A native macOS visual editor for all eleven InfinityOS installation screens and all eight post-install OS configuration screens. Its two expandable screen collections share the zoomable snapping artboard, toggleable marquee multi-selection with uniform group dragging, layer ordering, eight-handle resizing while the selection tool is active, image import, editable copy, undo/redo, validation, and atomic JSON/runtime-template saving. Navigation buttons are visible but immutable.
 
 Run `./run.sh`. Save writes:
 

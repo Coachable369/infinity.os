@@ -40,7 +40,7 @@ struct ElementInspector: View {
                     .buttonStyle(.borderless)
                     .help(element.locked ? "Unlock Element" : "Lock Element")
                 }
-                .listRowBackground(element.id == store.selectedElementID
+                .listRowBackground(store.selectedElementIDs.contains(element.id)
                     ? InfinityUIKit.Palette.nativeAccent.opacity(0.12)
                     : Color.clear)
             }
