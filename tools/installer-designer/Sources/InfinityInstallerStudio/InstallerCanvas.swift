@@ -374,51 +374,57 @@ private struct CanvasPanelPreview: View {
 
     var body: some View {
         let radius = CGFloat(element.cornerRadius) * canvasScale.height
-        RoundedRectangle(cornerRadius: radius)
-            .fill(LinearGradient(
-                colors: [recipe.fillTop.color, recipe.fillBottom.color],
-                startPoint: .top,
-                endPoint: .bottom
-            ))
-            .overlay(alignment: .top) {
-                RoundedRectangle(cornerRadius: radius)
-                    .stroke(Color.white.opacity(recipe.highlightOpacity * 0.28), lineWidth: max(0.6, canvasScale.height))
-                    .padding(max(1, canvasScale.height))
-                    .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .center))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: radius)
-                    .stroke(recipe.border.color, lineWidth: max(recipe.borderWidth, canvasScale.height))
-            }
-            .overlay(alignment: .leading) {
-                if isField, !element.text.isEmpty {
-                    HStack(spacing: 8 * canvasScale.height) {
-                        Text(element.text)
-                            .font(.system(
-                                size: max(8, CGFloat(element.fontSize) * canvasScale.height),
-                                weight: .regular,
-                                design: .rounded
-                            ))
-                            .tracking(element.role == .offsetBadge ? max(0.5, canvasScale.height) : 0)
-                            .foregroundStyle(element.role == .input
-                                ? InfinityUIKit.Palette.placeholder.color
-                                : recipe.text.color)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        if let trailingIcon {
-                            Image(systemName: trailingIcon)
-                                .font(.system(size: max(8, 15 * canvasScale.height), weight: .light))
-                                .foregroundStyle(InfinityUIKit.Palette.nativeAccentBright)
-                        }
-                    }
-                    .padding(.horizontal, max(7, 16 * canvasScale.height))
+        if element.role == .progressSegment {
+            RoundedRectangle(cornerRadius: radius)
+                .fill(element.fill.color)
+                .frame(height: max(2, 4 * canvasScale.height))
+        } else {
+            RoundedRectangle(cornerRadius: radius)
+                .fill(LinearGradient(
+                    colors: [recipe.fillTop.color, recipe.fillBottom.color],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ))
+                .overlay(alignment: .top) {
+                    RoundedRectangle(cornerRadius: radius)
+                        .stroke(Color.white.opacity(recipe.highlightOpacity * 0.28), lineWidth: max(0.6, canvasScale.height))
+                        .padding(max(1, canvasScale.height))
+                        .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .center))
                 }
-            }
-            .shadow(
-                color: InfinityUIKit.Palette.nativeAccent.opacity(recipe.glowOpacity),
-                radius: 10 * canvasScale.height
-            )
-            .onHover { hovered = $0 }
+                .overlay {
+                    RoundedRectangle(cornerRadius: radius)
+                        .stroke(recipe.border.color, lineWidth: max(recipe.borderWidth, canvasScale.height))
+                }
+                .overlay(alignment: .leading) {
+                    if isField, !element.text.isEmpty {
+                        HStack(spacing: 8 * canvasScale.height) {
+                            Text(element.text)
+                                .font(.system(
+                                    size: max(8, CGFloat(element.fontSize) * canvasScale.height),
+                                    weight: .regular,
+                                    design: .rounded
+                                ))
+                                .tracking(element.role == .offsetBadge ? max(0.5, canvasScale.height) : 0)
+                                .foregroundStyle(element.role == .input
+                                    ? InfinityUIKit.Palette.placeholder.color
+                                    : recipe.text.color)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            if let trailingIcon {
+                                Image(systemName: trailingIcon)
+                                    .font(.system(size: max(8, 15 * canvasScale.height), weight: .light))
+                                    .foregroundStyle(InfinityUIKit.Palette.nativeAccentBright)
+                            }
+                        }
+                        .padding(.horizontal, max(7, 16 * canvasScale.height))
+                    }
+                }
+                .shadow(
+                    color: InfinityUIKit.Palette.nativeAccent.opacity(recipe.glowOpacity),
+                    radius: 10 * canvasScale.height
+                )
+                .onHover { hovered = $0 }
+        }
     }
 }
 

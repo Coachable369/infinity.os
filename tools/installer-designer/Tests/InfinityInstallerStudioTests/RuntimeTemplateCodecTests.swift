@@ -337,12 +337,27 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             XCTAssertEqual(screen.elements.filter { $0.role == .backButton && $0.locked }.count, 1)
             XCTAssertEqual(screen.elements.filter { $0.role == .primaryButton && $0.locked }.count, 1)
             XCTAssertTrue(screen.elements.filter { $0.kind != .button }.allSatisfy { !$0.locked })
+            let progress = screen.elements.filter { $0.role == .progressSegment }
+            XCTAssertEqual(progress.count, 8)
+            XCTAssertTrue(progress.allSatisfy {
+                $0.kind == .panel && $0.frame.height == 20 && $0.text.isEmpty
+            })
+            XCTAssertLessThanOrEqual(
+                screen.elements.filter { $0.role == .input && !$0.hidden }.count,
+                1
+            )
         }
         XCTAssertEqual(
             configuration.screens.filter { screen in
                 screen.elements.contains { $0.role == .input && !$0.hidden }
             }.map(\.id),
             [2, 3, 4, 5]
+        )
+        XCTAssertEqual(
+            configuration.screens.flatMap { screen in
+                screen.elements.filter { $0.role == .input && !$0.hidden }.map(\.inputVariable)
+            },
+            [.machineNodeName, .profileName, .displayName, .password]
         )
         XCTAssertNoThrow(try TemplateValidator.validate(configuration))
         XCTAssertEqual(
@@ -402,6 +417,24 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             XCTAssertEqual(input.border, InfinityUIKit.Palette.fieldBorder)
             XCTAssertEqual(input.cornerRadius, 10)
         }
+    }
+
+    // ------------------------=
+    // FUNC: testValidationRejectsTwoLiveInputsOnOneScreen
+    // DESC: Verifies a saved screen cannot compile into the runtime with two independently painted input controls.
+    // ------------------=
+    func testValidationRejectsTwoLiveInputsOnOneScreen() {
+        var configuration = InstallerStudioDocument.factoryConfiguration()
+        var duplicate = configuration.screens[1].elements.first { $0.role == .input }!
+        duplicate.id = UUID()
+        configuration.screens[1].elements.append(duplicate)
+
+        XCTAssertThrowsError(try RuntimeTemplateCodec.encode(configuration))
+
+        var invalidRole = InstallerStudioDocument.factoryConfiguration()
+        let title = invalidRole.screens[1].elements.firstIndex { $0.role == .title }!
+        invalidRole.screens[1].elements[title].inputVariable = .machineNodeName
+        XCTAssertThrowsError(try RuntimeTemplateCodec.encode(invalidRole))
     }
 
     // ------------------------=

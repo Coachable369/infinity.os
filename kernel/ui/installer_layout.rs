@@ -1,6 +1,8 @@
 //! Shared, architecture-neutral geometry for every InfinityOS installer step.
 
-use super::installer_template::{InstallerTemplate, InstallerTemplateRect, InstallerTemplateRole};
+use super::installer_template::{
+    InstallerTemplate, InstallerTemplateRect, InstallerTemplateRole, InstallerTemplateVariable,
+};
 
 pub const INSTALLER_TEMPLATE_BYTES: &[u8] =
     include_bytes!("../../assets/boot/installer-screens.iuit");
@@ -213,6 +215,52 @@ pub fn configuration_template_rect(
         .ok()?
         .element(step.saturating_add(1) as u8, role)?;
     (!element.hidden).then(|| scale_template_rect(element.frame, display_width, display_height))
+}
+
+// ------------------------=
+// FUNC: configuration_template_input_variable
+// DESC: Resolves the saved runtime variable bound to the active first-boot input field.
+// ------------------=
+pub fn configuration_template_input_variable(step: usize) -> InstallerTemplateVariable {
+    let value = InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES)
+        .ok()
+        .and_then(|template| {
+            template.element(
+                step.saturating_add(1) as u8,
+                InstallerTemplateRole::Input,
+            )
+        })
+        .filter(|element| !element.hidden)
+        .map(|element| element.input_variable)
+        .unwrap_or(InstallerTemplateVariable::None as u8);
+    match value {
+        1 => InstallerTemplateVariable::MachineNodeName,
+        2 => InstallerTemplateVariable::ProfileName,
+        3 => InstallerTemplateVariable::DisplayName,
+        4 => InstallerTemplateVariable::Password,
+        _ => InstallerTemplateVariable::None,
+    }
+}
+
+// ------------------------=
+// FUNC: configuration_template_step_for_input_variable
+// DESC: Finds the authored first-boot screen that edits a required runtime variable.
+// ------------------=
+pub fn configuration_template_step_for_input_variable(
+    variable: InstallerTemplateVariable,
+) -> Option<usize> {
+    let template = InstallerTemplate::parse(CONFIGURATION_TEMPLATE_BYTES).ok()?;
+    for screen in 1..=template.screen_count() as u8 {
+        if template
+            .element(screen, InstallerTemplateRole::Input)
+            .is_some_and(|element| {
+                !element.hidden && element.input_variable == variable as u8
+            })
+        {
+            return Some(screen.saturating_sub(1) as usize);
+        }
+    }
+    None
 }
 
 // ------------------------=

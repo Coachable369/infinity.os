@@ -18,7 +18,7 @@ impl DisplayDevice {
     // DESC: Paints every visible installer layer in the editor's deterministic stacking order.
     // ------------------=
     pub(super) fn installer_template_screen(&mut self, screen: u8) -> bool {
-        self.template_screen(INSTALLER_TEMPLATE_BYTES, screen, None, true)
+        self.template_screen(INSTALLER_TEMPLATE_BYTES, screen, None, true, false)
     }
 
     // ------------------------=
@@ -30,6 +30,7 @@ impl DisplayDevice {
             CONFIGURATION_TEMPLATE_BYTES,
             step.saturating_add(1) as u8,
             None,
+            true,
             true,
         )
     }
@@ -52,6 +53,7 @@ impl DisplayDevice {
             screen,
             Some((focus, has_primary, Some((cursor_x, cursor_y, pressed)))),
             false,
+            false,
         )
     }
 
@@ -64,6 +66,7 @@ impl DisplayDevice {
             CONFIGURATION_TEMPLATE_BYTES,
             step.saturating_add(1) as u8,
             Some((focus, true, None)),
+            false,
             false,
         )
     }
@@ -78,6 +81,7 @@ impl DisplayDevice {
         screen: u8,
         navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>,
         full_scene: bool,
+        skip_live_input: bool,
     ) -> bool {
         let Ok(template) = InstallerTemplate::parse(bytes) else {
             return false;
@@ -90,6 +94,12 @@ impl DisplayDevice {
                 return false;
             };
             if element.hidden {
+                continue;
+            }
+            if full_scene
+                && skip_live_input
+                && element.role == InstallerTemplateRole::Input as u8
+            {
                 continue;
             }
             let is_navigation = element.role == InstallerTemplateRole::BackButton as u8
@@ -162,6 +172,21 @@ impl DisplayDevice {
         border_alpha: u8,
         navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>,
     ) {
+        if element.role == InstallerTemplateRole::ProgressSegment as u8 {
+            let bar_height = (4 * self.height / 1000).max(2).min(rect.height);
+            self.fill_rounded_rect_alpha(
+                rect.left,
+                rect.top + rect.height.saturating_sub(bar_height) / 2,
+                rect.width,
+                bar_height,
+                radius.min(bar_height / 2),
+                element.fill[0],
+                element.fill[1],
+                element.fill[2],
+                fill_alpha,
+            );
+            return;
+        }
         let focused = navigation.is_some_and(|(focus, _, _)| {
             element.role == InstallerTemplateRole::Input as u8 && focus >= 2
         });

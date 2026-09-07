@@ -2356,7 +2356,8 @@ impl super::DisplayDevice {
         focus: usize,
         validation_error: bool,
     ) {
-        if (1..=4).contains(&step) {
+        let input_variable = crate::ui::installer_layout::configuration_template_input_variable(step);
+        if input_variable != crate::ui::installer_template::InstallerTemplateVariable::None {
             if let Some(frame) = crate::ui::installer_layout::configuration_template_rect(
                 step,
                 crate::ui::installer_template::InstallerTemplateRole::Input,
@@ -2382,7 +2383,9 @@ impl super::DisplayDevice {
                     self.ui_text(
                         frame.left,
                         frame.bottom().saturating_add(8 * self.ui_scale().max(1)),
-                        if step == 4 {
+                        if input_variable
+                            == crate::ui::installer_template::InstallerTemplateVariable::Password
+                        {
                             b"Use at least eight characters."
                         } else {
                             b"This field is required before continuing."
@@ -2688,7 +2691,9 @@ impl super::DisplayDevice {
         masked: bool,
         focus: usize,
     ) {
-        if (1..=4).contains(&step) {
+        if crate::ui::installer_layout::configuration_template_input_variable(step)
+            != crate::ui::installer_template::InstallerTemplateVariable::None
+        {
             let scale = self.ui_scale().max(1);
             let top_bar = (46 * scale).min(self.height / 12).max(40);
             let card_width = (self.width * 34 / 100).clamp(500, 600 * scale);

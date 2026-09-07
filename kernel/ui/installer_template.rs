@@ -1,7 +1,7 @@
 //! Bounded parser for installer layouts authored by InfinityOS Installer Studio.
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 4;
+const FORMAT_VERSION: u16 = 5;
 const MAX_SCREEN_COUNT: u16 = 32;
 const MAX_ASSET_COUNT: u16 = 128;
 
@@ -25,6 +25,17 @@ pub enum InstallerTemplateRole {
     OffsetBadge = 15,
     TimeZoneMap = 16,
     Metadata = 17,
+    ProgressSegment = 18,
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallerTemplateVariable {
+    None = 0,
+    MachineNodeName = 1,
+    ProfileName = 2,
+    DisplayName = 3,
+    Password = 4,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +51,7 @@ pub struct InstallerTemplateElement<'a> {
     pub id: [u8; 16],
     pub kind: u8,
     pub role: u8,
+    pub input_variable: u8,
     pub locked: bool,
     pub hidden: bool,
     pub z_index: i16,
@@ -111,6 +123,7 @@ impl<'a> InstallerTemplate<'a> {
             let mut back_count = 0u8;
             let mut primary_count = 0u8;
             let mut console_count = 0u8;
+            let mut input_count = 0u8;
             for _ in 0..count {
                 let element = reader.element()?;
                 if !element_is_bounded(element.frame) {
@@ -118,6 +131,9 @@ impl<'a> InstallerTemplate<'a> {
                 }
                 if element.role == InstallerTemplateRole::Console as u8 {
                     console_count = console_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::Input as u8 && !element.hidden {
+                    input_count = input_count.saturating_add(1);
                 }
                 if element.role == InstallerTemplateRole::BackButton as u8 {
                     back_count = back_count.saturating_add(1);
@@ -132,7 +148,7 @@ impl<'a> InstallerTemplate<'a> {
                     }
                 }
             }
-            if back_count != 1 || primary_count != 1 || console_count == 0 {
+            if back_count != 1 || primary_count != 1 || console_count == 0 || input_count > 1 {
                 return Err(InstallerTemplateError::InvalidNavigation);
             }
         }
@@ -428,9 +444,16 @@ impl<'a> Reader<'a> {
         id.copy_from_slice(id_bytes);
         let kind = self.u8()?;
         let role = self.u8()?;
+        let input_variable = self.u8()?;
         let flags = self.u8()?;
         if !(1..=5).contains(&kind)
-            || role > InstallerTemplateRole::Metadata as u8
+            || role > InstallerTemplateRole::ProgressSegment as u8
+            || input_variable > InstallerTemplateVariable::Password as u8
+            || (role != InstallerTemplateRole::Input as u8
+                && input_variable != InstallerTemplateVariable::None as u8)
+            || (role == InstallerTemplateRole::Input as u8
+                && flags & 2 == 0
+                && input_variable == InstallerTemplateVariable::None as u8)
             || flags & !3 != 0
         {
             return Err(InstallerTemplateError::InvalidElement);
@@ -473,6 +496,7 @@ impl<'a> Reader<'a> {
             id,
             kind,
             role,
+            input_variable,
             locked: flags & 1 != 0,
             hidden: flags & 2 != 0,
             z_index,

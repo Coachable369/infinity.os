@@ -1019,7 +1019,10 @@ impl ConsoleRuntime {
                 displayed_input,
                 self.mode == ConsoleMode::Locked
                     || self.mode == ConsoleMode::Authentication
-                    || (self.mode == ConsoleMode::Onboarding && self.system_step == 4),
+                    || (self.mode == ConsoleMode::Onboarding
+                        && crate::ui::installer_layout::configuration_template_input_variable(
+                            self.system_step,
+                        ) == crate::ui::installer_template::InstallerTemplateVariable::Password),
                 self.system_focus,
                 self.pointer_x,
                 self.pointer_y,
@@ -4147,7 +4150,8 @@ impl ConsoleRuntime {
                 return;
             }
         }
-        if (1..=4).contains(&self.system_step)
+        if crate::ui::installer_layout::configuration_template_input_variable(self.system_step)
+            != crate::ui::installer_template::InstallerTemplateVariable::None
             && self.system_focus == 1
             && self.edit_system_text(key)
         {
@@ -4193,104 +4197,18 @@ impl ConsoleRuntime {
         }
         match self.system_step {
             0 => self.system_step = 1,
-            1 => {
-                if self.command_length == 0 {
+            1..=4 => {
+                let variable =
+                    crate::ui::installer_layout::configuration_template_input_variable(
+                        self.system_step,
+                    );
+                if !self.commit_onboarding_input(variable)
+                    || !self.materialize_onboarding_identity()
+                {
                     self.onboarding_validation_error = true;
                     return;
                 }
-                self.onboarding_machine_length = self.command_length.min(48);
-                self.onboarding_machine[..self.onboarding_machine_length]
-                    .copy_from_slice(&self.command[..self.onboarding_machine_length]);
-                let architecture = if self.system.architecture == b"x86_64" {
-                    2
-                } else if self.system.architecture == b"AArch64" {
-                    3
-                } else {
-                    1
-                };
-                let created = crate::runtime::with_runtime(|runtime| {
-                    runtime.identity.create_machine(
-                        &self.onboarding_machine[..self.onboarding_machine_length],
-                        architecture,
-                        1,
-                        1,
-                    )
-                })
-                .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState));
-                if created.is_err() {
-                    self.onboarding_validation_error = true;
-                    return;
-                }
-                self.system_step = 2;
-            }
-            2 => {
-                if self.command_length == 0 {
-                    self.onboarding_validation_error = true;
-                    return;
-                }
-                self.onboarding_handle_length = self.command_length.min(48);
-                self.onboarding_handle[..self.onboarding_handle_length]
-                    .copy_from_slice(&self.command[..self.onboarding_handle_length]);
-                self.system_step = 3;
-            }
-            3 => {
-                if self.command_length == 0 {
-                    self.onboarding_validation_error = true;
-                    return;
-                }
-                self.onboarding_name_length = self.command_length.min(48);
-                self.onboarding_name[..self.onboarding_name_length]
-                    .copy_from_slice(&self.command[..self.onboarding_name_length]);
-                let created = crate::runtime::with_runtime(|runtime| {
-                    runtime.identity.create_user(
-                        &self.onboarding_handle[..self.onboarding_handle_length],
-                        &self.onboarding_name[..self.onboarding_name_length],
-                        2,
-                    )
-                })
-                .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState));
-                let Ok(user) = created else {
-                    self.onboarding_validation_error = true;
-                    return;
-                };
-                self.current_user = user.id;
-                self.system_step = 4;
-            }
-            4 => {
-                if self.command_length < 8 || self.command_length > self.onboarding_secret.len() {
-                    self.onboarding_validation_error = true;
-                    return;
-                }
-                self.onboarding_secret_length = self.command_length;
-                self.onboarding_secret[..self.onboarding_secret_length]
-                    .copy_from_slice(&self.command[..self.onboarding_secret_length]);
-                let created = crate::runtime::with_runtime(|runtime| {
-                    if runtime.identity.has_active_credential(self.current_user) {
-                        runtime
-                            .identity
-                            .authenticate(
-                                self.current_user,
-                                &self.onboarding_secret[..self.onboarding_secret_length],
-                                3,
-                            )
-                            .map(|_| ())
-                    } else {
-                        runtime
-                            .identity
-                            .create_password(
-                                self.current_user,
-                                &self.onboarding_secret[..self.onboarding_secret_length],
-                                3,
-                            )
-                            .map(|_| ())
-                    }
-                })
-                .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState));
-                if created.is_err() {
-                    self.onboarding_validation_error = true;
-                    return;
-                }
-                self.system_step = 5;
+                self.system_step += 1;
             }
             5 => {
                 let selected = crate::runtime::with_runtime(|runtime| {
@@ -4315,6 +4233,18 @@ impl ConsoleRuntime {
                 self.system_step = 7;
             }
             _ => {
+                if !self.materialize_onboarding_identity() {
+                    self.onboarding_validation_error = true;
+                    return;
+                }
+                if let Some(variable) = self.missing_onboarding_variable() {
+                    self.system_step = crate::ui::installer_layout::configuration_template_step_for_input_variable(variable)
+                        .unwrap_or(1);
+                    self.system_focus = 1;
+                    self.onboarding_validation_error = true;
+                    self.restore_onboarding_input();
+                    return;
+                }
                 let session = crate::runtime::with_runtime(|runtime| {
                     runtime.identity.complete_onboarding()?;
                     runtime.identity.create_session(
@@ -4347,16 +4277,169 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: commit_onboarding_input
+    // DESC: Stores the current field bytes in the runtime variable selected by the saved UI template.
+    // ------------------=
+    fn commit_onboarding_input(
+        &mut self,
+        variable: crate::ui::installer_template::InstallerTemplateVariable,
+    ) -> bool {
+        use crate::ui::installer_template::InstallerTemplateVariable;
+        match variable {
+            InstallerTemplateVariable::MachineNodeName => {
+                if self.command_length == 0 || self.command_length > self.onboarding_machine.len() {
+                    return false;
+                }
+                self.onboarding_machine_length = self.command_length;
+                self.onboarding_machine[..self.onboarding_machine_length]
+                    .copy_from_slice(&self.command[..self.onboarding_machine_length]);
+            }
+            InstallerTemplateVariable::ProfileName => {
+                if self.command_length == 0 || self.command_length > self.onboarding_handle.len() {
+                    return false;
+                }
+                self.onboarding_handle_length = self.command_length;
+                self.onboarding_handle[..self.onboarding_handle_length]
+                    .copy_from_slice(&self.command[..self.onboarding_handle_length]);
+            }
+            InstallerTemplateVariable::DisplayName => {
+                if self.command_length == 0 || self.command_length > self.onboarding_name.len() {
+                    return false;
+                }
+                self.onboarding_name_length = self.command_length;
+                self.onboarding_name[..self.onboarding_name_length]
+                    .copy_from_slice(&self.command[..self.onboarding_name_length]);
+            }
+            InstallerTemplateVariable::Password => {
+                if self.command_length < 8 || self.command_length > self.onboarding_secret.len() {
+                    return false;
+                }
+                self.onboarding_secret_length = self.command_length;
+                self.onboarding_secret[..self.onboarding_secret_length]
+                    .copy_from_slice(&self.command[..self.onboarding_secret_length]);
+            }
+            InstallerTemplateVariable::None => return false,
+        }
+        true
+    }
+
+    // ------------------------=
+    // FUNC: materialize_onboarding_identity
+    // DESC: Creates ready identity objects whenever their template-bound variables have been collected.
+    // ------------------=
+    fn materialize_onboarding_identity(&mut self) -> bool {
+        if crate::runtime::with_runtime(|runtime| runtime.identity.machine().is_none())
+            .unwrap_or(true)
+            && self.onboarding_machine_length > 0
+        {
+            let architecture = if self.system.architecture == b"x86_64" {
+                2
+            } else if self.system.architecture == b"AArch64" {
+                3
+            } else {
+                1
+            };
+            let created = crate::runtime::with_runtime(|runtime| {
+                runtime.identity.create_machine(
+                    &self.onboarding_machine[..self.onboarding_machine_length],
+                    architecture,
+                    1,
+                    1,
+                )
+            })
+            .is_some_and(|result| result.is_ok());
+            if !created {
+                return false;
+            }
+        }
+        if self.current_user.is_zero()
+            && self.onboarding_handle_length > 0
+            && self.onboarding_name_length > 0
+        {
+            let created = crate::runtime::with_runtime(|runtime| {
+                runtime.identity.create_user(
+                    &self.onboarding_handle[..self.onboarding_handle_length],
+                    &self.onboarding_name[..self.onboarding_name_length],
+                    2,
+                )
+            });
+            let Some(Ok(user)) = created else {
+                return false;
+            };
+            self.current_user = user.id;
+        }
+        if !self.current_user.is_zero() && self.onboarding_secret_length >= 8 {
+            let credential = crate::runtime::with_runtime(|runtime| {
+                if runtime.identity.has_active_credential(self.current_user) {
+                    runtime
+                        .identity
+                        .authenticate(
+                            self.current_user,
+                            &self.onboarding_secret[..self.onboarding_secret_length],
+                            3,
+                        )
+                        .map(|_| ())
+                } else {
+                    runtime
+                        .identity
+                        .create_password(
+                            self.current_user,
+                            &self.onboarding_secret[..self.onboarding_secret_length],
+                            3,
+                        )
+                        .map(|_| ())
+                }
+            })
+            .is_some_and(|result| result.is_ok());
+            if !credential {
+                return false;
+            }
+        }
+        true
+    }
+
+    // ------------------------=
+    // FUNC: missing_onboarding_variable
+    // DESC: Returns the first required template variable whose durable identity state is incomplete.
+    // ------------------=
+    fn missing_onboarding_variable(
+        &self,
+    ) -> Option<crate::ui::installer_template::InstallerTemplateVariable> {
+        use crate::ui::installer_template::InstallerTemplateVariable;
+        if self.onboarding_machine_length == 0 {
+            Some(InstallerTemplateVariable::MachineNodeName)
+        } else if self.onboarding_handle_length == 0 {
+            Some(InstallerTemplateVariable::ProfileName)
+        } else if self.onboarding_name_length == 0 {
+            Some(InstallerTemplateVariable::DisplayName)
+        } else if self.onboarding_secret_length < 8 {
+            Some(InstallerTemplateVariable::Password)
+        } else {
+            None
+        }
+    }
+
+    // ------------------------=
     // FUNC: restore_onboarding_input
     // DESC: Restores previously committed first-boot values when navigating backward without exposing secrets externally.
     // ------------------=
     fn restore_onboarding_input(&mut self) {
         self.reset_input();
-        let (source, length): (&[u8], usize) = match self.system_step {
-            1 => (&self.onboarding_machine, self.onboarding_machine_length),
-            2 => (&self.onboarding_handle, self.onboarding_handle_length),
-            3 => (&self.onboarding_name, self.onboarding_name_length),
-            4 => (&self.onboarding_secret, self.onboarding_secret_length),
+        let (source, length): (&[u8], usize) = match
+            crate::ui::installer_layout::configuration_template_input_variable(self.system_step)
+        {
+            crate::ui::installer_template::InstallerTemplateVariable::MachineNodeName => {
+                (&self.onboarding_machine, self.onboarding_machine_length)
+            }
+            crate::ui::installer_template::InstallerTemplateVariable::ProfileName => {
+                (&self.onboarding_handle, self.onboarding_handle_length)
+            }
+            crate::ui::installer_template::InstallerTemplateVariable::DisplayName => {
+                (&self.onboarding_name, self.onboarding_name_length)
+            }
+            crate::ui::installer_template::InstallerTemplateVariable::Password => {
+                (&self.onboarding_secret, self.onboarding_secret_length)
+            }
             _ => (&[], 0),
         };
         let copied = length.min(COMMAND_CAPACITY).min(source.len());

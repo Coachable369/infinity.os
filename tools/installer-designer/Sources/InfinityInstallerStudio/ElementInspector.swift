@@ -53,6 +53,9 @@ struct ElementInspector: View {
                         inspectorHeader(element)
                         Divider()
                         geometrySection(element)
+                        if element.role == .input {
+                            variableSection(element)
+                        }
                         if element.kind == .text || element.kind == .button {
                             textSection(element)
                         }
@@ -128,6 +131,35 @@ struct ElementInspector: View {
             .textFieldStyle(.roundedBorder)
             .disabled(element.locked)
         }
+    }
+
+    // ------------------------=
+    // FUNC: variableSection
+    // DESC: Offers the runtime variable registry applicable to the selected screen collection.
+    // ------------------=
+    private func variableSection(_ element: StudioElement) -> some View {
+        GroupBox("Data Binding") {
+            VStack(alignment: .leading, spacing: 8) {
+                Picker("Variable", selection: inputVariableBinding(fallback: element.inputVariable)) {
+                    ForEach(availableInputVariables) { variable in
+                        Text(variable.title).tag(variable)
+                    }
+                }
+                Text(element.inputVariable.rawValue.isEmpty
+                    ? "Choose the value this field edits at runtime."
+                    : element.inputVariable.rawValue)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            .disabled(element.locked)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var availableInputVariables: [StudioInputVariable] {
+        store.selectedCollection == .configuration
+            ? [.machineNodeName, .profileName, .displayName, .password]
+            : [.none]
     }
 
     // ------------------------=
@@ -316,7 +348,23 @@ struct ElementInspector: View {
     ) -> Binding<StudioElementRole> {
         Binding(
             get: { store.selectedElement?[keyPath: keyPath] ?? fallback },
-            set: { value in store.updateSelected { $0[keyPath: keyPath] = value } }
+            set: { value in
+                store.updateSelected {
+                    $0[keyPath: keyPath] = value
+                    if value != .input { $0.inputVariable = .none }
+                }
+            }
+        )
+    }
+
+    // ------------------------=
+    // FUNC: inputVariableBinding
+    // DESC: Creates an undoable binding between an input layer and its runtime variable identifier.
+    // ------------------=
+    private func inputVariableBinding(fallback: StudioInputVariable) -> Binding<StudioInputVariable> {
+        Binding(
+            get: { store.selectedElement?.inputVariable ?? fallback },
+            set: { value in store.updateSelected("Variable binding changed") { $0.inputVariable = value } }
         )
     }
 

@@ -27,6 +27,7 @@ fn skip_element(data: &[u8], offset: &mut usize) -> (u8, usize) {
     let role = data[*offset];
     *offset += 1;
     *offset += 1;
+    *offset += 1;
     *offset += 2;
     *offset += 8;
     *offset += 8;
@@ -174,6 +175,27 @@ fn main() {
         assert_eq!(back.border, [42, 69, 91, 255]);
         assert_eq!(primary.fill, [8, 54, 84, 255]);
         assert_eq!(primary.border, [40, 181, 231, 255]);
+        let count = configuration
+            .element_count(screen)
+            .expect("configuration layers must enumerate");
+        let mut progress_count = 0;
+        let mut input_count = 0;
+        for layer in 0..count {
+            let element = configuration
+                .layer_at(screen, layer)
+                .expect("configuration layer must resolve");
+            if element.role == InstallerTemplateRole::ProgressSegment as u8 {
+                progress_count += 1;
+                assert_eq!(element.kind, 1);
+                assert_eq!(element.frame.height, 20);
+                assert!(element.text.is_empty());
+            }
+            if element.role == InstallerTemplateRole::Input as u8 && !element.hidden {
+                input_count += 1;
+            }
+        }
+        assert_eq!(progress_count, 8);
+        assert!(input_count <= 1);
         if screen == 1 {
             assert_eq!(back.opacity, 0);
             assert_eq!(back.frame, primary.frame);
@@ -200,6 +222,7 @@ fn main() {
         assert_eq!(input.fill, [2, 10, 20, 255]);
         assert_eq!(input.border, [40, 72, 95, 255]);
         assert_eq!(input.corner_radius, 10);
+        assert_eq!(input.input_variable, screen - 1);
     }
 
     let mut altered = FACTORY_TEMPLATE.to_vec();

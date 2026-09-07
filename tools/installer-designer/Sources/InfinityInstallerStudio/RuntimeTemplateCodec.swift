@@ -40,6 +40,7 @@ enum TemplateValidator {
             }
             let back = screen.elements.filter { $0.role == .backButton }
             let primary = screen.elements.filter { $0.role == .primaryButton }
+            let liveInputs = screen.elements.filter { $0.role == .input && !$0.hidden }
             guard back.count == 1, primary.count == 1 else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Canonical Back and Primary buttons are required")
             }
@@ -51,7 +52,20 @@ enum TemplateValidator {
             guard screen.elements.contains(where: { $0.role == .console }) else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "A console frame is required")
             }
+            guard liveInputs.count <= 1 else {
+                throw TemplateValidationIssue.invalidScreen(screen.id, "Only one live input field is supported per screen")
+            }
             for element in screen.elements {
+                guard element.role == .input || element.inputVariable == .none else {
+                    throw TemplateValidationIssue.invalidElement(
+                        screen.id, element.id, "Only input fields can bind runtime variables"
+                    )
+                }
+                guard element.role != .input || element.hidden || element.inputVariable != .none else {
+                    throw TemplateValidationIssue.invalidElement(
+                        screen.id, element.id, "Visible input fields require a runtime variable"
+                    )
+                }
                 guard element.frame == element.frame.clamped() else {
                     throw TemplateValidationIssue.invalidElement(screen.id, element.id, "Element lies outside the artboard")
                 }
@@ -71,7 +85,7 @@ enum TemplateValidator {
 
 enum RuntimeTemplateCodec {
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 4
+    static let version: UInt16 = 5
 
     // ------------------------=
     // FUNC: encode
@@ -91,6 +105,7 @@ enum RuntimeTemplateCodec {
                 output.append(contentsOf: element.id.bytes)
                 output.append(element.kind.rawValue)
                 output.append(element.role.rawValue)
+                output.append(element.inputVariable.runtimeCode)
                 var flags: UInt8 = 0
                 if element.locked { flags |= 1 }
                 if element.hidden { flags |= 2 }
@@ -193,7 +208,8 @@ enum RuntimeTemplateCodec {
             for _ in 0..<elementCount {
                 let id = try UUID(bytes: reader.readBytes(count: 16))
                 guard let kind = StudioElementKind(rawValue: try reader.readUInt8()),
-                      let role = StudioElementRole(rawValue: try reader.readUInt8())
+                      let role = StudioElementRole(rawValue: try reader.readUInt8()),
+                      let inputVariable = StudioInputVariable(runtimeCode: try reader.readUInt8())
                 else {
                     throw TemplateValidationIssue.invalidScreen(screenID, "Unknown element kind or role")
                 }
@@ -222,6 +238,7 @@ enum RuntimeTemplateCodec {
                     name: name,
                     kind: kind,
                     role: role,
+                    inputVariable: inputVariable,
                     frame: frame,
                     text: text,
                     imageAsset: imageAsset,

@@ -39,6 +39,7 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case offsetBadge = 15
     case timeZoneMap = 16
     case metadata = 17
+    case progressSegment = 18
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -61,6 +62,51 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .offsetBadge: "UTC Offset Badge"
         case .timeZoneMap: "Time Zone Map"
         case .metadata: "Metadata"
+        case .progressSegment: "Progress Segment"
+        }
+    }
+}
+
+enum StudioInputVariable: String, Codable, CaseIterable, Identifiable {
+    case none = ""
+    case machineNodeName = "machine.node_name"
+    case profileName = "user.profile_name"
+    case displayName = "user.display_name"
+    case password = "credential.password"
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .none: "Unbound"
+        case .machineNodeName: "Machine Node Name"
+        case .profileName: "Profile Name"
+        case .displayName: "Display Name"
+        case .password: "Password"
+        }
+    }
+    var isSecure: Bool { self == .password }
+    var runtimeCode: UInt8 {
+        switch self {
+        case .none: 0
+        case .machineNodeName: 1
+        case .profileName: 2
+        case .displayName: 3
+        case .password: 4
+        }
+    }
+
+    // ------------------------=
+    // FUNC: init_runtimeCode
+    // DESC: Restores a typed editor variable from its stable runtime artifact identifier.
+    // ------------------=
+    init?(runtimeCode: UInt8) {
+        switch runtimeCode {
+        case 0: self = .none
+        case 1: self = .machineNodeName
+        case 2: self = .profileName
+        case 3: self = .displayName
+        case 4: self = .password
+        default: return nil
         }
     }
 }
@@ -151,6 +197,7 @@ struct StudioElement: Identifiable, Codable, Hashable {
     var name: String
     var kind: StudioElementKind
     var role: StudioElementRole
+    var inputVariable: StudioInputVariable = .none
     var frame: CanvasRect
     var text: String
     var imageAsset: String
@@ -183,6 +230,7 @@ struct StudioElement: Identifiable, Codable, Hashable {
             name: name,
             kind: kind,
             role: role,
+            inputVariable: .none,
             frame: frame,
             text: text,
             imageAsset: imageAsset,
@@ -225,7 +273,7 @@ struct ImageCrop: Codable, Hashable {
 
 extension StudioElement {
     private enum CodingKeys: String, CodingKey {
-        case id, name, kind, role, frame, text, imageAsset, crop, fill, border
+        case id, name, kind, role, inputVariable, frame, text, imageAsset, crop, fill, border
         case fontSize, opacity, cornerRadius, zIndex, locked, hidden
     }
 
@@ -239,6 +287,7 @@ extension StudioElement {
         name = try values.decode(String.self, forKey: .name)
         kind = try values.decode(StudioElementKind.self, forKey: .kind)
         role = try values.decode(StudioElementRole.self, forKey: .role)
+        inputVariable = try values.decodeIfPresent(StudioInputVariable.self, forKey: .inputVariable) ?? .none
         frame = try values.decode(CanvasRect.self, forKey: .frame)
         text = try values.decode(String.self, forKey: .text)
         imageAsset = try values.decode(String.self, forKey: .imageAsset)
@@ -468,6 +517,13 @@ struct InstallerStudioDocument: Codable, Hashable {
         elements[5].fill = InfinityUIKit.Palette.field
         elements[5].border = InfinityUIKit.Palette.fieldBorder
         elements[5].cornerRadius = 10
+        elements[5].inputVariable = switch step {
+        case 1: .machineNodeName
+        case 2: .profileName
+        case 3: .displayName
+        case 4: .password
+        default: .none
+        }
         elements[8].fill = InfinityUIKit.Palette.textSecondary
         elements[8].fontSize = 13
         elements[9].fill = InfinityUIKit.Palette.textPrimary
@@ -477,14 +533,16 @@ struct InstallerStudioDocument: Codable, Hashable {
 
         for progressIndex in 0..<8 {
             var segment = StudioElement.make(
-                name: "Progress Segment \(progressIndex + 1)", kind: .text,
+                name: "Progress Segment \(progressIndex + 1)", kind: .panel,
+                role: .progressSegment,
                 frame: CanvasRect(x: 72 + progressIndex * 35, y: 197, width: 31, height: 20),
-                text: "━━━━", zIndex: 6
+                text: "", zIndex: 6
             )
             segment.fill = progressIndex <= step
                 ? InfinityUIKit.Palette.accent
                 : InfinityUIKit.Palette.border
-            segment.fontSize = 8
+            segment.border = segment.fill
+            segment.cornerRadius = 2
             elements.append(segment)
         }
         if placeholder.isEmpty {

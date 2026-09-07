@@ -5,9 +5,11 @@ mod installer_template;
 mod installer_layout;
 
 use installer_layout::{
+    configuration_template_input_variable, configuration_template_step_for_input_variable,
     installer_confirmation_button_frame, installer_confirmation_target, installer_wizard_layout,
     InstallerConfirmationTarget,
 };
+use installer_template::InstallerTemplateVariable;
 
 // ------------------------=
 // FUNC: main
@@ -58,5 +60,15 @@ fn main() {
         "one complete click in the rendered Erase & Install button must resolve immediately",
     );
     assert_eq!(installer_confirmation_target(500, 565), None);
+
+    for (step, variable) in [
+        (1, InstallerTemplateVariable::MachineNodeName),
+        (2, InstallerTemplateVariable::ProfileName),
+        (3, InstallerTemplateVariable::DisplayName),
+        (4, InstallerTemplateVariable::Password),
+    ] {
+        assert_eq!(configuration_template_input_variable(step), variable);
+        assert_eq!(configuration_template_step_for_input_variable(variable), Some(step));
+    }
     println!("PASS installer layout: all wizard states share one symmetric frame");
 }
