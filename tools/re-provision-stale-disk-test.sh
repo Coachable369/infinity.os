@@ -57,7 +57,7 @@ run_orphan_replacement_case() {
     test -f "$state_path/medium-inspected" || fail "The stale VDI registration was not checked."
     test "$(sed -n '1p' "$state_path/memory")" = 12288 || fail "The bootable 12 GB memory default was not applied."
     test "$(sed -n '1p' "$state_path/graphics")" = vmsvga || fail "VMSVGA graphics were not applied."
-    test "$(sed -n '1p' "$state_path/mouse")" = ps2 || fail "PS/2 mouse input was not applied."
+    test "$(sed -n '1p' "$state_path/mouse")" = usb || fail "Generic USB HID mouse input was not applied."
 }
 
 # ------------------------=

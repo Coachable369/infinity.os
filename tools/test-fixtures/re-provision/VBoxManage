@@ -25,7 +25,12 @@ case "$command_name" in
                 printf 'dvd="%s"\n' "$TEST_ISO_PATH"
             fi
         else
-            printf 'Pointing Device:             PS/2 Mouse\n'
+            mouse_mode=$(sed -n '1p' "$TEST_STATE_PATH/mouse")
+            if test "$mouse_mode" = usb; then
+                printf 'Pointing Device:             USB Mouse\n'
+            else
+                printf 'Pointing Device:             PS/2 Mouse\n'
+            fi
             printf 'Keyboard Device:             USB Keyboard\n'
             printf 'xHCI USB:                    enabled\n'
         fi

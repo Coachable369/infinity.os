@@ -5,7 +5,7 @@ vm_name=${1:-}
 
 if test -z "$vm_name"; then
     echo "Usage: $0 <VirtualBox-VM-name>" >&2
-    echo "Configures the ARM64 VM for InfinityOS USB keyboard and tablet input." >&2
+    echo "Configures the ARM64 VM for InfinityOS generic USB HID mouse and keyboard input." >&2
     exit 2
 fi
 
@@ -21,7 +21,7 @@ machine_info=$(VBoxManage showvminfo "$vm_name" --machinereadable 2>/dev/null) |
 
 machine_state=$(printf '%s\n' "$machine_info" | sed -n 's/^VMState="\(.*\)"/\1/p')
 configured_info=$(VBoxManage showvminfo "$vm_name")
-if printf '%s\n' "$configured_info" | grep -Fq 'Pointing Device:             USB Tablet' &&
+if printf '%s\n' "$configured_info" | grep -Fq 'Pointing Device:             USB Mouse' &&
    printf '%s\n' "$configured_info" | grep -Fq 'Keyboard Device:             USB Keyboard' &&
    printf '%s\n' "$configured_info" | grep -Fq 'xHCI USB:                    enabled' &&
    printf '%s\n' "$machine_info" | grep -Fq 'usb="off"'; then
@@ -35,15 +35,15 @@ if test "$machine_state" != "poweroff"; then
     exit 1
 fi
 
-# VirtualBox ARM routes its virtual tablet to the legacy OHCI root hub when
-# both OHCI and xHCI are enabled. InfinityOS discovers the tablet through the
-# xHCI-backed UEFI HID path, so leave OHCI off and xHCI on explicitly.
-VBoxManage modifyvm "$vm_name" --usb off --usb-xhci on --mouse usbtablet --keyboard usb
+# VirtualBox ARM does not instantiate PS/2 pointer hardware even when that
+# setting is retained in machine metadata. Use its standards-compatible USB
+# HID mouse so InfinityOS receives relative motion, buttons, and wheel input.
+VBoxManage modifyvm "$vm_name" --usb off --usb-xhci on --mouse usb --keyboard usb
 
 configured_info=$(VBoxManage showvminfo "$vm_name")
 machine_info=$(VBoxManage showvminfo "$vm_name" --machinereadable)
-printf '%s\n' "$configured_info" | grep -Fq 'Pointing Device:             USB Tablet' || {
-    echo "ERROR: VirtualBox did not retain the USB Tablet setting." >&2
+printf '%s\n' "$configured_info" | grep -Fq 'Pointing Device:             USB Mouse' || {
+    echo "ERROR: VirtualBox did not retain the generic USB Mouse setting." >&2
     exit 1
 }
 printf '%s\n' "$configured_info" | grep -Fq 'Keyboard Device:             USB Keyboard' || {
@@ -55,12 +55,12 @@ printf '%s\n' "$configured_info" | grep -Fq 'xHCI USB:                    enable
     exit 1
 }
 printf '%s\n' "$machine_info" | grep -Fq 'usb="off"' || {
-    echo "ERROR: VirtualBox left OHCI enabled, so the tablet can bypass xHCI." >&2
+    echo "ERROR: VirtualBox left OHCI enabled, so the mouse can bypass xHCI." >&2
     exit 1
 }
 
 echo "PASS: '$vm_name' is ready for InfinityOS ARM64 input."
-echo "  Pointing device: USB Tablet"
+echo "  Pointing device: USB Mouse"
 echo "  Keyboard:        USB Keyboard"
 echo "  USB controller:  xHCI"
 echo "  Legacy OHCI:     disabled"

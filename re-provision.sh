@@ -126,7 +126,7 @@ create_arm64_vm() {
         --cable-connected1 on \
         --usb off \
         --usb-xhci on \
-        --mouse ps2 \
+        --mouse usb \
         --keyboard usb \
         --audio-driver default \
         --audio-controller hda \
@@ -181,7 +181,7 @@ verify_vm() {
     printf '%s\n' "$final_info" | grep -Fq "$iso_path" || die "The ARM64 ISO is not mounted."
     printf '%s\n' "$final_info" | grep -Fq 'usb="off"' || die "OHCI must remain disabled while USB keyboard input is routed through xHCI."
     printf '%s\n' "$final_info" | grep -Fq 'xhci="on"' || die "The xHCI controller is not enabled."
-    printf '%s\n' "$final_human_info" | grep -Fq 'Pointing Device:             PS/2 Mouse' || die "PS/2 mouse input is not configured."
+    printf '%s\n' "$final_human_info" | grep -Fq 'Pointing Device:             USB Mouse' || die "Generic USB HID mouse input is not configured."
     printf '%s\n' "$final_human_info" | grep -Fq 'Keyboard Device:             USB Keyboard' || die "USB keyboard input is not configured."
     printf '%s\n' "$final_human_info" | grep -Fq 'xHCI USB:                    enabled' || die "The xHCI controller is not enabled."
 
