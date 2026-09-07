@@ -1,7 +1,8 @@
 # Active desktop performance audit — 2026-09-07
 
 Scope: the installed native DisplayDevice/system_ui_present path, not only the
-separate SoftwareCompositor. Runtime guest performance is not signed off.
+separate SoftwareCompositor. The findings below describe the original audit;
+the implementation and installed verification update follows at the end.
 
 ## Ordered checks
 
@@ -58,3 +59,51 @@ separate SoftwareCompositor. Runtime guest performance is not signed off.
 Next acceptance must first trace actual cursor-event damage, then replace active
 drag repainting with persistent surfaces. Do not treat the host improvements above
 as completion of the responsive-desktop milestone.
+
+## Implemented correction and installed verification
+
+- Added an explicit cursor-only entry point from ordinary desktop/Settings motion.
+  It does not hash app content, invoke application painters, or scan namespaces.
+- Active File Navigator, Settings, Command, Editor and Task Manager rendering now
+  uses desktop-owned premultiplied persistent surfaces. Unchanged translations
+  composite cached pixels over the current background, not a captured wallpaper.
+  Content/focus/appearance changes invalidate the cache; dimensions and clipped
+  edge insets are part of the cache validity check. Glass backdrop blur remains a
+  composition operation, while unchanged app painting is avoided.
+- Settings restores its caller clip after nested sidebar/content clipping.
+- Damage insertion no longer joins all sparse regions on overflow: it chooses a
+  minimum-area-cost pair. Tests verify sparse coverage and small cursor bounds.
+- Persistent back-buffer capacity increased to 3840x2160 pixels (including stride).
+- USB tablet burst draining now preserves down/up edges and the final held motion
+  before release. This fixed dropped automated click/drag capture in the VM test.
+- Correction to item 7: checkpoint_desktop_layout updates an in-memory identity
+  record; durable persistence is a separate session-boundary operation.
+
+Behavioral checks passed: production primitive pixel equivalence, retained surface
+translation/transparency/clipping/invalidation, sparse damage coverage, tablet
+press/motion/release/wheel bursts, redraw policy, InfinityUI runtime, and performance
+history/compositor tests. The actual native cached-window fixture composed 100
+translations with exactly one application paint (initial capture): average 1.51 ms,
+p95 1.61 ms for a 1280x900 surface on the host. This is not a guest FPS measurement.
+
+ARM64 and x86_64 installed/live release builds passed; legacy i686 cargo check
+passed. The build now verifies binary identity of each installed ELF embedded in
+its installer. Both architecture-labeled ISOs were refreshed in builds/.
+
+Installed VirtualBox verification: infinityos-4 is running the updated kernel on
+infinityos-4-performance-v2.vdi, with its optical drive detached. Login, single-click
+File Navigator activation, repeated navigator translation across the dock/widget
+area, folder-content invalidation, Settings translation, launcher opening and
+dismissal were exercised through native desktop controls and visually inspected.
+The original infinityos-4.vdi and the dated backup remain untouched. Each offline
+clone update verified boot checksums, kernel bytes, and an unchanged SHA-256 digest
+over all bytes outside the four intended kernel/manifest write extents.
+
+Remaining limits: guest numeric frame latency/damage traces were not collected.
+Each cached window is bounded to 2560x1600 pixels including effect margins; oversized
+windows retain the original painter fallback. Display strides exceeding the 4K
+back-buffer capacity retain the original direct-render fallback. Full dynamic
+allocation/budget integration and retaining every independent desktop widget are
+not implemented in this correction. Changed-content paints still perform text
+layout/scaling and namespace scans; they are no longer repeated for cache-hit drag
+frames. No claim of universal 60 FPS or completion of the separate Monitor spec.

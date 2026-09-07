@@ -1446,9 +1446,7 @@ impl ConsoleRuntime {
             self.shell_menu = 0;
             let image = match self.desktop_app {
                 DesktopAppKind::TextEditor => crate::runtime::task_manager::IMAGE_TEXT_EDITOR,
-                DesktopAppKind::CommandWindow => {
-                    crate::runtime::task_manager::IMAGE_COMMAND_WINDOW
-                }
+                DesktopAppKind::CommandWindow => crate::runtime::task_manager::IMAGE_COMMAND_WINDOW,
                 DesktopAppKind::TaskManager => crate::runtime::task_manager::IMAGE_TASK_MANAGER,
                 DesktopAppKind::None => return true,
             };
@@ -3691,7 +3689,13 @@ impl ConsoleRuntime {
                     found_current = true;
                 }
             }
-            runtime.nodes.discovered_nodes().iter().flatten().next().map(|node| node.id)
+            runtime
+                .nodes
+                .discovered_nodes()
+                .iter()
+                .flatten()
+                .next()
+                .map(|node| node.id)
         })
         .flatten();
     }
@@ -3701,7 +3705,11 @@ impl ConsoleRuntime {
     // DESC: Confirms the selected pairing only from six digits manually entered through protected Trusted UI.
     // ------------------=
     fn confirm_selected_node_pairing(&mut self) -> bool {
-        if self.command_length != 6 || self.command[..self.command_length].iter().any(|byte| !byte.is_ascii_digit()) {
+        if self.command_length != 6
+            || self.command[..self.command_length]
+                .iter()
+                .any(|byte| !byte.is_ascii_digit())
+        {
             return false;
         }
         let mut code = 0u32;
@@ -3710,25 +3718,54 @@ impl ConsoleRuntime {
         }
         let selected = self.selected_node_id;
         let changed = crate::runtime::with_runtime(|runtime| {
-            let now = runtime.nodes.audit_records().iter().flatten()
-                .map(|record| record.timestamp).max().unwrap_or(0).saturating_add(1);
-            let Some(pairing) = runtime.nodes.pairings().iter().flatten()
-                .find(|pairing| Some(pairing.peer) == selected
-                    && pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation)
-                .copied() else { return false; };
+            let now = runtime
+                .nodes
+                .audit_records()
+                .iter()
+                .flatten()
+                .map(|record| record.timestamp)
+                .max()
+                .unwrap_or(0)
+                .saturating_add(1);
+            let Some(pairing) = runtime
+                .nodes
+                .pairings()
+                .iter()
+                .flatten()
+                .find(|pairing| {
+                    Some(pairing.peer) == selected
+                        && pairing.state
+                            == crate::runtime::node::types::PairingState::AwaitingConfirmation
+                })
+                .copied()
+            else {
+                return false;
+            };
             let Ok(lease) = runtime.ui.trusted.acquire_secure_input(
-                true, 1, crate::ui::trusted::TrustedSurface::NodePairing, now.saturating_add(60),
-            ) else { return false; };
-            let confirmed = runtime.nodes.confirm_pairing(pairing.id, code, true, now, now).is_ok();
+                true,
+                1,
+                crate::ui::trusted::TrustedSurface::NodePairing,
+                now.saturating_add(60),
+            ) else {
+                return false;
+            };
+            let confirmed = runtime
+                .nodes
+                .confirm_pairing(pairing.id, code, true, now, now)
+                .is_ok();
             let _ = runtime.ui.trusted.release_secure_input(lease);
             confirmed
-        }).unwrap_or(false);
+        })
+        .unwrap_or(false);
         if changed {
             let committed = crate::runtime::persist_node_state();
             if committed {
                 if let Some(node_id) = selected {
                     let _ = crate::runtime::publish_node_state_event(
-                        crate::runtime::EVENT_NODE_PAIRED, node_id, code as u64, code as u64,
+                        crate::runtime::EVENT_NODE_PAIRED,
+                        node_id,
+                        code as u64,
+                        code as u64,
                     );
                 }
             }
@@ -3754,7 +3791,8 @@ impl ConsoleRuntime {
             let has_pending = crate::runtime::with_runtime(|runtime| {
                 runtime.nodes.pairings().iter().flatten().any(|pairing| {
                     Some(pairing.peer) == self.selected_node_id
-                        && pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation
+                        && pairing.state
+                            == crate::runtime::node::types::PairingState::AwaitingConfirmation
                 })
             })
             .unwrap_or(false);
@@ -3767,23 +3805,60 @@ impl ConsoleRuntime {
         }
         let selected = self.selected_node_id;
         let changed = crate::runtime::with_runtime(|runtime| {
-            let now = runtime.nodes.audit_records().iter().flatten()
-                .map(|record| record.timestamp).max().unwrap_or(0).saturating_add(1);
-            let peer = selected.and_then(|id| runtime.nodes.discovered_nodes().iter().flatten()
-                .find(|node| node.id == id).copied());
+            let now = runtime
+                .nodes
+                .audit_records()
+                .iter()
+                .flatten()
+                .map(|record| record.timestamp)
+                .max()
+                .unwrap_or(0)
+                .saturating_add(1);
+            let peer = selected.and_then(|id| {
+                runtime
+                    .nodes
+                    .discovered_nodes()
+                    .iter()
+                    .flatten()
+                    .find(|node| node.id == id)
+                    .copied()
+            });
             match (page, control, peer) {
-                (0, 1, Some(node)) if matches!(node.trust, TrustState::Trusted | TrustState::Restricted) =>
-                    runtime.nodes.revoke_trust(node.id, now, now).is_ok(),
-                (0, 4, Some(node)) => runtime.nodes.set_trust(node.id, TrustState::Blocked, now, now).is_ok(),
-                (0, 5, _) => { runtime.nodes.sweep(now); false }
-                (1, 1, Some(node)) if matches!(node.trust, TrustState::Untrusted | TrustState::Discovered) =>
-                    runtime.nodes.begin_pairing(node.id, now).is_ok(),
-                (1, 4, _) => runtime.nodes.pairings().iter().flatten()
-                    .find(|pairing| Some(pairing.peer) == selected
-                        && pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation)
-                    .copied().map(|pairing| runtime.nodes.cancel_pairing(pairing.id).is_ok()).unwrap_or(false),
-                (2, 1, Some(node)) if node.trust == TrustState::Trusted =>
-                    runtime.nodes.join_mesh(node.id, MeshRole::Member, now, now).is_ok(),
+                (0, 1, Some(node))
+                    if matches!(node.trust, TrustState::Trusted | TrustState::Restricted) =>
+                {
+                    runtime.nodes.revoke_trust(node.id, now, now).is_ok()
+                }
+                (0, 4, Some(node)) => runtime
+                    .nodes
+                    .set_trust(node.id, TrustState::Blocked, now, now)
+                    .is_ok(),
+                (0, 5, _) => {
+                    runtime.nodes.sweep(now);
+                    false
+                }
+                (1, 1, Some(node))
+                    if matches!(node.trust, TrustState::Untrusted | TrustState::Discovered) =>
+                {
+                    runtime.nodes.begin_pairing(node.id, now).is_ok()
+                }
+                (1, 4, _) => runtime
+                    .nodes
+                    .pairings()
+                    .iter()
+                    .flatten()
+                    .find(|pairing| {
+                        Some(pairing.peer) == selected
+                            && pairing.state
+                                == crate::runtime::node::types::PairingState::AwaitingConfirmation
+                    })
+                    .copied()
+                    .map(|pairing| runtime.nodes.cancel_pairing(pairing.id).is_ok())
+                    .unwrap_or(false),
+                (2, 1, Some(node)) if node.trust == TrustState::Trusted => runtime
+                    .nodes
+                    .join_mesh(node.id, MeshRole::Member, now, now)
+                    .is_ok(),
                 (2, 4, Some(node)) => runtime.nodes.leave_mesh(node.id, now, now).is_ok(),
                 (3, category @ 0..=4, Some(node)) => {
                     let mut policy = node.policy;
@@ -3793,16 +3868,23 @@ impl ConsoleRuntime {
                         _ => PolicyDecision::Deny,
                     };
                     policy.version = policy.version.saturating_add(1);
-                    runtime.nodes.update_policy(node.id, policy, now, now).is_ok()
+                    runtime
+                        .nodes
+                        .update_policy(node.id, policy, now, now)
+                        .is_ok()
                 }
                 (3, 5, Some(node)) => {
                     let mut policy = NodeTrustPolicy::deny_all();
                     policy.version = node.policy.version.saturating_add(1);
-                    runtime.nodes.update_policy(node.id, policy, now, now).is_ok()
+                    runtime
+                        .nodes
+                        .update_policy(node.id, policy, now, now)
+                        .is_ok()
                 }
                 _ => false,
             }
-        }).unwrap_or(false);
+        })
+        .unwrap_or(false);
         if changed {
             let committed = crate::runtime::persist_node_state();
             if committed {
@@ -3818,7 +3900,12 @@ impl ConsoleRuntime {
                 };
                 if event_type != 0 {
                     if let Some(node_id) = selected {
-                        let _ = crate::runtime::publish_node_state_event(event_type, node_id, page as u64 + 1, page as u64 + 1);
+                        let _ = crate::runtime::publish_node_state_event(
+                            event_type,
+                            node_id,
+                            page as u64 + 1,
+                            page as u64 + 1,
+                        );
                     }
                 }
             }
@@ -4319,10 +4406,9 @@ impl ConsoleRuntime {
         match self.system_step {
             0 => self.system_step = 1,
             1..=4 => {
-                let variable =
-                    crate::ui::installer_layout::configuration_template_input_variable(
-                        self.system_step,
-                    );
+                let variable = crate::ui::installer_layout::configuration_template_input_variable(
+                    self.system_step,
+                );
                 if !self.commit_onboarding_input(variable)
                     || !self.materialize_onboarding_identity()
                 {
@@ -4546,23 +4632,24 @@ impl ConsoleRuntime {
     // ------------------=
     fn restore_onboarding_input(&mut self) {
         self.reset_input();
-        let (source, length): (&[u8], usize) = match
-            crate::ui::installer_layout::configuration_template_input_variable(self.system_step)
-        {
-            crate::ui::installer_template::InstallerTemplateVariable::MachineNodeName => {
-                (&self.onboarding_machine, self.onboarding_machine_length)
-            }
-            crate::ui::installer_template::InstallerTemplateVariable::ProfileName => {
-                (&self.onboarding_handle, self.onboarding_handle_length)
-            }
-            crate::ui::installer_template::InstallerTemplateVariable::DisplayName => {
-                (&self.onboarding_name, self.onboarding_name_length)
-            }
-            crate::ui::installer_template::InstallerTemplateVariable::Password => {
-                (&self.onboarding_secret, self.onboarding_secret_length)
-            }
-            _ => (&[], 0),
-        };
+        let (source, length): (&[u8], usize) =
+            match crate::ui::installer_layout::configuration_template_input_variable(
+                self.system_step,
+            ) {
+                crate::ui::installer_template::InstallerTemplateVariable::MachineNodeName => {
+                    (&self.onboarding_machine, self.onboarding_machine_length)
+                }
+                crate::ui::installer_template::InstallerTemplateVariable::ProfileName => {
+                    (&self.onboarding_handle, self.onboarding_handle_length)
+                }
+                crate::ui::installer_template::InstallerTemplateVariable::DisplayName => {
+                    (&self.onboarding_name, self.onboarding_name_length)
+                }
+                crate::ui::installer_template::InstallerTemplateVariable::Password => {
+                    (&self.onboarding_secret, self.onboarding_secret_length)
+                }
+                _ => (&[], 0),
+            };
         let copied = length.min(COMMAND_CAPACITY).min(source.len());
         self.command[..copied].copy_from_slice(&source[..copied]);
         self.command_length = copied;
@@ -4802,7 +4889,13 @@ impl ConsoleRuntime {
                 return;
             }
             if matches!(key, ConsoleKey::Character(byte) if byte.is_ascii_digit())
-                || matches!(key, ConsoleKey::Backspace | ConsoleKey::Delete | ConsoleKey::Left | ConsoleKey::Right)
+                || matches!(
+                    key,
+                    ConsoleKey::Backspace
+                        | ConsoleKey::Delete
+                        | ConsoleKey::Left
+                        | ConsoleKey::Right
+                )
             {
                 let _ = self.edit_system_text(key);
                 if self.command_length > 6 {
@@ -5977,7 +6070,11 @@ impl ConsoleRuntime {
     ) {
         let _ = crate::runtime::with_runtime(|runtime| {
             let app_id = crate::runtime::resource_policy::AppId(image_identity);
-            if runtime.resources.set_mode_from_trusted_ui(app_id, mode).is_err() {
+            if runtime
+                .resources
+                .set_mode_from_trusted_ui(app_id, mode)
+                .is_err()
+            {
                 return;
             }
             let policy = runtime.resources.effective_policy(
@@ -7417,8 +7514,7 @@ impl ConsoleRuntime {
                 self.pointer_y,
                 self.settings_window,
                 self.system_focus,
-            )
-            {
+            ) {
                 match target {
                     SettingsTarget::Section(index) if clicked => {
                         self.system_focus = index;
@@ -7491,7 +7587,17 @@ impl ConsoleRuntime {
                 }
             }
         }
-        self.redraw();
+        if buttons == 0
+            && !released
+            && !clicked
+            && !right_clicked
+            && matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings)
+        {
+            self.publish_text_input_presentation();
+            crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
+        } else {
+            self.redraw();
+        }
     }
 
     // ------------------------=
@@ -8222,8 +8328,7 @@ impl ConsoleRuntime {
                         .map(|node| is_node_console_mutation(node.schema.operation))
                         .unwrap_or(false);
                 if graph.plan_only
-                    || (graph.maximum_effect != SideEffectClass::Query
-                        && !executable_node_mutation)
+                    || (graph.maximum_effect != SideEffectClass::Query && !executable_node_mutation)
                 {
                     self.output
                         .write_number(b"Operation plan stages: ", graph.node_count as u64);
@@ -8481,19 +8586,24 @@ impl ConsoleRuntime {
                     return true;
                 };
                 let Some(code_bytes) = node_argument(node, b"code") else {
-                    self.output.write_line(b"A six-digit verification code is required.");
+                    self.output
+                        .write_line(b"A six-digit verification code is required.");
                     return true;
                 };
                 if code_bytes.len() != 6 || code_bytes.iter().any(|byte| !byte.is_ascii_digit()) {
-                    self.output.write_line(b"A six-digit verification code is required.");
+                    self.output
+                        .write_line(b"A six-digit verification code is required.");
                     return true;
                 }
-                let Some(code) = parse_u32_decimal(code_bytes) else { return true; };
+                let Some(code) = parse_u32_decimal(code_bytes) else {
+                    return true;
+                };
                 request.handle = pairing_id;
                 request.value = code;
                 request.flags = NODE_OPERATION_HUMAN_APPROVED;
             }
-            OperationId::NodePairCancel | OperationId::NodeSessionClose
+            OperationId::NodePairCancel
+            | OperationId::NodeSessionClose
             | OperationId::NodeCapabilityRevoke => {
                 let Some(handle) = target.and_then(parse_u64_decimal) else {
                     self.output.write_line(b"Invalid operation handle.");
@@ -8526,7 +8636,10 @@ impl ConsoleRuntime {
                 }
             };
         }
-        if matches!(node.schema.operation, OperationId::NodePolicyUpdate | OperationId::MeshPolicyUpdate) {
+        if matches!(
+            node.schema.operation,
+            OperationId::NodePolicyUpdate | OperationId::MeshPolicyUpdate
+        ) {
             let Some(category) = node_argument(node, b"name").and_then(node_policy_category) else {
                 self.output.write_line(b"Invalid policy category.");
                 return true;
@@ -8538,15 +8651,24 @@ impl ConsoleRuntime {
                 Some(b"session") | Some(b"session-only") => 2,
                 Some(b"leased") => 3,
                 _ => {
-                    self.output.write_line(b"Policy value must be deny, allow, session, or leased.");
+                    self.output
+                        .write_line(b"Policy value must be deny, allow, session, or leased.");
                     return true;
                 }
             };
         }
         let now = crate::runtime::with_runtime(|runtime| {
-            runtime.nodes.audit_records().iter().flatten()
-                .map(|record| record.timestamp).max().unwrap_or(0).saturating_add(1)
-        }).unwrap_or(1);
+            runtime
+                .nodes
+                .audit_records()
+                .iter()
+                .flatten()
+                .map(|record| record.timestamp)
+                .max()
+                .unwrap_or(0)
+                .saturating_add(1)
+        })
+        .unwrap_or(1);
         let result = crate::runtime::with_runtime(|runtime| {
             crate::runtime::iop::execute_node_operation(
                 &mut runtime.nodes,
@@ -8556,12 +8678,14 @@ impl ConsoleRuntime {
                 now,
             )
         });
-        let Ok(response) = result.unwrap_or(Err(crate::runtime::iop::IopError::InvalidPayload)) else {
+        let Ok(response) = result.unwrap_or(Err(crate::runtime::iop::IopError::InvalidPayload))
+        else {
             self.output.write_line(b"Node operation denied or invalid.");
             return true;
         };
         if !crate::runtime::persist_node_state() {
-            self.output.write_line(b"Node state commit failed; no success was reported.");
+            self.output
+                .write_line(b"Node state commit failed; no success was reported.");
             return true;
         }
         let event_type = node_event_for_operation(node.schema.operation);
@@ -8570,9 +8694,12 @@ impl ConsoleRuntime {
             let _ = crate::runtime::publish_node_state_event(event_type, event_node, now, now);
         }
         if node.schema.operation == OperationId::NodePairBegin {
-            self.output.write_number(b"Pairing transaction: pairing:", response.handle);
-            self.output.write_number(b"Verification code: ", response.value as u64);
-            self.output.write_line(b"Confirm only after independently verifying the remote node.");
+            self.output
+                .write_number(b"Pairing transaction: pairing:", response.handle);
+            self.output
+                .write_number(b"Verification code: ", response.value as u64);
+            self.output
+                .write_line(b"Confirm only after independently verifying the remote node.");
         } else {
             self.output.write_line(b"Node operation committed.");
         }
@@ -10368,7 +10495,9 @@ fn node_argument<'a>(
     node: &'a crate::runtime::console_language::OperationNode<'a>,
     name: &[u8],
 ) -> Option<&'a [u8]> {
-    node.arguments.iter().flatten()
+    node.arguments
+        .iter()
+        .flatten()
         .find(|argument| argument.name == name)
         .map(|argument| argument.value)
 }
@@ -10430,9 +10559,21 @@ fn hex_nibble(value: u8) -> Option<u8> {
 // ------------------=
 fn node_policy_category(value: &[u8]) -> Option<usize> {
     [
-        b"object".as_slice(), b"namespace", b"compute", b"ai", b"service", b"event",
-        b"storage", b"clipboard", b"device", b"diagnostics", b"mesh", b"administrative",
-    ].iter().position(|candidate| *candidate == value)
+        b"object".as_slice(),
+        b"namespace",
+        b"compute",
+        b"ai",
+        b"service",
+        b"event",
+        b"storage",
+        b"clipboard",
+        b"device",
+        b"diagnostics",
+        b"mesh",
+        b"administrative",
+    ]
+    .iter()
+    .position(|candidate| *candidate == value)
 }
 
 // ------------------------=
@@ -10441,12 +10582,24 @@ fn node_policy_category(value: &[u8]) -> Option<usize> {
 // ------------------=
 fn is_node_console_mutation(operation: crate::runtime::iop::OperationId) -> bool {
     use crate::runtime::iop::OperationId;
-    matches!(operation,
-        OperationId::NodePairBegin | OperationId::NodePairConfirm | OperationId::NodePairCancel
-        | OperationId::NodeTrustUpdate | OperationId::NodeRevokeTrust | OperationId::NodeBlock
-        | OperationId::NodeUnblock | OperationId::NodeSessionClose | OperationId::NodeCapabilityRevoke
-        | OperationId::NodePolicyUpdate | OperationId::MeshPolicyUpdate | OperationId::MeshMemberAdd
-        | OperationId::MeshMemberRemove | OperationId::NodeJoin | OperationId::NodeLeave)
+    matches!(
+        operation,
+        OperationId::NodePairBegin
+            | OperationId::NodePairConfirm
+            | OperationId::NodePairCancel
+            | OperationId::NodeTrustUpdate
+            | OperationId::NodeRevokeTrust
+            | OperationId::NodeBlock
+            | OperationId::NodeUnblock
+            | OperationId::NodeSessionClose
+            | OperationId::NodeCapabilityRevoke
+            | OperationId::NodePolicyUpdate
+            | OperationId::MeshPolicyUpdate
+            | OperationId::MeshMemberAdd
+            | OperationId::MeshMemberRemove
+            | OperationId::NodeJoin
+            | OperationId::NodeLeave
+    )
 }
 
 // ------------------------=
@@ -10466,7 +10619,9 @@ fn node_event_for_operation(operation: crate::runtime::iop::OperationId) -> u32 
         OperationId::NodeSessionClose => crate::runtime::EVENT_NODE_SESSION_CLOSED,
         OperationId::NodeJoin | OperationId::MeshMemberAdd => crate::runtime::EVENT_NODE_JOINED,
         OperationId::NodeLeave | OperationId::MeshMemberRemove => crate::runtime::EVENT_NODE_LEFT,
-        OperationId::NodePolicyUpdate | OperationId::MeshPolicyUpdate => crate::runtime::EVENT_NODE_TRUST_CHANGED,
+        OperationId::NodePolicyUpdate | OperationId::MeshPolicyUpdate => {
+            crate::runtime::EVENT_NODE_TRUST_CHANGED
+        }
         _ => 0,
     }
 }
@@ -11161,10 +11316,7 @@ pub fn ui_animation_tick() -> bool {
                 runtime.system.framebuffer_height,
             );
             let maximum = layout
-                .settings_window_geometry_for_section(
-                    runtime.settings_window,
-                    runtime.system_focus,
-                )
+                .settings_window_geometry_for_section(runtime.settings_window, runtime.system_focus)
                 .maximum_scroll;
             runtime.settings_scroll_target = runtime.settings_scroll_target.min(maximum);
             let next = crate::ui::system_layout::eased_scroll_offset(

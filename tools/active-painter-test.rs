@@ -16,16 +16,30 @@ struct Region {
     right: usize,
     bottom: usize,
 }
+#[derive(Clone, Copy)]
 struct DisplayDevice {
     buffer: *mut u32,
     width: usize,
     height: usize,
     stride: usize,
     format: u32,
-    clip: Region,
+    render_clip: Option<Region>,
+    fast_motion_frame: bool,
     submissions: u64,
+    recording_surface: bool,
 }
+type PresentRegion = Region;
+#[path = "../kernel/core/bootstrap/retained_windows.rs"]
+mod retained_windows;
 impl DisplayDevice {
+    // ------------------------=
+    // FUNC: active_background_effects
+    // DESC: Selects no backdrop blur for deterministic surface pixel fixtures.
+    // ------------------=
+    fn active_background_effects(&self) -> (u8, u8) {
+        (100, 0)
+    }
+
     // ------------------------=
     // FUNC: clipped_render_region
     // DESC: Supplies bounded host framebuffer geometry to the actual kernel painter.
@@ -38,16 +52,16 @@ impl DisplayDevice {
         height: usize,
     ) -> Option<Region> {
         let value = Region {
-            left: left.max(self.clip.left),
-            top: top.max(self.clip.top),
+            left: left.max(self.render_clip.map_or(0, |c| c.left)),
+            top: top.max(self.render_clip.map_or(0, |c| c.top)),
             right: left
                 .saturating_add(width)
                 .min(self.width)
-                .min(self.clip.right),
+                .min(self.render_clip.map_or(self.width, |c| c.right)),
             bottom: top
                 .saturating_add(height)
                 .min(self.height)
-                .min(self.clip.bottom),
+                .min(self.render_clip.map_or(self.height, |c| c.bottom)),
         };
         (value.left < value.right && value.top < value.bottom).then_some(value)
     }
@@ -56,7 +70,10 @@ impl DisplayDevice {
     // DESC: Checks a test framebuffer point against its damage clip.
     // ------------------=
     fn render_point_visible(&self, x: usize, y: usize) -> bool {
-        x >= self.clip.left && x < self.clip.right && y >= self.clip.top && y < self.clip.bottom
+        x >= self.render_clip.map_or(0, |c| c.left)
+            && x < self.render_clip.map_or(self.width, |c| c.right)
+            && y >= self.render_clip.map_or(0, |c| c.top)
+            && y < self.render_clip.map_or(self.height, |c| c.bottom)
     }
     // ------------------------=
     // FUNC: mark_dirty_rect
@@ -96,6 +113,9 @@ fn scene(display: &mut DisplayDevice) {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    retained_window_benchmark();
+    damage_test();
+    retained_surface_test();
     let mut full = vec![0x102030u32; 2560 * 1600];
     let mut partial = full.clone();
     for format in [0, 1] {
@@ -108,22 +128,24 @@ fn main() {
                 height: 1600,
                 stride: 2560,
                 format,
-                clip: Region {
+                render_clip: Some(Region {
                     left: 0,
                     top: 0,
                     right: 2560,
                     bottom: 1600,
-                },
+                }),
+                fast_motion_frame: false,
                 submissions: 0,
+                recording_surface: false,
             };
             scene(&mut display);
             display.buffer = partial.as_mut_ptr();
-            display.clip = Region {
+            display.render_clip = Some(Region {
                 left: 65,
                 top: 65,
                 right: 65 + extent,
                 bottom: 65 + extent,
-            };
+            });
             display.submissions = 0;
             let mut times = [0u128; 20];
             for time in &mut times {
@@ -148,4 +170,160 @@ fn main() {
             println!("{{\"fixture\":\"active_painter_{label}\",\"format\":{},\"average_ns\":{},\"p95_ns\":{},\"damage_submissions\":{}}}",format,times.iter().sum::<u128>()/20,times[18],display.submissions);
         }
     }
+}
+
+// ------------------------=
+// FUNC: retained_window_benchmark
+// DESC: Measures the actual native cached-window composition path and asserts no application painting during translations.
+// ------------------=
+fn retained_window_benchmark() {
+    retained_windows::invalidate();
+    let mut pixels = vec![0x102030u32; 2560 * 1600];
+    let mut display = DisplayDevice {
+        buffer: pixels.as_mut_ptr(),
+        width: 2560,
+        height: 1600,
+        stride: 2560,
+        format: 0,
+        render_clip: None,
+        fast_motion_frame: true,
+        submissions: 0,
+        recording_surface: false,
+    };
+    let mut painted = 0;
+    display.retained_window(1, (80, 80, 1280, 900), |target| {
+        painted += 1;
+        scene(target);
+    });
+    let mut times = [0u128; 100];
+    for (index, elapsed) in times.iter_mut().enumerate() {
+        let start = Instant::now();
+        display.retained_window(1, (80 + index, 80, 1280, 900), |_| {
+            painted += 1;
+        });
+        *elapsed = start.elapsed().as_nanos();
+    }
+    assert_eq!(painted, 1);
+    times.sort_unstable();
+    println!("{{\"fixture\":\"native_cached_window\",\"frames\":100,\"application_paints\":{},\"average_ns\":{},\"p95_ns\":{}}}",
+        painted, times.iter().sum::<u128>() / 100, times[94]);
+}
+
+// ------------------------=
+// FUNC: damage_test
+// DESC: Verifies real presentation damage covers sparse input without full-screen overflow collapse.
+// ------------------=
+fn damage_test() {
+    use ui::present_damage::{insert, Region};
+    let mut regions = [Region::default(); 8];
+    let mut count = 0;
+    for index in 0..9 {
+        let x = 10 + index * 250;
+        let y = 10 + index * 150;
+        insert(
+            &mut regions,
+            &mut count,
+            Region {
+                left: x,
+                top: y,
+                right: x + 8,
+                bottom: y + 8,
+            },
+        );
+    }
+    assert_eq!(count, 8);
+    assert!(regions[..count].iter().map(|r| r.area()).sum::<usize>() < 2560 * 1600 / 20);
+    for index in 0..9 {
+        let x = 10 + index * 250;
+        let y = 10 + index * 150;
+        assert!(regions[..count].iter().any(|r| r.contains(Region {
+            left: x,
+            top: y,
+            right: x + 8,
+            bottom: y + 8
+        })));
+    }
+    for x in 100..200 {
+        count = 0;
+        for left in [x, x + 3] {
+            insert(
+                &mut regions,
+                &mut count,
+                Region {
+                    left,
+                    top: 100,
+                    right: left + 56,
+                    bottom: 156,
+                },
+            );
+        }
+        assert!(regions[..count].iter().map(|r| r.area()).sum::<usize>() <= 59 * 56);
+    }
+}
+
+// ------------------------=
+// FUNC: retained_surface_test
+// DESC: Verifies translation reuses pixels, preserves transparency on changed backdrops, and invalidation repaints once.
+// ------------------=
+fn retained_surface_test() {
+    retained_windows::invalidate();
+    let mut pixels = vec![0x302010u32; 320 * 200];
+    let mut display = DisplayDevice {
+        buffer: pixels.as_mut_ptr(),
+        width: 320,
+        height: 200,
+        stride: 320,
+        format: 0,
+        render_clip: None,
+        fast_motion_frame: false,
+        submissions: 0,
+        recording_surface: false,
+    };
+    let mut painted = 0;
+    display.retained_window(0, (40, 40, 40, 40), |target| {
+        painted += 1;
+        target.fill_rect_alpha(40, 40, 40, 40, 80, 100, 120, 128);
+        target.fill_rect(50, 50, 10, 10, 1, 2, 3);
+    });
+    assert_eq!(painted, 1);
+    assert_eq!(pixels[50 * 320 + 50], 0x030201);
+    pixels.fill(0x908070);
+    display.retained_window(0, (90, 60, 40, 40), |_| {
+        painted += 1;
+    });
+    assert_eq!(
+        painted, 1,
+        "Translation must never call the application painter"
+    );
+    assert_eq!(pixels[70 * 320 + 100], 0x030201);
+    assert_eq!(pixels[40 * 320 + 40], 0x908070);
+    let expected = retained_windows::over(128 << 24 | 60 << 16 | 50 << 8 | 40, 0x908070);
+    assert_eq!(pixels[60 * 320 + 90], expected);
+    display.render_clip = Some(Region {
+        left: 100,
+        top: 70,
+        right: 102,
+        bottom: 72,
+    });
+    pixels.fill(0xabcdef);
+    display.retained_window(0, (90, 60, 40, 40), |_| {
+        panic!("valid cache must be reused")
+    });
+    for y in 0..200 {
+        for x in 0..320 {
+            assert_eq!(
+                pixels[y * 320 + x],
+                if (100..102).contains(&x) && (70..72).contains(&y) {
+                    0x030201
+                } else {
+                    0xabcdef
+                }
+            );
+        }
+    }
+    retained_windows::invalidate();
+    display.retained_window(0, (90, 60, 40, 40), |_| {
+        painted += 1;
+    });
+    assert_eq!(painted, 2);
 }

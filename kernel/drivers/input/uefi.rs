@@ -561,6 +561,8 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
     let mut received = false;
     let mut buttons = unsafe { USB_MOUSE_BUTTONS[index] };
     let mut latest_absolute = None;
+    let mut absolute_batch =
+        pointer::AbsolutePointerBatch::new(synchronous_usb_buttons(index, buttons));
     let mut absolute_changed = false;
 
     // Relative reports are accumulated in a short burst. Absolute devices are
@@ -613,7 +615,12 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
             }
             buttons = event.buttons;
             event.buttons = synchronous_usb_buttons(index, event.buttons);
-            latest_absolute = Some(event);
+            for edge in absolute_batch.push(event).into_iter().flatten() {
+                // Button coordinates belong to the edge, not the latest
+                // firmware motion. Losing a down/up pair here drops clicks
+                // and title-bar drag capture even when the cursor tracks.
+                dispatch_pointer_absolute(edge);
+            }
             continue;
         }
         let Some(mut event) = pointer::decode_usb_boot_mouse(&report[..length]) else {
@@ -653,6 +660,7 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
         }
     }
     if received {
+        latest_absolute = absolute_batch.finish();
         if let Some(event) = latest_absolute {
             if absolute_changed {
                 // VirtualBox exposes one physical tablet through both the

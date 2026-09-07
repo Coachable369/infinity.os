@@ -11,6 +11,58 @@ use pointer::{
 };
 
 // ------------------------=
+// FUNC: tablet_edges_survive_burst
+// DESC: Verifies a drained tablet burst preserves down/up coordinates and wheel events without replaying stale motion.
+// ------------------=
+fn tablet_edges_survive_burst() {
+    use pointer::{AbsolutePointerBatch, AbsolutePointerEvent};
+    let mut batch = AbsolutePointerBatch::new(0);
+    let mut delivered = Vec::new();
+    for (x, buttons, wheel_y) in [
+        (1, 0, 0),
+        (2, 0, 0),
+        (3, 1, 0),
+        (4, 1, 0),
+        (5, 1, 0),
+        (6, 0, 0),
+        (7, 0, 1),
+        (8, 0, 1),
+        (9, 0, 0),
+        (10, 0, 0),
+    ] {
+        for event in batch
+            .push(AbsolutePointerEvent {
+                x,
+                y: 100,
+                buttons,
+                wheel_x: 0,
+                wheel_y,
+            })
+            .into_iter()
+            .flatten()
+        {
+            delivered.push((event.x, event.buttons, event.wheel_y));
+        }
+    }
+    if let Some(event) = batch.finish() {
+        delivered.push((event.x, event.buttons, event.wheel_y));
+    }
+    assert_eq!(
+        delivered,
+        vec![
+            (2, 0, 0),
+            (3, 1, 0),
+            (5, 1, 0),
+            (6, 0, 0),
+            (7, 0, 1),
+            (8, 0, 1),
+            (10, 0, 0)
+        ]
+    );
+    assert_eq!(batch.finish(), None);
+}
+
+// ------------------------=
 // FUNC: composite_button_capture
 // DESC: Verifies motion-only reports cannot release a drag owned by another pointer transport.
 // ------------------=
@@ -144,6 +196,7 @@ fn discovery_metadata() {
 // DESC: Runs the host-side pointer protocol and discovery regression suite.
 // ------------------=
 fn main() {
+    tablet_edges_survive_burst();
     ps2_protocols();
     usb_hid_protocols();
     discovery_metadata();

@@ -141,6 +141,43 @@ pub struct AbsolutePointerEvent {
     pub wheel_y: i8,
 }
 
+pub struct AbsolutePointerBatch {
+    buttons: u8,
+    pending: Option<AbsolutePointerEvent>,
+}
+impl AbsolutePointerBatch {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Starts a tablet burst using the last dispatched button state.
+    // ------------------=
+    pub const fn new(buttons: u8) -> Self {
+        Self {
+            buttons,
+            pending: None,
+        }
+    }
+    // ------------------------=
+    // FUNC: push
+    // DESC: Coalesces motion only; preserves every button edge and wheel report immediately.
+    // ------------------=
+    pub fn push(&mut self, event: AbsolutePointerEvent) -> [Option<AbsolutePointerEvent>; 2] {
+        if event.buttons != self.buttons || event.wheel_x != 0 || event.wheel_y != 0 {
+            self.buttons = event.buttons;
+            [self.pending.take(), Some(event)]
+        } else {
+            self.pending = Some(event);
+            [None, None]
+        }
+    }
+    // ------------------------=
+    // FUNC: finish
+    // DESC: Returns the newest motion after the final preserved edge.
+    // ------------------=
+    pub fn finish(&mut self) -> Option<AbsolutePointerEvent> {
+        self.pending.take()
+    }
+}
+
 impl AbsolutePointerEvent {
     // ------------------------=
     // FUNC: left_button

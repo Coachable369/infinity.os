@@ -7,13 +7,14 @@ mod crash;
 mod desktop;
 mod installer;
 mod primitives;
+mod retained_windows;
 mod template_compositor;
 
 use self::primitives::*;
 
 pub use self::bootstrap::{animation_tick, console_present, note_pointer_activity, show_splash};
 pub use self::crash::show_fatal_crash;
-pub use self::desktop::system_ui_present;
+pub use self::desktop::{system_ui_cursor, system_ui_present};
 pub use self::installer::{installer_progress_update, installer_reboot_countdown};
 
 #[derive(Clone, Copy)]
@@ -37,70 +38,12 @@ pub struct DisplayDevice {
     submitted_regions: u32,
     merged_regions: u32,
     fallback_reason: crate::ui::performance::FallbackReason,
+    recording_surface: bool,
 }
 
 const MAX_PRESENT_REGIONS: usize = 8;
 
-#[derive(Clone, Copy, Default)]
-struct PresentRegion {
-    left: usize,
-    top: usize,
-    right: usize,
-    bottom: usize,
-}
-
-impl PresentRegion {
-    // ------------------------=
-    // FUNC: intersects_or_touches
-    // DESC: Reports whether two presentation regions can be safely coalesced without a spatial gap.
-    // ------------------=
-    const fn intersects_or_touches(self, other: Self) -> bool {
-        self.left <= other.right
-            && other.left <= self.right
-            && self.top <= other.bottom
-            && other.top <= self.bottom
-    }
-
-    // ------------------------=
-    // FUNC: union
-    // DESC: Returns the smallest presentation region containing both inputs.
-    // ------------------=
-    const fn union(self, other: Self) -> Self {
-        Self {
-            left: if self.left < other.left {
-                self.left
-            } else {
-                other.left
-            },
-            top: if self.top < other.top {
-                self.top
-            } else {
-                other.top
-            },
-            right: if self.right > other.right {
-                self.right
-            } else {
-                other.right
-            },
-            bottom: if self.bottom > other.bottom {
-                self.bottom
-            } else {
-                other.bottom
-            },
-        }
-    }
-
-    // ------------------------=
-    // FUNC: contains
-    // DESC: Reports whether a pending region already covers a newly submitted region.
-    // ------------------=
-    const fn contains(self, other: Self) -> bool {
-        self.left <= other.left
-            && self.top <= other.top
-            && self.right >= other.right
-            && self.bottom >= other.bottom
-    }
-}
+use crate::ui::present_damage::Region as PresentRegion;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
 pub struct DisplayPresentDiagnostics {
@@ -113,7 +56,7 @@ pub struct DisplayPresentDiagnostics {
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-const MAX_SOFTWARE_BACK_BUFFER_PIXELS: usize = 2560 * 1600;
+const MAX_SOFTWARE_BACK_BUFFER_PIXELS: usize = 3840 * 2160;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 #[repr(align(64))]
@@ -170,6 +113,7 @@ impl DisplayDevice {
             submitted_regions: 0,
             merged_regions: 0,
             fallback_reason: crate::ui::performance::FallbackReason::InitialRender,
+            recording_surface: false,
         })
     }
 
@@ -261,46 +205,23 @@ impl DisplayDevice {
     // DESC: Adds a clipped framebuffer rectangle to the pending coherent presentation union.
     // ------------------=
     fn mark_dirty_rect(&mut self, left: usize, top: usize, width: usize, height: usize) {
+        if self.recording_surface {
+            return;
+        }
         let Some(mut submitted) = self.clipped_render_region(left, top, width, height) else {
             return;
         };
         let mut count = self.dirty_count as usize;
+        let before = count;
         self.submitted_regions = self.submitted_regions.saturating_add(1);
-        let mut index = 0;
-        while index < count {
-            if self.dirty_regions[index].contains(submitted) {
-                self.merged_regions = self.merged_regions.saturating_add(1);
-                return;
-            }
-            if self.dirty_regions[index].intersects_or_touches(submitted) {
-                self.merged_regions = self.merged_regions.saturating_add(1);
-                submitted = self.dirty_regions[index].union(submitted);
-                count -= 1;
-                self.dirty_regions[index] = self.dirty_regions[count];
-                index = 0;
-            } else {
-                index += 1;
-            }
-        }
+        let overflow =
+            crate::ui::present_damage::insert(&mut self.dirty_regions, &mut count, submitted);
+        self.merged_regions = self
+            .merged_regions
+            .saturating_add((before + 1).saturating_sub(count) as u32);
         self.dirty_count = count as u8;
-        if count < MAX_PRESENT_REGIONS {
-            self.dirty_regions[count] = submitted;
-            self.dirty_count += 1;
-            return;
-        }
-        let mut collapsed = submitted;
-        for region in &self.dirty_regions {
-            collapsed = collapsed.union(*region);
-        }
-        self.dirty_regions[0] = collapsed;
-        self.dirty_count = 1;
-        self.damage_collapses = self.damage_collapses.saturating_add(1);
-        if collapsed.left == 0
-            && collapsed.top == 0
-            && collapsed.right == self.width
-            && collapsed.bottom == self.height
-        {
-            self.fallback_reason = crate::ui::performance::FallbackReason::Fragmentation;
+        if overflow {
+            self.damage_collapses = self.damage_collapses.saturating_add(1);
         }
     }
 

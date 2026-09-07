@@ -25,6 +25,7 @@ fi
 make x86_64
 make aarch64
 make active-painter-test
+python3 tools/installed-kernel-parity-test.py
 make crash-screen-test
 make component-manifest-test
 make settings-color-test

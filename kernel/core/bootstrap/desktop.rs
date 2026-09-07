@@ -2355,7 +2355,8 @@ impl super::DisplayDevice {
         focus: usize,
         validation_error: bool,
     ) {
-        let input_variable = crate::ui::installer_layout::configuration_template_input_variable(step);
+        let input_variable =
+            crate::ui::installer_layout::configuration_template_input_variable(step);
         if input_variable != crate::ui::installer_template::InstallerTemplateVariable::None {
             if let Some(frame) = crate::ui::installer_layout::configuration_template_input_rect(
                 step,
@@ -2461,17 +2462,25 @@ impl super::DisplayDevice {
         ];
         for (index, (label, detail, icon, mode)) in rows.iter().enumerate() {
             let authored = crate::ui::installer_layout::configuration_network_row_rect(
-                index, self.width, self.height,
+                index,
+                self.width,
+                self.height,
             );
             if width == 0 && authored.is_none() {
                 continue;
             }
             let left = authored.map(|frame| frame.left).unwrap_or(left);
             let width = authored.map(|frame| frame.width).unwrap_or(width);
-            let row_top = authored.map(|frame| frame.top).unwrap_or(top + index * 58 * scale);
+            let row_top = authored
+                .map(|frame| frame.top)
+                .unwrap_or(top + index * 58 * scale);
             let row_height = authored.map(|frame| frame.height).unwrap_or(48 * scale);
             let unit = |value: usize| {
-                if authored.is_some() { (value * self.height / 1000).max(1) } else { value * scale }
+                if authored.is_some() {
+                    (value * self.height / 1000).max(1)
+                } else {
+                    value * scale
+                }
             };
             let radius = unit(10);
             let inset = unit(12);
@@ -2545,14 +2554,14 @@ impl super::DisplayDevice {
             );
             if is_selected {
                 let status: &[u8] = if snapshot
-                        .map(|value| value.connectivity != ConnectivityClass::Offline)
-                        .unwrap_or(false)
-                        && index < 2
-                    {
-                        b"ACTIVE"
-                    } else {
-                        b"SELECTED"
-                    };
+                    .map(|value| value.connectivity != ConnectivityClass::Offline)
+                    .unwrap_or(false)
+                    && index < 2
+                {
+                    b"ACTIVE"
+                } else {
+                    b"SELECTED"
+                };
                 let status_width = self.template_text_width(status, font_size, false);
                 self.template_text(
                     left + width.saturating_sub(inset + status_width),
@@ -2569,11 +2578,14 @@ impl super::DisplayDevice {
         }
         if validation_error {
             let last = crate::ui::installer_layout::configuration_network_row_rect(
-                2, self.width, self.height,
+                2,
+                self.width,
+                self.height,
             );
             self.ui_text(
                 last.map(|frame| frame.left).unwrap_or(left),
-                last.map(|frame| frame.bottom() + 8 * scale).unwrap_or(top + 178 * scale),
+                last.map(|frame| frame.bottom() + 8 * scale)
+                    .unwrap_or(top + 178 * scale),
                 b"That connection is unavailable. Connect hardware or choose Offline.",
                 255,
                 118,
@@ -2800,6 +2812,49 @@ impl super::DisplayDevice {
         app_menu: usize,
     ) {
         let task_menu_open = app_menu == 10;
+        if !self.recording_surface {
+            let rect = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .desktop_app_window_geometry(
+                    window_x,
+                    window_y,
+                    window_width,
+                    window_height,
+                    maximized,
+                )
+                .window;
+            self.retained_window(
+                (screen.saturating_sub(8) + 1) as usize,
+                (
+                    rect.x.max(0) as usize,
+                    rect.y.max(0) as usize,
+                    rect.width as usize,
+                    rect.height as usize,
+                ),
+                |target| {
+                    target.desktop_native_app_window(
+                        screen,
+                        input,
+                        output_lines,
+                        output_lengths,
+                        output_count,
+                        window_x,
+                        window_y,
+                        window_width,
+                        window_height,
+                        maximized,
+                        editor_saved,
+                        false,
+                        editor_scroll_row,
+                        editor_dialog,
+                        editor_dialog_input,
+                        editor_dialog_focus,
+                        task_manager_selected,
+                        app_menu,
+                    )
+                },
+            );
+            return;
+        }
         let scale = self.ui_scale().max(1);
         let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
             .desktop_app_window_geometry(
@@ -3609,8 +3664,7 @@ impl super::DisplayDevice {
                 230,
                 1,
             );
-            let (cpu, cpu_len) =
-                Self::task_manager_percent_text(task.cpu_share_percent as usize);
+            let (cpu, cpu_len) = Self::task_manager_percent_text(task.cpu_share_percent as usize);
             let (memory, memory_len) = Self::task_manager_bytes_text(task.usage.memory_bytes);
             let (disk, disk_len) = Self::task_manager_bytes_text(task.installed_bytes);
             self.ui_text(
@@ -4755,6 +4809,23 @@ impl super::DisplayDevice {
         settings_window: crate::ui::system_layout::SettingsWindowState,
         scale: usize,
     ) {
+        let caller_clip = self.render_clip;
+        if !self.recording_surface {
+            let rect = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .settings_window_geometry(settings_window)
+                .window;
+            self.retained_window(
+                4,
+                (
+                    rect.x.max(0) as usize,
+                    rect.y.max(0) as usize,
+                    rect.width as usize,
+                    rect.height as usize,
+                ),
+                |target| target.render_settings_window(focus, input, settings_window, scale),
+            );
+            return;
+        }
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
         let geometry = layout.settings_window_geometry_for_section(settings_window, focus);
         let left = geometry.window.x.max(0) as usize;
@@ -4852,7 +4923,7 @@ impl super::DisplayDevice {
             b"Storage",
             b"About",
         ];
-        self.set_render_clip(
+        self.intersect_render_clip(
             geometry.navigation.x.max(0) as usize,
             geometry.navigation.y.max(0) as usize,
             geometry.navigation.width as usize,
@@ -4895,7 +4966,7 @@ impl super::DisplayDevice {
                 1,
             );
         }
-        self.clear_render_clip();
+        self.render_clip = caller_clip;
         let content_x = geometry.content.x.max(0) as usize;
         let content_y = geometry.content.y.max(0) as usize;
         self.ui_text_strong(
@@ -4954,14 +5025,14 @@ impl super::DisplayDevice {
             )
         });
         if focus == 6 {
-            self.set_render_clip(
+            self.intersect_render_clip(
                 geometry.viewport.x.max(0) as usize,
                 geometry.viewport.y.max(0) as usize,
                 geometry.viewport.width as usize,
                 geometry.viewport.height as usize,
             );
             self.render_network_settings_dashboard(settings_window, scale, connectivity, input);
-            self.clear_render_clip();
+            self.render_clip = caller_clip;
             self.render_settings_overflow_chrome(
                 geometry,
                 settings_window,
@@ -4971,14 +5042,14 @@ impl super::DisplayDevice {
             return;
         }
         if focus == 7 {
-            self.set_render_clip(
+            self.intersect_render_clip(
                 geometry.viewport.x.max(0) as usize,
                 geometry.viewport.y.max(0) as usize,
                 geometry.viewport.width as usize,
                 geometry.viewport.height as usize,
             );
             self.render_node_settings_dashboard(settings_window, scale);
-            self.clear_render_clip();
+            self.render_clip = caller_clip;
             self.render_settings_overflow_chrome(
                 geometry,
                 settings_window,
@@ -5086,7 +5157,7 @@ impl super::DisplayDevice {
                 (b"", b""),
             ],
         };
-        self.set_render_clip(
+        self.intersect_render_clip(
             geometry.viewport.x.max(0) as usize,
             geometry.viewport.y.max(0) as usize,
             geometry.viewport.width as usize,
@@ -5327,7 +5398,7 @@ impl super::DisplayDevice {
                 }
             }
         }
-        self.clear_render_clip();
+        self.render_clip = caller_clip;
         self.render_settings_overflow_chrome(
             geometry,
             settings_window,
@@ -7834,84 +7905,601 @@ impl super::DisplayDevice {
             self.outline_rounded_rect(left, top, width, height, 10 * scale, 94, 184, 239);
         }
         if window_visible {
-            let navigator_state =
-                crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
-            let navigator_list_view = navigator_state
-                .map(|state| state.view_mode == crate::runtime::object_navigation::ViewMode::List)
-                .unwrap_or(true);
-            let (browser_left, browser_top, browser_width, browser_height) = if window_maximized {
-                let left = 10 * scale;
-                let top = (46 * scale).min(self.height / 12).max(40) + 10 * scale;
-                let bottom = self.height.saturating_sub(90 * scale);
-                (
-                    left,
-                    top,
-                    self.width.saturating_sub(left * 2),
-                    bottom.saturating_sub(top),
+            let bounds = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .home_window_geometry_sized(
+                    window_x,
+                    window_y,
+                    window_width,
+                    window_height,
+                    window_maximized,
+                );
+            self.retained_window(0, bounds, |target| {
+                target.paint_navigator_window(
+                    scale,
+                    window_x,
+                    window_y,
+                    window_width,
+                    window_height,
+                    window_maximized,
+                    home_location,
+                    dragging_item,
                 )
-            } else {
-                crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-                    .home_window_geometry_sized(
-                        window_x,
-                        window_y,
-                        window_width,
-                        window_height,
-                        false,
-                    )
-            };
-            self.glass_panel(
-                browser_left,
-                browser_top,
-                browser_width,
-                browser_height,
-                false,
-            );
-            let (header_r, header_g, header_b) =
-                self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
-            let (selection_r, selection_g, selection_b) =
-                self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
-            let title_h = 34 * scale;
-            self.fill_rect_alpha(
-                browser_left,
-                browser_top,
-                browser_width,
-                title_h,
-                header_r,
-                header_g,
-                header_b,
-                225,
-            );
-            let title_center_y = browser_top + title_h / 2;
-            self.small_infinity_mark(browser_left + 20 * scale, title_center_y, 24 * scale);
-            self.ui_text_strong(
-                browser_left + 38 * scale,
+            });
+        }
+
+        self.desktop_dock(scale, launcher_open);
+    }
+
+    // ------------------------=
+    // FUNC: paint_navigator_window
+    // DESC: Rasterizes the active navigator into its desktop-owned retained surface after invalidation.
+    // ------------------=
+    fn paint_navigator_window(
+        &mut self,
+        scale: usize,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        window_maximized: bool,
+        home_location: usize,
+        dragging_item: Option<usize>,
+    ) {
+        let navigator_state =
+            crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
+        let navigator_list_view = navigator_state
+            .map(|state| state.view_mode == crate::runtime::object_navigation::ViewMode::List)
+            .unwrap_or(true);
+        let (browser_left, browser_top, browser_width, browser_height) = if window_maximized {
+            let left = 10 * scale;
+            let top = (46 * scale).min(self.height / 12).max(40) + 10 * scale;
+            let bottom = self.height.saturating_sub(90 * scale);
+            (
+                left,
+                top,
+                self.width.saturating_sub(left * 2),
+                bottom.saturating_sub(top),
+            )
+        } else {
+            crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .home_window_geometry_sized(window_x, window_y, window_width, window_height, false)
+        };
+        self.glass_panel(
+            browser_left,
+            browser_top,
+            browser_width,
+            browser_height,
+            false,
+        );
+        let (header_r, header_g, header_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
+        let (selection_r, selection_g, selection_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
+        let title_h = 34 * scale;
+        self.fill_rect_alpha(
+            browser_left,
+            browser_top,
+            browser_width,
+            title_h,
+            header_r,
+            header_g,
+            header_b,
+            225,
+        );
+        let title_center_y = browser_top + title_h / 2;
+        self.small_infinity_mark(browser_left + 20 * scale, title_center_y, 24 * scale);
+        self.ui_text_strong(
+            browser_left + 38 * scale,
+            title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
+            b"File Navigator",
+            226,
+            237,
+            245,
+            1,
+        );
+        for (index, (label, offset)) in [
+            (b"File".as_slice(), 160usize),
+            (b"Performance".as_slice(), 211),
+            (b"View".as_slice(), 322),
+            (b"Navigate".as_slice(), 373),
+            (b"Help".as_slice(), 458),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let selected = navigator_state
+                .and_then(|state| state.menu_open)
+                .map(|menu| menu.index() == index + 1)
+                .unwrap_or(false);
+            if selected {
+                self.fill_rounded_rect_alpha(
+                    browser_left + offset * scale - 5 * scale,
+                    browser_top + 4 * scale,
+                    (label.len() * 8 + 10) * scale,
+                    26 * scale,
+                    6 * scale,
+                    selection_r,
+                    selection_g,
+                    selection_b,
+                    190,
+                );
+            }
+            self.ui_text(
+                browser_left + offset * scale,
                 title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
-                b"File Navigator",
-                226,
-                237,
-                245,
+                label,
+                221,
+                233,
+                241,
                 1,
             );
-            for (index, (label, offset)) in [
-                (b"File".as_slice(), 160usize),
-                (b"Performance".as_slice(), 211),
-                (b"View".as_slice(), 322),
-                (b"Navigate".as_slice(), 373),
-                (b"Help".as_slice(), 458),
-            ]
-            .iter()
-            .enumerate()
-            {
-                let selected = navigator_state
-                    .and_then(|state| state.menu_open)
-                    .map(|menu| menu.index() == index + 1)
-                    .unwrap_or(false);
-                if selected {
+        }
+        for index in 0..3usize {
+            let control_size = 20 * scale;
+            let control_left =
+                browser_left + browser_width.saturating_sub((28 + (2 - index) * 27) * scale);
+            self.fill_rounded_rect_alpha(
+                control_left,
+                title_center_y.saturating_sub(control_size / 2),
+                control_size,
+                control_size,
+                6 * scale,
+                13,
+                28,
+                43,
+                235,
+            );
+            self.outline_rounded_rect(
+                control_left,
+                title_center_y.saturating_sub(control_size / 2),
+                control_size,
+                control_size,
+                6 * scale,
+                63,
+                84,
+                101,
+            );
+            let center_x = control_left + control_size / 2;
+            let center_y = title_center_y;
+            if index == 0 {
+                self.icon_line(
+                    (center_x - 5 * scale) as i32,
+                    center_y as i32,
+                    (center_x + 5 * scale) as i32,
+                    center_y as i32,
+                    (181, 199, 212),
+                    control_size,
+                );
+            } else if index == 1 {
+                self.outline_rounded_rect(
+                    center_x - 5 * scale,
+                    center_y - 5 * scale,
+                    10 * scale,
+                    10 * scale,
+                    2 * scale,
+                    181,
+                    199,
+                    212,
+                );
+            } else {
+                self.icon_line(
+                    (center_x - 5 * scale) as i32,
+                    (center_y - 5 * scale) as i32,
+                    (center_x + 5 * scale) as i32,
+                    (center_y + 5 * scale) as i32,
+                    (209, 220, 229),
+                    control_size,
+                );
+                self.icon_line(
+                    (center_x + 5 * scale) as i32,
+                    (center_y - 5 * scale) as i32,
+                    (center_x - 5 * scale) as i32,
+                    (center_y + 5 * scale) as i32,
+                    (209, 220, 229),
+                    control_size,
+                );
+            }
+        }
+        if !window_maximized {
+            let (outline_r, outline_g, outline_b) =
+                self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+            for offset in [5usize, 9, 13] {
+                self.icon_line(
+                    (browser_left + browser_width - offset * scale) as i32,
+                    (browser_top + browser_height - 3 * scale) as i32,
+                    (browser_left + browser_width - 3 * scale) as i32,
+                    (browser_top + browser_height - offset * scale) as i32,
+                    (outline_r, outline_g, outline_b),
+                    16 * scale,
+                );
+            }
+        }
+        let tool_top = browser_top + title_h;
+        self.fill_rect_alpha(
+            browser_left,
+            tool_top,
+            browser_width,
+            38 * scale,
+            4,
+            15,
+            27,
+            216,
+        );
+        for (index, role) in [45usize, 46, 47].iter().enumerate() {
+            let enabled = navigator_state
+                .map(|state| match index {
+                    0 => !state.back_namespace_ref.as_bytes().is_empty(),
+                    1 => !state.forward_namespace_ref.as_bytes().is_empty(),
+                    _ => state.active_namespace_ref.as_bytes() != b"/",
+                })
+                .unwrap_or(false);
+            if !self.themed_icon(
+                browser_left + (20 + index * 28) * scale,
+                tool_top + 19 * scale,
+                *role,
+                18 * scale,
+            ) {
+                let center_x = (browser_left + (20 + index * 28) * scale) as i32;
+                let center_y = (tool_top + 19 * scale) as i32;
+                let color = if enabled {
+                    (184, 224, 245)
+                } else {
+                    (66, 91, 109)
+                };
+                if index == 2 {
+                    self.icon_line(
+                        center_x - 5 * scale as i32,
+                        center_y,
+                        center_x,
+                        center_y - 5 * scale as i32,
+                        color,
+                        18 * scale,
+                    );
+                    self.icon_line(
+                        center_x,
+                        center_y - 5 * scale as i32,
+                        center_x + 5 * scale as i32,
+                        center_y,
+                        color,
+                        18 * scale,
+                    );
+                } else {
+                    let direction = if index == 0 { -1 } else { 1 };
+                    self.icon_line(
+                        center_x,
+                        center_y - 5 * scale as i32,
+                        center_x + direction * 5 * scale as i32,
+                        center_y,
+                        color,
+                        18 * scale,
+                    );
+                    self.icon_line(
+                        center_x + direction * 5 * scale as i32,
+                        center_y,
+                        center_x,
+                        center_y + 5 * scale as i32,
+                        color,
+                        18 * scale,
+                    );
+                }
+            }
+        }
+        let location_left = browser_left + 100 * scale;
+        let mode_controls_width = 96 * scale;
+        let location_width = browser_width.saturating_sub(154 * scale + mode_controls_width);
+        self.fill_rounded_rect_alpha(
+            location_left,
+            tool_top + 5 * scale,
+            location_width,
+            28 * scale,
+            8 * scale,
+            4,
+            15,
+            27,
+            238,
+        );
+        let location_editing = navigator_state
+            .map(|state| state.location_editing)
+            .unwrap_or(false);
+        self.outline_rounded_rect(
+            location_left,
+            tool_top + 5 * scale,
+            location_width,
+            28 * scale,
+            8 * scale,
+            if location_editing { 74 } else { 38 },
+            if location_editing { 190 } else { 62 },
+            if location_editing { 235 } else { 81 },
+        );
+        let location_names: [&[u8]; 9] = [
+            b"/home/default",
+            b"/home/default",
+            b"/home/default/documents",
+            b"/home/default/downloads",
+            b"/home/default/pictures",
+            b"/home/default/media",
+            b"/home/default/media",
+            b"/home/default/projects",
+            b"/trash",
+        ];
+        self.ui_text(
+            location_left + 14 * scale,
+            tool_top + 9 * scale,
+            navigator_state
+                .as_ref()
+                .map(|state| {
+                    if state.location_editing {
+                        state.editor_text.as_bytes()
+                    } else {
+                        state.active_namespace_ref.as_bytes()
+                    }
+                })
+                .unwrap_or(location_names[home_location.min(8)]),
+            193,
+            211,
+            224,
+            1,
+        );
+        if location_editing {
+            let editing_text = navigator_state
+                .as_ref()
+                .map(|state| state.editor_text.as_bytes())
+                .unwrap_or(b"");
+            self.text_field_caret(
+                location_left + 14 * scale,
+                tool_top + 5 * scale,
+                28 * scale,
+                editing_text,
+                true,
+                2,
+            );
+        }
+        for (index, label) in [b"List".as_slice(), b"Grid"].iter().enumerate() {
+            let control_left =
+                browser_left + browser_width.saturating_sub((100 - index * 46) * scale);
+            let control_width = 42 * scale;
+            let selected =
+                (index == 0 && navigator_list_view) || (index == 1 && !navigator_list_view);
+            self.fill_rounded_rect_alpha(
+                control_left,
+                tool_top + 6 * scale,
+                control_width,
+                26 * scale,
+                7 * scale,
+                if selected { selection_r } else { 9 },
+                if selected { selection_g } else { 29 },
+                if selected { selection_b } else { 45 },
+                230,
+            );
+            self.ui_text_centered(
+                control_left,
+                control_width,
+                tool_top + 10 * scale,
+                label,
+                213,
+                231,
+                241,
+                1,
+            );
+        }
+        let sidebar_w = browser_width * 27 / 100;
+        self.fill_rect_alpha(
+            browser_left,
+            tool_top + 38 * scale,
+            sidebar_w,
+            browser_height.saturating_sub(title_h + 38 * scale),
+            5,
+            18,
+            31,
+            216,
+        );
+        self.ui_text(
+            browser_left + 14 * scale,
+            tool_top + 51 * scale,
+            b"FAVORITES",
+            90,
+            191,
+            230,
+            1,
+        );
+        for (index, item) in [
+            b"Home".as_slice(),
+            b"Personal Space",
+            b"Documents",
+            b"Downloads",
+            b"Pictures",
+            b"Music",
+            b"Videos",
+            b"Projects",
+            b"Trash",
+            b"",
+            b"DEVICES",
+            b"Infinity Storage",
+            b"",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let item_y = tool_top + (72 + index * 20) * scale;
+            if index == home_location {
+                self.fill_rect_alpha(
+                    browser_left + 7,
+                    item_y - 3,
+                    sidebar_w - 14,
+                    20 * scale,
+                    selection_r,
+                    selection_g,
+                    selection_b,
+                    218,
+                );
+            }
+            if !item.is_empty() && index != 10 {
+                let icon_kind = match index {
+                    0 => 2,
+                    1 => 8,
+                    2 => 5,
+                    3 => 4,
+                    4 => 13,
+                    5 => 7,
+                    6 => 11,
+                    7 => 8,
+                    8 => 9,
+                    11 | 12 => 11,
+                    _ => 0,
+                };
+                self.authentication_icon(
+                    browser_left + 16 * scale,
+                    item_y + 8 * scale,
+                    icon_kind,
+                    13 * scale,
+                    index == home_location,
+                );
+            }
+            self.ui_text(
+                browser_left + (if index == 10 { 16 } else { 30 }) * scale,
+                item_y,
+                item,
+                if index == 10 { 90 } else { 204 },
+                if index == 10 { 191 } else { 224 },
+                236,
+                1,
+            );
+        }
+        let grid_x = browser_left + sidebar_w + 28 * scale;
+        let grid_y = tool_top + 58 * scale;
+        let gap = (browser_width.saturating_sub(sidebar_w + 55 * scale)) / 4;
+        let tile_step = (self.height / 23).max(34) + 40 * scale;
+        let active_path = navigator_state
+            .map(|state| state.active_namespace_ref)
+            .unwrap_or_else(|| {
+                crate::runtime::object_navigation::ByteText::new(b"/home/default").unwrap()
+            });
+        let object_count =
+            crate::storage::namespace_child_count(active_path.as_bytes()).unwrap_or(0);
+        let child_count = object_count.saturating_add(
+            crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT,
+        );
+        let selected_index = navigator_state
+            .map(|state| state.selected_index)
+            .unwrap_or(crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION);
+        let scroll_offset = navigator_state
+            .map(|state| state.scroll_offset)
+            .unwrap_or(0);
+        if navigator_list_view {
+            self.ui_text_strong(
+                grid_x,
+                grid_y.saturating_sub(22 * scale),
+                b"NAME",
+                132,
+                180,
+                207,
+                1,
+            );
+            self.ui_text_strong(
+                grid_x + gap * 2,
+                grid_y.saturating_sub(22 * scale),
+                b"KIND",
+                132,
+                180,
+                207,
+                1,
+            );
+            self.ui_text_strong(
+                grid_x + gap * 3,
+                grid_y.saturating_sub(22 * scale),
+                b"SIZE",
+                132,
+                180,
+                207,
+                1,
+            );
+        }
+        let viewport = browser_height.saturating_sub(150 * scale);
+        let extent = if navigator_list_view {
+            34 * scale
+        } else {
+            tile_step
+        };
+        let (first, end) = crate::runtime::object_navigation::FileNavigatorState::visible_range(
+            child_count,
+            scroll_offset,
+            viewport,
+            extent,
+        );
+        for index in first..end {
+            let navigation_name: Option<&[u8]> = match index {
+                0 => Some(b"."),
+                1 => Some(b".."),
+                _ => None,
+            };
+            let entry = if navigation_name.is_none() {
+                crate::storage::namespace_child_nth_sorted(
+                    active_path.as_bytes(),
+                    index.saturating_sub(
+                        crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT,
+                    ),
+                    navigator_state
+                        .map(|state| state.sort_descending)
+                        .unwrap_or(false),
+                )
+                .ok()
+                .flatten()
+            } else {
+                None
+            };
+            if navigation_name.is_none() && entry.is_none() {
+                continue;
+            }
+            let path = entry
+                .as_ref()
+                .map(|value| &value.path[..value.path_len as usize]);
+            let metadata = path
+                .and_then(|value| crate::storage::object_inspect_path(value).ok())
+                .map(|value| value.0);
+            let kind = if navigation_name.is_some() {
+                Some(crate::storage::object::ObjectType::NamespaceNode)
+            } else {
+                metadata.map(|value| value.kind)
+            };
+            let icon_role = if kind == Some(crate::storage::object::ObjectType::NamespaceNode) {
+                3
+            } else {
+                4
+            };
+            let base_name = navigation_name.unwrap_or_else(|| {
+                crate::runtime::object_navigation::namespace_basename(path.unwrap_or(b"/"))
+            });
+            let is_renaming = navigator_state
+                .map(|state| state.rename_editing && state.selected_index as usize == index)
+                .unwrap_or(false);
+            let name = if is_renaming {
+                navigator_state
+                    .as_ref()
+                    .map(|state| state.editor_text.as_bytes())
+                    .unwrap_or(base_name)
+            } else {
+                base_name
+            };
+            let column = index % 4;
+            let row = (index - first) / 4;
+            if navigator_list_view {
+                let row_y = grid_y + (index - first) * 34 * scale;
+                self.fill_rect_alpha(
+                    grid_x.saturating_sub(18 * scale),
+                    row_y.saturating_sub(7 * scale),
+                    browser_width.saturating_sub(sidebar_w + 48 * scale),
+                    30 * scale,
+                    8,
+                    28,
+                    44,
+                    if index % 2 == 0 { 170 } else { 105 },
+                );
+                if selected_index as usize == index {
                     self.fill_rounded_rect_alpha(
-                        browser_left + offset * scale - 5 * scale,
-                        browser_top + 4 * scale,
-                        (label.len() * 8 + 10) * scale,
-                        26 * scale,
+                        grid_x.saturating_sub(18 * scale),
+                        row_y.saturating_sub(7 * scale),
+                        browser_width.saturating_sub(sidebar_w + 48 * scale),
+                        30 * scale,
                         6 * scale,
                         selection_r,
                         selection_g,
@@ -7919,1034 +8507,540 @@ impl super::DisplayDevice {
                         190,
                     );
                 }
+                let _ = self.themed_icon(grid_x, row_y + 7 * scale, icon_role, 22 * scale);
+                self.ui_text(grid_x + 22 * scale, row_y, name, 215, 229, 238, 1);
+                if is_renaming {
+                    self.text_field_caret(
+                        grid_x + 22 * scale,
+                        row_y.saturating_sub(7 * scale),
+                        30 * scale,
+                        name,
+                        true,
+                        2,
+                    );
+                }
+                let kind_name = match kind {
+                    Some(crate::storage::object::ObjectType::NamespaceNode) => b"Folder".as_slice(),
+                    Some(crate::storage::object::ObjectType::Text) => b"Text document".as_slice(),
+                    Some(crate::storage::object::ObjectType::Project) => b"Project".as_slice(),
+                    Some(crate::storage::object::ObjectType::Collection) => {
+                        b"Collection".as_slice()
+                    }
+                    _ => b"Object".as_slice(),
+                };
+                self.ui_text(grid_x + gap * 2, row_y, kind_name, 164, 190, 205, 1);
+                let mut size_text = [0u8; 16];
+                let size_len = navigator_decimal(
+                    &mut size_text,
+                    metadata
+                        .map(|value| value.logical_size as usize)
+                        .unwrap_or(0),
+                );
                 self.ui_text(
-                    browser_left + offset * scale,
-                    title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
-                    label,
-                    221,
-                    233,
-                    241,
+                    grid_x + gap * 3,
+                    row_y,
+                    &size_text[..size_len],
+                    164,
+                    190,
+                    205,
+                    1,
+                );
+            } else {
+                let center_x = grid_x + column * gap;
+                let center_y = grid_y + row * tile_step;
+                if selected_index as usize == index {
+                    self.fill_rounded_rect_alpha(
+                        center_x.saturating_sub(6 * scale),
+                        center_y.saturating_sub(8 * scale),
+                        gap.max(44 * scale),
+                        tile_step.max(54 * scale),
+                        8 * scale,
+                        selection_r,
+                        selection_g,
+                        selection_b,
+                        190,
+                    );
+                }
+                let _ = self.themed_icon(center_x, center_y, icon_role, 52 * scale);
+                self.ui_text_centered(
+                    center_x.saturating_sub(gap / 2),
+                    gap,
+                    center_y + 34 * scale,
+                    name,
+                    215,
+                    229,
+                    238,
+                    1,
+                );
+                if is_renaming {
+                    let name_width = self.ui_text_width(name, 1);
+                    self.text_field_caret(
+                        center_x.saturating_sub(name_width / 2),
+                        center_y + 28 * scale,
+                        28 * scale,
+                        name,
+                        true,
+                        2,
+                    );
+                }
+            }
+        }
+        let status_top = browser_top + browser_height.saturating_sub(24 * scale);
+        self.fill_rect_alpha(
+            browser_left + sidebar_w,
+            status_top,
+            browser_width.saturating_sub(sidebar_w),
+            24 * scale,
+            4,
+            15,
+            27,
+            220,
+        );
+        let mut count_text = [0u8; 24];
+        let count_len = navigator_decimal(&mut count_text, object_count);
+        self.ui_text(
+            browser_left + sidebar_w + 14 * scale,
+            status_top + 5 * scale,
+            &count_text[..count_len],
+            142,
+            185,
+            210,
+            1,
+        );
+        self.ui_text(
+            browser_left + sidebar_w + (14 + count_len * 8) * scale,
+            status_top + 5 * scale,
+            if object_count == 1 {
+                b" item"
+            } else {
+                b" items"
+            },
+            142,
+            185,
+            210,
+            1,
+        );
+        if dragging_item == Some(6) {
+            self.ui_text(
+                browser_left + sidebar_w + 28 * scale,
+                browser_top + browser_height.saturating_sub(28 * scale),
+                b"DROP NOTES.TXT ON A SIDEBAR LOCATION",
+                91,
+                211,
+                250,
+                1,
+            );
+        }
+        if navigator_state
+            .map(|state| state.inspector_open)
+            .unwrap_or(false)
+        {
+            let preview_width = (220 * scale).min(browser_width.saturating_sub(sidebar_w) / 2);
+            let preview_left = browser_left + browser_width.saturating_sub(preview_width);
+            let preview_top = tool_top + 38 * scale;
+            let preview_height = browser_height.saturating_sub(title_h + 62 * scale);
+            self.fill_rect_alpha(
+                preview_left,
+                preview_top,
+                preview_width,
+                preview_height,
+                5,
+                20,
+                34,
+                238,
+            );
+            self.outline_rounded_rect(
+                preview_left,
+                preview_top,
+                preview_width,
+                preview_height,
+                8 * scale,
+                55,
+                132,
+                177,
+            );
+            self.ui_text_strong(
+                preview_left + 18 * scale,
+                preview_top + 18 * scale,
+                b"PREVIEW",
+                91,
+                205,
+                247,
+                1,
+            );
+            let selected = navigator_state
+                .map(|state| state.selected_index)
+                .unwrap_or(crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION);
+            if selected == crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION {
+                self.ui_text(
+                    preview_left + 18 * scale,
+                    preview_top + 54 * scale,
+                    b"Select an object to inspect it.",
+                    168,
+                    191,
+                    207,
+                    1,
+                );
+            } else {
+                self.ui_text(
+                    preview_left + 18 * scale,
+                    preview_top + 54 * scale,
+                    b"Selected object",
+                    213,
+                    228,
+                    238,
+                    1,
+                );
+                let mut selection_text = [0u8; 18];
+                let selection_len = navigator_decimal(&mut selection_text, selected as usize + 1);
+                self.ui_text(
+                    preview_left + 18 * scale,
+                    preview_top + 80 * scale,
+                    &selection_text[..selection_len],
+                    139,
+                    184,
+                    211,
                     1,
                 );
             }
-            for index in 0..3usize {
-                let control_size = 20 * scale;
-                let control_left =
-                    browser_left + browser_width.saturating_sub((28 + (2 - index) * 27) * scale);
-                self.fill_rounded_rect_alpha(
-                    control_left,
-                    title_center_y.saturating_sub(control_size / 2),
-                    control_size,
-                    control_size,
-                    6 * scale,
-                    13,
-                    28,
-                    43,
-                    235,
-                );
-                self.outline_rounded_rect(
-                    control_left,
-                    title_center_y.saturating_sub(control_size / 2),
-                    control_size,
-                    control_size,
-                    6 * scale,
-                    63,
-                    84,
-                    101,
-                );
-                let center_x = control_left + control_size / 2;
-                let center_y = title_center_y;
-                if index == 0 {
-                    self.icon_line(
-                        (center_x - 5 * scale) as i32,
-                        center_y as i32,
-                        (center_x + 5 * scale) as i32,
-                        center_y as i32,
-                        (181, 199, 212),
-                        control_size,
-                    );
-                } else if index == 1 {
-                    self.outline_rounded_rect(
-                        center_x - 5 * scale,
-                        center_y - 5 * scale,
-                        10 * scale,
-                        10 * scale,
-                        2 * scale,
-                        181,
-                        199,
-                        212,
-                    );
-                } else {
-                    self.icon_line(
-                        (center_x - 5 * scale) as i32,
-                        (center_y - 5 * scale) as i32,
-                        (center_x + 5 * scale) as i32,
-                        (center_y + 5 * scale) as i32,
-                        (209, 220, 229),
-                        control_size,
-                    );
-                    self.icon_line(
-                        (center_x + 5 * scale) as i32,
-                        (center_y - 5 * scale) as i32,
-                        (center_x - 5 * scale) as i32,
-                        (center_y + 5 * scale) as i32,
-                        (209, 220, 229),
-                        control_size,
-                    );
-                }
-            }
-            if !window_maximized {
-                let (outline_r, outline_g, outline_b) =
-                    self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-                for offset in [5usize, 9, 13] {
-                    self.icon_line(
-                        (browser_left + browser_width - offset * scale) as i32,
-                        (browser_top + browser_height - 3 * scale) as i32,
-                        (browser_left + browser_width - 3 * scale) as i32,
-                        (browser_top + browser_height - offset * scale) as i32,
-                        (outline_r, outline_g, outline_b),
-                        16 * scale,
-                    );
-                }
-            }
-            let tool_top = browser_top + title_h;
-            self.fill_rect_alpha(
-                browser_left,
-                tool_top,
-                browser_width,
-                38 * scale,
-                4,
-                15,
-                27,
-                216,
-            );
-            for (index, role) in [45usize, 46, 47].iter().enumerate() {
-                let enabled = navigator_state
-                    .map(|state| match index {
-                        0 => !state.back_namespace_ref.as_bytes().is_empty(),
-                        1 => !state.forward_namespace_ref.as_bytes().is_empty(),
-                        _ => state.active_namespace_ref.as_bytes() != b"/",
-                    })
-                    .unwrap_or(false);
-                if !self.themed_icon(
-                    browser_left + (20 + index * 28) * scale,
-                    tool_top + 19 * scale,
-                    *role,
-                    18 * scale,
-                ) {
-                    let center_x = (browser_left + (20 + index * 28) * scale) as i32;
-                    let center_y = (tool_top + 19 * scale) as i32;
-                    let color = if enabled {
-                        (184, 224, 245)
-                    } else {
-                        (66, 91, 109)
-                    };
-                    if index == 2 {
-                        self.icon_line(
-                            center_x - 5 * scale as i32,
-                            center_y,
-                            center_x,
-                            center_y - 5 * scale as i32,
-                            color,
-                            18 * scale,
-                        );
-                        self.icon_line(
-                            center_x,
-                            center_y - 5 * scale as i32,
-                            center_x + 5 * scale as i32,
-                            center_y,
-                            color,
-                            18 * scale,
-                        );
-                    } else {
-                        let direction = if index == 0 { -1 } else { 1 };
-                        self.icon_line(
-                            center_x,
-                            center_y - 5 * scale as i32,
-                            center_x + direction * 5 * scale as i32,
-                            center_y,
-                            color,
-                            18 * scale,
-                        );
-                        self.icon_line(
-                            center_x + direction * 5 * scale as i32,
-                            center_y,
-                            center_x,
-                            center_y + 5 * scale as i32,
-                            color,
-                            18 * scale,
-                        );
-                    }
-                }
-            }
-            let location_left = browser_left + 100 * scale;
-            let mode_controls_width = 96 * scale;
-            let location_width = browser_width.saturating_sub(154 * scale + mode_controls_width);
+        }
+        if let Some(context) = navigator_state.filter(|state| state.context_menu_open) {
+            let menu = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .file_navigator_context_geometry(context.context_x, context.context_y);
+            let menu_left = menu.x.max(0) as usize;
+            let menu_top = menu.y.max(0) as usize;
+            let object_menu = context.context_item
+                != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION;
+            let labels: [&[u8]; 4] = if object_menu {
+                [b"Open", b"Rename", b"Duplicate", b"Move to Trash"]
+            } else {
+                [b"New Folder", b"List View", b"Grid View", b"Sort by Name"]
+            };
             self.fill_rounded_rect_alpha(
-                location_left,
-                tool_top + 5 * scale,
-                location_width,
-                28 * scale,
+                menu_left,
+                menu_top,
+                190 * scale,
+                120 * scale,
                 8 * scale,
-                4,
-                15,
-                27,
-                238,
+                5,
+                18,
+                31,
+                246,
             );
-            let location_editing = navigator_state
-                .map(|state| state.location_editing)
-                .unwrap_or(false);
             self.outline_rounded_rect(
-                location_left,
-                tool_top + 5 * scale,
-                location_width,
-                28 * scale,
+                menu_left,
+                menu_top,
+                190 * scale,
+                148 * scale,
                 8 * scale,
-                if location_editing { 74 } else { 38 },
-                if location_editing { 190 } else { 62 },
-                if location_editing { 235 } else { 81 },
+                73,
+                180,
+                229,
             );
-            let location_names: [&[u8]; 9] = [
-                b"/home/default",
-                b"/home/default",
-                b"/home/default/documents",
-                b"/home/default/downloads",
-                b"/home/default/pictures",
-                b"/home/default/media",
-                b"/home/default/media",
-                b"/home/default/projects",
-                b"/trash",
-            ];
-            self.ui_text(
-                location_left + 14 * scale,
-                tool_top + 9 * scale,
-                navigator_state
-                    .as_ref()
-                    .map(|state| {
-                        if state.location_editing {
-                            state.editor_text.as_bytes()
-                        } else {
-                            state.active_namespace_ref.as_bytes()
-                        }
-                    })
-                    .unwrap_or(location_names[home_location.min(8)]),
-                193,
-                211,
-                224,
-                1,
-            );
-            if location_editing {
-                let editing_text = navigator_state
-                    .as_ref()
-                    .map(|state| state.editor_text.as_bytes())
-                    .unwrap_or(b"");
-                self.text_field_caret(
-                    location_left + 14 * scale,
-                    tool_top + 5 * scale,
-                    28 * scale,
-                    editing_text,
-                    true,
-                    2,
-                );
-            }
-            for (index, label) in [b"List".as_slice(), b"Grid"].iter().enumerate() {
-                let control_left =
-                    browser_left + browser_width.saturating_sub((100 - index * 46) * scale);
-                let control_width = 42 * scale;
-                let selected =
-                    (index == 0 && navigator_list_view) || (index == 1 && !navigator_list_view);
-                self.fill_rounded_rect_alpha(
-                    control_left,
-                    tool_top + 6 * scale,
-                    control_width,
-                    26 * scale,
-                    7 * scale,
-                    if selected { selection_r } else { 9 },
-                    if selected { selection_g } else { 29 },
-                    if selected { selection_b } else { 45 },
-                    230,
-                );
-                self.ui_text_centered(
-                    control_left,
-                    control_width,
-                    tool_top + 10 * scale,
+            for (index, label) in labels.iter().enumerate() {
+                let row_top = menu_top + (6 + index * 28) * scale;
+                self.ui_text(
+                    menu_left + 14 * scale,
+                    row_top + 5 * scale,
                     label,
-                    213,
+                    215,
                     231,
                     241,
                     1,
                 );
             }
-            let sidebar_w = browser_width * 27 / 100;
-            self.fill_rect_alpha(
-                browser_left,
-                tool_top + 38 * scale,
-                sidebar_w,
-                browser_height.saturating_sub(title_h + 38 * scale),
+        }
+        if let Some(menu) = navigator_state.and_then(|state| state.menu_open) {
+            let labels: &[&[u8]] = match menu {
+                crate::runtime::object_navigation::FileNavigatorMenu::File => {
+                    &[b"New Window", b"Settings", b"Empty Trash", b"About"]
+                }
+                crate::runtime::object_navigation::FileNavigatorMenu::Performance => &[
+                    b"Restricted",
+                    b"Balanced",
+                    b"Expanded",
+                    b"Performance Settings...",
+                ],
+                crate::runtime::object_navigation::FileNavigatorMenu::View => {
+                    &[b"As List", b"As Grid", b"Preview Panel Enabled"]
+                }
+                crate::runtime::object_navigation::FileNavigatorMenu::Navigate => &[
+                    b"Home",
+                    b"Personal Space",
+                    b"Documents",
+                    b"Downloads",
+                    b"Pictures",
+                    b"Music",
+                    b"Videos",
+                    b"Projects",
+                    b"Custom Location...",
+                ],
+                crate::runtime::object_navigation::FileNavigatorMenu::Help => {
+                    &[b"File Navigator Help"]
+                }
+            };
+            let menu_rect = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .file_navigator_menu_geometry(
+                    browser_left,
+                    browser_top,
+                    menu.index(),
+                    labels.len(),
+                );
+            let menu_left = menu_rect.x.max(0) as usize;
+            let menu_top = menu_rect.y.max(0) as usize;
+            self.fill_rounded_rect_alpha(
+                menu_left,
+                menu_top,
+                menu_rect.width as usize,
+                menu_rect.height as usize,
+                9 * scale,
                 5,
                 18,
                 31,
-                216,
+                248,
             );
-            self.ui_text(
-                browser_left + 14 * scale,
-                tool_top + 51 * scale,
-                b"FAVORITES",
-                90,
-                191,
-                230,
-                1,
+            self.outline_rounded_rect(
+                menu_left,
+                menu_top,
+                menu_rect.width as usize,
+                menu_rect.height as usize,
+                9 * scale,
+                74,
+                171,
+                218,
             );
-            for (index, item) in [
-                b"Home".as_slice(),
-                b"Personal Space",
-                b"Documents",
-                b"Downloads",
-                b"Pictures",
-                b"Music",
-                b"Videos",
-                b"Projects",
-                b"Trash",
-                b"",
-                b"DEVICES",
-                b"Infinity Storage",
-                b"",
-            ]
-            .iter()
-            .enumerate()
-            {
-                let item_y = tool_top + (72 + index * 20) * scale;
-                if index == home_location {
-                    self.fill_rect_alpha(
-                        browser_left + 7,
-                        item_y - 3,
-                        sidebar_w - 14,
-                        20 * scale,
+            let selected = navigator_state
+                .map(|state| state.menu_selection as usize)
+                .unwrap_or(0);
+            for (index, label) in labels.iter().enumerate() {
+                let row_top = menu_top + (6 + index * 30) * scale;
+                if index == selected {
+                    self.fill_rounded_rect_alpha(
+                        menu_left + 5 * scale,
+                        row_top,
+                        menu_rect.width as usize - 10 * scale,
+                        28 * scale,
+                        5 * scale,
                         selection_r,
                         selection_g,
                         selection_b,
-                        218,
-                    );
-                }
-                if !item.is_empty() && index != 10 {
-                    let icon_kind = match index {
-                        0 => 2,
-                        1 => 8,
-                        2 => 5,
-                        3 => 4,
-                        4 => 13,
-                        5 => 7,
-                        6 => 11,
-                        7 => 8,
-                        8 => 9,
-                        11 | 12 => 11,
-                        _ => 0,
-                    };
-                    self.authentication_icon(
-                        browser_left + 16 * scale,
-                        item_y + 8 * scale,
-                        icon_kind,
-                        13 * scale,
-                        index == home_location,
-                    );
-                }
-                self.ui_text(
-                    browser_left + (if index == 10 { 16 } else { 30 }) * scale,
-                    item_y,
-                    item,
-                    if index == 10 { 90 } else { 204 },
-                    if index == 10 { 191 } else { 224 },
-                    236,
-                    1,
-                );
-            }
-            let grid_x = browser_left + sidebar_w + 28 * scale;
-            let grid_y = tool_top + 58 * scale;
-            let gap = (browser_width.saturating_sub(sidebar_w + 55 * scale)) / 4;
-            let tile_step = (self.height / 23).max(34) + 40 * scale;
-            let active_path = navigator_state
-                .map(|state| state.active_namespace_ref)
-                .unwrap_or_else(|| {
-                    crate::runtime::object_navigation::ByteText::new(b"/home/default").unwrap()
-                });
-            let object_count =
-                crate::storage::namespace_child_count(active_path.as_bytes()).unwrap_or(0);
-            let child_count = object_count.saturating_add(
-                crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT,
-            );
-            let selected_index = navigator_state
-                .map(|state| state.selected_index)
-                .unwrap_or(crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION);
-            let scroll_offset = navigator_state
-                .map(|state| state.scroll_offset)
-                .unwrap_or(0);
-            if navigator_list_view {
-                self.ui_text_strong(
-                    grid_x,
-                    grid_y.saturating_sub(22 * scale),
-                    b"NAME",
-                    132,
-                    180,
-                    207,
-                    1,
-                );
-                self.ui_text_strong(
-                    grid_x + gap * 2,
-                    grid_y.saturating_sub(22 * scale),
-                    b"KIND",
-                    132,
-                    180,
-                    207,
-                    1,
-                );
-                self.ui_text_strong(
-                    grid_x + gap * 3,
-                    grid_y.saturating_sub(22 * scale),
-                    b"SIZE",
-                    132,
-                    180,
-                    207,
-                    1,
-                );
-            }
-            let viewport = browser_height.saturating_sub(150 * scale);
-            let extent = if navigator_list_view {
-                34 * scale
-            } else {
-                tile_step
-            };
-            let (first, end) = crate::runtime::object_navigation::FileNavigatorState::visible_range(
-                child_count,
-                scroll_offset,
-                viewport,
-                extent,
-            );
-            for index in first..end {
-                let navigation_name: Option<&[u8]> = match index {
-                    0 => Some(b"."),
-                    1 => Some(b".."),
-                    _ => None,
-                };
-                let entry = if navigation_name.is_none() {
-                    crate::storage::namespace_child_nth_sorted(
-                        active_path.as_bytes(),
-                        index.saturating_sub(
-                            crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT,
-                        ),
-                        navigator_state
-                            .map(|state| state.sort_descending)
-                            .unwrap_or(false),
-                    )
-                    .ok()
-                    .flatten()
-                } else {
-                    None
-                };
-                if navigation_name.is_none() && entry.is_none() {
-                    continue;
-                }
-                let path = entry
-                    .as_ref()
-                    .map(|value| &value.path[..value.path_len as usize]);
-                let metadata = path
-                    .and_then(|value| crate::storage::object_inspect_path(value).ok())
-                    .map(|value| value.0);
-                let kind = if navigation_name.is_some() {
-                    Some(crate::storage::object::ObjectType::NamespaceNode)
-                } else {
-                    metadata.map(|value| value.kind)
-                };
-                let icon_role = if kind == Some(crate::storage::object::ObjectType::NamespaceNode) {
-                    3
-                } else {
-                    4
-                };
-                let base_name = navigation_name.unwrap_or_else(|| {
-                    crate::runtime::object_navigation::namespace_basename(path.unwrap_or(b"/"))
-                });
-                let is_renaming = navigator_state
-                    .map(|state| state.rename_editing && state.selected_index as usize == index)
-                    .unwrap_or(false);
-                let name = if is_renaming {
-                    navigator_state
-                        .as_ref()
-                        .map(|state| state.editor_text.as_bytes())
-                        .unwrap_or(base_name)
-                } else {
-                    base_name
-                };
-                let column = index % 4;
-                let row = (index - first) / 4;
-                if navigator_list_view {
-                    let row_y = grid_y + (index - first) * 34 * scale;
-                    self.fill_rect_alpha(
-                        grid_x.saturating_sub(18 * scale),
-                        row_y.saturating_sub(7 * scale),
-                        browser_width.saturating_sub(sidebar_w + 48 * scale),
-                        30 * scale,
-                        8,
-                        28,
-                        44,
-                        if index % 2 == 0 { 170 } else { 105 },
-                    );
-                    if selected_index as usize == index {
-                        self.fill_rounded_rect_alpha(
-                            grid_x.saturating_sub(18 * scale),
-                            row_y.saturating_sub(7 * scale),
-                            browser_width.saturating_sub(sidebar_w + 48 * scale),
-                            30 * scale,
-                            6 * scale,
-                            selection_r,
-                            selection_g,
-                            selection_b,
-                            190,
-                        );
-                    }
-                    let _ = self.themed_icon(grid_x, row_y + 7 * scale, icon_role, 22 * scale);
-                    self.ui_text(grid_x + 22 * scale, row_y, name, 215, 229, 238, 1);
-                    if is_renaming {
-                        self.text_field_caret(
-                            grid_x + 22 * scale,
-                            row_y.saturating_sub(7 * scale),
-                            30 * scale,
-                            name,
-                            true,
-                            2,
-                        );
-                    }
-                    let kind_name = match kind {
-                        Some(crate::storage::object::ObjectType::NamespaceNode) => {
-                            b"Folder".as_slice()
-                        }
-                        Some(crate::storage::object::ObjectType::Text) => {
-                            b"Text document".as_slice()
-                        }
-                        Some(crate::storage::object::ObjectType::Project) => b"Project".as_slice(),
-                        Some(crate::storage::object::ObjectType::Collection) => {
-                            b"Collection".as_slice()
-                        }
-                        _ => b"Object".as_slice(),
-                    };
-                    self.ui_text(grid_x + gap * 2, row_y, kind_name, 164, 190, 205, 1);
-                    let mut size_text = [0u8; 16];
-                    let size_len = navigator_decimal(
-                        &mut size_text,
-                        metadata
-                            .map(|value| value.logical_size as usize)
-                            .unwrap_or(0),
-                    );
-                    self.ui_text(
-                        grid_x + gap * 3,
-                        row_y,
-                        &size_text[..size_len],
-                        164,
                         190,
-                        205,
-                        1,
                     );
-                } else {
-                    let center_x = grid_x + column * gap;
-                    let center_y = grid_y + row * tile_step;
-                    if selected_index as usize == index {
-                        self.fill_rounded_rect_alpha(
-                            center_x.saturating_sub(6 * scale),
-                            center_y.saturating_sub(8 * scale),
-                            gap.max(44 * scale),
-                            tile_step.max(54 * scale),
-                            8 * scale,
-                            selection_r,
-                            selection_g,
-                            selection_b,
-                            190,
-                        );
-                    }
-                    let _ = self.themed_icon(center_x, center_y, icon_role, 52 * scale);
-                    self.ui_text_centered(
-                        center_x.saturating_sub(gap / 2),
-                        gap,
-                        center_y + 34 * scale,
-                        name,
-                        215,
-                        229,
-                        238,
-                        1,
-                    );
-                    if is_renaming {
-                        let name_width = self.ui_text_width(name, 1);
-                        self.text_field_caret(
-                            center_x.saturating_sub(name_width / 2),
-                            center_y + 28 * scale,
-                            28 * scale,
-                            name,
-                            true,
-                            2,
-                        );
-                    }
                 }
-            }
-            let status_top = browser_top + browser_height.saturating_sub(24 * scale);
-            self.fill_rect_alpha(
-                browser_left + sidebar_w,
-                status_top,
-                browser_width.saturating_sub(sidebar_w),
-                24 * scale,
-                4,
-                15,
-                27,
-                220,
-            );
-            let mut count_text = [0u8; 24];
-            let count_len = navigator_decimal(&mut count_text, object_count);
-            self.ui_text(
-                browser_left + sidebar_w + 14 * scale,
-                status_top + 5 * scale,
-                &count_text[..count_len],
-                142,
-                185,
-                210,
-                1,
-            );
-            self.ui_text(
-                browser_left + sidebar_w + (14 + count_len * 8) * scale,
-                status_top + 5 * scale,
-                if object_count == 1 {
-                    b" item"
-                } else {
-                    b" items"
-                },
-                142,
-                185,
-                210,
-                1,
-            );
-            if dragging_item == Some(6) {
+                let marked = match (menu, index) {
+                    (crate::runtime::object_navigation::FileNavigatorMenu::View, 0) => {
+                        navigator_list_view
+                    }
+                    (crate::runtime::object_navigation::FileNavigatorMenu::View, 1) => {
+                        !navigator_list_view
+                    }
+                    (crate::runtime::object_navigation::FileNavigatorMenu::View, 2) => {
+                        navigator_state
+                            .map(|state| state.inspector_open)
+                            .unwrap_or(false)
+                    }
+                    (crate::runtime::object_navigation::FileNavigatorMenu::Performance, row) => {
+                        let mode = crate::runtime::with_runtime(|runtime| {
+                            runtime
+                                .resources
+                                .override_for(crate::runtime::resource_policy::AppId(
+                                    crate::runtime::task_manager::IMAGE_FILE_NAVIGATOR,
+                                ))
+                                .map(|policy| policy.mode)
+                                .unwrap_or(runtime.resources.defaults().mode)
+                        })
+                        .unwrap_or(crate::runtime::resource_policy::ResourceMode::Balanced);
+                        matches!(
+                            (row, mode),
+                            (0, crate::runtime::resource_policy::ResourceMode::Restricted)
+                                | (1, crate::runtime::resource_policy::ResourceMode::Balanced)
+                                | (2, crate::runtime::resource_policy::ResourceMode::Expanded)
+                        )
+                    }
+                    _ => false,
+                };
                 self.ui_text(
-                    browser_left + sidebar_w + 28 * scale,
-                    browser_top + browser_height.saturating_sub(28 * scale),
-                    b"DROP NOTES.TXT ON A SIDEBAR LOCATION",
-                    91,
+                    menu_left + 14 * scale,
+                    row_top + 6 * scale,
+                    if marked { b"*" } else { b"" },
+                    94,
                     211,
                     250,
                     1,
                 );
-            }
-            if navigator_state
-                .map(|state| state.inspector_open)
-                .unwrap_or(false)
-            {
-                let preview_width = (220 * scale).min(browser_width.saturating_sub(sidebar_w) / 2);
-                let preview_left = browser_left + browser_width.saturating_sub(preview_width);
-                let preview_top = tool_top + 38 * scale;
-                let preview_height = browser_height.saturating_sub(title_h + 62 * scale);
-                self.fill_rect_alpha(
-                    preview_left,
-                    preview_top,
-                    preview_width,
-                    preview_height,
-                    5,
-                    20,
-                    34,
-                    238,
-                );
-                self.outline_rounded_rect(
-                    preview_left,
-                    preview_top,
-                    preview_width,
-                    preview_height,
-                    8 * scale,
-                    55,
-                    132,
-                    177,
-                );
-                self.ui_text_strong(
-                    preview_left + 18 * scale,
-                    preview_top + 18 * scale,
-                    b"PREVIEW",
-                    91,
-                    205,
-                    247,
-                    1,
-                );
-                let selected = navigator_state
-                    .map(|state| state.selected_index)
-                    .unwrap_or(crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION);
-                if selected == crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION {
-                    self.ui_text(
-                        preview_left + 18 * scale,
-                        preview_top + 54 * scale,
-                        b"Select an object to inspect it.",
-                        168,
-                        191,
-                        207,
-                        1,
-                    );
-                } else {
-                    self.ui_text(
-                        preview_left + 18 * scale,
-                        preview_top + 54 * scale,
-                        b"Selected object",
-                        213,
-                        228,
-                        238,
-                        1,
-                    );
-                    let mut selection_text = [0u8; 18];
-                    let selection_len =
-                        navigator_decimal(&mut selection_text, selected as usize + 1);
-                    self.ui_text(
-                        preview_left + 18 * scale,
-                        preview_top + 80 * scale,
-                        &selection_text[..selection_len],
-                        139,
-                        184,
-                        211,
-                        1,
-                    );
-                }
-            }
-            if let Some(context) = navigator_state.filter(|state| state.context_menu_open) {
-                let menu = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-                    .file_navigator_context_geometry(context.context_x, context.context_y);
-                let menu_left = menu.x.max(0) as usize;
-                let menu_top = menu.y.max(0) as usize;
-                let object_menu = context.context_item
-                    != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION;
-                let labels: [&[u8]; 4] = if object_menu {
-                    [b"Open", b"Rename", b"Duplicate", b"Move to Trash"]
-                } else {
-                    [b"New Folder", b"List View", b"Grid View", b"Sort by Name"]
-                };
-                self.fill_rounded_rect_alpha(
-                    menu_left,
-                    menu_top,
-                    190 * scale,
-                    120 * scale,
-                    8 * scale,
-                    5,
-                    18,
-                    31,
-                    246,
-                );
-                self.outline_rounded_rect(
-                    menu_left,
-                    menu_top,
-                    190 * scale,
-                    148 * scale,
-                    8 * scale,
-                    73,
-                    180,
-                    229,
-                );
-                for (index, label) in labels.iter().enumerate() {
-                    let row_top = menu_top + (6 + index * 28) * scale;
-                    self.ui_text(
-                        menu_left + 14 * scale,
-                        row_top + 5 * scale,
-                        label,
-                        215,
-                        231,
-                        241,
-                        1,
-                    );
-                }
-            }
-            if let Some(menu) = navigator_state.and_then(|state| state.menu_open) {
-                let labels: &[&[u8]] = match menu {
-                    crate::runtime::object_navigation::FileNavigatorMenu::File => {
-                        &[b"New Window", b"Settings", b"Empty Trash", b"About"]
-                    }
-                    crate::runtime::object_navigation::FileNavigatorMenu::Performance => &[
-                        b"Restricted",
-                        b"Balanced",
-                        b"Expanded",
-                        b"Performance Settings...",
-                    ],
-                    crate::runtime::object_navigation::FileNavigatorMenu::View => {
-                        &[b"As List", b"As Grid", b"Preview Panel Enabled"]
-                    }
-                    crate::runtime::object_navigation::FileNavigatorMenu::Navigate => &[
-                        b"Home",
-                        b"Personal Space",
-                        b"Documents",
-                        b"Downloads",
-                        b"Pictures",
-                        b"Music",
-                        b"Videos",
-                        b"Projects",
-                        b"Custom Location...",
-                    ],
-                    crate::runtime::object_navigation::FileNavigatorMenu::Help => {
-                        &[b"File Navigator Help"]
-                    }
-                };
-                let menu_rect =
-                    crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-                        .file_navigator_menu_geometry(
-                            browser_left,
-                            browser_top,
-                            menu.index(),
-                            labels.len(),
-                        );
-                let menu_left = menu_rect.x.max(0) as usize;
-                let menu_top = menu_rect.y.max(0) as usize;
-                self.fill_rounded_rect_alpha(
-                    menu_left,
-                    menu_top,
-                    menu_rect.width as usize,
-                    menu_rect.height as usize,
-                    9 * scale,
-                    5,
-                    18,
-                    31,
-                    248,
-                );
-                self.outline_rounded_rect(
-                    menu_left,
-                    menu_top,
-                    menu_rect.width as usize,
-                    menu_rect.height as usize,
-                    9 * scale,
-                    74,
-                    171,
-                    218,
-                );
-                let selected = navigator_state
-                    .map(|state| state.menu_selection as usize)
-                    .unwrap_or(0);
-                for (index, label) in labels.iter().enumerate() {
-                    let row_top = menu_top + (6 + index * 30) * scale;
-                    if index == selected {
-                        self.fill_rounded_rect_alpha(
-                            menu_left + 5 * scale,
-                            row_top,
-                            menu_rect.width as usize - 10 * scale,
-                            28 * scale,
-                            5 * scale,
-                            selection_r,
-                            selection_g,
-                            selection_b,
-                            190,
-                        );
-                    }
-                    let marked = match (menu, index) {
-                        (crate::runtime::object_navigation::FileNavigatorMenu::View, 0) => {
-                            navigator_list_view
-                        }
-                        (crate::runtime::object_navigation::FileNavigatorMenu::View, 1) => {
-                            !navigator_list_view
-                        }
-                        (crate::runtime::object_navigation::FileNavigatorMenu::View, 2) => {
-                            navigator_state
-                                .map(|state| state.inspector_open)
-                                .unwrap_or(false)
-                        }
-                        (crate::runtime::object_navigation::FileNavigatorMenu::Performance, row) => {
-                            let mode = crate::runtime::with_runtime(|runtime| {
-                                runtime
-                                    .resources
-                                    .override_for(crate::runtime::resource_policy::AppId(
-                                        crate::runtime::task_manager::IMAGE_FILE_NAVIGATOR,
-                                    ))
-                                    .map(|policy| policy.mode)
-                                    .unwrap_or(runtime.resources.defaults().mode)
-                            })
-                            .unwrap_or(crate::runtime::resource_policy::ResourceMode::Balanced);
-                            matches!(
-                                (row, mode),
-                                (0, crate::runtime::resource_policy::ResourceMode::Restricted)
-                                    | (1, crate::runtime::resource_policy::ResourceMode::Balanced)
-                                    | (2, crate::runtime::resource_policy::ResourceMode::Expanded)
-                            )
-                        }
-                        _ => false,
-                    };
-                    self.ui_text(
-                        menu_left + 14 * scale,
-                        row_top + 6 * scale,
-                        if marked { b"*" } else { b"" },
-                        94,
-                        211,
-                        250,
-                        1,
-                    );
-                    self.ui_text(
-                        menu_left + 32 * scale,
-                        row_top + 6 * scale,
-                        label,
-                        220,
-                        232,
-                        240,
-                        1,
-                    );
-                }
-            }
-            if let Some(dialog) = navigator_state.and_then(|state| state.dialog_open) {
-                let dialog_rect =
-                    crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-                        .file_navigator_dialog_geometry(
-                            browser_left,
-                            browser_top,
-                            browser_width,
-                            browser_height,
-                        );
-                let left = dialog_rect.x.max(0) as usize;
-                let top = dialog_rect.y.max(0) as usize;
-                let width = dialog_rect.width as usize;
-                let height = dialog_rect.height as usize;
-                self.fill_rounded_rect_alpha(left, top, width, height, 14 * scale, 4, 17, 30, 252);
-                self.outline_rounded_rect(left, top, width, height, 14 * scale, 76, 188, 235);
-                let (title, detail): (&[u8], &[u8]) = match dialog {
-                    crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash => (
-                        b"Empty Trash?",
-                        b"All objects in Trash will be permanently removed.",
-                    ),
-                    crate::runtime::object_navigation::FileNavigatorDialog::About => (
-                        b"About File Navigator",
-                        b"Browse InfinityOS objects through human Namespace references.",
-                    ),
-                    crate::runtime::object_navigation::FileNavigatorDialog::Help => (
-                        b"File Navigator Help",
-                        b"Use menus, the sidebar, or the location field to navigate.",
-                    ),
-                    crate::runtime::object_navigation::FileNavigatorDialog::Location => (
-                        b"Go to a custom location",
-                        b"Enter an absolute InfinityOS Namespace reference.",
-                    ),
-                };
-                self.ui_text_strong(left + 24 * scale, top + 22 * scale, title, 231, 239, 245, 1);
                 self.ui_text(
-                    left + 24 * scale,
-                    top + 54 * scale,
-                    detail,
-                    166,
-                    190,
-                    207,
+                    menu_left + 32 * scale,
+                    row_top + 6 * scale,
+                    label,
+                    220,
+                    232,
+                    240,
                     1,
                 );
-                if dialog == crate::runtime::object_navigation::FileNavigatorDialog::Location {
-                    self.fill_rounded_rect_alpha(
-                        left + 24 * scale,
-                        top + 82 * scale,
-                        width - 48 * scale,
-                        38 * scale,
-                        8 * scale,
-                        2,
-                        13,
-                        24,
-                        250,
-                    );
-                    self.outline_rounded_rect(
-                        left + 24 * scale,
-                        top + 82 * scale,
-                        width - 48 * scale,
-                        38 * scale,
-                        8 * scale,
-                        72,
-                        188,
-                        235,
-                    );
-                    let path_text = navigator_state
-                        .map(|state| state.editor_text)
-                        .unwrap_or(crate::runtime::object_navigation::ByteText::empty());
-                    let path = path_text.as_bytes();
-                    self.ui_text(left + 36 * scale, top + 93 * scale, path, 220, 232, 240, 1);
-                    self.text_field_caret(
-                        left + 36 * scale,
-                        top + 82 * scale,
-                        38 * scale,
-                        path,
-                        true,
-                        2,
-                    );
-                }
-                let button_top = top + height.saturating_sub(54 * scale);
-                let two_buttons = matches!(
-                    dialog,
-                    crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash
-                        | crate::runtime::object_navigation::FileNavigatorDialog::Location
+            }
+        }
+        if let Some(dialog) = navigator_state.and_then(|state| state.dialog_open) {
+            let dialog_rect = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .file_navigator_dialog_geometry(
+                    browser_left,
+                    browser_top,
+                    browser_width,
+                    browser_height,
                 );
-                if two_buttons {
-                    let half = width / 2;
-                    for (index, label) in [
-                        b"Cancel".as_slice(),
-                        if dialog
-                            == crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash
-                        {
-                            b"Empty Trash"
-                        } else {
-                            b"Go"
-                        },
-                    ]
-                    .iter()
-                    .enumerate()
+            let left = dialog_rect.x.max(0) as usize;
+            let top = dialog_rect.y.max(0) as usize;
+            let width = dialog_rect.width as usize;
+            let height = dialog_rect.height as usize;
+            self.fill_rounded_rect_alpha(left, top, width, height, 14 * scale, 4, 17, 30, 252);
+            self.outline_rounded_rect(left, top, width, height, 14 * scale, 76, 188, 235);
+            let (title, detail): (&[u8], &[u8]) = match dialog {
+                crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash => (
+                    b"Empty Trash?",
+                    b"All objects in Trash will be permanently removed.",
+                ),
+                crate::runtime::object_navigation::FileNavigatorDialog::About => (
+                    b"About File Navigator",
+                    b"Browse InfinityOS objects through human Namespace references.",
+                ),
+                crate::runtime::object_navigation::FileNavigatorDialog::Help => (
+                    b"File Navigator Help",
+                    b"Use menus, the sidebar, or the location field to navigate.",
+                ),
+                crate::runtime::object_navigation::FileNavigatorDialog::Location => (
+                    b"Go to a custom location",
+                    b"Enter an absolute InfinityOS Namespace reference.",
+                ),
+            };
+            self.ui_text_strong(left + 24 * scale, top + 22 * scale, title, 231, 239, 245, 1);
+            self.ui_text(
+                left + 24 * scale,
+                top + 54 * scale,
+                detail,
+                166,
+                190,
+                207,
+                1,
+            );
+            if dialog == crate::runtime::object_navigation::FileNavigatorDialog::Location {
+                self.fill_rounded_rect_alpha(
+                    left + 24 * scale,
+                    top + 82 * scale,
+                    width - 48 * scale,
+                    38 * scale,
+                    8 * scale,
+                    2,
+                    13,
+                    24,
+                    250,
+                );
+                self.outline_rounded_rect(
+                    left + 24 * scale,
+                    top + 82 * scale,
+                    width - 48 * scale,
+                    38 * scale,
+                    8 * scale,
+                    72,
+                    188,
+                    235,
+                );
+                let path_text = navigator_state
+                    .map(|state| state.editor_text)
+                    .unwrap_or(crate::runtime::object_navigation::ByteText::empty());
+                let path = path_text.as_bytes();
+                self.ui_text(left + 36 * scale, top + 93 * scale, path, 220, 232, 240, 1);
+                self.text_field_caret(
+                    left + 36 * scale,
+                    top + 82 * scale,
+                    38 * scale,
+                    path,
+                    true,
+                    2,
+                );
+            }
+            let button_top = top + height.saturating_sub(54 * scale);
+            let two_buttons = matches!(
+                dialog,
+                crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash
+                    | crate::runtime::object_navigation::FileNavigatorDialog::Location
+            );
+            if two_buttons {
+                let half = width / 2;
+                for (index, label) in [
+                    b"Cancel".as_slice(),
+                    if dialog == crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash
                     {
-                        let button_left = left
-                            + if index == 0 {
-                                20 * scale
-                            } else {
-                                half + 6 * scale
-                            };
-                        let button_width = half.saturating_sub(26 * scale);
-                        self.fill_rounded_rect_alpha(
-                            button_left,
-                            button_top,
-                            button_width,
-                            38 * scale,
-                            8 * scale,
-                            if index == 1 { selection_r } else { 10 },
-                            if index == 1 { selection_g } else { 31 },
-                            if index == 1 { selection_b } else { 48 },
-                            235,
-                        );
-                        self.outline_rounded_rect(
-                            button_left,
-                            button_top,
-                            button_width,
-                            38 * scale,
-                            8 * scale,
-                            76,
-                            165,
-                            207,
-                        );
-                        self.ui_text_centered(
-                            button_left,
-                            button_width,
-                            button_top + 10 * scale,
-                            label,
-                            226,
-                            236,
-                            243,
-                            1,
-                        );
-                    }
-                } else {
-                    let button_left = left + width / 2 - 74 * scale;
+                        b"Empty Trash"
+                    } else {
+                        b"Go"
+                    },
+                ]
+                .iter()
+                .enumerate()
+                {
+                    let button_left = left
+                        + if index == 0 {
+                            20 * scale
+                        } else {
+                            half + 6 * scale
+                        };
+                    let button_width = half.saturating_sub(26 * scale);
                     self.fill_rounded_rect_alpha(
                         button_left,
                         button_top,
-                        148 * scale,
+                        button_width,
                         38 * scale,
                         8 * scale,
-                        selection_r,
-                        selection_g,
-                        selection_b,
-                        225,
+                        if index == 1 { selection_r } else { 10 },
+                        if index == 1 { selection_g } else { 31 },
+                        if index == 1 { selection_b } else { 48 },
+                        235,
+                    );
+                    self.outline_rounded_rect(
+                        button_left,
+                        button_top,
+                        button_width,
+                        38 * scale,
+                        8 * scale,
+                        76,
+                        165,
+                        207,
                     );
                     self.ui_text_centered(
                         button_left,
-                        148 * scale,
+                        button_width,
                         button_top + 10 * scale,
-                        b"Close",
-                        230,
-                        239,
-                        245,
+                        label,
+                        226,
+                        236,
+                        243,
                         1,
                     );
                 }
+            } else {
+                let button_left = left + width / 2 - 74 * scale;
+                self.fill_rounded_rect_alpha(
+                    button_left,
+                    button_top,
+                    148 * scale,
+                    38 * scale,
+                    8 * scale,
+                    selection_r,
+                    selection_g,
+                    selection_b,
+                    225,
+                );
+                self.ui_text_centered(
+                    button_left,
+                    148 * scale,
+                    button_top + 10 * scale,
+                    b"Close",
+                    230,
+                    239,
+                    245,
+                    1,
+                );
             }
         }
-
-        self.desktop_dock(scale, launcher_open);
     }
 
     // ------------------------=
@@ -9441,8 +9535,7 @@ impl super::DisplayDevice {
             step,
             self.width,
             self.height,
-        )
-        else {
+        ) else {
             return;
         };
         let placeholder: &[u8] = match step {
@@ -9642,10 +9735,10 @@ pub fn system_ui_present(
                 && ((console.last_system_screen != screen && !desktop_layer_focus_changed)
                     || (!desktop_layer_focus_changed
                         && crate::ui::redraw::focus_change_requires_structural_redraw(
-                        screen,
-                        pointer_changed,
-                        focus_changed,
-                    ))
+                            screen,
+                            pointer_changed,
+                            focus_changed,
+                        ))
                     || console.last_system_menu != menu_kind))
                 || console.last_system_step != step
                 || icon_theme_changed
@@ -9687,6 +9780,16 @@ pub fn system_ui_present(
                     window_maximized,
                 );
             let content_changed = console.last_system_content != content;
+            if structural_change_without_window
+                || content_changed
+                || file_navigator_changed
+                || focus_changed
+                || launcher_state_changed
+                || window_resized
+                || settings_content_changed
+            {
+                super::retained_windows::invalidate();
+            }
             let bounded_launcher_change = screen == 7
                 && console.last_system_screen == 7
                 && launcher_state_changed
@@ -9697,13 +9800,14 @@ pub fn system_ui_present(
                 && !settings_geometry_changed
                 && !app_window_geometry_changed;
             let bounded_scene_geometry_change = !structural_change_without_window
-                && !content_changed
+                && (!content_changed || matches!(screen, 8 | 9 | 10))
                 && console.last_system_screen == screen
                 && (navigator_surface_changed
                     || window_moved
                     || window_resized
                     || settings_geometry_changed
-                    || app_window_geometry_changed);
+                    || app_window_geometry_changed
+                    || (content_changed && matches!(screen, 8 | 9 | 10)));
             let mut full_surface_redrawn = false;
             if bounded_menu_change
                 && !structural_change_without_window
@@ -10005,45 +10109,45 @@ pub fn system_ui_present(
                         damage.height as usize,
                     );
                     console.display.system_ui_frame(
-                    screen,
-                    step,
-                    input,
-                    masked,
-                    focus,
-                    validation_error,
-                    window_x,
-                    window_y,
-                    window_width,
-                    window_height,
-                    window_visible,
-                    window_maximized,
-                    home_location,
-                    selected_item,
-                    dragging_item,
-                    note_location,
-                    desktop_items,
-                    desktop_item_positions,
-                    clock,
-                    settings_window,
-                    menu_kind,
-                    output_lines,
-                    output_lengths,
-                    output_count,
-                    app_window_x,
-                    app_window_y,
-                    app_window_width,
-                    app_window_height,
-                    app_window_maximized,
-                    editor_saved,
-                    editor_input,
-                    command_input,
-                    editor_window,
-                    command_window,
-                    task_manager_window,
-                    editor_scroll_row,
-                    editor_dialog,
-                    editor_dialog_input,
-                    editor_dialog_focus,
+                        screen,
+                        step,
+                        input,
+                        masked,
+                        focus,
+                        validation_error,
+                        window_x,
+                        window_y,
+                        window_width,
+                        window_height,
+                        window_visible,
+                        window_maximized,
+                        home_location,
+                        selected_item,
+                        dragging_item,
+                        note_location,
+                        desktop_items,
+                        desktop_item_positions,
+                        clock,
+                        settings_window,
+                        menu_kind,
+                        output_lines,
+                        output_lengths,
+                        output_count,
+                        app_window_x,
+                        app_window_y,
+                        app_window_width,
+                        app_window_height,
+                        app_window_maximized,
+                        editor_saved,
+                        editor_input,
+                        command_input,
+                        editor_window,
+                        command_window,
+                        task_manager_window,
+                        editor_scroll_row,
+                        editor_dialog,
+                        editor_dialog_input,
+                        editor_dialog_focus,
                     );
                 }
                 console.display.clear_render_clip();
@@ -10101,9 +10205,13 @@ pub fn system_ui_present(
                 pointer_changed,
                 focus_changed,
             ) {
-                console
-                    .display
-                    .onboarding_focus_controls(step, input, masked, focus, validation_error);
+                console.display.onboarding_focus_controls(
+                    step,
+                    input,
+                    masked,
+                    focus,
+                    validation_error,
+                );
             } else if crate::ui::redraw::authentication_controls_require_repaint(
                 screen,
                 pointer_changed,
@@ -10343,6 +10451,24 @@ pub fn system_ui_present(
     _editor_dialog_focus: usize,
     _fast_motion_frame: bool,
 ) {
+}
+
+// ------------------------=
+// FUNC: system_ui_cursor
+// DESC: Presents only saved and new cursor pixels; no application hashes, painting, or service calls.
+// ------------------=
+pub fn system_ui_cursor(x: i32, y: i32) {
+    unsafe {
+        if let Some(console) = (*(&raw mut CONSOLE)).as_mut() {
+            console.display.frame_started_ns = crate::ui::performance::monotonic_ns();
+            console.display.clear_render_clip();
+            console.restore_cursor();
+            console.cursor_x = x;
+            console.cursor_y = y;
+            console.save_and_draw_cursor(x, y);
+            console.display.present_damage();
+        }
+    }
 }
 
 // ------------------------=

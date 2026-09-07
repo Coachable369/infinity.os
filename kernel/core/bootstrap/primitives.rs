@@ -327,6 +327,12 @@ impl super::DisplayDevice {
         } else {
             blue as u32 | (green as u32) << 8 | (red as u32) << 16
         };
+        let color = color
+            | if self.recording_surface {
+                0xff000000
+            } else {
+                0
+            };
         unsafe {
             write_volatile(
                 self.buffer.add(y as usize * self.stride + x as usize),
@@ -414,6 +420,12 @@ impl super::DisplayDevice {
         } else {
             blue | green << 8 | red << 16
         };
+        let packed = packed
+            | if self.recording_surface {
+                (alpha as u32 + ((color >> 24) * (255 - alpha as u32) / 255)) << 24
+            } else {
+                0
+            };
         unsafe {
             write_volatile(address, packed);
         }
@@ -910,6 +922,12 @@ impl super::DisplayDevice {
         } else {
             blue as u32 | (green as u32) << 8 | (red as u32) << 16
         };
+        let color = color
+            | if self.recording_surface {
+                0xff000000
+            } else {
+                0
+            };
         for y in region.top..region.bottom {
             for x in region.left..region.right {
                 unsafe {
