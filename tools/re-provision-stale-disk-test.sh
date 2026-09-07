@@ -55,6 +55,9 @@ run_orphan_replacement_case() {
     test "$(sed -n '1p' "$disk_path")" = fresh || fail "The stale VDI was not replaced."
     test -f "$state_path/unregistered" || fail "The old VM was not unregistered."
     test -f "$state_path/medium-inspected" || fail "The stale VDI registration was not checked."
+    test "$(sed -n '1p' "$state_path/memory")" = 1118208 || fail "The requested 1,092 GB memory default was not applied."
+    test "$(sed -n '1p' "$state_path/graphics")" = vmsvga || fail "VMSVGA graphics were not applied."
+    test "$(sed -n '1p' "$state_path/mouse")" = ps2 || fail "PS/2 mouse input was not applied."
 }
 
 # ------------------------=

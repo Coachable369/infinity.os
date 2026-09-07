@@ -4,7 +4,7 @@ set -eu
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 vm_name=${1:-infinityos-4}
 iso_input=${2:-$project_root/builds/InfinityOS-aarch64.iso}
-memory_mb=${INFINITY_VM_MEMORY_MB:-8192}
+memory_mb=${INFINITY_VM_MEMORY_MB:-1118208}
 cpu_count=${INFINITY_VM_CPU_COUNT:-6}
 disk_size_mb=${INFINITY_VM_DISK_SIZE_MB:-16384}
 vboxmanage=${INFINITY_VBOXMANAGE:-VBoxManage}
@@ -126,7 +126,7 @@ create_arm64_vm() {
         --cable-connected1 on \
         --usb off \
         --usb-xhci on \
-        --mouse usbtablet \
+        --mouse ps2 \
         --keyboard usb \
         --audio-driver default \
         --audio-controller hda \
@@ -176,11 +176,12 @@ verify_vm() {
     printf '%s\n' "$final_info" | grep -Fq 'ostype="Other/Unknown (ARM 64-bit)"' || die "The replacement VM has the wrong guest type."
     printf '%s\n' "$final_info" | grep -Fq "memory=$memory_mb" || die "The replacement VM has the wrong memory allocation."
     printf '%s\n' "$final_info" | grep -Fq "cpus=$cpu_count" || die "The replacement VM has the wrong CPU count."
+    printf '%s\n' "$final_info" | grep -Fq 'graphicscontroller="vmsvga"' || die "The replacement VM is not using VMSVGA graphics."
     printf '%s\n' "$final_info" | grep -Fq 'VMState="poweroff"' || die "The replacement VM is not powered off."
     printf '%s\n' "$final_info" | grep -Fq "$iso_path" || die "The ARM64 ISO is not mounted."
-    printf '%s\n' "$final_info" | grep -Fq 'usb="off"' || die "OHCI must remain disabled so the tablet is routed through xHCI."
+    printf '%s\n' "$final_info" | grep -Fq 'usb="off"' || die "OHCI must remain disabled while USB keyboard input is routed through xHCI."
     printf '%s\n' "$final_info" | grep -Fq 'xhci="on"' || die "The xHCI controller is not enabled."
-    printf '%s\n' "$final_human_info" | grep -Fq 'Pointing Device:             USB Tablet' || die "USB tablet pointing is not configured."
+    printf '%s\n' "$final_human_info" | grep -Fq 'Pointing Device:             PS/2 Mouse' || die "PS/2 mouse input is not configured."
     printf '%s\n' "$final_human_info" | grep -Fq 'Keyboard Device:             USB Keyboard' || die "USB keyboard input is not configured."
     printf '%s\n' "$final_human_info" | grep -Fq 'xHCI USB:                    enabled' || die "The xHCI controller is not enabled."
 
