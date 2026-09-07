@@ -352,6 +352,59 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     }
 
     // ------------------------=
+    // FUNC: testConfigurationFactoryUsesCanonicalUIKitGeometryAndTheme
+    // DESC: Verifies every default first-boot screen observes shared card, gutter, control, and semantic style tokens.
+    // ------------------=
+    func testConfigurationFactoryUsesCanonicalUIKitGeometryAndTheme() throws {
+        let configuration = InstallerStudioDocument.factoryConfiguration()
+
+        for screen in configuration.screens {
+            let card = try XCTUnwrap(screen.elements.first { $0.role == .console })
+            let content = try XCTUnwrap(screen.elements.first { $0.role == .content })
+            let title = try XCTUnwrap(screen.elements.first { $0.role == .title })
+            let body = try XCTUnwrap(screen.elements.first { $0.role == .body })
+            let back = try XCTUnwrap(screen.elements.first { $0.role == .backButton })
+            let primary = try XCTUnwrap(screen.elements.first { $0.role == .primaryButton })
+
+            XCTAssertEqual(card.frame, InfinityUIKit.Metrics.configurationCard)
+            XCTAssertEqual(card.fill, InfinityUIKit.Palette.panel)
+            XCTAssertEqual(card.border, InfinityUIKit.Palette.border)
+            XCTAssertEqual(card.cornerRadius, 16)
+            XCTAssertEqual(content.frame, InfinityUIKit.Metrics.configurationContent)
+            XCTAssertEqual(content.fill, InfinityUIKit.Palette.panelRaised)
+            XCTAssertEqual(title.frame.x - content.frame.x, 11)
+            XCTAssertEqual(body.frame.x, title.frame.x)
+            XCTAssertEqual(back.frame.height, 47)
+            XCTAssertEqual(primary.frame.height, 47)
+            XCTAssertEqual(primary.fill, InfinityUIKit.Palette.primaryAction)
+            XCTAssertEqual(primary.border, InfinityUIKit.Palette.primaryActionBorder)
+            XCTAssertEqual(back.fill, InfinityUIKit.Palette.secondaryAction)
+            XCTAssertEqual(back.border, InfinityUIKit.Palette.secondaryActionBorder)
+        }
+
+        let welcome = configuration.screens[0]
+        let welcomeBack = try XCTUnwrap(welcome.elements.first { $0.role == .backButton })
+        let welcomePrimary = try XCTUnwrap(welcome.elements.first { $0.role == .primaryButton })
+        XCTAssertEqual(welcomeBack.opacity, 0)
+        XCTAssertEqual(welcomeBack.frame, welcomePrimary.frame)
+
+        for screen in configuration.screens[1...] {
+            let back = try XCTUnwrap(screen.elements.first { $0.role == .backButton })
+            let primary = try XCTUnwrap(screen.elements.first { $0.role == .primaryButton })
+            XCTAssertEqual(primary.frame.x - (back.frame.x + back.frame.width), 8)
+            XCTAssertEqual(back.opacity, 100)
+        }
+
+        for screen in configuration.screens[1...4] {
+            let input = try XCTUnwrap(screen.elements.first { $0.role == .input })
+            XCTAssertEqual(input.frame, InfinityUIKit.Metrics.configurationInput)
+            XCTAssertEqual(input.fill, InfinityUIKit.Palette.field)
+            XCTAssertEqual(input.border, InfinityUIKit.Palette.fieldBorder)
+            XCTAssertEqual(input.cornerRadius, 10)
+        }
+    }
+
+    // ------------------------=
     // FUNC: testConfigurationSelectionScopesCanvasEditsAndScreenLifecycle
     // DESC: Exercises selection, element editing, addition, and ordering without mutating installer screens.
     // ------------------=

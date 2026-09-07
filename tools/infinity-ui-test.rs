@@ -1120,30 +1120,30 @@ fn installed_system_hit_geometry_test() {
     let wide = SystemLayout::new(1920, 1080);
     assert_eq!(wide.top_bar_height(), 38);
     assert_eq!(
-        wide.onboarding_target(0, 200, 790),
+        wide.onboarding_target(0, 200, 810),
         Some(OnboardingTarget::Primary)
     );
     assert_eq!(
-        wide.onboarding_target(2, 80, 790),
+        wide.onboarding_target(2, 100, 810),
         Some(OnboardingTarget::Back)
     );
     assert_eq!(
-        wide.onboarding_target(2, 210, 790),
+        wide.onboarding_target(2, 210, 810),
         Some(OnboardingTarget::Primary)
     );
     assert_eq!(
-        wide.onboarding_target(2, 200, 490),
+        wide.onboarding_target(2, 200, 465),
         Some(OnboardingTarget::Input)
     );
 
     let square = SystemLayout::new(1600, 1600);
     assert_eq!(square.top_bar_height(), 38);
     assert_eq!(
-        square.onboarding_target(0, 200, 790),
+        square.onboarding_target(0, 200, 810),
         Some(OnboardingTarget::Primary)
     );
     assert_eq!(
-        square.onboarding_target(3, 200, 490),
+        square.onboarding_target(3, 200, 465),
         Some(OnboardingTarget::Input)
     );
     assert_eq!(square.authentication_target(200, 420), Some(0));
@@ -1456,7 +1456,7 @@ fn installed_system_hit_geometry_test() {
         Some(OnboardingTarget::Primary)
     );
     assert_eq!(
-        hidpi.onboarding_target(4, 220, 490),
+        hidpi.onboarding_target(4, 220, 465),
         Some(OnboardingTarget::Input)
     );
     assert!(ui::redraw::desktop_menu_change_requires_bounded_redraw(

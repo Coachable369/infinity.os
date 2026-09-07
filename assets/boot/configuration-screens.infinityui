@@ -7,11 +7,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -19,10 +19,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -45,11 +45,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -57,17 +57,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 664,
+            "height" : 736,
             "width" : 340,
             "x" : 40,
-            "y" : 185
+            "y" : 128
           },
           "hidden" : false,
           "id" : "4F534346-0001-0002-8000-000000000001",
@@ -83,11 +83,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -95,17 +95,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 430,
-            "width" : 299,
-            "x" : 60,
-            "y" : 276
+            "height" : 504,
+            "width" : 298,
+            "x" : 61,
+            "y" : 222
           },
           "hidden" : false,
           "id" : "4F534346-0001-0003-8000-000000000001",
@@ -121,11 +121,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -134,16 +134,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 30,
           "frame" : {
-            "height" : 52,
-            "width" : 299,
-            "x" : 60,
-            "y" : 310
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 270
           },
           "hidden" : false,
           "id" : "4F534346-0001-0004-8000-000000000001",
@@ -159,11 +159,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -172,16 +172,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 72,
-            "width" : 299,
-            "x" : 60,
-            "y" : 370
+            "height" : 82,
+            "width" : 276,
+            "x" : 72,
+            "y" : 326
           },
           "hidden" : false,
           "id" : "4F534346-0001-0005-8000-000000000001",
@@ -197,11 +197,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 95,
+            "green" : 72,
+            "red" : 40
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -209,17 +209,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
+            "alpha" : 255,
+            "blue" : 20,
             "green" : 10,
             "red" : 2
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 49,
-            "width" : 299,
-            "x" : 60,
-            "y" : 475
+            "height" : 47,
+            "width" : 276,
+            "x" : 72,
+            "y" : 442
           },
           "hidden" : true,
           "id" : "4F534346-0001-0006-8000-000000000001",
@@ -235,11 +235,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -248,16 +248,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 89,
-            "x" : 60,
-            "y" : 778
+            "width" : 298,
+            "x" : 61,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0001-0007-8000-000000000001",
@@ -265,7 +265,7 @@
           "kind" : 5,
           "locked" : true,
           "name" : "Back",
-          "opacity" : 100,
+          "opacity" : 0,
           "role" : 7,
           "text" : "BACK",
           "zIndex" : 8
@@ -273,11 +273,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -286,16 +286,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 201,
-            "x" : 158,
-            "y" : 778
+            "width" : 298,
+            "x" : 61,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0001-0008-8000-000000000001",
@@ -311,11 +311,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -324,16 +324,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 13,
           "frame" : {
-            "height" : 28,
-            "width" : 84,
-            "x" : 275,
-            "y" : 209
+            "height" : 24,
+            "width" : 101,
+            "x" : 242,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0001-0009-8000-000000000001",
@@ -349,11 +349,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -362,36 +362,36 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 54,
-            "width" : 275,
+            "height" : 24,
+            "width" : 125,
             "x" : 72,
-            "y" : 455
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0001-000A-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Welcome Benefit 1",
+          "name" : "InfinityOS Wordmark",
           "opacity" : 100,
           "role" : 0,
-          "text" : "Yours from the start\nIdentity and Personal Space are built in.",
+          "text" : "INFINITYOS",
           "zIndex" : 6
         },
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -400,36 +400,36 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "fontSize" : 24,
+          "fontSize" : 14,
           "frame" : {
-            "height" : 54,
-            "width" : 275,
+            "height" : 24,
+            "width" : 276,
             "x" : 72,
-            "y" : 523
+            "y" : 230
           },
           "hidden" : false,
           "id" : "4F534346-0001-000B-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Welcome Benefit 2",
+          "name" : "Section Eyebrow",
           "opacity" : 100,
           "role" : 0,
-          "text" : "Private by design\nExplicit capability controls stay local.",
-          "zIndex" : 7
+          "text" : "WELCOME",
+          "zIndex" : 6
         },
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -438,27 +438,635 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "fontSize" : 24,
+          "fontSize" : 8,
           "frame" : {
-            "height" : 54,
-            "width" : 275,
+            "height" : 20,
+            "width" : 31,
             "x" : 72,
-            "y" : 591
+            "y" : 197
           },
           "hidden" : false,
           "id" : "4F534346-0001-000C-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Welcome Benefit 3",
+          "name" : "Progress Segment 1",
           "opacity" : 100,
           "role" : 0,
-          "text" : "Ready to grow\nObjects, apps, and AI share one system.",
-          "zIndex" : 8
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 107,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-000D-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 142,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-000E-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 177,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-000F-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 212,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0010-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 5",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 247,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0011-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 6",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 282,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0012-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 7",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 317,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0013-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 8",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 54,
+            "width" : 276,
+            "x" : 72,
+            "y" : 434
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0014-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Welcome Benefit Card 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 20,
+            "width" : 256,
+            "x" : 82,
+            "y" : 442
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0015-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Welcome Benefit Heading 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Yours from the start",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 256,
+            "x" : 82,
+            "y" : 463
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0016-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Welcome Benefit Detail 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Identity and Personal Space are built in.",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 54,
+            "width" : 276,
+            "x" : 72,
+            "y" : 500
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0017-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Welcome Benefit Card 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 20,
+            "width" : 256,
+            "x" : 82,
+            "y" : 508
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0018-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Welcome Benefit Heading 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Private by design",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 256,
+            "x" : 82,
+            "y" : 529
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-0019-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Welcome Benefit Detail 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Explicit capability controls stay local.",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 54,
+            "width" : 276,
+            "x" : 72,
+            "y" : 566
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-001A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Welcome Benefit Card 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 20,
+            "width" : 256,
+            "x" : 82,
+            "y" : 574
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-001B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Welcome Benefit Heading 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Ready to grow",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 256,
+            "x" : 82,
+            "y" : 595
+          },
+          "hidden" : false,
+          "id" : "4F534346-0001-001C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Welcome Benefit Detail 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Objects, apps, and AI share one system.",
+          "zIndex" : 7
         }
       ],
       "id" : 1,
@@ -469,11 +1077,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -481,10 +1089,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -507,11 +1115,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -519,17 +1127,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 664,
+            "height" : 736,
             "width" : 340,
             "x" : 40,
-            "y" : 185
+            "y" : 128
           },
           "hidden" : false,
           "id" : "4F534346-0002-0002-8000-000000000001",
@@ -545,11 +1153,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -557,17 +1165,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 430,
-            "width" : 299,
-            "x" : 60,
-            "y" : 276
+            "height" : 504,
+            "width" : 298,
+            "x" : 61,
+            "y" : 222
           },
           "hidden" : false,
           "id" : "4F534346-0002-0003-8000-000000000001",
@@ -583,11 +1191,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -596,16 +1204,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 30,
           "frame" : {
-            "height" : 52,
-            "width" : 299,
-            "x" : 60,
-            "y" : 310
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 270
           },
           "hidden" : false,
           "id" : "4F534346-0002-0004-8000-000000000001",
@@ -621,11 +1229,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -634,16 +1242,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 72,
-            "width" : 299,
-            "x" : 60,
-            "y" : 370
+            "height" : 82,
+            "width" : 276,
+            "x" : 72,
+            "y" : 326
           },
           "hidden" : false,
           "id" : "4F534346-0002-0005-8000-000000000001",
@@ -659,11 +1267,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 95,
+            "green" : 72,
+            "red" : 40
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -671,17 +1279,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
+            "alpha" : 255,
+            "blue" : 20,
             "green" : 10,
             "red" : 2
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 49,
-            "width" : 299,
-            "x" : 60,
-            "y" : 475
+            "height" : 47,
+            "width" : 276,
+            "x" : 72,
+            "y" : 442
           },
           "hidden" : false,
           "id" : "4F534346-0002-0006-8000-000000000001",
@@ -697,11 +1305,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -710,16 +1318,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 89,
-            "x" : 60,
-            "y" : 778
+            "width" : 87,
+            "x" : 61,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0002-0007-8000-000000000001",
@@ -735,11 +1343,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -748,16 +1356,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 201,
-            "x" : 158,
-            "y" : 778
+            "width" : 203,
+            "x" : 156,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0002-0008-8000-000000000001",
@@ -773,11 +1381,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -786,16 +1394,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 13,
           "frame" : {
-            "height" : 28,
-            "width" : 84,
-            "x" : 275,
-            "y" : 209
+            "height" : 24,
+            "width" : 101,
+            "x" : 242,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0002-0009-8000-000000000001",
@@ -811,11 +1419,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -824,26 +1432,368 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
             "height" : 24,
-            "width" : 270,
-            "x" : 73,
-            "y" : 489
+            "width" : 125,
+            "x" : 72,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0002-000A-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Input Placeholder",
+          "name" : "InfinityOS Wordmark",
           "opacity" : 100,
           "role" : 0,
-          "text" : "InfinityNode",
+          "text" : "INFINITYOS",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 24,
+            "width" : 276,
+            "x" : 72,
+            "y" : 230
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-000B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Eyebrow",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "MACHINE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 72,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-000C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 107,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-000D-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 142,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-000E-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 177,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-000F-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 212,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0010-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 5",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 247,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0011-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 6",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 282,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0012-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 7",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 317,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0002-0013-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 8",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
           "zIndex" : 6
         }
       ],
@@ -855,11 +1805,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -867,10 +1817,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -893,11 +1843,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -905,17 +1855,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 664,
+            "height" : 736,
             "width" : 340,
             "x" : 40,
-            "y" : 185
+            "y" : 128
           },
           "hidden" : false,
           "id" : "4F534346-0003-0002-8000-000000000001",
@@ -931,11 +1881,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -943,17 +1893,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 430,
-            "width" : 299,
-            "x" : 60,
-            "y" : 276
+            "height" : 504,
+            "width" : 298,
+            "x" : 61,
+            "y" : 222
           },
           "hidden" : false,
           "id" : "4F534346-0003-0003-8000-000000000001",
@@ -969,11 +1919,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -982,16 +1932,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 30,
           "frame" : {
-            "height" : 52,
-            "width" : 299,
-            "x" : 60,
-            "y" : 310
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 270
           },
           "hidden" : false,
           "id" : "4F534346-0003-0004-8000-000000000001",
@@ -1007,11 +1957,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1020,16 +1970,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 72,
-            "width" : 299,
-            "x" : 60,
-            "y" : 370
+            "height" : 82,
+            "width" : 276,
+            "x" : 72,
+            "y" : 326
           },
           "hidden" : false,
           "id" : "4F534346-0003-0005-8000-000000000001",
@@ -1045,11 +1995,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 95,
+            "green" : 72,
+            "red" : 40
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1057,17 +2007,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
+            "alpha" : 255,
+            "blue" : 20,
             "green" : 10,
             "red" : 2
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 49,
-            "width" : 299,
-            "x" : 60,
-            "y" : 475
+            "height" : 47,
+            "width" : 276,
+            "x" : 72,
+            "y" : 442
           },
           "hidden" : false,
           "id" : "4F534346-0003-0006-8000-000000000001",
@@ -1083,11 +2033,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1096,16 +2046,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 89,
-            "x" : 60,
-            "y" : 778
+            "width" : 87,
+            "x" : 61,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0003-0007-8000-000000000001",
@@ -1121,11 +2071,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1134,16 +2084,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 201,
-            "x" : 158,
-            "y" : 778
+            "width" : 203,
+            "x" : 156,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0003-0008-8000-000000000001",
@@ -1159,11 +2109,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1172,16 +2122,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 13,
           "frame" : {
-            "height" : 28,
-            "width" : 84,
-            "x" : 275,
-            "y" : 209
+            "height" : 24,
+            "width" : 101,
+            "x" : 242,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0003-0009-8000-000000000001",
@@ -1197,11 +2147,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1210,26 +2160,368 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
             "height" : 24,
-            "width" : 270,
-            "x" : 73,
-            "y" : 489
+            "width" : 125,
+            "x" : 72,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0003-000A-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Input Placeholder",
+          "name" : "InfinityOS Wordmark",
           "opacity" : 100,
           "role" : 0,
-          "text" : "your-profile",
+          "text" : "INFINITYOS",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 24,
+            "width" : 276,
+            "x" : 72,
+            "y" : 230
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-000B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Eyebrow",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "PROFILE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 72,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-000C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 107,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-000D-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 142,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-000E-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 177,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-000F-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 212,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0010-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 5",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 247,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0011-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 6",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 282,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0012-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 7",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 317,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0003-0013-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 8",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
           "zIndex" : 6
         }
       ],
@@ -1241,11 +2533,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1253,10 +2545,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -1279,11 +2571,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1291,17 +2583,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 664,
+            "height" : 736,
             "width" : 340,
             "x" : 40,
-            "y" : 185
+            "y" : 128
           },
           "hidden" : false,
           "id" : "4F534346-0004-0002-8000-000000000001",
@@ -1317,11 +2609,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1329,17 +2621,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 430,
-            "width" : 299,
-            "x" : 60,
-            "y" : 276
+            "height" : 504,
+            "width" : 298,
+            "x" : 61,
+            "y" : 222
           },
           "hidden" : false,
           "id" : "4F534346-0004-0003-8000-000000000001",
@@ -1355,11 +2647,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1368,16 +2660,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 30,
           "frame" : {
-            "height" : 52,
-            "width" : 299,
-            "x" : 60,
-            "y" : 310
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 270
           },
           "hidden" : false,
           "id" : "4F534346-0004-0004-8000-000000000001",
@@ -1393,11 +2685,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1406,16 +2698,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 72,
-            "width" : 299,
-            "x" : 60,
-            "y" : 370
+            "height" : 82,
+            "width" : 276,
+            "x" : 72,
+            "y" : 326
           },
           "hidden" : false,
           "id" : "4F534346-0004-0005-8000-000000000001",
@@ -1431,11 +2723,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 95,
+            "green" : 72,
+            "red" : 40
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1443,17 +2735,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
+            "alpha" : 255,
+            "blue" : 20,
             "green" : 10,
             "red" : 2
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 49,
-            "width" : 299,
-            "x" : 60,
-            "y" : 475
+            "height" : 47,
+            "width" : 276,
+            "x" : 72,
+            "y" : 442
           },
           "hidden" : false,
           "id" : "4F534346-0004-0006-8000-000000000001",
@@ -1469,11 +2761,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1482,16 +2774,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 89,
-            "x" : 60,
-            "y" : 778
+            "width" : 87,
+            "x" : 61,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0004-0007-8000-000000000001",
@@ -1507,11 +2799,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1520,16 +2812,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 201,
-            "x" : 158,
-            "y" : 778
+            "width" : 203,
+            "x" : 156,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0004-0008-8000-000000000001",
@@ -1545,11 +2837,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1558,16 +2850,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 13,
           "frame" : {
-            "height" : 28,
-            "width" : 84,
-            "x" : 275,
-            "y" : 209
+            "height" : 24,
+            "width" : 101,
+            "x" : 242,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0004-0009-8000-000000000001",
@@ -1583,11 +2875,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1596,26 +2888,368 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
             "height" : 24,
-            "width" : 270,
-            "x" : 73,
-            "y" : 489
+            "width" : 125,
+            "x" : 72,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0004-000A-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Input Placeholder",
+          "name" : "InfinityOS Wordmark",
           "opacity" : 100,
           "role" : 0,
-          "text" : "Display name",
+          "text" : "INFINITYOS",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 24,
+            "width" : 276,
+            "x" : 72,
+            "y" : 230
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-000B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Eyebrow",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "PROFILE",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 72,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-000C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 107,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-000D-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 142,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-000E-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 177,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-000F-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 212,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0010-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 5",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 247,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0011-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 6",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 282,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0012-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 7",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 317,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0004-0013-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 8",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
           "zIndex" : 6
         }
       ],
@@ -1627,11 +3261,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1639,10 +3273,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -1665,11 +3299,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1677,17 +3311,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 664,
+            "height" : 736,
             "width" : 340,
             "x" : 40,
-            "y" : 185
+            "y" : 128
           },
           "hidden" : false,
           "id" : "4F534346-0005-0002-8000-000000000001",
@@ -1703,11 +3337,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1715,17 +3349,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 430,
-            "width" : 299,
-            "x" : 60,
-            "y" : 276
+            "height" : 504,
+            "width" : 298,
+            "x" : 61,
+            "y" : 222
           },
           "hidden" : false,
           "id" : "4F534346-0005-0003-8000-000000000001",
@@ -1741,11 +3375,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1754,16 +3388,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 30,
           "frame" : {
-            "height" : 52,
-            "width" : 299,
-            "x" : 60,
-            "y" : 310
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 270
           },
           "hidden" : false,
           "id" : "4F534346-0005-0004-8000-000000000001",
@@ -1779,11 +3413,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1792,16 +3426,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 72,
-            "width" : 299,
-            "x" : 60,
-            "y" : 370
+            "height" : 82,
+            "width" : 276,
+            "x" : 72,
+            "y" : 326
           },
           "hidden" : false,
           "id" : "4F534346-0005-0005-8000-000000000001",
@@ -1817,11 +3451,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 95,
+            "green" : 72,
+            "red" : 40
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1829,17 +3463,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
+            "alpha" : 255,
+            "blue" : 20,
             "green" : 10,
             "red" : 2
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 49,
-            "width" : 299,
-            "x" : 60,
-            "y" : 475
+            "height" : 47,
+            "width" : 276,
+            "x" : 72,
+            "y" : 442
           },
           "hidden" : false,
           "id" : "4F534346-0005-0006-8000-000000000001",
@@ -1855,11 +3489,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1868,16 +3502,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 89,
-            "x" : 60,
-            "y" : 778
+            "width" : 87,
+            "x" : 61,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0005-0007-8000-000000000001",
@@ -1893,11 +3527,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1906,16 +3540,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 201,
-            "x" : 158,
-            "y" : 778
+            "width" : 203,
+            "x" : 156,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0005-0008-8000-000000000001",
@@ -1931,11 +3565,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1944,16 +3578,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 13,
           "frame" : {
-            "height" : 28,
-            "width" : 84,
-            "x" : 275,
-            "y" : 209
+            "height" : 24,
+            "width" : 101,
+            "x" : 242,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0005-0009-8000-000000000001",
@@ -1969,11 +3603,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -1982,26 +3616,368 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
             "height" : 24,
-            "width" : 270,
-            "x" : 73,
-            "y" : 489
+            "width" : 125,
+            "x" : 72,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0005-000A-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Input Placeholder",
+          "name" : "InfinityOS Wordmark",
           "opacity" : 100,
           "role" : 0,
-          "text" : "Create a password",
+          "text" : "INFINITYOS",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 24,
+            "width" : 276,
+            "x" : 72,
+            "y" : 230
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-000B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Eyebrow",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "SECURITY",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 72,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-000C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 107,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-000D-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 142,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-000E-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 177,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-000F-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 212,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0010-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 5",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 247,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0011-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 6",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 282,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0012-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 7",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 317,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0005-0013-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 8",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
           "zIndex" : 6
         }
       ],
@@ -2013,11 +3989,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2025,10 +4001,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -2051,11 +4027,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2063,17 +4039,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 664,
+            "height" : 736,
             "width" : 340,
             "x" : 40,
-            "y" : 185
+            "y" : 128
           },
           "hidden" : false,
           "id" : "4F534346-0006-0002-8000-000000000001",
@@ -2089,11 +4065,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2101,17 +4077,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 430,
-            "width" : 299,
-            "x" : 60,
-            "y" : 276
+            "height" : 504,
+            "width" : 298,
+            "x" : 61,
+            "y" : 222
           },
           "hidden" : false,
           "id" : "4F534346-0006-0003-8000-000000000001",
@@ -2127,11 +4103,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2140,16 +4116,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 30,
           "frame" : {
-            "height" : 52,
-            "width" : 299,
-            "x" : 60,
-            "y" : 310
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 270
           },
           "hidden" : false,
           "id" : "4F534346-0006-0004-8000-000000000001",
@@ -2165,11 +4141,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2178,16 +4154,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 72,
-            "width" : 299,
-            "x" : 60,
-            "y" : 370
+            "height" : 82,
+            "width" : 276,
+            "x" : 72,
+            "y" : 326
           },
           "hidden" : false,
           "id" : "4F534346-0006-0005-8000-000000000001",
@@ -2203,11 +4179,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 95,
+            "green" : 72,
+            "red" : 40
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2215,17 +4191,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
+            "alpha" : 255,
+            "blue" : 20,
             "green" : 10,
             "red" : 2
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 49,
-            "width" : 299,
-            "x" : 60,
-            "y" : 475
+            "height" : 47,
+            "width" : 276,
+            "x" : 72,
+            "y" : 442
           },
           "hidden" : true,
           "id" : "4F534346-0006-0006-8000-000000000001",
@@ -2241,11 +4217,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2254,16 +4230,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 89,
-            "x" : 60,
-            "y" : 778
+            "width" : 87,
+            "x" : 61,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0006-0007-8000-000000000001",
@@ -2279,11 +4255,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2292,16 +4268,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 201,
-            "x" : 158,
-            "y" : 778
+            "width" : 203,
+            "x" : 156,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0006-0008-8000-000000000001",
@@ -2317,11 +4293,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2330,16 +4306,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 13,
           "frame" : {
-            "height" : 28,
-            "width" : 84,
-            "x" : 275,
-            "y" : 209
+            "height" : 24,
+            "width" : 101,
+            "x" : 242,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0006-0009-8000-000000000001",
@@ -2355,11 +4331,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2368,36 +4344,36 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 42,
-            "width" : 275,
+            "height" : 24,
+            "width" : 125,
             "x" : 72,
-            "y" : 455
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0006-000A-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Privacy Setting 1",
+          "name" : "InfinityOS Wordmark",
           "opacity" : 100,
           "role" : 0,
-          "text" : "Local AI                                      ON",
+          "text" : "INFINITYOS",
           "zIndex" : 6
         },
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2406,36 +4382,36 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "fontSize" : 24,
+          "fontSize" : 14,
           "frame" : {
-            "height" : 42,
-            "width" : 275,
+            "height" : 24,
+            "width" : 276,
             "x" : 72,
-            "y" : 509
+            "y" : 230
           },
           "hidden" : false,
           "id" : "4F534346-0006-000B-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Privacy Setting 2",
+          "name" : "Section Eyebrow",
           "opacity" : 100,
           "role" : 0,
-          "text" : "Remote processing                         OFF",
-          "zIndex" : 7
+          "text" : "AI, VOICE & APPEARANCE",
+          "zIndex" : 6
         },
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2444,36 +4420,36 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "fontSize" : 24,
+          "fontSize" : 8,
           "frame" : {
-            "height" : 42,
-            "width" : 275,
+            "height" : 20,
+            "width" : 31,
             "x" : 72,
-            "y" : 563
+            "y" : 197
           },
           "hidden" : false,
           "id" : "4F534346-0006-000C-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Privacy Setting 3",
+          "name" : "Progress Segment 1",
           "opacity" : 100,
           "role" : 0,
-          "text" : "Voice and microphone                    OFF",
-          "zIndex" : 8
+          "text" : "━━━━",
+          "zIndex" : 6
         },
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2482,27 +4458,711 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "fontSize" : 24,
+          "fontSize" : 8,
           "frame" : {
-            "height" : 42,
-            "width" : 275,
-            "x" : 72,
-            "y" : 617
+            "height" : 20,
+            "width" : 31,
+            "x" : 107,
+            "y" : 197
           },
           "hidden" : false,
           "id" : "4F534346-0006-000D-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Privacy Setting 4",
+          "name" : "Progress Segment 2",
           "opacity" : 100,
           "role" : 0,
-          "text" : "Appearance                 Default Dark",
-          "zIndex" : 9
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 142,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-000E-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 177,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-000F-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 212,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0010-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 5",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 247,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0011-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 6",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 282,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0012-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 7",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 317,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0013-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 8",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 434
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0014-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Card 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 15,
+          "frame" : {
+            "height" : 20,
+            "width" : 153,
+            "x" : 82,
+            "y" : 446
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0015-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Label 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Local AI",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 232,
+            "red" : 156
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 103,
+            "x" : 235,
+            "y" : 446
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0016-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Value 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "ON",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 490
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0017-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Card 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 15,
+          "frame" : {
+            "height" : 20,
+            "width" : 153,
+            "x" : 82,
+            "y" : 502
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0018-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Label 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Remote processing",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 232,
+            "red" : 156
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 103,
+            "x" : 235,
+            "y" : 502
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-0019-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Value 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "OFF",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 546
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-001A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Card 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 15,
+          "frame" : {
+            "height" : 20,
+            "width" : 153,
+            "x" : 82,
+            "y" : 558
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-001B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Label 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Voice and microphone",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 232,
+            "red" : 156
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 103,
+            "x" : 235,
+            "y" : 558
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-001C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Value 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "OFF",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 602
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-001D-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Card 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 15,
+          "frame" : {
+            "height" : 20,
+            "width" : 153,
+            "x" : 82,
+            "y" : 614
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-001E-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Label 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "Appearance",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 232,
+            "red" : 156
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 103,
+            "x" : 235,
+            "y" : 614
+          },
+          "hidden" : false,
+          "id" : "4F534346-0006-001F-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Value 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "DEFAULT DARK",
+          "zIndex" : 7
         }
       ],
       "id" : 6,
@@ -2513,11 +5173,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2525,10 +5185,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -2551,11 +5211,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2563,17 +5223,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 664,
+            "height" : 736,
             "width" : 340,
             "x" : 40,
-            "y" : 185
+            "y" : 128
           },
           "hidden" : false,
           "id" : "4F534346-0007-0002-8000-000000000001",
@@ -2589,11 +5249,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2601,17 +5261,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 430,
-            "width" : 299,
-            "x" : 60,
-            "y" : 276
+            "height" : 504,
+            "width" : 298,
+            "x" : 61,
+            "y" : 222
           },
           "hidden" : false,
           "id" : "4F534346-0007-0003-8000-000000000001",
@@ -2627,11 +5287,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2640,16 +5300,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 30,
           "frame" : {
-            "height" : 52,
-            "width" : 299,
-            "x" : 60,
-            "y" : 310
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 270
           },
           "hidden" : false,
           "id" : "4F534346-0007-0004-8000-000000000001",
@@ -2665,11 +5325,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2678,16 +5338,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 72,
-            "width" : 299,
-            "x" : 60,
-            "y" : 370
+            "height" : 82,
+            "width" : 276,
+            "x" : 72,
+            "y" : 326
           },
           "hidden" : false,
           "id" : "4F534346-0007-0005-8000-000000000001",
@@ -2703,11 +5363,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 95,
+            "green" : 72,
+            "red" : 40
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2715,17 +5375,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
+            "alpha" : 255,
+            "blue" : 20,
             "green" : 10,
             "red" : 2
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 49,
-            "width" : 299,
-            "x" : 60,
-            "y" : 475
+            "height" : 47,
+            "width" : 276,
+            "x" : 72,
+            "y" : 442
           },
           "hidden" : true,
           "id" : "4F534346-0007-0006-8000-000000000001",
@@ -2741,11 +5401,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2754,16 +5414,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 89,
-            "x" : 60,
-            "y" : 778
+            "width" : 87,
+            "x" : 61,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0007-0007-8000-000000000001",
@@ -2779,11 +5439,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2792,16 +5452,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 201,
-            "x" : 158,
-            "y" : 778
+            "width" : 203,
+            "x" : 156,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0007-0008-8000-000000000001",
@@ -2817,11 +5477,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2830,16 +5490,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 13,
           "frame" : {
-            "height" : 28,
-            "width" : 84,
-            "x" : 275,
-            "y" : 209
+            "height" : 24,
+            "width" : 101,
+            "x" : 242,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0007-0009-8000-000000000001",
@@ -2855,11 +5515,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2868,36 +5528,36 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 46,
-            "width" : 275,
+            "height" : 24,
+            "width" : 125,
             "x" : 72,
-            "y" : 455
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0007-000A-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Network Choice 1",
+          "name" : "InfinityOS Wordmark",
           "opacity" : 100,
           "role" : 0,
-          "text" : "WIRED",
+          "text" : "INFINITYOS",
           "zIndex" : 6
         },
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2906,36 +5566,36 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "fontSize" : 24,
+          "fontSize" : 14,
           "frame" : {
-            "height" : 46,
-            "width" : 275,
+            "height" : 24,
+            "width" : 276,
             "x" : 72,
-            "y" : 513
+            "y" : 230
           },
           "hidden" : false,
           "id" : "4F534346-0007-000B-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Network Choice 2",
+          "name" : "Section Eyebrow",
           "opacity" : 100,
           "role" : 0,
-          "text" : "WI-FI",
-          "zIndex" : 7
+          "text" : "NETWORK",
+          "zIndex" : 6
         },
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2944,27 +5604,293 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "fontSize" : 24,
+          "fontSize" : 8,
           "frame" : {
-            "height" : 46,
-            "width" : 275,
+            "height" : 20,
+            "width" : 31,
             "x" : 72,
-            "y" : 571
+            "y" : 197
           },
           "hidden" : false,
           "id" : "4F534346-0007-000C-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Network Choice 3",
+          "name" : "Progress Segment 1",
           "opacity" : 100,
           "role" : 0,
-          "text" : "CONTINUE OFFLINE",
-          "zIndex" : 8
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 107,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-000D-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 142,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-000E-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 177,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-000F-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 212,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0010-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 5",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 247,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0011-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 6",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 282,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0012-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 7",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 317,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0007-0013-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 8",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
         }
       ],
       "id" : 7,
@@ -2975,11 +5901,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -2987,10 +5913,10 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -3013,11 +5939,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -3025,17 +5951,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 664,
+            "height" : 736,
             "width" : 340,
             "x" : 40,
-            "y" : 185
+            "y" : 128
           },
           "hidden" : false,
           "id" : "4F534346-0008-0002-8000-000000000001",
@@ -3051,11 +5977,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -3063,17 +5989,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 430,
-            "width" : 299,
-            "x" : 60,
-            "y" : 276
+            "height" : 504,
+            "width" : 298,
+            "x" : 61,
+            "y" : 222
           },
           "hidden" : false,
           "id" : "4F534346-0008-0003-8000-000000000001",
@@ -3089,11 +6015,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -3102,16 +6028,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 30,
           "frame" : {
-            "height" : 52,
-            "width" : 299,
-            "x" : 60,
-            "y" : 310
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 270
           },
           "hidden" : false,
           "id" : "4F534346-0008-0004-8000-000000000001",
@@ -3127,11 +6053,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -3140,16 +6066,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 72,
-            "width" : 299,
-            "x" : 60,
-            "y" : 370
+            "height" : 82,
+            "width" : 276,
+            "x" : 72,
+            "y" : 326
           },
           "hidden" : false,
           "id" : "4F534346-0008-0005-8000-000000000001",
@@ -3165,11 +6091,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 95,
+            "green" : 72,
+            "red" : 40
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -3177,17 +6103,17 @@
             "top" : 0
           },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
+            "alpha" : 255,
+            "blue" : 20,
             "green" : 10,
             "red" : 2
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 49,
-            "width" : 299,
-            "x" : 60,
-            "y" : 475
+            "height" : 47,
+            "width" : 276,
+            "x" : 72,
+            "y" : 442
           },
           "hidden" : true,
           "id" : "4F534346-0008-0006-8000-000000000001",
@@ -3203,11 +6129,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -3216,16 +6142,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 89,
-            "x" : 60,
-            "y" : 778
+            "width" : 87,
+            "x" : 61,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0008-0007-8000-000000000001",
@@ -3241,11 +6167,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -3254,16 +6180,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
             "height" : 47,
-            "width" : 201,
-            "x" : 158,
-            "y" : 778
+            "width" : 203,
+            "x" : 156,
+            "y" : 789
           },
           "hidden" : false,
           "id" : "4F534346-0008-0008-8000-000000000001",
@@ -3279,11 +6205,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -3292,16 +6218,16 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 13,
           "frame" : {
-            "height" : 28,
-            "width" : 84,
-            "x" : 275,
-            "y" : 209
+            "height" : 24,
+            "width" : 101,
+            "x" : 242,
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0008-0009-8000-000000000001",
@@ -3317,11 +6243,11 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
           "crop" : {
             "bottom" : 0,
             "left" : 0,
@@ -3330,27 +6256,825 @@
           },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
-          "fontSize" : 24,
+          "fontSize" : 17,
           "frame" : {
-            "height" : 150,
-            "width" : 275,
+            "height" : 24,
+            "width" : 125,
             "x" : 72,
-            "y" : 455
+            "y" : 151
           },
           "hidden" : false,
           "id" : "4F534346-0008-000A-8000-000000000001",
           "imageAsset" : "",
           "kind" : 3,
           "locked" : false,
-          "name" : "Ready Summary",
+          "name" : "InfinityOS Wordmark",
           "opacity" : 100,
           "role" : 0,
-          "text" : "IDENTITY READY\nPERSONAL SPACE READY\nPRIVACY DEFAULTS APPLIED\nAPPEARANCE READY",
+          "text" : "INFINITYOS",
           "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 24,
+            "width" : 276,
+            "x" : 72,
+            "y" : 230
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-000B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Eyebrow",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "READY",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 72,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-000C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 107,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-000D-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 142,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-000E-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 177,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-000F-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 212,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0010-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 5",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 247,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0011-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 6",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 282,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0012-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 7",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "fontSize" : 8,
+          "frame" : {
+            "height" : 20,
+            "width" : 31,
+            "x" : 317,
+            "y" : 197
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0013-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Progress Segment 8",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "━━━━",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 434
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0014-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Card 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 15,
+          "frame" : {
+            "height" : 20,
+            "width" : 153,
+            "x" : 82,
+            "y" : 446
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0015-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Label 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "IDENTITY",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 232,
+            "red" : 156
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 103,
+            "x" : 235,
+            "y" : 446
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0016-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Value 1",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "READY",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 484
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0017-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Card 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 15,
+          "frame" : {
+            "height" : 20,
+            "width" : 153,
+            "x" : 82,
+            "y" : 496
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0018-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Label 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "PERSONAL SPACE",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 232,
+            "red" : 156
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 103,
+            "x" : 235,
+            "y" : 496
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-0019-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Value 2",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "READY",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 534
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-001A-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Card 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 15,
+          "frame" : {
+            "height" : 20,
+            "width" : 153,
+            "x" : 82,
+            "y" : 546
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-001B-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Label 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "PRIVACY DEFAULTS",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 232,
+            "red" : 156
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 103,
+            "x" : 235,
+            "y" : 546
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-001C-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Value 3",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "READY",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 44,
+            "width" : 276,
+            "x" : 72,
+            "y" : 584
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-001D-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Card 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "",
+          "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 15,
+          "frame" : {
+            "height" : 20,
+            "width" : 153,
+            "x" : 82,
+            "y" : 596
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-001E-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Label 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "APPEARANCE",
+          "zIndex" : 7
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 232,
+            "red" : 156
+          },
+          "fontSize" : 13,
+          "frame" : {
+            "height" : 20,
+            "width" : 103,
+            "x" : 235,
+            "y" : 596
+          },
+          "hidden" : false,
+          "id" : "4F534346-0008-001F-8000-000000000001",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Setting Value 4",
+          "opacity" : 100,
+          "role" : 0,
+          "text" : "READY",
+          "zIndex" : 7
         }
       ],
       "id" : 8,

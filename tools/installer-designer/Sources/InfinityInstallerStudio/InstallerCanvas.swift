@@ -27,6 +27,12 @@ struct InstallerCanvas: View {
                                     .zIndex(Double(element.zIndex))
                             }
                         }
+                        if store.selectedCollection == .configuration,
+                           store.selectedScreenID == 7
+                        {
+                            ConfigurationNetworkPreview(canvasScale: canvasScale)
+                                .zIndex(7_500)
+                        }
                     }
                     .frame(width: 1000 * canvasScale.width, height: 1000 * canvasScale.height)
                     .coordinateSpace(name: CanvasInteractionMetrics.coordinateSpaceName)
@@ -39,7 +45,7 @@ struct InstallerCanvas: View {
                 }
                 .background(
                     LinearGradient(
-                        colors: [Color(nsColor: .windowBackgroundColor), Color.black.opacity(0.88)],
+                        colors: [InfinityUIKit.Palette.nativePanelRaised, InfinityUIKit.Palette.nativeCanvas],
                         startPoint: .top,
                         endPoint: .bottom
                     )
@@ -62,9 +68,9 @@ struct InstallerCanvas: View {
     @ViewBuilder
     private func artboardBackground(scale: CGSize) -> some View {
         ZStack {
-            Color(red: 0.008, green: 0.018, blue: 0.035)
+            InfinityUIKit.Palette.nativeCanvas
             RadialGradient(
-                colors: [Color.cyan.opacity(0.18), Color.clear],
+                colors: [InfinityUIKit.Palette.nativeAccent.opacity(0.18), Color.clear],
                 center: .top,
                 startRadius: 10,
                 endRadius: 520 * scale.height
@@ -119,14 +125,14 @@ private struct SnapGrid: View {
                 }
                 y += stepY
             }
-            context.stroke(minorPath, with: .color(.cyan.opacity(0.06)), lineWidth: 0.5)
-            context.stroke(majorPath, with: .color(.cyan.opacity(0.15)), lineWidth: 0.8)
+            context.stroke(minorPath, with: .color(InfinityUIKit.Palette.nativeAccent.opacity(0.06)), lineWidth: 0.5)
+            context.stroke(majorPath, with: .color(InfinityUIKit.Palette.nativeAccent.opacity(0.15)), lineWidth: 0.8)
             var axes = Path()
             axes.move(to: CGPoint(x: size.width / 2, y: 0))
             axes.addLine(to: CGPoint(x: size.width / 2, y: size.height))
             axes.move(to: CGPoint(x: 0, y: size.height / 2))
             axes.addLine(to: CGPoint(x: size.width, y: size.height / 2))
-            context.stroke(axes, with: .color(.cyan.opacity(0.28)), lineWidth: 1)
+            context.stroke(axes, with: .color(InfinityUIKit.Palette.nativeAccent.opacity(0.28)), lineWidth: 1)
         }
         .allowsHitTesting(false)
     }
@@ -168,6 +174,15 @@ private struct CanvasElementView: View {
                     RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
                         .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
                 }
+                .overlay(alignment: .leading) {
+                    if element.role == .input, !element.text.isEmpty {
+                        Text(element.text)
+                            .font(.system(size: max(8, CGFloat(16) * canvasScale.height)))
+                            .foregroundStyle(InfinityUIKit.Palette.placeholder.color)
+                            .padding(.leading, CGFloat(16) * canvasScale.height)
+                            .lineLimit(1)
+                    }
+                }
         case .console:
             RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
                 .fill(element.fill.color)
@@ -207,7 +222,7 @@ private struct CanvasElementView: View {
                 .clipped()
         } else {
             RoundedRectangle(cornerRadius: 8 * canvasScale.height)
-                .fill(Color.cyan.opacity(0.08))
+                .fill(InfinityUIKit.Palette.nativeAccent.opacity(0.08))
                 .overlay {
                     VStack(spacing: 5) {
                         Image(systemName: element.role == .masthead ? "infinity" : "photo")
@@ -215,7 +230,7 @@ private struct CanvasElementView: View {
                             .lineLimit(1)
                     }
                     .font(.system(size: max(8, 16 * canvasScale.height)))
-                    .foregroundStyle(Color.cyan.opacity(0.8))
+                    .foregroundStyle(InfinityUIKit.Palette.nativeAccent.opacity(0.8))
                 }
         }
     }
@@ -225,7 +240,7 @@ private struct CanvasElementView: View {
         if isSelected {
             ZStack {
                 Rectangle()
-                    .stroke(element.locked ? Color.orange : Color.cyan, style: StrokeStyle(lineWidth: 2, dash: element.locked ? [5, 4] : []))
+                    .stroke(element.locked ? Color.orange : InfinityUIKit.Palette.nativeAccent, style: StrokeStyle(lineWidth: 2, dash: element.locked ? [5, 4] : []))
                     .allowsHitTesting(false)
                 if element.locked {
                     VStack {
@@ -323,6 +338,60 @@ private struct CanvasElementView: View {
     }
 }
 
+private struct ConfigurationNetworkPreview: View {
+    let canvasScale: CGSize
+    private let labels = ["WIRED", "WI-FI", "CONTINUE OFFLINE"]
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
+                let frame = CanvasRect(x: 72, y: 434 + index * 58, width: 276, height: 46)
+                RoundedRectangle(cornerRadius: CGFloat(10) * canvasScale.height)
+                    .fill(InfinityUIKit.Palette.panelRaised.color)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: CGFloat(10) * canvasScale.height)
+                            .stroke(
+                                index == 0
+                                    ? InfinityUIKit.Palette.accent.color
+                                    : InfinityUIKit.Palette.border.color,
+                                lineWidth: max(1, canvasScale.height)
+                            )
+                    }
+                    .overlay(alignment: .leading) {
+                        HStack(spacing: CGFloat(10) * canvasScale.height) {
+                            Circle()
+                                .fill(index == 0
+                                    ? InfinityUIKit.Palette.accent.color
+                                    : InfinityUIKit.Palette.border.color)
+                                .frame(
+                                    width: CGFloat(8) * canvasScale.height,
+                                    height: CGFloat(8) * canvasScale.height
+                                )
+                            Text(label)
+                                .font(.system(
+                                    size: max(8, CGFloat(15) * canvasScale.height),
+                                    weight: .semibold
+                                ))
+                                .foregroundStyle(InfinityUIKit.Palette.nativeTextPrimary)
+                        }
+                        .padding(.leading, CGFloat(16) * canvasScale.height)
+                    }
+                    .frame(
+                        width: CGFloat(frame.width) * canvasScale.width,
+                        height: CGFloat(frame.height) * canvasScale.height
+                    )
+                    .position(
+                        x: CGFloat(frame.x) * canvasScale.width
+                            + CGFloat(frame.width) * canvasScale.width / 2,
+                        y: CGFloat(frame.y) * canvasScale.height
+                            + CGFloat(frame.height) * canvasScale.height / 2
+                    )
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 private struct ResizeHandleView: View {
     let handle: ResizeHandle
     let elementID: UUID
@@ -336,7 +405,7 @@ private struct ResizeHandleView: View {
                 .fill(Color.clear)
             Circle()
                 .fill(Color.white)
-                .overlay(Circle().stroke(Color.cyan, lineWidth: 2))
+                .overlay(Circle().stroke(InfinityUIKit.Palette.nativeAccent, lineWidth: 2))
                 .frame(
                     width: CanvasInteractionMetrics.resizeHandleVisualSize,
                     height: CanvasInteractionMetrics.resizeHandleVisualSize

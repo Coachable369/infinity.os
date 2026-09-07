@@ -7,16 +7,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -39,16 +45,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -71,16 +83,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -103,16 +121,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -135,18 +159,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -167,16 +197,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -199,16 +235,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -231,18 +273,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -269,16 +317,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -301,16 +355,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -333,16 +393,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -365,16 +431,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -397,18 +469,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -429,16 +507,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -461,16 +545,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -493,18 +583,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -531,16 +627,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -563,16 +665,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -595,16 +703,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -627,16 +741,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -659,18 +779,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -691,16 +817,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -723,16 +855,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -755,18 +893,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -793,16 +937,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -825,16 +975,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -857,16 +1013,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -889,16 +1051,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -921,18 +1089,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -953,16 +1127,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -985,16 +1165,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -1017,18 +1203,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -1055,16 +1247,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -1087,16 +1285,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -1119,16 +1323,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -1151,16 +1361,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -1183,18 +1399,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -1215,16 +1437,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -1247,16 +1475,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -1279,18 +1513,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -1317,16 +1557,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -1349,16 +1595,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -1381,16 +1633,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -1413,16 +1671,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -1445,18 +1709,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -1477,16 +1747,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -1509,16 +1785,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -1541,18 +1823,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -1579,16 +1867,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -1611,16 +1905,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -1643,16 +1943,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -1675,16 +1981,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -1707,18 +2019,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -1739,16 +2057,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -1771,16 +2095,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -1803,18 +2133,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -1841,16 +2177,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -1873,16 +2215,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -1905,16 +2253,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -1937,16 +2291,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -1969,18 +2329,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -2001,16 +2367,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -2033,16 +2405,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -2065,18 +2443,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -2103,16 +2487,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -2135,16 +2525,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -2167,16 +2563,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -2199,16 +2601,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -2231,18 +2639,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -2263,16 +2677,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -2295,16 +2715,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -2327,18 +2753,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -2365,16 +2797,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -2397,16 +2835,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -2429,16 +2873,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -2461,16 +2911,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -2493,18 +2949,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -2525,16 +2987,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -2557,16 +3025,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -2589,18 +3063,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,
@@ -2627,16 +3107,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -2659,16 +3145,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 6,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
           },
           "fontSize" : 19,
           "frame" : {
@@ -2691,16 +3183,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
           },
           "fontSize" : 24,
           "frame" : {
@@ -2723,16 +3221,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 71,
+            "red" : 51
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 16,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
-            "alpha" : 232,
-            "blue" : 18,
-            "green" : 10,
-            "red" : 2
+            "alpha" : 240,
+            "blue" : 42,
+            "green" : 29,
+            "red" : 18
           },
           "fontSize" : 19,
           "frame" : {
@@ -2755,18 +3259,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 24,
+          "fontSize" : 18,
           "frame" : {
             "height" : 120,
             "width" : 540,
@@ -2787,16 +3297,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 91,
+            "green" : 69,
+            "red" : 42
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 27,
+            "green" : 15,
+            "red" : 5
           },
           "fontSize" : 20,
           "frame" : {
@@ -2819,16 +3335,22 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 231,
+            "green" : 181,
+            "red" : 40
           },
-          "cornerRadius" : 9,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 44,
-            "green" : 28,
-            "red" : 14
+            "blue" : 84,
+            "green" : 54,
+            "red" : 8
           },
           "fontSize" : 20,
           "frame" : {
@@ -2851,18 +3373,24 @@
         {
           "border" : {
             "alpha" : 255,
-            "blue" : 246,
-            "green" : 198,
-            "red" : 52
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
           },
-          "cornerRadius" : 12,
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
           "fill" : {
             "alpha" : 255,
-            "blue" : 241,
-            "green" : 230,
-            "red" : 220
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
           },
-          "fontSize" : 19,
+          "fontSize" : 16,
           "frame" : {
             "height" : 40,
             "width" : 800,

@@ -94,10 +94,10 @@ struct StudioColor: Codable, Hashable {
     var blue: UInt8
     var alpha: UInt8
 
-    static let panel = StudioColor(red: 2, green: 10, blue: 18, alpha: 232)
-    static let cyan = StudioColor(red: 52, green: 198, blue: 246, alpha: 255)
-    static let text = StudioColor(red: 220, green: 230, blue: 241, alpha: 255)
-    static let button = StudioColor(red: 14, green: 28, blue: 44, alpha: 255)
+    static let panel = StudioColor(red: 10, green: 18, blue: 29, alpha: 230)
+    static let cyan = StudioColor(red: 32, green: 191, blue: 255, alpha: 255)
+    static let text = StudioColor(red: 241, green: 245, blue: 250, alpha: 255)
+    static let button = StudioColor(red: 5, green: 15, blue: 27, alpha: 255)
 
     var color: Color {
         Color(
@@ -176,7 +176,7 @@ struct StudioElement: Identifiable, Codable, Hashable {
             border: .cyan,
             fontSize: kind == .text ? 24 : 19,
             opacity: 100,
-            cornerRadius: kind == .console ? 6 : 12,
+            cornerRadius: kind == .console ? 16 : 10,
             zIndex: zIndex,
             locked: locked,
             hidden: false
@@ -380,6 +380,10 @@ struct InstallerStudioDocument: Codable, Hashable {
         placeholder: String,
         primary: String
     ) -> [StudioElement] {
+        let eyebrow = [
+            "WELCOME", "MACHINE", "PROFILE", "PROFILE", "SECURITY",
+            "AI, VOICE & APPEARANCE", "NETWORK", "READY",
+        ][step]
         var elements: [StudioElement] = [
             .make(
                 name: "First-Boot Background", kind: .image, role: .masthead,
@@ -388,94 +392,206 @@ struct InstallerStudioDocument: Codable, Hashable {
             ),
             .make(
                 name: "Configuration Card", kind: .console, role: .console,
-                frame: CanvasRect(x: 40, y: 185, width: 340, height: 664), zIndex: 1
+                frame: InfinityUIKit.Metrics.configurationCard, zIndex: 1
             ),
             .make(
                 name: "Configuration Content", kind: .panel, role: .content,
-                frame: CanvasRect(x: 60, y: 276, width: 299, height: 430), zIndex: 2
+                frame: InfinityUIKit.Metrics.configurationContent, zIndex: 2
             ),
             .make(
                 name: "Screen Title", kind: .text, role: .title,
-                frame: CanvasRect(x: 60, y: 310, width: 299, height: 52),
+                frame: InfinityUIKit.Metrics.configurationTitle,
                 text: title, zIndex: 4
             ),
             .make(
                 name: "Body Copy", kind: .text, role: .body,
-                frame: CanvasRect(x: 60, y: 370, width: 299, height: 72),
+                frame: InfinityUIKit.Metrics.configurationBody,
                 text: body, zIndex: 4
             ),
             .make(
                 name: "Configuration Input", kind: .panel, role: .input,
-                frame: CanvasRect(x: 60, y: 475, width: 299, height: 49),
+                frame: InfinityUIKit.Metrics.configurationInput,
                 text: placeholder, zIndex: 5
             ),
             lockedButton(
                 name: "Back", role: .backButton,
-                frame: CanvasRect(x: 60, y: 778, width: 89, height: 47),
+                frame: InfinityUIKit.Metrics.configurationBack,
                 text: "BACK", zIndex: 8
             ),
             lockedButton(
                 name: "Primary", role: .primaryButton,
-                frame: CanvasRect(x: 158, y: 778, width: 201, height: 47),
+                frame: InfinityUIKit.Metrics.configurationPrimary,
                 text: primary, zIndex: 8
             ),
             .make(
                 name: "Privacy Mark", kind: .text, role: .footer,
-                frame: CanvasRect(x: 275, y: 209, width: 84, height: 28),
+                frame: CanvasRect(x: 242, y: 151, width: 101, height: 24),
                 text: "LOCAL | PRIVATE", zIndex: 6
             ),
+            .make(
+                name: "InfinityOS Wordmark", kind: .text,
+                frame: CanvasRect(x: 72, y: 151, width: 125, height: 24),
+                text: "INFINITYOS", zIndex: 6
+            ),
+            .make(
+                name: "Section Eyebrow", kind: .text,
+                frame: CanvasRect(x: 72, y: 230, width: 276, height: 24),
+                text: eyebrow, zIndex: 6
+            ),
         ]
+        elements[1].fill = InfinityUIKit.Palette.panel
+        elements[1].border = InfinityUIKit.Palette.border
+        elements[1].cornerRadius = 16
+        elements[2].fill = InfinityUIKit.Palette.panelRaised
+        elements[2].border = InfinityUIKit.Palette.border
+        elements[2].cornerRadius = 16
+        elements[3].fill = InfinityUIKit.Palette.textPrimary
+        elements[3].fontSize = 30
+        elements[4].fill = InfinityUIKit.Palette.textSecondary
+        elements[4].fontSize = 17
+        elements[5].fill = InfinityUIKit.Palette.field
+        elements[5].border = InfinityUIKit.Palette.fieldBorder
+        elements[5].cornerRadius = 10
+        elements[8].fill = InfinityUIKit.Palette.textSecondary
+        elements[8].fontSize = 13
+        elements[9].fill = InfinityUIKit.Palette.textPrimary
+        elements[9].fontSize = 17
+        elements[10].fill = InfinityUIKit.Palette.accent
+        elements[10].fontSize = 14
+
+        for progressIndex in 0..<8 {
+            var segment = StudioElement.make(
+                name: "Progress Segment \(progressIndex + 1)", kind: .text,
+                frame: CanvasRect(x: 72 + progressIndex * 35, y: 197, width: 31, height: 20),
+                text: "━━━━", zIndex: 6
+            )
+            segment.fill = progressIndex <= step
+                ? InfinityUIKit.Palette.accent
+                : InfinityUIKit.Palette.border
+            segment.fontSize = 8
+            elements.append(segment)
+        }
         if placeholder.isEmpty {
             elements[5].hidden = true
-        } else {
-            elements.append(.make(
-                name: "Input Placeholder", kind: .text,
-                frame: CanvasRect(x: 73, y: 489, width: 270, height: 24),
-                text: placeholder, zIndex: 6
-            ))
         }
         if step == 0 {
-            for (index, copy) in [
-                "Yours from the start\nIdentity and Personal Space are built in.",
-                "Private by design\nExplicit capability controls stay local.",
-                "Ready to grow\nObjects, apps, and AI share one system.",
-            ].enumerated() {
-                elements.append(.make(
-                    name: "Welcome Benefit \(index + 1)", kind: .text,
-                    frame: CanvasRect(x: 72, y: 455 + index * 68, width: 275, height: 54),
-                    text: copy, zIndex: 6 + index
-                ))
+            elements[6].frame = CanvasRect(x: 61, y: 789, width: 298, height: 47)
+            elements[6].opacity = 0
+            elements[7].frame = CanvasRect(x: 61, y: 789, width: 298, height: 47)
+            let benefits = [
+                ("Yours from the start", "Identity and Personal Space are built in."),
+                ("Private by design", "Explicit capability controls stay local."),
+                ("Ready to grow", "Objects, apps, and AI share one system."),
+            ]
+            for (index, benefit) in benefits.enumerated() {
+                appendConfigurationRow(
+                    to: &elements,
+                    index: index,
+                    top: 434 + index * 66,
+                    heading: benefit.0,
+                    detail: benefit.1,
+                    prefix: "Welcome Benefit"
+                )
             }
         } else if step == 5 {
-            for (index, copy) in [
-                "Local AI                                      ON",
-                "Remote processing                         OFF",
-                "Voice and microphone                    OFF",
-                "Appearance                 Default Dark",
+            for (index, setting) in [
+                ("Local AI", "ON"),
+                ("Remote processing", "OFF"),
+                ("Voice and microphone", "OFF"),
+                ("Appearance", "DEFAULT DARK"),
             ].enumerated() {
-                elements.append(.make(
-                    name: "Privacy Setting \(index + 1)", kind: .text,
-                    frame: CanvasRect(x: 72, y: 455 + index * 54, width: 275, height: 42),
-                    text: copy, zIndex: 6 + index
-                ))
-            }
-        } else if step == 6 {
-            for (index, copy) in ["WIRED", "WI-FI", "CONTINUE OFFLINE"].enumerated() {
-                elements.append(.make(
-                    name: "Network Choice \(index + 1)", kind: .text,
-                    frame: CanvasRect(x: 72, y: 455 + index * 58, width: 275, height: 46),
-                    text: copy, zIndex: 6 + index
-                ))
+                appendConfigurationSetting(
+                    to: &elements,
+                    index: index,
+                    top: 434 + index * 56,
+                    label: setting.0,
+                    value: setting.1
+                )
             }
         } else if step == 7 {
-            elements.append(.make(
-                name: "Ready Summary", kind: .text,
-                frame: CanvasRect(x: 72, y: 455, width: 275, height: 150),
-                text: "IDENTITY READY\nPERSONAL SPACE READY\nPRIVACY DEFAULTS APPLIED\nAPPEARANCE READY",
-                zIndex: 6
-            ))
+            let ready = ["IDENTITY", "PERSONAL SPACE", "PRIVACY DEFAULTS", "APPEARANCE"]
+            for (index, label) in ready.enumerated() {
+                appendConfigurationSetting(
+                    to: &elements,
+                    index: index,
+                    top: 434 + index * 50,
+                    label: label,
+                    value: "READY"
+                )
+            }
         }
         return elements
+    }
+
+    // ------------------------=
+    // FUNC: appendConfigurationRow
+    // DESC: Adds a consistently guttered raised card with primary and secondary copy.
+    // ------------------=
+    private static func appendConfigurationRow(
+        to elements: inout [StudioElement],
+        index: Int,
+        top: Int,
+        heading: String,
+        detail: String,
+        prefix: String
+    ) {
+        var panel = StudioElement.make(
+            name: "\(prefix) Card \(index + 1)", kind: .panel,
+            frame: CanvasRect(x: 72, y: top, width: 276, height: 54), zIndex: 6
+        )
+        panel.fill = InfinityUIKit.Palette.panelRaised
+        panel.border = InfinityUIKit.Palette.border
+        panel.cornerRadius = 10
+        var headingElement = StudioElement.make(
+            name: "\(prefix) Heading \(index + 1)", kind: .text,
+            frame: CanvasRect(x: 82, y: top + 8, width: 256, height: 20),
+            text: heading, zIndex: 7
+        )
+        headingElement.fill = InfinityUIKit.Palette.textPrimary
+        headingElement.fontSize = 16
+        var detailElement = StudioElement.make(
+            name: "\(prefix) Detail \(index + 1)", kind: .text,
+            frame: CanvasRect(x: 82, y: top + 29, width: 256, height: 20),
+            text: detail, zIndex: 7
+        )
+        detailElement.fill = InfinityUIKit.Palette.textSecondary
+        detailElement.fontSize = 13
+        elements.append(contentsOf: [panel, headingElement, detailElement])
+    }
+
+    // ------------------------=
+    // FUNC: appendConfigurationSetting
+    // DESC: Adds one standardized configuration value row with aligned label and state.
+    // ------------------=
+    private static func appendConfigurationSetting(
+        to elements: inout [StudioElement],
+        index: Int,
+        top: Int,
+        label: String,
+        value: String
+    ) {
+        var panel = StudioElement.make(
+            name: "Setting Card \(index + 1)", kind: .panel,
+            frame: CanvasRect(x: 72, y: top, width: 276, height: 44), zIndex: 6
+        )
+        panel.fill = InfinityUIKit.Palette.panelRaised
+        panel.border = InfinityUIKit.Palette.border
+        panel.cornerRadius = 10
+        var labelElement = StudioElement.make(
+            name: "Setting Label \(index + 1)", kind: .text,
+            frame: CanvasRect(x: 82, y: top + 12, width: 153, height: 20),
+            text: label, zIndex: 7
+        )
+        labelElement.fill = InfinityUIKit.Palette.textPrimary
+        labelElement.fontSize = 15
+        var valueElement = StudioElement.make(
+            name: "Setting Value \(index + 1)", kind: .text,
+            frame: CanvasRect(x: 235, y: top + 12, width: 103, height: 20),
+            text: value, zIndex: 7
+        )
+        valueElement.fill = InfinityUIKit.Palette.accentBright
+        valueElement.fontSize = 13
+        elements.append(contentsOf: [panel, labelElement, valueElement])
     }
 
     // ------------------------=
@@ -483,7 +599,7 @@ struct InstallerStudioDocument: Codable, Hashable {
     // DESC: Creates the shared gold-standard composition for one installer screen.
     // ------------------=
     private static func defaultElements(title: String, body: String) -> [StudioElement] {
-        [
+        var elements: [StudioElement] = [
             .make(
                 name: "InfinityOS Masthead",
                 kind: .image,
@@ -548,6 +664,19 @@ struct InstallerStudioDocument: Codable, Hashable {
                 zIndex: 9
             ),
         ]
+        elements[1].fill = InfinityUIKit.Palette.panel
+        elements[1].border = InfinityUIKit.Palette.border
+        elements[1].cornerRadius = 16
+        elements[2].fill = InfinityUIKit.Palette.textPrimary
+        elements[2].fontSize = 24
+        elements[3].fill = InfinityUIKit.Palette.panelRaised
+        elements[3].border = InfinityUIKit.Palette.border
+        elements[3].cornerRadius = 16
+        elements[4].fill = InfinityUIKit.Palette.textSecondary
+        elements[4].fontSize = 18
+        elements[7].fill = InfinityUIKit.Palette.textSecondary
+        elements[7].fontSize = 16
+        return elements
     }
 
     // ------------------------=
@@ -570,9 +699,14 @@ struct InstallerStudioDocument: Codable, Hashable {
             locked: true,
             zIndex: zIndex
         )
-        element.fill = .button
+        element.fill = role == .primaryButton
+            ? InfinityUIKit.Palette.primaryAction
+            : InfinityUIKit.Palette.secondaryAction
+        element.border = role == .primaryButton
+            ? InfinityUIKit.Palette.primaryActionBorder
+            : InfinityUIKit.Palette.secondaryActionBorder
         element.fontSize = 20
-        element.cornerRadius = 9
+        element.cornerRadius = 10
         return element
     }
 }

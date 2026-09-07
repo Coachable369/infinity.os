@@ -18,7 +18,8 @@ struct StudioRootView: View {
             Divider()
             StudioStatusBar(store: store)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(InfinityUIKit.Palette.nativeCanvas)
+        .tint(InfinityUIKit.Palette.nativeAccent)
         .alert("Template Validation", isPresented: .constant(!store.validationIssues.isEmpty)) {
             Button("OK") { store.validationIssues = [] }
         } message: {
@@ -40,7 +41,7 @@ private struct StudioToolbar: View {
             } else {
                 Image(systemName: "infinity")
                     .font(.title2.weight(.semibold))
-                    .foregroundStyle(.cyan)
+                    .foregroundStyle(InfinityUIKit.Palette.nativeAccent)
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text("Installer Studio").font(.headline)
@@ -86,13 +87,13 @@ private struct StudioToolbar: View {
             Button(action: store.save) {
                 Label("Save", systemImage: "square.and.arrow.down")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.cyan)
+            .buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
         }
-        .controlSize(.small)
-        .padding(.horizontal, 14)
-        .frame(height: 58)
-        .background(.ultraThinMaterial)
+        .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+        .controlSize(.regular)
+        .padding(.horizontal, InfinityUIKit.Metrics.gutter)
+        .frame(height: InfinityUIKit.Metrics.toolbarHeight)
+        .background(InfinityUIKit.Palette.nativePanel)
     }
 
     // ------------------------=
@@ -161,19 +162,20 @@ private struct ScreenSidebar: View {
                         .help("Remove Screen")
                         .disabled(!store.canRemoveScreen)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(InfinityStudioButtonStyle(emphasis: .quiet))
                 }
-                .controlSize(.small)
-                .padding(14)
+                .controlSize(.regular)
+                .padding(InfinityUIKit.Metrics.gutter)
             }
             Divider()
             Button(role: .destructive, action: store.resetScreen) {
                 Label("Reset Current Screen", systemImage: "arrow.counterclockwise")
             }
-            .buttonStyle(.plain)
-            .padding(14)
+            .buttonStyle(InfinityStudioButtonStyle(emphasis: .quiet))
+            .foregroundStyle(.red)
+            .padding(InfinityUIKit.Metrics.gutter)
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.7))
+        .background(InfinityUIKit.Palette.nativePanel)
     }
 
     // ------------------------=
@@ -183,7 +185,9 @@ private struct ScreenSidebar: View {
     private func collectionHeader(_ collection: ScreenCollection) -> some View {
         HStack(spacing: 8) {
             Image(systemName: collection == .installation ? "shippingbox" : "person.crop.rectangle.stack")
-                .foregroundStyle(store.selectedCollection == collection ? .cyan : .secondary)
+                .foregroundStyle(store.selectedCollection == collection
+                    ? InfinityUIKit.Palette.nativeAccent
+                    : InfinityUIKit.Palette.nativeTextSecondary)
             Text(collection.title.uppercased())
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(store.selectedCollection == collection ? .primary : .secondary)
@@ -214,9 +218,11 @@ private struct ScreenSidebar: View {
                 HStack(spacing: 10) {
                     Text(String(format: "%02d", screen.id))
                         .font(.system(.caption, design: .monospaced).weight(.bold))
-                        .foregroundStyle(selected ? .black : .cyan)
+                        .foregroundStyle(selected ? .black : InfinityUIKit.Palette.nativeAccent)
                         .frame(width: 28, height: 28)
-                        .background(selected ? Color.cyan : Color.cyan.opacity(0.12))
+                        .background(selected
+                            ? InfinityUIKit.Palette.nativeAccent
+                            : InfinityUIKit.Palette.nativeAccent.opacity(0.12))
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(screen.title).font(.callout.weight(.medium))
@@ -229,7 +235,7 @@ private struct ScreenSidebar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .listRowBackground(selected ? Color.cyan.opacity(0.13) : Color.clear)
+            .listRowBackground(selected ? InfinityUIKit.Palette.nativeAccent.opacity(0.13) : Color.clear)
         }
         .onMove { offsets, destination in
             store.moveScreensInCollection(collection, fromOffsets: offsets, toOffset: destination)
@@ -276,12 +282,12 @@ private struct StudioStatusBar: View {
                 }
                 .help("Zoom In")
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(InfinityStudioButtonStyle(emphasis: .quiet))
         }
         .font(.caption)
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 14)
-        .frame(height: 30)
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, InfinityUIKit.Metrics.gutter)
+        .frame(height: InfinityUIKit.Metrics.statusBarHeight)
+        .background(InfinityUIKit.Palette.nativePanel)
     }
 }

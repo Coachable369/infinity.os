@@ -6,11 +6,11 @@ struct InlineElementEditor: View {
     private var element: StudioElement? { store.selectedElement }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: InfinityUIKit.Metrics.controlGap) {
             if let element {
                 HStack(spacing: 8) {
                     Image(systemName: icon(for: element.kind))
-                        .foregroundStyle(.cyan)
+                        .foregroundStyle(InfinityUIKit.Palette.nativeAccent)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(element.kind.title).font(.headline)
                         Text("Inline editor").font(.caption).foregroundStyle(.secondary)
@@ -19,8 +19,8 @@ struct InlineElementEditor: View {
                     Button(action: { store.toggleElementLock(element.id) }) {
                         Label("Lock", systemImage: "lock.fill")
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+                    .controlSize(.regular)
                 }
 
                 TextField("Layer name", text: stringBinding(\.name))
@@ -31,7 +31,10 @@ struct InlineElementEditor: View {
                         .scrollContentBackground(.hidden)
                         .frame(height: 76)
                         .padding(5)
-                        .background(Color.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
+                        .background(
+                            InfinityUIKit.Palette.nativePanelRaised,
+                            in: RoundedRectangle(cornerRadius: InfinityUIKit.Metrics.controlRadius)
+                        )
                 } else if element.kind == .image {
                     HStack {
                         Text(element.imageAsset).font(.caption.monospaced()).lineLimit(1)
@@ -98,16 +101,20 @@ struct InlineElementEditor: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                     Button("Done", action: store.dismissInlineEditor)
+                        .buttonStyle(InfinityStudioButtonStyle(emphasis: .primary))
                         .keyboardShortcut(.defaultAction)
                 }
             }
         }
-        .padding(14)
+        .padding(InfinityUIKit.Metrics.gutter)
         .frame(width: 340)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .background(
+            InfinityUIKit.Palette.nativePanel,
+            in: RoundedRectangle(cornerRadius: InfinityUIKit.Metrics.panelRadius)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.cyan.opacity(0.42), lineWidth: 1)
+            RoundedRectangle(cornerRadius: InfinityUIKit.Metrics.panelRadius)
+                .stroke(InfinityUIKit.Palette.nativeAccent.opacity(0.42), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.5), radius: 22, y: 8)
     }

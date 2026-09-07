@@ -14,13 +14,13 @@ struct ElementInspector: View {
                     .help("Bring Forward")
             }
             .buttonStyle(.plain)
-            .padding(12)
+            .padding(InfinityUIKit.Metrics.controlGap)
             List((store.selectedScreen?.elements ?? []).sorted { $0.zIndex > $1.zIndex }) { element in
                 HStack(spacing: 8) {
                     Button(action: { store.selectElement(element.id) }) {
                         HStack(spacing: 8) {
                             Image(systemName: icon(for: element.kind))
-                                .foregroundStyle(element.locked ? .orange : .cyan)
+                                .foregroundStyle(element.locked ? .orange : InfinityUIKit.Palette.nativeAccent)
                                 .frame(width: 18)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(element.name).lineLimit(1)
@@ -40,14 +40,16 @@ struct ElementInspector: View {
                     .buttonStyle(.borderless)
                     .help(element.locked ? "Unlock Element" : "Lock Element")
                 }
-                .listRowBackground(element.id == store.selectedElementID ? Color.cyan.opacity(0.12) : Color.clear)
+                .listRowBackground(element.id == store.selectedElementID
+                    ? InfinityUIKit.Palette.nativeAccent.opacity(0.12)
+                    : Color.clear)
             }
             .listStyle(.inset)
             .frame(minHeight: 190, idealHeight: 240)
             Divider()
             if let element = store.selectedElement {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: InfinityUIKit.Metrics.controlGap) {
                         inspectorHeader(element)
                         Divider()
                         geometrySection(element)
@@ -60,7 +62,7 @@ struct ElementInspector: View {
                         appearanceSection(element)
                         actionSection(element)
                     }
-                    .padding(14)
+                    .padding(InfinityUIKit.Metrics.gutter)
                 }
             } else {
                 ContentUnavailableView(
@@ -70,7 +72,8 @@ struct ElementInspector: View {
                 )
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.72))
+        .background(InfinityUIKit.Palette.nativePanel)
+        .tint(InfinityUIKit.Palette.nativeAccent)
     }
 
     // ------------------------=
@@ -89,9 +92,9 @@ struct ElementInspector: View {
                         systemImage: element.locked ? "lock.fill" : "lock.open"
                     )
                 }
-                .buttonStyle(.bordered)
-                .tint(element.locked ? .orange : .cyan)
-                .controlSize(.small)
+                .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
+                .tint(element.locked ? .orange : InfinityUIKit.Palette.nativeAccent)
+                .controlSize(.regular)
             }
             TextField("Layer name", text: stringBinding(\.name))
                 .disabled(element.locked)
@@ -139,7 +142,10 @@ struct ElementInspector: View {
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 92)
                     .padding(5)
-                    .background(Color.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 7))
+                    .background(
+                        InfinityUIKit.Palette.nativePanelRaised,
+                        in: RoundedRectangle(cornerRadius: InfinityUIKit.Metrics.controlRadius)
+                    )
                 HStack {
                     Text("Size")
                     Slider(value: doubleBinding(\.fontSize, fallback: element.fontSize), in: 8...72, step: 1)
@@ -229,6 +235,7 @@ struct ElementInspector: View {
             Spacer()
             Button("Delete", role: .destructive, action: store.deleteSelected)
         }
+        .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
         .disabled(element.locked)
     }
 
