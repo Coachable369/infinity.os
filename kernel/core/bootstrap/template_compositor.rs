@@ -3,7 +3,9 @@
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use super::desktop::ONBOARDING_BMP;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-use super::installer::{INSTALLER_MASTHEAD_BMP, INSTALLER_WELCOME_MASTHEAD_BMP};
+use super::installer::{
+    INSTALLER_MASTHEAD_BMP, INSTALLER_PROGRESS_HERO_BMP, INSTALLER_WELCOME_MASTHEAD_BMP,
+};
 use super::*;
 use crate::ui::installer_layout::{
     scale_template_rect, CONFIGURATION_TEMPLATE_BYTES, INSTALLER_TEMPLATE_BYTES,
@@ -157,6 +159,15 @@ impl DisplayDevice {
             ),
             3 => self.template_text_layer(element, rect),
             5 => self.template_button_layer(element, rect, navigation),
+            6 => self.template_progress_control(
+                rect,
+                element.fill,
+                element.border,
+                element.opacity,
+                element.corner_radius,
+                42,
+                element.text,
+            ),
             _ => {}
         }
     }
@@ -269,7 +280,7 @@ impl DisplayDevice {
     // FUNC: template_image
     // DESC: Resolves packaged editor image assets and paints them into their authored frame.
     // ------------------=
-    fn template_image(
+    pub(super) fn template_image(
         &mut self,
         name: &[u8],
         packaged: Option<&[u8]>,
@@ -288,6 +299,8 @@ impl DisplayDevice {
                 INSTALLER_WELCOME_MASTHEAD_BMP
             } else if name.ends_with(b"infinity-onboarding-wallpaper-v1.png") {
                 ONBOARDING_BMP
+            } else if name.ends_with(b"infinity-installer-progress-hero-v1.png") {
+                INSTALLER_PROGRESS_HERO_BMP
             } else {
                 &[]
             };
@@ -304,6 +317,162 @@ impl DisplayDevice {
                 );
             }
         }
+    }
+
+    // ------------------------=
+    // FUNC: template_progress_control
+    // DESC: Draws an authored UIKit progress control with a live label and percentage.
+    // ------------------=
+    pub(super) fn template_progress_control(
+        &mut self,
+        rect: crate::ui::installer_layout::InstallerRect,
+        fill: [u8; 4],
+        border: [u8; 4],
+        opacity: u8,
+        corner_radius: u8,
+        percent: usize,
+        label: &[u8],
+    ) {
+        let scale = self.ui_scale().max(1);
+        let radius = (corner_radius as usize * self.height / 1000).max(1);
+        let authored_alpha = |value: u8| (value as u16 * opacity as u16 / 100) as u8;
+        self.fill_rounded_rect_alpha(
+            rect.left + 6 * scale,
+            rect.top + 7 * scale,
+            rect.width,
+            rect.height,
+            radius,
+            0,
+            3,
+            9,
+            authored_alpha(150),
+        );
+        self.fill_rounded_rect_alpha(
+            rect.left,
+            rect.top,
+            rect.width,
+            rect.height,
+            radius,
+            2,
+            13,
+            25,
+            authored_alpha(246),
+        );
+        self.fill_rounded_rect_alpha(
+            rect.left + 2 * scale,
+            rect.top + 2 * scale,
+            rect.width.saturating_sub(4 * scale),
+            rect.height / 2,
+            radius.saturating_sub(2),
+            18,
+            56,
+            88,
+            authored_alpha(105),
+        );
+        self.outline_rounded_rect_alpha(
+            rect.left,
+            rect.top,
+            rect.width,
+            rect.height,
+            radius,
+            border[0],
+            border[1],
+            border[2],
+            authored_alpha(border[3]),
+        );
+        self.fill_rect(
+            rect.left + 18 * scale,
+            rect.top + rect.height * 12 / 100,
+            rect.width.saturating_sub(36 * scale),
+            rect.height * 24 / 100,
+            7,
+            28,
+            47,
+        );
+        self.ui_text_centered_strong(
+            rect.left,
+            rect.width,
+            rect.top + rect.height * 18 / 100,
+            label,
+            226,
+            238,
+            248,
+            1,
+        );
+        let track_left = rect.left + rect.width * 7 / 200;
+        let track_top = rect.top + rect.height * 54 / 100;
+        let track_width = rect.width * 93 / 100;
+        let track_height = (rect.height * 13 / 100).max(8 * scale);
+        self.fill_rect(track_left, track_top, track_width, track_height, 42, 50, 61);
+        let fill_width = track_width * percent.min(100) / 100;
+        self.fill_rect(
+            track_left,
+            track_top,
+            fill_width,
+            track_height,
+            fill[0],
+            fill[1],
+            fill[2],
+        );
+        if fill_width > 0 && track_height > 4 {
+            self.fill_rect_alpha(
+                track_left,
+                track_top + track_height / 4,
+                fill_width,
+                track_height / 2,
+                255,
+                255,
+                255,
+                authored_alpha(64),
+            );
+        }
+        self.outline_rect(
+            track_left,
+            track_top,
+            track_width,
+            track_height,
+            border[0],
+            border[1],
+            border[2],
+        );
+        for marker in 0..=4usize {
+            let marker_x = track_left + track_width * marker / 4;
+            let active = percent >= marker * 25;
+            self.star_orb(
+                marker_x as i32,
+                (track_top + track_height / 2) as i32,
+                if active { 3 * scale as i32 } else { 2 * scale as i32 },
+                if active { 238 } else { 74 },
+                active,
+            );
+        }
+        let mut percent_text = [b'0'; 4];
+        let value = percent.min(100);
+        let digits = if value == 100 {
+            percent_text[0] = b'1';
+            percent_text[1] = b'0';
+            percent_text[2] = b'0';
+            3
+        } else if value >= 10 {
+            percent_text[0] = b'0' + (value / 10) as u8;
+            percent_text[1] = b'0' + (value % 10) as u8;
+            2
+        } else {
+            percent_text[0] = b'0' + value as u8;
+            1
+        };
+        percent_text[digits] = b'%';
+        let percent_slice = &percent_text[..digits + 1];
+        let percent_width = self.ui_text_width(percent_slice, 1);
+        self.ui_text_strong(
+            track_left + track_width.saturating_sub(percent_width),
+            rect.top + 14 * scale,
+            percent_slice,
+            fill[0],
+            fill[1],
+            fill[2],
+            1,
+        );
     }
 
     // ------------------------=

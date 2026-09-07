@@ -110,6 +110,27 @@ fn main() {
             .text
             .is_empty());
     }
+    let progress = template
+        .element(8, InstallerTemplateRole::ProgressBar)
+        .expect("installing screen must expose one semantic progress control");
+    assert_eq!(progress.kind, 6);
+    assert_eq!((progress.frame.x, progress.frame.y), (110, 670));
+    assert_eq!((progress.frame.width, progress.frame.height), (780, 190));
+    assert_eq!(progress.text, b"PREPARING INSTALLATION");
+    let progress_hero = template
+        .element(8, InstallerTemplateRole::ProgressHero)
+        .expect("installing screen must expose its runtime progress hero");
+    assert_eq!(progress_hero.kind, 2);
+    assert!(progress_hero
+        .image_asset
+        .ends_with(b"infinity-installer-progress-hero-v1.png"));
+    assert_eq!(
+        template
+            .element(8, InstallerTemplateRole::Footer)
+            .unwrap()
+            .text,
+        b"INSTALLATION IN PROGRESS    PLEASE KEEP THIS DEVICE POWERED"
+    );
     let content = template.element(2, InstallerTemplateRole::Content).unwrap();
     assert_eq!(
         (

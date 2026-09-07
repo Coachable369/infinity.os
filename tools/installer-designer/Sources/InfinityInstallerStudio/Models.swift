@@ -7,6 +7,7 @@ enum StudioElementKind: UInt8, Codable, CaseIterable, Identifiable {
     case text = 3
     case console = 4
     case button = 5
+    case progressBar = 6
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -16,6 +17,7 @@ enum StudioElementKind: UInt8, Codable, CaseIterable, Identifiable {
         case .text: "Text"
         case .console: "Console"
         case .button: "Button"
+        case .progressBar: "Progress Bar"
         }
     }
 }
@@ -40,6 +42,8 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case timeZoneMap = 16
     case metadata = 17
     case progressSegment = 18
+    case progressBar = 19
+    case progressHero = 20
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -63,6 +67,8 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .timeZoneMap: "Time Zone Map"
         case .metadata: "Metadata"
         case .progressSegment: "Progress Segment"
+        case .progressBar: "Installation Progress"
+        case .progressHero: "Progress Hero"
         }
     }
 
@@ -355,9 +361,13 @@ struct InstallerStudioDocument: Codable, Hashable {
             "Use Tab or arrows to move, Enter to select, and Escape to return.",
         ]
         let screens = names.indices.map { index in
-            var elements = index == 4
-                ? dateTimeElements(title: headings[index], body: body[index])
-                : defaultElements(title: headings[index], body: body[index])
+            var elements = if index == 4 {
+                dateTimeElements(title: headings[index], body: body[index])
+            } else if index == 7 {
+                installingElements(title: headings[index], body: body[index])
+            } else {
+                defaultElements(title: headings[index], body: body[index])
+            }
             for elementIndex in elements.indices {
                 elements[elementIndex].id = factoryElementID(screen: index + 1, element: elementIndex + 1)
             }
@@ -759,6 +769,77 @@ struct InstallerStudioDocument: Codable, Hashable {
         elements[7].fill = InfinityUIKit.Palette.textSecondary
         elements[7].fontSize = 16
         return elements
+    }
+
+    // ------------------------=
+    // FUNC: installingElements
+    // DESC: Builds the runtime-faithful installation hero, live progress control, and non-interactive footer scene.
+    // ------------------=
+    private static func installingElements(title: String, body: String) -> [StudioElement] {
+        var elements = defaultElements(title: title, body: body)
+        elements[3].hidden = true
+        elements[4].hidden = true
+        elements[5].opacity = 0
+        elements[6].opacity = 0
+        elements[7].text = "INSTALLATION IN PROGRESS    PLEASE KEEP THIS DEVICE POWERED"
+
+        var hero = StudioElement.make(
+            name: "Installation Progress Hero",
+            kind: .image,
+            role: .progressHero,
+            frame: CanvasRect(x: 170, y: 380, width: 660, height: 260),
+            imageAsset: "infinity-installer-progress-hero-v1.png",
+            zIndex: 4
+        )
+        hero.fill = InfinityUIKit.Palette.textPrimary
+
+        var progress = StudioElement.make(
+            name: "Installation Progress",
+            kind: .progressBar,
+            role: .progressBar,
+            frame: CanvasRect(x: 110, y: 670, width: 780, height: 190),
+            text: "PREPARING INSTALLATION",
+            zIndex: 5
+        )
+        progress.fill = StudioColor(red: 174, green: 219, blue: 247, alpha: 255)
+        progress.border = StudioColor(red: 53, green: 165, blue: 220, alpha: 255)
+        progress.cornerRadius = 15
+        elements.append(contentsOf: [hero, progress])
+        return elements
+    }
+
+    // ------------------------=
+    // FUNC: migratedForInstallerRuntimeParity
+    // DESC: Adds missing semantic progress layers to existing installer projects without replacing authored geometry elsewhere.
+    // ------------------=
+    func migratedForInstallerRuntimeParity() -> InstallerStudioDocument {
+        var result = self
+        guard let screenIndex = result.screens.firstIndex(where: { $0.id == 8 }),
+              let factoryScreen = Self.factoryDefault().screens.first(where: { $0.id == 8 })
+        else { return result }
+        let missingProgress = !result.screens[screenIndex].elements.contains { $0.role == .progressBar }
+        let missingHero = !result.screens[screenIndex].elements.contains { $0.role == .progressHero }
+        guard missingProgress || missingHero else { return result }
+        for index in result.screens[screenIndex].elements.indices {
+            switch result.screens[screenIndex].elements[index].role {
+            case .content, .body:
+                result.screens[screenIndex].elements[index].hidden = true
+            case .backButton, .primaryButton:
+                result.screens[screenIndex].elements[index].opacity = 0
+            case .footer:
+                result.screens[screenIndex].elements[index].text =
+                    "INSTALLATION IN PROGRESS    PLEASE KEEP THIS DEVICE POWERED"
+            default:
+                break
+            }
+        }
+        for role in [StudioElementRole.progressHero, .progressBar]
+            where !result.screens[screenIndex].elements.contains(where: { $0.role == role }) {
+            if let required = factoryScreen.elements.first(where: { $0.role == role }) {
+                result.screens[screenIndex].elements.append(required)
+            }
+        }
+        return result
     }
 
     // ------------------------=

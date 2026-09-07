@@ -135,11 +135,17 @@ final class TemplateStore: ObservableObject {
         }
         if let root,
            let data = try? Data(contentsOf: root.appending(path: "assets/boot/installer-screens.infinityui")),
-           let decoded = try? JSONDecoder().decode(InstallerStudioDocument.self, from: data),
-           (try? TemplateValidator.validate(decoded)) != nil
+           let decoded = try? JSONDecoder().decode(InstallerStudioDocument.self, from: data)
         {
-            document = decoded
-            status = "Loaded repository templates"
+            let migrated = decoded.migratedForInstallerRuntimeParity()
+            if (try? TemplateValidator.validate(migrated)) != nil {
+                document = migrated
+                status = migrated == decoded
+                    ? "Loaded repository templates"
+                    : "Loaded and upgraded installer progress controls"
+            } else {
+                document = .factoryDefault()
+            }
         } else {
             document = .factoryDefault()
         }
@@ -449,25 +455,38 @@ final class TemplateStore: ObservableObject {
 
     // ------------------------=
     // FUNC: addElement
-    // DESC: Adds a real panel, image, text, or console element to the active screen.
+    // DESC: Adds a real panel, image, text, console, or progress element to the active screen.
     // ------------------=
     func addElement(kind: StudioElementKind) {
         guard kind != .button, let screen = selectedScreenIndex else { return }
         recordUndo()
         let offset = activeDocument.screens[screen].elements.count % 6 * 12
-        let element = StudioElement.make(
+        let role: StudioElementRole = switch kind {
+        case .image: .image
+        case .text: .body
+        case .progressBar: .progressBar
+        default: .decoration
+        }
+        var element = StudioElement.make(
             name: "New \(kind.title)",
             kind: kind,
-            role: kind == .image ? .image : kind == .text ? .body : .decoration,
+            role: role,
             frame: CanvasRect(
                 x: 300 + offset,
                 y: 470 + offset,
-                width: kind == .text ? 360 : 280,
-                height: kind == .text ? 70 : 180
+                width: kind == .progressBar ? 520 : kind == .text ? 360 : 280,
+                height: kind == .progressBar ? 120 : kind == .text ? 70 : 180
             ),
-            text: kind == .text ? "Editable text" : "",
+            text: kind == .progressBar
+                ? "PREPARING INSTALLATION"
+                : kind == .text ? "Editable text" : "",
             zIndex: nextZIndex(in: screen)
         )
+        if kind == .progressBar {
+            element.fill = StudioColor(red: 174, green: 219, blue: 247, alpha: 255)
+            element.border = StudioColor(red: 53, green: 165, blue: 220, alpha: 255)
+            element.cornerRadius = 15
+        }
         activeDocument.screens[screen].elements.append(element)
         selectedElementID = element.id
         status = "Added \(kind.title)"
@@ -906,10 +925,13 @@ final class TemplateStore: ObservableObject {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             let data = try Data(contentsOf: url)
-            let imported = if url.pathExtension.lowercased() == "iuit" {
+            var imported = if url.pathExtension.lowercased() == "iuit" {
                 try RuntimeTemplateCodec.decode(data)
             } else {
                 try JSONDecoder().decode(InstallerStudioDocument.self, from: data)
+            }
+            if selectedCollection == .installation {
+                imported = imported.migratedForInstallerRuntimeParity()
             }
             try TemplateValidator.validate(imported)
             recordUndo()

@@ -28,6 +28,8 @@ pub enum InstallerTemplateRole {
     TimeZoneMap = 16,
     Metadata = 17,
     ProgressSegment = 18,
+    ProgressBar = 19,
+    ProgressHero = 20,
 }
 
 // ------------------------=
@@ -456,9 +458,12 @@ impl<'a> Reader<'a> {
         let role = self.u8()?;
         let input_variable = self.u8()?;
         let flags = self.u8()?;
-        if !(1..=5).contains(&kind)
-            || role > InstallerTemplateRole::ProgressSegment as u8
+        if !(1..=6).contains(&kind)
+            || role > InstallerTemplateRole::ProgressHero as u8
             || input_variable > InstallerTemplateVariable::Password as u8
+            || (kind == 6 && role != InstallerTemplateRole::ProgressBar as u8)
+            || (role == InstallerTemplateRole::ProgressBar as u8 && kind != 6)
+            || (role == InstallerTemplateRole::ProgressHero as u8 && kind != 2)
             || (role != InstallerTemplateRole::Input as u8
                 && input_variable != InstallerTemplateVariable::None as u8)
             || (role == InstallerTemplateRole::Input as u8

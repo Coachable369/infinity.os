@@ -72,6 +72,7 @@ private struct StudioToolbar: View {
                 Button("Text") { store.addElement(kind: .text) }
                 Button("Image…") { store.chooseAndAddImage() }
                 Button("Console") { store.addElement(kind: .console) }
+                Button("Progress Bar") { store.addElement(kind: .progressBar) }
             } label: {
                 Label("Add", systemImage: "plus")
             }

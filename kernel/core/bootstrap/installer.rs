@@ -1039,7 +1039,11 @@ impl super::DisplayDevice {
             let hint: &[u8] = if screen == 7 {
                 b"TAB / ARROWS: CHOOSE    ENTER: CONFIRM    ESC: CANCEL"
             } else if screen == 8 {
-                b"INSTALLATION IN PROGRESS    PLEASE KEEP THIS DEVICE POWERED"
+                crate::ui::installer_layout::installer_template_text(
+                    8,
+                    crate::ui::installer_template::InstallerTemplateRole::Footer,
+                )
+                .unwrap_or(b"INSTALLATION IN PROGRESS    PLEASE KEEP THIS DEVICE POWERED")
             } else if screen == 5 {
                 b"LEFT / RIGHT: FIELD    UP / DOWN: CHANGE    TAB: MOVE    ENTER: SELECT"
             } else {
@@ -1210,18 +1214,41 @@ impl super::DisplayDevice {
                 self.paint_bitmap_fit_rect(INSTALLER_ACTIVATION_BMP, left, top, width, height);
                 self.outline_rect(left, top, width, height, 48, 118, 164);
             } else {
-                let left = self.width * 17 / 100;
-                let top = self.height * 38 / 100;
-                let width = self.width * 66 / 100;
-                let height = self.height * 26 / 100;
-                self.paint_bitmap_fit_rect_inset(
-                    INSTALLER_PROGRESS_HERO_BMP,
-                    left,
-                    top,
-                    width,
-                    height,
-                    3,
-                );
+                if let Some(element) = crate::ui::installer_layout::installer_template_element(
+                    8,
+                    crate::ui::installer_template::InstallerTemplateRole::ProgressHero,
+                ) {
+                    let rect = crate::ui::installer_layout::scale_template_rect(
+                        element.frame,
+                        self.width,
+                        self.height,
+                    );
+                    let template = crate::ui::installer_template::InstallerTemplate::parse(
+                        crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES,
+                    )
+                    .ok();
+                    self.template_image(
+                        element.image_asset,
+                        template.and_then(|value| value.asset(element.image_asset)),
+                        rect,
+                        element.crop,
+                        (255u16 * element.opacity as u16 / 100) as u8,
+                        false,
+                    );
+                } else {
+                    let left = self.width * 17 / 100;
+                    let top = self.height * 38 / 100;
+                    let width = self.width * 66 / 100;
+                    let height = self.height * 26 / 100;
+                    self.paint_bitmap_fit_rect_inset(
+                        INSTALLER_PROGRESS_HERO_BMP,
+                        left,
+                        top,
+                        width,
+                        height,
+                        3,
+                    );
+                }
             }
         }
     }
@@ -1232,141 +1259,38 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn installer_progress_frame(&mut self, percent: usize, label: &[u8], phase: usize) {
         let scale = self.ui_scale();
-        let left = self.width * 11 / 100;
-        let width = self.width * 78 / 100;
-        let top = self.height * 67 / 100;
-        let height = self.height * 19 / 100;
-        if percent == 0 && phase == 0 {
-            self.fill_rounded_rect_alpha(
-                left + 6 * scale,
-                top + 7 * scale,
-                width,
-                height,
-                15 * scale,
-                0,
-                3,
-                9,
-                150,
-            );
-            self.fill_rounded_rect_alpha(left, top, width, height, 15 * scale, 2, 13, 25, 246);
-            self.fill_rounded_rect_alpha(
-                left + 2 * scale,
-                top + 2 * scale,
-                width.saturating_sub(4 * scale),
-                height / 2,
-                13 * scale,
-                18,
-                56,
-                88,
-                105,
-            );
-            self.outline_rounded_rect(left, top, width, height, 15 * scale, 53, 165, 220);
-        }
-        self.fill_rect(
-            left + 18 * scale,
-            top + height * 12 / 100,
-            width.saturating_sub(36 * scale),
-            height * 24 / 100,
-            7,
-            28,
-            47,
+        let element = crate::ui::installer_layout::installer_template_element(
+            8,
+            crate::ui::installer_template::InstallerTemplateRole::ProgressBar,
         );
-
-        self.ui_text_centered_strong(
-            left,
-            width,
-            top + height * 18 / 100,
+        let rect = element
+            .map(|value| {
+                crate::ui::installer_layout::scale_template_rect(
+                    value.frame,
+                    self.width,
+                    self.height,
+                )
+            })
+            .unwrap_or(crate::ui::installer_layout::InstallerRect {
+                left: self.width * 11 / 100,
+                top: self.height * 67 / 100,
+                width: self.width * 78 / 100,
+                height: self.height * 19 / 100,
+            });
+        self.template_progress_control(
+            rect,
+            element.map(|value| value.fill).unwrap_or([174, 219, 247, 255]),
+            element.map(|value| value.border).unwrap_or([53, 165, 220, 255]),
+            element.map(|value| value.opacity).unwrap_or(100),
+            element.map(|value| value.corner_radius).unwrap_or(15),
+            percent,
             label,
-            226,
-            238,
-            248,
-            1,
         );
-
-        let track_left = left + width * 7 / 200;
-        let track_top = top + height * 54 / 100;
-        let track_width = width * 93 / 100;
-        let track_height = (height * 13 / 100).max(8 * scale);
-        self.fill_rect(track_left, track_top, track_width, track_height, 42, 50, 61);
-        self.fill_rect(
-            track_left,
-            track_top,
-            track_width * percent.min(100) / 100,
-            track_height,
-            174,
-            219,
-            247,
-        );
-        let fill_width = track_width * percent.min(100) / 100;
-        if fill_width > 0 && track_height > 4 {
-            self.fill_rect(
-                track_left,
-                track_top + track_height / 4,
-                fill_width,
-                track_height / 2,
-                205,
-                235,
-                253,
-            );
-        }
-        self.outline_rect(
-            track_left,
-            track_top,
-            track_width,
-            track_height,
-            104,
-            188,
-            235,
-        );
-
-        for marker in 0..=4usize {
-            let marker_x = track_left + track_width * marker / 4;
-            let active = percent >= marker * 25;
-            self.star_orb(
-                marker_x as i32,
-                (track_top + track_height / 2) as i32,
-                if active {
-                    3 * scale as i32
-                } else {
-                    2 * scale as i32
-                },
-                if active { 238 } else { 74 },
-                active,
-            );
-        }
 
         let (path_x, path_y) = infinity_point(phase);
         let orb_x = self.width as i32 / 2 + path_x * (self.width as i32 / 650).max(1);
         let orb_y = self.height as i32 * 50 / 100 + path_y * (self.height as i32 / 900).max(1);
         self.star_orb(orb_x, orb_y, 4 * scale as i32, 244, true);
-
-        let mut percent_text = [b'0'; 4];
-        let value = percent.min(100);
-        let digits = if value == 100 {
-            percent_text[0] = b'1';
-            percent_text[1] = b'0';
-            percent_text[2] = b'0';
-            3
-        } else if value >= 10 {
-            percent_text[0] = b'0' + (value / 10) as u8;
-            percent_text[1] = b'0' + (value % 10) as u8;
-            2
-        } else {
-            percent_text[0] = b'0' + value as u8;
-            1
-        };
-        percent_text[digits] = b'%';
-        let percent_slice = &percent_text[..digits + 1];
-        let percent_width = self.ui_text_width(percent_slice, 1);
-        self.ui_text_strong(
-            track_left + track_width.saturating_sub(percent_width),
-            top + 14 * scale,
-            percent_slice,
-            111,
-            204,
-            248,
-            1,
-        );
     }
 
     // ------------------------=
@@ -1721,7 +1645,7 @@ impl super::DisplayDevice {
         command: &[u8],
         screen: u8,
     ) {
-        if matches!(screen, 1 | 2 | 9 | 11) {
+        if matches!(screen, 1 | 2 | 8 | 9 | 11) {
             return;
         }
         let Some(content) = crate::ui::installer_template::InstallerTemplate::parse(

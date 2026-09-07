@@ -56,6 +56,14 @@ enum TemplateValidator {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Only one live input field is supported per screen")
             }
             for element in screen.elements {
+                guard element.kind != .progressBar || element.role == .progressBar,
+                      element.role != .progressBar || element.kind == .progressBar,
+                      element.role != .progressHero || element.kind == .image
+                else {
+                    throw TemplateValidationIssue.invalidElement(
+                        screen.id, element.id, "Progress controls require their semantic element types"
+                    )
+                }
                 guard element.role == .input || element.inputVariable == .none else {
                     throw TemplateValidationIssue.invalidElement(
                         screen.id, element.id, "Only input fields can bind runtime variables"
@@ -184,6 +192,7 @@ enum RuntimeTemplateCodec {
             || name.hasSuffix("infinity-installer-masthead-v1.png")
             || name.hasSuffix("infinity-onboarding-wallpaper-v1.png")
             || name.hasSuffix("infinity-time-zone-map-v1.png")
+            || name.hasSuffix("infinity-installer-progress-hero-v1.png")
     }
 
     // ------------------------=

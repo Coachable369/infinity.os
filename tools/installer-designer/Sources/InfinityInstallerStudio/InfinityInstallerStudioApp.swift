@@ -15,10 +15,13 @@ struct InfinityInstallerStudioApp: App {
             do {
                 let source = URL(fileURLWithPath: arguments[2])
                 let destination = URL(fileURLWithPath: arguments[3])
-                let document = try JSONDecoder().decode(
+                var document = try JSONDecoder().decode(
                     InstallerStudioDocument.self,
                     from: Data(contentsOf: source)
                 )
+                if source.lastPathComponent == "installer-screens.infinityui" {
+                    document = document.migratedForInstallerRuntimeParity()
+                }
                 try TemplateValidator.validate(document)
                 try FileManager.default.createDirectory(
                     at: destination.deletingLastPathComponent(),

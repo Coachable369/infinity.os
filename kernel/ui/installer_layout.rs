@@ -1,7 +1,8 @@
 //! Shared, architecture-neutral geometry for every InfinityOS installer step.
 
 use super::installer_template::{
-    InstallerTemplate, InstallerTemplateRect, InstallerTemplateRole, InstallerTemplateVariable,
+    InstallerTemplate, InstallerTemplateElement, InstallerTemplateRect, InstallerTemplateRole,
+    InstallerTemplateVariable,
 };
 
 pub const INSTALLER_TEMPLATE_BYTES: &[u8] =
@@ -169,6 +170,20 @@ pub fn installer_template_text(screen: u8, role: InstallerTemplateRole) -> Optio
         .ok()?
         .element(screen, role)
         .map(|element| element.text)
+}
+
+// ------------------------=
+// FUNC: installer_template_element
+// DESC: Returns one complete authored installer element for live semantic controls.
+// ------------------=
+pub fn installer_template_element(
+    screen: u8,
+    role: InstallerTemplateRole,
+) -> Option<InstallerTemplateElement<'static>> {
+    InstallerTemplate::parse(INSTALLER_TEMPLATE_BYTES)
+        .ok()?
+        .element(screen, role)
+        .filter(|element| !element.hidden)
 }
 
 // ------------------------=

@@ -3,6 +3,50 @@ import XCTest
 
 final class RuntimeTemplateCodecTests: XCTestCase {
     // ------------------------=
+    // FUNC: testInstallingScreenExposesRuntimeProgressControls
+    // DESC: Proves Studio screen eight models the live hero, progress bar, footer, and hidden navigation composition.
+    // ------------------=
+    func testInstallingScreenExposesRuntimeProgressControls() throws {
+        let screen = InstallerStudioDocument.factoryDefault().screens[7]
+        let progress = try XCTUnwrap(screen.elements.first { $0.role == .progressBar })
+        let hero = try XCTUnwrap(screen.elements.first { $0.role == .progressHero })
+
+        XCTAssertEqual(progress.kind, .progressBar)
+        XCTAssertEqual(progress.frame, CanvasRect(x: 110, y: 670, width: 780, height: 190))
+        XCTAssertEqual(progress.text, "PREPARING INSTALLATION")
+        XCTAssertEqual(hero.kind, .image)
+        XCTAssertEqual(hero.imageAsset, "infinity-installer-progress-hero-v1.png")
+        XCTAssertTrue(screen.elements.first { $0.role == .content }!.hidden)
+        XCTAssertTrue(screen.elements.first { $0.role == .body }!.hidden)
+        XCTAssertTrue(screen.elements.filter { $0.kind == .button }.allSatisfy { $0.opacity == 0 })
+        XCTAssertEqual(
+            screen.elements.first { $0.role == .footer }!.text,
+            "INSTALLATION IN PROGRESS    PLEASE KEEP THIS DEVICE POWERED"
+        )
+        XCTAssertNoThrow(try TemplateValidator.validate(InstallerStudioDocument.factoryDefault()))
+    }
+
+    // ------------------------=
+    // FUNC: testLegacyInstallingScreenMigratesWithoutReplacingOtherScreens
+    // DESC: Proves existing projects gain semantic progress controls while unrelated authored screen geometry is preserved.
+    // ------------------=
+    func testLegacyInstallingScreenMigratesWithoutReplacingOtherScreens() {
+        var document = InstallerStudioDocument.factoryDefault()
+        document.screens[0].elements[1].frame.x = 73
+        document.screens[7].elements.removeAll { $0.role == .progressBar || $0.role == .progressHero }
+        if let content = document.screens[7].elements.firstIndex(where: { $0.role == .content }) {
+            document.screens[7].elements[content].hidden = false
+        }
+
+        let migrated = document.migratedForInstallerRuntimeParity()
+
+        XCTAssertEqual(migrated.screens[0].elements[1].frame.x, 73)
+        XCTAssertEqual(migrated.screens[7].elements.filter { $0.role == .progressBar }.count, 1)
+        XCTAssertEqual(migrated.screens[7].elements.filter { $0.role == .progressHero }.count, 1)
+        XCTAssertTrue(migrated.screens[7].elements.first { $0.role == .content }!.hidden)
+    }
+
+    // ------------------------=
     // FUNC: testImageRoleFittingMatchesRuntimeWithoutClippingOrdinaryArtwork
     // DESC: Proves ordinary artwork preserves its full bounds while scene-filling image roles remain edge-to-edge.
     // ------------------=

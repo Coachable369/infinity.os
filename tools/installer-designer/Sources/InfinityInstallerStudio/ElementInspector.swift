@@ -56,7 +56,7 @@ struct ElementInspector: View {
                         if element.role == .input {
                             variableSection(element)
                         }
-                        if element.kind == .text || element.kind == .button {
+                        if element.kind == .text || element.kind == .button || element.kind == .progressBar {
                             textSection(element)
                         }
                         if element.kind == .image {
@@ -282,6 +282,7 @@ struct ElementInspector: View {
         case .text: "textformat"
         case .console: "terminal"
         case .button: "button.programmable"
+        case .progressBar: "chart.bar.fill"
         }
     }
 

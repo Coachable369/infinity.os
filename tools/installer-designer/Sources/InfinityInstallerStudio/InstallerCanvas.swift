@@ -367,6 +367,8 @@ private struct CanvasElementView: View {
                 canvasScale: canvasScale,
                 focused: isSelected
             )
+        case .progressBar:
+            CanvasProgressBarPreview(element: element, canvasScale: canvasScale)
         }
     }
 
@@ -482,6 +484,48 @@ private struct CanvasElementView: View {
         ).integral
         guard rect.width >= 1, rect.height >= 1, let result = source.cropping(to: rect) else { return image }
         return NSImage(cgImage: result, size: NSSize(width: rect.width, height: rect.height))
+    }
+}
+
+private struct CanvasProgressBarPreview: View {
+    let element: StudioElement
+    let canvasScale: CGSize
+
+    var body: some View {
+        VStack(spacing: max(5, 14 * canvasScale.height)) {
+            HStack {
+                Text(element.text)
+                    .font(.system(size: max(8, 18 * canvasScale.height), weight: .semibold, design: .rounded))
+                Spacer()
+                Text("42%")
+                    .font(.system(size: max(8, 18 * canvasScale.height), weight: .semibold, design: .rounded))
+                    .foregroundStyle(element.fill.color)
+            }
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: max(2, 5 * canvasScale.height))
+                        .fill(InfinityUIKit.Palette.nativeCanvas.opacity(0.78))
+                    RoundedRectangle(cornerRadius: max(2, 5 * canvasScale.height))
+                        .fill(element.fill.color)
+                        .frame(width: geometry.size.width * 0.42)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: max(2, 5 * canvasScale.height))
+                        .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
+                }
+            }
+            .frame(height: max(8, 16 * canvasScale.height))
+        }
+        .foregroundStyle(InfinityUIKit.Palette.nativeTextPrimary)
+        .padding(max(8, 18 * canvasScale.height))
+        .background(
+            InfinityUIKit.Palette.nativePanelRaised,
+            in: RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
+                .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
+        }
     }
 }
 
