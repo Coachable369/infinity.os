@@ -1,5 +1,7 @@
 pub mod device;
+pub mod display;
 pub mod input;
+pub mod svga;
 
 use crate::{boot_info::BootInfo, bootstrap};
 use device::{DeviceIdentity, DeviceKind, DeviceState};
@@ -10,13 +12,18 @@ use device::{DeviceIdentity, DeviceKind, DeviceState};
 // ------------------=
 pub fn initialize(info: &BootInfo) -> [DeviceIdentity; 3] {
     let display_ready = bootstrap::show_splash(info);
+    let display_driver = if display_ready {
+        display::initialize(info)
+    } else {
+        "unavailable"
+    };
     let input = input::initialize(info);
     input::report_pointer_discovery(input.pointer);
     let devices = [
         DeviceIdentity::new(
             "display0",
             DeviceKind::Display,
-            "boot-framebuffer",
+            display_driver,
             if display_ready {
                 DeviceState::Ready
             } else {

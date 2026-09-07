@@ -73,8 +73,18 @@ impl DisplayDevice {
     // DESC: Validates boot framebuffer metadata and creates a drawable display device.
     // ------------------=
     pub fn from_boot_info(info: &BootInfo) -> Option<Self> {
-        let required = info.framebuffer_stride as u64 * info.framebuffer_height as u64 * 4;
+        let required = (info.framebuffer_stride as u64)
+            .checked_mul(info.framebuffer_height as u64)?
+            .checked_mul(4)?;
         if info.framebuffer_address == 0
+            || info.framebuffer_address & 3 != 0
+            || info.framebuffer_format > 1
+            || required > usize::MAX as u64
+            || info.framebuffer_stride < info.framebuffer_width
+            || info
+                .framebuffer_address
+                .checked_add(info.framebuffer_size)
+                .is_none()
             || info.framebuffer_stride == 0
             || info.framebuffer_width == 0
             || info.framebuffer_height == 0
@@ -235,6 +245,7 @@ impl DisplayDevice {
             return 0;
         }
         let mut pixels = 0u64;
+        let mut submitted = true;
         let present_started = crate::ui::performance::monotonic_ns();
         for index in 0..self.dirty_count as usize {
             let region = self.dirty_regions[index];
@@ -252,6 +263,12 @@ impl DisplayDevice {
                 }
             }
             pixels = pixels.saturating_add((width as u64).saturating_mul(height as u64));
+            submitted &= crate::drivers::display::update(region.left, region.top, width, height);
+        }
+        crate::drivers::display::flush();
+        // Retry unchanged scanout damage when the native FIFO cannot accept the complete batch.
+        if !submitted {
+            return pixels;
         }
         self.presented_frames = self.presented_frames.wrapping_add(1);
         self.presented_pixels = self.presented_pixels.saturating_add(pixels);

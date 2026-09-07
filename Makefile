@@ -10,6 +10,7 @@ OBJCOPY := $(LLVM)/llvm-objcopy
 RUSTC := rustc
 CARGO := cargo
 QEMU_X64 := qemu-system-x86_64
+
 QEMU_AARCH64 := qemu-system-aarch64
 OVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-x86_64-code.fd /opt/homebrew/share/qemu/edk2-x86_64-code.fd))
 AAVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-aarch64-code.fd))
@@ -138,6 +139,16 @@ installer-template-test: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_
 
 all: x86_64
 
+.PHONY: video-driver-test
+video-driver-test:
+	@mkdir -p build/behavior-tests
+	cc -std=c11 -Wall -Wextra -Werror tools/video-mode-test.c -o build/behavior-tests/video-mode-test
+	build/behavior-tests/video-mode-test
+	rustc --edition=2021 tools/svga-driver-test.rs -o build/behavior-tests/svga-driver-test
+	build/behavior-tests/svga-driver-test
+	rustc --edition=2021 tools/svga-qtest.rs -o build/behavior-tests/svga-qtest
+	build/behavior-tests/svga-qtest
+
 check-tools:
 	@tools="$(CLANG) $(LD_LLD) $(LLD_LINK) $(OBJCOPY) $(RUSTC) $(CARGO) python3 ffmpeg mformat mcopy xorriso $(QEMU_X64) $(QEMU_AARCH64)"; \
 	for tool in $$tools; do command -v $$tool >/dev/null 2>&1 || { echo "ERROR: required tool not found: $$tool"; exit 1; }; done
@@ -167,7 +178,7 @@ $(BUILD)/x86_64/kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/x86_64/inst
 $(BUILD)/x86_64/kernel.elf: $(BUILD)/x86_64/kernel.o linker/x86_64.ld
 	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libkernel.a
 
-$(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h
+$(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h
 	@mkdir -p $(@D)
 	$(CLANG) --target=x86_64-pc-windows-msvc -ffreestanding -fshort-wchar -fno-stack-protector \
 		-mno-red-zone -O2 -Wall -Wextra -Werror -c $< -o $@
@@ -428,7 +439,7 @@ $(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld
 $(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld
 	$(LD_LLD) -nostdlib -static -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a
 
-$(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h
+$(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h
 	@mkdir -p $(@D)
 	$(CLANG) --target=aarch64-pc-windows-msvc -DINFINITY_AARCH64 -ffreestanding -fshort-wchar \
 		-fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -c $< -o $@

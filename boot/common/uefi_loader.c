@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "boot_info.h"
+#include "video_modes.h"
 
 #define EFIAPI __attribute__((ms_abi))
 #define EFI_SUCCESS 0
@@ -854,38 +855,46 @@ static void gather_framebuffer(EFI_SYSTEM_TABLE *system, InfinityBootInfo *info)
     EFI_GRAPHICS_OUTPUT_PROTOCOL *graphics = NULL;
     EFI_GUID guid = graphics_output_guid;
     if (system->boot_services->locate_protocol(&guid, NULL, (void **)&graphics) != EFI_SUCCESS ||
-        !graphics || !graphics->mode || !graphics->mode->info) return;
+        !graphics || !graphics->mode) return;
+    if (!graphics->mode->info && graphics->set_mode)
+        graphics->set_mode(graphics, 0);
     EFI_GRAPHICS_OUTPUT_PROTOCOL_MODE *mode = graphics->mode;
+    if (!mode || !mode->info) return;
     uint32_t best_mode = mode->mode;
-    uint64_t best_pixels = 0;
-    if (mode->info && mode->info->pixel_format <= 1)
-        best_pixels = (uint64_t)mode->info->horizontal_resolution * mode->info->vertical_resolution;
+    uint64_t best_score = infinity_video_score(mode->info->horizontal_resolution,
+        mode->info->vertical_resolution, mode->info->pixels_per_scan_line,
+        mode->info->pixel_format, mode->info->pixel_information);
     if (graphics->query_mode && graphics->set_mode) {
-        for (uint32_t candidate = 0; candidate < mode->max_mode; ++candidate) {
+        for (uint32_t candidate = 0; candidate < mode->max_mode && candidate < 4096; ++candidate) {
             EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *candidate_info = NULL;
             size_t candidate_size = 0;
-            if (graphics->query_mode(graphics, candidate, &candidate_size, &candidate_info) != EFI_SUCCESS ||
-                !candidate_info) continue;
-            uint64_t pixels = (uint64_t)candidate_info->horizontal_resolution *
-                              candidate_info->vertical_resolution;
-            if (candidate_info->pixel_format <= 1 && candidate_info->pixels_per_scan_line != 0 &&
-                pixels > best_pixels) {
-                best_pixels = pixels;
-                best_mode = candidate;
+            EFI_STATUS status = graphics->query_mode(graphics, candidate, &candidate_size, &candidate_info);
+            if (status == EFI_SUCCESS && candidate_info && candidate_size >= sizeof(*candidate_info)) {
+                uint64_t score = infinity_video_score(candidate_info->horizontal_resolution,
+                    candidate_info->vertical_resolution, candidate_info->pixels_per_scan_line,
+                    candidate_info->pixel_format, candidate_info->pixel_information);
+                if (score > best_score) { best_score = score; best_mode = candidate; }
             }
-            system->boot_services->free_pool(candidate_info);
+            if (candidate_info) system->boot_services->free_pool(candidate_info);
         }
-        if (best_mode != mode->mode && graphics->set_mode(graphics, best_mode) == EFI_SUCCESS)
-            serial_write("[BOOT] maximum display mode selected\n");
+        if (best_mode != mode->mode) graphics->set_mode(graphics, best_mode);
     }
     mode = graphics->mode;
-    if (!mode || !mode->info || mode->info->pixel_format > 1) return;
+    if (!mode || !mode->info || !infinity_video_score(mode->info->horizontal_resolution,
+        mode->info->vertical_resolution, mode->info->pixels_per_scan_line,
+        mode->info->pixel_format, mode->info->pixel_information) ||
+        !infinity_video_memory_valid(mode->framebuffer_base, mode->framebuffer_size,
+            mode->info->pixels_per_scan_line, mode->info->vertical_resolution)) return;
+#if !defined(INFINITY_AARCH64)
+    /* The current x86-64 bootstrap identity map covers the first 4 GiB. */
+    if (mode->framebuffer_base + mode->framebuffer_size > UINT64_C(0x100000000)) return;
+#endif
     info->framebuffer_address = mode->framebuffer_base;
     info->framebuffer_size = mode->framebuffer_size;
     info->framebuffer_width = mode->info->horizontal_resolution;
     info->framebuffer_height = mode->info->vertical_resolution;
     info->framebuffer_stride = mode->info->pixels_per_scan_line;
-    info->framebuffer_format = mode->info->pixel_format;
+    info->framebuffer_format = infinity_video_format(mode->info->pixel_format, mode->info->pixel_information);
     serial_write("[BOOT] framebuffer ready\n");
 }
 

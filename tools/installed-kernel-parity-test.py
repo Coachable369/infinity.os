@@ -1,6 +1,7 @@
 """Behavioral artifact parity: each installer embeds the exact installed ELF."""
 from pathlib import Path
 import mmap
+import subprocess
 
 # ------------------------=
 # FUNC: main
@@ -16,6 +17,13 @@ def main():
             with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as live:
                 assert live.find(installed) >= 0, architecture
         print({'architecture': architecture, 'installed_bytes': len(installed), 'parity': True})
+        boot_name = 'BOOTAA64.EFI' if architecture == 'aarch64' else 'BOOTX64.EFI'
+        loader = (root / 'build' / architecture / boot_name).read_bytes()
+        for disk in [root / 'build' / architecture / 'installed-esp.img',
+                     root / 'build' / f'infinity-{architecture}.img']:
+            packaged = subprocess.check_output(['mtype', '-i', str(disk), f'::/EFI/BOOT/{boot_name}'])
+            assert packaged == loader, (architecture, disk)
+        print({'architecture': architecture, 'boot_loader_bytes': len(loader), 'loader_parity': True})
 
 if __name__ == '__main__':
     main()
