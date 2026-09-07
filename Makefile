@@ -1,6 +1,7 @@
 SHELL := /bin/sh
 
 BUILD := build
+BOOT_IMAGE_SIZE_MB := 1024
 LLVM := /opt/homebrew/opt/llvm/bin
 LLD := /opt/homebrew/opt/lld/bin
 CLANG := $(LLVM)/clang
@@ -223,7 +224,7 @@ $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel
 	cp $(CRASH_ASSETS) $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Mesh/
 	cp $(APPLICATION_ASSETS) $(BUILD)/fat/EFI/INFINITY/APPLICATIONS/
-	dd if=/dev/zero of=$@ bs=1M count=1024 status=none
+	dd if=/dev/zero of=$@ bs=1M count=$(BOOT_IMAGE_SIZE_MB) status=none
 	mformat -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat/EFI ::
 
@@ -464,7 +465,7 @@ $(BUILD)/infinity-aarch64.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/ke
 	cp -R $(INSTALLER_IMAGE_ASSET_DIR) $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Installer/
 	cp $(CRASH_ASSETS) $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Mesh/
-	dd if=/dev/zero of=$@ bs=1M count=1024 status=none
+	dd if=/dev/zero of=$@ bs=1M count=$(BOOT_IMAGE_SIZE_MB) status=none
 	mformat -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat-aarch64/EFI ::
 
@@ -487,7 +488,7 @@ $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch
 	cp -R $(INSTALLER_IMAGE_ASSET_DIR) $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Installer/
 	cp $(CRASH_ASSETS) $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Mesh/
-	dd if=/dev/zero of=$@ bs=1M count=1024 status=none
+	dd if=/dev/zero of=$@ bs=1M count=$(BOOT_IMAGE_SIZE_MB) status=none
 	mformat -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat-aarch64-qemu/EFI ::
 

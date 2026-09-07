@@ -13,7 +13,6 @@ test -s assets/fonts/InfinityUI-Regular-24.atlas
 test -s assets/fonts/InfinityUI-Semibold-24.atlas
 rg -q 'assets/fonts/\*\.ttf.*installed-fat' Makefile || { echo "FAIL: installed System Generation does not package fonts" >&2; exit 1; }
 rg -q 'assets/fonts/\*\.ttf.*fat-aarch64-qemu' Makefile || { echo "FAIL: QEMU AArch64 image does not package fonts" >&2; exit 1; }
-sed -n '/infinity-aarch64-qemu\.img:/,/mcopy -i \$@/p' Makefile | rg -q 'bs=1M count=256' || { echo "FAIL: QEMU AArch64 image is too small for the complete system UI and font payload" >&2; exit 1; }
 rg -q 'infinity-default-dark-wallpaper-v2\.bmp' Makefile kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs || { echo "FAIL: desktop artwork is not a kernel build dependency" >&2; exit 1; }
 rg -q 'infinity-onboarding-wallpaper-v1\.bmp' Makefile kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs || { echo "FAIL: onboarding artwork is not a kernel build dependency" >&2; exit 1; }
 rg -q 'authentication_frame' kernel/core/bootstrap.rs kernel/core/bootstrap/*.rs || { echo "FAIL: gold-standard authentication layout is missing" >&2; exit 1; }

@@ -4,6 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+const LIVE_BOOT_IMAGE_BYTES: u64 = 1024 * 1024 * 1024;
+
 #[derive(Clone, Copy)]
 enum ContainerKind {
     Fat,
@@ -374,6 +376,25 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
 }
 
 // ------------------------=
+// FUNC: assert_live_boot_image_capacity
+// DESC: Verifies every generated live boot FAT container retains the required one-gigabyte capacity.
+// ------------------=
+fn assert_live_boot_image_capacity(container: &Container<'_>) {
+    if !matches!(container.kind, ContainerKind::Fat)
+        || !container.image.starts_with("build/infinity-")
+    {
+        return;
+    }
+    assert_eq!(
+        fs::metadata(container.image)
+            .expect("live boot image metadata must be readable")
+            .len(),
+        LIVE_BOOT_IMAGE_BYTES,
+        "live boot images must provide one gigabyte of FAT capacity"
+    );
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Exercises every live and fresh-install UI container and compares its extracted asset bytes.
 // ------------------=
@@ -463,6 +484,7 @@ fn main() {
             Path::new(container.image).is_file(),
             "system container must exist"
         );
+        assert_live_boot_image_capacity(container);
         let container_scratch = scratch.join(format!("container-{index}"));
         fs::create_dir_all(&container_scratch)
             .expect("container scratch directory must be creatable");
