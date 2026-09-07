@@ -422,6 +422,7 @@ struct ConsoleRuntime {
     current_user: crate::runtime::identity::StableId,
     current_session: crate::runtime::identity::StableId,
     settings_editing: bool,
+    selected_node_id: Option<crate::runtime::node::types::NodeId>,
     settings_window: SettingsWindowState,
     settings_window_dragging: bool,
     settings_window_resizing: Option<usize>,
@@ -551,6 +552,7 @@ impl ConsoleRuntime {
             current_user: crate::runtime::identity::StableId::zero(),
             current_session: crate::runtime::identity::StableId::zero(),
             settings_editing: false,
+            selected_node_id: None,
             settings_window: SettingsWindowState {
                 x: 160,
                 y: 210,
@@ -3580,8 +3582,68 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: select_next_node
+    // DESC: Changes the operator selection by stable NodeId only after an explicit selection action.
+    // ------------------=
+    fn select_next_node(&mut self) {
+        self.selected_node_id = crate::runtime::with_runtime(|runtime| {
+            let mut found_current = self.selected_node_id.is_none();
+            for node in runtime.nodes.discovered_nodes().iter().flatten() {
+                if found_current {
+                    return Some(node.id);
+                }
+                if Some(node.id) == self.selected_node_id {
+                    found_current = true;
+                }
+            }
+            runtime.nodes.discovered_nodes().iter().flatten().next().map(|node| node.id)
+        })
+        .flatten();
+    }
+
+    // ------------------------=
+    // FUNC: confirm_selected_node_pairing
+    // DESC: Confirms the selected pairing only from six digits manually entered through protected Trusted UI.
+    // ------------------=
+    fn confirm_selected_node_pairing(&mut self) -> bool {
+        if self.command_length != 6 || self.command[..self.command_length].iter().any(|byte| !byte.is_ascii_digit()) {
+            return false;
+        }
+        let mut code = 0u32;
+        for byte in &self.command[..self.command_length] {
+            code = code.saturating_mul(10).saturating_add((byte - b'0') as u32);
+        }
+        let selected = self.selected_node_id;
+        let changed = crate::runtime::with_runtime(|runtime| {
+            let now = runtime.nodes.audit_records().iter().flatten()
+                .map(|record| record.timestamp).max().unwrap_or(0).saturating_add(1);
+            let Some(pairing) = runtime.nodes.pairings().iter().flatten()
+                .find(|pairing| Some(pairing.peer) == selected
+                    && pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation)
+                .copied() else { return false; };
+            let Ok(lease) = runtime.ui.trusted.acquire_secure_input(
+                true, 1, crate::ui::trusted::TrustedSurface::NodePairing, now.saturating_add(60),
+            ) else { return false; };
+            let confirmed = runtime.nodes.confirm_pairing(pairing.id, code, true, now, now).is_ok();
+            let _ = runtime.ui.trusted.release_secure_input(lease);
+            confirmed
+        }).unwrap_or(false);
+        if changed {
+            let committed = crate::runtime::persist_node_state();
+            if committed {
+                if let Some(node_id) = selected {
+                    let _ = crate::runtime::publish_node_state_event(
+                        crate::runtime::EVENT_NODE_PAIRED, node_id, code as u64, code as u64,
+                    );
+                }
+            }
+        }
+        changed
+    }
+
+    // ------------------------=
     // FUNC: activate_node_control
-    // DESC: Executes one node-management control against typed trust, pairing, mesh, policy, or audit state.
+    // DESC: Executes one node-management control against the explicitly selected stable NodeId.
     // ------------------=
     fn activate_node_control(&mut self, control: usize) {
         use crate::runtime::node::types::{MeshRole, NodeTrustPolicy, PolicyDecision, TrustState};
@@ -3589,90 +3651,44 @@ impl ConsoleRuntime {
         let page = self.node_settings_page();
         let control = control.min(5);
         self.settings_window.control_focus = control;
+        if matches!((page, control), (0, 0) | (1, 0) | (2, 0)) {
+            self.select_next_node();
+            return;
+        }
+        if page == 1 && control == 3 {
+            let has_pending = crate::runtime::with_runtime(|runtime| {
+                runtime.nodes.pairings().iter().flatten().any(|pairing| {
+                    Some(pairing.peer) == self.selected_node_id
+                        && pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation
+                })
+            })
+            .unwrap_or(false);
+            if has_pending {
+                self.settings_editing = true;
+                self.onboarding_validation_error = false;
+                self.reset_input();
+            }
+            return;
+        }
+        let selected = self.selected_node_id;
         let changed = crate::runtime::with_runtime(|runtime| {
-            let now = runtime
-                .nodes
-                .audit_records()
-                .iter()
-                .flatten()
-                .map(|record| record.timestamp)
-                .max()
-                .unwrap_or(0)
-                .saturating_add(1);
-            let peer = runtime
-                .nodes
-                .discovered_nodes()
-                .iter()
-                .flatten()
-                .next()
-                .copied();
+            let now = runtime.nodes.audit_records().iter().flatten()
+                .map(|record| record.timestamp).max().unwrap_or(0).saturating_add(1);
+            let peer = selected.and_then(|id| runtime.nodes.discovered_nodes().iter().flatten()
+                .find(|node| node.id == id).copied());
             match (page, control, peer) {
-                (0, 1, Some(node))
-                    if matches!(node.trust, TrustState::Trusted | TrustState::Restricted) =>
-                {
-                    runtime.nodes.revoke_trust(node.id, now, now).is_ok()
-                }
-                (0, 4, Some(node)) => runtime
-                    .nodes
-                    .set_trust(node.id, TrustState::Blocked, now, now)
-                    .is_ok(),
-                (0, 5, _) => {
-                    runtime.nodes.sweep(now);
-                    false
-                }
-                (1, 0, Some(node))
-                    if matches!(node.trust, TrustState::Untrusted | TrustState::Discovered) =>
-                {
-                    runtime.nodes.begin_pairing(node.id, now).is_ok()
-                }
-                (1, 3, _) => {
-                    let pending = runtime
-                        .nodes
-                        .pairings()
-                        .iter()
-                        .flatten()
-                        .find(|pairing| {
-                            pairing.state
-                                == crate::runtime::node::types::PairingState::AwaitingConfirmation
-                        })
-                        .copied();
-                    let Some(pairing) = pending else {
-                        return false;
-                    };
-                    let Ok(lease) = runtime.ui.trusted.acquire_secure_input(
-                        true,
-                        1,
-                        crate::ui::trusted::TrustedSurface::NodePairing,
-                        now.saturating_add(60),
-                    ) else {
-                        return false;
-                    };
-                    let confirmed = runtime
-                        .nodes
-                        .confirm_pairing(pairing.id, pairing.verification_code, now, now)
-                        .is_ok();
-                    let _ = runtime.ui.trusted.release_secure_input(lease);
-                    confirmed
-                }
-                (1, 4, _) => {
-                    let pending = runtime
-                        .nodes
-                        .pairings()
-                        .iter()
-                        .flatten()
-                        .find(|pairing| {
-                            pairing.state
-                                == crate::runtime::node::types::PairingState::AwaitingConfirmation
-                        })
-                        .copied();
-                    pending
-                        .map(|pairing| runtime.nodes.cancel_pairing(pairing.id).is_ok())
-                        .unwrap_or(false)
-                }
-                (2, 0, Some(node)) if node.trust == TrustState::Trusted => runtime
-                    .nodes
-                    .join_mesh(node.id, MeshRole::Member, now, now)
-                    .is_ok(),
+                (0, 1, Some(node)) if matches!(node.trust, TrustState::Trusted | TrustState::Restricted) =>
+                    runtime.nodes.revoke_trust(node.id, now, now).is_ok(),
+                (0, 4, Some(node)) => runtime.nodes.set_trust(node.id, TrustState::Blocked, now, now).is_ok(),
+                (0, 5, _) => { runtime.nodes.sweep(now); false }
+                (1, 1, Some(node)) if matches!(node.trust, TrustState::Untrusted | TrustState::Discovered) =>
+                    runtime.nodes.begin_pairing(node.id, now).is_ok(),
+                (1, 4, _) => runtime.nodes.pairings().iter().flatten()
+                    .find(|pairing| Some(pairing.peer) == selected
+                        && pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation)
+                    .copied().map(|pairing| runtime.nodes.cancel_pairing(pairing.id).is_ok()).unwrap_or(false),
+                (2, 1, Some(node)) if node.trust == TrustState::Trusted =>
+                    runtime.nodes.join_mesh(node.id, MeshRole::Member, now, now).is_ok(),
                 (2, 4, Some(node)) => runtime.nodes.leave_mesh(node.id, now, now).is_ok(),
                 (3, category @ 0..=4, Some(node)) => {
                     let mut policy = node.policy;
@@ -3682,25 +3698,35 @@ impl ConsoleRuntime {
                         _ => PolicyDecision::Deny,
                     };
                     policy.version = policy.version.saturating_add(1);
-                    runtime
-                        .nodes
-                        .update_policy(node.id, policy, now, now)
-                        .is_ok()
+                    runtime.nodes.update_policy(node.id, policy, now, now).is_ok()
                 }
                 (3, 5, Some(node)) => {
                     let mut policy = NodeTrustPolicy::deny_all();
                     policy.version = node.policy.version.saturating_add(1);
-                    runtime
-                        .nodes
-                        .update_policy(node.id, policy, now, now)
-                        .is_ok()
+                    runtime.nodes.update_policy(node.id, policy, now, now).is_ok()
                 }
                 _ => false,
             }
-        })
-        .unwrap_or(false);
+        }).unwrap_or(false);
         if changed {
-            let _ = crate::runtime::persist_node_state();
+            let committed = crate::runtime::persist_node_state();
+            if committed {
+                let event_type = match (page, control) {
+                    (0, 1) => crate::runtime::EVENT_NODE_TRUST_REVOKED,
+                    (0, 4) => crate::runtime::EVENT_NODE_BLOCKED,
+                    (1, 1) => crate::runtime::EVENT_NODE_PAIRING_REQUESTED,
+                    (1, 4) => crate::runtime::EVENT_NODE_PAIRING_REJECTED,
+                    (2, 1) => crate::runtime::EVENT_NODE_JOINED,
+                    (2, 4) => crate::runtime::EVENT_NODE_LEFT,
+                    (3, _) => crate::runtime::EVENT_NODE_TRUST_CHANGED,
+                    _ => 0,
+                };
+                if event_type != 0 {
+                    if let Some(node_id) = selected {
+                        let _ = crate::runtime::publish_node_state_event(event_type, node_id, page as u64 + 1, page as u64 + 1);
+                    }
+                }
+            }
         }
     }
 
@@ -4661,6 +4687,34 @@ impl ConsoleRuntime {
                 return;
             }
             let _ = self.edit_system_text(key);
+            return;
+        }
+        if self.mode == ConsoleMode::Settings && self.system_focus == 7 && self.settings_editing {
+            if matches!(key, ConsoleKey::Escape) {
+                self.settings_editing = false;
+                self.onboarding_validation_error = false;
+                self.reset_input();
+                return;
+            }
+            if matches!(key, ConsoleKey::Enter) {
+                if self.confirm_selected_node_pairing() {
+                    self.settings_editing = false;
+                    self.onboarding_validation_error = false;
+                    self.reset_input();
+                } else {
+                    self.onboarding_validation_error = true;
+                }
+                return;
+            }
+            if matches!(key, ConsoleKey::Character(byte) if byte.is_ascii_digit())
+                || matches!(key, ConsoleKey::Backspace | ConsoleKey::Delete | ConsoleKey::Left | ConsoleKey::Right)
+            {
+                let _ = self.edit_system_text(key);
+                if self.command_length > 6 {
+                    self.command_length = 6;
+                    self.command_cursor = self.command_cursor.min(6);
+                }
+            }
             return;
         }
         if self.mode == ConsoleMode::Settings && self.settings_editing {
@@ -7959,7 +8013,14 @@ impl ConsoleRuntime {
             }
             ParseOutcome::Graph(graph) => {
                 crate::output_text(b"[console] typed operation graph validated\n");
-                if graph.plan_only || graph.maximum_effect != SideEffectClass::Query {
+                let executable_node_mutation = graph.node_count == 1
+                    && graph.nodes[0]
+                        .map(|node| is_node_console_mutation(node.schema.operation))
+                        .unwrap_or(false);
+                if graph.plan_only
+                    || (graph.maximum_effect != SideEffectClass::Query
+                        && !executable_node_mutation)
+                {
                     self.output
                         .write_number(b"Operation plan stages: ", graph.node_count as u64);
                     self.output
@@ -8092,6 +8153,21 @@ impl ConsoleRuntime {
             | OperationId::MeshStatus
             | OperationId::MeshMemberList
             | OperationId::MeshPolicyRead => return self.execute_node_query(node),
+            OperationId::NodePairBegin
+            | OperationId::NodePairConfirm
+            | OperationId::NodePairCancel
+            | OperationId::NodeTrustUpdate
+            | OperationId::NodeRevokeTrust
+            | OperationId::NodeBlock
+            | OperationId::NodeUnblock
+            | OperationId::NodeSessionClose
+            | OperationId::NodeCapabilityRevoke
+            | OperationId::NodePolicyUpdate
+            | OperationId::MeshPolicyUpdate
+            | OperationId::MeshMemberAdd
+            | OperationId::MeshMemberRemove
+            | OperationId::NodeJoin
+            | OperationId::NodeLeave => return self.execute_node_mutation(node),
             _ => {
                 // Existing service-specific handlers remain the typed operation adapters
                 // until all services accept native IOP payloads directly.
@@ -8169,6 +8245,133 @@ impl ConsoleRuntime {
                 );
             }
         });
+        true
+    }
+
+    // ------------------------=
+    // FUNC: execute_node_mutation
+    // DESC: Executes one deterministic Console node mutation through the shared typed node-operation service adapter and reports committed state only.
+    // ------------------=
+    fn execute_node_mutation(
+        &mut self,
+        node: &crate::runtime::console_language::OperationNode<'_>,
+    ) -> bool {
+        use crate::runtime::iop::{NodeOperationV1, OperationId, NODE_OPERATION_HUMAN_APPROVED};
+
+        let mut request = NodeOperationV1 {
+            node_id: [0; 32],
+            handle: 0,
+            scope: 0,
+            lease_deadline: 0,
+            operation: node.schema.operation.machine_id(),
+            rights: 0,
+            value: 0,
+            flags: 0,
+            schema_version: 1,
+        };
+        let target = node.target.map(|reference| reference.value);
+        match node.schema.operation {
+            OperationId::NodePairConfirm => {
+                let Some(pairing_id) = target.and_then(parse_u64_decimal) else {
+                    self.output.write_line(b"Invalid pairing reference.");
+                    return true;
+                };
+                let Some(code_bytes) = node_argument(node, b"code") else {
+                    self.output.write_line(b"A six-digit verification code is required.");
+                    return true;
+                };
+                if code_bytes.len() != 6 || code_bytes.iter().any(|byte| !byte.is_ascii_digit()) {
+                    self.output.write_line(b"A six-digit verification code is required.");
+                    return true;
+                }
+                let Some(code) = parse_u32_decimal(code_bytes) else { return true; };
+                request.handle = pairing_id;
+                request.value = code;
+                request.flags = NODE_OPERATION_HUMAN_APPROVED;
+            }
+            OperationId::NodePairCancel | OperationId::NodeSessionClose
+            | OperationId::NodeCapabilityRevoke => {
+                let Some(handle) = target.and_then(parse_u64_decimal) else {
+                    self.output.write_line(b"Invalid operation handle.");
+                    return true;
+                };
+                request.handle = handle;
+            }
+            _ => {
+                let Some(id) = target.and_then(parse_node_id) else {
+                    self.output.write_line(b"A full NodeId is required.");
+                    return true;
+                };
+                request.node_id = id.0;
+            }
+        }
+        if node.schema.operation == OperationId::NodeTrustUpdate {
+            if node_argument(node, b"name") != Some(b"state".as_slice()) {
+                self.output.write_line(b"Supported trust field: state");
+                return true;
+            }
+            request.value = match node_argument(node, b"value") {
+                Some(b"untrusted") => 1,
+                Some(b"trusted") => 3,
+                Some(b"restricted") => 4,
+                Some(b"revoked") => 5,
+                Some(b"blocked") => 6,
+                _ => {
+                    self.output.write_line(b"Invalid trust state.");
+                    return true;
+                }
+            };
+        }
+        if matches!(node.schema.operation, OperationId::NodePolicyUpdate | OperationId::MeshPolicyUpdate) {
+            let Some(category) = node_argument(node, b"name").and_then(node_policy_category) else {
+                self.output.write_line(b"Invalid policy category.");
+                return true;
+            };
+            request.flags = category as u32;
+            request.value = match node_argument(node, b"value") {
+                Some(b"deny") => 0,
+                Some(b"allow") => 1,
+                Some(b"session") | Some(b"session-only") => 2,
+                Some(b"leased") => 3,
+                _ => {
+                    self.output.write_line(b"Policy value must be deny, allow, session, or leased.");
+                    return true;
+                }
+            };
+        }
+        let now = crate::runtime::with_runtime(|runtime| {
+            runtime.nodes.audit_records().iter().flatten()
+                .map(|record| record.timestamp).max().unwrap_or(0).saturating_add(1)
+        }).unwrap_or(1);
+        let result = crate::runtime::with_runtime(|runtime| {
+            crate::runtime::iop::execute_node_operation(
+                &mut runtime.nodes,
+                node.schema.operation,
+                request,
+                now,
+                now,
+            )
+        });
+        let Ok(response) = result.unwrap_or(Err(crate::runtime::iop::IopError::InvalidPayload)) else {
+            self.output.write_line(b"Node operation denied or invalid.");
+            return true;
+        };
+        if !crate::runtime::persist_node_state() {
+            self.output.write_line(b"Node state commit failed; no success was reported.");
+            return true;
+        }
+        let event_type = node_event_for_operation(node.schema.operation);
+        if event_type != 0 {
+            let event_node = crate::runtime::node::types::NodeId(response.node_id);
+            let _ = crate::runtime::publish_node_state_event(event_type, event_node, now, now);
+        }
+        if node.schema.operation == OperationId::NodePairBegin {
+            self.output.write_number(b"Pairing transaction: pairing:", response.handle);
+            self.output.write_number(b"Verification code: ", response.value as u64);
+            self.output.write_line(b"Confirm only after independently verifying the remote node.");
+        } else {
+            self.output.write_line(b"Node operation committed.");
+        }
         true
     }
 
@@ -9951,6 +10154,117 @@ fn command_word(command: &[u8], index: usize) -> Option<&[u8]> {
         .split(|byte| byte.is_ascii_whitespace())
         .filter(|word| !word.is_empty())
         .nth(index)
+}
+
+// ------------------------=
+// FUNC: node_argument
+// DESC: Returns one validated typed argument from a parsed node operation without reparsing command text.
+// ------------------=
+fn node_argument<'a>(
+    node: &'a crate::runtime::console_language::OperationNode<'a>,
+    name: &[u8],
+) -> Option<&'a [u8]> {
+    node.arguments.iter().flatten()
+        .find(|argument| argument.name == name)
+        .map(|argument| argument.value)
+}
+
+// ------------------------=
+// FUNC: parse_u64_decimal
+// DESC: Parses a bounded unsigned decimal Console reference without allocation.
+// ------------------=
+fn parse_u64_decimal(value: &[u8]) -> Option<u64> {
+    if value.is_empty() || value.iter().any(|byte| !byte.is_ascii_digit()) {
+        return None;
+    }
+    value.iter().try_fold(0u64, |number, byte| {
+        number.checked_mul(10)?.checked_add((byte - b'0') as u64)
+    })
+}
+
+// ------------------------=
+// FUNC: parse_u32_decimal
+// DESC: Parses a bounded unsigned 32-bit Console value without allocation.
+// ------------------=
+fn parse_u32_decimal(value: &[u8]) -> Option<u32> {
+    u32::try_from(parse_u64_decimal(value)?).ok()
+}
+
+// ------------------------=
+// FUNC: parse_node_id
+// DESC: Decodes a complete 128-bit hexadecimal NodeId so mutable list position never becomes authority identity.
+// ------------------=
+fn parse_node_id(value: &[u8]) -> Option<crate::runtime::node::types::NodeId> {
+    if value.len() != 64 {
+        return None;
+    }
+    let mut bytes = [0u8; 32];
+    for index in 0..32 {
+        let high = hex_nibble(value[index * 2])?;
+        let low = hex_nibble(value[index * 2 + 1])?;
+        bytes[index] = high << 4 | low;
+    }
+    Some(crate::runtime::node::types::NodeId(bytes))
+}
+
+// ------------------------=
+// FUNC: hex_nibble
+// DESC: Converts one ASCII hexadecimal digit into its four-bit value.
+// ------------------=
+fn hex_nibble(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
+}
+
+// ------------------------=
+// FUNC: node_policy_category
+// DESC: Resolves the stable twelve-category node policy index from its deterministic human name.
+// ------------------=
+fn node_policy_category(value: &[u8]) -> Option<usize> {
+    [
+        b"object".as_slice(), b"namespace", b"compute", b"ai", b"service", b"event",
+        b"storage", b"clipboard", b"device", b"diagnostics", b"mesh", b"administrative",
+    ].iter().position(|candidate| *candidate == value)
+}
+
+// ------------------------=
+// FUNC: is_node_console_mutation
+// DESC: Identifies the explicitly implemented Milestone 9 mutations that may execute after deterministic parsing.
+// ------------------=
+fn is_node_console_mutation(operation: crate::runtime::iop::OperationId) -> bool {
+    use crate::runtime::iop::OperationId;
+    matches!(operation,
+        OperationId::NodePairBegin | OperationId::NodePairConfirm | OperationId::NodePairCancel
+        | OperationId::NodeTrustUpdate | OperationId::NodeRevokeTrust | OperationId::NodeBlock
+        | OperationId::NodeUnblock | OperationId::NodeSessionClose | OperationId::NodeCapabilityRevoke
+        | OperationId::NodePolicyUpdate | OperationId::MeshPolicyUpdate | OperationId::MeshMemberAdd
+        | OperationId::MeshMemberRemove | OperationId::NodeJoin | OperationId::NodeLeave)
+}
+
+// ------------------------=
+// FUNC: node_event_for_operation
+// DESC: Maps a committed node mutation to its bounded post-commit IEF notification type.
+// ------------------=
+fn node_event_for_operation(operation: crate::runtime::iop::OperationId) -> u32 {
+    use crate::runtime::iop::OperationId;
+    match operation {
+        OperationId::NodePairBegin => crate::runtime::EVENT_NODE_PAIRING_REQUESTED,
+        OperationId::NodePairConfirm => crate::runtime::EVENT_NODE_PAIRED,
+        OperationId::NodePairCancel => crate::runtime::EVENT_NODE_PAIRING_REJECTED,
+        OperationId::NodeTrustUpdate => crate::runtime::EVENT_NODE_TRUST_CHANGED,
+        OperationId::NodeRevokeTrust => crate::runtime::EVENT_NODE_TRUST_REVOKED,
+        OperationId::NodeBlock => crate::runtime::EVENT_NODE_BLOCKED,
+        OperationId::NodeUnblock => crate::runtime::EVENT_NODE_UNBLOCKED,
+        OperationId::NodeSessionClose => crate::runtime::EVENT_NODE_SESSION_CLOSED,
+        OperationId::NodeJoin | OperationId::MeshMemberAdd => crate::runtime::EVENT_NODE_JOINED,
+        OperationId::NodeLeave | OperationId::MeshMemberRemove => crate::runtime::EVENT_NODE_LEFT,
+        OperationId::NodePolicyUpdate | OperationId::MeshPolicyUpdate => crate::runtime::EVENT_NODE_TRUST_CHANGED,
+        _ => 0,
+    }
 }
 
 // ------------------------=

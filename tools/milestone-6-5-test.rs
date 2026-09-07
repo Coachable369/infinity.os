@@ -203,6 +203,16 @@ fn console_grammar() {
         parse(b"object find name=\"unterminated"),
         Err(ConsoleLanguageError::UnterminatedQuote)
     ));
+    let ParseOutcome::Graph(pair_confirm) =
+        parse(b"node pair-confirm pairing:7 code=847291").unwrap()
+    else {
+        panic!("node pair-confirm graph")
+    };
+    let confirm = pair_confirm.nodes[0].unwrap();
+    assert_eq!(confirm.schema.operation, OperationId::NodePairConfirm);
+    assert_eq!(confirm.target.unwrap().kind, ReferenceKind::Node);
+    assert_eq!(confirm.argument_count, 1);
+    assert_eq!(confirm.arguments[0].unwrap().value_type, ArgumentType::Text);
     let mut session = ConsoleSession::new();
     session.assign(b"docs", ValueType::ObjectSet).unwrap();
     assert_eq!(

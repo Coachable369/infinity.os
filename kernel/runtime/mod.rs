@@ -1994,6 +1994,44 @@ pub fn persist_node_state() -> bool {
 }
 
 // ------------------------=
+// FUNC: publish_node_state_event
+// DESC: Announces an already-committed node state change through capability-filtered IEF delivery.
+// ------------------=
+pub fn publish_node_state_event(
+    event_type: u32,
+    node_id: node::types::NodeId,
+    correlation_id: u64,
+    now: u64,
+) -> bool {
+    with_runtime(|runtime| {
+        let Some(index) = NODE_EVENT_TYPES.iter().position(|candidate| *candidate == event_type) else {
+            return false;
+        };
+        let Some(capability) = runtime.node_event_capabilities[index] else { return false; };
+        let Some(source) = runtime.service_identity(SERVICE_NODE_TRUST) else { return false; };
+        let class = if matches!(event_type, EVENT_NODE_PAIRED | EVENT_NODE_TRUST_CHANGED | EVENT_NODE_TRUST_REVOKED | EVENT_NODE_BLOCKED | EVENT_NODE_UNBLOCKED) {
+            EventClass::Record
+        } else {
+            EventClass::StateChange
+        };
+        runtime.events.publish(
+            class,
+            RoutingDomain::Mesh,
+            event_type,
+            source,
+            u64::from_le_bytes(node_id.0[..8].try_into().unwrap_or([0; 8])),
+            correlation_id,
+            correlation_id,
+            &node_id.0,
+            180,
+            now,
+            &runtime.capabilities,
+            capability,
+        ).is_ok()
+    }).unwrap_or(false)
+}
+
+// ------------------------=
 // FUNC: persist_shell_profile_state
 // DESC: Commits declarative Shell Profile objects before any observable profile event.
 // ------------------=

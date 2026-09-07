@@ -186,10 +186,14 @@ impl NodeRuntime {
 
     // ------------------------=
     // FUNC: confirm_pairing
-    // DESC: Promotes a peer to trusted only after matching the explicit out-of-band verification code.
+    // DESC: Promotes a peer only after an explicit human decision and matching out-of-band verification code.
     // ------------------=
-    pub fn confirm_pairing(&mut self, pairing_id: u64, code: u32, now: u64, correlation_id: u64) -> Result<(), NodeError> {
+    pub fn confirm_pairing(&mut self, pairing_id: u64, code: u32, human_approved: bool, now: u64, correlation_id: u64) -> Result<(), NodeError> {
+        if !human_approved { return Err(NodeError::HumanApprovalRequired); }
         let pairing = self.pairings.iter_mut().flatten().find(|pairing| pairing.id == pairing_id).ok_or(NodeError::PairingNotFound)?;
+        if pairing.state != PairingState::AwaitingConfirmation {
+            return Err(if pairing.state == PairingState::Expired { NodeError::PairingExpired } else { NodeError::PairingNotFound });
+        }
         if now >= pairing.expires_at { pairing.state = PairingState::Expired; return Err(NodeError::PairingExpired); }
         if pairing.verification_code != code { return Err(NodeError::VerificationMismatch); }
         pairing.state = PairingState::Confirmed;

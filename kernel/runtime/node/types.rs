@@ -119,4 +119,5 @@ pub enum NodeError {
     SessionNotFound, SessionExpired, ReplayDetected, AuthenticationFailed, CapabilityDenied,
     CapabilityExpired, CapabilityRevoked, MeshFull, AlreadyMember, NotMember, ResourceLimit,
     IdentityMismatch, DuplicateIdentity, ProtocolDowngrade, StateCorrupt, UnsupportedState,
+    HumanApprovalRequired,
 }

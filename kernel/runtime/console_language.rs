@@ -414,6 +414,11 @@ const SETTING_ARGS: &[ArgumentSchema] = &[
         required: true,
     },
 ];
+const PAIR_CONFIRM_ARGS: &[ArgumentSchema] = &[ArgumentSchema {
+    name: b"code",
+    value_type: ArgumentType::Text,
+    required: true,
+}];
 const NETWORK_CONFIG_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema {
         name: b"address",
@@ -1650,7 +1655,7 @@ pub static OPERATIONS: &[OperationSchema] = &[
     op(b"node", b"read", b"Inspect one stable cryptographic node identity", OperationId::NodeInspect, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NO_ARGS, 1, SideEffectClass::Query, b"node read node:7f84"),
     op(b"node", b"discover-status", b"Inspect bounded signed discovery state", OperationId::NodeDiscoverStatus, ValueType::Unit, ValueType::NodeSet, None, NO_ARGS, 1, SideEffectClass::Query, b"node discover-status"),
     op(b"node", b"pair", b"Begin an explicit verified node pairing", OperationId::NodePairBegin, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NO_ARGS, 9, SideEffectClass::SecurityChange, b"node pair node:7f84"),
-    op(b"node", b"pair-confirm", b"Confirm the displayed fingerprint and short code", OperationId::NodePairConfirm, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NO_ARGS, 9, SideEffectClass::SecurityChange, b"node pair-confirm pairing:1"),
+    op(b"node", b"pair-confirm", b"Confirm the displayed fingerprint and manually entered short code", OperationId::NodePairConfirm, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), PAIR_CONFIRM_ARGS, 9, SideEffectClass::SecurityChange, b"node pair-confirm pairing:1 code=847291"),
     op(b"node", b"pair-cancel", b"Cancel pairing without granting authority", OperationId::NodePairCancel, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NO_ARGS, 9, SideEffectClass::SecurityChange, b"node pair-cancel pairing:1"),
     op(b"node", b"trust-read", b"Read the scoped trust relationship", OperationId::NodeTrustRead, ValueType::Unit, ValueType::NodePolicy, Some(ArgumentType::NodeRef), NO_ARGS, 1, SideEffectClass::Query, b"node trust-read node:7f84"),
     op(b"node", b"trust-update", b"Update explicit node trust without ambient authority", OperationId::NodeTrustUpdate, ValueType::Unit, ValueType::NodePolicy, Some(ArgumentType::NodeRef), SETTING_ARGS, 9, SideEffectClass::SecurityChange, b"node trust-update node:7f84 name=state value=restricted"),

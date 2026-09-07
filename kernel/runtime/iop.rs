@@ -299,7 +299,14 @@ impl NodeOperationV1 {
     // DESC: Validates and decodes the fixed-width node operation schema version.
     // ------------------=
     pub fn decode(input: &[u8]) -> Result<Self, IopError> {
-        if input.len() != NODE_OPERATION_V1_BYTES || get_u16(input, 72) != 1 {
+        if input.len() != NODE_OPERATION_V1_BYTES {
+            return Err(IopError::InvalidPayload);
+        }
+        let operation = get_u32(input, 56);
+        if get_u16(input, 72) != 1
+            || input[74..80].iter().any(|byte| *byte != 0)
+            || !is_node_operation(operation)
+        {
             return Err(IopError::InvalidPayload);
         }
         let mut node_id = [0u8; 32];
@@ -315,6 +322,186 @@ impl NodeOperationV1 {
             flags: get_u32(input, 68),
             schema_version: 1,
         })
+    }
+}
+
+// ------------------------=
+// FUNC: is_node_operation
+// DESC: Rejects payloads whose embedded operation is outside the version-one node and mesh registry.
+// ------------------=
+fn is_node_operation(operation: u32) -> bool {
+    matches!(
+        operation,
+        0xd001..=0xd00b
+            | 0xd011..=0xd014
+            | 0xd021..=0xd023
+            | 0xd031..=0xd034
+            | 0xd041..=0xd042
+            | 0xd051..=0xd052
+            | 0xd061..=0xd068
+    )
+}
+
+pub const NODE_OPERATION_HUMAN_APPROVED: u32 = 1;
+
+// ------------------------=
+// FUNC: execute_node_operation
+// DESC: Executes the decoded NodeOperationV1 service contract against authoritative node state.
+// ------------------=
+pub fn execute_node_operation(
+    nodes: &mut super::node::NodeRuntime,
+    operation: OperationId,
+    request: NodeOperationV1,
+    now: u64,
+    correlation_id: u64,
+) -> Result<NodeOperationV1, IopError> {
+    use super::node::types::{MeshRole, NodeId, PolicyDecision, TrustState};
+    if request.operation != operation.machine_id() || request.schema_version != 1 {
+        return Err(IopError::InvalidPayload);
+    }
+    let peer = NodeId(request.node_id);
+    let mut response = request;
+    match operation {
+        OperationId::NodeList | OperationId::NodeDiscoverStatus => {
+            response.value = nodes.discovered_nodes().iter().flatten().count() as u32;
+        }
+        OperationId::NodeInspect | OperationId::NodeTrustRead | OperationId::NodePolicyRead
+        | OperationId::NodeHealth | OperationId::NodeDiagnostics => {
+            let node = nodes.discovered_nodes().iter().flatten().find(|node| node.id == peer)
+                .ok_or(IopError::InvalidPayload)?;
+            response.value = trust_value(node.trust);
+            response.flags = reachability_value(node.reachability);
+            response.scope = node.policy.scope;
+            response.lease_deadline = node.policy.expires_at;
+        }
+        OperationId::NodePairBegin => {
+            let pairing = nodes.begin_pairing(peer, now).map_err(map_node_error)?;
+            response.handle = pairing.id;
+            response.value = pairing.verification_code;
+            response.lease_deadline = pairing.expires_at;
+        }
+        OperationId::NodePairConfirm => {
+            let approved = request.flags & NODE_OPERATION_HUMAN_APPROVED != 0;
+            nodes.confirm_pairing(request.handle, request.value, approved, now, correlation_id)
+                .map_err(map_node_error)?;
+        }
+        OperationId::NodePairCancel => nodes.cancel_pairing(request.handle).map_err(map_node_error)?,
+        OperationId::NodeTrustUpdate => {
+            let state = trust_from_value(request.value).ok_or(IopError::InvalidPayload)?;
+            nodes.set_trust(peer, state, now, correlation_id).map_err(map_node_error)?;
+        }
+        OperationId::NodeRevokeTrust => nodes.revoke_trust(peer, now, correlation_id).map_err(map_node_error)?,
+        OperationId::NodeBlock => nodes.set_trust(peer, TrustState::Blocked, now, correlation_id).map_err(map_node_error)?,
+        OperationId::NodeUnblock => nodes.set_trust(peer, TrustState::Untrusted, now, correlation_id).map_err(map_node_error)?,
+        OperationId::NodeSessionList | OperationId::NodeSessionInspect => {
+            response.value = nodes.sessions().iter().flatten().count() as u32;
+        }
+        OperationId::NodeSessionClose => nodes.close_session(request.handle, now, correlation_id).map_err(map_node_error)?,
+        OperationId::NodeCapabilityList => response.value = nodes.remote_grants().iter().flatten().count() as u32,
+        OperationId::NodeCapabilityRevoke => nodes.revoke_remote(request.handle, now, correlation_id).map_err(map_node_error)?,
+        OperationId::MeshStatus | OperationId::MeshMemberList | OperationId::NodeDomainList
+        | OperationId::NodeDomainInspect | OperationId::MeshPolicyRead => {
+            response.value = nodes.mesh_members().iter().flatten().filter(|member| member.enabled).count() as u32;
+        }
+        OperationId::MeshMemberAdd | OperationId::NodeJoin => {
+            let role = match request.value { 0 => MeshRole::Member, 1 => MeshRole::Operator, 2 => MeshRole::Gateway, 3 => MeshRole::Compute, 4 => MeshRole::Storage, _ => return Err(IopError::InvalidPayload) };
+            nodes.join_mesh(peer, role, now, correlation_id).map_err(map_node_error)?;
+        }
+        OperationId::MeshMemberRemove | OperationId::NodeLeave => nodes.leave_mesh(peer, now, correlation_id).map_err(map_node_error)?,
+        OperationId::NodePolicyUpdate | OperationId::MeshPolicyUpdate => {
+            let category = (request.flags & 0xff) as usize;
+            if category >= 12 { return Err(IopError::InvalidPayload); }
+            let current = nodes.discovered_nodes().iter().flatten().find(|node| node.id == peer)
+                .ok_or(IopError::InvalidPayload)?;
+            let mut policy = current.policy;
+            policy.categories[category] = match request.value { 0 => PolicyDecision::Deny, 1 => PolicyDecision::Allow, 2 => PolicyDecision::SessionOnly, 3 => PolicyDecision::Leased, _ => return Err(IopError::InvalidPayload) };
+            policy.scope = request.scope;
+            policy.expires_at = request.lease_deadline;
+            policy.version = policy.version.saturating_add(1);
+            nodes.update_policy(peer, policy, now, correlation_id).map_err(map_node_error)?;
+        }
+        OperationId::NodeAuditList | OperationId::NodeAuditInspect => response.value = nodes.audit_records().iter().flatten().count() as u32,
+        OperationId::NodeSessionOpen | OperationId::NodeCapabilityGrant => return Err(IopError::InvalidPayload),
+        _ => return Err(IopError::InvalidPayload),
+    }
+    Ok(response)
+}
+
+// ------------------------=
+// FUNC: dispatch_node_operation
+// DESC: Receives, decodes, executes, and returns one capability-validated node operation through the bounded IOP router.
+// ------------------=
+pub fn dispatch_node_operation(
+    router: &mut IopRouter,
+    _capabilities: &CapabilityManager,
+    nodes: &mut super::node::NodeRuntime,
+    operation: OperationId,
+    service_endpoint: u16,
+    response_endpoint: u16,
+    service_identity: SecurityIdentity,
+    now: u64,
+) -> Result<NodeOperationV1, IopError> {
+    let request = router.receive(service_endpoint, now)?;
+    if request.header.message_type != MessageType::Request
+        || request.header.operation_type_id != operation.machine_id()
+    {
+        return Err(IopError::InvalidPayload);
+    }
+    let decoded = NodeOperationV1::decode(request.bytes())?;
+    let response = execute_node_operation(
+        nodes,
+        operation,
+        decoded,
+        now,
+        request.header.correlation_id,
+    )?;
+    router.respond(
+        response_endpoint,
+        &request,
+        service_identity,
+        &response.encode(),
+        now,
+    )?;
+    Ok(response)
+}
+
+// ------------------------=
+// FUNC: trust_value
+// DESC: Projects a trust state into the stable NodeOperationV1 value field.
+// ------------------=
+fn trust_value(state: super::node::types::TrustState) -> u32 {
+    use super::node::types::TrustState;
+    match state { TrustState::Discovered => 0, TrustState::Untrusted => 1, TrustState::PairingPending => 2, TrustState::Trusted => 3, TrustState::Restricted => 4, TrustState::Revoked => 5, TrustState::Blocked => 6, TrustState::Incompatible => 7 }
+}
+
+// ------------------------=
+// FUNC: trust_from_value
+// DESC: Validates a stable NodeOperationV1 trust-state discriminator.
+// ------------------=
+fn trust_from_value(value: u32) -> Option<super::node::types::TrustState> {
+    use super::node::types::TrustState;
+    match value { 0 => Some(TrustState::Discovered), 1 => Some(TrustState::Untrusted), 2 => Some(TrustState::PairingPending), 3 => Some(TrustState::Trusted), 4 => Some(TrustState::Restricted), 5 => Some(TrustState::Revoked), 6 => Some(TrustState::Blocked), 7 => Some(TrustState::Incompatible), _ => None }
+}
+
+// ------------------------=
+// FUNC: reachability_value
+// DESC: Projects observed reachability into the stable NodeOperationV1 flags field.
+// ------------------=
+fn reachability_value(state: super::node::types::Reachability) -> u32 {
+    use super::node::types::Reachability;
+    match state { Reachability::Unknown => 0, Reachability::Online => 1, Reachability::Degraded => 2, Reachability::Offline => 3 }
+}
+
+// ------------------------=
+// FUNC: map_node_error
+// DESC: Maps node-service validation and authority failures to the typed IOP error boundary.
+// ------------------=
+fn map_node_error(error: super::node::types::NodeError) -> IopError {
+    use super::node::types::NodeError;
+    match error {
+        NodeError::CapabilityDenied | NodeError::CapabilityExpired | NodeError::CapabilityRevoked
+        | NodeError::Blocked | NodeError::NotTrusted | NodeError::HumanApprovalRequired => IopError::AccessDenied,
+        _ => IopError::InvalidPayload,
     }
 }
 
