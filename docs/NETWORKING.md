@@ -1,5 +1,7 @@
 # InfinityOS Native Networking
 
+Node services consume typed Network Service boundaries and do not identify peers by address. Real cross-machine signed discovery and encrypted session carriage remain **SCAFFOLDED** until native packet transport is complete.
+
 ## Architecture
 
 Milestone 8 introduces an architecture-neutral Network Runtime above typed

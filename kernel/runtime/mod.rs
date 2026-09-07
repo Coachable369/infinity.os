@@ -7,9 +7,12 @@ pub mod font;
 pub mod identity;
 pub mod iop;
 pub mod network;
+pub mod crypto;
+pub mod node;
 pub mod object_navigation;
 pub mod scheduler;
 pub mod service;
+pub mod task_manager;
 
 use capability::{CapabilityManager, CapabilityType};
 use event::{EventClass, EventFabric, RoutingDomain};
@@ -82,6 +85,22 @@ pub const EVENT_OBJECT_DESTROYED: u32 = 0x9c002;
 pub const EVENT_TRASH_ITEM_ADDED: u32 = 0x9d001;
 pub const EVENT_TRASH_ITEM_RESTORED: u32 = 0x9d002;
 pub const EVENT_TRASH_ITEM_DESTROYED: u32 = 0x9d003;
+pub const EVENT_NODE_DISCOVERED: u32 = 0x9e001;
+pub const EVENT_NODE_PAIRING_REQUESTED: u32 = 0x9e002;
+pub const EVENT_NODE_PAIRED: u32 = 0x9e003;
+pub const EVENT_NODE_PAIRING_REJECTED: u32 = 0x9e004;
+pub const EVENT_NODE_TRUST_CHANGED: u32 = 0x9e005;
+pub const EVENT_NODE_TRUST_REVOKED: u32 = 0x9e006;
+pub const EVENT_NODE_BLOCKED: u32 = 0x9e007;
+pub const EVENT_NODE_UNBLOCKED: u32 = 0x9e008;
+pub const EVENT_NODE_SESSION_ESTABLISHED: u32 = 0x9e009;
+pub const EVENT_NODE_SESSION_CLOSED: u32 = 0x9e00a;
+pub const EVENT_NODE_JOINED: u32 = 0x9e00b;
+pub const EVENT_NODE_LEFT: u32 = 0x9e00c;
+pub const EVENT_NODE_DEGRADED: u32 = 0x9e00d;
+pub const EVENT_NODE_RECOVERED: u32 = 0x9e00e;
+pub const EVENT_NODE_OFFLINE: u32 = 0x9e00f;
+pub const EVENT_NODE_COMPATIBILITY_CHANGED: u32 = 0x9e010;
 
 const NETWORK_EVENT_TYPES: [u32; 15] = [
     EVENT_NETWORK_INTERFACE_STATE_CHANGED,
@@ -99,6 +118,14 @@ const NETWORK_EVENT_TYPES: [u32; 15] = [
     EVENT_NETWORK_SERVICE_LOST,
     EVENT_NETWORK_DEGRADED,
     EVENT_NETWORK_RECOVERED,
+];
+
+const NODE_EVENT_TYPES: [u32; 16] = [
+    EVENT_NODE_DISCOVERED, EVENT_NODE_PAIRING_REQUESTED, EVENT_NODE_PAIRED,
+    EVENT_NODE_PAIRING_REJECTED, EVENT_NODE_TRUST_CHANGED, EVENT_NODE_TRUST_REVOKED,
+    EVENT_NODE_BLOCKED, EVENT_NODE_UNBLOCKED, EVENT_NODE_SESSION_ESTABLISHED,
+    EVENT_NODE_SESSION_CLOSED, EVENT_NODE_JOINED, EVENT_NODE_LEFT, EVENT_NODE_DEGRADED,
+    EVENT_NODE_RECOVERED, EVENT_NODE_OFFLINE, EVENT_NODE_COMPATIBILITY_CHANGED,
 ];
 
 const UI_EVENT_TYPES: [u32; 12] = [
@@ -133,8 +160,11 @@ pub struct InfinityRuntime {
     pub fonts: font::FontCatalog,
     pub ui: crate::ui::InfinityUiRuntime,
     pub network: network::NetworkRuntime,
+    pub nodes: node::NodeRuntime,
+    pub task_manager: task_manager::TaskManager,
     pub shell_profiles: Option<object_navigation::ShellProfileService>,
     pub file_navigator: Option<object_navigation::FileNavigatorState>,
+    pub file_navigators: object_navigation::FileNavigatorWorkspace,
     pub live_profile: bool,
     service_event_cap: Option<u64>,
     identity_event_cap: Option<u64>,
@@ -144,6 +174,7 @@ pub struct InfinityRuntime {
     ai_event_capabilities: [Option<u64>; 3],
     ui_event_capabilities: [Option<u64>; UI_EVENT_TYPES.len()],
     network_event_capabilities: [Option<u64>; NETWORK_EVENT_TYPES.len()],
+    node_event_capabilities: [Option<u64>; NODE_EVENT_TYPES.len()],
     settings_network_profile_capability: Option<u64>,
     settings_network_address_capability: Option<u64>,
     settings_network_route_capability: Option<u64>,
@@ -167,8 +198,11 @@ impl InfinityRuntime {
             fonts: font::FontCatalog::new(),
             ui: crate::ui::InfinityUiRuntime::new(),
             network: network::NetworkRuntime::new(),
+            nodes: node::NodeRuntime::new(),
+            task_manager: task_manager::TaskManager::new(),
             shell_profiles: None,
             file_navigator: None,
+            file_navigators: object_navigation::FileNavigatorWorkspace::new(),
             live_profile,
             service_event_cap: None,
             identity_event_cap: None,
@@ -178,6 +212,7 @@ impl InfinityRuntime {
             ai_event_capabilities: [None; 3],
             ui_event_capabilities: [None; UI_EVENT_TYPES.len()],
             network_event_capabilities: [None; NETWORK_EVENT_TYPES.len()],
+            node_event_capabilities: [None; NODE_EVENT_TYPES.len()],
             settings_network_profile_capability: None,
             settings_network_address_capability: None,
             settings_network_route_capability: None,
@@ -1134,6 +1169,72 @@ impl InfinityRuntime {
             RestartPolicy::OnFailure,
             Criticality::NonCritical,
         ))?;
+        self.services.define(manifest(
+            SERVICE_CRYPTO,
+            [SERVICE_RUNTIME, SERVICE_EVENT, 0, 0],
+            2,
+            [0; 12],
+            0,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Critical,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_NODE_IDENTITY,
+            [SERVICE_CRYPTO, SERVICE_OBJECT, SERVICE_EVENT, 0],
+            3,
+            [OperationId::NodeInspect as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            1,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_NODE_DISCOVERY,
+            [SERVICE_NODE_IDENTITY, SERVICE_NETWORK_DISCOVERY, SERVICE_EVENT, 0],
+            3,
+            [OperationId::NodeList as u32, OperationId::NodeInspect as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            2,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_NODE_TRUST,
+            [SERVICE_NODE_IDENTITY, SERVICE_NODE_DISCOVERY, SERVICE_OBJECT, SERVICE_EVENT],
+            4,
+            [
+                OperationId::NodePairBegin as u32, OperationId::NodePairConfirm as u32,
+                OperationId::NodePairCancel as u32, OperationId::NodeTrustUpdate as u32,
+                OperationId::NodeRevokeTrust as u32, OperationId::NodeSessionList as u32,
+                OperationId::NodeSessionOpen as u32, OperationId::NodeSessionClose as u32,
+                OperationId::NodeCapabilityList as u32, OperationId::NodeCapabilityGrant as u32,
+                OperationId::NodeCapabilityRevoke as u32, 0,
+            ],
+            11,
+            RestartPolicy::BoundedRetry { maximum: 3 },
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_MESH,
+            [SERVICE_NODE_TRUST, SERVICE_NETWORK_TRANSPORT, SERVICE_EVENT, 0],
+            3,
+            [
+                OperationId::MeshStatus as u32, OperationId::MeshMemberList as u32,
+                OperationId::MeshMemberAdd as u32, OperationId::MeshMemberRemove as u32,
+                OperationId::MeshPolicyRead as u32, OperationId::MeshPolicyUpdate as u32,
+                0, 0, 0, 0, 0, 0,
+            ],
+            6,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
+        self.services.define(manifest(
+            SERVICE_NODE_AUDIT,
+            [SERVICE_NODE_TRUST, SERVICE_OBJECT, SERVICE_EVENT, 0],
+            3,
+            [OperationId::NodeAuditList as u32, OperationId::NodeAuditInspect as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            2,
+            RestartPolicy::OnFailure,
+            Criticality::Important,
+        ))?;
         if self.live_profile {
             self.services.define(manifest(
                 SERVICE_INSTALLER,
@@ -1154,7 +1255,7 @@ impl InfinityRuntime {
     pub fn start_all(&mut self, now: u64) {
         for _ in 0..MAX_SERVICES {
             self.services.start_ready(&mut self.execution, now);
-            for id in 1..=SERVICE_NETWORK_DISCOVERY {
+            for id in 1..=SERVICE_NODE_AUDIT {
                 if self
                     .services
                     .inspect(id)
@@ -1253,6 +1354,22 @@ impl InfinityRuntime {
                             0,
                         )
                         .ok();
+                }
+            }
+        }
+        if self.node_event_capabilities[0].is_none() {
+            if let Some(node_trust) = self.service_identity(SERVICE_NODE_TRUST) {
+                for (index, event_type) in NODE_EVENT_TYPES.iter().copied().enumerate() {
+                    self.node_event_capabilities[index] = self.capabilities.grant(
+                        CapabilityType::EventPublish,
+                        event_type as u64,
+                        1,
+                        0,
+                        runtime,
+                        node_trust,
+                        None,
+                        0,
+                    ).ok();
                 }
             }
         }
@@ -1698,10 +1815,17 @@ fn runtime_ref() -> &'static InfinityRuntime {
 // FUNC: initialize
 // DESC: Initializes initialize state.
 // ------------------=
-pub fn initialize() {
+pub fn initialize(live_profile: bool) {
     let runtime = runtime_mut();
+    runtime.live_profile = live_profile;
     runtime.shell_profiles = Some(object_navigation::ShellProfileService::new());
     runtime.file_navigator = object_navigation::FileNavigatorState::new(b"/home/default").ok();
+    if let Ok(handle) = runtime.task_manager.launch(
+        &mut runtime.execution,
+        task_manager::IMAGE_FILE_NAVIGATOR,
+    ) {
+        let _ = runtime.file_navigators.launch(b"/home/default", handle.0);
+    }
     let _ = runtime.define_bootstrap();
     // Bootstrap only the dependency roots. Storage/object/namespace readiness
     // is completed after the storage subsystem has initialized.
@@ -1715,6 +1839,14 @@ pub fn initialize() {
         crate::output_text(b"[network] degraded: native network bootstrap failed\n");
     }
     crate::output_text(b"[runtime] execution manager online\n[runtime] capability manager online\n[iop] router online\n[event] fabric online\n");
+}
+
+// ------------------------=
+// FUNC: initialize_node_identity
+// DESC: Initializes cryptographic node identity from boot-scoped firmware entropy.
+// ------------------=
+pub fn initialize_node_identity(entropy: &[u8; 32], valid: bool) -> bool {
+    runtime_mut().nodes.initialize(entropy, valid).is_ok()
 }
 
 // ------------------------=
@@ -1762,6 +1894,12 @@ pub fn storage_initialized() {
                 SERVICE_NETWORK_POLICY,
                 SERVICE_NETWORK_TRANSPORT,
                 SERVICE_NETWORK_DISCOVERY,
+                SERVICE_CRYPTO,
+                SERVICE_NODE_IDENTITY,
+                SERVICE_NODE_DISCOVERY,
+                SERVICE_NODE_TRUST,
+                SERVICE_MESH,
+                SERVICE_NODE_AUDIT,
             ] {
                 if runtime
                     .services
@@ -1780,6 +1918,20 @@ pub fn storage_initialized() {
             if let Ok(length) = crate::storage::network_state_load(&mut persisted) {
                 if length >= 32 {
                     let _ = runtime.network.restore_state(&persisted[..length]);
+                }
+            }
+        }
+        #[cfg(target_os = "none")]
+        {
+            let mut persisted = [0u8; node::types::NODE_STATE_BYTES];
+            let restored = crate::storage::node_state_load(&mut persisted)
+                .ok()
+                .filter(|length| *length == node::types::NODE_STATE_BYTES)
+                .and_then(|length| runtime.nodes.restore_state(&persisted[..length]).ok())
+                .is_some();
+            if !restored {
+                if let Ok(state) = runtime.nodes.encode_state() {
+                    let _ = crate::storage::node_state_commit(&state);
                 }
             }
         }
@@ -1824,6 +1976,21 @@ pub fn storage_initialized() {
             }
         }
     });
+}
+
+// ------------------------=
+// FUNC: persist_node_state
+// DESC: Commits cryptographic identity, trust policy, and mesh membership after authoritative node state changes.
+// ------------------=
+pub fn persist_node_state() -> bool {
+    #[cfg(target_os = "none")]
+    {
+        runtime_ref().nodes.encode_state().ok().and_then(|state| crate::storage::node_state_commit(&state).ok()).is_some()
+    }
+    #[cfg(not(target_os = "none"))]
+    {
+        true
+    }
 }
 
 // ------------------------=
@@ -2416,6 +2583,12 @@ pub fn announce_services() {
         (SERVICE_NETWORK_POLICY, b"network-policy".as_slice()),
         (SERVICE_NETWORK_TRANSPORT, b"network-transport".as_slice()),
         (SERVICE_NETWORK_DISCOVERY, b"network-discovery".as_slice()),
+        (SERVICE_CRYPTO, b"crypto".as_slice()),
+        (SERVICE_NODE_IDENTITY, b"node-identity".as_slice()),
+        (SERVICE_NODE_DISCOVERY, b"node-discovery".as_slice()),
+        (SERVICE_NODE_TRUST, b"node-trust".as_slice()),
+        (SERVICE_MESH, b"mesh".as_slice()),
+        (SERVICE_NODE_AUDIT, b"node-audit".as_slice()),
     ] {
         if runtime
             .services

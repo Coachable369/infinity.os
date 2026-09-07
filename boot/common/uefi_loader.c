@@ -143,6 +143,12 @@ typedef EFI_STATUS (EFIAPI *EFI_EXIT_BOOT_SERVICES)(EFI_HANDLE, uint64_t);
 typedef EFI_STATUS (EFIAPI *EFI_LOCATE_PROTOCOL)(EFI_GUID *, void *, void **);
 typedef EFI_STATUS (EFIAPI *EFI_LOCATE_HANDLE_BUFFER)(uint32_t, EFI_GUID *, void *, size_t *, EFI_HANDLE **);
 typedef EFI_STATUS (EFIAPI *EFI_CONNECT_CONTROLLER)(EFI_HANDLE, EFI_HANDLE *, void *, uint8_t);
+typedef struct EFI_RNG_PROTOCOL EFI_RNG_PROTOCOL;
+typedef EFI_STATUS (EFIAPI *EFI_GET_RNG)(EFI_RNG_PROTOCOL *, EFI_GUID *, size_t, uint8_t *);
+struct EFI_RNG_PROTOCOL {
+    void *get_info;
+    EFI_GET_RNG get_rng;
+};
 
 typedef struct {
     EFI_TABLE_HEADER header;
@@ -378,10 +384,26 @@ static const EFI_GUID simple_network_guid = {0xa19832b9, 0xac25, 0x11d3,
     {0x9a, 0x2d, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d}};
 static const EFI_GUID pci_io_guid = {0x4cf5b200, 0x68b8, 0x4ca5,
     {0x9e, 0xec, 0xb2, 0x3e, 0x3f, 0x50, 0x02, 0x9a}};
+static const EFI_GUID rng_protocol_guid = {0x3152bca5, 0xeade, 0x433d,
+    {0x86, 0x2e, 0xc0, 0x1c, 0xdc, 0x29, 0x1f, 0x44}};
 static const EFI_GUID acpi20_table_guid = {0x8868e871, 0xe4f1, 0x11d3,
     {0xbc, 0x22, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81}};
 static const uint8_t infinity_partition_type[16] =
     {0x69,0x66,0x6e,0x49,0x69,0x6e,0x79,0x74,0x53,0x54,0x4f,0x52,0x41,0x47,0x45,0x31};
+
+// ------------------------=
+// FUNC: gather_firmware_entropy
+// DESC: Obtains one boot-scoped seed from the UEFI RNG protocol without inventing fallback randomness.
+// ------------------=
+static void gather_firmware_entropy(EFI_SYSTEM_TABLE *system, InfinityBootInfo *info) {
+    EFI_RNG_PROTOCOL *rng = NULL;
+    info->firmware_entropy_valid = 0;
+    if (system->boot_services->locate_protocol((EFI_GUID *)&rng_protocol_guid, NULL,
+            (void **)&rng) == EFI_SUCCESS && rng && rng->get_rng &&
+        rng->get_rng(rng, NULL, sizeof(info->firmware_entropy), info->firmware_entropy) == EFI_SUCCESS) {
+        info->firmware_entropy_valid = 1;
+    }
+}
 
 // ------------------------=
 // FUNC: infinity_handoff
@@ -523,6 +545,36 @@ static uint8_t valid_sector_record(uint8_t *sector, size_t size, size_t crc_offs
 }
 
 static uint8_t installed_generation_invalid;
+static uint32_t installed_generation_stage;
+
+// ------------------------=
+// FUNC: read_blocks_bounded
+// DESC: Reads a large block extent through firmware-sized chunks so device transfer limits cannot invalidate a verified System Generation.
+// ------------------=
+static EFI_STATUS read_blocks_bounded(
+    EFI_BLOCK_IO_PROTOCOL *block,
+    uint64_t first_lba,
+    size_t byte_count,
+    void *destination
+) {
+    const size_t maximum_transfer = 1024 * 1024;
+    uint8_t *output = destination;
+    while (byte_count != 0) {
+        size_t transfer = byte_count > maximum_transfer ? maximum_transfer : byte_count;
+        EFI_STATUS status = block->read_blocks(
+            block,
+            block->media->media_id,
+            first_lba,
+            transfer,
+            output
+        );
+        if (status != EFI_SUCCESS) return status;
+        first_lba += transfer / 512;
+        output += transfer;
+        byte_count -= transfer;
+    }
+    return EFI_SUCCESS;
+}
 
 // ------------------------=
 // FUNC: try_load_installed_kernel
@@ -544,6 +596,7 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
         uint8_t sector[512];
         if (block->read_blocks(block, block->media->media_id, 1, sizeof(sector), sector) != EFI_SUCCESS ||
             !equal_bytes(sector, (const uint8_t *)"EFI PART", 8)) continue;
+        if (installed_generation_stage < 1) installed_generation_stage = 1;
         uint32_t header_size = read_u32(sector + 12);
         if (header_size < 92 || header_size > 512 || !valid_sector_record(sector, header_size, 16)) continue;
         uint64_t entries_lba = read_u64(sector + 72);
@@ -565,6 +618,7 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
                 read_u32(sector + 8) != 1 || read_u32(sector + 16) != 4 ||
                 !valid_sector_record(sector, 512, 508)) continue;
         installed_generation_invalid = 1;
+        if (installed_generation_stage < 2) installed_generation_stage = 2;
         uint64_t pool_relative_lba = read_u64(sector + 32);
         uint64_t spaces_relative_lba = read_u64(sector + 40);
         uint64_t boot_catalog_relative_lba = read_u64(sector + 96);
@@ -574,10 +628,12 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
                 sizeof(sector), sector) != EFI_SUCCESS || !equal_bytes(sector, (const uint8_t *)"INFPOOL1", 8) ||
                 read_u32(sector + 8) != 1 || !valid_sector_record(sector, 512, 508) ||
                 !equal_bytes(sector + 16, pool_uuid, 16) || !equal_bytes(sector + 32, container_uuid, 16)) continue;
+        if (installed_generation_stage < 3) installed_generation_stage = 3;
         if (block->read_blocks(block, block->media->media_id, container_lba + spaces_relative_lba,
                 sizeof(sector), sector) != EFI_SUCCESS || !equal_bytes(sector, (const uint8_t *)"INFSPACE", 8) ||
                 read_u32(sector + 8) != 1 || read_u32(sector + 16) != 4 ||
                 !valid_sector_record(sector, 512, 508)) continue;
+        if (installed_generation_stage < 4) installed_generation_stage = 4;
         uint64_t system_boot_relative_lba = 0, system_boot_bytes = 0;
         for (unsigned space = 0; space < 4; ++space) {
             uint8_t *entry = sector + 32 + space * 96;
@@ -595,6 +651,7 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
             read_u32(sector + 20) != INFINITY_ARCHITECTURE || read_u64(sector + 24) == 0 ||
             read_u32(sector + 56) == 0 || read_u32(sector + 56) > 8 ||
             !equal_bytes(sector + 64, container_uuid, 16) || !valid_sector_record(sector, 512, 508)) continue;
+        if (installed_generation_stage < 5) installed_generation_stage = 5;
         uint64_t active_generation = read_u64(sector + 24);
         uint64_t manifest_relative_lba = read_u64(sector + 32);
         if (manifest_relative_lba < 4 || manifest_relative_lba >= 2048 ||
@@ -604,6 +661,7 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
             read_u32(sector + 20) != INFINITY_ARCHITECTURE || read_u64(sector + 24) != active_generation ||
             read_u32(sector + 60) == 0 || read_u32(sector + 60) > 16 ||
             !equal_bytes(sector + 80, container_uuid, 16) || !valid_sector_record(sector, 512, 508)) continue;
+        if (installed_generation_stage < 6) installed_generation_stage = 6;
         uint64_t kernel_relative_lba = read_u64(sector + 40), kernel_bytes = read_u64(sector + 48);
         uint32_t kernel_crc = read_u32(sector + 56), component_count = read_u32(sector + 60);
         uint64_t components_relative_lba = read_u64(sector + 64);
@@ -617,6 +675,7 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
             read_u32(components + 8) != 2 || read_u32(components + 12) != sizeof(component_words) ||
             read_u32(components + 16) != component_count || read_u32(components + 20) != 48 ||
             read_u32(components + 24) != 2 || !valid_sector_record(components, sizeof(component_words), 1020)) continue;
+        if (installed_generation_stage < 7) installed_generation_stage = 7;
         uint8_t kernel_declared = 0, core_valid = 1;
         for (uint32_t component = 0; component < component_count; ++component) {
             uint8_t *entry = components + 32 + component * 48;
@@ -627,13 +686,20 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
                 read_u64(entry + 40) == kernel_bytes && read_u32(entry + 24) == kernel_crc) kernel_declared = 1;
         }
         if (!core_valid || !kernel_declared) continue;
-        if (kernel_bytes < sizeof(Elf64Header) || kernel_bytes > UINT64_C(64) * 1024 * 1024) continue;
+        if (installed_generation_stage < 8) installed_generation_stage = 8;
+        /* The installed image embeds the native System Generation payload and
+         * can legitimately exceed 64 MiB as new CORE services are added. Keep
+         * the bound explicit, but large enough for the architecture-neutral
+         * installed image assembled by the current build. */
+        if (kernel_bytes < sizeof(Elf64Header) || kernel_bytes > UINT64_C(256) * 1024 * 1024) continue;
         size_t transfer_size = (size_t)((kernel_bytes + 511) & ~UINT64_C(511));
         void *buffer = NULL;
         if (boot->allocate_pool(EFI_LOADER_DATA, transfer_size, &buffer) != EFI_SUCCESS) continue;
-        if (block->read_blocks(block, block->media->media_id, container_lba + kernel_relative_lba,
+        if (read_blocks_bounded(block, container_lba + kernel_relative_lba,
                 transfer_size, buffer) != EFI_SUCCESS) { boot->free_pool(buffer); continue; }
+        if (installed_generation_stage < 9) installed_generation_stage = 9;
         if (crc32_bytes(buffer, (size_t)kernel_bytes) != kernel_crc) { boot->free_pool(buffer); continue; }
+        installed_generation_stage = 10;
         *file_size = (size_t)kernel_bytes;
         installed_generation_invalid = 0;
         boot->free_pool(handles);
@@ -1135,6 +1201,20 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
 
     size_t image_size = 0;
     void *kernel_image = try_load_installed_kernel(system, &image_size);
+    if (!kernel_image && installed_generation_invalid) {
+        switch (installed_generation_stage) {
+            case 2: firmware_write(system, L"Installed boot validation: container only\r\n"); break;
+            case 3: firmware_write(system, L"Installed boot validation: pool only\r\n"); break;
+            case 4: firmware_write(system, L"Installed boot validation: spaces only\r\n"); break;
+            case 5: firmware_write(system, L"Installed boot validation: catalog only\r\n"); break;
+            case 6: firmware_write(system, L"Installed boot validation: system manifest only\r\n"); break;
+            case 7: firmware_write(system, L"Installed boot validation: component manifest only\r\n"); break;
+            case 8: firmware_write(system, L"Installed boot validation: kernel read failed\r\n"); break;
+            case 9: firmware_write(system, L"Installed boot validation: kernel checksum failed\r\n"); break;
+            default: firmware_write(system, L"Installed boot validation failed\r\n"); break;
+        }
+    }
+    uint8_t booted_installed_generation = kernel_image != NULL;
     if (!kernel_image) kernel_image = load_kernel_file(image, system, &image_size);
     serial_write("[BOOT] kernel located\n");
     uint64_t kernel_entry = load_elf(system, kernel_image, image_size);
@@ -1158,6 +1238,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     info->memory_map_address = 0;
     info->firmware_revision = system->header.revision;
     info->boot_flags = starts_with_edk(system->firmware_vendor) ? 1 : 0;
+    if (booted_installed_generation) info->boot_flags |= 32;
     info->framebuffer_address = 0;
     info->framebuffer_size = 0;
     info->framebuffer_width = 0;
@@ -1175,6 +1256,10 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     info->network_mac_length = 0;
     info->network_reserved = 0;
     memset(info->network_mac, 0, sizeof(info->network_mac));
+    memset(info->firmware_entropy, 0, sizeof(info->firmware_entropy));
+    info->firmware_entropy_valid = 0;
+    info->boot_reserved = 0;
+    gather_firmware_entropy(system, info);
     gather_framebuffer(system, info);
 #if defined(INFINITY_AARCH64)
     if (system->con_in && system->con_in->read_key_stroke) {

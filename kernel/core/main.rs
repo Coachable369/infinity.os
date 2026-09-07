@@ -21,9 +21,9 @@ mod output;
 mod runtime;
 #[path = "../storage/mod.rs"]
 mod storage;
+mod system;
 #[path = "../ui/mod.rs"]
 mod ui;
-mod system;
 
 use boot_info::{BootInfo, BOOT_MAGIC, BOOT_VERSION};
 use core::{ffi::c_void, panic::PanicInfo};
@@ -145,7 +145,11 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     crash::set_phase(crash::CrashPhase::Drivers);
     let devices = drivers::initialize(info);
     crash::set_phase(crash::CrashPhase::Runtime);
-    runtime::initialize();
+    runtime::initialize(cfg!(target_arch = "x86") || info.boot_flags & 32 == 0);
+    let _ = runtime::initialize_node_identity(
+        &info.firmware_entropy,
+        info.firmware_entropy_valid == 1,
+    );
     if info.network_device_count > 0 {
         let mut hardware_address = [0u8; 6];
         hardware_address.copy_from_slice(&info.network_mac[..6]);

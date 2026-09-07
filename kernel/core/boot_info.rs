@@ -1,5 +1,5 @@
 pub const BOOT_MAGIC: u64 = 0x494e_4642_4f4f_5430;
-pub const BOOT_VERSION: u32 = 5;
+pub const BOOT_VERSION: u32 = 6;
 #[cfg(target_arch = "x86")]
 pub const ARCH_X86: u32 = 1;
 #[cfg(target_arch = "x86_64")]
@@ -34,6 +34,9 @@ pub struct BootInfo {
     pub network_mac_length: u32,
     pub network_reserved: u32,
     pub network_mac: [u8; 32],
+    pub firmware_entropy: [u8; 32],
+    pub firmware_entropy_valid: u32,
+    pub boot_reserved: u32,
 }
 
-const _: () = assert!(core::mem::size_of::<BootInfo>() == 176);
+const _: () = assert!(core::mem::size_of::<BootInfo>() == 216);

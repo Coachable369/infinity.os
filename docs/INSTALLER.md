@@ -1,5 +1,7 @@
 # InfinityOS installer
 
+The UEFI loader scans for a valid ACTIVE generation even when firmware starts an attached ISO first. Installed kernels are read in bounded 1 MiB Block I/O transfers with an explicit 256 MiB ceiling, and successful discovery selects the installed runtime profile. Crypto/node/mesh components and artwork are packaged for x86_64 and AArch64 fresh installs.
+
 ## InfinityUI forward feature parity
 
 The installer packages InfinityUI, the Skin Registry, Window Server, Clipboard,

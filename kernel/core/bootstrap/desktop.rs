@@ -14,6 +14,9 @@ pub(super) const ONBOARDING_BMP: &[u8] =
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const TOP_BAR_INFINITY_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-topbar-icon-v2.bmp");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const NODE_TRUST_TOPOLOGY_BMP: &[u8] =
+    include_bytes!("../../../assets/mesh/infinity-node-trust-topology-v1.bmp");
 #[cfg(all(
     not(feature = "installer"),
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -2731,7 +2734,7 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: desktop_native_app_window
-    // DESC: Renders the live Text Editor or Command Window over the intact authenticated desktop.
+    // DESC: Renders a live native application window over the intact authenticated desktop.
     // ------------------=
     fn desktop_native_app_window(
         &mut self,
@@ -2792,13 +2795,21 @@ impl super::DisplayDevice {
                 header_b,
                 238,
             );
-            let icon_role = if screen == 9 { 49 } else { 25 };
+            let icon_role = if screen == 9 {
+                49
+            } else if screen == 10 {
+                19
+            } else {
+                25
+            };
             let _ = self.themed_icon(left + 30 * scale, top + 24 * scale, icon_role, 32 * scale);
             self.ui_text_strong(
                 left + 54 * scale,
                 top + 16 * scale,
                 if screen == 9 {
                     b"Text Editor"
+                } else if screen == 10 {
+                    b"Task Manager"
                 } else {
                     b"Command Window"
                 },
@@ -2936,6 +2947,28 @@ impl super::DisplayDevice {
                     if editor_saved { 176 } else { 255 },
                     1,
                 );
+            } else if screen == 10 {
+                for (index, label) in [
+                    b"Launch".as_slice(),
+                    b"Relaunch",
+                    b"End Task",
+                    b"Pause / Resume",
+                    b"Throttle",
+                ]
+                .iter()
+                .enumerate()
+                {
+                    let button_width =
+                        (geometry.toolbar.width as usize / 5).saturating_sub(8 * scale);
+                    self.polished_toolbar_button(
+                        toolbar_left + 4 * scale + index * (button_width + 8 * scale),
+                        toolbar_top + 5 * scale,
+                        button_width,
+                        geometry.toolbar.height as usize - 10 * scale,
+                        label,
+                        [4usize, 20, 52, 17, 19][index],
+                    );
+                }
             } else {
                 self.ui_text(
                     toolbar_left + 16 * scale,
@@ -2986,6 +3019,74 @@ impl super::DisplayDevice {
                 1,
                 10,
                 20,
+            );
+        } else if screen == 10 {
+            let line_height = 24 * scale;
+            self.fill_rounded_rect_alpha(
+                content_left,
+                content_top,
+                content_width,
+                content_height,
+                10 * scale,
+                1,
+                10,
+                20,
+                246,
+            );
+            self.outline_rounded_rect(
+                content_left,
+                content_top,
+                content_width,
+                content_height,
+                10 * scale,
+                57,
+                137,
+                181,
+            );
+            let header_height = 34 * scale;
+            self.fill_rect_alpha(
+                content_left + 8 * scale,
+                content_top + 8 * scale,
+                content_width.saturating_sub(16 * scale),
+                header_height,
+                18,
+                52,
+                76,
+                235,
+            );
+            for row in 0..output_count.min(6) {
+                let y = content_top + 18 * scale + row * line_height;
+                if row > 0 && output_lines[row][0] == b'>' {
+                    self.fill_rounded_rect_alpha(
+                        content_left + 10 * scale,
+                        y.saturating_sub(5 * scale),
+                        content_width.saturating_sub(20 * scale),
+                        line_height,
+                        7 * scale,
+                        31,
+                        104,
+                        151,
+                        185,
+                    );
+                }
+                self.ui_text(
+                    content_left + 18 * scale,
+                    y,
+                    &output_lines[row][..output_lengths[row].min(96)],
+                    if row == 0 { 117 } else { 200 },
+                    if row == 0 { 211 } else { 229 },
+                    if row == 0 { 250 } else { 239 },
+                    1,
+                );
+            }
+            self.ui_text(
+                content_left + 18 * scale,
+                content_top + content_height.saturating_sub(30 * scale),
+                b"UP/DOWN SELECT   SPACE PAUSE   R RELAUNCH   DEL END   T THROTTLE   L LAUNCH FILES",
+                126,
+                178,
+                207,
+                1,
             );
         } else {
             self.fill_rounded_rect_alpha(
@@ -3338,6 +3439,7 @@ impl super::DisplayDevice {
         command_input: &[u8],
         editor_window: crate::ui::system_layout::DesktopAppWindowState,
         command_window: crate::ui::system_layout::DesktopAppWindowState,
+        task_manager_window: crate::ui::system_layout::DesktopAppWindowState,
         editor_scroll_row: usize,
         editor_dialog: u8,
         editor_dialog_input: &[u8],
@@ -3354,7 +3456,7 @@ impl super::DisplayDevice {
             self.onboarding_frame(step, input, masked, focus, validation_error);
             return;
         }
-        if matches!(screen, 2 | 3 | 4 | 7 | 8 | 9) {
+        if matches!(screen, 2 | 3 | 4 | 7 | 8 | 9 | 10) {
             self.paint_desktop_background();
         } else {
             self.paint_first_boot_background();
@@ -3363,7 +3465,7 @@ impl super::DisplayDevice {
         let margin = self.width * 4 / 100;
         let top_bar = self.system_top_bar((screen == 3).then_some(menu_kind), clock);
 
-        if matches!(screen, 2 | 3 | 7 | 8 | 9) {
+        if matches!(screen, 3 | 7 | 8 | 9 | 10) {
             self.desktop_shell(
                 scale,
                 window_x,
@@ -3387,7 +3489,7 @@ impl super::DisplayDevice {
             self.app_launcher(scale, input, focus);
         }
 
-        if matches!(screen, 2 | 8 | 9) {
+        if matches!(screen, 2 | 8 | 9 | 10) {
             let active_editor = screen == 9;
             let active_command = screen == 8;
             if command_window.visible && !active_command {
@@ -3430,8 +3532,46 @@ impl super::DisplayDevice {
                     editor_dialog_focus,
                 );
             }
+            if task_manager_window.visible && screen != 10 {
+                self.desktop_native_app_window(
+                    10,
+                    input,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    task_manager_window.x,
+                    task_manager_window.y,
+                    task_manager_window.width,
+                    task_manager_window.height,
+                    task_manager_window.maximized,
+                    true,
+                    false,
+                    editor_scroll_row,
+                    editor_dialog,
+                    editor_dialog_input,
+                    editor_dialog_focus,
+                );
+            }
+            if screen == 2 {
+                self.desktop_shell(
+                    scale,
+                    window_x,
+                    window_y,
+                    window_width,
+                    window_height,
+                    window_visible,
+                    window_maximized,
+                    home_location,
+                    selected_item,
+                    dragging_item,
+                    note_location,
+                    desktop_items,
+                    desktop_item_positions,
+                    false,
+                );
+            }
         }
-        if matches!(screen, 8 | 9) {
+        if matches!(screen, 8 | 9 | 10) {
             self.desktop_native_app_window(
                 screen,
                 input,
@@ -4092,7 +4232,7 @@ impl super::DisplayDevice {
             76,
             180,
         );
-        let sections: [&[u8]; 9] = [
+        let sections: [&[u8]; 10] = [
             b"General",
             b"Themes & Skins",
             b"Users & Accounts",
@@ -4100,6 +4240,7 @@ impl super::DisplayDevice {
             b"Privacy & Security",
             b"Devices",
             b"Network",
+            b"Nodes & Mesh",
             b"Storage",
             b"About",
         ];
@@ -4121,7 +4262,7 @@ impl super::DisplayDevice {
             self.authentication_icon(
                 left + 27 * scale,
                 y + 8 * scale,
-                [8usize, 13, 6, 7, 8, 11, 14, 11, 12][index],
+                [8usize, 13, 6, 7, 8, 11, 14, 6, 11, 12][index],
                 17 * scale,
                 focus == index,
             );
@@ -4140,7 +4281,7 @@ impl super::DisplayDevice {
         self.ui_text_strong(
             content_x,
             content_y,
-            sections[focus.min(8)],
+            sections[focus.min(9)],
             238,
             244,
             249,
@@ -4196,7 +4337,11 @@ impl super::DisplayDevice {
             self.render_network_settings_dashboard(settings_window, scale, connectivity, input);
             return;
         }
-        let rows: [(&[u8], &[u8]); 8] = match focus.min(8) {
+        if focus == 7 {
+            self.render_node_settings_dashboard(settings_window, scale);
+            return;
+        }
+        let rows: [(&[u8], &[u8]); 8] = match focus.min(9) {
             0 => [
                 (b"Machine Name", input),
                 (b"Language", b"English (US)"),
@@ -4274,7 +4419,7 @@ impl super::DisplayDevice {
                 (b"Connections", b"Owner protected"),
                 (b"Diagnostics", b"Observed counters"),
             ],
-            7 => [
+            8 => [
                 (b"Infinity Pool", b"Online"),
                 (b"System Space", b"Ready"),
                 (b"Personal Space", b"Owned"),
@@ -4556,6 +4701,80 @@ impl super::DisplayDevice {
                 );
             }
         }
+    }
+
+    // ------------------------=
+    // FUNC: render_node_settings_dashboard
+    // DESC: Renders the five Milestone 9 node trust, pairing, mesh, policy, and audit operator surfaces from typed state.
+    // ------------------=
+    fn render_node_settings_dashboard(
+        &mut self,
+        settings_window: crate::ui::system_layout::SettingsWindowState,
+        scale: usize,
+    ) {
+        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let geometry = layout.network_settings_geometry(settings_window);
+        let snapshot = crate::runtime::with_runtime(|runtime| {
+            let discovered = runtime.nodes.discovered_nodes().iter().flatten().count();
+            let trusted = runtime.nodes.discovered_nodes().iter().flatten().filter(|node| {
+                matches!(node.trust, crate::runtime::node::types::TrustState::Trusted | crate::runtime::node::types::TrustState::Restricted)
+            }).count();
+            let online = runtime.nodes.discovered_nodes().iter().flatten().filter(|node| node.reachability == crate::runtime::node::types::Reachability::Online).count();
+            let pairings = runtime.nodes.pairings().iter().flatten().filter(|pairing| pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation).count();
+            let members = runtime.nodes.mesh_members().iter().flatten().filter(|member| member.enabled).count();
+            let sessions = runtime.nodes.sessions().iter().flatten().filter(|session| session.state == crate::runtime::node::types::SessionState::Established).count();
+            let grants = runtime.nodes.remote_grants().iter().flatten().filter(|grant| !grant.revoked).count();
+            let audit = runtime.nodes.audit_records().iter().flatten().count();
+            (runtime.nodes.local_id().is_some(), discovered, trusted, online, pairings, members, sessions, grants, audit)
+        }).unwrap_or((false, 0, 0, 0, 0, 0, 0, 0, 0));
+        let (identity_ready, discovered, trusted, online, pairings, members, sessions, grants, audit) = snapshot;
+        let (outline_r, outline_g, outline_b) = self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        let (selection_r, selection_g, selection_b) = self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
+        for card in [geometry.summary, geometry.main, geometry.sidebar] {
+            self.fill_rounded_rect_alpha(card.x.max(0) as usize, card.y.max(0) as usize, card.width as usize, card.height as usize, 12 * scale, 4, 18, 31, 224);
+            self.outline_rounded_rect(card.x.max(0) as usize, card.y.max(0) as usize, card.width as usize, card.height as usize, 12 * scale, outline_r / 2, outline_g / 2, outline_b / 2);
+        }
+        let page = settings_window.expanded_row.unwrap_or(0).min(4);
+        let tabs: [&[u8]; 5] = [b"TRUSTED NODES", b"PAIR NODE", b"MESH HEALTH", b"ACCESS POLICY", b"SECURITY AUDIT"];
+        for index in 0..5 {
+            let tab = geometry.tabs[index];
+            let active = page == index;
+            self.fill_rounded_rect_alpha(tab.x.max(0) as usize, tab.y.max(0) as usize, tab.width as usize, tab.height as usize, 7 * scale, if active { selection_r } else { 5 }, if active { selection_g } else { 20 }, if active { selection_b } else { 34 }, 228);
+            self.outline_rounded_rect(tab.x.max(0) as usize, tab.y.max(0) as usize, tab.width as usize, tab.height as usize, 7 * scale, if active { outline_r } else { outline_r / 2 }, if active { outline_g } else { outline_g / 2 }, if active { outline_b } else { outline_b / 2 });
+            self.ui_text_centered(tab.x.max(0) as usize, tab.width as usize, tab.y.max(0) as usize + 9 * scale, tabs[index], if active { 242 } else { 166 }, if active { 248 } else { 190 }, if active { 252 } else { 207 }, 1);
+        }
+        let summary_left = geometry.summary.x.max(0) as usize;
+        let summary_top = geometry.summary.y.max(0) as usize;
+        self.authentication_icon(summary_left + 36 * scale, summary_top + geometry.summary.height as usize / 2, 6, 44 * scale, true);
+        self.ui_text_strong(summary_left + 74 * scale, summary_top + 14 * scale, b"NODE IDENTITY", outline_r, outline_g, outline_b, 1);
+        self.ui_text_strong(summary_left + 74 * scale, summary_top + 39 * scale, if identity_ready { b"Cryptographic identity ready" } else { b"Identity unavailable" }, 239, 246, 251, 1);
+        let labels: [[&[u8]; 2]; 6] = match page {
+            0 => [[b"DISCOVERED", b"Observed, not trusted"], [b"TRUSTED", b"Explicit relationships"], [b"ONLINE", b"Authenticated reachability"], [b"SESSIONS", b"Mutually authenticated"], [b"AUTHORITY", b"Capability scoped"], [b"REFRESH", b"Discover local nodes"]],
+            1 => [[b"SELECT NODE", b"Choose an untrusted peer"], [b"VERIFY IDENTITY", b"Compare fingerprint"], [b"PAIRING CODE", b"Confirm on both nodes"], [b"CONFIRM", b"Trusted UI required"], [b"CANCEL", b"Grant no authority"], [b"PAIRING STATE", b"Short lived transaction"]],
+            2 => [[b"MEMBERS", b"Explicit domain membership"], [b"ONLINE", b"Recent authenticated heartbeat"], [b"DEGRADED", b"Partial availability"], [b"OFFLINE", b"State retained safely"], [b"LEAVE DOMAIN", b"Preserve node trust"], [b"DIAGNOSTICS", b"Health and compatibility"]],
+            3 => [[b"OBJECT ACCESS", b"Deny by default"], [b"REMOTE OPERATIONS", b"Scoped capabilities"], [b"AI CONTEXT", b"No ambient sharing"], [b"RESOURCE USE", b"Separate milestone"], [b"LEASE", b"Expiry enforced"], [b"COMMIT POLICY", b"Persist then announce"]],
+            _ => [[b"TRUST EVENTS", b"Structured records"], [b"PAIRING EVENTS", b"Correlation preserved"], [b"SESSION EVENTS", b"No secret material"], [b"POLICY EVENTS", b"Auditable changes"], [b"EXPORT", b"Typed projection"], [b"REFRESH", b"Read durable records"]],
+        };
+        let values = [discovered, trusted, online, sessions, grants, if page == 1 { pairings } else if page == 2 { members } else { audit }];
+        for index in 0..6 {
+            let card = geometry.controls[index];
+            let active = settings_window.scroll_offset.min(5) == index;
+            self.fill_rounded_rect_alpha(card.x.max(0) as usize, card.y.max(0) as usize, card.width as usize, card.height as usize, 8 * scale, if active { selection_r } else { 6 }, if active { selection_g } else { 24 }, if active { selection_b } else { 39 }, 230);
+            self.outline_rounded_rect(card.x.max(0) as usize, card.y.max(0) as usize, card.width as usize, card.height as usize, 8 * scale, if active { outline_r } else { outline_r / 2 }, if active { outline_g } else { outline_g / 2 }, if active { outline_b } else { outline_b / 2 });
+            self.ui_text_strong(card.x.max(0) as usize + 15 * scale, card.y.max(0) as usize + 9 * scale, labels[index][0], 220, 239, 249, 1);
+            self.ui_text(card.x.max(0) as usize + 15 * scale, card.y.max(0) as usize + 31 * scale, labels[index][1], 145, 174, 193, 1);
+            let (number, length) = Self::network_metric_text(values[index] as u64);
+            let number_width = self.ui_text_width(&number[..length], 1);
+            self.ui_text(card.right().max(0) as usize - number_width - 14 * scale, card.y.max(0) as usize + 18 * scale, &number[..length], outline_r, outline_g, outline_b, 1);
+        }
+        let art = geometry.sidebar;
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        self.paint_bitmap_fit_rect(NODE_TRUST_TOPOLOGY_BMP, art.x.max(0) as usize + 2 * scale, art.y.max(0) as usize + 2 * scale, (art.width as usize).saturating_sub(4 * scale), (art.height as usize).saturating_sub(4 * scale));
+        #[cfg(target_arch = "x86")]
+        self.fill_rect(art.x.max(0) as usize + 2 * scale, art.y.max(0) as usize + 2 * scale, (art.width as usize).saturating_sub(4 * scale), (art.height as usize).saturating_sub(4 * scale), 2, 13, 25);
+        self.fill_rect_alpha(art.x.max(0) as usize + 2 * scale, art.bottom().max(0) as usize - 70 * scale, (art.width as usize).saturating_sub(4 * scale), 68 * scale, 1, 11, 22, 220);
+        self.ui_text_centered(art.x.max(0) as usize, art.width as usize, art.bottom().max(0) as usize - 55 * scale, b"DISCOVERY IS NOT TRUST", 226, 241, 249, 1);
+        self.ui_text_centered(art.x.max(0) as usize, art.width as usize, art.bottom().max(0) as usize - 29 * scale, b"TRUST IS NOT AUTHORITY", outline_r, outline_g, outline_b, 1);
     }
 
     // ------------------------=
@@ -6490,6 +6709,63 @@ impl super::DisplayDevice {
             let pixel_y = self.height * y.clamp(90, 880) as usize / 1000;
             self.desktop_icon(pixel_x, pixel_y, name, *kind);
         }
+        let active_navigator =
+            crate::runtime::with_runtime(|runtime| runtime.file_navigators.active_index())
+                .flatten();
+        for layer in 0..crate::runtime::object_navigation::MAX_FILE_NAVIGATOR_INSTANCES {
+            let layered = crate::runtime::with_runtime(|runtime| {
+                runtime.file_navigators.back_to_front(layer)
+            })
+            .flatten();
+            let Some((index, navigator)) = layered else {
+                continue;
+            };
+            if Some(index) == active_navigator || !navigator.visible {
+                continue;
+            }
+            let (left, top, width, height) =
+                crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                    .home_window_geometry_sized(
+                        navigator.x,
+                        navigator.y,
+                        navigator.width,
+                        navigator.height,
+                        navigator.maximized,
+                    );
+            self.glass_panel(left, top, width, height, false);
+            let (header_r, header_g, header_b) =
+                self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
+            self.fill_rect_alpha(
+                left,
+                top,
+                width,
+                34 * scale,
+                header_r,
+                header_g,
+                header_b,
+                215,
+            );
+            self.small_infinity_mark(left + 20 * scale, top + 17 * scale, 24 * scale);
+            self.ui_text_strong(
+                left + 38 * scale,
+                top + 10 * scale,
+                b"File Navigator",
+                226,
+                237,
+                245,
+                1,
+            );
+            self.ui_text(
+                left + 24 * scale,
+                top + 58 * scale,
+                navigator.state.active_namespace_ref.as_bytes(),
+                185,
+                215,
+                236,
+                1,
+            );
+            self.outline_rounded_rect(left, top, width, height, 10 * scale, 94, 184, 239);
+        }
         if window_visible {
             let navigator_state =
                 crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
@@ -7785,6 +8061,7 @@ pub fn system_ui_present(
     command_input: &[u8],
     editor_window: crate::ui::system_layout::DesktopAppWindowState,
     command_window: crate::ui::system_layout::DesktopAppWindowState,
+    task_manager_window: crate::ui::system_layout::DesktopAppWindowState,
     editor_scroll_row: usize,
     editor_dialog: u8,
     editor_dialog_input: &[u8],
@@ -8047,6 +8324,7 @@ pub fn system_ui_present(
                     command_input,
                     editor_window,
                     command_window,
+                    task_manager_window,
                     editor_scroll_row,
                     editor_dialog,
                     editor_dialog_input,
@@ -8095,6 +8373,7 @@ pub fn system_ui_present(
                     command_input,
                     editor_window,
                     command_window,
+                    task_manager_window,
                     editor_scroll_row,
                     editor_dialog,
                     editor_dialog_input,
@@ -8191,6 +8470,7 @@ pub fn system_ui_present(
                     command_input,
                     editor_window,
                     command_window,
+                    task_manager_window,
                     editor_scroll_row,
                     editor_dialog,
                     editor_dialog_input,
@@ -8240,6 +8520,7 @@ pub fn system_ui_present(
                     command_input,
                     editor_window,
                     command_window,
+                    task_manager_window,
                     editor_scroll_row,
                     editor_dialog,
                     editor_dialog_input,
@@ -8334,6 +8615,7 @@ pub fn system_ui_present(
     _command_input: &[u8],
     _editor_window: crate::ui::system_layout::DesktopAppWindowState,
     _command_window: crate::ui::system_layout::DesktopAppWindowState,
+    _task_manager_window: crate::ui::system_layout::DesktopAppWindowState,
     _editor_scroll_row: usize,
     _editor_dialog: u8,
     _editor_dialog_input: &[u8],

@@ -1,5 +1,7 @@
 # Infinity Event Fabric (IEF)
 
+The Mesh routing domain defines typed Node discovered/lost, pairing, trust, session, capability, membership, health, policy, degraded, and recovered events. Security changes are Record class; high-frequency health is coalescible. Events announce committed state and are never authoritative.
+
 IOP asks; IEF announces. Services remain authoritative state owners.
 
 The API exposes System, Storage, Device, Session, Application, and Future AI routing domains. They share one fixed-capacity implementation initially; distributed routers are PLANNED without changing schemas.

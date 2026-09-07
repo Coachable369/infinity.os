@@ -1,5 +1,7 @@
 # InfinityOS testing
 
+`make milestone-9-test` behaviorally verifies identity, discovery, pairing, sessions, replay rejection, remote authority, mesh membership, bounds, persistence, and corruption handling. Installed boot is checked from framebuffer pixels and structured disk state, never rendered text. Two independently installed networked-node acceptance remains **SCAFFOLDED**.
+
 ## Milestone 8 native networking
 
 Run `make network-test` for behavior-only IPv4/IPv6 type behavior, route

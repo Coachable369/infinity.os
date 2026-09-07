@@ -1,5 +1,7 @@
 # Settings Service
 
+Nodes & Mesh provides five views: Trusted Nodes, Secure Pairing, Mesh Health, Per-Node Access Policy, and Security Audit. It uses the same bounded runtime state as IOP and Console and packages its topology visual into the installed System Generation.
+
 Appearance settings are typed and scoped to machine, user, or session. Skin,
 scale, primary, secondary, and wallpaper changes route through typed operations. Skin
 activation is transactional and retains Previous and LastKnownGood references;

@@ -67,6 +67,15 @@ pub enum CapabilityType {
     NetworkProfileActivate,
     NetworkServiceDiscover,
     NetworkRawFrame,
+    NodeInspect,
+    NodePair,
+    NodeTrustModify,
+    NodeSessionOpen,
+    NodeRemoteCall,
+    NodeCapabilityGrant,
+    MeshInspect,
+    MeshModify,
+    NodeAuditInspect,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

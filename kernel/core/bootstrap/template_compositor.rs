@@ -1,7 +1,9 @@
 //! Runtime compositor for the exact layer model saved by Installer Studio.
 
 use super::*;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use super::desktop::ONBOARDING_BMP;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 use super::installer::{INSTALLER_MASTHEAD_BMP, INSTALLER_WELCOME_MASTHEAD_BMP};
 use crate::ui::installer_layout::{scale_template_rect, CONFIGURATION_TEMPLATE_BYTES, INSTALLER_TEMPLATE_BYTES};
 use crate::ui::installer_template::{InstallerTemplate, InstallerTemplateElement, InstallerTemplateRole};

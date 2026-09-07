@@ -213,6 +213,40 @@ pub enum OperationId {
     NetworkDiagnostics = 0xc072,
     ServiceDiscoverLocal = 0xc081,
     ServiceAdvertiseLocal = 0xc082,
+    NodeList = 0xd001,
+    NodeInspect = 0xd002,
+    NodeDiscoverStatus = 0xd008,
+    NodePairBegin = 0xd003,
+    NodePairConfirm = 0xd004,
+    NodePairCancel = 0xd005,
+    NodeTrustRead = 0xd006,
+    NodeTrustUpdate = 0xd007,
+    NodeRevokeTrust = 0xd009,
+    NodeBlock = 0xd00a,
+    NodeUnblock = 0xd00b,
+    NodeSessionList = 0xd011,
+    NodeSessionOpen = 0xd012,
+    NodeSessionClose = 0xd013,
+    NodeSessionInspect = 0xd014,
+    NodeCapabilityList = 0xd021,
+    NodeCapabilityGrant = 0xd022,
+    NodeCapabilityRevoke = 0xd023,
+    MeshStatus = 0xd031,
+    MeshMemberList = 0xd032,
+    MeshMemberAdd = 0xd033,
+    MeshMemberRemove = 0xd034,
+    MeshPolicyRead = 0xd041,
+    MeshPolicyUpdate = 0xd042,
+    NodeAuditList = 0xd051,
+    NodeAuditInspect = 0xd052,
+    NodeJoin = 0xd061,
+    NodeLeave = 0xd062,
+    NodeDomainList = 0xd063,
+    NodeDomainInspect = 0xd064,
+    NodePolicyRead = 0xd065,
+    NodePolicyUpdate = 0xd066,
+    NodeHealth = 0xd067,
+    NodeDiagnostics = 0xd068,
 }
 impl OperationId {
     // ------------------------=
@@ -225,6 +259,64 @@ impl OperationId {
 }
 
 pub const WINDOW_MOVE_V1_BYTES: usize = 28;
+
+pub const NODE_OPERATION_V1_BYTES: usize = 80;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct NodeOperationV1 {
+    pub node_id: [u8; 32],
+    pub handle: u64,
+    pub scope: u64,
+    pub lease_deadline: u64,
+    pub operation: u32,
+    pub rights: u32,
+    pub value: u32,
+    pub flags: u32,
+    pub schema_version: u16,
+}
+
+impl NodeOperationV1 {
+    // ------------------------=
+    // FUNC: encode
+    // DESC: Encodes one architecture-neutral versioned node request without Rust ABI layout.
+    // ------------------=
+    pub fn encode(self) -> [u8; NODE_OPERATION_V1_BYTES] {
+        let mut out = [0u8; NODE_OPERATION_V1_BYTES];
+        out[..32].copy_from_slice(&self.node_id);
+        put_u64(&mut out, 32, self.handle);
+        put_u64(&mut out, 40, self.scope);
+        put_u64(&mut out, 48, self.lease_deadline);
+        put_u32(&mut out, 56, self.operation);
+        put_u32(&mut out, 60, self.rights);
+        put_u32(&mut out, 64, self.value);
+        put_u32(&mut out, 68, self.flags);
+        put_u16(&mut out, 72, self.schema_version);
+        out
+    }
+
+    // ------------------------=
+    // FUNC: decode
+    // DESC: Validates and decodes the fixed-width node operation schema version.
+    // ------------------=
+    pub fn decode(input: &[u8]) -> Result<Self, IopError> {
+        if input.len() != NODE_OPERATION_V1_BYTES || get_u16(input, 72) != 1 {
+            return Err(IopError::InvalidPayload);
+        }
+        let mut node_id = [0u8; 32];
+        node_id.copy_from_slice(&input[..32]);
+        Ok(Self {
+            node_id,
+            handle: get_u64(input, 32),
+            scope: get_u64(input, 40),
+            lease_deadline: get_u64(input, 48),
+            operation: get_u32(input, 56),
+            rights: get_u32(input, 60),
+            value: get_u32(input, 64),
+            flags: get_u32(input, 68),
+            schema_version: 1,
+        })
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct WindowMoveV1 {

@@ -1,5 +1,7 @@
 # InfinityOS System Generations
 
+Crypto/node/mesh services, schemas, and mesh artwork are CORE payloads in both architecture-specific installed generations. The ISO and installed boot use the same runtime implementation.
+
 **Status: TESTED on x86_64 UEFI/QEMU and AArch64 UEFI/VirtualBox, including a fresh ISO install followed by boot of the installed System Generation.**
 
 An installation constructs a declared System Generation in System Space; it does not clone the recovery environment. Generation 1 follows `INSTALLING (1) -> READY (2) -> ACTIVE (3)`. Values `FAILED (4)` and `ROLLBACK (5)` are reserved. The installer writes all payload data, verifies it, writes READY and verifies again, then writes ACTIVE and finally publishes the active-generation Boot Catalog and complete container marker. An interrupted installation therefore has no selectable ACTIVE generation.

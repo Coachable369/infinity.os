@@ -1,5 +1,7 @@
 # Capability Security
 
+Milestone 9 adds `NodeInspect`, `NodePair`, `NodeTrustModify`, `NodeSessionOpen`, `NodeRemoteCall`, `NodeCapabilityGrant`, `MeshInspect`, `MeshModify`, and `NodeAuditInspect`. Remote grants can only narrow peer, operation, scope, rights, and lease; revocation is checked without restarting the holder.
+
 Authority is explicit and deny-by-default. A capability stores its reference, type, numeric target, rights mask, constraints, issuer, 128-bit holder, optional monotonic expiry, delegation rights, parent, and revocation state.
 
 Validation checks holder, type, target, rights, constraints, lease, direct revocation, and ancestor revocation at every use. Delegation can only remove rights, add/narrow constraints, and shorten a lease. Revoking a parent immediately invalidates descendants without restarting a context.

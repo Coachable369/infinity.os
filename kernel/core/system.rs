@@ -11,6 +11,7 @@ pub struct SystemSnapshot {
     pub framebuffer_width: usize,
     pub framebuffer_height: usize,
     pub devices: [DeviceIdentity; 3],
+    pub live_profile: bool,
 }
 
 impl SystemSnapshot {
@@ -32,6 +33,7 @@ impl SystemSnapshot {
             framebuffer_width: info.framebuffer_width as usize,
             framebuffer_height: info.framebuffer_height as usize,
             devices,
+            live_profile: cfg!(target_arch = "x86") || info.boot_flags & 32 == 0,
         }
     }
 

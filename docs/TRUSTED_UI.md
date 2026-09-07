@@ -1,5 +1,7 @@
 # Trusted UI
 
+Node pairing confirmation is a dedicated trusted surface showing peer identity, fingerprint, short code, expiry, consequence, and policy source before trust changes. Exclusive input leasing is **TESTED**; the complete two-device presentation is **IMPLEMENTED BUT UNTESTED**.
+
 Authentication, lock, capability consent, destructive confirmation, and
 recovery are reserved trusted surfaces. A `SecureInputLease` is exclusive,
 bounded by monotonic expiry, and tied to one execution context. Only the active

@@ -1,4 +1,6 @@
-# InfinityOS architecture through Milestone 7.x
+# InfinityOS architecture through Milestone 9
+
+Milestone 9 adds architecture-neutral Crypto, Node Identity, Node Discovery, Node Trust, Mesh, and Node Audit services above Network Service. Discovery is not trust; trust is not membership; membership is not capability. Remote operations require authenticated sessions and scoped, leased, revocable grants.
 
 ## Installability invariant
 

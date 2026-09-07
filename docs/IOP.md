@@ -1,5 +1,7 @@
 # Infinity Operation Protocol (IOP)
 
+Milestone 9 registers versioned typed `Node.*` and `Mesh.*` operation identifiers and an 80-byte bounded `NodeOperationV1` payload. Node targets remain stable cryptographic identities, not network addresses or Console strings.
+
 Milestone 6.5 reserves stable IDs for Object.Filter/Object.Destroy,
 Namespace.Move, Project.List/Inspect/Create, Collection.List/Inspect/Create,
 Storage.Usage, Device.Inspect, Capability.List, Event.Subscriptions, and

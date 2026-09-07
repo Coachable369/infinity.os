@@ -599,6 +599,22 @@ pub fn network_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> 
 }
 
 // ------------------------=
+// FUNC: node_state_load
+// DESC: Loads authoritative cryptographic node identity, trust, and mesh state from System Space.
+// ------------------=
+pub fn node_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError> {
+    object_read_path(b"/system/security/nodes/state", None, out).map(|(_, length)| length)
+}
+
+// ------------------------=
+// FUNC: node_state_commit
+// DESC: Transactionally commits the typed node trust object as a new native object version.
+// ------------------=
+pub fn node_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
+    object_write_path(b"/system/security/nodes/state", content)
+}
+
+// ------------------------=
 // FUNC: shell_profile_state_load
 // DESC: Loads versioned declarative Shell Profile objects from authoritative System Space.
 // ------------------=
