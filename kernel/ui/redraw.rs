@@ -71,7 +71,20 @@ pub const fn desktop_window_move_requires_structural_redraw(
     window_visible: bool,
     window_maximized: bool,
 ) -> bool {
-    window_moved && (screen != 0 || window_visible || window_maximized)
+    window_moved
+        && !matches!(screen, 2 | 4 | 8 | 9 | 10)
+        && (screen != 0 || window_visible || window_maximized)
+}
+
+// ------------------------=
+// FUNC: desktop_window_move_uses_bounded_reconstruction
+// DESC: Selects old-plus-new damage reconstruction for movable installed desktop surfaces.
+// ------------------=
+pub const fn desktop_window_move_uses_bounded_reconstruction(
+    screen: u8,
+    window_moved: bool,
+) -> bool {
+    window_moved && matches!(screen, 2 | 4 | 8 | 9 | 10)
 }
 
 // ------------------------=

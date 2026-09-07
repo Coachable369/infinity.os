@@ -66,3 +66,11 @@ path = "../milestone-8-object-navigation-test.rs"
 [[bin]]
 name = "settings-timeout-test"
 path = "../settings-timeout-test.rs"
+
+[[bin]]
+name = "settings-overflow-test"
+path = "../settings-overflow-test.rs"
+
+[[bin]]
+name = "resource-policy-test"
+path = "../resource-policy-test.rs"

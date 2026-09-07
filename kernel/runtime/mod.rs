@@ -10,6 +10,7 @@ pub mod network;
 pub mod crypto;
 pub mod node;
 pub mod object_navigation;
+pub mod resource_policy;
 pub mod scheduler;
 pub mod service;
 pub mod task_manager;
@@ -161,6 +162,7 @@ pub struct InfinityRuntime {
     pub ui: crate::ui::InfinityUiRuntime,
     pub network: network::NetworkRuntime,
     pub nodes: node::NodeRuntime,
+    pub resources: resource_policy::ApplicationResourceManager,
     pub task_manager: task_manager::TaskManager,
     pub shell_profiles: Option<object_navigation::ShellProfileService>,
     pub file_navigator: Option<object_navigation::FileNavigatorState>,
@@ -199,6 +201,7 @@ impl InfinityRuntime {
             ui: crate::ui::InfinityUiRuntime::new(),
             network: network::NetworkRuntime::new(),
             nodes: node::NodeRuntime::new(),
+            resources: resource_policy::ApplicationResourceManager::new(),
             task_manager: task_manager::TaskManager::new(),
             shell_profiles: None,
             file_navigator: None,

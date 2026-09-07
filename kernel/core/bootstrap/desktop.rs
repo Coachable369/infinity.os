@@ -2777,8 +2777,9 @@ impl super::DisplayDevice {
         editor_dialog_input: &[u8],
         editor_dialog_focus: usize,
         task_manager_selected: usize,
-        task_menu_open: bool,
+        app_menu: usize,
     ) {
+        let task_menu_open = app_menu == 10;
         let scale = self.ui_scale().max(1);
         let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
             .desktop_app_window_geometry(
@@ -2840,6 +2841,24 @@ impl super::DisplayDevice {
                 231,
                 243,
                 250,
+                1,
+            );
+            self.ui_text(
+                left + 174 * scale,
+                top + 16 * scale,
+                b"File",
+                221,
+                233,
+                241,
+                1,
+            );
+            self.ui_text(
+                left + 225 * scale,
+                top + 16 * scale,
+                b"Performance",
+                221,
+                233,
+                241,
                 1,
             );
             for (index, control) in [geometry.minimize, geometry.maximize, geometry.close]
@@ -3227,6 +3246,95 @@ impl super::DisplayDevice {
                 34 * scale,
                 input,
                 true,
+                1,
+            );
+        }
+        if app_menu == 20 {
+            self.desktop_native_performance_menu(left, top, screen, scale);
+        }
+    }
+
+    // ------------------------=
+    // FUNC: desktop_native_performance_menu
+    // DESC: Renders the shared native-application performance menu above application content.
+    // ------------------=
+    fn desktop_native_performance_menu(
+        &mut self,
+        left: usize,
+        top: usize,
+        screen: u8,
+        scale: usize,
+    ) {
+        let menu_left = left + 220 * scale;
+        let menu_top = top + 42 * scale;
+        let menu_width = 232 * scale;
+        self.fill_rounded_rect_alpha(
+            menu_left,
+            menu_top,
+            menu_width,
+            140 * scale,
+            9 * scale,
+            5,
+            18,
+            31,
+            250,
+        );
+        self.outline_rounded_rect(
+            menu_left,
+            menu_top,
+            menu_width,
+            140 * scale,
+            9 * scale,
+            74,
+            171,
+            218,
+        );
+        let image = if screen == 9 {
+            crate::runtime::task_manager::IMAGE_TEXT_EDITOR
+        } else if screen == 10 {
+            crate::runtime::task_manager::IMAGE_TASK_MANAGER
+        } else {
+            crate::runtime::task_manager::IMAGE_COMMAND_WINDOW
+        };
+        let mode = crate::runtime::with_runtime(|runtime| {
+            runtime
+                .resources
+                .override_for(crate::runtime::resource_policy::AppId(image))
+                .map(|policy| policy.mode)
+                .unwrap_or(runtime.resources.defaults().mode)
+        })
+        .unwrap_or(crate::runtime::resource_policy::ResourceMode::Balanced);
+        for (row, label) in [
+            b"Restricted".as_slice(),
+            b"Balanced",
+            b"Expanded",
+            b"Performance Settings...",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let marked = matches!(
+                (row, mode),
+                (0, crate::runtime::resource_policy::ResourceMode::Restricted)
+                    | (1, crate::runtime::resource_policy::ResourceMode::Balanced)
+                    | (2, crate::runtime::resource_policy::ResourceMode::Expanded)
+            );
+            self.ui_text(
+                menu_left + 14 * scale,
+                menu_top + (12 + row * 30) * scale,
+                if marked { b"*" } else { b"" },
+                94,
+                211,
+                250,
+                1,
+            );
+            self.ui_text(
+                menu_left + 32 * scale,
+                menu_top + (12 + row * 30) * scale,
+                label,
+                220,
+                232,
+                240,
                 1,
             );
         }
@@ -3974,7 +4082,7 @@ impl super::DisplayDevice {
                     editor_dialog_input,
                     editor_dialog_focus,
                     0,
-                    false,
+                    0,
                 );
             }
             if editor_window.visible && !active_editor {
@@ -3996,7 +4104,7 @@ impl super::DisplayDevice {
                     editor_dialog_input,
                     editor_dialog_focus,
                     0,
-                    false,
+                    0,
                 );
             }
             if task_manager_window.visible && screen != 10 {
@@ -4018,7 +4126,7 @@ impl super::DisplayDevice {
                     editor_dialog_input,
                     editor_dialog_focus,
                     focus,
-                    false,
+                    0,
                 );
             }
             if screen == 2 {
@@ -4059,7 +4167,7 @@ impl super::DisplayDevice {
                 editor_dialog_input,
                 editor_dialog_focus,
                 focus,
-                screen == 10 && menu_kind == 10,
+                menu_kind,
             );
         }
 
@@ -7755,9 +7863,10 @@ impl super::DisplayDevice {
             );
             for (index, (label, offset)) in [
                 (b"File".as_slice(), 160usize),
-                (b"View".as_slice(), 211),
-                (b"Navigate".as_slice(), 262),
-                (b"Help".as_slice(), 347),
+                (b"Performance".as_slice(), 211),
+                (b"View".as_slice(), 322),
+                (b"Navigate".as_slice(), 373),
+                (b"Help".as_slice(), 458),
             ]
             .iter()
             .enumerate()
@@ -8515,6 +8624,12 @@ impl super::DisplayDevice {
                     crate::runtime::object_navigation::FileNavigatorMenu::File => {
                         &[b"New Window", b"Settings", b"Empty Trash", b"About"]
                     }
+                    crate::runtime::object_navigation::FileNavigatorMenu::Performance => &[
+                        b"Restricted",
+                        b"Balanced",
+                        b"Expanded",
+                        b"Performance Settings...",
+                    ],
                     crate::runtime::object_navigation::FileNavigatorMenu::View => {
                         &[b"As List", b"As Grid", b"Preview Panel Enabled"]
                     }
@@ -8593,6 +8708,24 @@ impl super::DisplayDevice {
                             navigator_state
                                 .map(|state| state.inspector_open)
                                 .unwrap_or(false)
+                        }
+                        (crate::runtime::object_navigation::FileNavigatorMenu::Performance, row) => {
+                            let mode = crate::runtime::with_runtime(|runtime| {
+                                runtime
+                                    .resources
+                                    .override_for(crate::runtime::resource_policy::AppId(
+                                        crate::runtime::task_manager::IMAGE_FILE_NAVIGATOR,
+                                    ))
+                                    .map(|policy| policy.mode)
+                                    .unwrap_or(runtime.resources.defaults().mode)
+                            })
+                            .unwrap_or(crate::runtime::resource_policy::ResourceMode::Balanced);
+                            matches!(
+                                (row, mode),
+                                (0, crate::runtime::resource_policy::ResourceMode::Restricted)
+                                    | (1, crate::runtime::resource_policy::ResourceMode::Balanced)
+                                    | (2, crate::runtime::resource_policy::ResourceMode::Expanded)
+                            )
                         }
                         _ => false,
                     };
@@ -9507,9 +9640,11 @@ pub fn system_ui_present(
             let bounded_scene_geometry_change = !structural_change_without_window
                 && !content_changed
                 && console.last_system_screen == screen
-                && navigator_surface_changed
-                && !window_moved
-                && !window_resized;
+                && (navigator_surface_changed
+                    || window_moved
+                    || window_resized
+                    || settings_geometry_changed
+                    || app_window_geometry_changed);
             let mut full_surface_redrawn = false;
             if bounded_menu_change
                 && !structural_change_without_window
@@ -9736,7 +9871,7 @@ pub fn system_ui_present(
                     editor_dialog_input,
                     editor_dialog_focus,
                     focus,
-                    screen == 10 && menu_kind == 10,
+                    menu_kind,
                 );
             } else if crate::ui::redraw::desktop_chat_content_requires_bounded_redraw(
                 screen,

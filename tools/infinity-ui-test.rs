@@ -1471,11 +1471,14 @@ fn installed_system_hit_geometry_test() {
     assert!(!ui::redraw::desktop_menu_change_requires_bounded_redraw(
         2, 4, 0, 0, true
     ));
-    assert!(ui::redraw::desktop_window_move_requires_structural_redraw(
+    assert!(!ui::redraw::desktop_window_move_requires_structural_redraw(
         2, true, true, false
     ));
-    assert!(ui::redraw::desktop_window_move_requires_structural_redraw(
+    assert!(!ui::redraw::desktop_window_move_requires_structural_redraw(
         2, true, true, true
+    ));
+    assert!(ui::redraw::desktop_window_move_uses_bounded_reconstruction(
+        2, true
     ));
     assert!(ui::redraw::desktop_app_content_requires_bounded_redraw(
         8, true

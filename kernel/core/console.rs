@@ -1401,6 +1401,74 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: activate_native_app_performance_pointer
+    // DESC: Opens and executes the uniform Performance menu at the same header position in every native app.
+    // ------------------=
+    fn activate_native_app_performance_pointer(&mut self) -> bool {
+        let layout = SystemLayout::new(
+            self.system.framebuffer_width,
+            self.system.framebuffer_height,
+        );
+        let scale = layout.scale().max(1) as i32;
+        let geometry = layout.desktop_app_window_geometry(
+            self.app_window_x,
+            self.app_window_y,
+            self.app_window_width,
+            self.app_window_height,
+            self.app_window_maximized,
+        );
+        let point_x = self.system.framebuffer_width as i32 * self.pointer_x / 1000;
+        let point_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+        let performance_left = geometry.window.x + 220 * scale;
+        if point_y >= geometry.window.y
+            && point_y < geometry.window.y + 42 * scale
+            && point_x >= performance_left
+            && point_x < performance_left + 110 * scale
+        {
+            self.shell_menu = if self.shell_menu == 20 { 0 } else { 20 };
+            return true;
+        }
+        if self.shell_menu != 20 {
+            return false;
+        }
+        let menu_top = geometry.window.y + 42 * scale;
+        if point_x >= performance_left
+            && point_x < performance_left + 232 * scale
+            && point_y >= menu_top
+            && point_y < menu_top + 140 * scale
+        {
+            let row = ((point_y - menu_top - 6 * scale) / (30 * scale)).clamp(0, 3);
+            self.shell_menu = 0;
+            let image = match self.desktop_app {
+                DesktopAppKind::TextEditor => crate::runtime::task_manager::IMAGE_TEXT_EDITOR,
+                DesktopAppKind::CommandWindow => {
+                    crate::runtime::task_manager::IMAGE_COMMAND_WINDOW
+                }
+                DesktopAppKind::TaskManager => crate::runtime::task_manager::IMAGE_TASK_MANAGER,
+                DesktopAppKind::None => return true,
+            };
+            match row {
+                0 => self.apply_application_resource_mode(
+                    image,
+                    crate::runtime::resource_policy::ResourceMode::Restricted,
+                ),
+                1 => self.apply_application_resource_mode(
+                    image,
+                    crate::runtime::resource_policy::ResourceMode::Balanced,
+                ),
+                2 => self.apply_application_resource_mode(
+                    image,
+                    crate::runtime::resource_policy::ResourceMode::Expanded,
+                ),
+                _ => self.open_settings(0),
+            }
+            return true;
+        }
+        self.shell_menu = 0;
+        false
+    }
+
+    // ------------------------=
     // FUNC: refresh_task_manager_output
     // DESC: Rebuilds the bounded live graphical task table from authoritative snapshots.
     // ------------------=
@@ -5798,6 +5866,27 @@ impl ConsoleRuntime {
                         .map(|navigator| navigator.open_dialog(FileNavigatorDialog::About))
                 });
             }
+            Some(FileNavigatorAction::SetPerformance(mode)) => {
+                let mode = match mode {
+                    crate::runtime::object_navigation::PerformanceMode::Restricted => {
+                        crate::runtime::resource_policy::ResourceMode::Restricted
+                    }
+                    crate::runtime::object_navigation::PerformanceMode::Balanced => {
+                        crate::runtime::resource_policy::ResourceMode::Balanced
+                    }
+                    crate::runtime::object_navigation::PerformanceMode::Expanded => {
+                        crate::runtime::resource_policy::ResourceMode::Expanded
+                    }
+                };
+                self.apply_application_resource_mode(
+                    crate::runtime::task_manager::IMAGE_FILE_NAVIGATOR,
+                    mode,
+                );
+            }
+            Some(FileNavigatorAction::PerformanceSettings) => {
+                self.checkpoint_active_file_navigator();
+                self.open_settings(0);
+            }
             Some(FileNavigatorAction::SetView(view_mode)) => {
                 let _ = crate::runtime::with_runtime(|runtime| {
                     runtime.file_navigator.as_mut().map(|navigator| {
@@ -5852,6 +5941,55 @@ impl ConsoleRuntime {
                 });
             }
         }
+    }
+
+    // ------------------------=
+    // FUNC: apply_application_resource_mode
+    // DESC: Applies one trusted menu preset to persistent policy and every live context for the application.
+    // ------------------=
+    fn apply_application_resource_mode(
+        &mut self,
+        image_identity: u32,
+        mode: crate::runtime::resource_policy::ResourceMode,
+    ) {
+        let _ = crate::runtime::with_runtime(|runtime| {
+            let app_id = crate::runtime::resource_policy::AppId(image_identity);
+            if runtime.resources.set_mode_from_trusted_ui(app_id, mode).is_err() {
+                return;
+            }
+            let policy = runtime.resources.effective_policy(
+                app_id,
+                crate::runtime::resource_policy::ApplicationManifestRequest::balanced(),
+                crate::runtime::resource_policy::SystemCapacity {
+                    logical_compute_units: 4,
+                    memory_bytes: 8 * 1024 * 1024,
+                    gpu_available: false,
+                    npu_available: false,
+                },
+                crate::runtime::resource_policy::SystemConditions {
+                    on_battery: false,
+                    low_power: false,
+                    thermal_pressure: false,
+                    foreground: true,
+                },
+            );
+            let Ok(policy) = policy else { return };
+            let mut handles = [None; crate::runtime::execution::MAX_CONTEXTS];
+            let mut count = 0usize;
+            for index in 0..runtime.execution.count() {
+                if let Some(context) = runtime.execution.nth(index) {
+                    if context.image_identity == image_identity {
+                        handles[count] = Some(context.handle);
+                        count += 1;
+                    }
+                }
+            }
+            for handle in handles[..count].iter().flatten().copied() {
+                let _ = runtime
+                    .resources
+                    .apply_to_context(&mut runtime.execution, handle, policy);
+            }
+        });
     }
 
     // ------------------------=
@@ -6304,6 +6442,10 @@ impl ConsoleRuntime {
                 return;
             } else if self.desktop_app != DesktopAppKind::None {
                 if clicked {
+                    if self.activate_native_app_performance_pointer() {
+                        self.redraw();
+                        return;
+                    }
                     if self.desktop_app == DesktopAppKind::TaskManager
                         && self.activate_task_manager_pointer()
                     {

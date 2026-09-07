@@ -65,7 +65,8 @@ mod iop {
 mod object_navigation;
 
 use object_navigation::{
-    FileNavigatorAction, FileNavigatorDialog, FileNavigatorMenu, FileNavigatorWorkspace, ViewMode,
+    FileNavigatorAction, FileNavigatorDialog, FileNavigatorMenu, FileNavigatorWorkspace,
+    PerformanceMode, ViewMode,
 };
 
 // ------------------------=
@@ -130,6 +131,15 @@ fn main() {
     assert_eq!(
         FileNavigatorMenu::View.action(2),
         Some(FileNavigatorAction::TogglePreview)
+    );
+    assert_eq!(FileNavigatorMenu::Performance.index(), 2);
+    assert_eq!(
+        FileNavigatorMenu::Performance.action(0),
+        Some(FileNavigatorAction::SetPerformance(PerformanceMode::Restricted))
+    );
+    assert_eq!(
+        FileNavigatorMenu::Performance.action(2),
+        Some(FileNavigatorAction::SetPerformance(PerformanceMode::Expanded))
     );
     assert_eq!(
         FileNavigatorMenu::Navigate.action(7),

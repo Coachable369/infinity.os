@@ -4,6 +4,7 @@ mod redraw;
 use redraw::{
     authentication_controls_require_repaint, clock_change_requires_structural_redraw,
     desktop_clock_requires_bounded_redraw, desktop_window_move_requires_structural_redraw,
+    desktop_window_move_uses_bounded_reconstruction,
     focus_change_requires_structural_redraw, onboarding_controls_require_repaint,
 };
 
@@ -75,24 +76,19 @@ fn ordinary_desktop_pointer_motion_is_cursor_only() {
 
 // ------------------------=
 // FUNC: desktop_drag_reconstructs_the_scene
-// DESC: Verifies every visible translucent-window move reconstructs the scene so stale content cannot trail behind it.
+// DESC: Verifies translucent desktop window moves reconstruct only old-plus-new damage bounds.
 // ------------------=
 fn desktop_drag_reconstructs_the_scene() {
-    assert!(desktop_window_move_requires_structural_redraw(
-        2, true, true, false
-    ));
-    assert!(desktop_window_move_requires_structural_redraw(
-        2, true, false, false
-    ));
-    assert!(desktop_window_move_requires_structural_redraw(
-        2, true, true, true
-    ));
+    assert!(desktop_window_move_uses_bounded_reconstruction(2, true));
+    assert!(desktop_window_move_uses_bounded_reconstruction(4, true));
+    assert!(desktop_window_move_uses_bounded_reconstruction(8, true));
+    assert!(desktop_window_move_uses_bounded_reconstruction(9, true));
+    assert!(desktop_window_move_uses_bounded_reconstruction(10, true));
+    assert!(!desktop_window_move_requires_structural_redraw(2, true, true, false));
     assert!(desktop_window_move_requires_structural_redraw(
         3, true, true, false
     ));
-    assert!(!desktop_window_move_requires_structural_redraw(
-        2, false, true, false
-    ));
+    assert!(!desktop_window_move_uses_bounded_reconstruction(2, false));
 }
 
 // ------------------------=

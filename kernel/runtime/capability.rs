@@ -76,6 +76,10 @@ pub enum CapabilityType {
     MeshInspect,
     MeshModify,
     NodeAuditInspect,
+    ResourceUse,
+    ResourcePolicyInspect,
+    ResourcePolicyModify,
+    ResourceExpand,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

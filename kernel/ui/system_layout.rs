@@ -333,9 +333,10 @@ impl SystemLayout {
     ) -> Rect {
         let (offset, width) = match menu {
             1 => (156usize, 190usize),
-            2 => (207, 190),
-            3 => (258, 224),
-            _ => (343, 196),
+            2 => (207, 232),
+            3 => (318, 190),
+            4 => (369, 224),
+            _ => (454, 196),
         };
         rect(
             browser_left + offset * self.scale,
@@ -451,7 +452,13 @@ impl SystemLayout {
                 return Some(DesktopTarget::HomeContent);
             }
         }
-        for (index, (offset, width)) in [(156usize, 46usize), (207, 46), (258, 80), (343, 46)]
+        for (index, (offset, width)) in [
+            (156usize, 46usize),
+            (207, 106),
+            (318, 46),
+            (369, 80),
+            (454, 46),
+        ]
             .iter()
             .enumerate()
         {

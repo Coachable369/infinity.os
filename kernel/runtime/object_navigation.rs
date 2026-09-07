@@ -60,8 +60,16 @@ pub enum ViewMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PerformanceMode {
+    Restricted,
+    Balanced,
+    Expanded,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileNavigatorMenu {
     File,
+    Performance,
     View,
     Navigate,
     Help,
@@ -75,6 +83,7 @@ impl FileNavigatorMenu {
     pub const fn item_count(self) -> usize {
         match self {
             Self::File => 4,
+            Self::Performance => 4,
             Self::View => 3,
             Self::Navigate => 9,
             Self::Help => 1,
@@ -88,9 +97,10 @@ impl FileNavigatorMenu {
     pub const fn from_index(index: usize) -> Option<Self> {
         match index {
             1 => Some(Self::File),
-            2 => Some(Self::View),
-            3 => Some(Self::Navigate),
-            4 => Some(Self::Help),
+            2 => Some(Self::Performance),
+            3 => Some(Self::View),
+            4 => Some(Self::Navigate),
+            5 => Some(Self::Help),
             _ => None,
         }
     }
@@ -102,9 +112,10 @@ impl FileNavigatorMenu {
     pub const fn index(self) -> usize {
         match self {
             Self::File => 1,
-            Self::View => 2,
-            Self::Navigate => 3,
-            Self::Help => 4,
+            Self::Performance => 2,
+            Self::View => 3,
+            Self::Navigate => 4,
+            Self::Help => 5,
         }
     }
 }
@@ -123,6 +134,8 @@ pub enum FileNavigatorAction {
     Settings,
     EmptyTrash,
     About,
+    SetPerformance(PerformanceMode),
+    PerformanceSettings,
     SetView(ViewMode),
     TogglePreview,
     Navigate(usize),
@@ -141,6 +154,16 @@ impl FileNavigatorMenu {
             (Self::File, 1) => Some(FileNavigatorAction::Settings),
             (Self::File, 2) => Some(FileNavigatorAction::EmptyTrash),
             (Self::File, 3) => Some(FileNavigatorAction::About),
+            (Self::Performance, 0) => Some(FileNavigatorAction::SetPerformance(
+                PerformanceMode::Restricted,
+            )),
+            (Self::Performance, 1) => Some(FileNavigatorAction::SetPerformance(
+                PerformanceMode::Balanced,
+            )),
+            (Self::Performance, 2) => Some(FileNavigatorAction::SetPerformance(
+                PerformanceMode::Expanded,
+            )),
+            (Self::Performance, 3) => Some(FileNavigatorAction::PerformanceSettings),
             (Self::View, 0) => Some(FileNavigatorAction::SetView(ViewMode::List)),
             (Self::View, 1) => Some(FileNavigatorAction::SetView(ViewMode::Grid)),
             (Self::View, 2) => Some(FileNavigatorAction::TogglePreview),

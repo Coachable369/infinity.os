@@ -49,6 +49,40 @@ fn main() {
         ),
         Some(DesktopTarget::HomeMenu(1))
     );
+    let performance_label_x = ((left + 240) as i32 * 1000 / 1600) as i32;
+    assert_eq!(
+        layout.file_navigator_overlay_target(
+            performance_label_x,
+            title_y,
+            80,
+            180,
+            780,
+            560,
+            false,
+            0,
+            0,
+            0,
+        ),
+        Some(DesktopTarget::HomeMenu(2))
+    );
+    let performance_menu = layout.file_navigator_menu_geometry(left, top, 2, 4);
+    let expanded_x = ((performance_menu.x + 40) * 1000 / 1600) as i32;
+    let expanded_y = ((performance_menu.y + 6 + 2 * 30 + 12) * 1000 / 1000) as i32;
+    assert_eq!(
+        layout.file_navigator_overlay_target(
+            expanded_x,
+            expanded_y,
+            80,
+            180,
+            780,
+            560,
+            false,
+            2,
+            4,
+            0,
+        ),
+        Some(DesktopTarget::HomeMenuItem(2))
+    );
     let file_menu = layout.file_navigator_menu_geometry(left, top, 1, 4);
     let empty_trash_x = ((file_menu.x + 40) * 1000 / 1600) as i32;
     let empty_trash_y = ((file_menu.y + 6 + 2 * 30 + 12) * 1000 / 1000) as i32;
