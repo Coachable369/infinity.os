@@ -1149,11 +1149,14 @@ impl super::DisplayDevice {
             139,
             1,
         );
+        let cancel_frame = crate::ui::installer_layout::installer_confirmation_button_frame(
+            crate::ui::installer_layout::InstallerConfirmationTarget::Cancel,
+        );
         self.installer_button(
-            310,
-            540,
-            170,
-            55,
+            cancel_frame.left,
+            cancel_frame.top,
+            cancel_frame.width,
+            cancel_frame.height,
             b"CANCEL",
             b"Keep the disk unchanged",
             focus == 0,
@@ -1161,11 +1164,14 @@ impl super::DisplayDevice {
             cursor_y,
             pressed,
         );
+        let install_frame = crate::ui::installer_layout::installer_confirmation_button_frame(
+            crate::ui::installer_layout::InstallerConfirmationTarget::Install,
+        );
         self.installer_button(
-            520,
-            540,
-            210,
-            55,
+            install_frame.left,
+            install_frame.top,
+            install_frame.width,
+            install_frame.height,
             b"ERASE & INSTALL",
             b"Begin installation",
             focus == 1,

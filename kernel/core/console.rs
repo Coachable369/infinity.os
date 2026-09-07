@@ -5904,11 +5904,20 @@ impl ConsoleRuntime {
                 crate::output_text(b"[installer] time-zone selected from map\n");
             }
             let popup = self.installer_step == InstallerStep::Confirm;
+            let confirmation_target = if popup {
+                crate::ui::installer_layout::installer_confirmation_target(
+                    self.pointer_x,
+                    self.pointer_y,
+                )
+            } else {
+                None
+            };
             let welcome = self.installer_step == InstallerStep::Welcome;
             let hierarchy = self.installer_step == InstallerStep::Hierarchy;
             let over_back = self.installer_has_back()
                 && if popup {
-                    (310..=480).contains(&self.pointer_x) && (570..=630).contains(&self.pointer_y)
+                    confirmation_target
+                        == Some(crate::ui::installer_layout::InstallerConfirmationTarget::Cancel)
                 } else if welcome {
                     (145..=470).contains(&self.pointer_x) && (810..=865).contains(&self.pointer_y)
                 } else if hierarchy {
@@ -5918,7 +5927,8 @@ impl ConsoleRuntime {
                 };
             let over_primary = self.installer_has_primary()
                 && if popup {
-                    (520..=730).contains(&self.pointer_x) && (570..=630).contains(&self.pointer_y)
+                    confirmation_target
+                        == Some(crate::ui::installer_layout::InstallerConfirmationTarget::Install)
                 } else if welcome {
                     (480..=830).contains(&self.pointer_x) && (810..=865).contains(&self.pointer_y)
                 } else if hierarchy {

@@ -4,7 +4,10 @@ mod installer_template;
 #[path = "../kernel/ui/installer_layout.rs"]
 mod installer_layout;
 
-use installer_layout::installer_wizard_layout;
+use installer_layout::{
+    installer_confirmation_button_frame, installer_confirmation_target, installer_wizard_layout,
+    InstallerConfirmationTarget,
+};
 
 // ------------------------=
 // FUNC: main
@@ -32,5 +35,28 @@ fn main() {
             assert_eq!(layout.back_button.height, layout.primary_button.height);
         }
     }
+
+    for target in [
+        InstallerConfirmationTarget::Cancel,
+        InstallerConfirmationTarget::Install,
+    ] {
+        let frame = installer_confirmation_button_frame(target);
+        for x in frame.left..frame.right() {
+            for y in frame.top..frame.bottom() {
+                assert_eq!(installer_confirmation_target(x as i32, y as i32), Some(target));
+            }
+        }
+    }
+
+    let install = installer_confirmation_button_frame(InstallerConfirmationTarget::Install);
+    assert_eq!(
+        installer_confirmation_target(
+            (install.left + install.width / 2) as i32,
+            (install.top + install.height / 2) as i32,
+        ),
+        Some(InstallerConfirmationTarget::Install),
+        "one complete click in the rendered Erase & Install button must resolve immediately",
+    );
+    assert_eq!(installer_confirmation_target(500, 565), None);
     println!("PASS installer layout: all wizard states share one symmetric frame");
 }

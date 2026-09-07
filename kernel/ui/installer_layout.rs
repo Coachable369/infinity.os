@@ -26,6 +26,12 @@ pub struct InstallerWizardLayout {
     pub footer_rail: InstallerRect,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallerConfirmationTarget {
+    Cancel,
+    Install,
+}
+
 impl InstallerRect {
     // ------------------------=
     // FUNC: right
@@ -52,6 +58,59 @@ impl InstallerRect {
             && other.top >= self.top
             && other.right() <= self.right()
             && other.bottom() <= self.bottom()
+    }
+
+    // ------------------------=
+    // FUNC: contains_point
+    // DESC: Reports whether a normalized pointer coordinate is inside this rectangle.
+    // ------------------=
+    pub const fn contains_point(self, x: i32, y: i32) -> bool {
+        x >= self.left as i32
+            && x < self.right() as i32
+            && y >= self.top as i32
+            && y < self.bottom() as i32
+    }
+}
+
+// ------------------------=
+// FUNC: installer_confirmation_button_frame
+// DESC: Returns the normalized frame shared by confirmation rendering and pointer hit testing.
+// ------------------=
+pub const fn installer_confirmation_button_frame(
+    target: InstallerConfirmationTarget,
+) -> InstallerRect {
+    match target {
+        InstallerConfirmationTarget::Cancel => InstallerRect {
+            left: 310,
+            top: 540,
+            width: 170,
+            height: 55,
+        },
+        InstallerConfirmationTarget::Install => InstallerRect {
+            left: 520,
+            top: 540,
+            width: 210,
+            height: 55,
+        },
+    }
+}
+
+// ------------------------=
+// FUNC: installer_confirmation_target
+// DESC: Resolves a pointer coordinate to exactly one destructive-confirmation action.
+// ------------------=
+pub const fn installer_confirmation_target(
+    pointer_x: i32,
+    pointer_y: i32,
+) -> Option<InstallerConfirmationTarget> {
+    let cancel = installer_confirmation_button_frame(InstallerConfirmationTarget::Cancel);
+    let install = installer_confirmation_button_frame(InstallerConfirmationTarget::Install);
+    if cancel.contains_point(pointer_x, pointer_y) {
+        Some(InstallerConfirmationTarget::Cancel)
+    } else if install.contains_point(pointer_x, pointer_y) {
+        Some(InstallerConfirmationTarget::Install)
+    } else {
+        None
     }
 }
 
