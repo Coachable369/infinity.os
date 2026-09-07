@@ -16,6 +16,7 @@ fn example_layout() -> DesktopSessionLayout {
         settings: WindowPlacement::new(142, 194, 641, 571, false, true),
         editor: WindowPlacement::new(211, 166, 533, 618, false, true),
         command: WindowPlacement::new(255, 205, 522, 480, true, true),
+        task_manager: WindowPlacement::new(188, 146, 720, 610, false, true),
         desktop_item_positions: [
             [70, 150], [155, 182], [241, 211], [332, 244], [430, 280], [518, 316],
             [610, 350],

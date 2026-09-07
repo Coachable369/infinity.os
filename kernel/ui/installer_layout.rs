@@ -111,6 +111,22 @@ pub fn installer_template_text(screen: u8, role: InstallerTemplateRole) -> Optio
 }
 
 // ------------------------=
+// FUNC: installer_template_rect
+// DESC: Scales one authored installer element role into the active display coordinate space.
+// ------------------=
+pub fn installer_template_rect(
+    screen: u8,
+    role: InstallerTemplateRole,
+    display_width: usize,
+    display_height: usize,
+) -> Option<InstallerRect> {
+    let element = InstallerTemplate::parse(INSTALLER_TEMPLATE_BYTES)
+        .ok()?
+        .element(screen, role)?;
+    (!element.hidden).then(|| scale_template_rect(element.frame, display_width, display_height))
+}
+
+// ------------------------=
 // FUNC: configuration_template_text
 // DESC: Returns authored copy for one validated post-install OS configuration screen role.
 // ------------------=

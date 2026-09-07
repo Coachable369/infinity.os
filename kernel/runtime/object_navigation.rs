@@ -24,6 +24,7 @@ pub enum NavigationError {
     MissingNamespace,
     AccessDenied,
     NoPreviousNamespace,
+    Capacity,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,6 +57,99 @@ pub enum BuiltInProfile {
 pub enum ViewMode {
     List,
     Grid,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileNavigatorMenu {
+    File,
+    View,
+    Navigate,
+    Help,
+}
+
+impl FileNavigatorMenu {
+    // ------------------------=
+    // FUNC: item_count
+    // DESC: Returns the bounded actionable row count for one File Navigator menu.
+    // ------------------=
+    pub const fn item_count(self) -> usize {
+        match self {
+            Self::File => 4,
+            Self::View => 3,
+            Self::Navigate => 9,
+            Self::Help => 1,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: from_index
+    // DESC: Resolves a one-based rendered menu index to its typed File Navigator menu.
+    // ------------------=
+    pub const fn from_index(index: usize) -> Option<Self> {
+        match index {
+            1 => Some(Self::File),
+            2 => Some(Self::View),
+            3 => Some(Self::Navigate),
+            4 => Some(Self::Help),
+            _ => None,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: index
+    // DESC: Returns the one-based rendered index for a typed File Navigator menu.
+    // ------------------=
+    pub const fn index(self) -> usize {
+        match self {
+            Self::File => 1,
+            Self::View => 2,
+            Self::Navigate => 3,
+            Self::Help => 4,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileNavigatorDialog {
+    EmptyTrash,
+    About,
+    Help,
+    Location,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileNavigatorAction {
+    NewWindow,
+    Settings,
+    EmptyTrash,
+    About,
+    SetView(ViewMode),
+    TogglePreview,
+    Navigate(usize),
+    CustomLocation,
+    Help,
+}
+
+impl FileNavigatorMenu {
+    // ------------------------=
+    // FUNC: action
+    // DESC: Maps one bounded menu row to the typed operation executed by File Navigator.
+    // ------------------=
+    pub const fn action(self, item: usize) -> Option<FileNavigatorAction> {
+        match (self, item) {
+            (Self::File, 0) => Some(FileNavigatorAction::NewWindow),
+            (Self::File, 1) => Some(FileNavigatorAction::Settings),
+            (Self::File, 2) => Some(FileNavigatorAction::EmptyTrash),
+            (Self::File, 3) => Some(FileNavigatorAction::About),
+            (Self::View, 0) => Some(FileNavigatorAction::SetView(ViewMode::List)),
+            (Self::View, 1) => Some(FileNavigatorAction::SetView(ViewMode::Grid)),
+            (Self::View, 2) => Some(FileNavigatorAction::TogglePreview),
+            (Self::Navigate, location @ 0..=7) => Some(FileNavigatorAction::Navigate(location)),
+            (Self::Navigate, 8) => Some(FileNavigatorAction::CustomLocation),
+            (Self::Help, 0) => Some(FileNavigatorAction::Help),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -948,9 +1042,229 @@ pub struct FileNavigatorState {
     pub context_x: i32,
     pub context_y: i32,
     pub context_item: u16,
+    pub menu_open: Option<FileNavigatorMenu>,
+    pub menu_selection: u8,
+    pub dialog_open: Option<FileNavigatorDialog>,
     history: [ByteText<MAX_NAMESPACE_PATH>; FILE_NAVIGATOR_HISTORY_CAPACITY],
     history_length: u8,
     history_cursor: u8,
+}
+
+pub const MAX_FILE_NAVIGATOR_INSTANCES: usize = 6;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileNavigatorWindow {
+    pub state: FileNavigatorState,
+    pub task_handle: u16,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+    pub maximized: bool,
+    pub visible: bool,
+    pub z_order: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FileNavigatorWorkspace {
+    windows: [Option<FileNavigatorWindow>; MAX_FILE_NAVIGATOR_INSTANCES],
+    active: Option<usize>,
+    next_z: u32,
+}
+
+impl FileNavigatorWorkspace {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates an empty bounded collection of independent File Navigator windows.
+    // ------------------=
+    pub const fn new() -> Self {
+        Self {
+            windows: [None; MAX_FILE_NAVIGATOR_INSTANCES],
+            active: None,
+            next_z: 1,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: launch
+    // DESC: Creates and raises a separately navigable File Navigator window.
+    // ------------------=
+    pub fn launch(&mut self, path: &[u8], task_handle: u16) -> Result<usize, NavigationError> {
+        let slot = self
+            .windows
+            .iter()
+            .position(Option::is_none)
+            .ok_or(NavigationError::Capacity)?;
+        let offset = slot as i32 * 34;
+        self.windows[slot] = Some(FileNavigatorWindow {
+            state: FileNavigatorState::new(path)?,
+            task_handle,
+            x: 110 + offset,
+            y: 150 + offset,
+            width: 780,
+            height: 660,
+            maximized: false,
+            visible: true,
+            z_order: self.next_z,
+        });
+        self.next_z = self.next_z.saturating_add(1);
+        self.active = Some(slot);
+        Ok(slot)
+    }
+
+    // ------------------------=
+    // FUNC: count
+    // DESC: Reports the number of live File Navigator instances.
+    // ------------------=
+    pub fn count(&self) -> usize {
+        self.windows.iter().flatten().count()
+    }
+
+    // ------------------------=
+    // FUNC: active_index
+    // DESC: Returns the currently raised File Navigator slot.
+    // ------------------=
+    pub const fn active_index(&self) -> Option<usize> {
+        self.active
+    }
+
+    // ------------------------=
+    // FUNC: window
+    // DESC: Returns one File Navigator window snapshot by stable slot.
+    // ------------------=
+    pub fn window(&self, index: usize) -> Option<FileNavigatorWindow> {
+        self.windows.get(index).copied().flatten()
+    }
+
+    // ------------------------=
+    // FUNC: update_active
+    // DESC: Commits the active navigator state and window geometry to its independent slot.
+    // ------------------=
+    pub fn update_active(&mut self, window: FileNavigatorWindow) -> bool {
+        let Some(index) = self.active else {
+            return false;
+        };
+        let Some(slot) = self.windows.get_mut(index) else {
+            return false;
+        };
+        *slot = Some(window);
+        true
+    }
+
+    // ------------------------=
+    // FUNC: raise
+    // DESC: Raises a visible navigator and returns its complete independent state.
+    // ------------------=
+    pub fn raise(&mut self, index: usize) -> Option<FileNavigatorWindow> {
+        let mut window = self.windows.get(index).copied().flatten()?;
+        if !window.visible {
+            return None;
+        }
+        window.z_order = self.next_z;
+        self.next_z = self.next_z.saturating_add(1);
+        self.windows[index] = Some(window);
+        self.active = Some(index);
+        Some(window)
+    }
+
+    // ------------------------=
+    // FUNC: close_active
+    // DESC: Closes only the raised navigator and selects the highest remaining visible layer.
+    // ------------------=
+    pub fn close_active(&mut self) -> Option<FileNavigatorWindow> {
+        let index = self.active?;
+        self.windows[index] = None;
+        self.active = self
+            .windows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, window)| {
+                window
+                    .filter(|item| item.visible)
+                    .map(|item| (index, item.z_order))
+            })
+            .max_by_key(|item| item.1)
+            .map(|item| item.0);
+        self.active.and_then(|active| self.windows[active])
+    }
+
+    // ------------------------=
+    // FUNC: close_task
+    // DESC: Closes the navigator owned by an ended execution context without affecting peers.
+    // ------------------=
+    pub fn close_task(&mut self, task_handle: u16) -> bool {
+        let Some(index) = self.windows.iter().position(|window| {
+            window
+                .map(|item| item.task_handle == task_handle)
+                .unwrap_or(false)
+        }) else {
+            return false;
+        };
+        self.windows[index] = None;
+        if self.active == Some(index) {
+            self.active = self
+                .windows
+                .iter()
+                .enumerate()
+                .filter_map(|(index, window)| {
+                    window
+                        .filter(|item| item.visible)
+                        .map(|item| (index, item.z_order))
+                })
+                .max_by_key(|item| item.1)
+                .map(|item| item.0);
+        }
+        true
+    }
+
+    // ------------------------=
+    // FUNC: back_to_front
+    // DESC: Returns the visible slot at one z-sorted layer position.
+    // ------------------=
+    pub fn back_to_front(&self, layer: usize) -> Option<(usize, FileNavigatorWindow)> {
+        let mut previous_z = None;
+        let mut selected = None;
+        for _ in 0..=layer {
+            selected = self
+                .windows
+                .iter()
+                .enumerate()
+                .filter_map(|(index, window)| {
+                    let window = window.filter(|item| item.visible)?;
+                    if previous_z
+                        .map(|prior| window.z_order > prior)
+                        .unwrap_or(true)
+                    {
+                        Some((index, window))
+                    } else {
+                        None
+                    }
+                })
+                .min_by_key(|item| item.1.z_order);
+            previous_z = selected.map(|item| item.1.z_order);
+        }
+        selected
+    }
+
+    // ------------------------=
+    // FUNC: topmost_at
+    // DESC: Hit-tests whole visible windows and returns the highest navigator layer at a point.
+    // ------------------=
+    pub fn topmost_at(&self, x: i32, y: i32) -> Option<usize> {
+        self.windows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, window)| {
+                let window = window.filter(|item| item.visible)?;
+                let inside = x >= window.x
+                    && x <= window.x.saturating_add(window.width)
+                    && y >= window.y
+                    && y <= window.y.saturating_add(window.height);
+                inside.then_some((index, window.z_order))
+            })
+            .max_by_key(|item| item.1)
+            .map(|item| item.0)
+    }
 }
 
 impl FileNavigatorState {
@@ -967,7 +1281,7 @@ impl FileNavigatorState {
             back_namespace_ref: ByteText::empty(),
             forward_namespace_ref: ByteText::empty(),
             view_mode: ViewMode::List,
-            inspector_open: true,
+            inspector_open: false,
             selected_reference_id: 0,
             scroll_offset: 0,
             sort_key: 0,
@@ -981,6 +1295,9 @@ impl FileNavigatorState {
             context_x: 0,
             context_y: 0,
             context_item: FILE_NAVIGATOR_NO_SELECTION,
+            menu_open: None,
+            menu_selection: 0,
+            dialog_open: None,
             history,
             history_length: 1,
             history_cursor: 0,
@@ -1022,10 +1339,7 @@ impl FileNavigatorState {
     // FUNC: navigate_navigation_entry
     // DESC: Applies traditional current and parent directory behavior for the virtual dot rows.
     // ------------------=
-    pub fn navigate_navigation_entry(
-        &mut self,
-        index: usize,
-    ) -> Result<bool, NavigationError> {
+    pub fn navigate_navigation_entry(&mut self, index: usize) -> Result<bool, NavigationError> {
         let destination = match index {
             0 => self.active_namespace_ref,
             1 => parent_path(self.active_namespace_ref.as_bytes())?,
@@ -1095,6 +1409,40 @@ impl FileNavigatorState {
     }
 
     // ------------------------=
+    // FUNC: open_menu
+    // DESC: Opens or toggles one app-local menu while dismissing competing transient overlays.
+    // ------------------=
+    pub fn open_menu(&mut self, menu: FileNavigatorMenu) {
+        self.menu_open = (self.menu_open != Some(menu)).then_some(menu);
+        self.menu_selection = 0;
+        self.dialog_open = None;
+        self.context_menu_open = false;
+        self.location_editing = false;
+        self.rename_editing = false;
+    }
+
+    // ------------------------=
+    // FUNC: open_dialog
+    // DESC: Opens one bounded File Navigator dialog and dismisses all menu overlays.
+    // ------------------=
+    pub fn open_dialog(&mut self, dialog: FileNavigatorDialog) {
+        self.dialog_open = Some(dialog);
+        self.menu_open = None;
+        self.context_menu_open = false;
+    }
+
+    // ------------------------=
+    // FUNC: close_overlays
+    // DESC: Dismisses File Navigator menus, dialogs, context menus, and active text editing.
+    // ------------------=
+    pub fn close_overlays(&mut self) {
+        self.menu_open = None;
+        self.dialog_open = None;
+        self.context_menu_open = false;
+        self.cancel_edit();
+    }
+
+    // ------------------------=
     // FUNC: begin_rename
     // DESC: Focuses the bounded inline rename editor for one selected namespace entry.
     // ------------------=
@@ -1147,7 +1495,11 @@ impl FileNavigatorState {
             return;
         }
         let next = if self.selected_index == FILE_NAVIGATOR_NO_SELECTION {
-            if previous { count - 1 } else { 0 }
+            if previous {
+                count - 1
+            } else {
+                0
+            }
         } else if previous {
             (self.selected_index as usize).saturating_sub(1)
         } else {
@@ -1160,19 +1512,15 @@ impl FileNavigatorState {
     // FUNC: scroll_by
     // DESC: Applies bounded File Navigator scrolling so wheel input cannot move beyond the final visible page.
     // ------------------=
-    pub fn scroll_by(
-        &mut self,
-        delta: isize,
-        total: usize,
-        viewport: usize,
-        item_extent: usize,
-    ) {
+    pub fn scroll_by(&mut self, delta: isize, total: usize, viewport: usize, item_extent: usize) {
         let content_height = total.saturating_mul(item_extent.max(1));
         let maximum = content_height.saturating_sub(viewport);
         self.scroll_offset = if delta < 0 {
             self.scroll_offset.saturating_sub(delta.unsigned_abs())
         } else {
-            self.scroll_offset.saturating_add(delta as usize).min(maximum)
+            self.scroll_offset
+                .saturating_add(delta as usize)
+                .min(maximum)
         };
     }
 

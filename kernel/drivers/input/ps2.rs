@@ -121,10 +121,7 @@ fn mouse_device_id() -> Option<u8> {
 // DESC: Enables IntelliMouse wheel and Explorer five-button packets when the device supports them.
 // ------------------=
 fn negotiate_mouse_protocol() -> u8 {
-    if !(mouse_set_sample_rate(200)
-        && mouse_set_sample_rate(100)
-        && mouse_set_sample_rate(80))
-    {
+    if !(mouse_set_sample_rate(200) && mouse_set_sample_rate(100) && mouse_set_sample_rate(80)) {
         return 0;
     }
     let wheel_id = mouse_device_id().unwrap_or(0);

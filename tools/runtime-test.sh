@@ -1,5 +1,5 @@
 #!/bin/sh
 set -eu
-mkdir -p build/tests
-rustc --edition=2021 -O tools/runtime-test.rs -o build/tests/runtime-test
-build/tests/runtime-test
+cd "$(dirname "$0")/.."
+CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet \
+    --manifest-path tools/behavior-harness/Cargo.toml --bin runtime-test

@@ -7,6 +7,13 @@ mod storage;
 #[path = "../kernel/ui/mod.rs"]
 mod ui;
 
+mod console {
+    #[derive(Clone, Copy)]
+    pub enum ConsoleKey {
+        Character(u8), Backspace, Delete, Left, Right, Home, End, Enter,
+    }
+}
+
 // ------------------------=
 // FUNC: output_text
 // DESC: Provides the diagnostic sink required by the host runtime harness.
@@ -26,6 +33,7 @@ fn layout() -> DesktopSessionLayout {
         settings: WindowPlacement::new(135, 188, 690, 604, true, true),
         editor: WindowPlacement::new(227, 163, 548, 612, false, true),
         command: WindowPlacement::new(281, 219, 501, 477, false, false),
+        task_manager: WindowPlacement::new(176, 139, 744, 633, false, true),
         desktop_item_positions: [
             [81, 141],
             [164, 177],

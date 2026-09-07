@@ -355,6 +355,7 @@ struct ConsoleSurface {
     last_background_opacity: u8,
     last_background_blur: u8,
     last_system_content: u32,
+    last_launcher_state: u64,
     last_system_validation_error: bool,
     last_home_window_x: i32,
     last_home_window_y: i32,

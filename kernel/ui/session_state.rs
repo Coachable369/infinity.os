@@ -2,7 +2,7 @@
 
 pub const DESKTOP_LAYOUT_STATE_BYTES: usize = 1536;
 pub const MAX_PERSISTED_DESKTOP_LAYOUTS: usize = 8;
-const DESKTOP_LAYOUT_RECORD_BYTES: usize = 160;
+const DESKTOP_LAYOUT_RECORD_BYTES: usize = 177;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DesktopResumeSurface {
@@ -10,6 +10,7 @@ pub enum DesktopResumeSurface {
     Settings,
     TextEditor,
     CommandWindow,
+    TaskManager,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +53,7 @@ pub struct DesktopSessionLayout {
     pub settings: WindowPlacement,
     pub editor: WindowPlacement,
     pub command: WindowPlacement,
+    pub task_manager: WindowPlacement,
     pub desktop_item_positions: [[i32; 2]; 7],
     pub focused_surface: DesktopResumeSurface,
     pub settings_section: usize,
@@ -274,6 +276,7 @@ fn write_layout(out: &mut [u8], at: usize, layout: DesktopSessionLayout) {
         DesktopResumeSurface::Settings => 2,
         DesktopResumeSurface::TextEditor => 3,
         DesktopResumeSurface::CommandWindow => 4,
+        DesktopResumeSurface::TaskManager => 5,
     };
     out[at + 125] = layout.settings_section.min(u8::MAX as usize) as u8;
     out[at + 126] = layout
@@ -285,6 +288,7 @@ fn write_layout(out: &mut [u8], at: usize, layout: DesktopSessionLayout) {
         at + 128,
         layout.settings_scroll_offset.min(u32::MAX as usize) as u32,
     );
+    write_placement(out, at + 133, layout.task_manager);
 }
 
 // ------------------------=
@@ -296,6 +300,7 @@ fn read_layout(input: &[u8], at: usize) -> Option<DesktopSessionLayout> {
     let settings = read_placement(input, at + 17)?;
     let editor = read_placement(input, at + 34)?;
     let command = read_placement(input, at + 51)?;
+    let task_manager = read_placement(input, at + 133)?;
     let mut positions = [[0i32; 2]; 7];
     let positions_at = at + 68;
     for (index, position) in positions.iter_mut().enumerate() {
@@ -307,6 +312,7 @@ fn read_layout(input: &[u8], at: usize) -> Option<DesktopSessionLayout> {
         2 => DesktopResumeSurface::Settings,
         3 => DesktopResumeSurface::TextEditor,
         4 => DesktopResumeSurface::CommandWindow,
+        5 => DesktopResumeSurface::TaskManager,
         _ => return None,
     };
     Some(DesktopSessionLayout {
@@ -314,6 +320,7 @@ fn read_layout(input: &[u8], at: usize) -> Option<DesktopSessionLayout> {
         settings,
         editor,
         command,
+        task_manager,
         desktop_item_positions: positions,
         focused_surface,
         settings_section: input[at + 125] as usize,

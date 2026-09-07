@@ -2011,13 +2011,7 @@ impl super::DisplayDevice {
         validation_error: bool,
     ) {
         if self.configuration_template_screen(step) {
-            self.configuration_template_live_content(
-                step,
-                input,
-                masked,
-                focus,
-                validation_error,
-            );
+            self.configuration_template_live_content(step, input, masked, focus, validation_error);
             return;
         }
         let scale = self.ui_scale().max(1);
@@ -2029,22 +2023,22 @@ impl super::DisplayDevice {
         let fallback_card_left = self.width * 4 / 100;
         let fallback_card_top =
             top_bar + self.height.saturating_sub(top_bar + fallback_card_height) / 2;
-        let (card_left, card_top, card_width, card_height) =
-            if let Some(card) = crate::ui::installer_layout::configuration_template_rect(
+        let (card_left, card_top, card_width, card_height) = if let Some(card) =
+            crate::ui::installer_layout::configuration_template_rect(
                 step,
                 crate::ui::installer_template::InstallerTemplateRole::Console,
                 self.width,
                 self.height,
             ) {
-                (card.left, card.top, card.width, card.height)
-            } else {
-                (
-                    fallback_card_left,
-                    fallback_card_top,
-                    fallback_card_width,
-                    fallback_card_height,
-                )
-            };
+            (card.left, card.top, card.width, card.height)
+        } else {
+            (
+                fallback_card_left,
+                fallback_card_top,
+                fallback_card_width,
+                fallback_card_height,
+            )
+        };
         self.onboarding_glass_panel(card_left, card_top, card_width, card_height);
 
         let inner_left = card_left + 32 * scale;
@@ -2198,17 +2192,18 @@ impl super::DisplayDevice {
             let input_top = authored_input
                 .map(|frame| frame.top)
                 .unwrap_or(body_top + 28 * scale);
-            let input_width = authored_input.map(|frame| frame.width).unwrap_or(inner_width);
+            let input_width = authored_input
+                .map(|frame| frame.width)
+                .unwrap_or(inner_width);
             let input_height = authored_input
                 .map(|frame| frame.height)
                 .unwrap_or(50 * scale);
-            let authored_placeholder =
-                crate::ui::installer_layout::configuration_template_text(
-                    step,
-                    crate::ui::installer_template::InstallerTemplateRole::Input,
-                )
-                .filter(|value| !value.is_empty())
-                .unwrap_or(placeholder);
+            let authored_placeholder = crate::ui::installer_layout::configuration_template_text(
+                step,
+                crate::ui::installer_template::InstallerTemplateRole::Input,
+            )
+            .filter(|value| !value.is_empty())
+            .unwrap_or(placeholder);
             self.ui_text_strong(
                 input_left,
                 input_top.saturating_sub(28 * scale),
@@ -2407,8 +2402,7 @@ impl super::DisplayDevice {
                 self.height,
             ) {
                 self.onboarding_network_rows(
-                    content.left
-                        + crate::ui::system_layout::UI_GUTTER * self.ui_scale().max(1),
+                    content.left + crate::ui::system_layout::UI_GUTTER * self.ui_scale().max(1),
                     content.top + content.height * 42 / 100,
                     content.width.saturating_sub(
                         crate::ui::system_layout::UI_GUTTER * 2 * self.ui_scale().max(1),
@@ -2443,14 +2437,20 @@ impl super::DisplayDevice {
             Some(value) if value.wired_available && value.wired_link == LinkState::Up => {
                 b"Connected link detected"
             }
-            Some(value) if value.wired_available => b"Connect a network cable",
+            Some(value) if value.wired_available && value.wired_link == LinkState::Down => {
+                b"Connect a network cable"
+            }
+            Some(value) if value.wired_available => b"Wired adapter detected",
             _ => b"No wired adapter detected",
         };
         let wireless_detail: &[u8] = match snapshot {
             Some(value) if value.wireless_available && value.wireless_link == LinkState::Up => {
                 b"Connected wireless link detected"
             }
-            Some(value) if value.wireless_available => b"Wireless link is not connected",
+            Some(value) if value.wireless_available && value.wireless_link == LinkState::Down => {
+                b"Wireless link is not connected"
+            }
+            Some(value) if value.wireless_available => b"Wireless adapter detected",
             _ => b"No wireless adapter detected",
         };
         let rows: [(&[u8], &[u8], usize, NetworkSetupMode); 3] = [
@@ -2603,13 +2603,19 @@ impl super::DisplayDevice {
             crate::ui::installer_template::InstallerTemplateRole::PrimaryButton,
         )
         .filter(|value| !value.is_empty())
-        .unwrap_or(if step >= 7 { b"Enter InfinityOS" } else { b"Continue" });
+        .unwrap_or(if step >= 7 {
+            b"Enter InfinityOS"
+        } else {
+            b"Continue"
+        });
         if step > 0 {
             let back_width = inner_width * 30 / 100;
             let back_left = authored_back.map(|frame| frame.left).unwrap_or(inner_left);
             let back_top = authored_back.map(|frame| frame.top).unwrap_or(button_top);
             let back_width = authored_back.map(|frame| frame.width).unwrap_or(back_width);
-            let back_height = authored_back.map(|frame| frame.height).unwrap_or(button_height);
+            let back_height = authored_back
+                .map(|frame| frame.height)
+                .unwrap_or(button_height);
             self.polished_button(
                 back_left,
                 back_top,
@@ -2624,11 +2630,16 @@ impl super::DisplayDevice {
             let primary_left = authored_primary
                 .map(|frame| frame.left)
                 .unwrap_or(fallback_primary_left);
-            let primary_top = authored_primary.map(|frame| frame.top).unwrap_or(button_top);
-            let primary_width = authored_primary.map(|frame| frame.width).unwrap_or_else(|| {
-                inner_width
-                    .saturating_sub(back_width + crate::ui::system_layout::UI_CONTROL_GAP * scale)
-            });
+            let primary_top = authored_primary
+                .map(|frame| frame.top)
+                .unwrap_or(button_top);
+            let primary_width = authored_primary
+                .map(|frame| frame.width)
+                .unwrap_or_else(|| {
+                    inner_width.saturating_sub(
+                        back_width + crate::ui::system_layout::UI_CONTROL_GAP * scale,
+                    )
+                });
             let primary_height = authored_primary
                 .map(|frame| frame.height)
                 .unwrap_or(button_height);
@@ -2642,9 +2653,15 @@ impl super::DisplayDevice {
                 focus == 1,
             );
         } else {
-            let primary_left = authored_primary.map(|frame| frame.left).unwrap_or(inner_left);
-            let primary_top = authored_primary.map(|frame| frame.top).unwrap_or(button_top);
-            let primary_width = authored_primary.map(|frame| frame.width).unwrap_or(inner_width);
+            let primary_left = authored_primary
+                .map(|frame| frame.left)
+                .unwrap_or(inner_left);
+            let primary_top = authored_primary
+                .map(|frame| frame.top)
+                .unwrap_or(button_top);
+            let primary_width = authored_primary
+                .map(|frame| frame.width)
+                .unwrap_or(inner_width);
             let primary_height = authored_primary
                 .map(|frame| frame.height)
                 .unwrap_or(button_height);
@@ -2690,13 +2707,12 @@ impl super::DisplayDevice {
                 4 => b"Create a password",
                 _ => b"",
             };
-            let authored_placeholder =
-                crate::ui::installer_layout::configuration_template_text(
-                    step,
-                    crate::ui::installer_template::InstallerTemplateRole::Input,
-                )
-                .filter(|value| !value.is_empty())
-                .unwrap_or(placeholder);
+            let authored_placeholder = crate::ui::installer_layout::configuration_template_text(
+                step,
+                crate::ui::installer_template::InstallerTemplateRole::Input,
+            )
+            .filter(|value| !value.is_empty())
+            .unwrap_or(placeholder);
             let authored_input =
                 crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                     .onboarding_input_geometry(step);
@@ -2757,6 +2773,8 @@ impl super::DisplayDevice {
         editor_dialog: u8,
         editor_dialog_input: &[u8],
         editor_dialog_focus: usize,
+        task_manager_selected: usize,
+        task_menu_open: bool,
     ) {
         let scale = self.ui_scale().max(1);
         let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
@@ -2951,27 +2969,46 @@ impl super::DisplayDevice {
                     1,
                 );
             } else if screen == 10 {
-                for (index, label) in [
-                    b"Launch".as_slice(),
-                    b"Relaunch",
-                    b"End Task",
-                    b"Pause / Resume",
-                    b"Throttle",
-                ]
-                .iter()
-                .enumerate()
-                {
-                    let button_width =
-                        (geometry.toolbar.width as usize / 5).saturating_sub(8 * scale);
-                    self.polished_toolbar_button(
-                        toolbar_left + 4 * scale + index * (button_width + 8 * scale),
-                        toolbar_top + 5 * scale,
-                        button_width,
-                        geometry.toolbar.height as usize - 10 * scale,
-                        label,
-                        [4usize, 20, 52, 17, 19][index],
-                    );
-                }
+                self.fill_rounded_rect_alpha(
+                    toolbar_left + 10 * scale,
+                    toolbar_top + 6 * scale,
+                    94 * scale,
+                    geometry.toolbar.height as usize - 12 * scale,
+                    7 * scale,
+                    if task_menu_open { 29 } else { 8 },
+                    if task_menu_open { 91 } else { 31 },
+                    if task_menu_open { 132 } else { 48 },
+                    240,
+                );
+                self.ui_text_strong(
+                    toolbar_left + 24 * scale,
+                    toolbar_top + 15 * scale,
+                    b"Task",
+                    225,
+                    240,
+                    249,
+                    1,
+                );
+                self.ui_text(
+                    toolbar_left + 79 * scale,
+                    toolbar_top + 15 * scale,
+                    if task_menu_open { b"^" } else { b"v" },
+                    103,
+                    211,
+                    252,
+                    1,
+                );
+                let live = b"LIVE TELEMETRY  /  1 SEC";
+                let live_width = self.ui_text_width(live, 1);
+                self.ui_text(
+                    toolbar_left + geometry.toolbar.width as usize - live_width - 18 * scale,
+                    toolbar_top + 15 * scale,
+                    live,
+                    107,
+                    199,
+                    236,
+                    1,
+                );
             } else {
                 self.ui_text(
                     toolbar_left + 16 * scale,
@@ -3013,7 +3050,14 @@ impl super::DisplayDevice {
         let content_top = geometry.content.y.max(0) as usize;
         let content_width = geometry.content.width as usize;
         let content_height = geometry.content.height as usize;
-        if content_only {
+        if screen == 10 {
+            self.render_task_manager_dashboard(
+                geometry,
+                task_manager_selected,
+                task_menu_open,
+                scale,
+            );
+        } else if content_only {
             self.fill_rect(
                 content_left + scale,
                 content_top + scale,
@@ -3022,74 +3066,6 @@ impl super::DisplayDevice {
                 1,
                 10,
                 20,
-            );
-        } else if screen == 10 {
-            let line_height = 24 * scale;
-            self.fill_rounded_rect_alpha(
-                content_left,
-                content_top,
-                content_width,
-                content_height,
-                10 * scale,
-                1,
-                10,
-                20,
-                246,
-            );
-            self.outline_rounded_rect(
-                content_left,
-                content_top,
-                content_width,
-                content_height,
-                10 * scale,
-                57,
-                137,
-                181,
-            );
-            let header_height = 34 * scale;
-            self.fill_rect_alpha(
-                content_left + 8 * scale,
-                content_top + 8 * scale,
-                content_width.saturating_sub(16 * scale),
-                header_height,
-                18,
-                52,
-                76,
-                235,
-            );
-            for row in 0..output_count.min(6) {
-                let y = content_top + 18 * scale + row * line_height;
-                if row > 0 && output_lines[row][0] == b'>' {
-                    self.fill_rounded_rect_alpha(
-                        content_left + 10 * scale,
-                        y.saturating_sub(5 * scale),
-                        content_width.saturating_sub(20 * scale),
-                        line_height,
-                        7 * scale,
-                        31,
-                        104,
-                        151,
-                        185,
-                    );
-                }
-                self.ui_text(
-                    content_left + 18 * scale,
-                    y,
-                    &output_lines[row][..output_lengths[row].min(96)],
-                    if row == 0 { 117 } else { 200 },
-                    if row == 0 { 211 } else { 229 },
-                    if row == 0 { 250 } else { 239 },
-                    1,
-                );
-            }
-            self.ui_text(
-                content_left + 18 * scale,
-                content_top + content_height.saturating_sub(30 * scale),
-                b"UP/DOWN SELECT   SPACE PAUSE   R RELAUNCH   DEL END   T THROTTLE   L LAUNCH FILES",
-                126,
-                178,
-                207,
-                1,
             );
         } else {
             self.fill_rounded_rect_alpha(
@@ -3209,7 +3185,7 @@ impl super::DisplayDevice {
                     scale,
                 );
             }
-        } else {
+        } else if screen != 10 {
             for row in 0..output_count.min(6) {
                 self.ui_text(
                     content_left + 18 * scale,
@@ -3250,6 +3226,487 @@ impl super::DisplayDevice {
                 true,
                 1,
             );
+        }
+    }
+
+    // ------------------------=
+    // FUNC: render_task_manager_dashboard
+    // DESC: Renders animated authoritative CPU, memory, disk, process, and selected-task telemetry with a native Task menu.
+    // ------------------=
+    fn render_task_manager_dashboard(
+        &mut self,
+        geometry: crate::ui::system_layout::DesktopAppWindowGeometry,
+        selected: usize,
+        menu_open: bool,
+        scale: usize,
+    ) {
+        let left = geometry.content.x.max(0) as usize;
+        let top = geometry.content.y.max(0) as usize;
+        let width = geometry.content.width as usize;
+        let height = geometry.content.height as usize;
+        let (accent_r, accent_g, accent_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
+        self.fill_rounded_rect_alpha(left, top, width, height, 11 * scale, 1, 9, 19, 246);
+        self.outline_rounded_rect(left, top, width, height, 11 * scale, 55, 133, 178);
+
+        let (count, running, total_ticks, total_memory, total_memory_limit, total_disk) =
+            crate::runtime::with_runtime(|runtime| {
+                let count = runtime.task_manager.task_count(&runtime.execution);
+                let mut running = 0usize;
+                let mut ticks = 0u64;
+                let mut memory = 0u64;
+                let mut memory_limit = 0u64;
+                let mut disk = 0u64;
+                for index in 0..count {
+                    if let Some(task) = runtime.task_manager.task_nth(&runtime.execution, index) {
+                        if matches!(
+                            task.state,
+                            crate::runtime::execution::ContextState::Runnable
+                                | crate::runtime::execution::ContextState::Running
+                        ) {
+                            running += 1;
+                        }
+                        ticks = ticks.saturating_add(task.usage.cpu_ticks);
+                        memory = memory.saturating_add(task.usage.memory_bytes);
+                        memory_limit = memory_limit.saturating_add(task.budget.memory_limit);
+                        disk = disk.saturating_add(task.installed_bytes);
+                    }
+                }
+                (count, running, ticks, memory, memory_limit, disk)
+            })
+            .unwrap_or((0, 0, 0, 0, 0, 0));
+
+        let gap = 10 * scale;
+        let card_top = top + 12 * scale;
+        let card_height = 92 * scale;
+        let card_width = width.saturating_sub(32 * scale + gap * 2) / 3;
+        let memory_percent = if total_memory_limit == 0 {
+            0
+        } else {
+            total_memory.saturating_mul(100) / total_memory_limit
+        } as usize;
+        let cpu_percent = if count == 0 {
+            0
+        } else {
+            running.saturating_mul(100) / count
+        };
+        let disk_capacity = (count.max(1) as u64).saturating_mul(256 * 1024);
+        let disk_percent =
+            (total_disk.saturating_mul(100) / disk_capacity.max(1)).min(100) as usize;
+        let cards = [
+            (
+                b"CPU ACTIVITY".as_slice(),
+                total_ticks,
+                cpu_percent,
+                19usize,
+            ),
+            (
+                b"MEMORY IN USE".as_slice(),
+                total_memory,
+                memory_percent,
+                18usize,
+            ),
+            (
+                b"APP DISK SIZE".as_slice(),
+                total_disk,
+                disk_percent,
+                11usize,
+            ),
+        ];
+        for (index, (label, value, percent, role)) in cards.iter().enumerate() {
+            let card_left = left + 12 * scale + index * (card_width + gap);
+            self.fill_rounded_rect_alpha(
+                card_left,
+                card_top,
+                card_width,
+                card_height,
+                10 * scale,
+                5,
+                23,
+                39,
+                236,
+            );
+            self.outline_rounded_rect(
+                card_left,
+                card_top,
+                card_width,
+                card_height,
+                10 * scale,
+                accent_r / 2,
+                accent_g / 2,
+                accent_b / 2,
+            );
+            let _ = self.themed_icon(
+                card_left + 24 * scale,
+                card_top + 25 * scale,
+                *role,
+                25 * scale,
+            );
+            self.ui_text_strong(
+                card_left + 44 * scale,
+                card_top + 17 * scale,
+                label,
+                172,
+                204,
+                222,
+                1,
+            );
+            let (value_text, value_length) = if index == 0 {
+                Self::task_manager_count_text(*value)
+            } else {
+                Self::task_manager_bytes_text(*value)
+            };
+            self.ui_text_strong(
+                card_left + 16 * scale,
+                card_top + 45 * scale,
+                &value_text[..value_length],
+                237,
+                247,
+                252,
+                1,
+            );
+            self.task_manager_meter(
+                card_left + 16 * scale,
+                card_top + 72 * scale,
+                card_width.saturating_sub(32 * scale),
+                *percent,
+                scale,
+                (accent_r, accent_g, accent_b),
+            );
+        }
+
+        let table_top = top + 116 * scale;
+        let table_height = height.saturating_sub(172 * scale);
+        self.fill_rounded_rect_alpha(
+            left + 12 * scale,
+            table_top,
+            width.saturating_sub(24 * scale),
+            table_height,
+            10 * scale,
+            3,
+            17,
+            30,
+            238,
+        );
+        self.ui_text_strong(
+            left + 28 * scale,
+            table_top + 13 * scale,
+            b"TASK",
+            129,
+            197,
+            229,
+            1,
+        );
+        self.ui_text_strong(
+            left + width * 43 / 100,
+            table_top + 13 * scale,
+            b"STATUS",
+            129,
+            197,
+            229,
+            1,
+        );
+        self.ui_text_strong(
+            left + width * 57 / 100,
+            table_top + 13 * scale,
+            b"CPU",
+            129,
+            197,
+            229,
+            1,
+        );
+        self.ui_text_strong(
+            left + width * 69 / 100,
+            table_top + 13 * scale,
+            b"MEMORY",
+            129,
+            197,
+            229,
+            1,
+        );
+        self.ui_text_strong(
+            left + width * 84 / 100,
+            table_top + 13 * scale,
+            b"DISK",
+            129,
+            197,
+            229,
+            1,
+        );
+
+        let first = selected.saturating_sub(3);
+        let row_height = 38 * scale;
+        for visible in 0..5usize {
+            let index = first + visible;
+            let task = crate::runtime::with_runtime(|runtime| {
+                runtime.task_manager.task_nth(&runtime.execution, index)
+            })
+            .flatten();
+            let Some(task) = task else { break };
+            let row_top = table_top + (38 + visible * 38) * scale;
+            if row_top + row_height > top + height.saturating_sub(28 * scale) {
+                break;
+            }
+            let active = index == selected;
+            self.fill_rounded_rect_alpha(
+                left + 18 * scale,
+                row_top,
+                width.saturating_sub(36 * scale),
+                row_height.saturating_sub(3 * scale),
+                7 * scale,
+                if active { accent_r } else { 5 },
+                if active { accent_g } else { 25 },
+                if active { accent_b } else { 41 },
+                if active { 155 } else { 210 },
+            );
+            let app = Self::task_manager_task_name(task.service_identity, task.image_identity);
+            self.ui_text_strong(
+                left + 30 * scale,
+                row_top + 11 * scale,
+                app,
+                224,
+                238,
+                247,
+                1,
+            );
+            self.ui_text(
+                left + width * 43 / 100,
+                row_top + 11 * scale,
+                Self::task_manager_state_text(task.state),
+                163,
+                211,
+                230,
+                1,
+            );
+            let (cpu, cpu_len) =
+                Self::task_manager_percent_text(task.cpu_share_percent as usize);
+            let (memory, memory_len) = Self::task_manager_bytes_text(task.usage.memory_bytes);
+            let (disk, disk_len) = Self::task_manager_bytes_text(task.installed_bytes);
+            self.ui_text(
+                left + width * 57 / 100,
+                row_top + 11 * scale,
+                &cpu[..cpu_len],
+                104,
+                220,
+                251,
+                1,
+            );
+            self.ui_text(
+                left + width * 69 / 100,
+                row_top + 11 * scale,
+                &memory[..memory_len],
+                204,
+                224,
+                236,
+                1,
+            );
+            self.ui_text(
+                left + width * 84 / 100,
+                row_top + 11 * scale,
+                &disk[..disk_len],
+                204,
+                224,
+                236,
+                1,
+            );
+        }
+        let footer = if count == 1 {
+            b"1 task".as_slice()
+        } else {
+            b"Live tasks  /  Use Task menu for actions".as_slice()
+        };
+        self.ui_text(
+            left + 20 * scale,
+            top + height.saturating_sub(24 * scale),
+            footer,
+            117,
+            175,
+            205,
+            1,
+        );
+        if menu_open {
+            self.render_task_manager_menu(geometry, scale, (accent_r, accent_g, accent_b));
+        }
+    }
+
+    // ------------------------=
+    // FUNC: task_manager_meter
+    // DESC: Draws a bounded telemetry meter with a moving highlight tied to the compositor frame clock.
+    // ------------------=
+    fn task_manager_meter(
+        &mut self,
+        left: usize,
+        top: usize,
+        width: usize,
+        percent: usize,
+        scale: usize,
+        accent: (u8, u8, u8),
+    ) {
+        self.fill_rounded_rect_alpha(left, top, width, 7 * scale, 3 * scale, 6, 18, 30, 245);
+        let filled = width.saturating_mul(percent.min(100)) / 100;
+        self.fill_rounded_rect_alpha(
+            left,
+            top,
+            filled,
+            7 * scale,
+            3 * scale,
+            accent.0,
+            accent.1,
+            accent.2,
+            230,
+        );
+        if filled > 8 * scale {
+            let shimmer = left + (self.presented_frames as usize * 5 * scale) % filled;
+            self.fill_rounded_rect_alpha(
+                shimmer,
+                top,
+                4 * scale,
+                7 * scale,
+                2 * scale,
+                225,
+                249,
+                255,
+                210,
+            );
+        }
+    }
+
+    // ------------------------=
+    // FUNC: render_task_manager_menu
+    // DESC: Renders the conventional application Task menu above dashboard content.
+    // ------------------=
+    fn render_task_manager_menu(
+        &mut self,
+        geometry: crate::ui::system_layout::DesktopAppWindowGeometry,
+        scale: usize,
+        accent: (u8, u8, u8),
+    ) {
+        let left = geometry.toolbar.x.max(0) as usize + 10 * scale;
+        let top = geometry.toolbar.bottom().max(0) as usize - 2 * scale;
+        let width = 232 * scale;
+        self.fill_rounded_rect_alpha(left, top, width, 214 * scale, 10 * scale, 3, 15, 27, 250);
+        self.outline_rounded_rect(
+            left,
+            top,
+            width,
+            214 * scale,
+            10 * scale,
+            accent.0,
+            accent.1,
+            accent.2,
+        );
+        let labels: [&[u8]; 6] = [
+            b"Launch File Navigator",
+            b"Relaunch Selected",
+            b"Pause / Resume",
+            b"Throttle Selected",
+            b"End Selected Task",
+            b"Refresh Now",
+        ];
+        for (index, label) in labels.iter().enumerate() {
+            let row_top = top + (8 + index * 32) * scale;
+            if index == 4 {
+                self.fill_rect_alpha(
+                    left + 12 * scale,
+                    row_top.saturating_sub(4 * scale),
+                    width.saturating_sub(24 * scale),
+                    1,
+                    51,
+                    82,
+                    101,
+                    180,
+                );
+            }
+            self.ui_text(
+                left + 18 * scale,
+                row_top + 8 * scale,
+                label,
+                if index == 4 { 255 } else { 218 },
+                if index == 4 { 149 } else { 232 },
+                if index == 4 { 149 } else { 241 },
+                1,
+            );
+        }
+    }
+
+    // ------------------------=
+    // FUNC: task_manager_bytes_text
+    // DESC: Formats telemetry bytes into a compact KiB or MiB value without allocation.
+    // ------------------=
+    fn task_manager_bytes_text(bytes: u64) -> ([u8; 20], usize) {
+        let (value, suffix): (u64, &[u8]) = if bytes >= 1024 * 1024 {
+            (bytes / (1024 * 1024), b" MiB")
+        } else {
+            (bytes / 1024, b" KiB")
+        };
+        let (digits, length) = Self::task_manager_count_text(value);
+        let mut output = [0u8; 20];
+        output[..length].copy_from_slice(&digits[..length]);
+        output[length..length + suffix.len()].copy_from_slice(suffix);
+        (output, length + suffix.len())
+    }
+
+    // ------------------------=
+    // FUNC: task_manager_count_text
+    // DESC: Formats an unsigned task metric into a fixed stack buffer.
+    // ------------------=
+    fn task_manager_count_text(mut value: u64) -> ([u8; 20], usize) {
+        let mut reversed = [0u8; 20];
+        let mut length = 0usize;
+        loop {
+            reversed[length] = b'0' + (value % 10) as u8;
+            length += 1;
+            value /= 10;
+            if value == 0 || length == reversed.len() {
+                break;
+            }
+        }
+        let mut output = [0u8; 20];
+        for index in 0..length {
+            output[index] = reversed[length - index - 1];
+        }
+        (output, length)
+    }
+
+    // ------------------------=
+    // FUNC: task_manager_percent_text
+    // DESC: Formats one bounded CPU share as a percentage.
+    // ------------------=
+    fn task_manager_percent_text(value: usize) -> ([u8; 20], usize) {
+        let (digits, length) = Self::task_manager_count_text(value.min(100) as u64);
+        let mut output = [0u8; 20];
+        output[..length].copy_from_slice(&digits[..length]);
+        output[length] = b'%';
+        (output, length + 1)
+    }
+
+    // ------------------------=
+    // FUNC: task_manager_task_name
+    // DESC: Resolves stable task identities to concise first-class display names.
+    // ------------------=
+    fn task_manager_task_name(service: u32, image: u32) -> &'static [u8] {
+        match image {
+            crate::runtime::task_manager::IMAGE_FILE_NAVIGATOR => b"File Navigator",
+            crate::runtime::task_manager::IMAGE_TEXT_EDITOR => b"Text Editor",
+            crate::runtime::task_manager::IMAGE_COMMAND_WINDOW => b"Command Window",
+            crate::runtime::task_manager::IMAGE_TASK_MANAGER => b"Task Manager",
+            _ if service != 0 => b"System Service",
+            _ => b"Application",
+        }
+    }
+
+    // ------------------------=
+    // FUNC: task_manager_state_text
+    // DESC: Maps typed execution state to a compact status label.
+    // ------------------=
+    fn task_manager_state_text(state: crate::runtime::execution::ContextState) -> &'static [u8] {
+        match state {
+            crate::runtime::execution::ContextState::Defined => b"Defined",
+            crate::runtime::execution::ContextState::Runnable => b"Ready",
+            crate::runtime::execution::ContextState::Running => b"Running",
+            crate::runtime::execution::ContextState::Waiting => b"Paused",
+            crate::runtime::execution::ContextState::Stopped => b"Stopped",
+            crate::runtime::execution::ContextState::Failed => b"Failed",
         }
     }
 
@@ -3513,6 +3970,8 @@ impl super::DisplayDevice {
                     editor_dialog,
                     editor_dialog_input,
                     editor_dialog_focus,
+                    0,
+                    false,
                 );
             }
             if editor_window.visible && !active_editor {
@@ -3533,6 +3992,8 @@ impl super::DisplayDevice {
                     editor_dialog,
                     editor_dialog_input,
                     editor_dialog_focus,
+                    0,
+                    false,
                 );
             }
             if task_manager_window.visible && screen != 10 {
@@ -3553,6 +4014,8 @@ impl super::DisplayDevice {
                     editor_dialog,
                     editor_dialog_input,
                     editor_dialog_focus,
+                    focus,
+                    false,
                 );
             }
             if screen == 2 {
@@ -3592,6 +4055,8 @@ impl super::DisplayDevice {
                 editor_dialog,
                 editor_dialog_input,
                 editor_dialog_focus,
+                focus,
+                screen == 10 && menu_kind == 10,
             );
         }
 
@@ -4357,7 +4822,12 @@ impl super::DisplayDevice {
             );
             self.render_network_settings_dashboard(settings_window, scale, connectivity, input);
             self.clear_render_clip();
-            self.render_settings_overflow_chrome(geometry, settings_window, scale, (outline_r, outline_g, outline_b));
+            self.render_settings_overflow_chrome(
+                geometry,
+                settings_window,
+                scale,
+                (outline_r, outline_g, outline_b),
+            );
             return;
         }
         if focus == 7 {
@@ -4369,7 +4839,12 @@ impl super::DisplayDevice {
             );
             self.render_node_settings_dashboard(settings_window, scale);
             self.clear_render_clip();
-            self.render_settings_overflow_chrome(geometry, settings_window, scale, (outline_r, outline_g, outline_b));
+            self.render_settings_overflow_chrome(
+                geometry,
+                settings_window,
+                scale,
+                (outline_r, outline_g, outline_b),
+            );
             return;
         }
         let rows: [(&[u8], &[u8]); 8] = match focus.min(9) {
@@ -4701,7 +5176,12 @@ impl super::DisplayDevice {
             }
         }
         self.clear_render_clip();
-        self.render_settings_overflow_chrome(geometry, settings_window, scale, (outline_r, outline_g, outline_b));
+        self.render_settings_overflow_chrome(
+            geometry,
+            settings_window,
+            scale,
+            (outline_r, outline_g, outline_b),
+        );
     }
 
     // ------------------------=
@@ -4773,65 +5253,345 @@ impl super::DisplayDevice {
         let geometry = layout.network_settings_geometry(settings_window);
         let snapshot = crate::runtime::with_runtime(|runtime| {
             let discovered = runtime.nodes.discovered_nodes().iter().flatten().count();
-            let trusted = runtime.nodes.discovered_nodes().iter().flatten().filter(|node| {
-                matches!(node.trust, crate::runtime::node::types::TrustState::Trusted | crate::runtime::node::types::TrustState::Restricted)
-            }).count();
-            let online = runtime.nodes.discovered_nodes().iter().flatten().filter(|node| node.reachability == crate::runtime::node::types::Reachability::Online).count();
-            let pairings = runtime.nodes.pairings().iter().flatten().filter(|pairing| pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation).count();
-            let members = runtime.nodes.mesh_members().iter().flatten().filter(|member| member.enabled).count();
-            let sessions = runtime.nodes.sessions().iter().flatten().filter(|session| session.state == crate::runtime::node::types::SessionState::Established).count();
-            let grants = runtime.nodes.remote_grants().iter().flatten().filter(|grant| !grant.revoked).count();
+            let trusted = runtime
+                .nodes
+                .discovered_nodes()
+                .iter()
+                .flatten()
+                .filter(|node| {
+                    matches!(
+                        node.trust,
+                        crate::runtime::node::types::TrustState::Trusted
+                            | crate::runtime::node::types::TrustState::Restricted
+                    )
+                })
+                .count();
+            let online = runtime
+                .nodes
+                .discovered_nodes()
+                .iter()
+                .flatten()
+                .filter(|node| {
+                    node.reachability == crate::runtime::node::types::Reachability::Online
+                })
+                .count();
+            let pairings = runtime
+                .nodes
+                .pairings()
+                .iter()
+                .flatten()
+                .filter(|pairing| {
+                    pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation
+                })
+                .count();
+            let members = runtime
+                .nodes
+                .mesh_members()
+                .iter()
+                .flatten()
+                .filter(|member| member.enabled)
+                .count();
+            let sessions = runtime
+                .nodes
+                .sessions()
+                .iter()
+                .flatten()
+                .filter(|session| {
+                    session.state == crate::runtime::node::types::SessionState::Established
+                })
+                .count();
+            let grants = runtime
+                .nodes
+                .remote_grants()
+                .iter()
+                .flatten()
+                .filter(|grant| !grant.revoked)
+                .count();
             let audit = runtime.nodes.audit_records().iter().flatten().count();
-            (runtime.nodes.local_id().is_some(), discovered, trusted, online, pairings, members, sessions, grants, audit)
-        }).unwrap_or((false, 0, 0, 0, 0, 0, 0, 0, 0));
-        let (identity_ready, discovered, trusted, online, pairings, members, sessions, grants, audit) = snapshot;
-        let (outline_r, outline_g, outline_b) = self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-        let (selection_r, selection_g, selection_b) = self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
+            (
+                runtime.nodes.local_id().is_some(),
+                discovered,
+                trusted,
+                online,
+                pairings,
+                members,
+                sessions,
+                grants,
+                audit,
+            )
+        })
+        .unwrap_or((false, 0, 0, 0, 0, 0, 0, 0, 0));
+        let (
+            identity_ready,
+            discovered,
+            trusted,
+            online,
+            pairings,
+            members,
+            sessions,
+            grants,
+            audit,
+        ) = snapshot;
+        let (outline_r, outline_g, outline_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
+        let (selection_r, selection_g, selection_b) =
+            self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
         for card in [geometry.summary, geometry.main, geometry.sidebar] {
-            self.fill_rounded_rect_alpha(card.x.max(0) as usize, card.y.max(0) as usize, card.width as usize, card.height as usize, 12 * scale, 4, 18, 31, 224);
-            self.outline_rounded_rect(card.x.max(0) as usize, card.y.max(0) as usize, card.width as usize, card.height as usize, 12 * scale, outline_r / 2, outline_g / 2, outline_b / 2);
+            self.fill_rounded_rect_alpha(
+                card.x.max(0) as usize,
+                card.y.max(0) as usize,
+                card.width as usize,
+                card.height as usize,
+                12 * scale,
+                4,
+                18,
+                31,
+                224,
+            );
+            self.outline_rounded_rect(
+                card.x.max(0) as usize,
+                card.y.max(0) as usize,
+                card.width as usize,
+                card.height as usize,
+                12 * scale,
+                outline_r / 2,
+                outline_g / 2,
+                outline_b / 2,
+            );
         }
         let page = settings_window.expanded_row.unwrap_or(0).min(4);
-        let tabs: [&[u8]; 5] = [b"TRUSTED NODES", b"PAIR NODE", b"MESH HEALTH", b"ACCESS POLICY", b"SECURITY AUDIT"];
+        let tabs: [&[u8]; 5] = [
+            b"TRUSTED NODES",
+            b"PAIR NODE",
+            b"MESH HEALTH",
+            b"ACCESS POLICY",
+            b"SECURITY AUDIT",
+        ];
         for index in 0..5 {
             let tab = geometry.tabs[index];
             let active = page == index;
-            self.fill_rounded_rect_alpha(tab.x.max(0) as usize, tab.y.max(0) as usize, tab.width as usize, tab.height as usize, 7 * scale, if active { selection_r } else { 5 }, if active { selection_g } else { 20 }, if active { selection_b } else { 34 }, 228);
-            self.outline_rounded_rect(tab.x.max(0) as usize, tab.y.max(0) as usize, tab.width as usize, tab.height as usize, 7 * scale, if active { outline_r } else { outline_r / 2 }, if active { outline_g } else { outline_g / 2 }, if active { outline_b } else { outline_b / 2 });
-            self.ui_text_centered(tab.x.max(0) as usize, tab.width as usize, tab.y.max(0) as usize + 9 * scale, tabs[index], if active { 242 } else { 166 }, if active { 248 } else { 190 }, if active { 252 } else { 207 }, 1);
+            self.fill_rounded_rect_alpha(
+                tab.x.max(0) as usize,
+                tab.y.max(0) as usize,
+                tab.width as usize,
+                tab.height as usize,
+                7 * scale,
+                if active { selection_r } else { 5 },
+                if active { selection_g } else { 20 },
+                if active { selection_b } else { 34 },
+                228,
+            );
+            self.outline_rounded_rect(
+                tab.x.max(0) as usize,
+                tab.y.max(0) as usize,
+                tab.width as usize,
+                tab.height as usize,
+                7 * scale,
+                if active { outline_r } else { outline_r / 2 },
+                if active { outline_g } else { outline_g / 2 },
+                if active { outline_b } else { outline_b / 2 },
+            );
+            self.ui_text_centered(
+                tab.x.max(0) as usize,
+                tab.width as usize,
+                tab.y.max(0) as usize + 9 * scale,
+                tabs[index],
+                if active { 242 } else { 166 },
+                if active { 248 } else { 190 },
+                if active { 252 } else { 207 },
+                1,
+            );
         }
         let summary_left = geometry.summary.x.max(0) as usize;
         let summary_top = geometry.summary.y.max(0) as usize;
-        self.authentication_icon(summary_left + 36 * scale, summary_top + geometry.summary.height as usize / 2, 6, 44 * scale, true);
-        self.ui_text_strong(summary_left + 74 * scale, summary_top + 14 * scale, b"NODE IDENTITY", outline_r, outline_g, outline_b, 1);
-        self.ui_text_strong(summary_left + 74 * scale, summary_top + 39 * scale, if identity_ready { b"Cryptographic identity ready" } else { b"Identity unavailable" }, 239, 246, 251, 1);
+        self.authentication_icon(
+            summary_left + 36 * scale,
+            summary_top + geometry.summary.height as usize / 2,
+            6,
+            44 * scale,
+            true,
+        );
+        self.ui_text_strong(
+            summary_left + 74 * scale,
+            summary_top + 14 * scale,
+            b"NODE IDENTITY",
+            outline_r,
+            outline_g,
+            outline_b,
+            1,
+        );
+        self.ui_text_strong(
+            summary_left + 74 * scale,
+            summary_top + 39 * scale,
+            if identity_ready {
+                b"Cryptographic identity ready"
+            } else {
+                b"Identity unavailable"
+            },
+            239,
+            246,
+            251,
+            1,
+        );
         let labels: [[&[u8]; 2]; 6] = match page {
-            0 => [[b"DISCOVERED", b"Observed, not trusted"], [b"TRUSTED", b"Explicit relationships"], [b"ONLINE", b"Authenticated reachability"], [b"SESSIONS", b"Mutually authenticated"], [b"AUTHORITY", b"Capability scoped"], [b"REFRESH", b"Discover local nodes"]],
-            1 => [[b"SELECT NODE", b"Choose an untrusted peer"], [b"VERIFY IDENTITY", b"Compare fingerprint"], [b"PAIRING CODE", b"Confirm on both nodes"], [b"CONFIRM", b"Trusted UI required"], [b"CANCEL", b"Grant no authority"], [b"PAIRING STATE", b"Short lived transaction"]],
-            2 => [[b"MEMBERS", b"Explicit domain membership"], [b"ONLINE", b"Recent authenticated heartbeat"], [b"DEGRADED", b"Partial availability"], [b"OFFLINE", b"State retained safely"], [b"LEAVE DOMAIN", b"Preserve node trust"], [b"DIAGNOSTICS", b"Health and compatibility"]],
-            3 => [[b"OBJECT ACCESS", b"Deny by default"], [b"REMOTE OPERATIONS", b"Scoped capabilities"], [b"AI CONTEXT", b"No ambient sharing"], [b"RESOURCE USE", b"Separate milestone"], [b"LEASE", b"Expiry enforced"], [b"COMMIT POLICY", b"Persist then announce"]],
-            _ => [[b"TRUST EVENTS", b"Structured records"], [b"PAIRING EVENTS", b"Correlation preserved"], [b"SESSION EVENTS", b"No secret material"], [b"POLICY EVENTS", b"Auditable changes"], [b"EXPORT", b"Typed projection"], [b"REFRESH", b"Read durable records"]],
+            0 => [
+                [b"DISCOVERED", b"Observed, not trusted"],
+                [b"TRUSTED", b"Explicit relationships"],
+                [b"ONLINE", b"Authenticated reachability"],
+                [b"SESSIONS", b"Mutually authenticated"],
+                [b"AUTHORITY", b"Capability scoped"],
+                [b"REFRESH", b"Discover local nodes"],
+            ],
+            1 => [
+                [b"SELECT NODE", b"Choose an untrusted peer"],
+                [b"VERIFY IDENTITY", b"Compare fingerprint"],
+                [b"PAIRING CODE", b"Confirm on both nodes"],
+                [b"CONFIRM", b"Trusted UI required"],
+                [b"CANCEL", b"Grant no authority"],
+                [b"PAIRING STATE", b"Short lived transaction"],
+            ],
+            2 => [
+                [b"MEMBERS", b"Explicit domain membership"],
+                [b"ONLINE", b"Recent authenticated heartbeat"],
+                [b"DEGRADED", b"Partial availability"],
+                [b"OFFLINE", b"State retained safely"],
+                [b"LEAVE DOMAIN", b"Preserve node trust"],
+                [b"DIAGNOSTICS", b"Health and compatibility"],
+            ],
+            3 => [
+                [b"OBJECT ACCESS", b"Deny by default"],
+                [b"REMOTE OPERATIONS", b"Scoped capabilities"],
+                [b"AI CONTEXT", b"No ambient sharing"],
+                [b"RESOURCE USE", b"Separate milestone"],
+                [b"LEASE", b"Expiry enforced"],
+                [b"COMMIT POLICY", b"Persist then announce"],
+            ],
+            _ => [
+                [b"TRUST EVENTS", b"Structured records"],
+                [b"PAIRING EVENTS", b"Correlation preserved"],
+                [b"SESSION EVENTS", b"No secret material"],
+                [b"POLICY EVENTS", b"Auditable changes"],
+                [b"EXPORT", b"Typed projection"],
+                [b"REFRESH", b"Read durable records"],
+            ],
         };
-        let values = [discovered, trusted, online, sessions, grants, if page == 1 { pairings } else if page == 2 { members } else { audit }];
+        let values = [
+            discovered,
+            trusted,
+            online,
+            sessions,
+            grants,
+            if page == 1 {
+                pairings
+            } else if page == 2 {
+                members
+            } else {
+                audit
+            },
+        ];
         for index in 0..6 {
             let card = geometry.controls[index];
             let active = settings_window.control_focus.min(5) == index;
-            self.fill_rounded_rect_alpha(card.x.max(0) as usize, card.y.max(0) as usize, card.width as usize, card.height as usize, 8 * scale, if active { selection_r } else { 6 }, if active { selection_g } else { 24 }, if active { selection_b } else { 39 }, 230);
-            self.outline_rounded_rect(card.x.max(0) as usize, card.y.max(0) as usize, card.width as usize, card.height as usize, 8 * scale, if active { outline_r } else { outline_r / 2 }, if active { outline_g } else { outline_g / 2 }, if active { outline_b } else { outline_b / 2 });
-            self.ui_text_strong(card.x.max(0) as usize + 15 * scale, card.y.max(0) as usize + 9 * scale, labels[index][0], 220, 239, 249, 1);
-            self.ui_text(card.x.max(0) as usize + 15 * scale, card.y.max(0) as usize + 31 * scale, labels[index][1], 145, 174, 193, 1);
+            self.fill_rounded_rect_alpha(
+                card.x.max(0) as usize,
+                card.y.max(0) as usize,
+                card.width as usize,
+                card.height as usize,
+                8 * scale,
+                if active { selection_r } else { 6 },
+                if active { selection_g } else { 24 },
+                if active { selection_b } else { 39 },
+                230,
+            );
+            self.outline_rounded_rect(
+                card.x.max(0) as usize,
+                card.y.max(0) as usize,
+                card.width as usize,
+                card.height as usize,
+                8 * scale,
+                if active { outline_r } else { outline_r / 2 },
+                if active { outline_g } else { outline_g / 2 },
+                if active { outline_b } else { outline_b / 2 },
+            );
+            self.ui_text_strong(
+                card.x.max(0) as usize + 15 * scale,
+                card.y.max(0) as usize + 9 * scale,
+                labels[index][0],
+                220,
+                239,
+                249,
+                1,
+            );
+            self.ui_text(
+                card.x.max(0) as usize + 15 * scale,
+                card.y.max(0) as usize + 31 * scale,
+                labels[index][1],
+                145,
+                174,
+                193,
+                1,
+            );
             let (number, length) = Self::network_metric_text(values[index] as u64);
             let number_width = self.ui_text_width(&number[..length], 1);
-            self.ui_text(card.right().max(0) as usize - number_width - 14 * scale, card.y.max(0) as usize + 18 * scale, &number[..length], outline_r, outline_g, outline_b, 1);
+            self.ui_text(
+                card.right().max(0) as usize - number_width - 14 * scale,
+                card.y.max(0) as usize + 18 * scale,
+                &number[..length],
+                outline_r,
+                outline_g,
+                outline_b,
+                1,
+            );
         }
         let art = geometry.sidebar;
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-        self.paint_bitmap_fit_rect(NODE_TRUST_TOPOLOGY_BMP, art.x.max(0) as usize + 2 * scale, art.y.max(0) as usize + 2 * scale, (art.width as usize).saturating_sub(4 * scale), (art.height as usize).saturating_sub(4 * scale));
+        self.paint_bitmap_fit_rect(
+            NODE_TRUST_TOPOLOGY_BMP,
+            art.x.max(0) as usize + 2 * scale,
+            art.y.max(0) as usize + 2 * scale,
+            (art.width as usize).saturating_sub(4 * scale),
+            (art.height as usize).saturating_sub(4 * scale),
+        );
         #[cfg(target_arch = "x86")]
-        self.fill_rect(art.x.max(0) as usize + 2 * scale, art.y.max(0) as usize + 2 * scale, (art.width as usize).saturating_sub(4 * scale), (art.height as usize).saturating_sub(4 * scale), 2, 13, 25);
-        self.fill_rect_alpha(art.x.max(0) as usize + 2 * scale, art.bottom().max(0) as usize - 70 * scale, (art.width as usize).saturating_sub(4 * scale), 68 * scale, 1, 11, 22, 220);
-        self.ui_text_centered(art.x.max(0) as usize, art.width as usize, art.bottom().max(0) as usize - 55 * scale, b"DISCOVERY IS NOT TRUST", 226, 241, 249, 1);
-        self.ui_text_centered(art.x.max(0) as usize, art.width as usize, art.bottom().max(0) as usize - 29 * scale, b"TRUST IS NOT AUTHORITY", outline_r, outline_g, outline_b, 1);
+        self.fill_rect(
+            art.x.max(0) as usize + 2 * scale,
+            art.y.max(0) as usize + 2 * scale,
+            (art.width as usize).saturating_sub(4 * scale),
+            (art.height as usize).saturating_sub(4 * scale),
+            2,
+            13,
+            25,
+        );
+        self.fill_rect_alpha(
+            art.x.max(0) as usize + 2 * scale,
+            art.bottom().max(0) as usize - 70 * scale,
+            (art.width as usize).saturating_sub(4 * scale),
+            68 * scale,
+            1,
+            11,
+            22,
+            220,
+        );
+        self.ui_text_centered(
+            art.x.max(0) as usize,
+            art.width as usize,
+            art.bottom().max(0) as usize - 55 * scale,
+            b"DISCOVERY IS NOT TRUST",
+            226,
+            241,
+            249,
+            1,
+        );
+        self.ui_text_centered(
+            art.x.max(0) as usize,
+            art.width as usize,
+            art.bottom().max(0) as usize - 29 * scale,
+            b"TRUST IS NOT AUTHORITY",
+            outline_r,
+            outline_g,
+            outline_b,
+            1,
+        );
     }
 
     // ------------------------=
@@ -6387,11 +7147,20 @@ impl super::DisplayDevice {
             if focus == 0 { 255 } else { 168 },
         );
         let visible = crate::ui::app_launcher::launcher_visible_count(query);
+        let presentation = crate::ui::app_launcher::launcher_presentation();
+        self.set_render_clip(
+            geometry.grid_viewport.x.max(0) as usize,
+            geometry.grid_viewport.y.max(0) as usize,
+            geometry.grid_viewport.width as usize,
+            geometry.grid_viewport.height as usize,
+        );
         for visible_index in 0..visible {
-            let column = visible_index % 6;
-            let row = visible_index / 6;
+            let slot = crate::ui::app_launcher::launcher_display_slot(visible_index, presentation);
+            let column = slot % crate::ui::app_launcher::LAUNCHER_COLUMNS;
+            let row = slot / crate::ui::app_launcher::LAUNCHER_COLUMNS;
             let cell_left = geometry.grid_left + column * geometry.grid_cell_width;
-            let cell_top = geometry.grid_top + row * geometry.grid_row_height;
+            let cell_top = (geometry.grid_top + row * geometry.grid_row_height)
+                .saturating_sub(presentation.scroll);
             let well_size = geometry
                 .grid_cell_width
                 .min(geometry.grid_row_height)
@@ -6410,6 +7179,7 @@ impl super::DisplayDevice {
                 if selected { 255 } else { 146 },
             );
         }
+        self.clear_render_clip();
         for index in 0..crate::ui::app_launcher::LAUNCHER_CATEGORIES.len() {
             let left = geometry.category_left + index * geometry.category_width + 6 * scale;
             let width = geometry.category_width.saturating_sub(12 * scale);
@@ -6434,6 +7204,7 @@ impl super::DisplayDevice {
     fn paint_app_launcher(&mut self, scale: usize, query: &[u8], focus: usize) {
         let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
             .app_launcher_geometry();
+        let presentation = crate::ui::app_launcher::launcher_presentation();
         let panel_left = geometry.panel.x.max(0) as usize;
         let panel_top = geometry.panel.y.max(0) as usize;
         let panel_width = geometry.panel.width as usize;
@@ -6582,15 +7353,26 @@ impl super::DisplayDevice {
         );
 
         let visible = crate::ui::app_launcher::launcher_visible_count(query);
+        self.set_render_clip(
+            geometry.grid_viewport.x.max(0) as usize,
+            geometry.grid_viewport.y.max(0) as usize,
+            geometry.grid_viewport.width as usize,
+            geometry.grid_viewport.height as usize,
+        );
         for visible_index in 0..visible {
             let Some(entry) = crate::ui::app_launcher::launcher_visible_entry(query, visible_index)
             else {
                 continue;
             };
-            let column = visible_index % 6;
-            let row = visible_index / 6;
+            if presentation.drag_moved && presentation.drag_source == Some(visible_index) {
+                continue;
+            }
+            let slot = crate::ui::app_launcher::launcher_display_slot(visible_index, presentation);
+            let column = slot % crate::ui::app_launcher::LAUNCHER_COLUMNS;
+            let row = slot / crate::ui::app_launcher::LAUNCHER_COLUMNS;
             let cell_left = geometry.grid_left + column * geometry.grid_cell_width;
-            let cell_top = geometry.grid_top + row * geometry.grid_row_height;
+            let cell_top = (geometry.grid_top + row * geometry.grid_row_height)
+                .saturating_sub(presentation.scroll);
             let selected = focus == visible_index + 1;
             let well_size = geometry
                 .grid_cell_width
@@ -6636,6 +7418,80 @@ impl super::DisplayDevice {
                 245,
                 1,
             );
+        }
+        self.clear_render_clip();
+        let scroll = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .app_launcher_scroll_geometry(visible);
+        if scroll.maximum_scroll != 0 {
+            self.fill_rounded_rect_alpha(
+                geometry.scrollbar_track.x.max(0) as usize,
+                geometry.scrollbar_track.y.max(0) as usize,
+                geometry.scrollbar_track.width as usize,
+                geometry.scrollbar_track.height as usize,
+                geometry.scrollbar_track.width as usize / 2,
+                16,
+                43,
+                65,
+                176,
+            );
+            self.fill_rounded_rect_alpha(
+                scroll.thumb.x.max(0) as usize,
+                scroll.thumb.y.max(0) as usize,
+                scroll.thumb.width as usize,
+                scroll.thumb.height as usize,
+                scroll.thumb.width as usize / 2,
+                84,
+                199,
+                249,
+                242,
+            );
+        }
+        if presentation.drag_moved {
+            if let Some(source) = presentation.drag_source {
+                if let Some(entry) = crate::ui::app_launcher::launcher_visible_entry(query, source)
+                {
+                    let ghost_size = geometry
+                        .grid_cell_width
+                        .min(geometry.grid_row_height)
+                        .saturating_mul(70)
+                        / 100;
+                    let center_x = (self.width as i32 * presentation.drag_x / 1000)
+                        .clamp(0, self.width.saturating_sub(1) as i32)
+                        as usize;
+                    let center_y = (self.height as i32 * presentation.drag_y / 1000)
+                        .clamp(0, self.height.saturating_sub(1) as i32)
+                        as usize;
+                    let left = center_x.saturating_sub(ghost_size / 2);
+                    let top = center_y.saturating_sub(ghost_size / 2);
+                    self.fill_rounded_rect_alpha(
+                        left.saturating_sub(5 * scale),
+                        top.saturating_sub(5 * scale),
+                        ghost_size + 10 * scale,
+                        ghost_size + 10 * scale,
+                        17 * scale,
+                        29,
+                        105,
+                        151,
+                        210,
+                    );
+                    self.outline_rounded_rect(
+                        left,
+                        top,
+                        ghost_size,
+                        ghost_size,
+                        13 * scale,
+                        112,
+                        220,
+                        255,
+                    );
+                    let _ = self.launcher_icon(
+                        center_x,
+                        center_y,
+                        entry.icon_role,
+                        ghost_size * 84 / 100,
+                    );
+                }
+            }
         }
         if visible == 0 {
             self.ui_text_centered_strong(
@@ -6882,6 +7738,42 @@ impl super::DisplayDevice {
                 245,
                 1,
             );
+            for (index, (label, offset)) in [
+                (b"File".as_slice(), 160usize),
+                (b"View".as_slice(), 211),
+                (b"Navigate".as_slice(), 262),
+                (b"Help".as_slice(), 347),
+            ]
+            .iter()
+            .enumerate()
+            {
+                let selected = navigator_state
+                    .and_then(|state| state.menu_open)
+                    .map(|menu| menu.index() == index + 1)
+                    .unwrap_or(false);
+                if selected {
+                    self.fill_rounded_rect_alpha(
+                        browser_left + offset * scale - 5 * scale,
+                        browser_top + 4 * scale,
+                        (label.len() * 8 + 10) * scale,
+                        26 * scale,
+                        6 * scale,
+                        selection_r,
+                        selection_g,
+                        selection_b,
+                        190,
+                    );
+                }
+                self.ui_text(
+                    browser_left + offset * scale,
+                    title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
+                    label,
+                    221,
+                    233,
+                    241,
+                    1,
+                );
+            }
             for index in 0..3usize {
                 let control_size = 20 * scale;
                 let control_left =
@@ -7483,6 +8375,80 @@ impl super::DisplayDevice {
                     1,
                 );
             }
+            if navigator_state
+                .map(|state| state.inspector_open)
+                .unwrap_or(false)
+            {
+                let preview_width = (220 * scale).min(browser_width.saturating_sub(sidebar_w) / 2);
+                let preview_left = browser_left + browser_width.saturating_sub(preview_width);
+                let preview_top = tool_top + 38 * scale;
+                let preview_height = browser_height.saturating_sub(title_h + 62 * scale);
+                self.fill_rect_alpha(
+                    preview_left,
+                    preview_top,
+                    preview_width,
+                    preview_height,
+                    5,
+                    20,
+                    34,
+                    238,
+                );
+                self.outline_rounded_rect(
+                    preview_left,
+                    preview_top,
+                    preview_width,
+                    preview_height,
+                    8 * scale,
+                    55,
+                    132,
+                    177,
+                );
+                self.ui_text_strong(
+                    preview_left + 18 * scale,
+                    preview_top + 18 * scale,
+                    b"PREVIEW",
+                    91,
+                    205,
+                    247,
+                    1,
+                );
+                let selected = navigator_state
+                    .map(|state| state.selected_index)
+                    .unwrap_or(crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION);
+                if selected == crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION {
+                    self.ui_text(
+                        preview_left + 18 * scale,
+                        preview_top + 54 * scale,
+                        b"Select an object to inspect it.",
+                        168,
+                        191,
+                        207,
+                        1,
+                    );
+                } else {
+                    self.ui_text(
+                        preview_left + 18 * scale,
+                        preview_top + 54 * scale,
+                        b"Selected object",
+                        213,
+                        228,
+                        238,
+                        1,
+                    );
+                    let mut selection_text = [0u8; 18];
+                    let selection_len =
+                        navigator_decimal(&mut selection_text, selected as usize + 1);
+                    self.ui_text(
+                        preview_left + 18 * scale,
+                        preview_top + 80 * scale,
+                        &selection_text[..selection_len],
+                        139,
+                        184,
+                        211,
+                        1,
+                    );
+                }
+            }
             if let Some(context) = navigator_state.filter(|state| state.context_menu_open) {
                 let menu = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                     .file_navigator_context_geometry(context.context_x, context.context_y);
@@ -7525,6 +8491,276 @@ impl super::DisplayDevice {
                         215,
                         231,
                         241,
+                        1,
+                    );
+                }
+            }
+            if let Some(menu) = navigator_state.and_then(|state| state.menu_open) {
+                let labels: &[&[u8]] = match menu {
+                    crate::runtime::object_navigation::FileNavigatorMenu::File => {
+                        &[b"New Window", b"Settings", b"Empty Trash", b"About"]
+                    }
+                    crate::runtime::object_navigation::FileNavigatorMenu::View => {
+                        &[b"As List", b"As Grid", b"Preview Panel Enabled"]
+                    }
+                    crate::runtime::object_navigation::FileNavigatorMenu::Navigate => &[
+                        b"Home",
+                        b"Personal Space",
+                        b"Documents",
+                        b"Downloads",
+                        b"Pictures",
+                        b"Music",
+                        b"Videos",
+                        b"Projects",
+                        b"Custom Location...",
+                    ],
+                    crate::runtime::object_navigation::FileNavigatorMenu::Help => {
+                        &[b"File Navigator Help"]
+                    }
+                };
+                let menu_rect =
+                    crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                        .file_navigator_menu_geometry(
+                            browser_left,
+                            browser_top,
+                            menu.index(),
+                            labels.len(),
+                        );
+                let menu_left = menu_rect.x.max(0) as usize;
+                let menu_top = menu_rect.y.max(0) as usize;
+                self.fill_rounded_rect_alpha(
+                    menu_left,
+                    menu_top,
+                    menu_rect.width as usize,
+                    menu_rect.height as usize,
+                    9 * scale,
+                    5,
+                    18,
+                    31,
+                    248,
+                );
+                self.outline_rounded_rect(
+                    menu_left,
+                    menu_top,
+                    menu_rect.width as usize,
+                    menu_rect.height as usize,
+                    9 * scale,
+                    74,
+                    171,
+                    218,
+                );
+                let selected = navigator_state
+                    .map(|state| state.menu_selection as usize)
+                    .unwrap_or(0);
+                for (index, label) in labels.iter().enumerate() {
+                    let row_top = menu_top + (6 + index * 30) * scale;
+                    if index == selected {
+                        self.fill_rounded_rect_alpha(
+                            menu_left + 5 * scale,
+                            row_top,
+                            menu_rect.width as usize - 10 * scale,
+                            28 * scale,
+                            5 * scale,
+                            selection_r,
+                            selection_g,
+                            selection_b,
+                            190,
+                        );
+                    }
+                    let marked = match (menu, index) {
+                        (crate::runtime::object_navigation::FileNavigatorMenu::View, 0) => {
+                            navigator_list_view
+                        }
+                        (crate::runtime::object_navigation::FileNavigatorMenu::View, 1) => {
+                            !navigator_list_view
+                        }
+                        (crate::runtime::object_navigation::FileNavigatorMenu::View, 2) => {
+                            navigator_state
+                                .map(|state| state.inspector_open)
+                                .unwrap_or(false)
+                        }
+                        _ => false,
+                    };
+                    self.ui_text(
+                        menu_left + 14 * scale,
+                        row_top + 6 * scale,
+                        if marked { b"*" } else { b"" },
+                        94,
+                        211,
+                        250,
+                        1,
+                    );
+                    self.ui_text(
+                        menu_left + 32 * scale,
+                        row_top + 6 * scale,
+                        label,
+                        220,
+                        232,
+                        240,
+                        1,
+                    );
+                }
+            }
+            if let Some(dialog) = navigator_state.and_then(|state| state.dialog_open) {
+                let dialog_rect =
+                    crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                        .file_navigator_dialog_geometry(
+                            browser_left,
+                            browser_top,
+                            browser_width,
+                            browser_height,
+                        );
+                let left = dialog_rect.x.max(0) as usize;
+                let top = dialog_rect.y.max(0) as usize;
+                let width = dialog_rect.width as usize;
+                let height = dialog_rect.height as usize;
+                self.fill_rounded_rect_alpha(left, top, width, height, 14 * scale, 4, 17, 30, 252);
+                self.outline_rounded_rect(left, top, width, height, 14 * scale, 76, 188, 235);
+                let (title, detail): (&[u8], &[u8]) = match dialog {
+                    crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash => (
+                        b"Empty Trash?",
+                        b"All objects in Trash will be permanently removed.",
+                    ),
+                    crate::runtime::object_navigation::FileNavigatorDialog::About => (
+                        b"About File Navigator",
+                        b"Browse InfinityOS objects through human Namespace references.",
+                    ),
+                    crate::runtime::object_navigation::FileNavigatorDialog::Help => (
+                        b"File Navigator Help",
+                        b"Use menus, the sidebar, or the location field to navigate.",
+                    ),
+                    crate::runtime::object_navigation::FileNavigatorDialog::Location => (
+                        b"Go to a custom location",
+                        b"Enter an absolute InfinityOS Namespace reference.",
+                    ),
+                };
+                self.ui_text_strong(left + 24 * scale, top + 22 * scale, title, 231, 239, 245, 1);
+                self.ui_text(
+                    left + 24 * scale,
+                    top + 54 * scale,
+                    detail,
+                    166,
+                    190,
+                    207,
+                    1,
+                );
+                if dialog == crate::runtime::object_navigation::FileNavigatorDialog::Location {
+                    self.fill_rounded_rect_alpha(
+                        left + 24 * scale,
+                        top + 82 * scale,
+                        width - 48 * scale,
+                        38 * scale,
+                        8 * scale,
+                        2,
+                        13,
+                        24,
+                        250,
+                    );
+                    self.outline_rounded_rect(
+                        left + 24 * scale,
+                        top + 82 * scale,
+                        width - 48 * scale,
+                        38 * scale,
+                        8 * scale,
+                        72,
+                        188,
+                        235,
+                    );
+                    let path_text = navigator_state
+                        .map(|state| state.editor_text)
+                        .unwrap_or(crate::runtime::object_navigation::ByteText::empty());
+                    let path = path_text.as_bytes();
+                    self.ui_text(left + 36 * scale, top + 93 * scale, path, 220, 232, 240, 1);
+                    self.text_field_caret(
+                        left + 36 * scale,
+                        top + 82 * scale,
+                        38 * scale,
+                        path,
+                        true,
+                        2,
+                    );
+                }
+                let button_top = top + height.saturating_sub(54 * scale);
+                let two_buttons = matches!(
+                    dialog,
+                    crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash
+                        | crate::runtime::object_navigation::FileNavigatorDialog::Location
+                );
+                if two_buttons {
+                    let half = width / 2;
+                    for (index, label) in [
+                        b"Cancel".as_slice(),
+                        if dialog
+                            == crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash
+                        {
+                            b"Empty Trash"
+                        } else {
+                            b"Go"
+                        },
+                    ]
+                    .iter()
+                    .enumerate()
+                    {
+                        let button_left = left
+                            + if index == 0 {
+                                20 * scale
+                            } else {
+                                half + 6 * scale
+                            };
+                        let button_width = half.saturating_sub(26 * scale);
+                        self.fill_rounded_rect_alpha(
+                            button_left,
+                            button_top,
+                            button_width,
+                            38 * scale,
+                            8 * scale,
+                            if index == 1 { selection_r } else { 10 },
+                            if index == 1 { selection_g } else { 31 },
+                            if index == 1 { selection_b } else { 48 },
+                            235,
+                        );
+                        self.outline_rounded_rect(
+                            button_left,
+                            button_top,
+                            button_width,
+                            38 * scale,
+                            8 * scale,
+                            76,
+                            165,
+                            207,
+                        );
+                        self.ui_text_centered(
+                            button_left,
+                            button_width,
+                            button_top + 10 * scale,
+                            label,
+                            226,
+                            236,
+                            243,
+                            1,
+                        );
+                    }
+                } else {
+                    let button_left = left + width / 2 - 74 * scale;
+                    self.fill_rounded_rect_alpha(
+                        button_left,
+                        button_top,
+                        148 * scale,
+                        38 * scale,
+                        8 * scale,
+                        selection_r,
+                        selection_g,
+                        selection_b,
+                        225,
+                    );
+                    self.ui_text_centered(
+                        button_left,
+                        148 * scale,
+                        button_top + 10 * scale,
+                        b"Close",
+                        230,
+                        239,
+                        245,
                         1,
                     );
                 }
@@ -8147,7 +9383,12 @@ pub fn system_ui_present(
             ) ^ crate::runtime::ai::with_ai_runtime(|runtime| {
                 let hash = runtime.chat.state_hash();
                 hash as u32 ^ (hash >> 32) as u32
-            }) ^ crate::ui::text_input::presentation_hash();
+            }) ^ crate::ui::text_input::presentation_hash()
+                ^ if screen == 10 {
+                    u32::from(clock.second)
+                } else {
+                    0
+                };
             let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
             let focus_changed = console.last_system_focus != focus;
             let clock_changed = console.last_system_clock != clock;
@@ -8202,6 +9443,7 @@ pub fn system_ui_present(
                     menu_kind,
                     focus_changed,
                 );
+            let launcher_state = crate::ui::app_launcher::launcher_state_hash();
             let structural_change_without_window = (!bounded_menu_change
                 && (console.last_system_screen != screen
                     || crate::ui::redraw::focus_change_requires_structural_redraw(
@@ -8226,6 +9468,7 @@ pub fn system_ui_present(
                     screen,
                     clock_changed,
                 )
+                || (screen == 7 && console.last_launcher_state != launcher_state)
                 || settings_content_changed;
             let window_moved =
                 console.last_home_window_x != window_x || console.last_home_window_y != window_y;
@@ -8481,6 +9724,8 @@ pub fn system_ui_present(
                     editor_dialog,
                     editor_dialog_input,
                     editor_dialog_focus,
+                    focus,
+                    screen == 10 && menu_kind == 10,
                 );
             } else if crate::ui::redraw::desktop_chat_content_requires_bounded_redraw(
                 screen,
@@ -8604,6 +9849,7 @@ pub fn system_ui_present(
             console.last_background_opacity = background_opacity;
             console.last_background_blur = background_blur;
             console.last_system_content = content;
+            console.last_launcher_state = launcher_state;
             console.last_system_validation_error = validation_error;
             console.last_home_window_x = window_x;
             console.last_home_window_y = window_y;

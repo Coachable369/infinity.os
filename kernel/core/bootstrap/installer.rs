@@ -505,8 +505,16 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn template_text_width(&self, text: &[u8], pixels: usize, semibold: bool) -> usize {
         let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
-        let metrics = if semibold { INSTALLER_FONT_SEMIBOLD_METRICS } else { INSTALLER_FONT_METRICS };
-        let kerning = if semibold { INSTALLER_FONT_SEMIBOLD_KERN } else { INSTALLER_FONT_KERN };
+        let metrics = if semibold {
+            INSTALLER_FONT_SEMIBOLD_METRICS
+        } else {
+            INSTALLER_FONT_METRICS
+        };
+        let kerning = if semibold {
+            INSTALLER_FONT_SEMIBOLD_KERN
+        } else {
+            INSTALLER_FONT_KERN
+        };
         let mut width = 0usize;
         let mut previous = None;
         for byte in text {
@@ -521,7 +529,8 @@ impl super::DisplayDevice {
                 width,
                 font_size.scale_isize(Self::font_pair_adjustment(kerning, previous, *byte)),
             );
-            width = width.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
+            width =
+                width.saturating_add(font_size.scale_usize(metrics[*byte as usize - 32] as usize));
             previous = Some(*byte);
         }
         width
@@ -545,9 +554,21 @@ impl super::DisplayDevice {
     ) {
         let line_start = x;
         let font_size = FontSize::new(INSTALLER_FONT_NATIVE_SIZE_PX, pixels.max(1));
-        let atlas = if semibold { INSTALLER_FONT_SEMIBOLD_ATLAS } else { INSTALLER_FONT_ATLAS };
-        let metrics = if semibold { INSTALLER_FONT_SEMIBOLD_METRICS } else { INSTALLER_FONT_METRICS };
-        let kerning = if semibold { INSTALLER_FONT_SEMIBOLD_KERN } else { INSTALLER_FONT_KERN };
+        let atlas = if semibold {
+            INSTALLER_FONT_SEMIBOLD_ATLAS
+        } else {
+            INSTALLER_FONT_ATLAS
+        };
+        let metrics = if semibold {
+            INSTALLER_FONT_SEMIBOLD_METRICS
+        } else {
+            INSTALLER_FONT_METRICS
+        };
+        let kerning = if semibold {
+            INSTALLER_FONT_SEMIBOLD_KERN
+        } else {
+            INSTALLER_FONT_KERN
+        };
         let glyph_width = font_size.scale_usize(INSTALLER_FONT_CELL_WIDTH).max(1);
         let glyph_height = font_size.scale_usize(INSTALLER_FONT_CELL_HEIGHT).max(1);
         let line_advance = glyph_height.saturating_add(font_size.scale_usize(4));
@@ -569,13 +590,25 @@ impl super::DisplayDevice {
             );
             let glyph = (*byte as usize - 32) * INSTALLER_FONT_CELL_WIDTH;
             for row in 0..glyph_height {
-                let source_row = font_size.source_index(row).min(INSTALLER_FONT_CELL_HEIGHT - 1);
+                let source_row = font_size
+                    .source_index(row)
+                    .min(INSTALLER_FONT_CELL_HEIGHT - 1);
                 for column in 0..glyph_width {
-                    let source_column = font_size.source_index(column).min(INSTALLER_FONT_CELL_WIDTH - 1);
-                    let atlas_alpha = atlas[source_row * INSTALLER_FONT_CELL_WIDTH * 95 + glyph + source_column];
+                    let source_column = font_size
+                        .source_index(column)
+                        .min(INSTALLER_FONT_CELL_WIDTH - 1);
+                    let atlas_alpha =
+                        atlas[source_row * INSTALLER_FONT_CELL_WIDTH * 95 + glyph + source_column];
                     let alpha = (atlas_alpha as u16 * opacity as u16 / 255) as u8;
                     if alpha != 0 {
-                        self.blend_color((x + column) as i32, (y + row) as i32, red, green, blue, alpha);
+                        self.blend_color(
+                            (x + column) as i32,
+                            (y + row) as i32,
+                            red,
+                            green,
+                            blue,
+                            alpha,
+                        );
                     }
                 }
             }
@@ -612,7 +645,10 @@ impl super::DisplayDevice {
             if start >= text.len() {
                 break;
             }
-            let explicit_end = text[start..].iter().position(|byte| *byte == b'\n').map(|value| start + value);
+            let explicit_end = text[start..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map(|value| start + value);
             let paragraph_end = explicit_end.unwrap_or(text.len());
             let mut end = start + 1;
             let mut last_space = None;
@@ -629,9 +665,23 @@ impl super::DisplayDevice {
                 }
                 end += 1;
             }
-            self.template_text(x, y + line * line_advance, &text[start..end], red, green, blue, opacity, pixels, semibold);
+            self.template_text(
+                x,
+                y + line * line_advance,
+                &text[start..end],
+                red,
+                green,
+                blue,
+                opacity,
+                pixels,
+                semibold,
+            );
             line += 1;
-            start = if end == paragraph_end && explicit_end.is_some() { end + 1 } else { end };
+            start = if end == paragraph_end && explicit_end.is_some() {
+                end + 1
+            } else {
+                end
+            };
         }
     }
 
@@ -907,7 +957,16 @@ impl super::DisplayDevice {
         pressed: bool,
         redraw_foundation: bool,
     ) {
-        if self.installer_template_navigation(screen, focus, has_primary) {
+        if !matches!(screen, 7 | 8 | 9)
+            && self.installer_template_navigation(
+                screen,
+                focus,
+                has_primary,
+                cursor_x,
+                cursor_y,
+                pressed,
+            )
+        {
             return;
         }
         let modal_or_progress = screen == 7 || screen == 8;
@@ -1092,9 +1151,9 @@ impl super::DisplayDevice {
         );
         self.installer_button(
             310,
-            570,
+            540,
             170,
-            60,
+            55,
             b"CANCEL",
             b"Keep the disk unchanged",
             focus == 0,
@@ -1104,9 +1163,9 @@ impl super::DisplayDevice {
         );
         self.installer_button(
             520,
-            570,
+            540,
             210,
-            60,
+            55,
             b"ERASE & INSTALL",
             b"Begin installation",
             focus == 1,
@@ -1118,7 +1177,7 @@ impl super::DisplayDevice {
         self.ui_text_centered(
             left,
             width,
-            top + height.saturating_sub(27 * scale),
+            top + height.saturating_sub(18 * scale),
             hint,
             137,
             159,
@@ -1400,14 +1459,12 @@ impl super::DisplayDevice {
         cursor_y: i32,
         pressed: bool,
     ) {
-        if self.installer_template_screen(screen) {
+        // Date/time owns live form controls and a selectable map. The authored
+        // template supplies shared geometry/copy, but it must not short-circuit
+        // the functional renderer for this step.
+        if !matches!(screen, 5 | 7 | 8 | 9) && self.installer_template_screen(screen) {
             self.installer_template_live_content(
-                lines,
-                lengths,
-                line_count,
-                prompt,
-                command,
-                screen,
+                lines, lengths, line_count, prompt, command, screen,
             );
             return;
         }
@@ -1806,14 +1863,7 @@ impl super::DisplayDevice {
             crate::ui::installer_template::InstallerTemplateRole::Title,
         )
         .unwrap_or(b"HOW INFINITY POOL WORKS");
-        self.installer_text_strong(
-            left + inset,
-            header_y,
-            screen_title,
-            220,
-            230,
-            241,
-        );
+        self.installer_text_strong(left + inset, header_y, screen_title, 220, 230, 241);
         let section = b"GUIDED SETUP";
         let section_width = self.installer_text_width(section, true);
         self.installer_text_strong(
@@ -2858,14 +2908,7 @@ impl super::DisplayDevice {
             crate::ui::installer_template::InstallerTemplateRole::Title,
         )
         .unwrap_or(b"WELCOME TO INFINITYOS");
-        self.installer_text_strong(
-            left + inset,
-            header_y,
-            screen_title,
-            220,
-            230,
-            241,
-        );
+        self.installer_text_strong(left + inset, header_y, screen_title, 220, 230, 241);
         let section = b"GUIDED SETUP";
         let section_width = self.installer_text_width(section, true);
         let section_x = left + width.saturating_sub(inset + section_width + 30);
@@ -3788,15 +3831,50 @@ impl super::DisplayDevice {
             204,
             221,
         );
-        let instruction = b"CLICK MAP  |  LEFT / RIGHT";
-        let instruction_width = self.installer_text_width(instruction, false);
+        let zone_label = Self::installer_time_zone_label(date_time.time_zone_id);
+        let offset = &zone_label[..zone_label.len().min(9)];
+        let offset_width = self.installer_text_width(offset, false) + 18 * scale;
+        let offset_left = art_left + art_width.saturating_sub(22 * scale + offset_width);
+        let offset_top = art_top + art_height.saturating_sub(38 * scale);
+        self.fill_rounded_rect_alpha(
+            offset_left,
+            offset_top,
+            offset_width,
+            27 * scale,
+            9 * scale,
+            5,
+            15,
+            27,
+            255,
+        );
+        self.fill_rounded_rect_alpha(
+            offset_left + 2 * scale,
+            offset_top + 2 * scale,
+            offset_width.saturating_sub(4 * scale),
+            12 * scale,
+            7 * scale,
+            12,
+            36,
+            55,
+            96,
+        );
+        self.outline_rounded_rect(
+            offset_left,
+            offset_top,
+            offset_width,
+            27 * scale,
+            9 * scale,
+            40,
+            181,
+            231,
+        );
         self.installer_text(
-            art_left + art_width.saturating_sub(22 * scale + instruction_width),
-            art_top + art_height.saturating_sub(31 * scale),
-            instruction,
-            84,
-            187,
-            229,
+            offset_left + 9 * scale,
+            offset_top + 6 * scale,
+            offset,
+            156,
+            232,
+            255,
         );
         self.installer_text(
             left + width.saturating_sub(inset + self.installer_text_width(b"05", false)),

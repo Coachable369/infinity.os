@@ -1,8 +1,8 @@
+use super::component_manifest;
 use super::{
     BlockDevice, CurrentLayout, DateTimeConfiguration, DestructiveConsequence, PoolPlan, SpacePlan,
     StorageDevice, StorageError, StorageProfile, StorageProvisioningPlan, StorageStrategy,
 };
-use super::component_manifest;
 
 #[cfg(target_arch = "x86_64")]
 const ESP_IMAGE: &[u8] = include_bytes!("../../build/x86_64/installed-esp.img");

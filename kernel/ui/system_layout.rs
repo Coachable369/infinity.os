@@ -26,6 +26,9 @@ pub enum DesktopTarget {
     HomeTitle,
     HomeControl(usize),
     HomeResize(usize),
+    HomeMenu(usize),
+    HomeMenuItem(usize),
+    HomeDialogAction(usize),
     HomeToolbar(usize),
     HomeLocation,
     HomeSidebar(usize),
@@ -61,6 +64,8 @@ pub enum AppLauncherTarget {
     Search,
     App(usize),
     Category(usize),
+    ScrollbarThumb,
+    ScrollbarTrack,
     Close,
     DockToggle,
     Panel,
@@ -164,10 +169,18 @@ pub struct AppLauncherGeometry {
     pub grid_top: usize,
     pub grid_cell_width: usize,
     pub grid_row_height: usize,
+    pub grid_viewport: Rect,
+    pub scrollbar_track: Rect,
     pub category_left: usize,
     pub category_top: usize,
     pub category_width: usize,
     pub category_height: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AppLauncherScrollGeometry {
+    pub maximum_scroll: usize,
+    pub thumb: Rect,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -285,6 +298,154 @@ pub struct SystemLayout {
 }
 
 impl SystemLayout {
+    // ------------------------=
+    // FUNC: file_navigator_menu_geometry
+    // DESC: Returns the shared app-local drop-down bounds for one File Navigator menu.
+    // ------------------=
+    pub fn file_navigator_menu_geometry(
+        self,
+        browser_left: usize,
+        browser_top: usize,
+        menu: usize,
+        item_count: usize,
+    ) -> Rect {
+        let (offset, width) = match menu {
+            1 => (156usize, 190usize),
+            2 => (207, 190),
+            3 => (258, 224),
+            _ => (343, 196),
+        };
+        rect(
+            browser_left + offset * self.scale,
+            browser_top + 32 * self.scale,
+            width * self.scale,
+            (12 + item_count * 30) * self.scale,
+        )
+    }
+
+    // ------------------------=
+    // FUNC: file_navigator_dialog_geometry
+    // DESC: Centers a bounded modal surface within the active File Navigator window.
+    // ------------------=
+    pub fn file_navigator_dialog_geometry(
+        self,
+        browser_left: usize,
+        browser_top: usize,
+        browser_width: usize,
+        browser_height: usize,
+    ) -> Rect {
+        let width = (460 * self.scale).min(browser_width.saturating_sub(32 * self.scale));
+        let height = (218 * self.scale).min(browser_height.saturating_sub(32 * self.scale));
+        rect(
+            browser_left + browser_width.saturating_sub(width) / 2,
+            browser_top + browser_height.saturating_sub(height) / 2,
+            width,
+            height,
+        )
+    }
+
+    // ------------------------=
+    // FUNC: file_navigator_overlay_target
+    // DESC: Resolves app menu labels, open menu rows, and modal actions before underlying window controls.
+    // ------------------=
+    pub fn file_navigator_overlay_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        window_maximized: bool,
+        menu_open: usize,
+        menu_items: usize,
+        dialog_open: usize,
+    ) -> Option<DesktopTarget> {
+        let point = self.point(normalized_x, normalized_y);
+        let (left, top, width, height) = self.home_window_geometry_sized(
+            window_x,
+            window_y,
+            window_width,
+            window_height,
+            window_maximized,
+        );
+        if dialog_open != 0 {
+            let dialog = self.file_navigator_dialog_geometry(left, top, width, height);
+            if dialog_open == 4 {
+                let field = rect(
+                    dialog.x.max(0) as usize + 24 * self.scale,
+                    dialog.y.max(0) as usize + 82 * self.scale,
+                    dialog.width as usize - 48 * self.scale,
+                    38 * self.scale,
+                );
+                if field.contains(point) {
+                    return Some(DesktopTarget::HomeDialogAction(2));
+                }
+            }
+            let button_top = dialog.bottom().saturating_sub((54 * self.scale) as i32);
+            if matches!(dialog_open, 1 | 4) {
+                let half = dialog.width as usize / 2;
+                let cancel = rect(
+                    dialog.x.max(0) as usize + 20 * self.scale,
+                    button_top.max(0) as usize,
+                    half.saturating_sub(26 * self.scale),
+                    38 * self.scale,
+                );
+                let primary = rect(
+                    dialog.x.max(0) as usize + half + 6 * self.scale,
+                    button_top.max(0) as usize,
+                    half.saturating_sub(26 * self.scale),
+                    38 * self.scale,
+                );
+                if cancel.contains(point) {
+                    return Some(DesktopTarget::HomeDialogAction(1));
+                }
+                if primary.contains(point) {
+                    return Some(DesktopTarget::HomeDialogAction(0));
+                }
+            } else {
+                let close = rect(
+                    dialog.x.max(0) as usize + dialog.width as usize / 2 - 74 * self.scale,
+                    button_top.max(0) as usize,
+                    148 * self.scale,
+                    38 * self.scale,
+                );
+                if close.contains(point) {
+                    return Some(DesktopTarget::HomeDialogAction(1));
+                }
+            }
+            return dialog.contains(point).then_some(DesktopTarget::HomeContent);
+        }
+        if menu_open != 0 {
+            let menu = self.file_navigator_menu_geometry(left, top, menu_open, menu_items);
+            if menu.contains(point) {
+                let row_top = menu.y + (6 * self.scale) as i32;
+                if point.y >= row_top {
+                    let row = (point.y - row_top) as usize / (30 * self.scale).max(1);
+                    if row < menu_items {
+                        return Some(DesktopTarget::HomeMenuItem(row));
+                    }
+                }
+                return Some(DesktopTarget::HomeContent);
+            }
+        }
+        for (index, (offset, width)) in [(156usize, 46usize), (207, 46), (258, 80), (343, 46)]
+            .iter()
+            .enumerate()
+        {
+            if rect(
+                left + offset * self.scale,
+                top + 4 * self.scale,
+                width * self.scale,
+                27 * self.scale,
+            )
+            .contains(point)
+            {
+                return Some(DesktopTarget::HomeMenu(index + 1));
+            }
+        }
+        None
+    }
     // ------------------------=
     // FUNC: new
     // DESC: Creates resolution-aware system UI hit geometry for one framebuffer.
@@ -532,7 +693,9 @@ impl SystemLayout {
             }
         }
         if step > 0 {
-            if let Some(back) = self.onboarding_template_rect(step, InstallerTemplateRole::BackButton) {
+            if let Some(back) =
+                self.onboarding_template_rect(step, InstallerTemplateRole::BackButton)
+            {
                 if back.contains(point) {
                     return Some(OnboardingTarget::Back);
                 }
@@ -654,18 +817,19 @@ impl SystemLayout {
     // FUNC: onboarding_template_rect
     // DESC: Resolves one saved OS configuration element into shared framebuffer hit geometry.
     // ------------------=
-    fn onboarding_template_rect(
-        self,
-        step: usize,
-        role: InstallerTemplateRole,
-    ) -> Option<Rect> {
+    fn onboarding_template_rect(self, step: usize, role: InstallerTemplateRole) -> Option<Rect> {
         let authored = crate::ui::installer_layout::configuration_template_rect(
             step,
             role,
             self.width,
             self.height,
         )?;
-        Some(rect(authored.left, authored.top, authored.width, authored.height))
+        Some(rect(
+            authored.left,
+            authored.top,
+            authored.width,
+            authored.height,
+        ))
     }
 
     // ------------------------=
@@ -992,9 +1156,16 @@ impl SystemLayout {
             .min(available_height)
             .max(1);
         let panel_left = self.width.saturating_sub(panel_width) / 2;
-        let panel_top = dock_top
+        let final_panel_top = dock_top
             .saturating_sub(14 * self.scale)
             .saturating_sub(panel_height);
+        let transition = usize::from(super::app_launcher::launcher_presentation().transition);
+        let panel_top = final_panel_top.saturating_add(
+            panel_height
+                .saturating_add(18 * self.scale)
+                .saturating_mul(255usize.saturating_sub(transition))
+                / 255,
+        );
         let panel = rect(panel_left, panel_top, panel_width, panel_height);
         let search_width = panel_width * 62 / 100;
         let search_height = (50 * self.scale)
@@ -1010,6 +1181,8 @@ impl SystemLayout {
         let inner_width = panel_width.saturating_sub(inset * 2);
         let grid_top = panel_top + panel_height * 21 / 100;
         let grid_row_height = panel_height * 22 / 100;
+        let grid_bottom = panel_top + panel_height * 69 / 100;
+        let scrollbar_width = (7 * self.scale).max(5);
         let category_left = panel_left + inset;
         let category_width = inner_width / 5;
         AppLauncherGeometry {
@@ -1023,12 +1196,63 @@ impl SystemLayout {
             ),
             grid_left: panel_left + inset,
             grid_top,
-            grid_cell_width: inner_width / 6,
+            grid_cell_width: inner_width.saturating_sub(20 * self.scale) / 6,
             grid_row_height,
+            grid_viewport: rect(
+                panel_left + inset,
+                grid_top,
+                inner_width.saturating_sub(20 * self.scale),
+                grid_bottom.saturating_sub(grid_top),
+            ),
+            scrollbar_track: rect(
+                panel_left + panel_width.saturating_sub(inset + scrollbar_width),
+                grid_top,
+                scrollbar_width,
+                grid_bottom.saturating_sub(grid_top),
+            ),
             category_left,
             category_top: panel_top + panel_height * 76 / 100,
             category_width,
             category_height: panel_height * 16 / 100,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: app_launcher_scroll_geometry
+    // DESC: Computes bounded application content and proportional smooth-scroll thumb geometry.
+    // ------------------=
+    pub fn app_launcher_scroll_geometry(self, visible_apps: usize) -> AppLauncherScrollGeometry {
+        let geometry = self.app_launcher_geometry();
+        let rows = visible_apps.saturating_add(super::app_launcher::LAUNCHER_COLUMNS - 1)
+            / super::app_launcher::LAUNCHER_COLUMNS;
+        let content_height = rows.saturating_mul(geometry.grid_row_height);
+        let viewport_height = geometry.grid_viewport.height as usize;
+        let maximum_scroll = content_height.saturating_sub(viewport_height);
+        let presentation = super::app_launcher::launcher_presentation();
+        let thumb_height = if maximum_scroll == 0 {
+            geometry.scrollbar_track.height as usize
+        } else {
+            viewport_height
+                .saturating_mul(viewport_height)
+                .checked_div(content_height.max(1))
+                .unwrap_or(viewport_height)
+                .max(32 * self.scale)
+                .min(viewport_height)
+        };
+        let travel = viewport_height.saturating_sub(thumb_height);
+        let thumb_offset = if maximum_scroll == 0 {
+            0
+        } else {
+            presentation.scroll.min(maximum_scroll) * travel / maximum_scroll
+        };
+        AppLauncherScrollGeometry {
+            maximum_scroll,
+            thumb: rect(
+                geometry.scrollbar_track.x.max(0) as usize,
+                geometry.scrollbar_track.y.max(0) as usize + thumb_offset,
+                geometry.scrollbar_track.width as usize,
+                thumb_height,
+            ),
         }
     }
 
@@ -1068,17 +1292,27 @@ impl SystemLayout {
         if geometry.search.contains(point) {
             return AppLauncherTarget::Search;
         }
-        for index in 0..visible_apps.min(12) {
-            let column = index % 6;
-            let row = index / 6;
-            if rect(
-                geometry.grid_left + column * geometry.grid_cell_width,
-                geometry.grid_top + row * geometry.grid_row_height,
-                geometry.grid_cell_width,
-                geometry.grid_row_height,
-            )
-            .contains(point)
-            {
+        let scroll = self.app_launcher_scroll_geometry(visible_apps);
+        if scroll.maximum_scroll != 0 && scroll.thumb.contains(point) {
+            return AppLauncherTarget::ScrollbarThumb;
+        }
+        if scroll.maximum_scroll != 0 && geometry.scrollbar_track.contains(point) {
+            return AppLauncherTarget::ScrollbarTrack;
+        }
+        let scroll_offset = super::app_launcher::launcher_presentation()
+            .scroll
+            .min(scroll.maximum_scroll) as i32;
+        for index in 0..visible_apps {
+            let column = index % super::app_launcher::LAUNCHER_COLUMNS;
+            let row = index / super::app_launcher::LAUNCHER_COLUMNS;
+            let cell = Rect {
+                x: (geometry.grid_left + column * geometry.grid_cell_width) as i32,
+                y: geometry.grid_top as i32 + (row * geometry.grid_row_height) as i32
+                    - scroll_offset,
+                width: geometry.grid_cell_width as u32,
+                height: geometry.grid_row_height as u32,
+            };
+            if geometry.grid_viewport.contains(point) && cell.contains(point) {
                 return AppLauncherTarget::App(index);
             }
         }
@@ -1730,11 +1964,7 @@ impl SystemLayout {
     // FUNC: settings_section_geometry
     // DESC: Fits all Settings sections inside the navigation viewport while preserving generous icon and pointer space.
     // ------------------=
-    pub fn settings_section_geometry(
-        self,
-        state: SettingsWindowState,
-        index: usize,
-    ) -> Rect {
+    pub fn settings_section_geometry(self, state: SettingsWindowState, index: usize) -> Rect {
         let geometry = self.settings_window_geometry(state);
         let navigation = geometry.navigation;
         let inset = 10 * self.scale;
@@ -1919,7 +2149,11 @@ impl SystemLayout {
         state: SettingsWindowState,
     ) -> Option<NetworkSettingsTarget> {
         let point = self.point(normalized_x, normalized_y);
-        if !self.settings_window_geometry(state).viewport.contains(point) {
+        if !self
+            .settings_window_geometry(state)
+            .viewport
+            .contains(point)
+        {
             return None;
         }
         let geometry = self.network_settings_geometry(state);

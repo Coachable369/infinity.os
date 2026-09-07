@@ -32,6 +32,13 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case primaryButton = 8
     case footer = 9
     case input = 10
+    case sectionLabel = 11
+    case dateField = 12
+    case timeField = 13
+    case timeZoneSelector = 14
+    case offsetBadge = 15
+    case timeZoneMap = 16
+    case metadata = 17
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -47,6 +54,13 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .primaryButton: "Primary Button"
         case .footer: "Footer"
         case .input: "Input Field"
+        case .sectionLabel: "Section Label"
+        case .dateField: "Date Field"
+        case .timeField: "Time Field"
+        case .timeZoneSelector: "Time Zone Selector"
+        case .offsetBadge: "UTC Offset Badge"
+        case .timeZoneMap: "Time Zone Map"
+        case .metadata: "Metadata"
         }
     }
 }
@@ -284,7 +298,9 @@ struct InstallerStudioDocument: Codable, Hashable {
             "Use Tab or arrows to move, Enter to select, and Escape to return.",
         ]
         let screens = names.indices.map { index in
-            var elements = defaultElements(title: headings[index], body: body[index])
+            var elements = index == 4
+                ? dateTimeElements(title: headings[index], body: body[index])
+                : defaultElements(title: headings[index], body: body[index])
             for elementIndex in elements.indices {
                 elements[elementIndex].id = factoryElementID(screen: index + 1, element: elementIndex + 1)
             }
@@ -676,6 +692,68 @@ struct InstallerStudioDocument: Codable, Hashable {
         elements[4].fontSize = 18
         elements[7].fill = InfinityUIKit.Palette.textSecondary
         elements[7].fontSize = 16
+        return elements
+    }
+
+    // ------------------------=
+    // FUNC: dateTimeElements
+    // DESC: Builds the editable Date and Time kit with semantic glass fields, badge, and map layers.
+    // ------------------=
+    private static func dateTimeElements(title: String, body: String) -> [StudioElement] {
+        var elements = defaultElements(title: title, body: body)
+        if let bodyIndex = elements.firstIndex(where: { $0.role == .body }) {
+            elements[bodyIndex].frame = CanvasRect(x: 70, y: 400, width: 520, height: 28)
+            elements[bodyIndex].fontSize = 14
+        }
+
+        let controls: [(String, StudioElementKind, StudioElementRole, CanvasRect, String, String)] = [
+            ("Date Label", .text, .sectionLabel, CanvasRect(x: 70, y: 438, width: 250, height: 20), "DATE", ""),
+            ("Date Field", .panel, .dateField, CanvasRect(x: 70, y: 462, width: 250, height: 58), "MAY 24, 2024", ""),
+            ("Time Label", .text, .sectionLabel, CanvasRect(x: 340, y: 438, width: 250, height: 20), "TIME", ""),
+            ("Time Field", .panel, .timeField, CanvasRect(x: 340, y: 462, width: 250, height: 58), "10:30 AM", ""),
+            ("Time Zone Label", .text, .sectionLabel, CanvasRect(x: 70, y: 548, width: 520, height: 20), "TIME ZONE", ""),
+            ("Time Zone Selector", .panel, .timeZoneSelector, CanvasRect(x: 70, y: 572, width: 520, height: 58), "CENTRAL TIME", ""),
+            ("Offset Label", .text, .sectionLabel, CanvasRect(x: 70, y: 658, width: 180, height: 20), "UTC OFFSET", ""),
+            ("UTC Offset Badge", .panel, .offsetBadge, CanvasRect(x: 70, y: 682, width: 155, height: 40), "UTC-06:00", ""),
+            ("Map Label", .text, .sectionLabel, CanvasRect(x: 620, y: 410, width: 310, height: 20), "TIME ZONE SELECTION", ""),
+            ("Time Zone Map", .image, .timeZoneMap, CanvasRect(x: 620, y: 438, width: 310, height: 250), "", "infinity-time-zone-map-v1.png"),
+            ("Time Zone Metadata", .text, .metadata, CanvasRect(x: 620, y: 704, width: 310, height: 44), "CENTRAL TIME\nUnited States, Canada (Central)", ""),
+        ]
+        for (index, control) in controls.enumerated() {
+            var element = StudioElement.make(
+                name: control.0,
+                kind: control.1,
+                role: control.2,
+                frame: control.3,
+                text: control.4,
+                imageAsset: control.5,
+                zIndex: 5 + index
+            )
+            switch control.2 {
+            case .sectionLabel:
+                element.fill = InfinityUIKit.Palette.accent
+                element.fontSize = 14
+            case .dateField, .timeField, .timeZoneSelector:
+                element.fill = InfinityUIKit.Palette.field
+                element.border = InfinityUIKit.Palette.fieldBorder
+                element.fontSize = 18
+                element.cornerRadius = 10
+            case .offsetBadge:
+                element.fill = InfinityUIKit.Palette.secondaryAction
+                element.border = InfinityUIKit.Palette.primaryActionBorder
+                element.fontSize = 15
+                element.cornerRadius = 12
+            case .timeZoneMap:
+                element.border = InfinityUIKit.Palette.fieldBorder
+                element.cornerRadius = 12
+            case .metadata:
+                element.fill = InfinityUIKit.Palette.textSecondary
+                element.fontSize = 14
+            default:
+                break
+            }
+            elements.append(element)
+        }
         return elements
     }
 

@@ -1472,7 +1472,12 @@ impl super::DisplayDevice {
         crop: [u8; 4],
         opacity: u8,
     ) {
-        if bitmap.len() < 54 || &bitmap[0..2] != b"BM" || le16(bitmap, 28) != 24 || width == 0 || height == 0 {
+        if bitmap.len() < 54
+            || &bitmap[0..2] != b"BM"
+            || le16(bitmap, 28) != 24
+            || width == 0
+            || height == 0
+        {
             return;
         }
         let offset = le32(bitmap, 10) as usize;
@@ -1484,8 +1489,10 @@ impl super::DisplayDevice {
         }
         let mut crop_left = source_width * crop[0] as usize / 100;
         let mut crop_top = source_height * crop[1] as usize / 100;
-        let mut sampled_width = source_width * (100usize.saturating_sub(crop[0] as usize + crop[2] as usize)) / 100;
-        let mut sampled_height = source_height * (100usize.saturating_sub(crop[1] as usize + crop[3] as usize)) / 100;
+        let mut sampled_width =
+            source_width * (100usize.saturating_sub(crop[0] as usize + crop[2] as usize)) / 100;
+        let mut sampled_height =
+            source_height * (100usize.saturating_sub(crop[1] as usize + crop[3] as usize)) / 100;
         if sampled_width == 0 || sampled_height == 0 {
             return;
         }
@@ -1501,7 +1508,11 @@ impl super::DisplayDevice {
         let row_bytes = (source_width * 3 + 3) & !3;
         for y in 0..height.min(self.height.saturating_sub(top)) {
             let logical_y = crop_top + y * sampled_height / height;
-            let source_y = if signed_height < 0 { logical_y } else { source_height - 1 - logical_y };
+            let source_y = if signed_height < 0 {
+                logical_y
+            } else {
+                source_height - 1 - logical_y
+            };
             for x in 0..width.min(self.width.saturating_sub(left)) {
                 let source_x = crop_left + x * sampled_width / width;
                 let index = offset + source_y * row_bytes + source_x * 3;

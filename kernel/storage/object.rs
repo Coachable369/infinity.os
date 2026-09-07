@@ -19,11 +19,11 @@ pub const ROOT_B: u64 = 1;
 pub const BANK_A: u64 = 8;
 pub const BANK_B: u64 = 40;
 const CONTENT: u64 = 80;
-pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 14;
-// Eight object-table sectors fit in each 32-sector metadata bank. Keeping the
-// table capacity derived from its serialized geometry prevents bootstrap
-// System objects from consuming the user-visible object budget by accident.
-const OBJECT_TABLE_SECTORS: usize = 8;
+pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 15;
+// Thirteen object-table sectors fit in each 32-sector metadata bank. The first
+// six retain their original offsets and the remaining seven occupy the bank's
+// reserved tail, leaving useful object headroom after bootstrap System objects.
+const OBJECT_TABLE_SECTORS: usize = 13;
 const OBJECTS_PER_SECTOR: usize = 4;
 const MAX_OBJECTS: usize = OBJECT_TABLE_SECTORS * OBJECTS_PER_SECTOR;
 const MAX_VERSIONS: usize = 32;
@@ -33,7 +33,7 @@ const MAX_PATH: usize = 95;
 const MAX_COMPONENT: usize = 63;
 pub const MAX_CONTENT: usize = 16 * 1024;
 const ALLOCATION_BYTES: usize = 1968;
-pub const FORMAT_VERSION: u32 = 3;
+pub const FORMAT_VERSION: u32 = 4;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug)]
 pub struct ObjectId(pub [u8; 16]);
@@ -558,11 +558,11 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.attach_record(b"/system/runtime", runtime)?;
         let registry =
             self.create_record(b"service-registry", ObjectType::Metadata, Space::System)?;
-        let mut service_registry = [0u8; 128];
+        let mut service_registry = [0u8; 160];
         service_registry[..8].copy_from_slice(b"INFSVC1\0");
         service_registry[8..10].copy_from_slice(&1u16.to_le_bytes());
-        service_registry[10..12].copy_from_slice(&28u16.to_le_bytes());
-        for id in 1..=28u32 {
+        service_registry[10..12].copy_from_slice(&34u16.to_le_bytes());
+        for id in 1..=34u32 {
             let at = 12 + (id as usize - 1) * 4;
             service_registry[at..at + 4].copy_from_slice(&id.to_le_bytes());
         }
@@ -653,6 +653,10 @@ impl<D: BlockDevice> ObjectStore<D> {
         state[16..24].copy_from_slice(&1u64.to_le_bytes());
         self.write_record(network_state, &state)?;
         self.attach_record(b"/system/network/state", network_state)?;
+        let node_state =
+            self.create_record(b"node-trust-state", ObjectType::IdentityData, Space::System)?;
+        self.write_record(node_state, b"INFNOD01\x01\0FIRST-BOOT-KEY-GENERATION")?;
+        self.attach_record(b"/system/security/nodes/state", node_state)?;
         let shell_profiles =
             self.create_record(b"shell-profile-state", ObjectType::Metadata, Space::System)?;
         self.write_record(shell_profiles, b"INFSHL01\x01\0")?;
@@ -688,6 +692,10 @@ impl<D: BlockDevice> ObjectStore<D> {
             ),
             (b"/system/identity/state".as_slice(), b"INFIDN1".as_slice()),
             (b"/system/network/state".as_slice(), b"INFNET01".as_slice()),
+            (
+                b"/system/security/nodes/state".as_slice(),
+                b"INFNOD01".as_slice(),
+            ),
             (
                 b"/system/settings/shell/profiles".as_slice(),
                 b"INFSHL01".as_slice(),

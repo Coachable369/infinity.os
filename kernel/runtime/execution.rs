@@ -3,7 +3,7 @@
 //! validated as non-overlapping ownership ranges. `AddressSpaceToken` is the
 //! narrow architecture seam that will gain MMU switching later.
 
-pub const MAX_CONTEXTS: usize = 24;
+pub const MAX_CONTEXTS: usize = 48;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct SecurityIdentity(pub [u8; 16]);
@@ -243,6 +243,45 @@ impl ExecutionManager {
     // ------------------=
     pub fn fail(&mut self, handle: ContextHandle) -> Result<(), ExecutionError> {
         self.set_state(handle, ContextState::Failed)
+    }
+
+    // ------------------------=
+    // FUNC: update_budget
+    // DESC: Atomically changes enforceable resource and priority limits when current usage fits.
+    // ------------------=
+    pub fn update_budget(
+        &mut self,
+        handle: ContextHandle,
+        budget: ResourceBudget,
+        priority: PriorityClass,
+    ) -> Result<(), ExecutionError> {
+        let context = self.get_mut(handle).ok_or(ExecutionError::UnknownContext)?;
+        if context.usage.memory_bytes > budget.memory_limit
+            || context.usage.queued_messages > budget.message_queue_limit
+        {
+            return Err(ExecutionError::BudgetExceeded);
+        }
+        context.budget = budget;
+        context.priority = priority;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: relaunch
+    // DESC: Rotates runtime identity, clears accounting, and makes a retained context runnable again.
+    // ------------------=
+    pub fn relaunch(&mut self, handle: ContextHandle) -> Result<(), ExecutionError> {
+        let nonce = self.next_identity;
+        self.next_identity = self.next_identity.wrapping_add(1).max(1);
+        let context = self.get_mut(handle).ok_or(ExecutionError::UnknownContext)?;
+        let mut identity = [0u8; 16];
+        identity[..4].copy_from_slice(&context.service_identity.to_le_bytes());
+        identity[4..8].copy_from_slice(&context.image_identity.to_le_bytes());
+        identity[8..].copy_from_slice(&nonce.to_le_bytes());
+        context.security_identity = SecurityIdentity(identity);
+        context.usage = ResourceUsage::default();
+        context.state = ContextState::Runnable;
+        Ok(())
     }
     // ------------------------=
     // FUNC: destroy

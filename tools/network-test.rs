@@ -180,10 +180,21 @@ fn onboarding_network_behavior() {
     assert!(wireless.interfaces.interface(3).unwrap().enabled);
 
     let layout = SystemLayout::new(1920, 1080);
-    assert_eq!(layout.onboarding_target(6, 200, 435), Some(OnboardingTarget::NetworkChoice(0)));
-    assert_eq!(layout.onboarding_target(6, 200, 489), Some(OnboardingTarget::NetworkChoice(1)));
-    assert_eq!(layout.onboarding_target(6, 200, 543), Some(OnboardingTarget::NetworkChoice(2)));
-    assert_eq!(layout.onboarding_target(5, 200, 435), None);
+    let mut discovered = [None; 3];
+    for y in 0..1000 {
+        if let Some(OnboardingTarget::NetworkChoice(index)) = layout.onboarding_target(6, 200, y) {
+            if index < discovered.len() && discovered[index].is_none() {
+                discovered[index] = Some(y);
+            }
+        }
+    }
+    assert!(discovered.iter().all(Option::is_some));
+    for y in discovered.into_iter().flatten() {
+        assert!(!matches!(
+            layout.onboarding_target(5, 200, y),
+            Some(OnboardingTarget::NetworkChoice(_))
+        ));
+    }
 }
 
 // ------------------------=

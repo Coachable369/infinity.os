@@ -875,7 +875,12 @@ impl IdentitySystem {
         if actor != user {
             return Err(IdentityError::AccessDenied);
         }
-        if !self.users.iter().flatten().any(|candidate| candidate.id == user) {
+        if !self
+            .users
+            .iter()
+            .flatten()
+            .any(|candidate| candidate.id == user)
+        {
             return Err(IdentityError::NotFound);
         }
         if !self.desktop_layouts.save(user.0, layout) {
@@ -1291,8 +1296,7 @@ impl IdentitySystem {
         out[SYSTEM_PRIMARY_OFFSET + 2] = (self.primary_rgb & 0xff) as u8;
         out[SYSTEM_BACKGROUND_EFFECTS_OFFSET] =
             encode_background_effects(self.background_opacity, self.background_blur);
-        out[USER_DESKTOP_LAYOUTS_OFFSET
-            ..USER_DESKTOP_LAYOUTS_OFFSET + DESKTOP_LAYOUT_STATE_BYTES]
+        out[USER_DESKTOP_LAYOUTS_OFFSET..USER_DESKTOP_LAYOUTS_OFFSET + DESKTOP_LAYOUT_STATE_BYTES]
             .copy_from_slice(&self.desktop_layouts.encode());
         out[USER_AI_MEMORY_OFFSET..USER_AI_MEMORY_OFFSET + 8].copy_from_slice(b"INFAIM1\0");
         out[USER_AI_MEMORY_OFFSET + 8..USER_AI_MEMORY_OFFSET + 10]

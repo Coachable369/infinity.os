@@ -1135,7 +1135,7 @@
           "fontSize" : 19,
           "frame" : {
             "height" : 736,
-            "width" : 340,
+            "width" : 370,
             "x" : 40,
             "y" : 128
           },
@@ -1172,8 +1172,8 @@
           },
           "fontSize" : 19,
           "frame" : {
-            "height" : 504,
-            "width" : 298,
+            "height" : 358,
+            "width" : 329,
             "x" : 61,
             "y" : 222
           },
@@ -1210,8 +1210,8 @@
           },
           "fontSize" : 30,
           "frame" : {
-            "height" : 44,
-            "width" : 276,
+            "height" : 40,
+            "width" : 328,
             "x" : 72,
             "y" : 270
           },
@@ -1223,7 +1223,7 @@
           "name" : "Screen Title",
           "opacity" : 100,
           "role" : 4,
-          "text" : "Name your Infinity Node",
+          "text" : "Step 1: Naming the Compute Node",
           "zIndex" : 4
         },
         {
@@ -1250,8 +1250,8 @@
           "frame" : {
             "height" : 82,
             "width" : 276,
-            "x" : 72,
-            "y" : 326
+            "x" : 70,
+            "y" : 390
           },
           "hidden" : false,
           "id" : "4F534346-0002-0005-8000-000000000001",
@@ -1288,8 +1288,8 @@
           "frame" : {
             "height" : 47,
             "width" : 276,
-            "x" : 72,
-            "y" : 442
+            "x" : 70,
+            "y" : 480
           },
           "hidden" : false,
           "id" : "4F534346-0002-0006-8000-000000000001",
@@ -1413,7 +1413,7 @@
           "name" : "Privacy Mark",
           "opacity" : 100,
           "role" : 9,
-          "text" : "LOCAL | PRIVATE",
+          "text" : "Ifinite Possibilities",
           "zIndex" : 6
         },
         {
@@ -1795,6 +1795,44 @@
           "role" : 0,
           "text" : "━━━━",
           "zIndex" : 6
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 70,
+            "width" : 350,
+            "x" : 72,
+            "y" : 313
+          },
+          "hidden" : false,
+          "id" : "815EC2B1-396A-4800-9462-FA097FAB75DF",
+          "imageAsset" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "New Text",
+          "opacity" : 84,
+          "role" : 5,
+          "text" : "Let’s Name Your Compute Node",
+          "zIndex" : 9
         }
       ],
       "id" : 2,

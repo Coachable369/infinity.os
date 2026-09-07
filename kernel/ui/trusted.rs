@@ -6,6 +6,7 @@ pub enum TrustedSurface {
     Lock,
     CapabilityConsent,
     DestructiveConfirmation,
+    NodePairing,
     Recovery,
 }
 

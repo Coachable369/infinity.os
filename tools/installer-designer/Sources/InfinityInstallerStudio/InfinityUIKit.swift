@@ -58,6 +58,85 @@ enum InfinityStudioButtonEmphasis {
     case quiet
 }
 
+enum InfinityUIKitInteractionState: Equatable {
+    case idle
+    case hover
+    case focused
+    case pressed
+}
+
+struct InfinityUIKitVisualRecipe: Equatable {
+    let fillTop: StudioColor
+    let fillBottom: StudioColor
+    let border: StudioColor
+    let text: StudioColor
+    let highlightOpacity: Double
+    let glowOpacity: Double
+    let borderWidth: CGFloat
+}
+
+extension InfinityUIKit {
+    // ------------------------=
+    // FUNC: visualRecipe
+    // DESC: Resolves the shared UIKit glass, border, text, and glow recipe for a semantic canvas control state.
+    // ------------------=
+    static func visualRecipe(
+        role: StudioElementRole,
+        state: InfinityUIKitInteractionState,
+        authoredFill: StudioColor,
+        authoredBorder: StudioColor
+    ) -> InfinityUIKitVisualRecipe {
+        let active = state == .hover || state == .focused
+        let pressed = state == .pressed
+        let isPrimary = role == .primaryButton
+        let isAction = isPrimary || role == .backButton
+        let isField = [.input, .dateField, .timeField, .timeZoneSelector].contains(role)
+        let isBadge = role == .offsetBadge
+
+        let lift: (Int, Int, Int) = if isPrimary {
+            active ? (30, 82, 104) : (17, 57, 75)
+        } else if isAction {
+            active ? (24, 55, 75) : (12, 25, 36)
+        } else if isField || isBadge {
+            active ? (14, 38, 52) : (7, 21, 28)
+        } else {
+            active ? (12, 27, 38) : (6, 14, 21)
+        }
+        let bottom = pressed ? authoredFill.adjusting(red: -3, green: -8, blue: -11) : authoredFill
+        let border = if state == .focused {
+            Palette.accentBright
+        } else if state == .hover {
+            Palette.accent
+        } else {
+            authoredBorder
+        }
+        return InfinityUIKitVisualRecipe(
+            fillTop: bottom.adjusting(red: lift.0, green: lift.1, blue: lift.2),
+            fillBottom: bottom,
+            border: border,
+            text: isBadge ? Palette.accentBright : Palette.textPrimary,
+            highlightOpacity: pressed ? 0.22 : (active ? 0.58 : 0.34),
+            glowOpacity: state == .focused ? 0.72 : (state == .hover ? 0.38 : (isPrimary ? 0.16 : 0)),
+            borderWidth: state == .focused ? 1.5 : 1
+        )
+    }
+}
+
+extension StudioColor {
+    // ------------------------=
+    // FUNC: adjusting
+    // DESC: Applies clamped byte-channel offsets used by both default and interactive glass control states.
+    // ------------------=
+    func adjusting(red: Int, green: Int, blue: Int) -> StudioColor {
+        StudioColor(
+            red: UInt8((Int(self.red) + red).clamped(to: 0...255)),
+            green: UInt8((Int(self.green) + green).clamped(to: 0...255)),
+            blue: UInt8((Int(self.blue) + blue).clamped(to: 0...255)),
+            alpha: alpha
+        )
+    }
+}
+
 struct InfinityStudioButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     let emphasis: InfinityStudioButtonEmphasis

@@ -434,6 +434,8 @@ struct ConsoleRuntime {
     settings_timeout_dragging: bool,
     settings_scroll_dragging: bool,
     settings_scroll_grab_offset: i32,
+    launcher_scroll_dragging: bool,
+    launcher_scroll_grab_offset: i32,
     onboarding_validation_error: bool,
     home_window_x: i32,
     home_window_y: i32,
@@ -571,6 +573,8 @@ impl ConsoleRuntime {
             settings_timeout_dragging: false,
             settings_scroll_dragging: false,
             settings_scroll_grab_offset: 0,
+            launcher_scroll_dragging: false,
+            launcher_scroll_grab_offset: 0,
             onboarding_validation_error: false,
             home_window_x: 110,
             home_window_y: 150,
@@ -1202,6 +1206,7 @@ impl ConsoleRuntime {
             ConsoleKey::Character(b'l' | b'L') => {
                 let _ = self.open_file_navigator_window(b"/home/default");
             }
+            ConsoleKey::Escape if self.shell_menu == 10 => self.shell_menu = 0,
             ConsoleKey::Escape => self.close_desktop_app(),
             _ => {}
         }
@@ -1216,45 +1221,46 @@ impl ConsoleRuntime {
         let selected = self.task_manager_selected;
         let task = crate::runtime::with_runtime(|runtime| {
             runtime.task_manager.task_nth(&runtime.execution, selected)
-        }).flatten();
+        })
+        .flatten();
         let Some(task) = task else { return };
-        let changed = crate::runtime::with_runtime(|runtime| {
-            match action {
-                0 => runtime
+        let changed = crate::runtime::with_runtime(|runtime| match action {
+            0 => runtime
+                .task_manager
+                .end(&mut runtime.execution, task.handle)
+                .ok(),
+            1 => runtime
+                .task_manager
+                .relaunch(&mut runtime.execution, task.handle)
+                .ok(),
+            2 if task.state == crate::runtime::execution::ContextState::Waiting => runtime
+                .task_manager
+                .resume(&mut runtime.execution, task.handle)
+                .ok(),
+            2 => runtime
+                .task_manager
+                .pause(&mut runtime.execution, task.handle)
+                .ok(),
+            _ => {
+                let mut budget = task.budget;
+                budget.cpu_weight = match budget.cpu_weight {
+                    1..=24 => 100,
+                    25..=99 => 25,
+                    _ => 50,
+                };
+                runtime
                     .task_manager
-                    .end(&mut runtime.execution, task.handle)
-                    .ok(),
-                1 => runtime
-                    .task_manager
-                    .relaunch(&mut runtime.execution, task.handle)
-                    .ok(),
-                2 if task.state == crate::runtime::execution::ContextState::Waiting => runtime
-                    .task_manager
-                    .resume(&mut runtime.execution, task.handle)
-                    .ok(),
-                2 => runtime
-                    .task_manager
-                    .pause(&mut runtime.execution, task.handle)
-                    .ok(),
-                _ => {
-                    let mut budget = task.budget;
-                    budget.cpu_weight = match budget.cpu_weight {
-                        1..=24 => 100,
-                        25..=99 => 25,
-                        _ => 50,
-                    };
-                    runtime
-                        .task_manager
-                        .throttle(
-                            &mut runtime.execution,
-                            task.handle,
-                            budget,
-                            crate::runtime::execution::PriorityClass::Background,
-                        )
-                        .ok()
-                }
+                    .throttle(
+                        &mut runtime.execution,
+                        task.handle,
+                        budget,
+                        crate::runtime::execution::PriorityClass::Background,
+                    )
+                    .ok()
             }
-        }).flatten().is_some();
+        })
+        .flatten()
+        .is_some();
         if action == 0 && changed {
             self.close_task_surface(task);
         } else if action == 1 && changed {
@@ -1272,7 +1278,8 @@ impl ConsoleRuntime {
                 let next = crate::runtime::with_runtime(|runtime| {
                     runtime.file_navigators.close_task(task.handle.0);
                     runtime.file_navigators.active_index()
-                }).flatten();
+                })
+                .flatten();
                 if let Some(index) = next {
                     let _ = self.load_file_navigator_window(index);
                 } else {
@@ -1280,8 +1287,12 @@ impl ConsoleRuntime {
                 }
             }
             crate::runtime::task_manager::IMAGE_TEXT_EDITOR => self.editor_window.visible = false,
-            crate::runtime::task_manager::IMAGE_COMMAND_WINDOW => self.command_window.visible = false,
-            crate::runtime::task_manager::IMAGE_TASK_MANAGER => self.task_manager_window.visible = false,
+            crate::runtime::task_manager::IMAGE_COMMAND_WINDOW => {
+                self.command_window.visible = false
+            }
+            crate::runtime::task_manager::IMAGE_TASK_MANAGER => {
+                self.task_manager_window.visible = false
+            }
             _ => {}
         }
     }
@@ -1294,9 +1305,15 @@ impl ConsoleRuntime {
         match task.image_identity {
             crate::runtime::task_manager::IMAGE_FILE_NAVIGATOR => {
                 let index = crate::runtime::with_runtime(|runtime| {
-                    runtime.file_navigators.launch(b"/home/default", task.handle.0).ok()
-                }).flatten();
-                if let Some(index) = index { let _ = self.load_file_navigator_window(index); }
+                    runtime
+                        .file_navigators
+                        .launch(b"/home/default", task.handle.0)
+                        .ok()
+                })
+                .flatten();
+                if let Some(index) = index {
+                    let _ = self.load_file_navigator_window(index);
+                }
             }
             crate::runtime::task_manager::IMAGE_TEXT_EDITOR => self.open_text_editor(),
             crate::runtime::task_manager::IMAGE_COMMAND_WINDOW => self.open_command_window(),
@@ -1307,30 +1324,67 @@ impl ConsoleRuntime {
 
     // ------------------------=
     // FUNC: activate_task_manager_pointer
-    // DESC: Hit-tests Task Manager toolbar and visible rows using live normalized geometry.
+    // DESC: Hit-tests the Task menu and visible process rows using shared live window geometry.
     // ------------------=
     fn activate_task_manager_pointer(&mut self) -> bool {
-        let top = self.app_window_y;
-        let left = self.app_window_x;
-        let width = self.app_window_width.max(1);
-        if self.pointer_x < left
-            || self.pointer_x >= left + width
-            || self.pointer_y < top + 48
-            || self.pointer_y >= top + self.app_window_height
-        {
+        let layout = SystemLayout::new(
+            self.system.framebuffer_width,
+            self.system.framebuffer_height,
+        );
+        let scale = layout.scale().max(1);
+        let geometry = layout.desktop_app_window_geometry(
+            self.app_window_x,
+            self.app_window_y,
+            self.app_window_width,
+            self.app_window_height,
+            self.app_window_maximized,
+        );
+        let point_x = self.system.framebuffer_width as i32 * self.pointer_x / 1000;
+        let point_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+        if !geometry.window.contains(crate::ui::geometry::Point {
+            x: point_x,
+            y: point_y,
+        }) {
             return false;
         }
-        if self.pointer_y < top + 94 {
-            let action = ((self.pointer_x - left) * 5 / width).clamp(0, 4) as u8;
-            if action == 0 {
-                let _ = self.open_file_navigator_window(b"/home/default");
-            } else {
-                self.task_manager_action([0u8, 1, 0, 2, 3][action as usize]);
-            }
+        let toolbar_left = geometry.toolbar.x;
+        let toolbar_top = geometry.toolbar.y;
+        let menu_width = 232 * scale as i32;
+        if point_y >= toolbar_top
+            && point_y < toolbar_top + geometry.toolbar.height as i32
+            && point_x >= toolbar_left + 10 * scale as i32
+            && point_x < toolbar_left + 104 * scale as i32
+        {
+            self.shell_menu = if self.shell_menu == 10 { 0 } else { 10 };
             self.refresh_task_manager_output();
             return true;
         }
-        let row = ((self.pointer_y - top - 112) / 24).max(0) as usize;
+        if self.shell_menu == 10 {
+            let menu_top = toolbar_top + geometry.toolbar.height as i32 - 2 * scale as i32;
+            if point_x >= toolbar_left + 10 * scale as i32
+                && point_x < toolbar_left + 10 * scale as i32 + menu_width
+                && point_y >= menu_top
+                && point_y < menu_top + 214 * scale as i32
+            {
+                let action = ((point_y - menu_top - 8 * scale as i32) / (32 * scale) as i32)
+                    .clamp(0, 5) as u8;
+                self.shell_menu = 0;
+                match action {
+                    0 => {
+                        let _ = self.open_file_navigator_window(b"/home/default");
+                    }
+                    1 => self.task_manager_action(1),
+                    2 => self.task_manager_action(2),
+                    3 => self.task_manager_action(3),
+                    4 => self.task_manager_action(0),
+                    _ => self.refresh_task_manager_output(),
+                }
+                return true;
+            }
+            self.shell_menu = 0;
+        }
+        let content_top = geometry.content.y + 154 * scale as i32;
+        let row = ((point_y - content_top) / (38 * scale) as i32).max(0) as usize;
         if row < 5 {
             self.task_manager_selected = self.task_manager_scroll + row;
             self.refresh_task_manager_output();
@@ -1349,9 +1403,11 @@ impl ConsoleRuntime {
             .write_line(b"ID  TASK                 STATE       CPU WEIGHT");
         let selected = self.task_manager_selected;
         crate::runtime::with_runtime(|runtime| {
+            runtime.task_manager.sample_cpu(&runtime.execution);
             let count = runtime.task_manager.task_count(&runtime.execution);
             self.task_manager_selected = selected.min(count.saturating_sub(1));
             self.task_manager_scroll = self.task_manager_selected.saturating_sub(3);
+            self.system_focus = self.task_manager_selected;
             for index in self.task_manager_scroll..count.min(self.task_manager_scroll + 5) {
                 if let Some(task) = runtime.task_manager.task_nth(&runtime.execution, index) {
                     let id = number_pair(task.handle.0 as usize);
@@ -1409,6 +1465,92 @@ impl ConsoleRuntime {
                     });
                 }
                 ConsoleKey::Enter => self.commit_file_navigator_edit(state),
+                _ => {}
+            }
+            return true;
+        }
+        if let Some(menu) = state.menu_open {
+            match key {
+                ConsoleKey::Escape => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime
+                            .file_navigator
+                            .as_mut()
+                            .map(|navigator| navigator.close_overlays())
+                    });
+                }
+                ConsoleKey::Left | ConsoleKey::Right => {
+                    let current = menu.index();
+                    let next = if matches!(key, ConsoleKey::Left) {
+                        if current == 1 {
+                            4
+                        } else {
+                            current - 1
+                        }
+                    } else if current == 4 {
+                        1
+                    } else {
+                        current + 1
+                    };
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime.file_navigator.as_mut().map(|navigator| {
+                            navigator.open_menu(
+                                crate::runtime::object_navigation::FileNavigatorMenu::from_index(
+                                    next,
+                                )
+                                .unwrap(),
+                            )
+                        })
+                    });
+                }
+                ConsoleKey::Up | ConsoleKey::Down => {
+                    let count = menu.item_count();
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime.file_navigator.as_mut().map(|navigator| {
+                            let selected = navigator.menu_selection as usize;
+                            navigator.menu_selection = if matches!(key, ConsoleKey::Up) {
+                                if selected == 0 {
+                                    count - 1
+                                } else {
+                                    selected - 1
+                                }
+                            } else {
+                                (selected + 1) % count
+                            } as u8;
+                        })
+                    });
+                }
+                ConsoleKey::Enter => {
+                    self.activate_file_navigator_menu(menu, state.menu_selection as usize);
+                }
+                _ => {}
+            }
+            return true;
+        }
+        if let Some(dialog) = state.dialog_open {
+            match key {
+                ConsoleKey::Escape => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime
+                            .file_navigator
+                            .as_mut()
+                            .map(|navigator| navigator.close_overlays())
+                    });
+                }
+                ConsoleKey::Enter
+                    if matches!(
+                        dialog,
+                        crate::runtime::object_navigation::FileNavigatorDialog::About
+                            | crate::runtime::object_navigation::FileNavigatorDialog::Help
+                    ) =>
+                {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime
+                            .file_navigator
+                            .as_mut()
+                            .map(|navigator| navigator.close_overlays())
+                    });
+                }
                 _ => {}
             }
             return true;
@@ -1477,6 +1619,7 @@ impl ConsoleRuntime {
                     runtime.file_navigator.as_mut().map(|navigator| {
                         let result = navigator.navigate(path);
                         navigator.cancel_edit();
+                        navigator.dialog_open = None;
                         result
                     })
                 });
@@ -1499,10 +1642,10 @@ impl ConsoleRuntime {
                 }
             }
             let _ = crate::runtime::with_runtime(|runtime| {
-                runtime
-                    .file_navigator
-                    .as_mut()
-                    .map(|navigator| navigator.cancel_edit())
+                runtime.file_navigator.as_mut().map(|navigator| {
+                    navigator.cancel_edit();
+                    navigator.dialog_open = None;
+                })
             });
         }
     }
@@ -1814,13 +1957,19 @@ impl ConsoleRuntime {
     fn ensure_app_task(&mut self, image_identity: u32) {
         let _ = crate::runtime::with_runtime(|runtime| {
             let running = (0..runtime.execution.count()).any(|index| {
-                runtime.execution.nth(index).map(|task| {
-                    task.image_identity == image_identity
-                        && task.state != crate::runtime::execution::ContextState::Stopped
-                }).unwrap_or(false)
+                runtime
+                    .execution
+                    .nth(index)
+                    .map(|task| {
+                        task.image_identity == image_identity
+                            && task.state != crate::runtime::execution::ContextState::Stopped
+                    })
+                    .unwrap_or(false)
             });
             if !running {
-                let _ = runtime.task_manager.launch(&mut runtime.execution, image_identity);
+                let _ = runtime
+                    .task_manager
+                    .launch(&mut runtime.execution, image_identity);
             }
         });
     }
@@ -2077,7 +2226,13 @@ impl ConsoleRuntime {
     // FUNC: desktop_app_windows
     // DESC: Returns both open window states with the focused window's live geometry applied.
     // ------------------=
-    fn desktop_app_windows(&self) -> (DesktopAppWindowState, DesktopAppWindowState, DesktopAppWindowState) {
+    fn desktop_app_windows(
+        &self,
+    ) -> (
+        DesktopAppWindowState,
+        DesktopAppWindowState,
+        DesktopAppWindowState,
+    ) {
         let mut editor = self.editor_window;
         let mut command = self.command_window;
         let mut task_manager = self.task_manager_window;
@@ -2600,6 +2755,36 @@ impl ConsoleRuntime {
     // DESC: Resolves a pointer target from the same live Home bounds used by the renderer.
     // ------------------=
     fn desktop_target(&self, layout: SystemLayout) -> Option<DesktopTarget> {
+        if self.home_window_visible {
+            let overlay = crate::runtime::with_runtime(|runtime| {
+                let state = runtime.file_navigator?;
+                let menu = state.menu_open.map(|value| value.index()).unwrap_or(0);
+                let menu_items = state.menu_open.map(|value| value.item_count()).unwrap_or(0);
+                let dialog = match state.dialog_open {
+                    Some(crate::runtime::object_navigation::FileNavigatorDialog::EmptyTrash) => 1,
+                    Some(crate::runtime::object_navigation::FileNavigatorDialog::About) => 2,
+                    Some(crate::runtime::object_navigation::FileNavigatorDialog::Help) => 3,
+                    Some(crate::runtime::object_navigation::FileNavigatorDialog::Location) => 4,
+                    None => 0,
+                };
+                layout.file_navigator_overlay_target(
+                    self.pointer_x,
+                    self.pointer_y,
+                    self.home_window_x,
+                    self.home_window_y,
+                    self.home_window_width,
+                    self.home_window_height,
+                    self.home_window_maximized,
+                    menu,
+                    menu_items,
+                    dialog,
+                )
+            })
+            .flatten();
+            if overlay.is_some() {
+                return overlay;
+            }
+        }
         let target = layout.desktop_target_sized(
             self.pointer_x,
             self.pointer_y,
@@ -3411,34 +3596,80 @@ impl ConsoleRuntime {
                 .max()
                 .unwrap_or(0)
                 .saturating_add(1);
-            let peer = runtime.nodes.discovered_nodes().iter().flatten().next().copied();
+            let peer = runtime
+                .nodes
+                .discovered_nodes()
+                .iter()
+                .flatten()
+                .next()
+                .copied();
             match (page, control, peer) {
-                (0, 1, Some(node)) if matches!(node.trust, TrustState::Trusted | TrustState::Restricted) => {
+                (0, 1, Some(node))
+                    if matches!(node.trust, TrustState::Trusted | TrustState::Restricted) =>
+                {
                     runtime.nodes.revoke_trust(node.id, now, now).is_ok()
                 }
-                (0, 4, Some(node)) => runtime.nodes.set_trust(node.id, TrustState::Blocked, now, now).is_ok(),
+                (0, 4, Some(node)) => runtime
+                    .nodes
+                    .set_trust(node.id, TrustState::Blocked, now, now)
+                    .is_ok(),
                 (0, 5, _) => {
                     runtime.nodes.sweep(now);
                     false
                 }
-                (1, 0, Some(node)) if matches!(node.trust, TrustState::Untrusted | TrustState::Discovered) => {
+                (1, 0, Some(node))
+                    if matches!(node.trust, TrustState::Untrusted | TrustState::Discovered) =>
+                {
                     runtime.nodes.begin_pairing(node.id, now).is_ok()
                 }
                 (1, 3, _) => {
-                    let pending = runtime.nodes.pairings().iter().flatten().find(|pairing| pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation).copied();
-                    let Some(pairing) = pending else { return false; };
-                    let Ok(lease) = runtime.ui.trusted.acquire_secure_input(true, 1, crate::ui::trusted::TrustedSurface::NodePairing, now.saturating_add(60)) else { return false; };
-                    let confirmed = runtime.nodes.confirm_pairing(pairing.id, pairing.verification_code, now, now).is_ok();
+                    let pending = runtime
+                        .nodes
+                        .pairings()
+                        .iter()
+                        .flatten()
+                        .find(|pairing| {
+                            pairing.state
+                                == crate::runtime::node::types::PairingState::AwaitingConfirmation
+                        })
+                        .copied();
+                    let Some(pairing) = pending else {
+                        return false;
+                    };
+                    let Ok(lease) = runtime.ui.trusted.acquire_secure_input(
+                        true,
+                        1,
+                        crate::ui::trusted::TrustedSurface::NodePairing,
+                        now.saturating_add(60),
+                    ) else {
+                        return false;
+                    };
+                    let confirmed = runtime
+                        .nodes
+                        .confirm_pairing(pairing.id, pairing.verification_code, now, now)
+                        .is_ok();
                     let _ = runtime.ui.trusted.release_secure_input(lease);
                     confirmed
                 }
                 (1, 4, _) => {
-                    let pending = runtime.nodes.pairings().iter().flatten().find(|pairing| pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation).copied();
-                    pending.map(|pairing| runtime.nodes.cancel_pairing(pairing.id).is_ok()).unwrap_or(false)
+                    let pending = runtime
+                        .nodes
+                        .pairings()
+                        .iter()
+                        .flatten()
+                        .find(|pairing| {
+                            pairing.state
+                                == crate::runtime::node::types::PairingState::AwaitingConfirmation
+                        })
+                        .copied();
+                    pending
+                        .map(|pairing| runtime.nodes.cancel_pairing(pairing.id).is_ok())
+                        .unwrap_or(false)
                 }
-                (2, 0, Some(node)) if node.trust == TrustState::Trusted => {
-                    runtime.nodes.join_mesh(node.id, MeshRole::Member, now, now).is_ok()
-                }
+                (2, 0, Some(node)) if node.trust == TrustState::Trusted => runtime
+                    .nodes
+                    .join_mesh(node.id, MeshRole::Member, now, now)
+                    .is_ok(),
                 (2, 4, Some(node)) => runtime.nodes.leave_mesh(node.id, now, now).is_ok(),
                 (3, category @ 0..=4, Some(node)) => {
                     let mut policy = node.policy;
@@ -3448,16 +3679,23 @@ impl ConsoleRuntime {
                         _ => PolicyDecision::Deny,
                     };
                     policy.version = policy.version.saturating_add(1);
-                    runtime.nodes.update_policy(node.id, policy, now, now).is_ok()
+                    runtime
+                        .nodes
+                        .update_policy(node.id, policy, now, now)
+                        .is_ok()
                 }
                 (3, 5, Some(node)) => {
                     let mut policy = NodeTrustPolicy::deny_all();
                     policy.version = node.policy.version.saturating_add(1);
-                    runtime.nodes.update_policy(node.id, policy, now, now).is_ok()
+                    runtime
+                        .nodes
+                        .update_policy(node.id, policy, now, now)
+                        .is_ok()
                 }
                 _ => false,
             }
-        }).unwrap_or(false);
+        })
+        .unwrap_or(false);
         if changed {
             let _ = crate::runtime::persist_node_state();
         }
@@ -3552,9 +3790,19 @@ impl ConsoleRuntime {
     // ------------------=
     fn open_app_launcher(&mut self) {
         self.store_active_app_window();
+        crate::ui::app_launcher::launcher_open();
+        self.launcher_scroll_dragging = false;
         self.mode = ConsoleMode::AppLauncher;
         self.system_focus = 0;
         self.reset_input();
+    }
+
+    // ------------------------=
+    // FUNC: close_app_launcher
+    // DESC: Begins the native launcher exit transition while retaining its composited surface.
+    // ------------------=
+    fn close_app_launcher(&mut self) {
+        crate::ui::app_launcher::launcher_begin_close();
     }
 
     // ------------------------=
@@ -3593,6 +3841,35 @@ impl ConsoleRuntime {
         if let Some(entry) = LAUNCHER_CATEGORIES.get(category) {
             self.activate_launcher_action(entry.action);
         }
+    }
+
+    // ------------------------=
+    // FUNC: reveal_launcher_focus
+    // DESC: Smoothly reveals a keyboard-focused application row inside the bounded grid viewport.
+    // ------------------=
+    fn reveal_launcher_focus(&self, visible: usize) {
+        if !(1..=visible).contains(&self.system_focus) {
+            return;
+        }
+        let layout = SystemLayout::new(
+            self.system.framebuffer_width,
+            self.system.framebuffer_height,
+        );
+        let geometry = layout.app_launcher_geometry();
+        let scroll = layout.app_launcher_scroll_geometry(visible);
+        let row = (self.system_focus - 1) / crate::ui::app_launcher::LAUNCHER_COLUMNS;
+        let top = row.saturating_mul(geometry.grid_row_height);
+        let bottom = top.saturating_add(geometry.grid_row_height);
+        let current = crate::ui::app_launcher::launcher_presentation().scroll;
+        let viewport = geometry.grid_viewport.height as usize;
+        let desired = if top < current {
+            top
+        } else if bottom > current.saturating_add(viewport) {
+            bottom.saturating_sub(viewport)
+        } else {
+            current
+        };
+        let _ = crate::ui::app_launcher::launcher_scroll_to(desired, scroll.maximum_scroll);
     }
 
     // ------------------------=
@@ -4225,25 +4502,21 @@ impl ConsoleRuntime {
     fn input_shell(&mut self, key: ConsoleKey) {
         if self.mode == ConsoleMode::AppLauncher {
             if matches!(key, ConsoleKey::Escape) {
-                self.enter_desktop();
+                self.close_app_launcher();
                 return;
             }
             if matches!(key, ConsoleKey::Character(b'/')) && self.command_length == 0 {
                 self.system_focus = 0;
                 return;
             }
-            if self.system_focus == 0
-                && matches!(
-                    key,
-                    ConsoleKey::Character(_)
-                        | ConsoleKey::Backspace
-                        | ConsoleKey::Delete
-                        | ConsoleKey::Left
-                        | ConsoleKey::Right
-                        | ConsoleKey::Home
-                        | ConsoleKey::End
-                )
-            {
+            if matches!(
+                key,
+                ConsoleKey::Character(_)
+                    | ConsoleKey::Backspace
+                    | ConsoleKey::Delete
+                    | ConsoleKey::Home
+                    | ConsoleKey::End
+            ) {
                 if self.edit_system_text(key) {
                     self.system_focus =
                         if launcher_visible_count(&self.command[..self.command_length]) > 0 {
@@ -4251,6 +4524,9 @@ impl ConsoleRuntime {
                         } else {
                             0
                         };
+                    let visible = launcher_visible_count(&self.command[..self.command_length]);
+                    let _ = crate::ui::app_launcher::launcher_scroll_to(0, 0);
+                    self.reveal_launcher_focus(visible);
                 }
                 return;
             }
@@ -4261,6 +4537,7 @@ impl ConsoleRuntime {
                 ConsoleKey::Up | ConsoleKey::Left | ConsoleKey::Tab(true)
             ) {
                 self.system_focus = (self.system_focus + focus_count - 1) % focus_count;
+                self.reveal_launcher_focus(visible);
                 return;
             }
             if matches!(
@@ -4268,6 +4545,7 @@ impl ConsoleRuntime {
                 ConsoleKey::Down | ConsoleKey::Right | ConsoleKey::Tab(false)
             ) {
                 self.system_focus = (self.system_focus + 1) % focus_count;
+                self.reveal_launcher_focus(visible);
                 return;
             }
             if matches!(key, ConsoleKey::Enter) {
@@ -4372,9 +4650,7 @@ impl ConsoleRuntime {
                     self.settings_window.control_focus =
                         (self.settings_window.control_focus + 1) % 6;
                 }
-                ConsoleKey::Enter => {
-                    self.activate_node_control(self.settings_window.control_focus)
-                }
+                ConsoleKey::Enter => self.activate_node_control(self.settings_window.control_focus),
                 _ => {}
             }
             return;
@@ -4401,8 +4677,7 @@ impl ConsoleRuntime {
                 } else {
                     5
                 };
-                self.settings_window.expanded_row =
-                    matches!(self.system_focus, 6 | 7).then_some(0);
+                self.settings_window.expanded_row = matches!(self.system_focus, 6 | 7).then_some(0);
                 self.settings_window.scroll_offset = 0;
             }
             return;
@@ -4425,8 +4700,7 @@ impl ConsoleRuntime {
                 } else {
                     5
                 };
-                self.settings_window.expanded_row =
-                    matches!(self.system_focus, 6 | 7).then_some(0);
+                self.settings_window.expanded_row = matches!(self.system_focus, 6 | 7).then_some(0);
                 self.settings_window.scroll_offset = 0;
             }
             return;
@@ -5185,6 +5459,19 @@ impl ConsoleRuntime {
             return false;
         }
         self.session_idle.note_activity();
+        if self.mode == ConsoleMode::AppLauncher {
+            let layout = SystemLayout::new(
+                self.system.framebuffer_width,
+                self.system.framebuffer_height,
+            );
+            let visible = launcher_visible_count(&self.command[..self.command_length]);
+            let maximum = layout.app_launcher_scroll_geometry(visible).maximum_scroll;
+            let distance = vertical.signum() as i32 * (72 * layout.scale()) as i32;
+            if crate::ui::app_launcher::launcher_scroll_by(distance, maximum) {
+                self.redraw();
+            }
+            return true;
+        }
         if self.mode == ConsoleMode::Settings {
             self.scroll_settings(vertical);
             self.redraw();
@@ -5318,6 +5605,141 @@ impl ConsoleRuntime {
                 .as_mut()
                 .map(|navigator| navigator.context_menu_open = false)
         });
+    }
+
+    // ------------------------=
+    // FUNC: activate_file_navigator_menu
+    // DESC: Executes one typed app-local File Navigator menu action against live navigator or storage state.
+    // ------------------=
+    fn activate_file_navigator_menu(
+        &mut self,
+        menu: crate::runtime::object_navigation::FileNavigatorMenu,
+        item: usize,
+    ) {
+        use crate::runtime::object_navigation::{FileNavigatorAction, FileNavigatorDialog};
+
+        match menu.action(item) {
+            Some(FileNavigatorAction::NewWindow) => {
+                let path = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .map(|navigator| navigator.active_namespace_ref)
+                })
+                .flatten()
+                .unwrap_or_else(|| {
+                    crate::runtime::object_navigation::ByteText::new(b"/home/default").unwrap()
+                });
+                let _ = self.open_file_navigator_window(path.as_bytes());
+            }
+            Some(FileNavigatorAction::Settings) => {
+                self.checkpoint_active_file_navigator();
+                self.open_settings(0);
+            }
+            Some(FileNavigatorAction::EmptyTrash) => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.open_dialog(FileNavigatorDialog::EmptyTrash))
+                });
+            }
+            Some(FileNavigatorAction::About) => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.open_dialog(FileNavigatorDialog::About))
+                });
+            }
+            Some(FileNavigatorAction::SetView(view_mode)) => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime.file_navigator.as_mut().map(|navigator| {
+                        navigator.view_mode = view_mode;
+                        navigator.close_overlays();
+                    })
+                });
+            }
+            Some(FileNavigatorAction::TogglePreview) => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime.file_navigator.as_mut().map(|navigator| {
+                        navigator.inspector_open = !navigator.inspector_open;
+                        navigator.menu_open = None;
+                    })
+                });
+            }
+            Some(FileNavigatorAction::Navigate(location)) => {
+                self.home_previous_location = self.home_location;
+                self.home_location = location;
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime.file_navigator.as_mut().map(|navigator| {
+                        let result = navigator.navigate(home_location_path(location));
+                        navigator.menu_open = None;
+                        result
+                    })
+                });
+                self.home_selected_item = None;
+            }
+            Some(FileNavigatorAction::CustomLocation) => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime.file_navigator.as_mut().map(|navigator| {
+                        navigator.begin_location_edit();
+                        navigator.open_dialog(FileNavigatorDialog::Location);
+                        navigator.location_editing = true;
+                    })
+                });
+            }
+            Some(FileNavigatorAction::Help) => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.open_dialog(FileNavigatorDialog::Help))
+                });
+            }
+            None => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.close_overlays())
+                });
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: activate_file_navigator_dialog
+    // DESC: Applies one modal File Navigator action with explicit confirmation for destructive Trash removal.
+    // ------------------=
+    fn activate_file_navigator_dialog(&mut self, action: usize) {
+        use crate::runtime::object_navigation::FileNavigatorDialog;
+
+        let state = crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
+        let Some(state) = state else { return };
+        match (state.dialog_open, action) {
+            (Some(FileNavigatorDialog::EmptyTrash), 0) => {
+                let _ = crate::storage::trash_empty();
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.close_overlays())
+                });
+            }
+            (Some(FileNavigatorDialog::Location), 0) => {
+                self.commit_file_navigator_edit(state);
+            }
+            (Some(FileNavigatorDialog::Location), 2) => {}
+            (_, 1) => {
+                let _ = crate::runtime::with_runtime(|runtime| {
+                    runtime
+                        .file_navigator
+                        .as_mut()
+                        .map(|navigator| navigator.close_overlays())
+                });
+            }
+            _ => {}
+        }
     }
 
     // ------------------------=
@@ -5682,6 +6104,12 @@ impl ConsoleRuntime {
                 return;
             } else if let Some(corner) = self.app_window_resizing {
                 if left_button {
+                    let (minimum_width, minimum_height) =
+                        if self.desktop_app == DesktopAppKind::TaskManager {
+                            (620, 500)
+                        } else {
+                            (420, 360)
+                        };
                     let resized = crate::ui::system_layout::resize_native_window(
                         self.app_window_x,
                         self.app_window_y,
@@ -5690,8 +6118,8 @@ impl ConsoleRuntime {
                         corner,
                         self.pointer_x,
                         self.pointer_y,
-                        420,
-                        360,
+                        minimum_width,
+                        minimum_height,
                     );
                     self.app_window_x = resized.0;
                     self.app_window_y = resized.1;
@@ -6018,7 +6446,22 @@ impl ConsoleRuntime {
                     let _ = self.checkpoint_desktop_layout();
                 }
             } else if clicked {
-                match self.desktop_target(layout) {
+                let target = self.desktop_target(layout);
+                if !matches!(
+                    target,
+                    Some(DesktopTarget::HomeMenu(_))
+                        | Some(DesktopTarget::HomeMenuItem(_))
+                        | Some(DesktopTarget::HomeDialogAction(_))
+                ) {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime.file_navigator.as_mut().map(|navigator| {
+                            if navigator.dialog_open.is_none() {
+                                navigator.menu_open = None;
+                            }
+                        })
+                    });
+                }
+                match target {
                     Some(DesktopTarget::HomeResize(corner)) => {
                         self.home_window_resizing = Some(corner);
                     }
@@ -6084,6 +6527,32 @@ impl ConsoleRuntime {
                         }
                         self.home_window_maximized = !self.home_window_maximized;
                         let _ = self.checkpoint_desktop_layout();
+                    }
+                    Some(DesktopTarget::HomeMenu(menu)) => {
+                        if let Some(menu) =
+                            crate::runtime::object_navigation::FileNavigatorMenu::from_index(menu)
+                        {
+                            let _ = crate::runtime::with_runtime(|runtime| {
+                                runtime
+                                    .file_navigator
+                                    .as_mut()
+                                    .map(|navigator| navigator.open_menu(menu))
+                            });
+                        }
+                    }
+                    Some(DesktopTarget::HomeMenuItem(item)) => {
+                        let menu = crate::runtime::with_runtime(|runtime| {
+                            runtime
+                                .file_navigator
+                                .and_then(|navigator| navigator.menu_open)
+                        })
+                        .flatten();
+                        if let Some(menu) = menu {
+                            self.activate_file_navigator_menu(menu, item);
+                        }
+                    }
+                    Some(DesktopTarget::HomeDialogAction(action)) => {
+                        self.activate_file_navigator_dialog(action);
                     }
                     Some(DesktopTarget::HomeToolbar(action)) => {
                         let _ = crate::runtime::with_runtime(|runtime| {
@@ -6223,7 +6692,81 @@ impl ConsoleRuntime {
             }
         } else if self.mode == ConsoleMode::AppLauncher {
             let visible = launcher_visible_count(&self.command[..self.command_length]);
-            match layout.app_launcher_target(self.pointer_x, self.pointer_y, visible) {
+            let geometry = layout.app_launcher_geometry();
+            let scroll = layout.app_launcher_scroll_geometry(visible);
+            let target = layout.app_launcher_target(self.pointer_x, self.pointer_y, visible);
+            let presentation = crate::ui::app_launcher::launcher_presentation();
+            if let Some(source) = presentation.drag_source {
+                if left_button {
+                    let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+                    let edge = (28 * layout.scale()) as i32;
+                    if pointer_y < geometry.grid_viewport.y.saturating_add(edge) {
+                        let _ = crate::ui::app_launcher::launcher_scroll_by(
+                            -(12 * layout.scale() as i32),
+                            scroll.maximum_scroll,
+                        );
+                    } else if pointer_y > geometry.grid_viewport.bottom().saturating_sub(edge) {
+                        let _ = crate::ui::app_launcher::launcher_scroll_by(
+                            12 * layout.scale() as i32,
+                            scroll.maximum_scroll,
+                        );
+                    }
+                    let drag_target = match target {
+                        AppLauncherTarget::App(index) => Some(index),
+                        _ => None,
+                    };
+                    let _ = crate::ui::app_launcher::launcher_update_drag(
+                        drag_target,
+                        self.pointer_x,
+                        self.pointer_y,
+                    );
+                }
+                if released {
+                    match crate::ui::app_launcher::launcher_finish_drag(
+                        &self.command[..self.command_length],
+                    ) {
+                        crate::ui::app_launcher::LauncherRelease::Activate(index) => {
+                            self.system_focus = index + 1;
+                            self.activate_launcher_focus();
+                        }
+                        crate::ui::app_launcher::LauncherRelease::Reordered => {
+                            self.system_focus = source.min(visible.saturating_sub(1)) + 1;
+                        }
+                        crate::ui::app_launcher::LauncherRelease::None => {}
+                    }
+                }
+                self.redraw();
+                return;
+            }
+            if self.launcher_scroll_dragging {
+                if left_button {
+                    let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+                    let track_top = geometry.scrollbar_track.y;
+                    let travel = geometry
+                        .scrollbar_track
+                        .height
+                        .saturating_sub(scroll.thumb.height)
+                        as usize;
+                    let thumb_top = pointer_y
+                        .saturating_sub(self.launcher_scroll_grab_offset)
+                        .saturating_sub(track_top)
+                        .clamp(0, travel.min(i32::MAX as usize) as i32)
+                        as usize;
+                    let offset = if travel == 0 {
+                        0
+                    } else {
+                        thumb_top.saturating_mul(scroll.maximum_scroll) / travel
+                    };
+                    let _ =
+                        crate::ui::app_launcher::launcher_scroll_to(offset, scroll.maximum_scroll);
+                }
+                if released {
+                    self.launcher_scroll_dragging = false;
+                }
+                self.redraw();
+                return;
+            }
+            match target {
                 AppLauncherTarget::Search => {
                     self.system_focus = 0;
                     if clicked {
@@ -6238,7 +6781,11 @@ impl ConsoleRuntime {
                 AppLauncherTarget::App(index) => {
                     self.system_focus = index + 1;
                     if clicked {
-                        self.activate_launcher_focus();
+                        crate::ui::app_launcher::launcher_begin_drag(
+                            index,
+                            self.pointer_x,
+                            self.pointer_y,
+                        );
                     }
                 }
                 AppLauncherTarget::Category(index) => {
@@ -6252,9 +6799,36 @@ impl ConsoleRuntime {
                 | AppLauncherTarget::Dismiss
                     if clicked =>
                 {
-                    self.enter_desktop();
+                    self.close_app_launcher();
+                }
+                AppLauncherTarget::ScrollbarThumb if clicked => {
+                    let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+                    self.launcher_scroll_grab_offset = pointer_y.saturating_sub(scroll.thumb.y);
+                    self.launcher_scroll_dragging = true;
+                }
+                AppLauncherTarget::ScrollbarTrack if clicked => {
+                    let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+                    let travel = geometry
+                        .scrollbar_track
+                        .height
+                        .saturating_sub(scroll.thumb.height)
+                        as usize;
+                    let thumb_top = pointer_y
+                        .saturating_sub(geometry.scrollbar_track.y)
+                        .saturating_sub(scroll.thumb.height as i32 / 2)
+                        .clamp(0, travel.min(i32::MAX as usize) as i32)
+                        as usize;
+                    let offset = if travel == 0 {
+                        0
+                    } else {
+                        thumb_top.saturating_mul(scroll.maximum_scroll) / travel
+                    };
+                    let _ =
+                        crate::ui::app_launcher::launcher_scroll_to(offset, scroll.maximum_scroll);
                 }
                 AppLauncherTarget::Panel
+                | AppLauncherTarget::ScrollbarThumb
+                | AppLauncherTarget::ScrollbarTrack
                 | AppLauncherTarget::Close
                 | AppLauncherTarget::DockToggle
                 | AppLauncherTarget::Dismiss => {}
@@ -6489,9 +7063,7 @@ impl ConsoleRuntime {
                             self.settings_window.scroll_offset = 0;
                             self.settings_window.control_focus = 0;
                         }
-                        NetworkSettingsTarget::Control(index) => {
-                            self.activate_node_control(index)
-                        }
+                        NetworkSettingsTarget::Control(index) => self.activate_node_control(index),
                     }
                     self.redraw();
                     return;
@@ -6517,7 +7089,8 @@ impl ConsoleRuntime {
                         self.reset_input();
                     }
                     SettingsTarget::ContentRow(row)
-                        if clicked && !matches!(self.system_focus, 6 | 7) => {
+                        if clicked && !matches!(self.system_focus, 6 | 7) =>
+                    {
                         self.toggle_settings_row(row)
                     }
                     SettingsTarget::ExpandedAction if clicked => {
@@ -7444,64 +8017,63 @@ impl ConsoleRuntime {
         node: &crate::runtime::console_language::OperationNode<'_>,
     ) -> bool {
         use crate::runtime::iop::OperationId;
-        crate::runtime::with_runtime(|runtime| {
-            match node.schema.operation {
-                OperationId::NodeSessionList | OperationId::NodeSessionInspect => {
-                    self.output.write_number(
-                        b"NodeSessionSet count: ",
-                        runtime.nodes.sessions().iter().flatten().count() as u64,
-                    );
-                }
-                OperationId::NodeCapabilityList => {
-                    self.output.write_number(
-                        b"RemoteCapabilitySet count: ",
-                        runtime.nodes.remote_grants().iter().flatten().count() as u64,
-                    );
-                }
-                OperationId::NodeAuditList | OperationId::NodeAuditInspect => {
-                    self.output.write_number(
-                        b"NodeAuditSet count: ",
-                        runtime.nodes.audit_records().iter().flatten().count() as u64,
-                    );
-                }
-                OperationId::NodeDomainList
-                | OperationId::NodeDomainInspect
-                | OperationId::MeshStatus
-                | OperationId::MeshMemberList
-                | OperationId::MeshPolicyRead => {
-                    self.output.write_number(
-                        b"MeshDomainSet member count: ",
-                        runtime
-                            .nodes
-                            .mesh_members()
-                            .iter()
-                            .flatten()
-                            .filter(|member| member.enabled)
-                            .count() as u64,
-                    );
-                }
-                OperationId::NodeTrustRead | OperationId::NodePolicyRead => {
-                    let trusted = runtime
+        crate::runtime::with_runtime(|runtime| match node.schema.operation {
+            OperationId::NodeSessionList | OperationId::NodeSessionInspect => {
+                self.output.write_number(
+                    b"NodeSessionSet count: ",
+                    runtime.nodes.sessions().iter().flatten().count() as u64,
+                );
+            }
+            OperationId::NodeCapabilityList => {
+                self.output.write_number(
+                    b"RemoteCapabilitySet count: ",
+                    runtime.nodes.remote_grants().iter().flatten().count() as u64,
+                );
+            }
+            OperationId::NodeAuditList | OperationId::NodeAuditInspect => {
+                self.output.write_number(
+                    b"NodeAuditSet count: ",
+                    runtime.nodes.audit_records().iter().flatten().count() as u64,
+                );
+            }
+            OperationId::NodeDomainList
+            | OperationId::NodeDomainInspect
+            | OperationId::MeshStatus
+            | OperationId::MeshMemberList
+            | OperationId::MeshPolicyRead => {
+                self.output.write_number(
+                    b"MeshDomainSet member count: ",
+                    runtime
                         .nodes
-                        .discovered_nodes()
+                        .mesh_members()
                         .iter()
                         .flatten()
-                        .filter(|peer| {
-                            matches!(
-                                peer.trust,
-                                crate::runtime::node::types::TrustState::Trusted
-                                    | crate::runtime::node::types::TrustState::Restricted
-                            )
-                        })
-                        .count();
-                    self.output.write_number(b"NodePolicy trusted peers: ", trusted as u64);
-                }
-                _ => {
-                    self.output.write_number(
-                        b"NodeSet count: ",
-                        runtime.nodes.discovered_nodes().iter().flatten().count() as u64,
-                    );
-                }
+                        .filter(|member| member.enabled)
+                        .count() as u64,
+                );
+            }
+            OperationId::NodeTrustRead | OperationId::NodePolicyRead => {
+                let trusted = runtime
+                    .nodes
+                    .discovered_nodes()
+                    .iter()
+                    .flatten()
+                    .filter(|peer| {
+                        matches!(
+                            peer.trust,
+                            crate::runtime::node::types::TrustState::Trusted
+                                | crate::runtime::node::types::TrustState::Restricted
+                        )
+                    })
+                    .count();
+                self.output
+                    .write_number(b"NodePolicy trusted peers: ", trusted as u64);
+            }
+            _ => {
+                self.output.write_number(
+                    b"NodeSet count: ",
+                    runtime.nodes.discovered_nodes().iter().flatten().count() as u64,
+                );
             }
         });
         true
@@ -8300,8 +8872,9 @@ impl ConsoleRuntime {
             self.output
                 .write_line(b"Integrity: valid (verified by Infinity EFI)");
         } else {
-            self.output
-                .write_line(b"No installed generation is active in recovery/development boot mode.");
+            self.output.write_line(
+                b"No installed generation is active in recovery/development boot mode.",
+            );
         }
     }
 
@@ -8368,9 +8941,13 @@ impl ConsoleRuntime {
     // ------------------=
     fn execute_runtime_command(&mut self, command: &[u8]) -> bool {
         if command == b"task" || command == b"help task" {
-            self.output.write_line(b"task - monitor and control live execution contexts");
-            self.output.write_line(b"list | inspect HANDLE | launch APP | end HANDLE | relaunch HANDLE");
-            self.output.write_line(b"pause HANDLE | resume HANDLE | throttle HANDLE cpu=N memory=N queue=N io=N");
+            self.output
+                .write_line(b"task - monitor and control live execution contexts");
+            self.output
+                .write_line(b"list | inspect HANDLE | launch APP | end HANDLE | relaunch HANDLE");
+            self.output.write_line(
+                b"pause HANDLE | resume HANDLE | throttle HANDLE cpu=N memory=N queue=N io=N",
+            );
             return true;
         }
         if command == b"task list" || command == b"tasks" {
@@ -8451,10 +9028,13 @@ impl ConsoleRuntime {
             });
             match launched {
                 Some(Ok(handle)) => {
-                    self.output.write_number(b"Launched task: ", handle.0 as u64);
+                    self.output
+                        .write_number(b"Launched task: ", handle.0 as u64);
                     match image {
                         crate::runtime::task_manager::IMAGE_TEXT_EDITOR => self.open_text_editor(),
-                        crate::runtime::task_manager::IMAGE_TASK_MANAGER => self.open_task_manager(),
+                        crate::runtime::task_manager::IMAGE_TASK_MANAGER => {
+                            self.open_task_manager()
+                        }
                         _ => {}
                     }
                 }
@@ -8477,8 +9057,12 @@ impl ConsoleRuntime {
                     return true;
                 };
                 let task = crate::runtime::with_runtime(|runtime| {
-                    runtime.task_manager.inspect(&runtime.execution, handle).ok()
-                }).flatten();
+                    runtime
+                        .task_manager
+                        .inspect(&runtime.execution, handle)
+                        .ok()
+                })
+                .flatten();
                 let result = crate::runtime::with_runtime(|runtime| match action {
                     0 => runtime.task_manager.end(&mut runtime.execution, handle),
                     1 => runtime
@@ -8493,9 +9077,13 @@ impl ConsoleRuntime {
                     b"Task operation rejected; inspect state or system-task protection."
                 });
                 if action == 0 && matches!(result, Some(Ok(()))) {
-                    if let Some(task) = task { self.close_task_surface(task); }
+                    if let Some(task) = task {
+                        self.close_task_surface(task);
+                    }
                 } else if action == 1 && matches!(result, Some(Ok(()))) {
-                    if let Some(task) = task { self.reopen_task_surface(task); }
+                    if let Some(task) = task {
+                        self.reopen_task_surface(task);
+                    }
                 }
                 return true;
             }
@@ -8507,41 +9095,71 @@ impl ConsoleRuntime {
                 return true;
             };
             let Some(handle_value) = parse_u32(handle_text) else {
-                self.output.write_line(b"A numeric task handle is required.");
+                self.output
+                    .write_line(b"A numeric task handle is required.");
                 return true;
             };
             let handle = crate::runtime::execution::ContextHandle(handle_value as u16);
-            let result = crate::runtime::with_runtime(|runtime| {
-                let task = runtime.task_manager.inspect(&runtime.execution, handle)?;
-                let mut budget = task.budget;
-                let mut priority = task.priority;
-                for index in 1..7 {
-                    let Some(setting) = command_word(arguments, index) else { break };
-                    let Some((name, value)) = split_once(setting, b'=') else {
-                        return Err(crate::runtime::task_manager::TaskManagerError::InvalidBudget);
-                    };
-                    match name {
-                        b"cpu" => budget.cpu_weight = parse_u32(value).ok_or(crate::runtime::task_manager::TaskManagerError::InvalidBudget)?.min(u16::MAX as u32) as u16,
-                        b"memory" => budget.memory_limit = parse_u32(value).ok_or(crate::runtime::task_manager::TaskManagerError::InvalidBudget)? as u64,
-                        b"queue" => budget.message_queue_limit = parse_u32(value).ok_or(crate::runtime::task_manager::TaskManagerError::InvalidBudget)?.min(u16::MAX as u32) as u16,
-                        b"io" => budget.io_priority = parse_u32(value).ok_or(crate::runtime::task_manager::TaskManagerError::InvalidBudget)?.min(u8::MAX as u32) as u8,
-                        b"priority" => priority = match value {
-                            b"background" => crate::runtime::execution::PriorityClass::Background,
-                            b"interactive" => crate::runtime::execution::PriorityClass::Normal,
-                            b"system" => crate::runtime::execution::PriorityClass::System,
-                            b"critical" => crate::runtime::execution::PriorityClass::Critical,
-                            _ => return Err(crate::runtime::task_manager::TaskManagerError::InvalidBudget),
-                        },
-                        _ => return Err(crate::runtime::task_manager::TaskManagerError::InvalidBudget),
+            let result =
+                crate::runtime::with_runtime(|runtime| {
+                    let task = runtime.task_manager.inspect(&runtime.execution, handle)?;
+                    let mut budget = task.budget;
+                    let mut priority = task.priority;
+                    for index in 1..7 {
+                        let Some(setting) = command_word(arguments, index) else {
+                            break;
+                        };
+                        let Some((name, value)) = split_once(setting, b'=') else {
+                            return Err(
+                                crate::runtime::task_manager::TaskManagerError::InvalidBudget,
+                            );
+                        };
+                        match name {
+                            b"cpu" => budget.cpu_weight = parse_u32(value)
+                                .ok_or(
+                                    crate::runtime::task_manager::TaskManagerError::InvalidBudget,
+                                )?
+                                .min(u16::MAX as u32)
+                                as u16,
+                            b"memory" => {
+                                budget.memory_limit = parse_u32(value).ok_or(
+                                    crate::runtime::task_manager::TaskManagerError::InvalidBudget,
+                                )? as u64
+                            }
+                            b"queue" => budget.message_queue_limit = parse_u32(value)
+                                .ok_or(
+                                    crate::runtime::task_manager::TaskManagerError::InvalidBudget,
+                                )?
+                                .min(u16::MAX as u32)
+                                as u16,
+                            b"io" => budget.io_priority = parse_u32(value)
+                                .ok_or(
+                                    crate::runtime::task_manager::TaskManagerError::InvalidBudget,
+                                )?
+                                .min(u8::MAX as u32)
+                                as u8,
+                            b"priority" => priority = match value {
+                                b"background" => {
+                                    crate::runtime::execution::PriorityClass::Background
+                                }
+                                b"interactive" => crate::runtime::execution::PriorityClass::Normal,
+                                b"system" => crate::runtime::execution::PriorityClass::System,
+                                b"critical" => crate::runtime::execution::PriorityClass::Critical,
+                                _ => return Err(
+                                    crate::runtime::task_manager::TaskManagerError::InvalidBudget,
+                                ),
+                            },
+                            _ => {
+                                return Err(
+                                    crate::runtime::task_manager::TaskManagerError::InvalidBudget,
+                                )
+                            }
+                        }
                     }
-                }
-                runtime.task_manager.throttle(
-                    &mut runtime.execution,
-                    handle,
-                    budget,
-                    priority,
-                )
-            });
+                    runtime
+                        .task_manager
+                        .throttle(&mut runtime.execution, handle, budget, priority)
+                });
             self.output.write_line(if matches!(result, Some(Ok(()))) {
                 b"Task resource limits and scheduling priority updated."
             } else {
@@ -9911,6 +10529,39 @@ pub fn pointer_absolute_buttons(x: i32, y: i32, buttons: u8) {
         if let Some(runtime) = (*slot).as_mut() {
             runtime.pointer_absolute(x, y, buttons);
         }
+    }
+}
+
+// ------------------------=
+// FUNC: ui_animation_tick
+// DESC: Advances launcher transitions and smooth scrolling on the display refresh clock.
+// ------------------=
+pub fn ui_animation_tick() -> bool {
+    unsafe {
+        let slot = &raw mut RUNTIME;
+        let Some(runtime) = (*slot).as_mut() else {
+            return false;
+        };
+        if runtime.mode != ConsoleMode::AppLauncher {
+            return false;
+        }
+        let layout = SystemLayout::new(
+            runtime.system.framebuffer_width,
+            runtime.system.framebuffer_height,
+        );
+        let visible = launcher_visible_count(&runtime.command[..runtime.command_length]);
+        let maximum = layout.app_launcher_scroll_geometry(visible).maximum_scroll;
+        let tick = crate::ui::app_launcher::launcher_animation_tick(maximum);
+        if tick.closed {
+            runtime.enter_desktop();
+            runtime.redraw();
+            return true;
+        }
+        if tick.changed {
+            runtime.redraw();
+            return true;
+        }
+        false
     }
 }
 

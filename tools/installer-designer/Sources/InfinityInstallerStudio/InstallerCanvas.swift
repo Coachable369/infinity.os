@@ -168,48 +168,50 @@ private struct CanvasElementView: View {
     private var elementBody: some View {
         switch element.kind {
         case .panel:
-            RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                .fill(element.fill.color)
-                .overlay {
-                    RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                        .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
-                }
-                .overlay(alignment: .leading) {
-                    if element.role == .input, !element.text.isEmpty {
-                        Text(element.text)
-                            .font(.system(size: max(8, CGFloat(16) * canvasScale.height)))
-                            .foregroundStyle(InfinityUIKit.Palette.placeholder.color)
-                            .padding(.leading, CGFloat(16) * canvasScale.height)
-                            .lineLimit(1)
-                    }
-                }
+            CanvasPanelPreview(
+                element: element,
+                canvasScale: canvasScale,
+                focused: isSelected
+            )
         case .console:
-            RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                .fill(element.fill.color)
-                .overlay {
-                    RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                        .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
-                }
+            CanvasPanelPreview(
+                element: element,
+                canvasScale: canvasScale,
+                focused: isSelected
+            )
         case .text:
             Text(element.text)
-                .font(.system(size: max(8, CGFloat(element.fontSize) * canvasScale.height), weight: element.role == .title ? .semibold : .regular))
+                .font(.system(
+                    size: max(8, CGFloat(element.fontSize) * canvasScale.height),
+                    weight: element.role == .title ? .medium : .regular,
+                    design: .rounded
+                ))
+                .tracking(element.role == .title || element.role == .sectionLabel
+                    ? max(0.8, CGFloat(element.fontSize) * canvasScale.height * 0.12)
+                    : 0)
                 .foregroundStyle(element.fill.color)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .multilineTextAlignment(.leading)
+                .lineSpacing(max(1, 4 * canvasScale.height))
         case .image:
-            imagePreview
+            if element.role == .timeZoneMap {
+                imagePreview
+                    .overlay { TimeZoneMapSelectionPreview(canvasScale: canvasScale) }
+                    .clipShape(RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
+                            .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
+                    }
+                    .shadow(color: InfinityUIKit.Palette.nativeAccent.opacity(0.16), radius: 8 * canvasScale.height)
+            } else {
+                imagePreview
+            }
         case .button:
-            RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                .fill(element.fill.color)
-                .overlay {
-                    RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
-                        .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
-                }
-                .overlay {
-                    Text(element.text).fontWeight(.semibold)
-                    .font(.system(size: max(8, CGFloat(element.fontSize) * canvasScale.height)))
-                    .foregroundStyle(.white)
-                }
+            CanvasButtonPreview(
+                element: element,
+                canvasScale: canvasScale,
+                focused: isSelected
+            )
         }
     }
 
@@ -335,6 +337,177 @@ private struct CanvasElementView: View {
         ).integral
         guard rect.width >= 1, rect.height >= 1, let result = source.cropping(to: rect) else { return image }
         return NSImage(cgImage: result, size: NSSize(width: rect.width, height: rect.height))
+    }
+}
+
+private struct CanvasPanelPreview: View {
+    let element: StudioElement
+    let canvasScale: CGSize
+    let focused: Bool
+    @State private var hovered = false
+
+    private var interactionState: InfinityUIKitInteractionState {
+        focused ? .focused : (hovered ? .hover : .idle)
+    }
+
+    private var recipe: InfinityUIKitVisualRecipe {
+        InfinityUIKit.visualRecipe(
+            role: element.role,
+            state: interactionState,
+            authoredFill: element.fill,
+            authoredBorder: element.border
+        )
+    }
+
+    private var isField: Bool {
+        [.input, .dateField, .timeField, .timeZoneSelector, .offsetBadge].contains(element.role)
+    }
+
+    private var trailingIcon: String? {
+        switch element.role {
+        case .dateField: "calendar"
+        case .timeField: "clock"
+        case .timeZoneSelector: "chevron.down"
+        default: nil
+        }
+    }
+
+    var body: some View {
+        let radius = CGFloat(element.cornerRadius) * canvasScale.height
+        RoundedRectangle(cornerRadius: radius)
+            .fill(LinearGradient(
+                colors: [recipe.fillTop.color, recipe.fillBottom.color],
+                startPoint: .top,
+                endPoint: .bottom
+            ))
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: radius)
+                    .stroke(Color.white.opacity(recipe.highlightOpacity * 0.28), lineWidth: max(0.6, canvasScale.height))
+                    .padding(max(1, canvasScale.height))
+                    .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .center))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: radius)
+                    .stroke(recipe.border.color, lineWidth: max(recipe.borderWidth, canvasScale.height))
+            }
+            .overlay(alignment: .leading) {
+                if isField, !element.text.isEmpty {
+                    HStack(spacing: 8 * canvasScale.height) {
+                        Text(element.text)
+                            .font(.system(
+                                size: max(8, CGFloat(element.fontSize) * canvasScale.height),
+                                weight: .regular,
+                                design: .rounded
+                            ))
+                            .tracking(element.role == .offsetBadge ? max(0.5, canvasScale.height) : 0)
+                            .foregroundStyle(element.role == .input
+                                ? InfinityUIKit.Palette.placeholder.color
+                                : recipe.text.color)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        if let trailingIcon {
+                            Image(systemName: trailingIcon)
+                                .font(.system(size: max(8, 15 * canvasScale.height), weight: .light))
+                                .foregroundStyle(InfinityUIKit.Palette.nativeAccentBright)
+                        }
+                    }
+                    .padding(.horizontal, max(7, 16 * canvasScale.height))
+                }
+            }
+            .shadow(
+                color: InfinityUIKit.Palette.nativeAccent.opacity(recipe.glowOpacity),
+                radius: 10 * canvasScale.height
+            )
+            .onHover { hovered = $0 }
+    }
+}
+
+private struct CanvasButtonPreview: View {
+    let element: StudioElement
+    let canvasScale: CGSize
+    let focused: Bool
+    @State private var hovered = false
+
+    private var interactionState: InfinityUIKitInteractionState {
+        focused ? .focused : (hovered ? .hover : .idle)
+    }
+
+    private var recipe: InfinityUIKitVisualRecipe {
+        InfinityUIKit.visualRecipe(
+            role: element.role,
+            state: interactionState,
+            authoredFill: element.fill,
+            authoredBorder: element.border
+        )
+    }
+
+    var body: some View {
+        let radius = CGFloat(element.cornerRadius) * canvasScale.height
+        RoundedRectangle(cornerRadius: radius)
+            .fill(LinearGradient(
+                colors: [recipe.fillTop.color, recipe.fillBottom.color],
+                startPoint: .top,
+                endPoint: .bottom
+            ))
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: radius)
+                    .fill(LinearGradient(
+                        colors: [Color.white.opacity(recipe.highlightOpacity * 0.20), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ))
+                    .frame(maxHeight: .infinity)
+                    .padding(max(1, canvasScale.height))
+                    .mask(Rectangle().frame(maxHeight: .infinity, alignment: .top))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: radius)
+                    .stroke(recipe.border.color, lineWidth: max(recipe.borderWidth, canvasScale.height))
+            }
+            .overlay {
+                Text(element.text)
+                    .font(.system(
+                        size: max(8, CGFloat(element.fontSize) * canvasScale.height),
+                        weight: .medium,
+                        design: .rounded
+                    ))
+                    .tracking(max(0.7, CGFloat(element.fontSize) * canvasScale.height * 0.10))
+                    .foregroundStyle(recipe.text.color)
+                    .lineLimit(1)
+                    .padding(.horizontal, max(8, 14 * canvasScale.height))
+            }
+            .shadow(
+                color: InfinityUIKit.Palette.nativeAccent.opacity(recipe.glowOpacity),
+                radius: 11 * canvasScale.height
+            )
+            .onHover { hovered = $0 }
+    }
+}
+
+private struct TimeZoneMapSelectionPreview: View {
+    let canvasScale: CGSize
+
+    var body: some View {
+        GeometryReader { proxy in
+            let bandWidth = max(4, proxy.size.width / 24)
+            let marker = CGPoint(x: proxy.size.width * 0.235, y: proxy.size.height * 0.29)
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(InfinityUIKit.Palette.nativeAccent.opacity(0.20))
+                    .frame(width: bandWidth)
+                    .overlay {
+                        Rectangle().stroke(InfinityUIKit.Palette.nativeAccent.opacity(0.72), lineWidth: max(1, canvasScale.height))
+                    }
+                    .offset(x: marker.x - bandWidth / 2)
+                Circle()
+                    .fill(InfinityUIKit.Palette.nativeAccentBright)
+                    .frame(width: max(8, 13 * canvasScale.height), height: max(8, 13 * canvasScale.height))
+                    .overlay(Circle().stroke(.white, lineWidth: max(1, canvasScale.height)))
+                    .shadow(color: InfinityUIKit.Palette.nativeAccent, radius: 8 * canvasScale.height)
+                    .position(marker)
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 

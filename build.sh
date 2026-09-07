@@ -21,6 +21,7 @@ make object-test
 make network-test
 make ui-install-parity-test
 make input-regression-test
+make app-launcher-interaction-test
 
 mkdir -p "$output_dir"
 find "$output_dir" -maxdepth 1 -type f -name 'InfinityOS-*.iso' -delete

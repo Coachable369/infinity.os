@@ -1,0 +1,68 @@
+[package]
+name = "infinityos-behavior-harness"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chacha20poly1305 = { version = "0.11.0", default-features = false }
+ed25519-dalek = { version = "3.0.0", default-features = false, features = ["zeroize"] }
+hkdf = { version = "0.13.0", default-features = false }
+sha2 = { version = "0.11.0", default-features = false }
+x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets", "zeroize"] }
+zeroize = { version = "1.8.1", default-features = false }
+
+[[bin]]
+name = "network-test"
+path = "../network-test.rs"
+
+[[bin]]
+name = "pointer-protocol-test"
+path = "../pointer-protocol-test.rs"
+
+[[bin]]
+name = "ui-redraw-policy-test"
+path = "../ui-redraw-policy-test.rs"
+
+[[bin]]
+name = "window-session-state-test"
+path = "../window-session-state-test.rs"
+
+[[bin]]
+name = "file-navigator-layout-test"
+path = "../file-navigator-layout-test.rs"
+
+[[bin]]
+name = "desktop-layout-identity-test"
+path = "../desktop-layout-identity-test.rs"
+
+[[bin]]
+name = "task-manager-test"
+path = "../task-manager-test.rs"
+
+[[bin]]
+name = "file-navigator-workspace-test"
+path = "../file-navigator-workspace-test.rs"
+
+[[bin]]
+name = "ai-test"
+path = "../ai-test.rs"
+
+[[bin]]
+name = "runtime-test"
+path = "../runtime-test.rs"
+
+[[bin]]
+name = "milestone-6-5-test"
+path = "../milestone-6-5-test.rs"
+
+[[bin]]
+name = "milestone-7-test"
+path = "../milestone-7-test.rs"
+
+[[bin]]
+name = "milestone-8-object-navigation-test"
+path = "../milestone-8-object-navigation-test.rs"
+
+[[bin]]
+name = "settings-timeout-test"
+path = "../settings-timeout-test.rs"

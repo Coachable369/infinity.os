@@ -121,8 +121,12 @@ impl CrashReason {
     // ------------------=
     pub const fn description(self) -> &'static [u8] {
         match self {
-            Self::KernelPanic => b"THE KERNEL STOPPED AFTER DETECTING AN UNRECOVERABLE SOFTWARE CONDITION.",
-            Self::InvalidBootInformation => b"THE BOOT CONTRACT WAS INVALID, SO STARTUP COULD NOT CONTINUE SAFELY.",
+            Self::KernelPanic => {
+                b"THE KERNEL STOPPED AFTER DETECTING AN UNRECOVERABLE SOFTWARE CONDITION."
+            }
+            Self::InvalidBootInformation => {
+                b"THE BOOT CONTRACT WAS INVALID, SO STARTUP COULD NOT CONTINUE SAFELY."
+            }
             Self::ProcessorFault => b"THE PROCESSOR REPORTED A FAULT THAT COULD NOT BE CONTAINED.",
             Self::InvariantViolation => b"A REQUIRED SYSTEM SAFETY INVARIANT WAS VIOLATED.",
         }
@@ -244,13 +248,7 @@ impl Write for FixedText {
 // FUNC: crash_fingerprint
 // DESC: Computes a stable non-secret fingerprint from the structured failure record.
 // ------------------=
-fn crash_fingerprint(
-    code: u32,
-    phase: CrashPhase,
-    line: u32,
-    column: u32,
-    summary: &[u8],
-) -> u64 {
+fn crash_fingerprint(code: u32, phase: CrashPhase, line: u32, column: u32, summary: &[u8]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     for byte in code
         .to_le_bytes()

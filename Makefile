@@ -71,7 +71,12 @@ SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-
 	assets/boot/installer-screens.iuit assets/boot/configuration-screens.iuit \
 	$(CRASH_ASSETS) $(NODE_ASSETS)
 
-.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test installer-layout-test installer-template-runtime installer-template-test component-manifest-test object-test namespace-test crash-recovery-test crash-screen-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test milestone-7c-test milestone-8-test milestone-9-test network-test icon-theme-test settings-color-test settings-timeout-test desktop-system-test ui-install-parity-test input-regression-test task-manager-test file-navigator-workspace-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
+.PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test installer-layout-test installer-template-runtime installer-template-test component-manifest-test object-test namespace-test crash-recovery-test crash-screen-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test milestone-7c-test milestone-8-test milestone-9-test network-test icon-theme-test settings-color-test settings-timeout-test desktop-system-test ui-install-parity-test input-regression-test app-launcher-interaction-test task-manager-test file-navigator-workspace-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
+
+app-launcher-interaction-test:
+	@mkdir -p build/tools
+	@rustc --edition 2021 -A warnings tools/app-launcher-interaction-test.rs -o build/tools/app-launcher-interaction-test
+	@build/tools/app-launcher-interaction-test
 
 milestone-9-test:
 	@tools/milestone9-test.sh
@@ -96,9 +101,8 @@ settings-color-test:
 	@echo "Independent Primary and Secondary theme controls: PASS"
 
 settings-timeout-test:
-	@mkdir -p build/tools
-	@rustc --edition 2021 -A warnings tools/settings-timeout-test.rs -o build/tools/settings-timeout-test
-	@build/tools/settings-timeout-test
+	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet \
+		--manifest-path tools/behavior-harness/Cargo.toml --bin settings-timeout-test
 
 installer-layout-test:
 	@mkdir -p build/tools
@@ -273,14 +277,12 @@ input-regression-test:
 	@tools/input-regression-test.sh
 
 task-manager-test:
-	@mkdir -p build/behavior-tests
-	@rustc --edition=2021 -C opt-level=2 tools/task-manager-test.rs -o build/behavior-tests/task-manager-test
-	@build/behavior-tests/task-manager-test
+	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet \
+		--manifest-path tools/behavior-harness/Cargo.toml --bin task-manager-test
 
 file-navigator-workspace-test:
-	@mkdir -p build/behavior-tests
-	@rustc --edition=2021 -C opt-level=2 tools/file-navigator-workspace-test.rs -o build/behavior-tests/file-navigator-workspace-test
-	@build/behavior-tests/file-navigator-workspace-test
+	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet \
+		--manifest-path tools/behavior-harness/Cargo.toml --bin file-navigator-workspace-test
 
 installed-object-test:
 	@rustc --edition=2021 -C opt-level=2 tools/installed-object-test.rs -o build/installed-object-test

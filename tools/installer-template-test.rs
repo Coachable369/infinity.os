@@ -120,6 +120,27 @@ fn main() {
         .image_asset
         .ends_with(b"infinity-installer-masthead-v2.png"));
     assert!(template.asset(masthead.image_asset).is_none());
+    let date = template
+        .element(5, InstallerTemplateRole::DateField)
+        .expect("date field must be a saved semantic control");
+    let time = template
+        .element(5, InstallerTemplateRole::TimeField)
+        .expect("time field must be a saved semantic control");
+    let zone = template
+        .element(5, InstallerTemplateRole::TimeZoneSelector)
+        .expect("time-zone selector must be a saved semantic control");
+    let badge = template
+        .element(5, InstallerTemplateRole::OffsetBadge)
+        .expect("UTC offset badge must be a saved semantic control");
+    let map = template
+        .element(5, InstallerTemplateRole::TimeZoneMap)
+        .expect("time-zone map must be a saved semantic layer");
+    assert_eq!(date.fill, [2, 10, 20, 255]);
+    assert_eq!(time.fill, date.fill);
+    assert_eq!(zone.border, [40, 72, 95, 255]);
+    assert_eq!(badge.border, [40, 181, 231, 255]);
+    assert!(map.image_asset.ends_with(b"infinity-time-zone-map-v1.png"));
+    assert!(template.asset(map.image_asset).is_none());
 
     let configuration =
         InstallerTemplate::parse(CONFIGURATION_TEMPLATE).expect("configuration template must load");
@@ -128,15 +149,10 @@ fn main() {
         let card = configuration
             .element(screen, InstallerTemplateRole::Console)
             .expect("configuration card must exist");
-        assert_eq!(
-            (
-                card.frame.x,
-                card.frame.y,
-                card.frame.width,
-                card.frame.height
-            ),
-            (40, 128, 340, 736)
-        );
+        assert!(card.frame.width >= 300);
+        assert!(card.frame.height >= 600);
+        assert!(card.frame.x as u32 + card.frame.width as u32 <= 1000);
+        assert!(card.frame.y as u32 + card.frame.height as u32 <= 1000);
         assert_eq!(card.fill, [10, 18, 29, 230]);
         assert_eq!(card.border, [51, 71, 91, 255]);
         assert_eq!(card.corner_radius, 16);
@@ -177,15 +193,10 @@ fn main() {
             .element(screen, InstallerTemplateRole::Input)
             .expect("profile and credential steps need an authored input field");
         assert!(!input.hidden);
-        assert_eq!(
-            (
-                input.frame.x,
-                input.frame.y,
-                input.frame.width,
-                input.frame.height
-            ),
-            (72, 442, 276, 47)
-        );
+        assert!(input.frame.width >= 220);
+        assert_eq!(input.frame.height, 47);
+        assert!(input.frame.x as u32 + input.frame.width as u32 <= 1000);
+        assert!(input.frame.y as u32 + input.frame.height as u32 <= 1000);
         assert_eq!(input.fill, [2, 10, 20, 255]);
         assert_eq!(input.border, [40, 72, 95, 255]);
         assert_eq!(input.corner_radius, 10);

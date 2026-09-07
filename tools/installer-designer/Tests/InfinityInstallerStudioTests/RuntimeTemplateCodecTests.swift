@@ -487,4 +487,62 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         store.resetZoom()
         XCTAssertEqual(store.zoom, 1.0, accuracy: 0.001)
     }
+
+    // ------------------------=
+    // FUNC: testDateTimeFactoryCarriesEveryUIKitComponentIntoRuntimeData
+    // DESC: Verifies the editable Date and Time kit exposes every semantic control and survives binary persistence.
+    // ------------------=
+    func testDateTimeFactoryCarriesEveryUIKitComponentIntoRuntimeData() throws {
+        let document = InstallerStudioDocument.factoryDefault()
+        let dateTime = try XCTUnwrap(document.screens.first { $0.title == "Date & Time" })
+        let required: Set<StudioElementRole> = [
+            .sectionLabel, .dateField, .timeField, .timeZoneSelector,
+            .offsetBadge, .timeZoneMap, .metadata, .backButton, .primaryButton,
+        ]
+
+        XCTAssertTrue(required.isSubset(of: Set(dateTime.elements.map(\.role))))
+        XCTAssertTrue(dateTime.elements.filter { required.contains($0.role) }.allSatisfy {
+            $0.frame.width > 0 && $0.frame.height > 0
+        })
+        let decoded = try RuntimeTemplateCodec.decode(RuntimeTemplateCodec.encode(document))
+        XCTAssertEqual(decoded.screens[4], dateTime)
+    }
+
+    // ------------------------=
+    // FUNC: testUIKitVisualRecipeExpressesControlStateHierarchy
+    // DESC: Exercises default, hover, focus, and pressed recipes as structured visual state transitions.
+    // ------------------=
+    func testUIKitVisualRecipeExpressesControlStateHierarchy() {
+        let idle = InfinityUIKit.visualRecipe(
+            role: .primaryButton,
+            state: .idle,
+            authoredFill: InfinityUIKit.Palette.primaryAction,
+            authoredBorder: InfinityUIKit.Palette.primaryActionBorder
+        )
+        let hover = InfinityUIKit.visualRecipe(
+            role: .primaryButton,
+            state: .hover,
+            authoredFill: InfinityUIKit.Palette.primaryAction,
+            authoredBorder: InfinityUIKit.Palette.primaryActionBorder
+        )
+        let focused = InfinityUIKit.visualRecipe(
+            role: .primaryButton,
+            state: .focused,
+            authoredFill: InfinityUIKit.Palette.primaryAction,
+            authoredBorder: InfinityUIKit.Palette.primaryActionBorder
+        )
+        let pressed = InfinityUIKit.visualRecipe(
+            role: .primaryButton,
+            state: .pressed,
+            authoredFill: InfinityUIKit.Palette.primaryAction,
+            authoredBorder: InfinityUIKit.Palette.primaryActionBorder
+        )
+
+        XCTAssertGreaterThan(hover.glowOpacity, idle.glowOpacity)
+        XCTAssertGreaterThan(focused.glowOpacity, hover.glowOpacity)
+        XCTAssertGreaterThan(focused.borderWidth, idle.borderWidth)
+        XCTAssertGreaterThan(hover.fillTop.blue, idle.fillTop.blue)
+        XCTAssertLessThan(pressed.fillBottom.blue, idle.fillBottom.blue)
+        XCTAssertEqual(focused.border, InfinityUIKit.Palette.accentBright)
+    }
 }

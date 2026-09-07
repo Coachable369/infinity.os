@@ -3,13 +3,15 @@ set -eu
 cd "$(dirname "$0")/.."
 
 mkdir -p build/behavior-tests
-rustc --edition=2021 -C opt-level=2 tools/pointer-protocol-test.rs -o build/behavior-tests/pointer-protocol-test
-build/behavior-tests/pointer-protocol-test
-rustc --edition=2021 -C opt-level=2 tools/ui-redraw-policy-test.rs -o build/behavior-tests/ui-redraw-policy-test
-build/behavior-tests/ui-redraw-policy-test
-rustc --edition=2021 -C opt-level=2 tools/window-session-state-test.rs -o build/behavior-tests/window-session-state-test
-build/behavior-tests/window-session-state-test
-rustc --edition=2021 -C opt-level=2 tools/file-navigator-layout-test.rs -o build/behavior-tests/file-navigator-layout-test
-build/behavior-tests/file-navigator-layout-test
-rustc --edition=2021 -C opt-level=2 tools/desktop-layout-identity-test.rs -o build/behavior-tests/desktop-layout-identity-test
-build/behavior-tests/desktop-layout-identity-test
+for test_name in \
+    pointer-protocol-test \
+    ui-redraw-policy-test \
+    window-session-state-test \
+    file-navigator-layout-test \
+    desktop-layout-identity-test \
+    task-manager-test \
+    file-navigator-workspace-test
+do
+    CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet \
+        --manifest-path tools/behavior-harness/Cargo.toml --bin "$test_name"
+done

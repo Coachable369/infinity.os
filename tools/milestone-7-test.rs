@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-#[path = "../kernel/ui/mod.rs"]
-mod ui;
 #[path = "../kernel/runtime/mod.rs"]
 mod runtime;
 #[path = "storage.rs"]
 mod storage;
+#[path = "../kernel/ui/mod.rs"]
+mod ui;
 
 // ------------------------=
 // FUNC: output_text
@@ -22,7 +22,9 @@ use runtime::iop::OperationId;
 // DESC: Finds an exact byte sequence without interpreting native state as text.
 // ------------------=
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack.windows(needle.len()).any(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 // ------------------------=
@@ -33,24 +35,38 @@ fn identity_lifecycle() {
     let mut identities = IdentitySystem::new();
     assert_eq!(identities.onboarding_state(), OnboardingState::Required);
     identities.begin_onboarding().unwrap();
-    let machine = identities.create_machine(b"InfinityNode", 0xaa64, 7, 1).unwrap();
+    let machine = identities
+        .create_machine(b"InfinityNode", 0xaa64, 7, 1)
+        .unwrap();
     let renamed = identities.update_machine_name(b"HomeMesh").unwrap();
     assert_eq!(renamed.id, machine.id);
 
-    let owner = identities.create_user(b"aurelius", b"Aurelius Prime", 2).unwrap();
+    let owner = identities
+        .create_user(b"aurelius", b"Aurelius Prime", 2)
+        .unwrap();
     let owner_space = identities.personal_space(owner.id).unwrap();
     assert_eq!(owner_space.owner, owner.id);
-    identities.create_password(owner.id, b"correct horse battery", 3).unwrap();
+    identities
+        .create_password(owner.id, b"correct horse battery", 3)
+        .unwrap();
     identities.complete_onboarding().unwrap();
-    let owner_session = identities.create_session(owner.id, b"correct horse battery", 4).unwrap();
+    let owner_session = identities
+        .create_session(owner.id, b"correct horse battery", 4)
+        .unwrap();
     assert_ne!(owner_session.capabilities & SESSION_IDENTITY_MANAGE, 0);
     assert_eq!(owner_session.personal_space, owner_space.space);
 
-    let second = identities.create_user(b"second", b"Second User", 5).unwrap();
+    let second = identities
+        .create_user(b"second", b"Second User", 5)
+        .unwrap();
     let second_space = identities.personal_space(second.id).unwrap();
     assert_ne!(owner_space.space, second_space.space);
-    let second_credential = identities.create_password(second.id, b"different secret", 6).unwrap();
-    let second_session = identities.create_session(second.id, b"different secret", 7).unwrap();
+    let second_credential = identities
+        .create_password(second.id, b"different secret", 6)
+        .unwrap();
+    let second_session = identities
+        .create_session(second.id, b"different secret", 7)
+        .unwrap();
     assert_eq!(second_session.capabilities & SESSION_IDENTITY_MANAGE, 0);
     assert_eq!(
         identities.update_user_name(second.id, owner.id, b"Nope", false),
@@ -134,8 +150,11 @@ fn identity_lifecycle() {
         identities.update_user_accent(second.id, owner.id, 0x33d69f),
         Err(IdentityError::AccessDenied)
     );
+    identities
+        .update_user_icon_theme(owner.id, owner.id, 3)
+        .unwrap();
     assert_eq!(
-        identities.update_user_icon_theme(owner.id, owner.id, 3),
+        identities.update_user_icon_theme(owner.id, owner.id, 4),
         Err(IdentityError::InvalidInput)
     );
     identities
@@ -154,7 +173,7 @@ fn identity_lifecycle() {
         restored.user_profile(owner.id).unwrap().theme.as_bytes(),
         b"nebula-high-contrast"
     );
-    assert_eq!(restored.user_profile(owner.id).unwrap().icon_theme, 2);
+    assert_eq!(restored.user_profile(owner.id).unwrap().icon_theme, 3);
     assert_eq!(restored.background_effects(), (64, 7));
     assert_eq!(
         restored.user_profile(owner.id).unwrap().accent_rgb,
@@ -193,7 +212,9 @@ fn identity_lifecycle() {
 fn interrupted_onboarding() {
     let mut state = IdentitySystem::new();
     state.begin_onboarding().unwrap();
-    state.create_machine(b"InterruptedNode", 0x8664, 1, 1).unwrap();
+    state
+        .create_machine(b"InterruptedNode", 0x8664, 1, 1)
+        .unwrap();
     let persisted = state.encode();
     let resumed = IdentitySystem::decode(&persisted).unwrap();
     assert_eq!(resumed.onboarding_state(), OnboardingState::InProgress);
@@ -202,12 +223,16 @@ fn interrupted_onboarding() {
 
     let mut late = IdentitySystem::new();
     late.begin_onboarding().unwrap();
-    late.create_machine(b"LateInterruptedNode", 0x8664, 1, 1).unwrap();
+    late.create_machine(b"LateInterruptedNode", 0x8664, 1, 1)
+        .unwrap();
     let user = late.create_user(b"recovery", b"Recovery User", 2).unwrap();
-    late.create_password(user.id, b"recovery secret", 3).unwrap();
+    late.create_password(user.id, b"recovery secret", 3)
+        .unwrap();
     let mut resumed_late = IdentitySystem::decode(&late.encode()).unwrap();
     assert!(resumed_late.has_active_credential(user.id));
-    resumed_late.authenticate(user.id, b"recovery secret", 4).unwrap();
+    resumed_late
+        .authenticate(user.id, b"recovery secret", 4)
+        .unwrap();
     resumed_late.complete_onboarding().unwrap();
     assert_eq!(resumed_late.onboarding_state(), OnboardingState::Complete);
     println!("PASS onboarding recovery: early and post-credential interruptions resume without inventing authority");
@@ -250,7 +275,11 @@ fn console_contract() {
         b"clipboard read",
         b"clipboard write name=text value=hello",
     ] {
-        assert!(matches!(parse(command), Ok(ParseOutcome::Graph(_))), "unregistered command: {}", String::from_utf8_lossy(command));
+        assert!(
+            matches!(parse(command), Ok(ParseOutcome::Graph(_))),
+            "unregistered command: {}",
+            String::from_utf8_lossy(command)
+        );
     }
     println!("PASS GUI/CLI contract: identity, machine, credential, session, Personal Space, AI, voice, and settings use typed operations");
 }
@@ -298,7 +327,9 @@ fn default_font_catalog() {
         assert!(font.resource.ends_with(b".ttf"));
         assert_eq!(system.fonts.by_id(font.id), Some(font));
     }
-    println!("PASS font catalog: 46 typed default families resolve to installed System-space resources");
+    println!(
+        "PASS font catalog: 46 typed default families resolve to installed System-space resources"
+    );
 }
 
 // ------------------------=

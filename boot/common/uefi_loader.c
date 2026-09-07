@@ -140,6 +140,7 @@ typedef EFI_STATUS (EFIAPI *EFI_ALLOCATE_POOL)(uint32_t, size_t, void **);
 typedef EFI_STATUS (EFIAPI *EFI_FREE_POOL)(void *);
 typedef EFI_STATUS (EFIAPI *EFI_HANDLE_PROTOCOL)(EFI_HANDLE, EFI_GUID *, void **);
 typedef EFI_STATUS (EFIAPI *EFI_EXIT_BOOT_SERVICES)(EFI_HANDLE, uint64_t);
+typedef EFI_STATUS (EFIAPI *EFI_SET_WATCHDOG_TIMER)(size_t, uint64_t, size_t, const CHAR16 *);
 typedef EFI_STATUS (EFIAPI *EFI_LOCATE_PROTOCOL)(EFI_GUID *, void *, void **);
 typedef EFI_STATUS (EFIAPI *EFI_LOCATE_HANDLE_BUFFER)(uint32_t, EFI_GUID *, void *, size_t *, EFI_HANDLE **);
 typedef EFI_STATUS (EFIAPI *EFI_CONNECT_CONTROLLER)(EFI_HANDLE, EFI_HANDLE *, void *, uint8_t);
@@ -163,7 +164,8 @@ typedef struct {
     EFI_HANDLE_PROTOCOL handle_protocol;
     void *unused_17_25[9];
     EFI_EXIT_BOOT_SERVICES exit_boot_services;
-    void *unused_27_29[3];
+    void *unused_27_28[2];
+    EFI_SET_WATCHDOG_TIMER set_watchdog_timer;
     EFI_CONNECT_CONTROLLER connect_controller;
     void *unused_31_35[5];
     EFI_LOCATE_HANDLE_BUFFER locate_handle_buffer;
@@ -1277,6 +1279,12 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     }
 #endif
     gather_firmware_network(system, info);
+
+    /* AArch64 retains selected firmware services for its input bridge. Disable
+     * the standard five-minute image watchdog before transferring control so a
+     * healthy installed system is not reset after 300 seconds. */
+    if (system->boot_services->set_watchdog_timer)
+        system->boot_services->set_watchdog_timer(0, 0, 0, NULL);
 
     size_t map_size = 0, descriptor_size = 0;
     uint64_t map_key = 0;

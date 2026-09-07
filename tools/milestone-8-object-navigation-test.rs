@@ -6,6 +6,8 @@ mod capability;
 mod execution;
 #[path = "../kernel/runtime/iop.rs"]
 mod iop;
+#[path = "../kernel/ui/mod.rs"]
+mod ui;
 #[path = "../kernel/runtime/object_navigation.rs"]
 mod object_navigation;
 #[path = "storage.rs"]

@@ -168,6 +168,7 @@ enum RuntimeTemplateCodec {
         name.hasSuffix("infinity-installer-masthead-v2.png")
             || name.hasSuffix("infinity-installer-masthead-v1.png")
             || name.hasSuffix("infinity-onboarding-wallpaper-v1.png")
+            || name.hasSuffix("infinity-time-zone-map-v1.png")
     }
 
     // ------------------------=

@@ -18,6 +18,13 @@ pub enum InstallerTemplateRole {
     PrimaryButton = 8,
     Footer = 9,
     Input = 10,
+    SectionLabel = 11,
+    DateField = 12,
+    TimeField = 13,
+    TimeZoneSelector = 14,
+    OffsetBadge = 15,
+    TimeZoneMap = 16,
+    Metadata = 17,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -155,7 +162,11 @@ impl<'a> InstallerTemplate<'a> {
         if !reader.is_at_end() {
             return Err(InstallerTemplateError::TrailingData);
         }
-        Ok(Self { data, screen_count, asset_count })
+        Ok(Self {
+            data,
+            screen_count,
+            asset_count,
+        })
     }
 
     // ------------------------=
@@ -418,7 +429,9 @@ impl<'a> Reader<'a> {
         let kind = self.u8()?;
         let role = self.u8()?;
         let flags = self.u8()?;
-        if !(1..=5).contains(&kind) || role > InstallerTemplateRole::Input as u8 || flags & !3 != 0
+        if !(1..=5).contains(&kind)
+            || role > InstallerTemplateRole::Metadata as u8
+            || flags & !3 != 0
         {
             return Err(InstallerTemplateError::InvalidElement);
         }
