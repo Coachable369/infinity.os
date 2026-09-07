@@ -96,6 +96,11 @@ struct InfinityInstallerStudioApp: App {
                     .keyboardShortcut(.delete, modifiers: [])
             }
             CommandMenu("Canvas") {
+                Button(store.marqueeSelectionEnabled ? "Disable Marquee Select" : "Enable Marquee Select") {
+                    store.toggleMarqueeSelection()
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+                Divider()
                 Button("Zoom In") { store.zoomIn() }
                     .keyboardShortcut("+", modifiers: .command)
                 Button("Zoom Out") { store.zoomOut() }

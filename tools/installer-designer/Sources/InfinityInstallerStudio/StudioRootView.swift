@@ -73,11 +73,6 @@ private struct StudioToolbar: View {
                 .toggleStyle(.button)
             Toggle(isOn: $store.snapEnabled) { Label("Snap", systemImage: "magnet") }
                 .toggleStyle(.button)
-            Toggle(isOn: $store.marqueeSelectionEnabled) {
-                Label("Marquee", systemImage: "rectangle.dashed")
-            }
-            .toggleStyle(.button)
-            .help("Drag across empty canvas space to select multiple unlocked elements; hold Shift to add")
             Picker("Grid", selection: $store.gridSize) {
                 Text("5").tag(5)
                 Text("10").tag(10)

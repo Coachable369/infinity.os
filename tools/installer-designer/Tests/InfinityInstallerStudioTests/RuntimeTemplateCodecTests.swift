@@ -182,13 +182,13 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
     // ------------------------=
     // FUNC: testMarqueeSelectionFiltersElementsAndSupportsAdditiveSelection
-    // DESC: Exercises rectangle hit testing, lock and visibility exclusion, replacement, and Shift-style additive selection.
+    // DESC: Exercises full-enclosure selection, partial-overlap rejection, lock and visibility exclusion, replacement, and additive selection.
     // ------------------=
     @MainActor
     func testMarqueeSelectionFiltersElementsAndSupportsAdditiveSelection() {
         let store = TemplateStore()
-        let indexes = Array(store.document.screens[0].elements.indices.prefix(4))
-        XCTAssertEqual(indexes.count, 4)
+        let indexes = Array(store.document.screens[0].elements.indices.prefix(5))
+        XCTAssertEqual(indexes.count, 5)
         for index in store.document.screens[0].elements.indices {
             store.document.screens[0].elements[index].hidden = true
         }
@@ -204,15 +204,20 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         store.document.screens[0].elements[indexes[3]].hidden = false
         store.document.screens[0].elements[indexes[3]].locked = false
         store.document.screens[0].elements[indexes[3]].frame = CanvasRect(x: 500, y: 500, width: 50, height: 50)
+        store.document.screens[0].elements[indexes[4]].hidden = false
+        store.document.screens[0].elements[indexes[4]].locked = false
+        store.document.screens[0].elements[indexes[4]].frame = CanvasRect(x: 250, y: 100, width: 60, height: 60)
 
         let first = store.document.screens[0].elements[indexes[0]].id
         let second = store.document.screens[0].elements[indexes[1]].id
         let locked = store.document.screens[0].elements[indexes[2]].id
         let outside = store.document.screens[0].elements[indexes[3]].id
+        let partiallyOverlapped = store.document.screens[0].elements[indexes[4]].id
         store.selectElements(in: CanvasRect(x: 90, y: 90, width: 170, height: 110))
 
         XCTAssertEqual(store.selectedElementIDs, Set([first, second]))
         XCTAssertFalse(store.selectedElementIDs.contains(locked))
+        XCTAssertFalse(store.selectedElementIDs.contains(partiallyOverlapped))
 
         store.selectElements(in: CanvasRect(x: 490, y: 490, width: 80, height: 80), additive: true)
         XCTAssertEqual(store.selectedElementIDs, Set([first, second, outside]))
@@ -220,6 +225,39 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         store.selectElements(in: CanvasRect(x: 700, y: 700, width: 40, height: 40))
         XCTAssertTrue(store.selectedElementIDs.isEmpty)
         XCTAssertNil(store.selectedElementID)
+    }
+
+    // ------------------------=
+    // FUNC: testMarqueePointSelectionRoutesThroughTopmostCanvasLayer
+    // DESC: Proves the whole-artboard selector can click layers through its overlay and only starts group movement on selected unlocked content.
+    // ------------------=
+    @MainActor
+    func testMarqueePointSelectionRoutesThroughTopmostCanvasLayer() {
+        let store = TemplateStore()
+        let indexes = Array(store.document.screens[0].elements.indices.prefix(2))
+        for index in store.document.screens[0].elements.indices {
+            store.document.screens[0].elements[index].hidden = true
+        }
+        store.document.screens[0].elements[indexes[0]].hidden = false
+        store.document.screens[0].elements[indexes[0]].locked = false
+        store.document.screens[0].elements[indexes[0]].zIndex = 10
+        store.document.screens[0].elements[indexes[0]].frame = CanvasRect(x: 100, y: 100, width: 120, height: 120)
+        store.document.screens[0].elements[indexes[1]].hidden = false
+        store.document.screens[0].elements[indexes[1]].locked = true
+        store.document.screens[0].elements[indexes[1]].zIndex = 20
+        store.document.screens[0].elements[indexes[1]].frame = CanvasRect(x: 120, y: 120, width: 80, height: 80)
+
+        let unlocked = store.document.screens[0].elements[indexes[0]].id
+        let locked = store.document.screens[0].elements[indexes[1]].id
+        store.activateCanvas(at: CGPoint(x: 150, y: 150))
+        XCTAssertEqual(store.selectedElementID, locked)
+        XCTAssertFalse(store.canMoveSelection(at: CGPoint(x: 150, y: 150)))
+
+        store.document.screens[0].elements[indexes[1]].hidden = true
+        store.activateCanvas(at: CGPoint(x: 150, y: 150))
+        XCTAssertEqual(store.selectedElementID, unlocked)
+        XCTAssertEqual(store.inlineEditorElementID, unlocked)
+        XCTAssertTrue(store.canMoveSelection(at: CGPoint(x: 150, y: 150)))
     }
 
     // ------------------------=

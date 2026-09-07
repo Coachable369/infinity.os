@@ -66,7 +66,7 @@ without storing resolution-specific layouts.
 The canvas provides:
 
 * Click selection and Shift-click multi-selection behavior.
-* A toolbar Marquee tool for visible rectangle selection, including Shift-additive selection.
+* A persistent canvas Marquee Select tool using PowerPoint-style full-enclosure selection, including Shift-additive selection.
 * Uniform drag and keyboard movement for unlocked multi-element selections.
 * Drag movement and eight-handle resizing.
 * Arrow-key nudging and grid-sized Shift-arrow movement.

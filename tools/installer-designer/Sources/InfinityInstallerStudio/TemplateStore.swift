@@ -179,7 +179,7 @@ final class TemplateStore: ObservableObject {
 
     // ------------------------=
     // FUNC: selectElements
-    // DESC: Selects every visible unlocked element intersecting a marquee, optionally extending the current set.
+    // DESC: Selects every visible unlocked element fully enclosed by a marquee, optionally extending the current set.
     // ------------------=
     func selectElements(in marquee: CanvasRect, additive: Bool = false) {
         guard let screen = selectedScreen else {
@@ -187,7 +187,7 @@ final class TemplateStore: ObservableObject {
             return
         }
         let hits = screen.elements.filter { element in
-            !element.hidden && !element.locked && framesIntersect(element.frame, marquee)
+            !element.hidden && !element.locked && marqueeContains(element.frame, marquee: marquee)
         }
         var nextSelection = additive ? selectedElementIDs : []
         nextSelection.formUnion(hits.map(\.id))
@@ -206,6 +206,52 @@ final class TemplateStore: ObservableObject {
             }?.id ?? nextSelection.first
         }
         status = nextSelection.count == 1 ? "1 element selected" : "\(nextSelection.count) elements selected"
+    }
+
+    // ------------------------=
+    // FUNC: activateCanvas
+    // DESC: Point-selects the frontmost visible layer through the Marquee interaction surface.
+    // ------------------=
+    func activateCanvas(at point: CGPoint, additive: Bool = false) {
+        guard let element = topmostVisibleElement(at: point) else {
+            if !additive { selectElement(nil) }
+            return
+        }
+        if !additive {
+            activateCanvasElement(element.id)
+            return
+        }
+        inlineEditorElementID = nil
+        var nextSelection = selectedElementIDs
+        if nextSelection.contains(element.id) {
+            nextSelection.remove(element.id)
+        } else {
+            nextSelection.insert(element.id)
+        }
+        selectedElementIDs = nextSelection
+        selectedElementID = nextSelection.contains(element.id) ? element.id : nextSelection.first
+        status = nextSelection.isEmpty
+            ? "No elements selected"
+            : nextSelection.count == 1 ? "1 element selected" : "\(nextSelection.count) elements selected"
+    }
+
+    // ------------------------=
+    // FUNC: canMoveSelection
+    // DESC: Determines whether a Marquee drag began on the frontmost unlocked member of the current selection.
+    // ------------------=
+    func canMoveSelection(at point: CGPoint) -> Bool {
+        guard let element = topmostVisibleElement(at: point) else { return false }
+        return !element.locked && selectedElementIDs.contains(element.id)
+    }
+
+    // ------------------------=
+    // FUNC: toggleMarqueeSelection
+    // DESC: Toggles the whole-artboard selection tool and its resize affordances.
+    // ------------------=
+    func toggleMarqueeSelection() {
+        marqueeSelectionEnabled.toggle()
+        inlineEditorElementID = nil
+        status = marqueeSelectionEnabled ? "Marquee Select enabled" : "Marquee Select disabled"
     }
 
     // ------------------------=
@@ -988,14 +1034,31 @@ final class TemplateStore: ObservableObject {
     }
 
     // ------------------------=
-    // FUNC: framesIntersect
-    // DESC: Tests positive-area overlap between an element frame and a normalized marquee rectangle.
+    // FUNC: marqueeContains
+    // DESC: Tests whether a normalized marquee completely encloses an element frame.
     // ------------------=
-    private func framesIntersect(_ element: CanvasRect, _ marquee: CanvasRect) -> Bool {
-        element.x < marquee.x + marquee.width
-            && element.x + element.width > marquee.x
-            && element.y < marquee.y + marquee.height
-            && element.y + element.height > marquee.y
+    private func marqueeContains(_ element: CanvasRect, marquee: CanvasRect) -> Bool {
+        element.x >= marquee.x
+            && element.y >= marquee.y
+            && element.x + element.width <= marquee.x + marquee.width
+            && element.y + element.height <= marquee.y + marquee.height
+    }
+
+    // ------------------------=
+    // FUNC: topmostVisibleElement
+    // DESC: Resolves the highest visible layer containing one normalized point for click and drag routing.
+    // ------------------=
+    private func topmostVisibleElement(at point: CGPoint) -> StudioElement? {
+        selectedScreen?.elements.filter { element in
+            !element.hidden
+                && point.x >= CGFloat(element.frame.x)
+                && point.x <= CGFloat(element.frame.x + element.frame.width)
+                && point.y >= CGFloat(element.frame.y)
+                && point.y <= CGFloat(element.frame.y + element.frame.height)
+        }.max { lhs, rhs in
+            if lhs.zIndex != rhs.zIndex { return lhs.zIndex < rhs.zIndex }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
     }
 
     // ------------------------=

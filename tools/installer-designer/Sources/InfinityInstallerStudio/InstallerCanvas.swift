@@ -4,6 +4,7 @@ import SwiftUI
 struct InstallerCanvas: View {
     @ObservedObject var store: TemplateStore
     @State private var marqueeDisplayRect: CGRect?
+    @State private var canvasDragMode: CanvasDragMode?
 
     var body: some View {
         GeometryReader { proxy in
@@ -18,7 +19,9 @@ struct InstallerCanvas: View {
                     ZStack(alignment: .topLeading) {
                         artboardBackground(scale: canvasScale)
                             .contentShape(Rectangle())
-                            .gesture(backgroundInteractionGesture(canvasScale: canvasScale))
+                            .onTapGesture {
+                                if !store.marqueeSelectionEnabled { store.selectElement(nil) }
+                            }
                         if store.showGrid {
                             SnapGrid(gridSize: store.gridSize, scale: canvasScale)
                         }
@@ -33,6 +36,13 @@ struct InstallerCanvas: View {
                         {
                             ConfigurationNetworkPreview(canvasScale: canvasScale)
                                 .zIndex(7_500)
+                        }
+                        if store.marqueeSelectionEnabled {
+                            Rectangle()
+                                .fill(Color.clear)
+                                .contentShape(Rectangle())
+                                .gesture(marqueeInteractionGesture(canvasScale: canvasScale))
+                                .zIndex(39_000)
                         }
                         if let marqueeDisplayRect {
                             RoundedRectangle(cornerRadius: 4)
@@ -49,6 +59,8 @@ struct InstallerCanvas: View {
                                 .allowsHitTesting(false)
                                 .zIndex(40_000)
                         }
+                        selectionHandleOverlay(canvasScale: canvasScale)
+                            .zIndex(41_000)
                     }
                     .frame(width: 1000 * canvasScale.width, height: 1000 * canvasScale.height)
                     .coordinateSpace(name: CanvasInteractionMetrics.coordinateSpaceName)
@@ -66,6 +78,15 @@ struct InstallerCanvas: View {
                         endPoint: .bottom
                     )
                 )
+                VStack {
+                    HStack {
+                        CanvasSelectionToolPalette(store: store)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .padding(16)
+                .zIndex(48_000)
                 if store.inlineEditorElementID != nil {
                     InlineElementEditor(store: store)
                         .padding(16)
@@ -109,41 +130,95 @@ struct InstallerCanvas: View {
     }
 
     // ------------------------=
-    // FUNC: backgroundInteractionGesture
-    // DESC: Clears selection on an empty click or performs visible marquee selection in rectangle-tool mode.
+    // FUNC: marqueeInteractionGesture
+    // DESC: Provides point selection, whole-artboard rectangle selection, and selected-group dragging above canvas layers.
     // ------------------=
-    private func backgroundInteractionGesture(canvasScale: CGSize) -> some Gesture {
+    private func marqueeInteractionGesture(canvasScale: CGSize) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .named(CanvasInteractionMetrics.coordinateSpaceName))
             .onChanged { value in
                 guard store.marqueeSelectionEnabled else { return }
-                store.dismissInlineEditor()
-                marqueeDisplayRect = clippedDisplayRect(
+                if canvasDragMode == nil {
+                    let start = normalizedPoint(from: value.startLocation, canvasScale: canvasScale)
+                    canvasDragMode = store.canMoveSelection(at: start) ? .moveSelection : .marquee
+                    if canvasDragMode == .moveSelection {
+                        store.beginGesture()
+                    } else {
+                        store.dismissInlineEditor()
+                    }
+                }
+                if canvasDragMode == .moveSelection {
+                    store.moveSelected(translation: value.translation, canvasScale: canvasScale)
+                } else {
+                    marqueeDisplayRect = clippedDisplayRect(
+                        from: value.startLocation,
+                        to: value.location,
+                        canvasScale: canvasScale
+                    )
+                }
+            }
+            .onEnded { value in
+                defer {
+                    marqueeDisplayRect = nil
+                    canvasDragMode = nil
+                }
+                let distance = max(abs(value.translation.width), abs(value.translation.height))
+                guard store.marqueeSelectionEnabled else { return }
+                if distance < CanvasInteractionMetrics.dragThreshold {
+                    if canvasDragMode == .moveSelection { store.endGesture() }
+                    store.activateCanvas(
+                        at: normalizedPoint(from: value.location, canvasScale: canvasScale),
+                        additive: NSEvent.modifierFlags.contains(.shift)
+                    )
+                    return
+                }
+                if canvasDragMode == .moveSelection {
+                    store.endGesture()
+                    return
+                }
+                guard let displayRect = clippedDisplayRect(
                     from: value.startLocation,
                     to: value.location,
                     canvasScale: canvasScale
-                )
-            }
-            .onEnded { value in
-                defer { marqueeDisplayRect = nil }
-                let distance = max(abs(value.translation.width), abs(value.translation.height))
-                guard store.marqueeSelectionEnabled,
-                      distance >= CanvasInteractionMetrics.dragThreshold,
-                      let displayRect = clippedDisplayRect(
-                          from: value.startLocation,
-                          to: value.location,
-                          canvasScale: canvasScale
-                      ),
+                ),
                       displayRect.width > 0,
                       displayRect.height > 0
-                else {
-                    store.selectElement(nil)
-                    return
-                }
+                else { return }
                 store.selectElements(
                     in: normalizedRect(from: displayRect, canvasScale: canvasScale),
                     additive: NSEvent.modifierFlags.contains(.shift)
                 )
             }
+    }
+
+    // ------------------------=
+    // FUNC: selectionHandleOverlay
+    // DESC: Places resize handles above the whole-artboard Marquee interaction surface for one unlocked selection.
+    // ------------------=
+    @ViewBuilder
+    private func selectionHandleOverlay(canvasScale: CGSize) -> some View {
+        if store.resizeHandlesVisible, let element = store.selectedElement {
+            ZStack {
+                ForEach(ResizeHandle.allCases) { handle in
+                    ResizeHandleView(
+                        handle: handle,
+                        elementID: element.id,
+                        elementFrame: element.frame,
+                        store: store,
+                        canvasScale: canvasScale
+                    )
+                }
+            }
+            .frame(
+                width: CGFloat(element.frame.width) * canvasScale.width,
+                height: CGFloat(element.frame.height) * canvasScale.height
+            )
+            .position(
+                x: CGFloat(element.frame.x) * canvasScale.width
+                    + CGFloat(element.frame.width) * canvasScale.width / 2,
+                y: CGFloat(element.frame.y) * canvasScale.height
+                    + CGFloat(element.frame.height) * canvasScale.height / 2
+            )
+        }
     }
 
     // ------------------------=
@@ -172,6 +247,47 @@ struct InstallerCanvas: View {
         let right = Int(ceil(displayRect.maxX / canvasScale.width))
         let bottom = Int(ceil(displayRect.maxY / canvasScale.height))
         return CanvasRect(x: left, y: top, width: max(1, right - left), height: max(1, bottom - top))
+    }
+
+    // ------------------------=
+    // FUNC: normalizedPoint
+    // DESC: Converts a displayed pointer location into a clamped normalized artboard coordinate.
+    // ------------------=
+    private func normalizedPoint(from point: CGPoint, canvasScale: CGSize) -> CGPoint {
+        CGPoint(
+            x: (point.x / canvasScale.width).clamped(to: 0...1000),
+            y: (point.y / canvasScale.height).clamped(to: 0...1000)
+        )
+    }
+}
+
+private enum CanvasDragMode: Equatable {
+    case marquee
+    case moveSelection
+}
+
+private struct CanvasSelectionToolPalette: View {
+    @ObservedObject var store: TemplateStore
+
+    var body: some View {
+        Button(action: store.toggleMarqueeSelection) {
+            Label(
+                store.marqueeSelectionEnabled ? "MARQUEE ON" : "MARQUEE SELECT",
+                systemImage: "rectangle.dashed"
+            )
+        }
+        .buttonStyle(InfinityStudioButtonStyle(
+            emphasis: store.marqueeSelectionEnabled ? .primary : .secondary
+        ))
+        .controlSize(.regular)
+        .accessibilityValue(store.marqueeSelectionEnabled ? "On" : "Off")
+        .help("Toggle Marquee Select. Drag anywhere on the artboard to select; drag a selected item to move the group.")
+        .padding(8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(InfinityUIKit.Palette.nativeAccent.opacity(0.35), lineWidth: 1)
+        }
     }
 }
 
@@ -341,16 +457,6 @@ private struct CanvasElementView: View {
                     }
                     .padding(4)
                     .allowsHitTesting(false)
-                } else if store.resizeHandlesVisible, store.selectedElementID == element.id {
-                    ForEach(ResizeHandle.allCases) { handle in
-                        ResizeHandleView(
-                            handle: handle,
-                            elementID: element.id,
-                            elementFrame: element.frame,
-                            store: store,
-                            canvasScale: canvasScale
-                        )
-                    }
                 }
             }
         }
