@@ -4619,7 +4619,7 @@ impl super::DisplayDevice {
         scale: usize,
     ) {
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
-        let geometry = layout.settings_window_geometry(settings_window);
+        let geometry = layout.settings_window_geometry_for_section(settings_window, focus);
         let left = geometry.window.x.max(0) as usize;
         let top = geometry.window.y.max(0) as usize;
         let width = geometry.window.width as usize;
@@ -4961,9 +4961,7 @@ impl super::DisplayDevice {
             .enumerate()
         {
             let row = layout.settings_row_geometry(settings_window, index);
-            if row.summary.y >= geometry.viewport.y
-                && row.summary.bottom() <= geometry.viewport.bottom()
-            {
+            if row.summary.intersects(geometry.viewport) {
                 let summary_left = row.summary.x.max(0) as usize;
                 let summary_top = row.summary.y.max(0) as usize;
                 let summary_width = row.summary.width as usize;
@@ -4989,20 +4987,35 @@ impl super::DisplayDevice {
                     if expanded { outline_g } else { outline_g / 2 },
                     if expanded { outline_b } else { outline_b / 2 },
                 );
+                let label_limit = summary_width * 46 / 100;
+                let mut label_length = label.len();
+                while label_length > 0
+                    && self.ui_text_width(&label[..label_length], 1) > label_limit
+                {
+                    label_length -= 1;
+                }
                 self.ui_text_strong(
                     summary_left + crate::ui::system_layout::UI_GUTTER * scale,
                     summary_top + 13 * scale,
-                    label,
+                    &label[..label_length],
                     190,
                     205,
                     217,
                     1,
                 );
-                let value_width = self.ui_text_width(value, 1);
+                let value_limit = summary_width * 42 / 100;
+                let mut value_length = value.len();
+                while value_length > 0
+                    && self.ui_text_width(&value[..value_length], 1) > value_limit
+                {
+                    value_length -= 1;
+                }
+                let displayed_value = &value[..value_length];
+                let value_width = self.ui_text_width(displayed_value, 1);
                 self.ui_text(
                     summary_left + summary_width.saturating_sub(value_width + 40 * scale),
                     summary_top + 13 * scale,
-                    value,
+                    displayed_value,
                     220,
                     232,
                     240,
@@ -5013,7 +5026,7 @@ impl super::DisplayDevice {
                         summary_left + summary_width.saturating_sub(value_width + 40 * scale),
                         summary_top,
                         row.summary.height as usize,
-                        value,
+                        displayed_value,
                         true,
                         1,
                     );
@@ -5057,8 +5070,7 @@ impl super::DisplayDevice {
                 }
             }
             if settings_window.expanded_row == Some(index)
-                && row.detail.y >= geometry.viewport.y
-                && row.detail.bottom() <= geometry.viewport.bottom()
+                && row.detail.intersects(geometry.viewport)
             {
                 let detail_left = row.detail.x.max(0) as usize;
                 let detail_top = row.detail.y.max(0) as usize;
@@ -5253,7 +5265,7 @@ impl super::DisplayDevice {
         scale: usize,
     ) {
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
-        let geometry = layout.network_settings_geometry(settings_window);
+        let geometry = layout.node_settings_geometry(settings_window);
         let snapshot = crate::runtime::with_runtime(|runtime| {
             let discovered = runtime.nodes.discovered_nodes().iter().flatten().count();
             let trusted = runtime

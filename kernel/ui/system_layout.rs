@@ -9,6 +9,9 @@ use super::geometry::{Point, Rect};
 use super::installer_template::InstallerTemplateRole;
 
 pub const SETTINGS_SECTION_ICON_SIZE: usize = 25;
+pub const SETTINGS_NETWORK_SECTION: usize = 6;
+pub const SETTINGS_NODE_SECTION: usize = 7;
+pub const SETTINGS_DASHBOARD_CONTENT_HEIGHT: usize = 670;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OnboardingTarget {
@@ -205,6 +208,25 @@ pub fn window_transition_damage(old: Rect, new: Rect, display: Rect, padding: u3
         height: union.height.saturating_add(padding.saturating_mul(2)),
     }
     .intersection(display)
+}
+
+// ------------------------=
+// FUNC: eased_scroll_offset
+// DESC: Advances a logical scroll position toward a bounded target with a short decelerating step.
+// ------------------=
+pub fn eased_scroll_offset(current: usize, target: usize, maximum: usize) -> usize {
+    let current = current.min(maximum);
+    let target = target.min(maximum);
+    if current == target {
+        return current;
+    }
+    let distance = current.abs_diff(target);
+    let step = (distance / 4).clamp(1, 24);
+    if current < target {
+        current.saturating_add(step).min(target)
+    } else {
+        current.saturating_sub(step).max(target)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1835,6 +1857,18 @@ impl SystemLayout {
     // DESC: Derives the complete resizable Settings window, scroll viewport, and proportional scrollbar geometry.
     // ------------------=
     pub fn settings_window_geometry(self, state: SettingsWindowState) -> SettingsWindowGeometry {
+        self.settings_window_geometry_for_section(state, usize::MAX)
+    }
+
+    // ------------------------=
+    // FUNC: settings_window_geometry_for_section
+    // DESC: Derives Settings chrome with section-specific intrinsic content height for accurate overflow behavior.
+    // ------------------=
+    pub fn settings_window_geometry_for_section(
+        self,
+        state: SettingsWindowState,
+        section: usize,
+    ) -> SettingsWindowGeometry {
         let top_bar = self.top_bar_height();
         let (left, top, width, height) = if state.maximized {
             let inset = 10 * self.scale;
@@ -1860,8 +1894,12 @@ impl SystemLayout {
         let content_width = width.saturating_sub(navigation_width + 68 * self.scale);
         let viewport_top = top + title_height + 98 * self.scale;
         let viewport_height = height.saturating_sub(title_height + 116 * self.scale);
-        let detail_height = state.expanded_row.map(settings_detail_height).unwrap_or(0);
-        let total_content_height = state.row_count.clamp(1, 8) * 58 + detail_height;
+        let total_content_height = if matches!(section, SETTINGS_NETWORK_SECTION | SETTINGS_NODE_SECTION) {
+            SETTINGS_DASHBOARD_CONTENT_HEIGHT
+        } else {
+            let detail_height = state.expanded_row.map(settings_detail_height).unwrap_or(0);
+            state.row_count.clamp(1, 8) * 58 + detail_height
+        };
         let visible_logical_height = viewport_height / self.scale.max(1);
         let maximum_scroll = total_content_height.saturating_sub(visible_logical_height);
         let track = rect(
@@ -1988,8 +2026,22 @@ impl SystemLayout {
         normalized_y: i32,
         state: SettingsWindowState,
     ) -> Option<SettingsTarget> {
+        self.settings_target_for_section(normalized_x, normalized_y, state, usize::MAX)
+    }
+
+    // ------------------------=
+    // FUNC: settings_target_for_section
+    // DESC: Hit-tests Settings chrome and overflow using the active section's intrinsic content height.
+    // ------------------=
+    pub fn settings_target_for_section(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+        section: usize,
+    ) -> Option<SettingsTarget> {
         let point = self.point(normalized_x, normalized_y);
-        let geometry = self.settings_window_geometry(state);
+        let geometry = self.settings_window_geometry_for_section(state, section);
         let left = geometry.window.x.max(0) as usize;
         let top = geometry.window.y.max(0) as usize;
         let width = geometry.window.width as usize;
@@ -2070,28 +2122,58 @@ impl SystemLayout {
     // DESC: Derives a bounded responsive network editor with page navigation and non-overlapping controls.
     // ------------------=
     pub fn network_settings_geometry(self, state: SettingsWindowState) -> NetworkSettingsGeometry {
-        let window = self.settings_window_geometry(state);
+        self.paged_settings_geometry(state, 7, SETTINGS_NETWORK_SECTION)
+    }
+
+    // ------------------------=
+    // FUNC: node_settings_geometry
+    // DESC: Derives the five-page Nodes and Mesh dashboard with label-safe wrapped tabs.
+    // ------------------=
+    pub fn node_settings_geometry(self, state: SettingsWindowState) -> NetworkSettingsGeometry {
+        self.paged_settings_geometry(state, 5, SETTINGS_NODE_SECTION)
+    }
+
+    // ------------------------=
+    // FUNC: paged_settings_geometry
+    // DESC: Builds one readable scrolling dashboard with wrapped tabs and fixed-height action cards.
+    // ------------------=
+    fn paged_settings_geometry(
+        self,
+        state: SettingsWindowState,
+        page_count: usize,
+        section: usize,
+    ) -> NetworkSettingsGeometry {
+        let window = self.settings_window_geometry_for_section(state, section);
         let content = window.content;
         let gap = 12 * self.scale;
         let top = content.y.max(0) as usize + 68 * self.scale;
         let left = content.x.max(0) as usize;
         let width = content.width as usize;
-        let available_height = (content.bottom().max(0) as usize).saturating_sub(top);
-        let tab_gap = 4 * self.scale;
-        let tab_width = width.saturating_sub(tab_gap * 6) / 7;
+        let tab_gap = 6 * self.scale;
+        let minimum_tab_width = 112 * self.scale;
+        let columns = ((width + tab_gap) / (minimum_tab_width + tab_gap))
+            .clamp(1, page_count.max(1));
+        let tab_width = width.saturating_sub(tab_gap * columns.saturating_sub(1)) / columns;
+        let tab_height = 38 * self.scale;
+        let tab_rows = (page_count + columns - 1) / columns;
         let mut tabs = [rect(0, 0, 0, 0); 7];
-        for (index, tab) in tabs.iter_mut().enumerate() {
+        for (index, tab) in tabs.iter_mut().take(page_count).enumerate() {
+            let row = index / columns;
+            let column = index % columns;
             *tab = rect(
-                left + index * (tab_width + tab_gap),
-                top,
+                left + column * (tab_width + tab_gap),
+                top + row * (tab_height + tab_gap),
                 tab_width,
-                34 * self.scale,
+                tab_height,
             );
         }
-        let summary_top = top + 46 * self.scale;
-        let summary_height = 82 * self.scale;
+        let summary_top = top
+            + tab_rows * tab_height
+            + tab_rows.saturating_sub(1) * tab_gap
+            + 12 * self.scale;
+        let summary_height = 88 * self.scale;
         let body_top = summary_top + summary_height + gap;
-        let body_height = available_height.saturating_sub(body_top.saturating_sub(top));
+        let body_height = 420 * self.scale;
         let main_width = width * 68 / 100;
         let main = rect(
             left,
@@ -2105,8 +2187,8 @@ impl SystemLayout {
             width.saturating_sub(main_width + gap / 2),
             body_height,
         );
-        let control_gap = 7 * self.scale;
-        let control_height = body_height.saturating_sub(24 * self.scale + control_gap * 5) / 6;
+        let control_gap = 8 * self.scale;
+        let control_height = 58 * self.scale;
         let mut controls = [rect(0, 0, 0, 0); 6];
         for (index, control) in controls.iter_mut().enumerate() {
             *control = rect(
@@ -2148,16 +2230,49 @@ impl SystemLayout {
         normalized_y: i32,
         state: SettingsWindowState,
     ) -> Option<NetworkSettingsTarget> {
+        self.paged_settings_target(normalized_x, normalized_y, state, 7, SETTINGS_NETWORK_SECTION)
+    }
+
+    // ------------------------=
+    // FUNC: node_settings_target
+    // DESC: Resolves Nodes and Mesh tabs and controls from the five-page dashboard geometry.
+    // ------------------=
+    pub fn node_settings_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+    ) -> Option<NetworkSettingsTarget> {
+        self.paged_settings_target(normalized_x, normalized_y, state, 5, SETTINGS_NODE_SECTION)
+    }
+
+    // ------------------------=
+    // FUNC: paged_settings_target
+    // DESC: Hit-tests visible dashboard tabs and controls inside the clipped Settings viewport.
+    // ------------------=
+    fn paged_settings_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+        page_count: usize,
+        section: usize,
+    ) -> Option<NetworkSettingsTarget> {
         let point = self.point(normalized_x, normalized_y);
         if !self
-            .settings_window_geometry(state)
+            .settings_window_geometry_for_section(state, section)
             .viewport
             .contains(point)
         {
             return None;
         }
-        let geometry = self.network_settings_geometry(state);
-        if let Some(index) = geometry.tabs.iter().position(|card| card.contains(point)) {
+        let geometry = self.paged_settings_geometry(state, page_count, section);
+        if let Some(index) = geometry
+            .tabs
+            .iter()
+            .take(page_count)
+            .position(|card| card.contains(point))
+        {
             return Some(NetworkSettingsTarget::Page(index));
         }
         geometry
@@ -2194,7 +2309,26 @@ impl SystemLayout {
         state: SettingsWindowState,
         grab_offset: i32,
     ) -> usize {
-        let geometry = self.settings_window_geometry(state);
+        self.settings_scroll_offset_for_thumb_in_section(
+            normalized_y,
+            state,
+            grab_offset,
+            usize::MAX,
+        )
+    }
+
+    // ------------------------=
+    // FUNC: settings_scroll_offset_for_thumb_in_section
+    // DESC: Converts a Settings thumb drag using the active section's intrinsic overflow range.
+    // ------------------=
+    pub fn settings_scroll_offset_for_thumb_in_section(
+        self,
+        normalized_y: i32,
+        state: SettingsWindowState,
+        grab_offset: i32,
+        section: usize,
+    ) -> usize {
+        let geometry = self.settings_window_geometry_for_section(state, section);
         if geometry.maximum_scroll == 0 {
             return 0;
         }

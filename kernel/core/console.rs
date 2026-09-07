@@ -435,6 +435,7 @@ struct ConsoleRuntime {
     settings_timeout_dragging: bool,
     settings_scroll_dragging: bool,
     settings_scroll_grab_offset: i32,
+    settings_scroll_target: usize,
     launcher_scroll_dragging: bool,
     launcher_scroll_grab_offset: i32,
     onboarding_validation_error: bool,
@@ -575,6 +576,7 @@ impl ConsoleRuntime {
             settings_timeout_dragging: false,
             settings_scroll_dragging: false,
             settings_scroll_grab_offset: 0,
+            settings_scroll_target: 0,
             launcher_scroll_dragging: false,
             launcher_scroll_grab_offset: 0,
             onboarding_validation_error: false,
@@ -2345,6 +2347,7 @@ impl ConsoleRuntime {
         self.settings_window.maximized = layout.settings.maximized;
         self.settings_window.expanded_row = layout.settings_expanded_row;
         self.settings_window.scroll_offset = layout.settings_scroll_offset;
+        self.settings_scroll_target = layout.settings_scroll_offset;
         self.editor_window = DesktopAppWindowState {
             x: layout.editor.x,
             y: layout.editor.y,
@@ -2877,6 +2880,7 @@ impl ConsoleRuntime {
         self.settings_editing = false;
         self.settings_window.expanded_row = matches!(self.system_focus, 6 | 7).then_some(0);
         self.settings_window.scroll_offset = 0;
+        self.settings_scroll_target = 0;
         self.settings_window.control_focus = 0;
         self.settings_window_dragging = false;
         self.settings_window_resizing = None;
@@ -2900,18 +2904,19 @@ impl ConsoleRuntime {
         } else {
             Some(row.min(self.settings_window.row_count.saturating_sub(1)))
         };
-        self.settings_window.scroll_offset = 0;
         let layout = SystemLayout::new(
             self.system.framebuffer_width,
             self.system.framebuffer_height,
         );
-        let window = layout.settings_window_geometry(self.settings_window);
+        let mut unscrolled = self.settings_window;
+        unscrolled.scroll_offset = 0;
+        let window = layout.settings_window_geometry_for_section(unscrolled, self.system_focus);
         let desired_scroll = self
             .settings_window
             .expanded_row
             .map(|expanded| {
                 layout
-                    .settings_row_geometry(self.settings_window, expanded)
+                    .settings_row_geometry(unscrolled, expanded)
                     .detail
                     .bottom()
                     .saturating_sub(window.viewport.bottom())
@@ -2920,12 +2925,13 @@ impl ConsoleRuntime {
             })
             .unwrap_or(0);
         let maximum_scroll = window.maximum_scroll;
-        self.settings_window.scroll_offset = desired_scroll.min(maximum_scroll);
+        self.settings_scroll_target = desired_scroll.min(maximum_scroll);
+        self.settings_window.scroll_offset = self.settings_window.scroll_offset.min(maximum_scroll);
     }
 
     // ------------------------=
     // FUNC: scroll_settings
-    // DESC: Moves the Settings accordion by bounded logical increments while leaving navigation focus unchanged.
+    // DESC: Moves all Settings sections toward bounded logical scroll targets while leaving navigation focus unchanged.
     // ------------------=
     fn scroll_settings(&mut self, direction: i8) {
         let distance = direction.unsigned_abs() as usize * 58;
@@ -2933,15 +2939,13 @@ impl ConsoleRuntime {
             self.system.framebuffer_width,
             self.system.framebuffer_height,
         )
-        .settings_window_geometry(self.settings_window)
+        .settings_window_geometry_for_section(self.settings_window, self.system_focus)
         .maximum_scroll;
         if direction < 0 {
-            self.settings_window.scroll_offset =
-                self.settings_window.scroll_offset.saturating_sub(distance);
+            self.settings_scroll_target = self.settings_scroll_target.saturating_sub(distance);
         } else {
-            self.settings_window.scroll_offset = self
-                .settings_window
-                .scroll_offset
+            self.settings_scroll_target = self
+                .settings_scroll_target
                 .saturating_add(distance)
                 .min(maximum_scroll);
         }
@@ -4744,11 +4748,13 @@ impl ConsoleRuntime {
                 ConsoleKey::Left => {
                     self.settings_window.expanded_row = Some((self.network_page() + 6) % 7);
                     self.settings_window.scroll_offset = 0;
+                    self.settings_scroll_target = 0;
                     self.settings_window.control_focus = 0;
                 }
                 ConsoleKey::Right => {
                     self.settings_window.expanded_row = Some((self.network_page() + 1) % 7);
                     self.settings_window.scroll_offset = 0;
+                    self.settings_scroll_target = 0;
                     self.settings_window.control_focus = 0;
                 }
                 ConsoleKey::Up | ConsoleKey::Tab(true) => {
@@ -4772,11 +4778,13 @@ impl ConsoleRuntime {
                 ConsoleKey::Left => {
                     self.settings_window.expanded_row = Some((self.node_settings_page() + 4) % 5);
                     self.settings_window.scroll_offset = 0;
+                    self.settings_scroll_target = 0;
                     self.settings_window.control_focus = 0;
                 }
                 ConsoleKey::Right => {
                     self.settings_window.expanded_row = Some((self.node_settings_page() + 1) % 5);
                     self.settings_window.scroll_offset = 0;
+                    self.settings_scroll_target = 0;
                     self.settings_window.control_focus = 0;
                 }
                 ConsoleKey::Up | ConsoleKey::Tab(true) => {
@@ -4816,6 +4824,7 @@ impl ConsoleRuntime {
                 };
                 self.settings_window.expanded_row = matches!(self.system_focus, 6 | 7).then_some(0);
                 self.settings_window.scroll_offset = 0;
+                self.settings_scroll_target = 0;
             }
             return;
         }
@@ -4839,6 +4848,7 @@ impl ConsoleRuntime {
                 };
                 self.settings_window.expanded_row = matches!(self.system_focus, 6 | 7).then_some(0);
                 self.settings_window.scroll_offset = 0;
+                self.settings_scroll_target = 0;
             }
             return;
         }
@@ -7063,11 +7073,14 @@ impl ConsoleRuntime {
                 }
             } else if self.settings_scroll_dragging {
                 if left_button {
-                    self.settings_window.scroll_offset = layout.settings_scroll_offset_for_thumb(
+                    let offset = layout.settings_scroll_offset_for_thumb_in_section(
                         self.pointer_y,
                         self.settings_window,
                         self.settings_scroll_grab_offset,
+                        self.system_focus,
                     );
+                    self.settings_window.scroll_offset = offset;
+                    self.settings_scroll_target = offset;
                 }
                 if released {
                     self.settings_scroll_dragging = false;
@@ -7186,6 +7199,7 @@ impl ConsoleRuntime {
                         NetworkSettingsTarget::Page(index) => {
                             self.settings_window.expanded_row = Some(index.min(6));
                             self.settings_window.scroll_offset = 0;
+                            self.settings_scroll_target = 0;
                             self.settings_window.control_focus = 0;
                             self.settings_editing = false;
                             self.reset_input();
@@ -7199,7 +7213,7 @@ impl ConsoleRuntime {
                 }
             }
             if clicked && self.system_focus == 7 {
-                if let Some(target) = layout.network_settings_target(
+                if let Some(target) = layout.node_settings_target(
                     self.pointer_x,
                     self.pointer_y,
                     self.settings_window,
@@ -7208,6 +7222,7 @@ impl ConsoleRuntime {
                         NetworkSettingsTarget::Page(index) => {
                             self.settings_window.expanded_row = Some(index.min(4));
                             self.settings_window.scroll_offset = 0;
+                            self.settings_scroll_target = 0;
                             self.settings_window.control_focus = 0;
                         }
                         NetworkSettingsTarget::Control(index) => self.activate_node_control(index),
@@ -7216,8 +7231,12 @@ impl ConsoleRuntime {
                     return;
                 }
             }
-            if let Some(target) =
-                layout.settings_target(self.pointer_x, self.pointer_y, self.settings_window)
+            if let Some(target) = layout.settings_target_for_section(
+                self.pointer_x,
+                self.pointer_y,
+                self.settings_window,
+                self.system_focus,
+            )
             {
                 match target {
                     SettingsTarget::Section(index) if clicked => {
@@ -7232,6 +7251,7 @@ impl ConsoleRuntime {
                         self.settings_editing = false;
                         self.settings_window.expanded_row = matches!(index, 6 | 7).then_some(0);
                         self.settings_window.scroll_offset = 0;
+                        self.settings_scroll_target = 0;
                         self.settings_window.control_focus = 0;
                         self.reset_input();
                     }
@@ -7249,7 +7269,10 @@ impl ConsoleRuntime {
                         self.scroll_settings(if down { 4 } else { -4 })
                     }
                     SettingsTarget::ScrollThumb if clicked => {
-                        let geometry = layout.settings_window_geometry(self.settings_window);
+                        let geometry = layout.settings_window_geometry_for_section(
+                            self.settings_window,
+                            self.system_focus,
+                        );
                         let pointer_y =
                             self.system.framebuffer_height as i32 * self.pointer_y / 1000;
                         self.settings_scroll_grab_offset =
@@ -10941,7 +10964,7 @@ pub fn pointer_absolute_buttons(x: i32, y: i32, buttons: u8) {
 
 // ------------------------=
 // FUNC: ui_animation_tick
-// DESC: Advances launcher transitions and smooth scrolling on the display refresh clock.
+// DESC: Advances launcher transitions and eased Settings scrolling on the display refresh clock.
 // ------------------=
 pub fn ui_animation_tick() -> bool {
     unsafe {
@@ -10949,6 +10972,30 @@ pub fn ui_animation_tick() -> bool {
         let Some(runtime) = (*slot).as_mut() else {
             return false;
         };
+        if runtime.mode == ConsoleMode::Settings {
+            let layout = SystemLayout::new(
+                runtime.system.framebuffer_width,
+                runtime.system.framebuffer_height,
+            );
+            let maximum = layout
+                .settings_window_geometry_for_section(
+                    runtime.settings_window,
+                    runtime.system_focus,
+                )
+                .maximum_scroll;
+            runtime.settings_scroll_target = runtime.settings_scroll_target.min(maximum);
+            let next = crate::ui::system_layout::eased_scroll_offset(
+                runtime.settings_window.scroll_offset,
+                runtime.settings_scroll_target,
+                maximum,
+            );
+            if next != runtime.settings_window.scroll_offset {
+                runtime.settings_window.scroll_offset = next;
+                runtime.redraw();
+                return true;
+            }
+            return false;
+        }
         if runtime.mode != ConsoleMode::AppLauncher {
             return false;
         }
