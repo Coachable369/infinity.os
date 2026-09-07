@@ -2180,7 +2180,13 @@ impl SystemLayout {
             + 12 * self.scale;
         let summary_height = 88 * self.scale;
         let body_top = summary_top + summary_height + gap;
-        let body_height = 420 * self.scale;
+        let preferred_body_height = 420 * self.scale;
+        let available_body_height = content.bottom().saturating_sub(body_top as i32).max(0) as usize;
+        let body_height = if available_body_height >= 120 * self.scale {
+            preferred_body_height.min(available_body_height)
+        } else {
+            preferred_body_height
+        };
         let main_width = width * 68 / 100;
         let main = rect(
             left,
@@ -2195,7 +2201,14 @@ impl SystemLayout {
             body_height,
         );
         let control_gap = 8 * self.scale;
-        let control_height = 58 * self.scale;
+        let control_height = if body_height < preferred_body_height {
+            body_height
+                .saturating_sub(24 * self.scale)
+                .saturating_sub(control_gap * 5)
+                / 6
+        } else {
+            58 * self.scale
+        };
         let mut controls = [rect(0, 0, 0, 0); 6];
         for (index, control) in controls.iter_mut().enumerate() {
             *control = rect(
