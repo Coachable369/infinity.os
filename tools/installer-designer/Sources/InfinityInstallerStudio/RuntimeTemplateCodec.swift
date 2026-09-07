@@ -32,6 +32,7 @@ enum TemplateValidator {
         else {
             throw TemplateValidationIssue.invalidDocument("Installer screens must be ordered and numbered contiguously")
         }
+        let collection = ScreenCollection.runtimeCollection(screenCount: document.screens.count)
         for screen in document.screens {
             guard !screen.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   screen.title.utf8.count <= 63
@@ -41,6 +42,26 @@ enum TemplateValidator {
             let back = screen.elements.filter { $0.role == .backButton }
             let primary = screen.elements.filter { $0.role == .primaryButton }
             let liveInputs = screen.elements.filter { $0.role == .input && !$0.hidden }
+            for role in StudioElementRole.allCases {
+                let required = collection?.requiredRoleCount(role, screenID: screen.id)
+                    ?? ([StudioElementRole.masthead, .console, .content, .title, .body,
+                         .backButton, .primaryButton, .footer].contains(role) ? 1 : 0)
+                let count = screen.elements.filter { $0.role == role }.count
+                guard count >= required else {
+                    throw TemplateValidationIssue.invalidScreen(
+                        screen.id,
+                        "Required \(role.title) structure is missing"
+                    )
+                }
+                let maximum = collection?.maximumRoleCount(role, screenID: screen.id)
+                    ?? (required > 0 && role != .body ? required : nil)
+                guard maximum.map({ count <= $0 }) ?? true else {
+                    throw TemplateValidationIssue.invalidScreen(
+                        screen.id,
+                        "Required \(role.title) structure is duplicated"
+                    )
+                }
+            }
             guard back.count == 1, primary.count == 1 else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Canonical Back and Primary buttons are required")
             }

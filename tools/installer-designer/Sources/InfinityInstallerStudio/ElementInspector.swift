@@ -99,6 +99,11 @@ struct ElementInspector: View {
                 .tint(element.locked ? .orange : InfinityUIKit.Palette.nativeAccent)
                 .controlSize(.regular)
             }
+            if store.selectedElementIsRequired {
+                Label("Required runtime structure", systemImage: "shield.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(InfinityUIKit.Palette.nativeAccent)
+            }
             TextField("Layer name", text: stringBinding(\.name))
                 .disabled(element.locked)
             Picker("Role", selection: enumBinding(\.role, fallback: element.role)) {
@@ -264,11 +269,12 @@ struct ElementInspector: View {
     private func actionSection(_ element: StudioElement) -> some View {
         HStack {
             Button("Duplicate", action: store.duplicateSelected)
+                .disabled(element.locked && !store.selectedElementIsRequired)
             Spacer()
             Button("Delete", role: .destructive, action: store.deleteSelected)
+                .disabled(element.locked && !store.selectedElementIsRequired)
         }
         .buttonStyle(InfinityStudioButtonStyle(emphasis: .secondary))
-        .disabled(element.locked)
     }
 
     // ------------------------=

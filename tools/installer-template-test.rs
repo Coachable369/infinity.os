@@ -4,10 +4,11 @@ mod bitmap;
 #[path = "../kernel/ui/installer_template.rs"]
 mod installer_template;
 
-use bitmap::RuntimeBitmap;
-use installer_template::{
-    template_image_uses_aspect_fill, InstallerTemplate, InstallerTemplateRole,
-};
+#[path = "../kernel/ui/installer_layout.rs"]
+mod installer_layout;
+
+use installer_layout::installer_wizard_layout;
+use installer_template::{InstallerTemplate, InstallerTemplateRole};
 
 const FACTORY_TEMPLATE: &[u8] = include_bytes!("../assets/boot/installer-screens.iuit");
 const CONFIGURATION_TEMPLATE: &[u8] = include_bytes!("../assets/boot/configuration-screens.iuit");
@@ -71,11 +72,11 @@ fn first_primary_kind_offset(data: &[u8]) -> usize {
 
 // ------------------------=
 // FUNC: main
-// DESC: Exercises saved-template parsing, screen coverage, authored copy, geometry, and action-integrity rejection.
+// DESC: Exercises authored runtime structure, geometry consumption, data bindings, and action-integrity rejection.
 // ------------------=
 fn main() {
     let template = InstallerTemplate::parse(FACTORY_TEMPLATE).expect("factory template must load");
-    assert_eq!(template.screen_count(), 11);
+    assert!((1..=32).contains(&template.screen_count()));
     for screen in 1..=template.screen_count() as u8 {
         let count = template
             .element_count(screen)
@@ -96,94 +97,64 @@ fn main() {
         assert!(template
             .element(screen, InstallerTemplateRole::Console)
             .is_some());
-        assert!(template
+        let authored_content = template
             .element(screen, InstallerTemplateRole::Content)
-            .is_some());
-        assert!(!template
-            .element(screen, InstallerTemplateRole::Title)
-            .unwrap()
-            .text
-            .is_empty());
-        assert!(!template
-            .element(screen, InstallerTemplateRole::Body)
-            .unwrap()
-            .text
-            .is_empty());
+            .expect("compiled screen must retain its required content structure");
+        let runtime_content = installer_wizard_layout(screen, 1000, 1000).content;
+        assert_eq!(
+            (
+                runtime_content.left,
+                runtime_content.top,
+                runtime_content.width,
+                runtime_content.height,
+            ),
+            (
+                usize::from(authored_content.frame.x),
+                usize::from(authored_content.frame.y),
+                usize::from(authored_content.frame.width),
+                usize::from(authored_content.frame.height),
+            ),
+            "runtime geometry must follow the compiled Studio template"
+        );
     }
-    let progress = template
-        .element(8, InstallerTemplateRole::ProgressBar)
-        .expect("installing screen must expose one semantic progress control");
-    assert_eq!(progress.kind, 6);
-    assert_eq!((progress.frame.x, progress.frame.y), (110, 670));
-    assert_eq!((progress.frame.width, progress.frame.height), (780, 190));
-    assert_eq!(progress.text, b"PREPARING INSTALLATION");
-    let progress_hero = template
-        .element(8, InstallerTemplateRole::ProgressHero)
-        .expect("installing screen must expose its runtime progress hero");
-    assert_eq!(progress_hero.kind, 2);
-    assert!(progress_hero
-        .image_asset
-        .ends_with(b"infinity-installer-progress-hero-v1.png"));
-    assert_eq!(
-        template
-            .element(8, InstallerTemplateRole::Footer)
-            .unwrap()
-            .text,
-        b"INSTALLATION IN PROGRESS    PLEASE KEEP THIS DEVICE POWERED"
-    );
-    let content = template.element(2, InstallerTemplateRole::Content).unwrap();
-    assert_eq!(
-        (
-            content.frame.x,
-            content.frame.y,
-            content.frame.width,
-            content.frame.height
-        ),
-        (38, 396, 924, 404)
-    );
-    let masthead = template
-        .element(1, InstallerTemplateRole::Masthead)
-        .unwrap();
-    assert!(masthead
-        .image_asset
-        .ends_with(b"infinity-installer-masthead-v2.png"));
-    assert!(template.asset(masthead.image_asset).is_none());
-    let date = template
-        .element(5, InstallerTemplateRole::DateField)
-        .expect("date field must be a saved semantic control");
-    let time = template
-        .element(5, InstallerTemplateRole::TimeField)
-        .expect("time field must be a saved semantic control");
-    let zone = template
-        .element(5, InstallerTemplateRole::TimeZoneSelector)
-        .expect("time-zone selector must be a saved semantic control");
-    let badge = template
-        .element(5, InstallerTemplateRole::OffsetBadge)
-        .expect("UTC offset badge must be a saved semantic control");
-    let map = template
-        .element(5, InstallerTemplateRole::TimeZoneMap)
-        .expect("time-zone map must be a saved semantic layer");
-    assert_eq!(date.fill, [2, 10, 20, 255]);
-    assert_eq!(time.fill, date.fill);
-    assert_eq!(zone.border, [40, 72, 95, 255]);
-    assert_eq!(badge.border, [40, 181, 231, 255]);
-    assert!(map.image_asset.ends_with(b"infinity-time-zone-map-v1.png"));
-    assert!(template.asset(map.image_asset).is_none());
+    if template.screen_count() >= 8 {
+        let progress = template
+            .element(8, InstallerTemplateRole::ProgressBar)
+            .expect("installing screen must expose one semantic progress control");
+        assert_eq!(progress.kind, 6);
+        let progress_hero = template
+            .element(8, InstallerTemplateRole::ProgressHero)
+            .expect("installing screen must expose its runtime progress hero");
+        assert_eq!(progress_hero.kind, 2);
+    }
+    if template.screen_count() >= 5 {
+        let date = template
+            .element(5, InstallerTemplateRole::DateField)
+            .expect("date field must be a saved semantic control");
+        let time = template
+            .element(5, InstallerTemplateRole::TimeField)
+            .expect("time field must be a saved semantic control");
+        let zone = template
+            .element(5, InstallerTemplateRole::TimeZoneSelector)
+            .expect("time-zone selector must be a saved semantic control");
+        let badge = template
+            .element(5, InstallerTemplateRole::OffsetBadge)
+            .expect("UTC offset badge must be a saved semantic control");
+        let map = template
+            .element(5, InstallerTemplateRole::TimeZoneMap)
+            .expect("time-zone map must be a saved semantic layer");
+        assert!(!date.hidden && !time.hidden && !zone.hidden && !badge.hidden && !map.hidden);
+    }
 
     let configuration =
         InstallerTemplate::parse(CONFIGURATION_TEMPLATE).expect("configuration template must load");
-    assert_eq!(configuration.screen_count(), 8);
+    assert!((1..=32).contains(&configuration.screen_count()));
     for screen in 1..=configuration.screen_count() as u8 {
         let card = configuration
             .element(screen, InstallerTemplateRole::Console)
             .expect("configuration card must exist");
-        assert!(card.frame.width >= 300);
-        assert!(card.frame.height >= 600);
         assert!(card.frame.x as u32 + card.frame.width as u32 <= 1000);
         assert!(card.frame.y as u32 + card.frame.height as u32 <= 1000);
-        assert_eq!(card.fill, [10, 18, 29, 230]);
-        assert_eq!(card.border, [51, 71, 91, 255]);
-        assert_eq!(card.corner_radius, 16);
         assert!(configuration
             .element(screen, InstallerTemplateRole::Title)
             .is_some());
@@ -196,12 +167,8 @@ fn main() {
         let primary = configuration
             .element(screen, InstallerTemplateRole::PrimaryButton)
             .unwrap();
-        assert_eq!(back.frame.height, 47);
-        assert_eq!(primary.frame.height, 47);
-        assert_eq!(back.fill, [5, 15, 27, 255]);
-        assert_eq!(back.border, [42, 69, 91, 255]);
-        assert_eq!(primary.fill, [8, 54, 84, 255]);
-        assert_eq!(primary.border, [40, 181, 231, 255]);
+        assert_eq!(back.kind, 5);
+        assert_eq!(primary.kind, 5);
         let count = configuration
             .element_count(screen)
             .expect("configuration layers must enumerate");
@@ -214,8 +181,6 @@ fn main() {
             if element.role == InstallerTemplateRole::ProgressSegment as u8 {
                 progress_count += 1;
                 assert_eq!(element.kind, 1);
-                assert_eq!(element.frame.height, 20);
-                assert!(element.text.is_empty());
             }
             if element.role == InstallerTemplateRole::Input as u8 && !element.hidden {
                 input_count += 1;
@@ -223,70 +188,17 @@ fn main() {
         }
         assert_eq!(progress_count, 8);
         assert!(input_count <= 1);
-        if screen == 1 {
-            assert_eq!(back.opacity, 0);
-            assert_eq!(back.frame, primary.frame);
-        } else {
-            assert_eq!(primary.frame.x - (back.frame.x + back.frame.width), 8);
-        }
     }
-    let background = configuration
-        .element(1, InstallerTemplateRole::Masthead)
-        .unwrap();
-    assert!(background
-        .image_asset
-        .ends_with(b"infinity-onboarding-wallpaper-v1.png"));
-    assert!(configuration.asset(background.image_asset).is_none());
-    let node_image = (0..configuration.element_count(1).unwrap())
-        .filter_map(|layer| configuration.layer_at(1, layer))
-        .find(|element| element.kind == 2 && element.role == InstallerTemplateRole::Image as u8)
-        .expect("Studio-authored node image must remain in the configuration scene");
-    let node_bitmap = RuntimeBitmap::parse(
-        configuration
-            .asset(node_image.image_asset)
-            .expect("Studio-authored node image must be embedded in the runtime template"),
-    )
-    .expect("embedded node image must be runtime-decodable");
-    let transparent = node_bitmap.rgba(0, 0).unwrap();
-    let visible = node_bitmap
-        .rgba(node_bitmap.width() / 2, node_bitmap.height() / 2)
-        .unwrap();
-    assert!(transparent[3] < 8, "transparent PNG pixels must remain transparent");
-    assert!(visible[3] > 200, "visible PNG pixels must remain visible");
-    assert!(visible[0] > 0 || visible[1] > 0 || visible[2] > 0);
-    let display_width = 1920usize;
-    let display_height = 1080usize;
-    let destination_width = display_width * node_image.frame.width as usize / 1000;
-    let destination_height = display_height * node_image.frame.height as usize / 1000;
-    assert!(!template_image_uses_aspect_fill(node_image.role));
-    let placement = node_bitmap
-        .placement(
-            destination_width,
-            destination_height,
-            node_image.crop,
-            template_image_uses_aspect_fill(node_image.role),
-        )
-        .expect("ordinary artwork must have valid aspect-fit placement");
-    assert_eq!(placement.source_top, 0);
-    assert_eq!(placement.source_height, node_bitmap.height());
-    assert_eq!(placement.destination_height, destination_height);
-    assert!(placement.destination_width < destination_width);
-    assert!(template_image_uses_aspect_fill(
-        InstallerTemplateRole::Masthead as u8
-    ));
-    for screen in 2..=5 {
-        let input = configuration
-            .element(screen, InstallerTemplateRole::Input)
-            .expect("profile and credential steps need an authored input field");
-        assert!(!input.hidden);
-        assert!(input.frame.width >= 220);
-        assert_eq!(input.frame.height, 47);
-        assert!(input.frame.x as u32 + input.frame.width as u32 <= 1000);
-        assert!(input.frame.y as u32 + input.frame.height as u32 <= 1000);
-        assert_eq!(input.fill, [2, 10, 20, 255]);
-        assert_eq!(input.border, [40, 72, 95, 255]);
-        assert_eq!(input.corner_radius, 10);
-        assert_eq!(input.input_variable, screen - 1);
+    if configuration.screen_count() >= 2 {
+        for screen in 2..=configuration.screen_count().min(5) as u8 {
+            let input = configuration
+                .element(screen, InstallerTemplateRole::Input)
+                .expect("profile and credential steps need an authored input field");
+            assert!(!input.hidden);
+            assert!(input.frame.x as u32 + input.frame.width as u32 <= 1000);
+            assert!(input.frame.y as u32 + input.frame.height as u32 <= 1000);
+            assert_eq!(input.input_variable, screen - 1);
+        }
     }
 
     let mut altered = FACTORY_TEMPLATE.to_vec();

@@ -122,6 +122,8 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")!
         try png.write(to: source)
         let store = TemplateStore()
+        store.document = .factoryDefault()
+        store.configurationDocument = .factoryConfiguration()
         store.projectRoot = root
 
         let id = try store.importImageAsset(from: source)
@@ -704,6 +706,83 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         let title = invalidRole.screens[1].elements.firstIndex { $0.role == .title }!
         invalidRole.screens[1].elements[title].inputVariable = .machineNodeName
         XCTAssertThrowsError(try RuntimeTemplateCodec.encode(invalidRole))
+    }
+
+    // ------------------------=
+    // FUNC: testValidationRejectsMissingRequiredStructureAcrossRuntimeWorkflows
+    // DESC: Removes each required semantic element in turn and proves neither runtime workflow can be compiled invalid.
+    // ------------------=
+    func testValidationRejectsMissingRequiredStructureAcrossRuntimeWorkflows() {
+        let fixtures: [(ScreenCollection, InstallerStudioDocument)] = [
+            (.installation, .factoryDefault()),
+            (.configuration, .factoryConfiguration()),
+        ]
+
+        for (collection, fixture) in fixtures {
+            for screen in fixture.screens {
+                for role in StudioElementRole.allCases
+                    where collection.requiredRoleCount(role, screenID: screen.id) > 0
+                {
+                    var invalid = fixture
+                    let screenIndex = invalid.screens.firstIndex { $0.id == screen.id }!
+                    invalid.screens[screenIndex].elements.removeAll { $0.role == role }
+                    XCTAssertThrowsError(
+                        try TemplateValidator.validate(invalid),
+                        "\(collection.title) screen \(screen.id) accepted missing \(role.title)"
+                    )
+                }
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: testStoreProtectsRequiredStructureAndAllowsOrdinaryLayerDeletion
+    // DESC: Exercises every destructive editor route and verifies required roles alert without blocking optional artwork edits.
+    // ------------------=
+    @MainActor
+    func testStoreProtectsRequiredStructureAndAllowsOrdinaryLayerDeletion() {
+        let store = TemplateStore()
+        store.document = .factoryDefault()
+        store.configurationDocument = .factoryConfiguration()
+
+        for collection in ScreenCollection.allCases {
+            store.selectScreenCollection(collection)
+            let required = store.selectedScreen!.elements.first { $0.role == .content }!
+            store.selectElement(required.id)
+            let count = store.selectedScreen!.elements.count
+
+            store.deleteSelected()
+            XCTAssertEqual(store.selectedScreen!.elements.count, count)
+            XCTAssertFalse(store.validationIssues.isEmpty)
+
+            store.validationIssues = []
+            store.duplicateSelected()
+            XCTAssertEqual(store.selectedScreen!.elements.count, count)
+            XCTAssertFalse(store.validationIssues.isEmpty)
+
+            store.validationIssues = []
+            store.updateSelected("Hide required element") { $0.hidden = true }
+            XCTAssertFalse(store.selectedElement!.hidden)
+            XCTAssertFalse(store.validationIssues.isEmpty)
+
+            store.validationIssues = []
+            store.updateSelected("Reassign required role") { $0.role = .decoration }
+            XCTAssertEqual(store.selectedElement!.role, .content)
+            XCTAssertFalse(store.validationIssues.isEmpty)
+
+            store.validationIssues = []
+            store.addElement(kind: .image)
+            let optionalID = store.selectedElementID!
+            XCTAssertFalse(store.selectedElementIsRequired)
+            store.updateSelected("Claim required role") { $0.role = .content }
+            XCTAssertEqual(store.selectedElement!.role, .image)
+            XCTAssertFalse(store.validationIssues.isEmpty)
+
+            store.validationIssues = []
+            store.deleteSelected()
+            XCTAssertFalse(store.selectedScreen!.elements.contains { $0.id == optionalID })
+            XCTAssertTrue(store.validationIssues.isEmpty)
+        }
     }
 
     // ------------------------=

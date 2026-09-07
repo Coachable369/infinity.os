@@ -672,6 +672,45 @@
           "role" : 9,
           "text" : "TAB / ARROWS: MOVE FOCUS    ENTER: SELECT    ESC: CANCEL    F1: HELP",
           "zIndex" : 9
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 29,
+            "green" : 18,
+            "red" : 10
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 430,
+            "width" : 430,
+            "x" : 540,
+            "y" : 370
+          },
+          "hidden" : false,
+          "id" : "C5E4FCC7-7980-4DC7-B38A-3D0C46D999B2",
+          "imageAsset" : "installer-assets/nodeicon3.png",
+          "inputVariable" : "",
+          "kind" : 2,
+          "locked" : false,
+          "name" : "nodeicon3",
+          "opacity" : 100,
+          "role" : 6,
+          "text" : "",
+          "zIndex" : 10
         }
       ],
       "id" : 2,

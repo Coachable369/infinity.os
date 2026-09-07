@@ -114,6 +114,15 @@ final class TemplateStore: ObservableObject {
     var resizeHandlesVisible: Bool {
         marqueeSelectionEnabled && selectedElementIDs.count == 1 && selectedElement?.locked == false
     }
+    // ------------------------=
+    // FUNC: selectedElementIsRequired
+    // DESC: Reports whether the current element participates in the active runtime workflow contract.
+    // ------------------=
+    var selectedElementIsRequired: Bool {
+        guard let element = selectedElement, let screen = selectedScreen else { return false }
+        let required = selectedCollection.requiredRoleCount(element.role, screenID: selectedScreenID)
+        return required > 0 && screen.elements.filter { $0.role == element.role }.count <= required
+    }
 
     // ------------------------=
     // FUNC: init
@@ -444,8 +453,38 @@ final class TemplateStore: ObservableObject {
             status = "Unlock this element to edit it"
             return
         }
+        var candidate = location.element
+        mutation(&candidate)
+        let screenID = activeDocument.screens[location.screen].id
+        let originalRequired = selectedCollection.requiredRoleCount(
+            location.element.role,
+            screenID: screenID
+        )
+        let originalCount = activeDocument.screens[location.screen].elements.filter {
+            $0.role == location.element.role
+        }.count
+        let candidateCount = activeDocument.screens[location.screen].elements.filter {
+            $0.role == candidate.role
+        }.count
+        let candidateMaximum = selectedCollection.maximumRoleCount(candidate.role, screenID: screenID)
+        let removesRequiredRole = originalRequired > 0 && originalCount <= originalRequired
+            && (candidate.role != location.element.role || (!location.element.hidden && candidate.hidden))
+        let exceedsCandidateMaximum = candidate.role != location.element.role
+            && candidateMaximum.map { candidateCount >= $0 } == true
+        if removesRequiredRole {
+            refuseStructuralChange(
+                "\(location.element.role.title) is required by InfinityOS and cannot be removed, hidden, or reassigned."
+            )
+            return
+        }
+        if exceedsCandidateMaximum {
+            refuseStructuralChange(
+                "\(candidate.role.title) is singular runtime structure and already exists on this screen."
+            )
+            return
+        }
         recordUndo()
-        mutation(&activeDocument.screens[location.screen].elements[location.elementIndex])
+        activeDocument.screens[location.screen].elements[location.elementIndex] = candidate
         activeDocument.screens[location.screen].elements[location.elementIndex].frame =
             activeDocument.screens[location.screen].elements[location.elementIndex].frame.clamped()
         activeDocument.screens[location.screen].elements[location.elementIndex].crop =
@@ -634,7 +673,21 @@ final class TemplateStore: ObservableObject {
     // DESC: Deletes the selected editable element and refuses deletion of locked controls.
     // ------------------=
     func deleteSelected() {
-        guard let location = selectedLocation(), !location.element.locked else {
+        guard let location = selectedLocation() else { return }
+        let required = selectedCollection.requiredRoleCount(
+            location.element.role,
+            screenID: activeDocument.screens[location.screen].id
+        )
+        let roleCount = activeDocument.screens[location.screen].elements.filter {
+            $0.role == location.element.role
+        }.count
+        if required > 0 && roleCount <= required {
+            refuseStructuralChange(
+                "\(location.element.role.title) is required by InfinityOS and cannot be deleted."
+            )
+            return
+        }
+        guard !location.element.locked else {
             status = "Locked elements cannot be deleted"
             return
         }
@@ -650,7 +703,21 @@ final class TemplateStore: ObservableObject {
     // DESC: Duplicates the selected editable element with a snapped offset.
     // ------------------=
     func duplicateSelected() {
-        guard let location = selectedLocation(), !location.element.locked else {
+        guard let location = selectedLocation() else { return }
+        let maximum = selectedCollection.maximumRoleCount(
+            location.element.role,
+            screenID: activeDocument.screens[location.screen].id
+        )
+        let roleCount = activeDocument.screens[location.screen].elements.filter {
+            $0.role == location.element.role
+        }.count
+        if maximum.map({ roleCount >= $0 }) == true {
+            refuseStructuralChange(
+                "\(location.element.role.title) is unique runtime structure and cannot be duplicated."
+            )
+            return
+        }
+        guard !location.element.locked else {
             status = "Locked elements cannot be duplicated"
             return
         }
@@ -850,6 +917,15 @@ final class TemplateStore: ObservableObject {
         selectedElementID = nil
         inlineEditorElementID = nil
         status = "Redo"
+    }
+
+    // ------------------------=
+    // FUNC: refuseStructuralChange
+    // DESC: Publishes an immediate native alert when an edit would invalidate required runtime structure.
+    // ------------------=
+    private func refuseStructuralChange(_ message: String) {
+        validationIssues = [message]
+        status = "Required structure protected"
     }
 
     // ------------------------=

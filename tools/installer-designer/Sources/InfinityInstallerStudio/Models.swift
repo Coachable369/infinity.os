@@ -152,6 +152,60 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
         case .configuration: "OS Configuration Screens"
         }
     }
+
+    // ------------------------=
+    // FUNC: requiredScreenCount
+    // DESC: Returns the canonical screen count used to identify a built-in runtime workflow.
+    // ------------------=
+    var requiredScreenCount: Int {
+        switch self {
+        case .installation: 11
+        case .configuration: 8
+        }
+    }
+
+    // ------------------------=
+    // FUNC: runtimeCollection
+    // DESC: Resolves the fixed InfinityOS runtime workflow represented by one template document.
+    // ------------------=
+    static func runtimeCollection(screenCount: Int) -> ScreenCollection? {
+        allCases.first { $0.requiredScreenCount == screenCount }
+    }
+
+    // ------------------------=
+    // FUNC: requiredRoleCount
+    // DESC: Returns the minimum structural role count required by this runtime workflow and screen.
+    // ------------------=
+    func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
+        if [.masthead, .console, .content, .title, .body, .backButton, .primaryButton, .footer]
+            .contains(role)
+        {
+            return 1
+        }
+        switch self {
+        case .installation where screenID == 5:
+            return [.dateField, .timeField, .timeZoneSelector, .offsetBadge, .timeZoneMap]
+                .contains(role) ? 1 : 0
+        case .installation where screenID == 8:
+            return [.progressBar, .progressHero].contains(role) ? 1 : 0
+        case .configuration:
+            if role == .input { return 1 }
+            if role == .progressSegment { return 8 }
+            return 0
+        default:
+            return 0
+        }
+    }
+
+    // ------------------------=
+    // FUNC: maximumRoleCount
+    // DESC: Caps singular runtime roles while allowing additional authored body-copy layers.
+    // ------------------=
+    func maximumRoleCount(_ role: StudioElementRole, screenID: Int) -> Int? {
+        let required = requiredRoleCount(role, screenID: screenID)
+        guard required > 0, role != .body else { return nil }
+        return required
+    }
 }
 
 struct CanvasRect: Codable, Hashable {
