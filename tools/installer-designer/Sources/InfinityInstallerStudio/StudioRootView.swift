@@ -48,6 +48,20 @@ private struct StudioToolbar: View {
                 Text("InfinityOS UI Templates").font(.caption).foregroundStyle(.secondary)
             }
             Divider().frame(height: 28).padding(.horizontal, 4)
+            Button(action: store.toggleMarqueeSelection) {
+                Label(
+                    store.marqueeSelectionEnabled ? "Marquee On" : "Marquee Select",
+                    systemImage: "rectangle.dashed"
+                )
+            }
+            .buttonStyle(InfinityStudioButtonStyle(
+                emphasis: store.marqueeSelectionEnabled ? .primary : .secondary
+            ))
+            .fixedSize()
+            .layoutPriority(20)
+            .accessibilityLabel("Marquee Selection")
+            .accessibilityValue(store.marqueeSelectionEnabled ? "On" : "Off")
+            .help("Select enclosed objects and move them as a group (Shift-Command-M)")
             Button(action: store.undo) { Label("Undo", systemImage: "arrow.uturn.backward") }
                 .disabled(!store.canUndo)
             Button(action: store.redo) { Label("Redo", systemImage: "arrow.uturn.forward") }
@@ -73,18 +87,6 @@ private struct StudioToolbar: View {
                 .toggleStyle(.button)
             Toggle(isOn: $store.snapEnabled) { Label("Snap", systemImage: "magnet") }
                 .toggleStyle(.button)
-            Toggle(
-                isOn: Binding(
-                    get: { store.marqueeSelectionEnabled },
-                    set: { enabled in
-                        if enabled != store.marqueeSelectionEnabled { store.toggleMarqueeSelection() }
-                    }
-                )
-            ) {
-                Label("Marquee", systemImage: "rectangle.dashed")
-            }
-            .toggleStyle(.button)
-            .help("Select enclosed objects and move them as a group (Shift-Command-M)")
             Picker("Grid", selection: $store.gridSize) {
                 Text("5").tag(5)
                 Text("10").tag(10)
