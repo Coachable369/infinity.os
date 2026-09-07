@@ -245,6 +245,7 @@ fn settings_dashboard_behavior() {
             maximized: false,
             expanded_row: None,
             scroll_offset: 0,
+            control_focus: 0,
             row_count: 8,
         };
         let window = layout.settings_window_geometry(state);

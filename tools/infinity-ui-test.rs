@@ -1232,6 +1232,7 @@ fn installed_system_hit_geometry_test() {
         maximized: false,
         expanded_row: None,
         scroll_offset: 0,
+        control_focus: 0,
         row_count: 8,
     };
     let settings_geometry = square.settings_window_geometry(settings);
@@ -1249,6 +1250,12 @@ fn installed_system_hit_geometry_test() {
         square.settings_target(section_point.0, section_point.1, settings),
         Some(SettingsTarget::Section(0))
     );
+    assert!(ui::system_layout::SETTINGS_SECTION_ICON_SIZE >= 24);
+    for index in 0..10 {
+        let section = square.settings_section_geometry(settings, index);
+        assert!(section.y >= settings_geometry.navigation.y);
+        assert!(section.bottom() <= settings_geometry.navigation.bottom());
+    }
     let row_point = normalized_center(square.settings_row_geometry(settings, 0).summary);
     assert_eq!(
         square.settings_target(row_point.0, row_point.1, settings),
@@ -1316,6 +1323,17 @@ fn installed_system_hit_geometry_test() {
     );
     let dragged_offset = compact.settings_scroll_offset_for_thumb(900, expanded, 0);
     assert_eq!(dragged_offset, expanded_geometry.maximum_scroll);
+    let network_at_top = compact.network_settings_geometry(expanded);
+    let scrolled_dashboard = SettingsWindowState {
+        scroll_offset: expanded_geometry.maximum_scroll,
+        ..expanded
+    };
+    let network_at_bottom = compact.network_settings_geometry(scrolled_dashboard);
+    assert_eq!(
+        network_at_top.tabs[0].y - network_at_bottom.tabs[0].y,
+        (expanded_geometry.maximum_scroll * compact.scale()) as i32
+    );
+    assert!(network_at_bottom.sidebar.bottom() <= network_at_top.sidebar.bottom());
     let picker = square.settings_primary_geometry(expanded);
     let picker_point = |rect: Rect| {
         (
@@ -1347,6 +1365,7 @@ fn installed_system_hit_geometry_test() {
     let opacity_expanded = SettingsWindowState {
         expanded_row: Some(4),
         scroll_offset: 0,
+        control_focus: 0,
         height: 620,
         ..settings
     };
@@ -1403,6 +1422,7 @@ fn installed_system_hit_geometry_test() {
         maximized: false,
         expanded_row: None,
         scroll_offset: 0,
+        control_focus: 0,
         row_count: 6,
     };
     let hidpi_layout = SystemLayout::new(2560, 1440);

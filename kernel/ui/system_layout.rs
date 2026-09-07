@@ -8,6 +8,8 @@
 use super::geometry::{Point, Rect};
 use super::installer_template::InstallerTemplateRole;
 
+pub const SETTINGS_SECTION_ICON_SIZE: usize = 25;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OnboardingTarget {
     Back,
@@ -234,6 +236,7 @@ pub struct SettingsWindowState {
     pub maximized: bool,
     pub expanded_row: Option<usize>,
     pub scroll_offset: usize,
+    pub control_focus: usize,
     pub row_count: usize,
 }
 
@@ -1724,6 +1727,28 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: settings_section_geometry
+    // DESC: Fits all Settings sections inside the navigation viewport while preserving generous icon and pointer space.
+    // ------------------=
+    pub fn settings_section_geometry(
+        self,
+        state: SettingsWindowState,
+        index: usize,
+    ) -> Rect {
+        let geometry = self.settings_window_geometry(state);
+        let navigation = geometry.navigation;
+        let inset = 10 * self.scale;
+        let usable_height = (navigation.height as usize).saturating_sub(inset * 2);
+        let row_height = (usable_height / 10).min(43 * self.scale).max(1);
+        rect(
+            navigation.x.max(0) as usize + inset,
+            navigation.y.max(0) as usize + inset + index.min(9) * row_height,
+            (navigation.width as usize).saturating_sub(inset * 2),
+            row_height,
+        )
+    }
+
+    // ------------------------=
     // FUNC: settings_target
     // DESC: Resolves Settings navigation, accordion, scrolling, chrome, and resize affordances from shared geometry.
     // ------------------=
@@ -1759,16 +1784,8 @@ impl SystemLayout {
         if geometry.title.contains(point) {
             return Some(SettingsTarget::Title);
         }
-        for index in 0..9usize {
-            let y = top + 54 * self.scale + (25 + index * 43) * self.scale;
-            if rect(
-                left + 10 * self.scale,
-                y.saturating_sub(10 * self.scale),
-                (geometry.navigation.width as usize).saturating_sub(20 * self.scale),
-                36 * self.scale,
-            )
-            .contains(point)
-            {
+        for index in 0..10usize {
+            if self.settings_section_geometry(state, index).contains(point) {
                 return Some(SettingsTarget::Section(index));
             }
         }
@@ -1869,9 +1886,22 @@ impl SystemLayout {
                 control_height,
             );
         }
+        let scroll = (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
+        for tab in tabs.iter_mut() {
+            tab.y = tab.y.saturating_sub(scroll);
+        }
+        let mut summary = rect(left, summary_top, width, summary_height);
+        let mut main = main;
+        let mut sidebar = sidebar;
+        summary.y = summary.y.saturating_sub(scroll);
+        main.y = main.y.saturating_sub(scroll);
+        sidebar.y = sidebar.y.saturating_sub(scroll);
+        for control in controls.iter_mut() {
+            control.y = control.y.saturating_sub(scroll);
+        }
         NetworkSettingsGeometry {
             tabs,
-            summary: rect(left, summary_top, width, summary_height),
+            summary,
             main,
             sidebar,
             controls,
@@ -1889,6 +1919,9 @@ impl SystemLayout {
         state: SettingsWindowState,
     ) -> Option<NetworkSettingsTarget> {
         let point = self.point(normalized_x, normalized_y);
+        if !self.settings_window_geometry(state).viewport.contains(point) {
+            return None;
+        }
         let geometry = self.network_settings_geometry(state);
         if let Some(index) = geometry.tabs.iter().position(|card| card.contains(point)) {
             return Some(NetworkSettingsTarget::Page(index));

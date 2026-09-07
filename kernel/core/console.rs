@@ -557,6 +557,7 @@ impl ConsoleRuntime {
                 maximized: false,
                 expanded_row: None,
                 scroll_offset: 0,
+                control_focus: 0,
                 row_count: 8,
             },
             settings_window_dragging: false,
@@ -2686,6 +2687,7 @@ impl ConsoleRuntime {
         self.settings_editing = false;
         self.settings_window.expanded_row = matches!(self.system_focus, 6 | 7).then_some(0);
         self.settings_window.scroll_offset = 0;
+        self.settings_window.control_focus = 0;
         self.settings_window_dragging = false;
         self.settings_window_resizing = None;
         self.settings_accent_dirty = false;
@@ -3239,7 +3241,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn commit_network_edit(&mut self) -> bool {
         let page = self.network_page();
-        let control = self.settings_window.scroll_offset.min(5);
+        let control = self.settings_window.control_focus.min(5);
         let input = &self.command[..self.command_length];
         if page == 2 {
             let (mut address, mut prefix, mut gateway, mut metric) =
@@ -3308,7 +3310,7 @@ impl ConsoleRuntime {
     // DESC: Executes the focused Network page control through typed runtime configuration operations.
     // ------------------=
     fn activate_network_control(&mut self, control: usize) {
-        self.settings_window.scroll_offset = control.min(5);
+        self.settings_window.control_focus = control.min(5);
         match (self.network_page(), control.min(5)) {
             (0, index @ 0..=3) => {
                 let mode = [
@@ -3398,7 +3400,7 @@ impl ConsoleRuntime {
 
         let page = self.node_settings_page();
         let control = control.min(5);
-        self.settings_window.scroll_offset = control;
+        self.settings_window.control_focus = control;
         let changed = crate::runtime::with_runtime(|runtime| {
             let now = runtime
                 .nodes
@@ -4327,21 +4329,23 @@ impl ConsoleRuntime {
                 ConsoleKey::Left => {
                     self.settings_window.expanded_row = Some((self.network_page() + 6) % 7);
                     self.settings_window.scroll_offset = 0;
+                    self.settings_window.control_focus = 0;
                 }
                 ConsoleKey::Right => {
                     self.settings_window.expanded_row = Some((self.network_page() + 1) % 7);
                     self.settings_window.scroll_offset = 0;
+                    self.settings_window.control_focus = 0;
                 }
                 ConsoleKey::Up | ConsoleKey::Tab(true) => {
-                    self.settings_window.scroll_offset =
-                        (self.settings_window.scroll_offset + 5) % 6;
+                    self.settings_window.control_focus =
+                        (self.settings_window.control_focus + 5) % 6;
                 }
                 ConsoleKey::Down | ConsoleKey::Tab(false) => {
-                    self.settings_window.scroll_offset =
-                        (self.settings_window.scroll_offset + 1) % 6;
+                    self.settings_window.control_focus =
+                        (self.settings_window.control_focus + 1) % 6;
                 }
                 ConsoleKey::Enter => {
-                    self.activate_network_control(self.settings_window.scroll_offset)
+                    self.activate_network_control(self.settings_window.control_focus)
                 }
                 _ => {}
             }
@@ -4353,21 +4357,23 @@ impl ConsoleRuntime {
                 ConsoleKey::Left => {
                     self.settings_window.expanded_row = Some((self.node_settings_page() + 4) % 5);
                     self.settings_window.scroll_offset = 0;
+                    self.settings_window.control_focus = 0;
                 }
                 ConsoleKey::Right => {
                     self.settings_window.expanded_row = Some((self.node_settings_page() + 1) % 5);
                     self.settings_window.scroll_offset = 0;
+                    self.settings_window.control_focus = 0;
                 }
                 ConsoleKey::Up | ConsoleKey::Tab(true) => {
-                    self.settings_window.scroll_offset =
-                        (self.settings_window.scroll_offset + 5) % 6;
+                    self.settings_window.control_focus =
+                        (self.settings_window.control_focus + 5) % 6;
                 }
                 ConsoleKey::Down | ConsoleKey::Tab(false) => {
-                    self.settings_window.scroll_offset =
-                        (self.settings_window.scroll_offset + 1) % 6;
+                    self.settings_window.control_focus =
+                        (self.settings_window.control_focus + 1) % 6;
                 }
                 ConsoleKey::Enter => {
-                    self.activate_node_control(self.settings_window.scroll_offset)
+                    self.activate_node_control(self.settings_window.control_focus)
                 }
                 _ => {}
             }
@@ -6459,6 +6465,7 @@ impl ConsoleRuntime {
                         NetworkSettingsTarget::Page(index) => {
                             self.settings_window.expanded_row = Some(index.min(6));
                             self.settings_window.scroll_offset = 0;
+                            self.settings_window.control_focus = 0;
                             self.settings_editing = false;
                             self.reset_input();
                         }
@@ -6480,6 +6487,7 @@ impl ConsoleRuntime {
                         NetworkSettingsTarget::Page(index) => {
                             self.settings_window.expanded_row = Some(index.min(4));
                             self.settings_window.scroll_offset = 0;
+                            self.settings_window.control_focus = 0;
                         }
                         NetworkSettingsTarget::Control(index) => {
                             self.activate_node_control(index)
@@ -6505,6 +6513,7 @@ impl ConsoleRuntime {
                         self.settings_editing = false;
                         self.settings_window.expanded_row = matches!(index, 6 | 7).then_some(0);
                         self.settings_window.scroll_offset = 0;
+                        self.settings_window.control_focus = 0;
                         self.reset_input();
                     }
                     SettingsTarget::ContentRow(row)

@@ -18,6 +18,7 @@ fn main() {
         maximized: false,
         expanded_row: None,
         scroll_offset: 0,
+        control_focus: 0,
         row_count: 6,
     };
     let window = layout.settings_window_geometry(state);

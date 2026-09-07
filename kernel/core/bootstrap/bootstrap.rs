@@ -848,6 +848,7 @@ fn activate_console(display: DisplayDevice) {
                 maximized: false,
                 expanded_row: None,
                 scroll_offset: 0,
+                control_focus: 0,
                 row_count: 8,
             },
             last_app_window_x: 0,

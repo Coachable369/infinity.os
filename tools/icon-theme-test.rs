@@ -46,6 +46,7 @@ fn main() {
         maximized: false,
         expanded_row: Some(1),
         scroll_offset: 0,
+        control_focus: 0,
         row_count: 6,
     };
     let detail = layout.settings_row_geometry(settings, 1).detail;

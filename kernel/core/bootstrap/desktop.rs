@@ -2407,9 +2407,12 @@ impl super::DisplayDevice {
                 self.height,
             ) {
                 self.onboarding_network_rows(
-                    content.left + 12 * self.ui_scale().max(1),
+                    content.left
+                        + crate::ui::system_layout::UI_GUTTER * self.ui_scale().max(1),
                     content.top + content.height * 42 / 100,
-                    content.width.saturating_sub(24 * self.ui_scale().max(1)),
+                    content.width.saturating_sub(
+                        crate::ui::system_layout::UI_GUTTER * 2 * self.ui_scale().max(1),
+                    ),
                     focus,
                     validation_error,
                 );
@@ -4244,14 +4247,24 @@ impl super::DisplayDevice {
             b"Storage",
             b"About",
         ];
+        self.set_render_clip(
+            geometry.navigation.x.max(0) as usize,
+            geometry.navigation.y.max(0) as usize,
+            geometry.navigation.width as usize,
+            geometry.navigation.height as usize,
+        );
         for (index, section) in sections.iter().enumerate() {
-            let y = top + title_height + (25 + index * 43) * scale;
+            let row = layout.settings_section_geometry(settings_window, index);
+            let row_left = row.x.max(0) as usize;
+            let row_top = row.y.max(0) as usize;
+            let row_width = row.width as usize;
+            let row_height = row.height as usize;
             if focus == index {
                 self.fill_rounded_rect_alpha(
-                    left + 10 * scale,
-                    y.saturating_sub(10 * scale),
-                    nav_width.saturating_sub(20 * scale),
-                    36 * scale,
+                    row_left,
+                    row_top,
+                    row_width,
+                    row_height,
                     9 * scale,
                     selection_r,
                     selection_g,
@@ -4261,14 +4274,15 @@ impl super::DisplayDevice {
             }
             self.authentication_icon(
                 left + 27 * scale,
-                y + 8 * scale,
+                row_top + row_height / 2,
                 [8usize, 13, 6, 7, 8, 11, 14, 6, 11, 12][index],
-                17 * scale,
+                (crate::ui::system_layout::SETTINGS_SECTION_ICON_SIZE * scale)
+                    .min(row_height.saturating_sub(6 * scale).max(12 * scale)),
                 focus == index,
             );
             self.ui_text_strong(
                 left + 48 * scale,
-                y,
+                row_top + row_height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
                 section,
                 if focus == index { 237 } else { 180 },
                 if focus == index { 245 } else { 198 },
@@ -4276,6 +4290,7 @@ impl super::DisplayDevice {
                 1,
             );
         }
+        self.clear_render_clip();
         let content_x = geometry.content.x.max(0) as usize;
         let content_y = geometry.content.y.max(0) as usize;
         self.ui_text_strong(
@@ -4334,11 +4349,27 @@ impl super::DisplayDevice {
             )
         });
         if focus == 6 {
+            self.set_render_clip(
+                geometry.viewport.x.max(0) as usize,
+                geometry.viewport.y.max(0) as usize,
+                geometry.viewport.width as usize,
+                geometry.viewport.height as usize,
+            );
             self.render_network_settings_dashboard(settings_window, scale, connectivity, input);
+            self.clear_render_clip();
+            self.render_settings_overflow_chrome(geometry, settings_window, scale, (outline_r, outline_g, outline_b));
             return;
         }
         if focus == 7 {
+            self.set_render_clip(
+                geometry.viewport.x.max(0) as usize,
+                geometry.viewport.y.max(0) as usize,
+                geometry.viewport.width as usize,
+                geometry.viewport.height as usize,
+            );
             self.render_node_settings_dashboard(settings_window, scale);
+            self.clear_render_clip();
+            self.render_settings_overflow_chrome(geometry, settings_window, scale, (outline_r, outline_g, outline_b));
             return;
         }
         let rows: [(&[u8], &[u8]); 8] = match focus.min(9) {
@@ -4440,6 +4471,12 @@ impl super::DisplayDevice {
                 (b"", b""),
             ],
         };
+        self.set_render_clip(
+            geometry.viewport.x.max(0) as usize,
+            geometry.viewport.y.max(0) as usize,
+            geometry.viewport.width as usize,
+            geometry.viewport.height as usize,
+        );
         for (index, (label, value)) in rows
             .iter()
             .take(settings_window.row_count.clamp(1, 8))
@@ -4663,6 +4700,26 @@ impl super::DisplayDevice {
                 }
             }
         }
+        self.clear_render_clip();
+        self.render_settings_overflow_chrome(geometry, settings_window, scale, (outline_r, outline_g, outline_b));
+    }
+
+    // ------------------------=
+    // FUNC: render_settings_overflow_chrome
+    // DESC: Draws the proportional Settings scrollbar and resize grip outside the clipped content viewport.
+    // ------------------=
+    fn render_settings_overflow_chrome(
+        &mut self,
+        geometry: crate::ui::system_layout::SettingsWindowGeometry,
+        settings_window: crate::ui::system_layout::SettingsWindowState,
+        scale: usize,
+        outline: (u8, u8, u8),
+    ) {
+        let (outline_r, outline_g, outline_b) = outline;
+        let left = geometry.window.x.max(0) as usize;
+        let top = geometry.window.y.max(0) as usize;
+        let width = geometry.window.width as usize;
+        let height = geometry.window.height as usize;
         if geometry.maximum_scroll > 0 {
             let track = geometry.scrollbar_track;
             let thumb = geometry.scrollbar_thumb;
@@ -4758,7 +4815,7 @@ impl super::DisplayDevice {
         let values = [discovered, trusted, online, sessions, grants, if page == 1 { pairings } else if page == 2 { members } else { audit }];
         for index in 0..6 {
             let card = geometry.controls[index];
-            let active = settings_window.scroll_offset.min(5) == index;
+            let active = settings_window.control_focus.min(5) == index;
             self.fill_rounded_rect_alpha(card.x.max(0) as usize, card.y.max(0) as usize, card.width as usize, card.height as usize, 8 * scale, if active { selection_r } else { 6 }, if active { selection_g } else { 24 }, if active { selection_b } else { 39 }, 230);
             self.outline_rounded_rect(card.x.max(0) as usize, card.y.max(0) as usize, card.width as usize, card.height as usize, 8 * scale, if active { outline_r } else { outline_r / 2 }, if active { outline_g } else { outline_g / 2 }, if active { outline_b } else { outline_b / 2 });
             self.ui_text_strong(card.x.max(0) as usize + 15 * scale, card.y.max(0) as usize + 9 * scale, labels[index][0], 220, 239, 249, 1);
@@ -5054,7 +5111,7 @@ impl super::DisplayDevice {
         for (index, card) in geometry.controls.iter().enumerate() {
             let left = card.x.max(0) as usize;
             let top = card.y.max(0) as usize;
-            let active = settings_window.scroll_offset.min(5) == index;
+            let active = settings_window.control_focus.min(5) == index;
             self.fill_rounded_rect_alpha(
                 left,
                 top,
@@ -8130,6 +8187,7 @@ pub fn system_ui_present(
             let settings_content_changed = console.last_settings_window.expanded_row
                 != settings_window.expanded_row
                 || console.last_settings_window.scroll_offset != settings_window.scroll_offset
+                || console.last_settings_window.control_focus != settings_window.control_focus
                 || console.last_settings_window.row_count != settings_window.row_count;
             let app_window_geometry_changed = console.last_app_window_x != app_window_x
                 || console.last_app_window_y != app_window_y

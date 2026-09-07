@@ -83,6 +83,7 @@ fn slider_maps_complete_timeout_range() {
         maximized: false,
         expanded_row: Some(3),
         scroll_offset: 0,
+        control_focus: 0,
         row_count: 5,
     };
     let maximum = MAX_NO_ACTIVITY_TIMEOUT_MINUTES - MIN_NO_ACTIVITY_TIMEOUT_MINUTES;
