@@ -19,6 +19,7 @@ pub mod installer_layout;
 pub mod installer_template;
 pub mod localization;
 pub mod platform;
+pub mod performance;
 pub mod redraw;
 pub mod scene;
 pub mod session_state;

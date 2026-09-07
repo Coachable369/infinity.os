@@ -1,0 +1,21 @@
+{
+  "fixture": "retained_drag",
+  "environment": "macOS host, release behavior harness, not guest VM",
+  "frames": 300,
+  "display": [640, 480],
+  "surface": [320, 240],
+  "before": [
+    {"average_ns": 145180, "p95_ns": 251417, "worst_ns": 395792},
+    {"average_ns": 138040, "p95_ns": 155750, "worst_ns": 213916}
+  ],
+  "after": [
+    {"average_ns": 29683, "p95_ns": 30625, "worst_ns": 121000},
+    {"average_ns": 29866, "p95_ns": 31959, "worst_ns": 60333}
+  ],
+  "presented_pixels_per_run": 23159280,
+  "cpu_usage": null,
+  "gpu_usage": null,
+  "cache_hit_percent": null,
+  "ui_blocked_ns": null,
+  "notes": "Host timings vary. This is the retained SoftwareCompositor, not evidence of end-to-end native desktop speed. Original offscreen sampling fixture failed before the fix."
+}

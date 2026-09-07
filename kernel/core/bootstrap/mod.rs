@@ -33,6 +33,10 @@ pub struct DisplayDevice {
     damage_collapses: u32,
     render_clip: Option<PresentRegion>,
     fast_motion_frame: bool,
+    frame_started_ns: Option<u64>,
+    submitted_regions: u32,
+    merged_regions: u32,
+    fallback_reason: crate::ui::performance::FallbackReason,
 }
 
 const MAX_PRESENT_REGIONS: usize = 8;
@@ -162,6 +166,10 @@ impl DisplayDevice {
             damage_collapses: 0,
             render_clip: None,
             fast_motion_frame: false,
+            frame_started_ns: None,
+            submitted_regions: 0,
+            merged_regions: 0,
+            fallback_reason: crate::ui::performance::FallbackReason::InitialRender,
         })
     }
 
@@ -256,17 +264,25 @@ impl DisplayDevice {
         let Some(mut submitted) = self.clipped_render_region(left, top, width, height) else {
             return;
         };
-        let count = self.dirty_count as usize;
-        for index in 0..count {
+        let mut count = self.dirty_count as usize;
+        self.submitted_regions = self.submitted_regions.saturating_add(1);
+        let mut index = 0;
+        while index < count {
             if self.dirty_regions[index].contains(submitted) {
+                self.merged_regions = self.merged_regions.saturating_add(1);
                 return;
             }
             if self.dirty_regions[index].intersects_or_touches(submitted) {
+                self.merged_regions = self.merged_regions.saturating_add(1);
                 submitted = self.dirty_regions[index].union(submitted);
-                self.dirty_regions[index] = submitted;
-                return;
+                count -= 1;
+                self.dirty_regions[index] = self.dirty_regions[count];
+                index = 0;
+            } else {
+                index += 1;
             }
         }
+        self.dirty_count = count as u8;
         if count < MAX_PRESENT_REGIONS {
             self.dirty_regions[count] = submitted;
             self.dirty_count += 1;
@@ -279,6 +295,13 @@ impl DisplayDevice {
         self.dirty_regions[0] = collapsed;
         self.dirty_count = 1;
         self.damage_collapses = self.damage_collapses.saturating_add(1);
+        if collapsed.left == 0
+            && collapsed.top == 0
+            && collapsed.right == self.width
+            && collapsed.bottom == self.height
+        {
+            self.fallback_reason = crate::ui::performance::FallbackReason::Fragmentation;
+        }
     }
 
     // ------------------------=
@@ -290,6 +313,7 @@ impl DisplayDevice {
             return 0;
         }
         let mut pixels = 0u64;
+        let present_started = crate::ui::performance::monotonic_ns();
         for index in 0..self.dirty_count as usize {
             let region = self.dirty_regions[index];
             let width = region.right.saturating_sub(region.left);
@@ -309,6 +333,37 @@ impl DisplayDevice {
         }
         self.presented_frames = self.presented_frames.wrapping_add(1);
         self.presented_pixels = self.presented_pixels.saturating_add(pixels);
+        let completed = crate::ui::performance::monotonic_ns();
+        let screen_pixels = self.width as u64 * self.height as u64;
+        let fallback = if pixels >= screen_pixels {
+            if self.fallback_reason == crate::ui::performance::FallbackReason::None {
+                crate::ui::performance::FallbackReason::Unclassified
+            } else {
+                self.fallback_reason
+            }
+        } else {
+            crate::ui::performance::FallbackReason::None
+        };
+        if fallback != crate::ui::performance::FallbackReason::None {
+            self.full_frame_fallbacks = self.full_frame_fallbacks.saturating_add(1);
+        }
+        crate::ui::performance::publish(crate::ui::performance::FramePerformanceSample {
+            timestamp_ns: completed,
+            frame_ns: crate::ui::performance::elapsed(self.frame_started_ns, completed),
+            compose_ns: crate::ui::performance::elapsed(self.frame_started_ns, present_started),
+            present_ns: crate::ui::performance::elapsed(present_started, completed),
+            submitted_regions: self.submitted_regions,
+            merged_regions: self.merged_regions,
+            damaged_pixels: pixels,
+            screen_pixels,
+            fallback,
+            budget_ns: 16_666_667,
+            ..crate::ui::performance::FramePerformanceSample::default()
+        });
+        self.frame_started_ns = None;
+        self.submitted_regions = 0;
+        self.merged_regions = 0;
+        self.fallback_reason = crate::ui::performance::FallbackReason::None;
         self.dirty_count = 0;
         pixels
     }
@@ -318,7 +373,9 @@ impl DisplayDevice {
     // DESC: Requests and presents a complete frame for initialization or explicit recovery.
     // ------------------=
     fn force_full_present(&mut self) -> u64 {
-        self.full_frame_fallbacks = self.full_frame_fallbacks.saturating_add(1);
+        if self.fallback_reason == crate::ui::performance::FallbackReason::None {
+            self.fallback_reason = crate::ui::performance::FallbackReason::Recovery;
+        }
         self.mark_dirty_rect(0, 0, self.width, self.height);
         self.present_damage()
     }

@@ -353,25 +353,35 @@ impl DamageTracker {
     // FUNC: add_semantic
     // DESC: Adds typed damage, merging compatible geometry while retaining source and priority diagnostics.
     // ------------------=
-    pub fn add_semantic(&mut self, rect: Rect, class: DamageClass, source_id: u32, priority: u8) {
+    pub fn add_semantic(
+        &mut self,
+        mut rect: Rect,
+        mut class: DamageClass,
+        mut source_id: u32,
+        mut priority: u8,
+    ) {
         if rect.width == 0 || rect.height == 0 {
             return;
         }
         self.diagnostics.submitted = self.diagnostics.submitted.saturating_add(1);
-        for index in 0..self.count as usize {
+        let mut index = 0;
+        while index < self.count as usize {
             if self.regions[index].intersects(rect) {
-                let merged = self.regions[index].union(rect);
-                self.regions[index] = merged;
-                self.records[index].rect = merged;
-                self.records[index].priority = self.records[index].priority.max(priority);
+                rect = self.regions[index].union(rect);
+                priority = self.records[index].priority.max(priority);
                 if self.records[index].class != class {
-                    self.records[index].class = DamageClass::Geometry;
-                    self.records[index].source_id = 0;
+                    class = DamageClass::Geometry;
+                    source_id = 0;
                 } else if self.records[index].source_id != source_id {
-                    self.records[index].source_id = 0;
+                    source_id = 0;
                 }
                 self.diagnostics.merged = self.diagnostics.merged.saturating_add(1);
-                return;
+                self.count -= 1;
+                self.regions[index] = self.regions[self.count as usize];
+                self.records[index] = self.records[self.count as usize];
+                index = 0;
+            } else {
+                index += 1;
             }
         }
         if self.count as usize == MAX_DAMAGE_REGIONS {
@@ -379,12 +389,15 @@ impl DamageTracker {
             for region in &self.regions[..self.count as usize] {
                 combined = combined.union(*region);
             }
+            for record in &self.records[..self.count as usize] {
+                priority = priority.max(record.priority);
+            }
             self.regions[0] = combined;
             self.records[0] = DamageRecord {
                 rect: combined,
                 class: DamageClass::Geometry,
                 source_id: 0,
-                priority: 255,
+                priority,
             };
             self.count = 1;
             self.full_redraw = true;

@@ -91,6 +91,11 @@ milestone-7x-test:
 milestone-7c-test:
 	@tools/milestone-7c-test.sh
 
+.PHONY: performance-test
+performance-test:
+	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release \
+		--manifest-path tools/behavior-harness/Cargo.toml --bin performance-test
+
 icon-theme-test:
 	@tools/icon-theme-test.sh
 

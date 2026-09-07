@@ -9539,6 +9539,7 @@ pub fn system_ui_present(
     unsafe {
         let slot = &raw mut CONSOLE;
         if let Some(console) = (*slot).as_mut() {
+            console.display.frame_started_ns = crate::ui::performance::monotonic_ns();
             console.display.fast_motion_frame = fast_motion_frame;
             console.system_ui_active = true;
             console.restore_cursor();
@@ -9584,6 +9585,11 @@ pub fn system_ui_present(
             let (background_opacity, background_blur) = console.display.active_background_effects();
             let background_effects_changed = console.last_background_opacity != background_opacity
                 || console.last_background_blur != background_blur;
+            if icon_theme_changed || accent_changed || primary_changed || background_effects_changed
+            {
+                console.display.fallback_reason =
+                    crate::ui::performance::FallbackReason::AppearanceChange;
+            }
             let file_navigator_state =
                 crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
             let file_navigator_changed = console.last_file_navigator_state != file_navigator_state;

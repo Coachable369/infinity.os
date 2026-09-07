@@ -22,6 +22,7 @@ pub enum CompositorError {
     FrontBufferTooSmall,
     SurfaceBufferTooSmall,
     PrivilegedZOrderDenied,
+    DeferredBufferTooSmall,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
@@ -92,9 +93,26 @@ impl SoftwareCompositor {
         layers: &[SurfaceFrame<'_>],
         damage: &DamageTracker,
     ) -> Result<(), CompositorError> {
+        self.frame_ready = false;
         let required = self.required_pixels()?;
         if back_buffer.len() < required {
             return Err(CompositorError::BackBufferTooSmall);
+        }
+        // Validate the whole transaction before touching staged pixels.
+        for layer in layers.iter().filter(|layer| layer.visible) {
+            if !layer_authorized(layer) {
+                self.metrics.rejected_layers = self.metrics.rejected_layers.saturating_add(1);
+                return Err(CompositorError::PrivilegedZOrderDenied);
+            }
+            let descriptor = layer.descriptor;
+            let source_required = (descriptor.stride_pixels as usize)
+                .checked_mul(descriptor.size.height as usize)
+                .ok_or(CompositorError::SurfaceBufferTooSmall)?;
+            if descriptor.stride_pixels < descriptor.size.width
+                || layer.pixels.len() < source_required
+            {
+                return Err(CompositorError::SurfaceBufferTooSmall);
+            }
         }
         let display_rect = Rect {
             x: 0,
@@ -111,16 +129,6 @@ impl SoftwareCompositor {
                 for layer in layers {
                     if !layer.visible || layer.z_class as u8 != z {
                         continue;
-                    }
-                    if !layer_authorized(layer) {
-                        self.metrics.rejected_layers =
-                            self.metrics.rejected_layers.saturating_add(1);
-                        return Err(CompositorError::PrivilegedZOrderDenied);
-                    }
-                    let source_required = layer.descriptor.stride_pixels as usize
-                        * layer.descriptor.size.height as usize;
-                    if layer.pixels.len() < source_required {
-                        return Err(CompositorError::SurfaceBufferTooSmall);
                     }
                     self.blend_layer(back_buffer, layer, clipped);
                 }
@@ -189,6 +197,30 @@ impl SoftwareCompositor {
         };
         let mut consumed_pixels = 0u64;
         let mut deferred_count = 0usize;
+        // Only short caller buffers need preflight. Never lose damage or exceed the
+        // responsiveness budget to compensate for an undersized output buffer.
+        if deferred.len() < damage.records().len() {
+            let mut planned_pixels = 0u64;
+            let mut pending = 0;
+            for priority in (0u16..=255).rev() {
+                for record in damage
+                    .records()
+                    .iter()
+                    .filter(|record| record.priority as u16 == priority)
+                {
+                    let pixels = area(record.rect.intersection(display_rect));
+                    if record.priority < 240 && planned_pixels.saturating_add(pixels) > pixel_budget
+                    {
+                        pending += 1;
+                    } else {
+                        planned_pixels = planned_pixels.saturating_add(pixels);
+                    }
+                }
+            }
+            if pending > deferred.len() {
+                return Err(CompositorError::DeferredBufferTooSmall);
+            }
+        }
         for priority in (0u16..=255).rev() {
             for record in damage.records() {
                 if record.priority as u16 != priority {
@@ -198,10 +230,8 @@ impl SoftwareCompositor {
                 let pixels = area(clipped);
                 let protected = record.priority >= 240;
                 if !protected && consumed_pixels.saturating_add(pixels) > pixel_budget {
-                    if deferred_count < deferred.len() {
-                        deferred[deferred_count] = *record;
-                        deferred_count += 1;
-                    }
+                    deferred[deferred_count] = *record;
+                    deferred_count += 1;
                     self.metrics.deferred_regions = self.metrics.deferred_regions.saturating_add(1);
                     continue;
                 }
@@ -215,7 +245,9 @@ impl SoftwareCompositor {
                     self.metrics.presented_pixels.saturating_add(pixels);
             }
         }
-        self.metrics.presented_frames = self.metrics.presented_frames.wrapping_add(1);
+        if consumed_pixels != 0 {
+            self.metrics.presented_frames = self.metrics.presented_frames.wrapping_add(1);
+        }
         self.frame_ready = deferred_count != 0;
         Ok(deferred_count)
     }
@@ -250,9 +282,30 @@ impl SoftwareCompositor {
             return;
         }
         for y in target.y.max(0) as usize..target.bottom().max(0) as usize {
+            let source_y = (y as i64 - i64::from(layer.bounds.y)) as usize;
+            if source_y >= layer.descriptor.size.height as usize {
+                continue;
+            }
+            // Opaque rows can be copied directly from the persistent app surface.
+            if layer.opacity == 255 && layer.descriptor.format == PixelFormat::Xrgb8888 {
+                let left = target.x.max(0) as usize;
+                let source_x = (left as i64 - i64::from(layer.bounds.x)) as usize;
+                let width = (target.width as usize)
+                    .min((layer.descriptor.size.width as usize).saturating_sub(source_x));
+                if width != 0 {
+                    let source = source_y * layer.descriptor.stride_pixels as usize + source_x;
+                    let destination = y * self.stride_pixels + left;
+                    for (out, pixel) in back_buffer[destination..destination + width]
+                        .iter_mut()
+                        .zip(&layer.pixels[source..source + width])
+                    {
+                        *out = *pixel | 0xff00_0000;
+                    }
+                }
+                continue;
+            }
             for x in target.x.max(0) as usize..target.right().max(0) as usize {
-                let source_x = x.saturating_sub(layer.bounds.x.max(0) as usize);
-                let source_y = y.saturating_sub(layer.bounds.y.max(0) as usize);
+                let source_x = (x as i64 - i64::from(layer.bounds.x)) as usize;
                 if source_x >= layer.descriptor.size.width as usize
                     || source_y >= layer.descriptor.size.height as usize
                 {
