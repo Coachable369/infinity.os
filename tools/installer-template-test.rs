@@ -5,7 +5,9 @@ mod bitmap;
 mod installer_template;
 
 use bitmap::RuntimeBitmap;
-use installer_template::{InstallerTemplate, InstallerTemplateRole};
+use installer_template::{
+    template_image_uses_aspect_fill, InstallerTemplate, InstallerTemplateRole,
+};
 
 const FACTORY_TEMPLATE: &[u8] = include_bytes!("../assets/boot/installer-screens.iuit");
 const CONFIGURATION_TEMPLATE: &[u8] = include_bytes!("../assets/boot/configuration-screens.iuit");
@@ -231,6 +233,26 @@ fn main() {
     assert!(transparent[3] < 8, "transparent PNG pixels must remain transparent");
     assert!(visible[3] > 200, "visible PNG pixels must remain visible");
     assert!(visible[0] > 0 || visible[1] > 0 || visible[2] > 0);
+    let display_width = 1920usize;
+    let display_height = 1080usize;
+    let destination_width = display_width * node_image.frame.width as usize / 1000;
+    let destination_height = display_height * node_image.frame.height as usize / 1000;
+    assert!(!template_image_uses_aspect_fill(node_image.role));
+    let placement = node_bitmap
+        .placement(
+            destination_width,
+            destination_height,
+            node_image.crop,
+            template_image_uses_aspect_fill(node_image.role),
+        )
+        .expect("ordinary artwork must have valid aspect-fit placement");
+    assert_eq!(placement.source_top, 0);
+    assert_eq!(placement.source_height, node_bitmap.height());
+    assert_eq!(placement.destination_height, destination_height);
+    assert!(placement.destination_width < destination_width);
+    assert!(template_image_uses_aspect_fill(
+        InstallerTemplateRole::Masthead as u8
+    ));
     for screen in 2..=5 {
         let input = configuration
             .element(screen, InstallerTemplateRole::Input)

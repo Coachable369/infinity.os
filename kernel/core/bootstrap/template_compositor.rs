@@ -9,7 +9,8 @@ use crate::ui::installer_layout::{
     scale_template_rect, CONFIGURATION_TEMPLATE_BYTES, INSTALLER_TEMPLATE_BYTES,
 };
 use crate::ui::installer_template::{
-    InstallerTemplate, InstallerTemplateElement, InstallerTemplateRole,
+    template_image_uses_aspect_fill, InstallerTemplate, InstallerTemplateElement,
+    InstallerTemplateRole,
 };
 
 impl DisplayDevice {
@@ -152,6 +153,7 @@ impl DisplayDevice {
                 rect,
                 element.crop,
                 (255u16 * element.opacity as u16 / 100) as u8,
+                template_image_uses_aspect_fill(element.role),
             ),
             3 => self.template_text_layer(element, rect),
             5 => self.template_button_layer(element, rect, navigation),
@@ -274,6 +276,7 @@ impl DisplayDevice {
         rect: crate::ui::installer_layout::InstallerRect,
         crop: [u8; 4],
         opacity: u8,
+        aspect_fill: bool,
     ) {
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         {
@@ -297,6 +300,7 @@ impl DisplayDevice {
                     rect.height,
                     crop,
                     opacity,
+                    aspect_fill,
                 );
             }
         }

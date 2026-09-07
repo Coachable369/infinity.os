@@ -65,6 +65,14 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .progressSegment: "Progress Segment"
         }
     }
+
+    // ------------------------=
+    // FUNC: imageUsesAspectFill
+    // DESC: Matches runtime image fitting so wallpaper and maps fill while ordinary artwork stays wholly visible.
+    // ------------------=
+    var imageUsesAspectFill: Bool {
+        self == .masthead || self == .timeZoneMap
+    }
 }
 
 enum StudioInputVariable: String, Codable, CaseIterable, Identifiable {

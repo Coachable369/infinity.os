@@ -1460,7 +1460,7 @@ impl super::DisplayDevice {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
     // FUNC: paint_bitmap_template_rect
-    // DESC: Paints a cropped aspect-fill template image with authored layer opacity.
+    // DESC: Paints a cropped template image with role-selected aspect fit and authored layer opacity.
     // ------------------=
     pub(super) fn paint_bitmap_template_rect(
         &mut self,
@@ -1471,6 +1471,7 @@ impl super::DisplayDevice {
         height: usize,
         crop: [u8; 4],
         opacity: u8,
+        aspect_fill: bool,
     ) {
         let Some(bitmap) = crate::ui::bitmap::RuntimeBitmap::parse(bitmap) else {
             return;
@@ -1478,37 +1479,30 @@ impl super::DisplayDevice {
         if width == 0 || height == 0 {
             return;
         }
-        let source_width = bitmap.width();
-        let source_height = bitmap.height();
-        let mut crop_left = source_width * crop[0] as usize / 100;
-        let mut crop_top = source_height * crop[1] as usize / 100;
-        let mut sampled_width =
-            source_width * (100usize.saturating_sub(crop[0] as usize + crop[2] as usize)) / 100;
-        let mut sampled_height =
-            source_height * (100usize.saturating_sub(crop[1] as usize + crop[3] as usize)) / 100;
-        if sampled_width == 0 || sampled_height == 0 {
+        let Some(placement) = bitmap.placement(width, height, crop, aspect_fill) else {
             return;
-        }
-        if sampled_width * height > sampled_height * width {
-            let fitted_width = sampled_height * width / height;
-            crop_left += sampled_width.saturating_sub(fitted_width) / 2;
-            sampled_width = fitted_width;
-        } else {
-            let fitted_height = sampled_width * height / width;
-            crop_top += sampled_height.saturating_sub(fitted_height) / 2;
-            sampled_height = fitted_height;
-        }
-        for y in 0..height.min(self.height.saturating_sub(top)) {
-            let source_y = crop_top + y * sampled_height / height;
-            for x in 0..width.min(self.width.saturating_sub(left)) {
-                let source_x = crop_left + x * sampled_width / width;
+        };
+        let draw_left = left.saturating_add(placement.destination_left);
+        let draw_top = top.saturating_add(placement.destination_top);
+        for y in 0..placement
+            .destination_height
+            .min(self.height.saturating_sub(draw_top))
+        {
+            let source_y = placement.source_top
+                + y * placement.source_height / placement.destination_height;
+            for x in 0..placement
+                .destination_width
+                .min(self.width.saturating_sub(draw_left))
+            {
+                let source_x = placement.source_left
+                    + x * placement.source_width / placement.destination_width;
                 let Some([red, green, blue, source_alpha]) = bitmap.rgba(source_x, source_y) else {
                     return;
                 };
                 let alpha = (source_alpha as u16 * opacity as u16 / 255) as u8;
                 self.blend_color(
-                    (left + x) as i32,
-                    (top + y) as i32,
+                    (draw_left + x) as i32,
+                    (draw_top + y) as i32,
                     red,
                     green,
                     blue,

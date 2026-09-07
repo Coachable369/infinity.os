@@ -30,6 +30,15 @@ pub enum InstallerTemplateRole {
     ProgressSegment = 18,
 }
 
+// ------------------------=
+// FUNC: template_image_uses_aspect_fill
+// DESC: Keeps scene-filling wallpaper and map roles edge-to-edge while ordinary artwork remains wholly visible.
+// ------------------=
+pub const fn template_image_uses_aspect_fill(role: u8) -> bool {
+    role == InstallerTemplateRole::Masthead as u8
+        || role == InstallerTemplateRole::TimeZoneMap as u8
+}
+
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InstallerTemplateVariable {

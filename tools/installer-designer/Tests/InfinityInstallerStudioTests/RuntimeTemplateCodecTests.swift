@@ -3,6 +3,17 @@ import XCTest
 
 final class RuntimeTemplateCodecTests: XCTestCase {
     // ------------------------=
+    // FUNC: testImageRoleFittingMatchesRuntimeWithoutClippingOrdinaryArtwork
+    // DESC: Proves ordinary artwork preserves its full bounds while scene-filling image roles remain edge-to-edge.
+    // ------------------=
+    func testImageRoleFittingMatchesRuntimeWithoutClippingOrdinaryArtwork() {
+        XCTAssertFalse(StudioElementRole.image.imageUsesAspectFill)
+        XCTAssertFalse(StudioElementRole.decoration.imageUsesAspectFill)
+        XCTAssertTrue(StudioElementRole.masthead.imageUsesAspectFill)
+        XCTAssertTrue(StudioElementRole.timeZoneMap.imageUsesAspectFill)
+    }
+
+    // ------------------------=
     // FUNC: testPNGImportAddsMovableResizableCroppedCanvasLayer
     // DESC: Exercises file import, project asset materialization, canvas transforms, crop, and runtime persistence.
     // ------------------=

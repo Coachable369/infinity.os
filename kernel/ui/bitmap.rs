@@ -12,6 +12,18 @@ pub struct RuntimeBitmap<'a> {
     uses_alpha: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RuntimeBitmapPlacement {
+    pub destination_left: usize,
+    pub destination_top: usize,
+    pub destination_width: usize,
+    pub destination_height: usize,
+    pub source_left: usize,
+    pub source_top: usize,
+    pub source_width: usize,
+    pub source_height: usize,
+}
+
 impl<'a> RuntimeBitmap<'a> {
     // ------------------------=
     // FUNC: parse
@@ -73,6 +85,69 @@ impl<'a> RuntimeBitmap<'a> {
     // ------------------=
     pub const fn height(self) -> usize {
         self.height
+    }
+
+    // ------------------------=
+    // FUNC: placement
+    // DESC: Resolves explicit crop plus either aspect-fill or whole-image aspect-fit sampling geometry.
+    // ------------------=
+    pub fn placement(
+        self,
+        destination_width: usize,
+        destination_height: usize,
+        crop: [u8; 4],
+        aspect_fill: bool,
+    ) -> Option<RuntimeBitmapPlacement> {
+        if destination_width == 0 || destination_height == 0 {
+            return None;
+        }
+        let mut source_left = self.width * crop[0] as usize / 100;
+        let mut source_top = self.height * crop[1] as usize / 100;
+        let mut source_width = self.width
+            * (100usize.saturating_sub(crop[0] as usize + crop[2] as usize))
+            / 100;
+        let mut source_height = self.height
+            * (100usize.saturating_sub(crop[1] as usize + crop[3] as usize))
+            / 100;
+        if source_width == 0 || source_height == 0 {
+            return None;
+        }
+        let mut placement = RuntimeBitmapPlacement {
+            destination_left: 0,
+            destination_top: 0,
+            destination_width,
+            destination_height,
+            source_left,
+            source_top,
+            source_width,
+            source_height,
+        };
+        if aspect_fill {
+            if source_width * destination_height > source_height * destination_width {
+                let fitted_width = source_height * destination_width / destination_height;
+                source_left += source_width.saturating_sub(fitted_width) / 2;
+                source_width = fitted_width;
+            } else {
+                let fitted_height = source_width * destination_height / destination_width;
+                source_top += source_height.saturating_sub(fitted_height) / 2;
+                source_height = fitted_height;
+            }
+            placement.source_left = source_left;
+            placement.source_top = source_top;
+            placement.source_width = source_width;
+            placement.source_height = source_height;
+        } else if source_width * destination_height > source_height * destination_width {
+            placement.destination_height =
+                (source_height * destination_width / source_width).max(1);
+            placement.destination_top =
+                destination_height.saturating_sub(placement.destination_height) / 2;
+        } else {
+            placement.destination_width =
+                (source_width * destination_height / source_height).max(1);
+            placement.destination_left =
+                destination_width.saturating_sub(placement.destination_width) / 2;
+        }
+        Some(placement)
     }
 
     // ------------------------=
