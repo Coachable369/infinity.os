@@ -2940,69 +2940,13 @@ impl super::DisplayDevice {
                 .iter()
                 .enumerate()
             {
-                let control_left = control.x.max(0) as usize;
-                let control_top = control.y.max(0) as usize;
-                let control_size = control.width as usize;
-                self.fill_rounded_rect_alpha(
-                    control_left,
-                    control_top,
-                    control_size,
-                    control.height as usize,
-                    7 * scale,
-                    11,
-                    31,
-                    48,
-                    244,
+                self.window_control(
+                    control.x.max(0) as usize,
+                    control.y.max(0) as usize,
+                    control.width as usize,
+                    index,
+                    maximized,
                 );
-                self.outline_rounded_rect(
-                    control_left,
-                    control_top,
-                    control_size,
-                    control.height as usize,
-                    7 * scale,
-                    65,
-                    111,
-                    139,
-                );
-                let center_x = control_left + control_size / 2;
-                let center_y = control_top + control.height as usize / 2;
-                if index == 0 {
-                    self.icon_line(
-                        (center_x - 5 * scale) as i32,
-                        center_y as i32,
-                        (center_x + 5 * scale) as i32,
-                        center_y as i32,
-                        (194, 222, 238),
-                        control_size,
-                    );
-                } else if index == 1 {
-                    self.outline_rect(
-                        center_x - 5 * scale,
-                        center_y - 5 * scale,
-                        10 * scale,
-                        10 * scale,
-                        194,
-                        222,
-                        238,
-                    );
-                } else {
-                    self.icon_line(
-                        (center_x - 5 * scale) as i32,
-                        (center_y - 5 * scale) as i32,
-                        (center_x + 5 * scale) as i32,
-                        (center_y + 5 * scale) as i32,
-                        (194, 222, 238),
-                        control_size,
-                    );
-                    self.icon_line(
-                        (center_x + 5 * scale) as i32,
-                        (center_y - 5 * scale) as i32,
-                        (center_x - 5 * scale) as i32,
-                        (center_y + 5 * scale) as i32,
-                        (194, 222, 238),
-                        control_size,
-                    );
-                }
             }
             if !maximized {
                 let (outline_r, outline_g, outline_b) =
@@ -4552,26 +4496,12 @@ impl super::DisplayDevice {
             for index in 0..3usize {
                 let control_size = 18 * scale;
                 let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * scale);
-                self.fill_rounded_rect_alpha(
+                self.window_control(
                     control_left,
                     title_center_y.saturating_sub(control_size / 2),
                     control_size,
-                    control_size,
-                    5 * scale,
-                    14,
-                    28,
-                    42,
-                    225,
-                );
-                self.outline_rounded_rect(
-                    control_left,
-                    title_center_y.saturating_sub(control_size / 2),
-                    control_size,
-                    control_size,
-                    5 * scale,
-                    56,
-                    78,
-                    96,
+                    index,
+                    settings_window.maximized,
                 );
             }
             let nav_w = width * 28 / 100;
@@ -4868,26 +4798,12 @@ impl super::DisplayDevice {
         for index in 0..3usize {
             let control_size = 18 * scale;
             let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * scale);
-            self.fill_rounded_rect_alpha(
+            self.window_control(
                 control_left,
                 title_center_y.saturating_sub(control_size / 2),
                 control_size,
-                control_size,
-                5 * scale,
-                14,
-                28,
-                42,
-                225,
-            );
-            self.outline_rounded_rect(
-                control_left,
-                title_center_y.saturating_sub(control_size / 2),
-                control_size,
-                control_size,
-                5 * scale,
-                56,
-                78,
-                96,
+                index,
+                settings_window.maximized,
             );
         }
         let nav_width = geometry.navigation.width as usize;
@@ -8038,67 +7954,13 @@ impl super::DisplayDevice {
             let control_size = 20 * scale;
             let control_left =
                 browser_left + browser_width.saturating_sub((28 + (2 - index) * 27) * scale);
-            self.fill_rounded_rect_alpha(
+            self.window_control(
                 control_left,
                 title_center_y.saturating_sub(control_size / 2),
                 control_size,
-                control_size,
-                6 * scale,
-                13,
-                28,
-                43,
-                235,
+                index,
+                window_maximized,
             );
-            self.outline_rounded_rect(
-                control_left,
-                title_center_y.saturating_sub(control_size / 2),
-                control_size,
-                control_size,
-                6 * scale,
-                63,
-                84,
-                101,
-            );
-            let center_x = control_left + control_size / 2;
-            let center_y = title_center_y;
-            if index == 0 {
-                self.icon_line(
-                    (center_x - 5 * scale) as i32,
-                    center_y as i32,
-                    (center_x + 5 * scale) as i32,
-                    center_y as i32,
-                    (181, 199, 212),
-                    control_size,
-                );
-            } else if index == 1 {
-                self.outline_rounded_rect(
-                    center_x - 5 * scale,
-                    center_y - 5 * scale,
-                    10 * scale,
-                    10 * scale,
-                    2 * scale,
-                    181,
-                    199,
-                    212,
-                );
-            } else {
-                self.icon_line(
-                    (center_x - 5 * scale) as i32,
-                    (center_y - 5 * scale) as i32,
-                    (center_x + 5 * scale) as i32,
-                    (center_y + 5 * scale) as i32,
-                    (209, 220, 229),
-                    control_size,
-                );
-                self.icon_line(
-                    (center_x + 5 * scale) as i32,
-                    (center_y - 5 * scale) as i32,
-                    (center_x - 5 * scale) as i32,
-                    (center_y + 5 * scale) as i32,
-                    (209, 220, 229),
-                    control_size,
-                );
-            }
         }
         if !window_maximized {
             let (outline_r, outline_g, outline_b) =

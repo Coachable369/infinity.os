@@ -27,9 +27,9 @@ use ui::surface::{PixelFormat, SurfaceError, SurfaceRegistry, SurfaceSecurityCla
 use ui::system_layout::{
     resize_home_window, resize_native_window, window_motion_damage_regions,
     window_transition_damage, AiChatTarget, AppLauncherTarget, DesktopAppWindowTarget,
-    DesktopTarget, EditorDialogTarget, EditorScrollTarget, OnboardingTarget,
-    SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget,
-    DESKTOP_FOREGROUND_DOCK, DESKTOP_FOREGROUND_WIDGETS,
+    DesktopTarget, EditorDialogTarget, EditorScrollTarget, OnboardingTarget, SettingsAccentTarget,
+    SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget, DESKTOP_FOREGROUND_DOCK,
+    DESKTOP_FOREGROUND_WIDGETS,
 };
 use ui::text_editor::{document_path, visual_line_count, visual_line_start, TextDocument};
 use ui::trusted::{TrustedSurface, TrustedUiError};
@@ -46,6 +46,7 @@ use ui::window::{
 // DESC: Runs deterministic InfinityUI parser, layout, input, damage, skin, and isolation acceptance tests.
 // ------------------=
 fn main() {
+    native_window_controls_test();
     geometry_test();
     skin_test();
     focus_and_pointer_test();
@@ -65,6 +66,35 @@ fn main() {
     drag_path_test();
     service_foundation_test();
     println!("InfinityUI native runtime: PASS");
+}
+
+// ------------------------=
+// FUNC: native_window_controls_test
+// DESC: Exercises all native chrome targets for editor and non-editor apps at normal and maximized sizes.
+// ------------------=
+fn native_window_controls_test() {
+    for (width, height) in [(1024, 768), (1920, 1080), (2560, 1440), (3840, 2160)] {
+        let layout = SystemLayout::new(width, height);
+        for maximized in [false, true] {
+            let geometry = layout.desktop_app_window_geometry(190, 160, 600, 620, maximized);
+            for editor in [false, true] {
+                for (control, target) in [
+                    (geometry.close, DesktopAppWindowTarget::Close),
+                    (geometry.minimize, DesktopAppWindowTarget::Minimize),
+                    (geometry.maximize, DesktopAppWindowTarget::Maximize),
+                ] {
+                    let x = (control.x + control.width as i32 / 2) * 1000 / width as i32;
+                    let y = (control.y + control.height as i32 / 2) * 1000 / height as i32;
+                    assert_eq!(layout.task_manager_process_row(x, y, geometry), None);
+                    assert_eq!(
+                        layout
+                            .desktop_app_window_target(x, y, 190, 160, 600, 620, maximized, editor),
+                        target
+                    );
+                }
+            }
+        }
+    }
 }
 
 // ------------------------=

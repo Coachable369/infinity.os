@@ -98,6 +98,13 @@ fn main() {
     assert!(workspace.update_active(second_window));
 
     assert_eq!(workspace.count(), 2);
+    assert!(workspace.minimize_active().is_some());
+    assert_eq!(workspace.count(), 2);
+    assert!(!workspace.window(second).unwrap().visible);
+    assert_eq!(workspace.restore_minimized(), Some(second));
+    assert_eq!(workspace.window(second).unwrap().state.selected_index, 3);
+    assert_eq!(workspace.window(second).unwrap().task_handle, 42);
+    assert_eq!(workspace.restore_minimized(), None);
     assert_eq!(workspace.active_index(), Some(second));
     let raised_first = workspace.raise(first).expect("raise first");
     assert_eq!(
@@ -135,11 +142,15 @@ fn main() {
     assert_eq!(FileNavigatorMenu::Performance.index(), 2);
     assert_eq!(
         FileNavigatorMenu::Performance.action(0),
-        Some(FileNavigatorAction::SetPerformance(PerformanceMode::Restricted))
+        Some(FileNavigatorAction::SetPerformance(
+            PerformanceMode::Restricted
+        ))
     );
     assert_eq!(
         FileNavigatorMenu::Performance.action(2),
-        Some(FileNavigatorAction::SetPerformance(PerformanceMode::Expanded))
+        Some(FileNavigatorAction::SetPerformance(
+            PerformanceMode::Expanded
+        ))
     );
     assert_eq!(
         FileNavigatorMenu::Navigate.action(7),

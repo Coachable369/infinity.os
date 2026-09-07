@@ -9,6 +9,7 @@ mod installer;
 mod primitives;
 mod retained_windows;
 mod template_compositor;
+mod window_chrome;
 
 use self::primitives::*;
 

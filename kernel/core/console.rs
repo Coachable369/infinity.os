@@ -470,6 +470,7 @@ struct ConsoleRuntime {
     home_clipboard_note: bool,
     desktop_clock: DateTimeConfiguration,
     desktop_app: DesktopAppKind,
+    command_window_suspended: bool,
     app_window_x: i32,
     app_window_y: i32,
     app_window_width: i32,
@@ -621,6 +622,7 @@ impl ConsoleRuntime {
             home_clipboard_note: false,
             desktop_clock: installer_date_time,
             desktop_app: DesktopAppKind::None,
+            command_window_suspended: false,
             app_window_x: 190,
             app_window_y: 160,
             app_window_width: 600,
@@ -1361,6 +1363,14 @@ impl ConsoleRuntime {
         }
         let toolbar_left = geometry.toolbar.x;
         let toolbar_top = geometry.toolbar.y;
+        // Window chrome must never be consumed as a process-row click.
+        let point = crate::ui::geometry::Point {
+            x: point_x,
+            y: point_y,
+        };
+        if !geometry.toolbar.contains(point) && !geometry.content.contains(point) {
+            return false;
+        }
         let menu_width = 232 * scale as i32;
         if point_y >= toolbar_top
             && point_y < toolbar_top + geometry.toolbar.height as i32
@@ -1395,9 +1405,8 @@ impl ConsoleRuntime {
             }
             self.shell_menu = 0;
         }
-        let content_top = geometry.content.y + 154 * scale as i32;
-        let row = ((point_y - content_top) / (38 * scale) as i32).max(0) as usize;
-        if row < 5 {
+        if let Some(row) = layout.task_manager_process_row(self.pointer_x, self.pointer_y, geometry)
+        {
             self.task_manager_selected = self.task_manager_scroll + row;
             self.refresh_task_manager_output();
             return true;
@@ -2085,11 +2094,14 @@ impl ConsoleRuntime {
         self.load_active_app_window();
         self.app_window_dragging = false;
         self.app_window_resizing = None;
-        self.reset_input();
-        self.output.clear();
-        self.output.write_line(b"Infinity Command Window");
-        self.output
-            .write_line(b"Type help or describe what you want.");
+        if !self.command_window_suspended {
+            self.reset_input();
+            self.output.clear();
+            self.output.write_line(b"Infinity Command Window");
+            self.output
+                .write_line(b"Type help or describe what you want.");
+        }
+        self.command_window_suspended = false;
         crate::output_text(b"[ui] desktop command window opened\n");
         let _ = self.checkpoint_desktop_layout();
     }
@@ -2153,7 +2165,13 @@ impl ConsoleRuntime {
     // DESC: Raises one navigator layer and loads its independent state into the active window engine.
     // ------------------=
     fn load_file_navigator_window(&mut self, index: usize) -> bool {
-        self.checkpoint_active_file_navigator();
+        // Close/minimize/restore may already have selected the destination slot.
+        // Never overwrite that slot with the previously displayed window's state.
+        let active = crate::runtime::with_runtime(|runtime| runtime.file_navigators.active_index())
+            .flatten();
+        if active != Some(index) {
+            self.checkpoint_active_file_navigator();
+        }
         let window = crate::runtime::with_runtime(|runtime| {
             let window = runtime.file_navigators.raise(index)?;
             runtime.file_navigator = Some(window.state);
@@ -2222,10 +2240,36 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: minimize_desktop_app
+    // DESC: Hides a native app without clearing its document, command output, or interaction state.
+    // ------------------=
+    fn minimize_desktop_app(&mut self) {
+        self.store_active_app_window();
+        match self.desktop_app {
+            DesktopAppKind::TextEditor => self.editor_window.visible = false,
+            DesktopAppKind::CommandWindow => {
+                self.command_window.visible = false;
+                self.command_window_suspended = true;
+            }
+            DesktopAppKind::TaskManager => self.task_manager_window.visible = false,
+            DesktopAppKind::None => return,
+        }
+        self.desktop_app = DesktopAppKind::None;
+        self.app_window_dragging = false;
+        self.app_window_resizing = None;
+        self.shell_menu = 0;
+        let _ = self.checkpoint_desktop_layout();
+    }
+
+    // ------------------------=
     // FUNC: close_desktop_app
     // DESC: Dismisses the active desktop application without changing session or desktop state.
     // ------------------=
     fn close_desktop_app(&mut self) {
+        self.store_active_app_window();
+        if self.desktop_app == DesktopAppKind::CommandWindow {
+            self.command_window_suspended = false;
+        }
         match self.desktop_app {
             DesktopAppKind::TextEditor => self.editor_window.visible = false,
             DesktopAppKind::CommandWindow => self.command_window.visible = false,
@@ -6627,7 +6671,10 @@ impl ConsoleRuntime {
                             self.app_window_drag_offset_x = self.pointer_x - self.app_window_x;
                             self.app_window_drag_offset_y = self.pointer_y - self.app_window_y;
                         }
-                        DesktopAppWindowTarget::Minimize | DesktopAppWindowTarget::Close => {
+                        DesktopAppWindowTarget::Minimize => {
+                            self.minimize_desktop_app();
+                        }
+                        DesktopAppWindowTarget::Close => {
                             self.close_desktop_app();
                         }
                         DesktopAppWindowTarget::Maximize => {
@@ -6910,7 +6957,7 @@ impl ConsoleRuntime {
                     Some(DesktopTarget::HomeControl(0)) => {
                         self.checkpoint_active_file_navigator();
                         let next = crate::runtime::with_runtime(|runtime| {
-                            runtime.file_navigators.close_active()
+                            runtime.file_navigators.minimize_active()
                         })
                         .flatten();
                         if let Some(next) = next {
@@ -7088,7 +7135,15 @@ impl ConsoleRuntime {
                         match DESKTOP_DOCK_ENTRIES.get(index).map(|entry| entry.action) {
                             Some(DockAction::Launcher) => self.open_app_launcher(),
                             Some(DockAction::Files) => {
-                                let _ = self.open_file_navigator_window(b"/home/default");
+                                let restored = crate::runtime::with_runtime(|runtime| {
+                                    runtime.file_navigators.restore_minimized()
+                                })
+                                .flatten();
+                                if let Some(index) = restored {
+                                    let _ = self.load_file_navigator_window(index);
+                                } else {
+                                    let _ = self.open_file_navigator_window(b"/home/default");
+                                }
                             }
                             Some(DockAction::Settings) => self.open_settings(0),
                             Some(DockAction::About) => self.open_settings(8),

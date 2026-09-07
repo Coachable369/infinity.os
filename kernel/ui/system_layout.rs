@@ -475,8 +475,8 @@ impl SystemLayout {
             (369, 80),
             (454, 46),
         ]
-            .iter()
-            .enumerate()
+        .iter()
+        .enumerate()
         {
             if rect(
                 left + offset * self.scale,
@@ -740,23 +740,32 @@ impl SystemLayout {
             }
         }
         if step == 6 && authored_card.is_some() {
-            return (0..3).find_map(|index| {
-                let row = crate::ui::installer_layout::configuration_network_row_rect(
-                    index, self.width, self.height,
-                )?;
-                rect(row.left, row.top, row.width, row.height)
-                    .contains(point)
-                    .then_some(OnboardingTarget::NetworkChoice(index))
-            }).or_else(|| {
-                [
-                    (InstallerTemplateRole::BackButton, OnboardingTarget::Back),
-                    (InstallerTemplateRole::PrimaryButton, OnboardingTarget::Primary),
-                ].into_iter().find_map(|(role, target)| {
-                    self.onboarding_template_rect(step, role)
-                        .filter(|frame| frame.contains(point))
-                        .map(|_| target)
+            return (0..3)
+                .find_map(|index| {
+                    let row = crate::ui::installer_layout::configuration_network_row_rect(
+                        index,
+                        self.width,
+                        self.height,
+                    )?;
+                    rect(row.left, row.top, row.width, row.height)
+                        .contains(point)
+                        .then_some(OnboardingTarget::NetworkChoice(index))
                 })
-            });
+                .or_else(|| {
+                    [
+                        (InstallerTemplateRole::BackButton, OnboardingTarget::Back),
+                        (
+                            InstallerTemplateRole::PrimaryButton,
+                            OnboardingTarget::Primary,
+                        ),
+                    ]
+                    .into_iter()
+                    .find_map(|(role, target)| {
+                        self.onboarding_template_rect(step, role)
+                            .filter(|frame| frame.contains(point))
+                            .map(|_| target)
+                    })
+                });
         }
         if step > 0 {
             if let Some(back) =
@@ -1283,9 +1292,7 @@ impl SystemLayout {
     // ------------------=
     pub fn app_launcher_visible_region_for_progress(self, progress: u8) -> Rect {
         let panel = self.app_launcher_geometry().panel;
-        let visible_height = (panel.height as usize)
-            .saturating_mul(usize::from(progress))
-            / 255;
+        let visible_height = (panel.height as usize).saturating_mul(usize::from(progress)) / 255;
         rect(
             panel.x.max(0) as usize,
             panel.bottom().max(panel.y) as usize - visible_height,
@@ -1324,9 +1331,7 @@ impl SystemLayout {
         let right = (panel.right() + padding as i32)
             .max(0)
             .min(self.width as i32) as usize;
-        let bottom = lower
-            .saturating_add(padding as usize)
-            .min(self.height);
+        let bottom = lower.saturating_add(padding as usize).min(self.height);
         rect(
             left,
             top,
@@ -1562,6 +1567,28 @@ impl SystemLayout {
                 window.toolbar.height as usize,
             ),
         }
+    }
+
+    // ------------------------=
+    // FUNC: task_manager_process_row
+    // DESC: Resolves only real process rows; title chrome and summary space never select a task.
+    // ------------------=
+    pub fn task_manager_process_row(
+        self,
+        pointer_x: i32,
+        pointer_y: i32,
+        geometry: DesktopAppWindowGeometry,
+    ) -> Option<usize> {
+        let point = self.point(pointer_x, pointer_y);
+        if !geometry.content.contains(point) {
+            return None;
+        }
+        let offset = point.y - geometry.content.y - 154 * self.scale as i32;
+        if offset < 0 {
+            return None;
+        }
+        let row = offset as usize / (38 * self.scale.max(1));
+        (row < 5).then_some(row)
     }
 
     // ------------------------=
@@ -1990,12 +2017,13 @@ impl SystemLayout {
         let content_width = width.saturating_sub(navigation_width + 68 * self.scale);
         let viewport_top = top + title_height + 98 * self.scale;
         let viewport_height = height.saturating_sub(title_height + 116 * self.scale);
-        let total_content_height = if matches!(section, SETTINGS_NETWORK_SECTION | SETTINGS_NODE_SECTION) {
-            SETTINGS_DASHBOARD_CONTENT_HEIGHT
-        } else {
-            let detail_height = state.expanded_row.map(settings_detail_height).unwrap_or(0);
-            state.row_count.clamp(1, 8) * 58 + detail_height
-        };
+        let total_content_height =
+            if matches!(section, SETTINGS_NETWORK_SECTION | SETTINGS_NODE_SECTION) {
+                SETTINGS_DASHBOARD_CONTENT_HEIGHT
+            } else {
+                let detail_height = state.expanded_row.map(settings_detail_height).unwrap_or(0);
+                state.row_count.clamp(1, 8) * 58 + detail_height
+            };
         let visible_logical_height = viewport_height / self.scale.max(1);
         let maximum_scroll = total_content_height.saturating_sub(visible_logical_height);
         let track = rect(
@@ -2247,8 +2275,8 @@ impl SystemLayout {
         let width = content.width as usize;
         let tab_gap = 6 * self.scale;
         let minimum_tab_width = 112 * self.scale;
-        let columns = ((width + tab_gap) / (minimum_tab_width + tab_gap))
-            .clamp(1, page_count.max(1));
+        let columns =
+            ((width + tab_gap) / (minimum_tab_width + tab_gap)).clamp(1, page_count.max(1));
         let tab_width = width.saturating_sub(tab_gap * columns.saturating_sub(1)) / columns;
         let tab_height = 38 * self.scale;
         let tab_rows = (page_count + columns - 1) / columns;
@@ -2263,14 +2291,13 @@ impl SystemLayout {
                 tab_height,
             );
         }
-        let summary_top = top
-            + tab_rows * tab_height
-            + tab_rows.saturating_sub(1) * tab_gap
-            + 12 * self.scale;
+        let summary_top =
+            top + tab_rows * tab_height + tab_rows.saturating_sub(1) * tab_gap + 12 * self.scale;
         let summary_height = 88 * self.scale;
         let body_top = summary_top + summary_height + gap;
         let preferred_body_height = 420 * self.scale;
-        let available_body_height = content.bottom().saturating_sub(body_top as i32).max(0) as usize;
+        let available_body_height =
+            content.bottom().saturating_sub(body_top as i32).max(0) as usize;
         let body_height = if available_body_height >= 120 * self.scale {
             preferred_body_height.min(available_body_height)
         } else {
@@ -2339,7 +2366,13 @@ impl SystemLayout {
         normalized_y: i32,
         state: SettingsWindowState,
     ) -> Option<NetworkSettingsTarget> {
-        self.paged_settings_target(normalized_x, normalized_y, state, 7, SETTINGS_NETWORK_SECTION)
+        self.paged_settings_target(
+            normalized_x,
+            normalized_y,
+            state,
+            7,
+            SETTINGS_NETWORK_SECTION,
+        )
     }
 
     // ------------------------=

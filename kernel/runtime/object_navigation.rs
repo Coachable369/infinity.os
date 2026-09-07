@@ -1191,6 +1191,48 @@ impl FileNavigatorWorkspace {
     }
 
     // ------------------------=
+    // FUNC: minimize_active
+    // DESC: Hides the active navigator while retaining its location, selection, history, and task.
+    // ------------------=
+    pub fn minimize_active(&mut self) -> Option<FileNavigatorWindow> {
+        let index = self.active?;
+        self.windows[index].as_mut()?.visible = false;
+        self.active = self
+            .windows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, window)| {
+                window
+                    .filter(|item| item.visible)
+                    .map(|item| (index, item.z_order))
+            })
+            .max_by_key(|item| item.1)
+            .map(|item| item.0);
+        self.active.and_then(|active| self.windows[active])
+    }
+
+    // ------------------------=
+    // FUNC: restore_minimized
+    // DESC: Restores the most recently hidden navigator without launching a replacement task.
+    // ------------------=
+    pub fn restore_minimized(&mut self) -> Option<usize> {
+        let index = self
+            .windows
+            .iter()
+            .enumerate()
+            .filter_map(|(index, window)| {
+                window
+                    .filter(|item| !item.visible)
+                    .map(|item| (index, item.z_order))
+            })
+            .max_by_key(|item| item.1)?
+            .0;
+        self.windows[index].as_mut()?.visible = true;
+        self.raise(index)?;
+        Some(index)
+    }
+
+    // ------------------------=
     // FUNC: close_active
     // DESC: Closes only the raised navigator and selects the highest remaining visible layer.
     // ------------------=

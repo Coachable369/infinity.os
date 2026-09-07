@@ -31,6 +31,8 @@ struct DisplayDevice {
 type PresentRegion = Region;
 #[path = "../kernel/core/bootstrap/retained_windows.rs"]
 mod retained_windows;
+#[path = "../kernel/core/bootstrap/window_chrome.rs"]
+mod window_chrome;
 impl DisplayDevice {
     // ------------------------=
     // FUNC: active_background_effects
@@ -113,6 +115,7 @@ fn scene(display: &mut DisplayDevice) {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    window_controls_test();
     retained_window_benchmark();
     damage_test();
     retained_surface_test();
@@ -170,6 +173,67 @@ fn main() {
             println!("{{\"fixture\":\"active_painter_{label}\",\"format\":{},\"average_ns\":{},\"p95_ns\":{},\"damage_submissions\":{}}}",format,times.iter().sum::<u128>()/20,times[18],display.submissions);
         }
     }
+}
+
+// ------------------------=
+// FUNC: window_controls_test
+// DESC: Verifies glyphs remain visible inside retained RGBA controls at every supported UI scale.
+// ------------------=
+fn window_controls_test() {
+    for scale in 1..=3 {
+        for index in 0..3 {
+            for maximized in [false, true] {
+                let size = 20 * scale;
+                let mut pixels = vec![0u32; 128 * 128];
+                let mut display = DisplayDevice {
+                    buffer: pixels.as_mut_ptr(),
+                    width: 128,
+                    height: 128,
+                    stride: 128,
+                    format: 0,
+                    render_clip: None,
+                    fast_motion_frame: false,
+                    submissions: 0,
+                    recording_surface: true,
+                };
+                display.window_control(8, 8, size, index, maximized);
+                let mut glyph_pixels = 0;
+                for y in 8 + size / 4..8 + size * 3 / 4 + 1 {
+                    for x in 8 + size / 4..8 + size * 3 / 4 + 1 {
+                        let pixel = pixels[y * 128 + x];
+                        if pixel & 255 > 200 && pixel >> 24 == 255 {
+                            glyph_pixels += 1;
+                        }
+                    }
+                }
+                assert!(glyph_pixels >= 8 * scale);
+                assert_eq!(pixels[0], 0);
+            }
+        }
+    }
+    let mut pixels = vec![0x001a0b05u32; 256 * 96];
+    let mut display = DisplayDevice {
+        buffer: pixels.as_mut_ptr(),
+        width: 256,
+        height: 96,
+        stride: 256,
+        format: 0,
+        render_clip: None,
+        fast_motion_frame: false,
+        submissions: 0,
+        recording_surface: false,
+    };
+    for (slot, (index, maximized)) in [(0, false), (1, false), (1, true), (2, false)]
+        .iter()
+        .enumerate()
+    {
+        display.window_control(16 + slot * 60, 28, 40, *index, *maximized);
+    }
+    let mut ppm = b"P6\n256 96\n255\n".to_vec();
+    for pixel in pixels {
+        ppm.extend_from_slice(&[pixel as u8, (pixel >> 8) as u8, (pixel >> 16) as u8]);
+    }
+    std::fs::write("build/window-controls-proof.ppm", ppm).unwrap();
 }
 
 // ------------------------=
