@@ -6,6 +6,7 @@
 
 pub mod app_launcher;
 pub mod async_model;
+pub mod bitmap;
 pub mod clipboard;
 pub mod compositor;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

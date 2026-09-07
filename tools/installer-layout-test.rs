@@ -1,3 +1,6 @@
+#[path = "../kernel/ui/bitmap.rs"]
+mod bitmap;
+
 #[path = "../kernel/ui/installer_template.rs"]
 mod installer_template;
 
@@ -5,9 +8,9 @@ mod installer_template;
 mod installer_layout;
 
 use installer_layout::{
-    configuration_template_input_variable, configuration_template_step_for_input_variable,
-    installer_confirmation_button_frame, installer_confirmation_target, installer_wizard_layout,
-    InstallerConfirmationTarget,
+    configuration_template_input_rect, configuration_template_input_variable,
+    configuration_template_step_for_input_variable, installer_confirmation_button_frame,
+    installer_confirmation_target, installer_wizard_layout, InstallerConfirmationTarget,
 };
 use installer_template::InstallerTemplateVariable;
 
@@ -69,6 +72,11 @@ fn main() {
     ] {
         assert_eq!(configuration_template_input_variable(step), variable);
         assert_eq!(configuration_template_step_for_input_variable(variable), Some(step));
+        let field = configuration_template_input_rect(step, 1760, 992)
+            .expect("bound field must have one authored runtime rectangle");
+        assert!(field.width > 0 && field.height > 0);
     }
+    assert_eq!(configuration_template_input_rect(0, 1760, 992), None);
+    assert_eq!(configuration_template_input_rect(5, 1760, 992), None);
     println!("PASS installer layout: all wizard states share one symmetric frame");
 }

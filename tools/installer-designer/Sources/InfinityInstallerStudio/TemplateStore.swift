@@ -260,40 +260,15 @@ final class TemplateStore: ObservableObject {
     }
 
     // ------------------------=
-    // FUNC: presentInlineEditor
-    // DESC: Opens the canvas-attached editor only for the selected unlocked element.
-    // ------------------=
-    func presentInlineEditor(for id: UUID) {
-        selectElement(id)
-        guard selectedElement?.locked == false else {
-            inlineEditorElementID = nil
-            status = "Unlock this element to edit it"
-            return
-        }
-        inlineEditorElementID = id
-        status = "Inline editor opened"
-    }
-
-    // ------------------------=
     // FUNC: activateCanvasElement
-    // DESC: Selects a clicked canvas object and opens inline editing when the object is unlocked.
+    // DESC: Selects a clicked canvas object for editing in the persistent right-hand inspector.
     // ------------------=
     func activateCanvasElement(_ id: UUID) {
         selectElement(id)
-        guard selectedElement?.locked == false else {
-            inlineEditorElementID = nil
-            status = "Locked element selected for inspection"
-            return
-        }
-        presentInlineEditor(for: id)
-    }
-
-    // ------------------------=
-    // FUNC: dismissInlineEditor
-    // DESC: Closes the canvas-attached editor without changing the current selection.
-    // ------------------=
-    func dismissInlineEditor() {
         inlineEditorElementID = nil
+        status = selectedElement?.locked == false
+            ? "Selected for editing in the inspector"
+            : "Locked element selected for inspection"
     }
 
     // ------------------------=
@@ -570,7 +545,7 @@ final class TemplateStore: ObservableObject {
         )
         activeDocument.screens[screen].elements.append(element)
         selectedElementID = element.id
-        inlineEditorElementID = element.id
+        inlineEditorElementID = nil
         projectRoot = root
         status = "Image added to canvas"
         return element.id

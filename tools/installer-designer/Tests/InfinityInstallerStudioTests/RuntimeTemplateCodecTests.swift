@@ -20,7 +20,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
         let id = try store.importImageAsset(from: source)
         XCTAssertEqual(store.selectedElementID, id)
-        XCTAssertEqual(store.inlineEditorElementID, id)
+        XCTAssertNil(store.inlineEditorElementID)
         XCTAssertFalse(store.selectedElement!.locked)
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: root.appending(path: "assets/boot/\(store.selectedElement!.imageAsset)").path
@@ -256,7 +256,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         store.document.screens[0].elements[indexes[1]].hidden = true
         store.activateCanvas(at: CGPoint(x: 150, y: 150))
         XCTAssertEqual(store.selectedElementID, unlocked)
-        XCTAssertEqual(store.inlineEditorElementID, unlocked)
+        XCTAssertNil(store.inlineEditorElementID)
         XCTAssertTrue(store.canMoveSelection(at: CGPoint(x: 150, y: 150)))
     }
 
@@ -379,7 +379,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
 
     // ------------------------=
     // FUNC: testCanvasActivationSelectsObjectsAndHonorsLocks
-    // DESC: Exercises direct canvas selection with inline editing for unlocked objects and inspection-only locks.
+    // DESC: Exercises direct canvas selection in the persistent inspector for unlocked and locked objects.
     // ------------------=
     @MainActor
     func testCanvasActivationSelectsObjectsAndHonorsLocks() {
@@ -387,7 +387,8 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         let body = store.selectedScreen!.elements.first { $0.role == .body }!
         store.activateCanvasElement(body.id)
         XCTAssertEqual(store.selectedElementID, body.id)
-        XCTAssertEqual(store.inlineEditorElementID, body.id)
+        XCTAssertNil(store.inlineEditorElementID)
+        XCTAssertEqual(store.status, "Selected for editing in the inspector")
 
         let primary = store.selectedScreen!.elements.first { $0.role == .primaryButton }!
         store.activateCanvasElement(primary.id)
@@ -414,11 +415,11 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     }
 
     // ------------------------=
-    // FUNC: testEveryElementCanToggleLockAndInlineEditingRequiresUnlock
-    // DESC: Exercises persisted lock control and the canvas inline-editor gate for every element kind.
+    // FUNC: testEveryElementCanToggleLockAndSidebarEditingRequiresUnlock
+    // DESC: Exercises persisted lock control and right-inspector mutation gating for every element kind.
     // ------------------=
     @MainActor
-    func testEveryElementCanToggleLockAndInlineEditingRequiresUnlock() {
+    func testEveryElementCanToggleLockAndSidebarEditingRequiresUnlock() {
         let store = TemplateStore()
         let elements = store.selectedScreen!.elements
 
@@ -427,15 +428,15 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             if !store.selectedElement!.locked {
                 store.toggleElementLock(element.id)
             }
-            store.presentInlineEditor(for: element.id)
+            let lockedName = store.selectedElement!.name
+            store.updateSelected("Inspector edit") { $0.name += " Blocked" }
+            XCTAssertEqual(store.selectedElement!.name, lockedName)
             XCTAssertNil(store.inlineEditorElementID)
 
             store.toggleElementLock(element.id)
-            store.presentInlineEditor(for: element.id)
-            XCTAssertEqual(store.inlineEditorElementID, element.id)
-            store.updateSelected("Inline edit") { $0.name += " Edited" }
+            store.updateSelected("Inspector edit") { $0.name += " Edited" }
             XCTAssertTrue(store.selectedElement!.name.hasSuffix(" Edited"))
-            store.dismissInlineEditor()
+            XCTAssertNil(store.inlineEditorElementID)
         }
     }
 
@@ -454,8 +455,8 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         store.projectRoot = root
         let masthead = store.selectedScreen!.elements.first { $0.role == .masthead }!
         store.toggleElementLock(masthead.id)
-        store.presentInlineEditor(for: masthead.id)
-        store.updateSelected("Inline edit") { $0.name = "Editable Masthead" }
+        store.selectElement(masthead.id)
+        store.updateSelected("Inspector edit") { $0.name = "Editable Masthead" }
 
         store.save()
 

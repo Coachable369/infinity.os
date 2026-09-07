@@ -1472,21 +1472,14 @@ impl super::DisplayDevice {
         crop: [u8; 4],
         opacity: u8,
     ) {
-        if bitmap.len() < 54
-            || &bitmap[0..2] != b"BM"
-            || le16(bitmap, 28) != 24
-            || width == 0
-            || height == 0
-        {
+        let Some(bitmap) = crate::ui::bitmap::RuntimeBitmap::parse(bitmap) else {
+            return;
+        };
+        if width == 0 || height == 0 {
             return;
         }
-        let offset = le32(bitmap, 10) as usize;
-        let source_width = le32(bitmap, 18) as usize;
-        let signed_height = le32(bitmap, 22) as i32;
-        let source_height = signed_height.unsigned_abs() as usize;
-        if source_width == 0 || source_height == 0 {
-            return;
-        }
+        let source_width = bitmap.width();
+        let source_height = bitmap.height();
         let mut crop_left = source_width * crop[0] as usize / 100;
         let mut crop_top = source_height * crop[1] as usize / 100;
         let mut sampled_width =
@@ -1505,27 +1498,21 @@ impl super::DisplayDevice {
             crop_top += sampled_height.saturating_sub(fitted_height) / 2;
             sampled_height = fitted_height;
         }
-        let row_bytes = (source_width * 3 + 3) & !3;
         for y in 0..height.min(self.height.saturating_sub(top)) {
-            let logical_y = crop_top + y * sampled_height / height;
-            let source_y = if signed_height < 0 {
-                logical_y
-            } else {
-                source_height - 1 - logical_y
-            };
+            let source_y = crop_top + y * sampled_height / height;
             for x in 0..width.min(self.width.saturating_sub(left)) {
                 let source_x = crop_left + x * sampled_width / width;
-                let index = offset + source_y * row_bytes + source_x * 3;
-                if index + 2 >= bitmap.len() {
+                let Some([red, green, blue, source_alpha]) = bitmap.rgba(source_x, source_y) else {
                     return;
-                }
+                };
+                let alpha = (source_alpha as u16 * opacity as u16 / 255) as u8;
                 self.blend_color(
                     (left + x) as i32,
                     (top + y) as i32,
-                    bitmap[index + 2],
-                    bitmap[index + 1],
-                    bitmap[index],
-                    opacity,
+                    red,
+                    green,
+                    blue,
+                    alpha,
                 );
             }
         }

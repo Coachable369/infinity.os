@@ -8,7 +8,7 @@ struct InstallerCanvas: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack(alignment: .topTrailing) {
+            ZStack {
                 ScrollView([.horizontal, .vertical]) {
                     let fit = max(0.24, min(
                         (proxy.size.width - 80) / 1600,
@@ -78,14 +78,7 @@ struct InstallerCanvas: View {
                         endPoint: .bottom
                     )
                 )
-                if store.inlineEditorElementID != nil {
-                    InlineElementEditor(store: store)
-                        .padding(16)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                        .zIndex(50_000)
-                }
             }
-            .animation(.easeOut(duration: 0.16), value: store.inlineEditorElementID)
         }
     }
 
@@ -133,8 +126,6 @@ struct InstallerCanvas: View {
                     canvasDragMode = store.canMoveSelection(at: start) ? .moveSelection : .marquee
                     if canvasDragMode == .moveSelection {
                         store.beginGesture()
-                    } else {
-                        store.dismissInlineEditor()
                     }
                 }
                 if canvasDragMode == .moveSelection {

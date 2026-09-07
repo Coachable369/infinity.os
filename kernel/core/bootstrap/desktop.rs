@@ -2182,9 +2182,8 @@ impl super::DisplayDevice {
                 );
             }
         } else if (1..=4).contains(&step) {
-            let authored_input = crate::ui::installer_layout::configuration_template_rect(
+            let authored_input = crate::ui::installer_layout::configuration_template_input_rect(
                 step,
-                crate::ui::installer_template::InstallerTemplateRole::Input,
                 self.width,
                 self.height,
             );
@@ -2358,9 +2357,8 @@ impl super::DisplayDevice {
     ) {
         let input_variable = crate::ui::installer_layout::configuration_template_input_variable(step);
         if input_variable != crate::ui::installer_template::InstallerTemplateVariable::None {
-            if let Some(frame) = crate::ui::installer_layout::configuration_template_rect(
+            if let Some(frame) = crate::ui::installer_layout::configuration_template_input_rect(
                 step,
-                crate::ui::installer_template::InstallerTemplateRole::Input,
                 self.width,
                 self.height,
             ) {
@@ -9263,18 +9261,14 @@ impl super::DisplayDevice {
             );
             return;
         }
-        let scale = self.ui_scale().max(1);
-        let top_bar = (46 * scale).min(self.height / 12).max(40);
-        let card_width = (self.width * 34 / 100).clamp(500, 600 * scale);
-        let card_height = (self.height * 68 / 100)
-            .clamp(560, 680 * scale)
-            .min(self.height.saturating_sub(top_bar + 24));
-        let card_left = self.width * 4 / 100;
-        let card_top = top_bar + self.height.saturating_sub(top_bar + card_height) / 2;
-        let inner_left = card_left + 32 * scale;
-        let inner_width = card_width.saturating_sub(64 * scale);
-        let content_top = card_top + 94 * scale;
-        let body_top = content_top + 132 * scale;
+        let Some(field) = crate::ui::installer_layout::configuration_template_input_rect(
+            step,
+            self.width,
+            self.height,
+        )
+        else {
+            return;
+        };
         let placeholder: &[u8] = match step {
             1 => b"InfinityNode",
             2 => b"your-handle",
@@ -9283,10 +9277,10 @@ impl super::DisplayDevice {
             _ => b"",
         };
         self.onboarding_input_field(
-            inner_left,
-            body_top + 28 * scale,
-            inner_width,
-            50 * scale,
+            field.left,
+            field.top,
+            field.width,
+            field.height,
             input,
             masked,
             true,

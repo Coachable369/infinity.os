@@ -218,6 +218,27 @@ pub fn configuration_template_rect(
 }
 
 // ------------------------=
+// FUNC: configuration_template_input_rect
+// DESC: Resolves the single bound field rectangle shared by full-frame, focus, and typing paints.
+// ------------------=
+pub fn configuration_template_input_rect(
+    step: usize,
+    display_width: usize,
+    display_height: usize,
+) -> Option<InstallerRect> {
+    (configuration_template_input_variable(step) != InstallerTemplateVariable::None)
+        .then(|| {
+            configuration_template_rect(
+                step,
+                InstallerTemplateRole::Input,
+                display_width,
+                display_height,
+            )
+        })
+        .flatten()
+}
+
+// ------------------------=
 // FUNC: configuration_template_input_variable
 // DESC: Resolves the saved runtime variable bound to the active first-boot input field.
 // ------------------=

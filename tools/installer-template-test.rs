@@ -1,6 +1,10 @@
+#[path = "../kernel/ui/bitmap.rs"]
+mod bitmap;
+
 #[path = "../kernel/ui/installer_template.rs"]
 mod installer_template;
 
+use bitmap::RuntimeBitmap;
 use installer_template::{InstallerTemplate, InstallerTemplateRole};
 
 const FACTORY_TEMPLATE: &[u8] = include_bytes!("../assets/boot/installer-screens.iuit");
@@ -210,6 +214,23 @@ fn main() {
         .image_asset
         .ends_with(b"infinity-onboarding-wallpaper-v1.png"));
     assert!(configuration.asset(background.image_asset).is_none());
+    let node_image = (0..configuration.element_count(1).unwrap())
+        .filter_map(|layer| configuration.layer_at(1, layer))
+        .find(|element| element.kind == 2 && element.role == InstallerTemplateRole::Image as u8)
+        .expect("Studio-authored node image must remain in the configuration scene");
+    let node_bitmap = RuntimeBitmap::parse(
+        configuration
+            .asset(node_image.image_asset)
+            .expect("Studio-authored node image must be embedded in the runtime template"),
+    )
+    .expect("embedded node image must be runtime-decodable");
+    let transparent = node_bitmap.rgba(0, 0).unwrap();
+    let visible = node_bitmap
+        .rgba(node_bitmap.width() / 2, node_bitmap.height() / 2)
+        .unwrap();
+    assert!(transparent[3] < 8, "transparent PNG pixels must remain transparent");
+    assert!(visible[3] > 200, "visible PNG pixels must remain visible");
+    assert!(visible[0] > 0 || visible[1] > 0 || visible[2] > 0);
     for screen in 2..=5 {
         let input = configuration
             .element(screen, InstallerTemplateRole::Input)

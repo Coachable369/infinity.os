@@ -1,5 +1,7 @@
 //! Bounded parser for installer layouts authored by InfinityOS Installer Studio.
 
+use super::bitmap::RuntimeBitmap;
+
 const MAGIC: &[u8; 4] = b"IUIT";
 const FORMAT_VERSION: u16 = 5;
 const MAX_SCREEN_COUNT: u16 = 32;
@@ -169,8 +171,7 @@ impl<'a> InstallerTemplate<'a> {
             let bytes = reader.long_bytes()?;
             if name.is_empty()
                 || core::str::from_utf8(name).is_err()
-                || bytes.len() < 54
-                || &bytes[0..2] != b"BM"
+                || RuntimeBitmap::parse(bytes).is_none()
             {
                 return Err(InstallerTemplateError::InvalidElement);
             }
