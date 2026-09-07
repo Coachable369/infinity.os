@@ -26,8 +26,12 @@ The editor is implemented as a native SwiftUI macOS application in:
 
 Build and launch commands:
 
+    ./run-infinitystudio.sh
     tools/installer-designer/build.sh
     tools/installer-designer/run.sh
+
+The repository-level command performs a clean build before launching the
+packaged application.
 
 The production application bundle is written to:
 
