@@ -60,6 +60,7 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case progressSegment = 18
     case progressBar = 19
     case progressHero = 20
+    case liveDetails = 21
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -85,6 +86,7 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .progressSegment: "Progress Segment"
         case .progressBar: "Installation Progress"
         case .progressHero: "Progress Hero"
+        case .liveDetails: "Live Installer Details"
         }
     }
 
@@ -183,6 +185,8 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
             return 1
         }
         switch self {
+        case .installation where [3, 4, 6, 10].contains(screenID):
+            return role == .liveDetails ? 1 : 0
         case .installation where screenID == 5:
             return [.dateField, .timeField, .timeZoneSelector, .offsetBadge, .timeZoneMap]
                 .contains(role) ? 1 : 0
@@ -202,6 +206,9 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Caps singular runtime roles while allowing additional authored body-copy layers.
     // ------------------=
     func maximumRoleCount(_ role: StudioElementRole, screenID: Int) -> Int? {
+        if role == .liveDetails {
+            return self == .installation && [3, 4, 6, 10].contains(screenID) ? 1 : 0
+        }
         let required = requiredRoleCount(role, screenID: screenID)
         guard required > 0, role != .body else { return nil }
         return required
@@ -437,6 +444,9 @@ struct InstallerStudioDocument: Codable, Hashable {
                 installingElements(title: headings[index], body: body[index])
             } else {
                 defaultElements(title: headings[index], body: body[index])
+            }
+            if let details = liveDetailsElement(screenID: index + 1) {
+                elements.append(details)
             }
             for elementIndex in elements.indices {
                 elements[elementIndex].id = factoryElementID(screen: index + 1, element: elementIndex + 1)
@@ -879,11 +889,46 @@ struct InstallerStudioDocument: Codable, Hashable {
     }
 
     // ------------------------=
+    // FUNC: liveDetailsElement
+    // DESC: Exposes runtime-owned installer values as one movable, resizable text layer with representative preview data.
+    // ------------------=
+    static func liveDetailsElement(screenID: Int) -> StudioElement? {
+        let preview: String
+        switch screenID {
+        case 3:
+            preview = "Disk: Example SSD\nSize: 262144 MiB\nConnection: SATA\nContents: Empty disk\nENTER: Use this disk"
+        case 4:
+            preview = "Name: Example SSD\nSize in MiB: 262144\nConnection: SATA\nCurrent contents: Empty\nENTER: Continue to date and time"
+        case 6:
+            preview = "Disk: Example SSD\nCreates: EFI boot area + Infinity Container\nPool areas: System | Personal | Applications | Recovery\nLocal time: 2026-09-07 18:28\nTime zone: UTC+00:00 Universal"
+        case 10:
+            preview = "The installation could not be completed.\nReview the detected issue before retrying."
+        default:
+            return nil
+        }
+        var element = StudioElement.make(
+            name: "Live Installer Details", kind: .text, role: .liveDetails,
+            frame: CanvasRect(x: 70, y: 562, width: 500, height: 220),
+            text: preview, zIndex: 5
+        )
+        element.id = factoryElementID(screen: screenID, element: 100)
+        element.fontSize = 16
+        element.fill = InfinityUIKit.Palette.textSecondary
+        return element
+    }
+
+    // ------------------------=
     // FUNC: migratedForInstallerRuntimeParity
-    // DESC: Adds missing semantic progress layers to existing installer projects without replacing authored geometry elsewhere.
+    // DESC: Adds missing runtime details and progress layers without replacing existing authored geometry or hidden states.
     // ------------------=
     func migratedForInstallerRuntimeParity() -> InstallerStudioDocument {
         var result = self
+        for index in result.screens.indices {
+            if !result.screens[index].elements.contains(where: { $0.role == .liveDetails }),
+               let details = Self.liveDetailsElement(screenID: result.screens[index].id) {
+                result.screens[index].elements.append(details)
+            }
+        }
         guard let screenIndex = result.screens.firstIndex(where: { $0.id == 8 }),
               let factoryScreen = Self.factoryDefault().screens.first(where: { $0.id == 8 })
         else { return result }

@@ -733,6 +733,45 @@
             "top" : 0
           },
           "fill" : {
+            "alpha" : 255,
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
+          },
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 220,
+            "width" : 500,
+            "x" : 70,
+            "y" : 562
+          },
+          "hidden" : false,
+          "id" : "49554954-0003-0064-8000-000000000064",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Live Installer Details",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Disk: Example SSD\nSize: 262144 MiB\nConnection: SATA\nContents: Empty disk\nENTER: Use this disk",
+          "zIndex" : 5
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
             "alpha" : 230,
             "blue" : 29,
             "green" : 18,
@@ -1036,6 +1075,45 @@
     },
     {
       "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
+          },
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 220,
+            "width" : 500,
+            "x" : 70,
+            "y" : 562
+          },
+          "hidden" : false,
+          "id" : "49554954-0004-0064-8000-000000000064",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Live Installer Details",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Name: Example SSD\nSize in MiB: 262144\nConnection: SATA\nCurrent contents: Empty\nENTER: Continue to date and time",
+          "zIndex" : 5
+        },
         {
           "border" : {
             "alpha" : 255,
@@ -2116,6 +2194,45 @@
             "top" : 0
           },
           "fill" : {
+            "alpha" : 255,
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
+          },
+          "fontSize" : 14,
+          "frame" : {
+            "height" : 112,
+            "width" : 500,
+            "x" : 70,
+            "y" : 670
+          },
+          "hidden" : false,
+          "id" : "49554954-0006-0064-8000-000000000064",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Live Installer Details",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Disk: Example SSD\nCreates: EFI boot area + Infinity Container\nPool areas: System | Personal | Applications | Recovery\nLocal time: 2026-09-07 18:28\nTime zone: UTC+00:00 Universal",
+          "zIndex" : 5
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
             "alpha" : 230,
             "blue" : 29,
             "green" : 18,
@@ -2279,7 +2396,7 @@
           },
           "fontSize" : 24,
           "frame" : {
-            "height" : 120,
+            "height" : 50,
             "width" : 540,
             "x" : 70,
             "y" : 430
@@ -3412,6 +3529,45 @@
     },
     {
       "elements" : [
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 198,
+            "green" : 184,
+            "red" : 174
+          },
+          "fontSize" : 16,
+          "frame" : {
+            "height" : 220,
+            "width" : 500,
+            "x" : 70,
+            "y" : 562
+          },
+          "hidden" : false,
+          "id" : "49554954-000A-0064-8000-000000000064",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Live Installer Details",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "The installation could not be completed.\nReview the detected issue before retrying.",
+          "zIndex" : 5
+        },
         {
           "border" : {
             "alpha" : 255,

@@ -79,7 +79,8 @@ enum TemplateValidator {
             for element in screen.elements {
                 guard element.kind != .progressBar || element.role == .progressBar,
                       element.role != .progressBar || element.kind == .progressBar,
-                      element.role != .progressHero || element.kind == .image
+                      element.role != .progressHero || element.kind == .image,
+                      element.role != .liveDetails || element.kind == .text
                 else {
                     throw TemplateValidationIssue.invalidElement(
                         screen.id, element.id, "Progress controls require their semantic element types"

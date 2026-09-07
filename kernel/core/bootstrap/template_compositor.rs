@@ -21,7 +21,15 @@ impl DisplayDevice {
     // DESC: Paints every visible installer layer in the editor's deterministic stacking order.
     // ------------------=
     pub(super) fn installer_template_screen(&mut self, screen: u8) -> bool {
-        self.template_screen(INSTALLER_TEMPLATE_BYTES, screen, None, true, false)
+        self.template_screen(INSTALLER_TEMPLATE_BYTES, screen, None, true, false, None)
+    }
+
+    // ------------------------=
+    // FUNC: installer_template_screen_with_details
+    // DESC: Substitutes live data at its saved layer position instead of drawing a second fixed-position overlay.
+    // ------------------=
+    pub(super) fn installer_template_screen_with_details(&mut self, screen: u8, details: &[u8]) -> bool {
+        self.template_screen(INSTALLER_TEMPLATE_BYTES, screen, None, true, false, Some(details))
     }
 
     // ------------------------=
@@ -35,6 +43,7 @@ impl DisplayDevice {
             None,
             true,
             true,
+            None,
         )
     }
 
@@ -57,6 +66,7 @@ impl DisplayDevice {
             Some((focus, has_primary, Some((cursor_x, cursor_y, pressed)))),
             false,
             false,
+            None,
         )
     }
 
@@ -71,6 +81,7 @@ impl DisplayDevice {
             Some((focus, true, None)),
             false,
             false,
+            None,
         )
     }
 
@@ -85,6 +96,7 @@ impl DisplayDevice {
         navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>,
         full_scene: bool,
         skip_live_input: bool,
+        live_details: Option<&[u8]>,
     ) -> bool {
         let Ok(template) = InstallerTemplate::parse(bytes) else {
             return false;
@@ -109,6 +121,12 @@ impl DisplayDevice {
                 || element.role == InstallerTemplateRole::PrimaryButton as u8
                 || element.role == InstallerTemplateRole::Footer as u8;
             if full_scene || is_navigation {
+                if element.role == InstallerTemplateRole::LiveDetails as u8 {
+                    if let Some(text) = live_details {
+                        self.template_element(InstallerTemplateElement { text, ..element }, None, navigation);
+                    }
+                    continue;
+                }
                 let image = if element.kind == 2 {
                     template.asset(element.image_asset)
                 } else {
@@ -485,7 +503,8 @@ impl DisplayDevice {
         rect: crate::ui::installer_layout::InstallerRect,
     ) {
         let alpha = (element.fill[3] as u16 * element.opacity as u16 / 100) as u8;
-        self.set_render_clip(rect.left, rect.top, rect.width, rect.height);
+        let previous_clip = self.render_clip;
+        self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
         self.template_text_wrapped(
             rect.left,
             rect.top,
@@ -498,7 +517,7 @@ impl DisplayDevice {
             element.font_size as usize * self.height / 1000,
             element.role == InstallerTemplateRole::Title as u8,
         );
-        self.clear_render_clip();
+        self.render_clip = previous_clip;
     }
 
     // ------------------------=

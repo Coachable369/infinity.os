@@ -75,7 +75,34 @@ fn first_primary_kind_offset(data: &[u8]) -> usize {
 // DESC: Exercises authored runtime structure, geometry consumption, data bindings, and action-integrity rejection.
 // ------------------=
 fn main() {
+    let mut lines = [[0u8; 96]; 6];
+    let lengths = [2, 3, 1, 0, 0, 0];
+    lines[0][..2].copy_from_slice(&[70, 71]);
+    lines[1][..3].copy_from_slice(&[80, 81, 82]);
+    lines[2][0] = 90;
+    let (details, length) = installer_template::installer_live_details(&lines, &lengths, 3, &[60], &[61]);
+    assert_eq!(&details[..length], &[80, 81, 82, 10, 90, 10, 60, 61]);
+    let (details, length) = installer_template::installer_live_details(&lines, &lengths, 1, &[], &[]);
+    assert_eq!(&details[..length], &[70, 71]);
+    let (_, length) = installer_template::installer_live_details(&lines, &[usize::MAX; 6], usize::MAX, &[1; 1024], &[2; 1024]);
+    assert_eq!(length, 768);
     let template = InstallerTemplate::parse(FACTORY_TEMPLATE).expect("factory template must load");
+    for screen in [3, 4, 6, 10] {
+        let details = template.element(screen, InstallerTemplateRole::LiveDetails).unwrap();
+        assert_eq!(details.kind, 3);
+        assert!(!details.hidden);
+        assert!(details.frame.width > 0 && details.frame.height > 0);
+        if screen == 6 {
+            for layer in 0..template.element_count(screen).unwrap() {
+                let copy = template.layer_at(screen, layer).unwrap();
+                if copy.role == InstallerTemplateRole::Body as u8 && !copy.hidden {
+                    let a = copy.frame;
+                    let b = details.frame;
+                    assert!(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
+                }
+            }
+        }
+    }
     assert!((1..=32).contains(&template.screen_count()));
     for screen in 1..=template.screen_count() as u8 {
         let count = template

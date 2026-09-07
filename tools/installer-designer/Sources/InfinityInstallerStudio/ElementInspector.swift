@@ -172,8 +172,13 @@ struct ElementInspector: View {
     // DESC: Builds multiline content and typography controls for text-capable elements.
     // ------------------=
     private func textSection(_ element: StudioElement) -> some View {
-        GroupBox("Text") {
+        GroupBox(element.role == .liveDetails ? "Live details preview" : "Text") {
             VStack(alignment: .leading, spacing: 8) {
+                if element.role == .liveDetails {
+                    Text("The installer fills this box with live disk, plan, or error details. Move and resize it on the canvas. Preview copy is illustrative; geometry, size, color, and visibility are used in the ISO.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 TextEditor(text: stringBinding(\.text))
                     .font(.body)
                     .scrollContentBackground(.hidden)

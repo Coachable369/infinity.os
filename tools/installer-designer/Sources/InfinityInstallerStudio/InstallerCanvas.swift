@@ -294,7 +294,7 @@ private struct SnapGrid: View {
     }
 }
 
-private struct CanvasElementView: View {
+struct CanvasElementView: View {
     let element: StudioElement
     @ObservedObject var store: TemplateStore
     let canvasScale: CGSize
@@ -349,6 +349,7 @@ private struct CanvasElementView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .multilineTextAlignment(.leading)
                 .lineSpacing(max(1, 4 * canvasScale.height))
+                .clipped()
         case .image:
             if element.role == .timeZoneMap {
                 imagePreview

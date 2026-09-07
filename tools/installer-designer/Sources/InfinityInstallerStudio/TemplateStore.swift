@@ -151,7 +151,7 @@ final class TemplateStore: ObservableObject {
                 document = migrated
                 status = migrated == decoded
                     ? "Loaded repository templates"
-                    : "Loaded and upgraded installer progress controls"
+                    : "Loaded and upgraded installer runtime layers"
             } else {
                 document = .factoryDefault()
             }
@@ -468,7 +468,8 @@ final class TemplateStore: ObservableObject {
         }.count
         let candidateMaximum = selectedCollection.maximumRoleCount(candidate.role, screenID: screenID)
         let removesRequiredRole = originalRequired > 0 && originalCount <= originalRequired
-            && (candidate.role != location.element.role || (!location.element.hidden && candidate.hidden))
+            && (candidate.role != location.element.role
+                || (!location.element.hidden && candidate.hidden && candidate.role != .liveDetails))
         let exceedsCandidateMaximum = candidate.role != location.element.role
             && candidateMaximum.map { candidateCount >= $0 } == true
         if removesRequiredRole {
@@ -490,6 +491,16 @@ final class TemplateStore: ObservableObject {
         activeDocument.screens[location.screen].elements[location.elementIndex].crop =
             activeDocument.screens[location.screen].elements[location.elementIndex].crop.clamped()
         status = label
+    }
+
+    // ------------------------=
+    // FUNC: selectLiveDetails
+    // DESC: Opens the screen's runtime text region in the sidebar without creating duplicate live-data layers.
+    // ------------------=
+    func selectLiveDetails() {
+        guard let element = selectedScreen?.elements.first(where: { $0.role == .liveDetails }) else { return }
+        selectElement(element.id)
+        status = "Live Installer Details selected — move, resize, and style in the sidebar"
     }
 
     // ------------------------=

@@ -73,6 +73,9 @@ private struct StudioToolbar: View {
                 Button("Image…") { store.chooseAndAddImage() }
                 Button("Console") { store.addElement(kind: .console) }
                 Button("Progress Bar") { store.addElement(kind: .progressBar) }
+                Divider()
+                Button("Live Installer Details…") { store.selectLiveDetails() }
+                    .disabled(store.selectedScreen?.elements.contains(where: { $0.role == .liveDetails }) != true)
             } label: {
                 Label("Add", systemImage: "plus")
             }

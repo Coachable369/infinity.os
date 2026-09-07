@@ -1392,11 +1392,13 @@ impl super::DisplayDevice {
         // Date/time owns live form controls and a selectable map. The authored
         // template supplies shared geometry/copy, but it must not short-circuit
         // the functional renderer for this step.
-        if !matches!(screen, 5 | 7 | 8 | 9) && self.installer_template_screen(screen) {
-            self.installer_template_live_content(
-                lines, lengths, line_count, prompt, command, screen,
+        if !matches!(screen, 5 | 7 | 8 | 9) {
+            let (details, length) = crate::ui::installer_template::installer_live_details(
+                lines, lengths, line_count, prompt, command,
             );
-            return;
+            if self.installer_template_screen_with_details(screen, &details[..length]) {
+                return;
+            }
         }
         let scale = self.ui_scale();
         let frame =
@@ -1629,67 +1631,6 @@ impl super::DisplayDevice {
             let step_x = left + width.saturating_sub(44 * scale);
             let step_y = self.height * 80 / 100;
             self.text(step_x, step_y, &step, 105, 154, 193);
-        }
-    }
-
-    // ------------------------=
-    // FUNC: installer_template_live_content
-    // DESC: Places live installer state inside the authored content slot without restyling template layers.
-    // ------------------=
-    pub(super) fn installer_template_live_content(
-        &mut self,
-        lines: &[[u8; 96]; 6],
-        lengths: &[usize; 6],
-        line_count: usize,
-        prompt: &[u8],
-        command: &[u8],
-        screen: u8,
-    ) {
-        if matches!(screen, 1 | 2 | 8 | 9 | 11) {
-            return;
-        }
-        let Some(content) = crate::ui::installer_template::InstallerTemplate::parse(
-            crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES,
-        )
-        .ok()
-        .and_then(|template| {
-            template.element(
-                screen,
-                crate::ui::installer_template::InstallerTemplateRole::Content,
-            )
-        }) else {
-            return;
-        };
-        let rect = crate::ui::installer_layout::scale_template_rect(
-            content.frame,
-            self.width,
-            self.height,
-        );
-        let scale = self.ui_scale().max(1);
-        let start_row = if line_count > 1 { 1 } else { 0 };
-        let mut y = rect.top + rect.height * 42 / 100;
-        for row in start_row..line_count.min(6) {
-            self.installer_text(
-                rect.left + 18 * scale,
-                y,
-                &lines[row][..lengths[row]],
-                216,
-                226,
-                237,
-            );
-            y = y.saturating_add(30 * scale);
-        }
-        if !prompt.is_empty() {
-            self.installer_text(rect.left + 18 * scale, y, prompt, 216, 226, 237);
-            let prompt_width = self.installer_text_width(prompt, false);
-            self.installer_text(
-                rect.left + 18 * scale + prompt_width,
-                y,
-                command,
-                255,
-                255,
-                255,
-            );
         }
     }
 

@@ -30,6 +30,7 @@ pub enum InstallerTemplateRole {
     ProgressSegment = 18,
     ProgressBar = 19,
     ProgressHero = 20,
+    LiveDetails = 21,
 }
 
 // ------------------------=
@@ -39,6 +40,43 @@ pub enum InstallerTemplateRole {
 pub const fn template_image_uses_aspect_fill(role: u8) -> bool {
     role == InstallerTemplateRole::Masthead as u8
         || role == InstallerTemplateRole::TimeZoneMap as u8
+}
+
+// ------------------------=
+// FUNC: installer_live_details
+// DESC: Collects bounded runtime rows for the authored details layer, excluding the separate screen heading.
+// ------------------=
+pub fn installer_live_details(
+    lines: &[[u8; 96]; 6],
+    lengths: &[usize; 6],
+    line_count: usize,
+    prompt: &[u8],
+    command: &[u8],
+) -> ([u8; 768], usize) {
+    let mut text = [0u8; 768];
+    let mut length = 0usize;
+    let start = if line_count > 1 { 1 } else { 0 };
+    for row in start..line_count.min(6) {
+        if length > 0 {
+            text[length] = b'\n';
+            length += 1;
+        }
+        let count = lengths[row].min(96);
+        text[length..length + count].copy_from_slice(&lines[row][..count]);
+        length += count;
+    }
+    if !prompt.is_empty() {
+        if length > 0 {
+            text[length] = b'\n';
+            length += 1;
+        }
+        for bytes in [prompt, command] {
+            let count = bytes.len().min(text.len() - length);
+            text[length..length + count].copy_from_slice(&bytes[..count]);
+            length += count;
+        }
+    }
+    (text, length)
 }
 
 #[repr(u8)]
@@ -137,6 +175,7 @@ impl<'a> InstallerTemplate<'a> {
             let mut primary_count = 0u8;
             let mut console_count = 0u8;
             let mut input_count = 0u8;
+            let mut details_count = 0u8;
             for _ in 0..count {
                 let element = reader.element()?;
                 if !element_is_bounded(element.frame) {
@@ -147,6 +186,9 @@ impl<'a> InstallerTemplate<'a> {
                 }
                 if element.role == InstallerTemplateRole::Input as u8 && !element.hidden {
                     input_count = input_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::LiveDetails as u8 {
+                    details_count = details_count.saturating_add(1);
                 }
                 if element.role == InstallerTemplateRole::BackButton as u8 {
                     back_count = back_count.saturating_add(1);
@@ -161,7 +203,7 @@ impl<'a> InstallerTemplate<'a> {
                     }
                 }
             }
-            if back_count != 1 || primary_count != 1 || console_count == 0 || input_count > 1 {
+            if back_count != 1 || primary_count != 1 || console_count == 0 || input_count > 1 || details_count > 1 {
                 return Err(InstallerTemplateError::InvalidNavigation);
             }
         }
@@ -459,11 +501,12 @@ impl<'a> Reader<'a> {
         let input_variable = self.u8()?;
         let flags = self.u8()?;
         if !(1..=6).contains(&kind)
-            || role > InstallerTemplateRole::ProgressHero as u8
+            || role > InstallerTemplateRole::LiveDetails as u8
             || input_variable > InstallerTemplateVariable::Password as u8
             || (kind == 6 && role != InstallerTemplateRole::ProgressBar as u8)
             || (role == InstallerTemplateRole::ProgressBar as u8 && kind != 6)
             || (role == InstallerTemplateRole::ProgressHero as u8 && kind != 2)
+            || (role == InstallerTemplateRole::LiveDetails as u8 && kind != 3)
             || (role != InstallerTemplateRole::Input as u8
                 && input_variable != InstallerTemplateVariable::None as u8)
             || (role == InstallerTemplateRole::Input as u8
