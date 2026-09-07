@@ -6,9 +6,22 @@ output_dir="$project_root/builds"
 
 cd "$project_root"
 
-echo "==> Building InfinityOS for x86, x86_64, and AArch64"
+echo "==> Building InfinityOS for x86_64 and AArch64"
 make clean
-make x86
+
+# The legacy BIOS loader must place its complete 32-bit payload below the
+# conventional-memory/video boundary. The current graphical kernel is larger
+# than that physical window, so legacy x86 is opt-in until its staged loader is
+# implemented. Never let that unsupported target prevent Studio users from
+# producing the supported UEFI images.
+legacy_x86_built=false
+if [ "${INFINITY_BUILD_LEGACY_X86:-0}" = "1" ]; then
+    echo "==> Building opt-in legacy BIOS x86 image"
+    make x86
+    legacy_x86_built=true
+else
+    echo "==> Skipping legacy BIOS x86 (set INFINITY_BUILD_LEGACY_X86=1 to attempt it)"
+fi
 make x86_64
 make aarch64
 make crash-screen-test
@@ -19,14 +32,21 @@ make milestone-7x-test
 make ai-test
 make object-test
 make network-test
-make ui-install-parity-test
+tools/ui-install-parity-test.sh \
+    build/infinity-x86_64.img \
+    build/infinity-aarch64.img \
+    build/infinity-aarch64-qemu.img \
+    build/x86_64/installed-esp.img \
+    build/aarch64/installed-esp.img
 make input-regression-test
 make app-launcher-interaction-test
 
 mkdir -p "$output_dir"
 find "$output_dir" -maxdepth 1 -type f -name 'InfinityOS-*.iso' -delete
 find "$output_dir" -maxdepth 1 -type f -name 'SHA256SUMS' -delete
-cp build/infinity-x86.iso "$output_dir/InfinityOS-x86.iso"
+if [ "$legacy_x86_built" = true ]; then
+    cp build/infinity-x86.iso "$output_dir/InfinityOS-x86.iso"
+fi
 cp build/infinity-x86_64.iso "$output_dir/InfinityOS-x86_64.iso"
 cp build/infinity-aarch64.iso "$output_dir/InfinityOS-aarch64.iso"
 cp tools/configure-virtualbox-arm64.sh "$output_dir/configure-virtualbox-arm64.sh"
@@ -64,4 +84,7 @@ echo
 echo "InfinityOS images are ready in $output_dir"
 echo "Apple Silicon VirtualBox image: builds/InfinityOS-aarch64.iso"
 echo "Start an ARM64 VM safely: builds/start-virtualbox-arm64.sh '<VM name>'"
-echo "Intel/AMD images: builds/InfinityOS-x86.iso and builds/InfinityOS-x86_64.iso"
+echo "Intel/AMD UEFI image: builds/InfinityOS-x86_64.iso"
+if [ "$legacy_x86_built" = true ]; then
+    echo "Legacy Intel/AMD BIOS image: builds/InfinityOS-x86.iso"
+fi
