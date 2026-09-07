@@ -3,7 +3,7 @@
 use super::{DisplayDevice, PresentRegion};
 const PIXELS: usize = 2560 * 1600;
 const SCRATCH_PIXELS: usize = 3840 * 2160;
-const SLOTS: usize = 5;
+const SLOTS: usize = 6;
 
 #[derive(Clone, Copy)]
 struct CachedWindow {
@@ -118,7 +118,7 @@ impl DisplayDevice {
                 cache.valid = true;
             }
             let (opacity, blur) = self.active_background_effects();
-            if blur >= 2 && opacity < 100 && !self.fast_motion_frame {
+            if slot != 5 && blur >= 2 && opacity < 100 && !self.fast_motion_frame {
                 self.blur_framebuffer_region(bounds.0, bounds.1, bounds.2, bounds.3, blur as usize);
             }
             for y in region.top..region.bottom {

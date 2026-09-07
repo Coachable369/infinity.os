@@ -395,6 +395,7 @@ struct ConsoleRuntime {
     pointer_x: i32,
     pointer_y: i32,
     pointer_x_remainder: i32,
+    preference_pointer_remainder: [i32; 2],
     pointer_y_remainder: i32,
     pointer_pressed: bool,
     pointer_buttons: u8,
@@ -439,6 +440,7 @@ struct ConsoleRuntime {
     settings_scroll_grab_offset: i32,
     settings_scroll_target: usize,
     launcher_scroll_dragging: bool,
+    launcher_tick_ns: Option<u64>,
     launcher_scroll_grab_offset: i32,
     onboarding_validation_error: bool,
     home_window_x: i32,
@@ -529,6 +531,7 @@ impl ConsoleRuntime {
             pointer_x: 500,
             pointer_y: 500,
             pointer_x_remainder: 0,
+            preference_pointer_remainder: [0; 2],
             pointer_y_remainder: 0,
             pointer_pressed: false,
             pointer_buttons: 0,
@@ -583,6 +586,7 @@ impl ConsoleRuntime {
             settings_scroll_grab_offset: 0,
             settings_scroll_target: 0,
             launcher_scroll_dragging: false,
+            launcher_tick_ns: None,
             launcher_scroll_grab_offset: 0,
             onboarding_validation_error: false,
             home_window_x: 110,
@@ -2502,6 +2506,7 @@ impl ConsoleRuntime {
             settings_section: self.system_focus,
             settings_expanded_row: self.settings_window.expanded_row,
             settings_scroll_offset: self.settings_window.scroll_offset,
+            input_preferences: crate::ui::input_preferences::current().encode(),
         }
     }
 
@@ -2510,6 +2515,9 @@ impl ConsoleRuntime {
     // DESC: Restores the exact pre-lock window geometry, desktop positions, visibility, and focus.
     // ------------------=
     fn restore_desktop_layout(&mut self, layout: DesktopSessionLayout) {
+        crate::ui::input_preferences::apply(crate::ui::input_preferences::Preferences::decode(
+            layout.input_preferences,
+        ));
         self.home_window_x = layout.home.x;
         self.home_window_y = layout.home.y;
         self.home_window_width = layout.home.width;
@@ -2581,6 +2589,7 @@ impl ConsoleRuntime {
     // DESC: Restores the authenticated user's last durable cross-session desktop layout.
     // ------------------=
     fn restore_persisted_desktop_layout(&mut self) -> bool {
+        crate::ui::input_preferences::apply(crate::ui::input_preferences::Preferences::defaults());
         if self.current_user.is_zero() {
             return false;
         }
@@ -3067,8 +3076,8 @@ impl ConsoleRuntime {
     fn open_settings(&mut self, section: usize) {
         self.store_active_app_window();
         self.mode = ConsoleMode::Settings;
-        self.system_focus = section.min(9);
-        self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7) {
+        self.system_focus = section.min(10);
+        self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 10) {
             8
         } else if self.system_focus == 3 {
             7
@@ -3097,6 +3106,13 @@ impl ConsoleRuntime {
     // DESC: Opens one inline Settings detail well, closes it on a second activation, and reveals lower rows safely.
     // ------------------=
     fn toggle_settings_row(&mut self, row: usize) {
+        if self.system_focus == 10 {
+            let mut preferences = crate::ui::input_preferences::current();
+            preferences.cycle(row);
+            crate::ui::input_preferences::apply(preferences);
+            let _ = self.persist_desktop_layout();
+            return;
+        }
         self.settings_window.expanded_row = if self.settings_window.expanded_row == Some(row) {
             None
         } else {
@@ -3132,14 +3148,15 @@ impl ConsoleRuntime {
     // DESC: Moves all Settings sections toward bounded logical scroll targets while leaving navigation focus unchanged.
     // ------------------=
     fn scroll_settings(&mut self, direction: i8) {
-        let distance = direction.unsigned_abs() as usize * 58;
+        let amount = crate::ui::input_preferences::current().wheel(direction);
+        let distance = amount.unsigned_abs() as usize * 20;
         let maximum_scroll = SystemLayout::new(
             self.system.framebuffer_width,
             self.system.framebuffer_height,
         )
         .settings_window_geometry_for_section(self.settings_window, self.system_focus)
         .maximum_scroll;
-        if direction < 0 {
+        if amount < 0 {
             self.settings_scroll_target = self.settings_scroll_target.saturating_sub(distance);
         } else {
             self.settings_scroll_target = self
@@ -3147,6 +3164,7 @@ impl ConsoleRuntime {
                 .saturating_add(distance)
                 .min(maximum_scroll);
         }
+        self.settings_window.scroll_offset = self.settings_scroll_target;
     }
 
     // ------------------------=
@@ -3186,8 +3204,9 @@ impl ConsoleRuntime {
     // ------------------=
     fn scroll_editor(&mut self, direction: i8) {
         let maximum = self.editor_scroll_geometry().maximum_scroll;
-        let distance = direction.unsigned_abs() as usize * 3;
-        if direction < 0 {
+        let amount = crate::ui::input_preferences::current().wheel(direction);
+        let distance = amount.unsigned_abs() as usize;
+        if amount < 0 {
             self.editor_scroll_row = self.editor_scroll_row.saturating_sub(distance);
         } else {
             self.editor_scroll_row = self.editor_scroll_row.saturating_add(distance).min(maximum);
@@ -4100,7 +4119,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn open_shell_menu(&mut self, menu: usize) {
         self.mode = ConsoleMode::SystemMenu;
-        self.shell_menu = menu.min(5);
+        self.shell_menu = menu.min(16);
         self.system_focus = 0;
     }
 
@@ -4111,6 +4130,7 @@ impl ConsoleRuntime {
     fn open_app_launcher(&mut self) {
         self.store_active_app_window();
         crate::ui::app_launcher::launcher_open();
+        self.launcher_tick_ns = crate::ui::performance::monotonic_ns();
         self.launcher_scroll_dragging = false;
         self.mode = ConsoleMode::AppLauncher;
         self.system_focus = 0;
@@ -4197,6 +4217,9 @@ impl ConsoleRuntime {
     // DESC: Returns the bounded row count for the currently open native menu.
     // ------------------=
     fn shell_menu_item_count(&self) -> usize {
+        if self.shell_menu >= 8 {
+            return crate::ui::status_menu::items(self.shell_menu).len();
+        }
         match self.shell_menu {
             1 => 5,
             2 => 6,
@@ -4220,6 +4243,42 @@ impl ConsoleRuntime {
     // DESC: Executes the selected menu command through real shell, settings, session, or firmware behavior.
     // ------------------=
     fn activate_shell_menu_item(&mut self) {
+        if self.shell_menu >= 8 {
+            use crate::ui::status_menu::Action;
+            if let Some((_, action)) =
+                crate::ui::status_menu::items(self.shell_menu).get(self.system_focus)
+            {
+                match *action {
+                    Action::Settings(section) => self.open_settings(section),
+                    Action::Devices(row) => {
+                        self.open_settings(5);
+                        self.toggle_settings_row(row);
+                    }
+                    Action::Launcher => self.open_app_launcher(),
+                    Action::Files => {
+                        self.enter_desktop();
+                        let _ = self.open_file_navigator_window(b"/home/default");
+                    }
+                    Action::Lock => {
+                        let _ = self.lock_session_preserving_desktop(false);
+                    }
+                    Action::Restart | Action::Shutdown => {
+                        self.shell_menu = 0;
+                        self.system_focus = if *action == Action::Restart { 8 } else { 9 };
+                        self.activate_shell_menu_item();
+                    }
+                    Action::PreviousMonth | Action::Today | Action::NextMonth => {
+                        crate::ui::status_menu::navigate(match action {
+                            Action::PreviousMonth => -1,
+                            Action::NextMonth => 1,
+                            _ => 0,
+                        });
+                        self.shell_menu = if self.shell_menu == 15 { 16 } else { 15 };
+                    }
+                }
+            }
+            return;
+        }
         match (self.shell_menu, self.system_focus) {
             (0, 0) => self.open_settings(8),
             (0, 1) => self.open_settings(0),
@@ -4358,11 +4417,16 @@ impl ConsoleRuntime {
     // DESC: Routes one top-bar status control to truthful settings, search, or menu functionality.
     // ------------------=
     fn activate_status_item(&mut self, item: usize) {
-        match item {
-            0..=2 => self.open_settings(5),
-            3 | 4 => self.open_settings(8),
-            5 => self.show_shell_notice(b"Search objects with: object find name=..."),
-            _ => self.open_shell_menu(0),
+        if item == 7 {
+            crate::ui::status_menu::navigate(0);
+        }
+        let menu = 8 + item.min(7);
+        if self.mode == ConsoleMode::SystemMenu
+            && (self.shell_menu == menu || item == 7 && self.shell_menu == 16)
+        {
+            self.enter_desktop();
+        } else {
+            self.open_shell_menu(menu);
         }
     }
 
@@ -5104,11 +5168,11 @@ impl ConsoleRuntime {
             let count = if self.mode == ConsoleMode::SystemMenu {
                 self.shell_menu_item_count()
             } else {
-                10
+                11
             };
             self.system_focus = (self.system_focus + count - 1) % count;
             if self.mode == ConsoleMode::Settings {
-                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7) {
+                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 10) {
                     8
                 } else if self.system_focus == 3 {
                     7
@@ -5128,11 +5192,11 @@ impl ConsoleRuntime {
             let count = if self.mode == ConsoleMode::SystemMenu {
                 self.shell_menu_item_count()
             } else {
-                10
+                11
             };
             self.system_focus = (self.system_focus + 1) % count;
             if self.mode == ConsoleMode::Settings {
-                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7) {
+                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 10) {
                     8
                 } else if self.system_focus == 3 {
                     7
@@ -5837,7 +5901,8 @@ impl ConsoleRuntime {
         if matches!(self.mode, ConsoleMode::Console | ConsoleMode::Repair) {
             return;
         }
-        let button_changed = buttons != self.pointer_buttons;
+        let button_changed =
+            crate::ui::input_preferences::current().buttons(buttons) != self.pointer_buttons;
         if delta_x == 0 && delta_y == 0 && !button_changed {
             return;
         }
@@ -5883,6 +5948,21 @@ impl ConsoleRuntime {
         let accelerated_x = delta_x as i32 * 3;
         #[cfg(not(target_arch = "aarch64"))]
         let accelerated_y = delta_y as i32 * 3;
+        let preferences = crate::ui::input_preferences::current();
+        let dx = if preferences.acceleration {
+            accelerated_x
+        } else {
+            delta_x as i32 * 2
+        };
+        let dy = if preferences.acceleration {
+            accelerated_y
+        } else {
+            delta_y as i32 * 2
+        };
+        let x = dx * preferences.speed as i32 + self.preference_pointer_remainder[0];
+        let y = dy * preferences.speed as i32 + self.preference_pointer_remainder[1];
+        self.preference_pointer_remainder = [x % 4, y % 4];
+        let (accelerated_x, accelerated_y) = (x / 4, y / 4);
         // The pointer is a screen-level device, not a console-panel device.
         // Keep only a small edge inset so the cursor remains visible.
         self.pointer_x = (self.pointer_x + accelerated_x).clamp(8, 992);
@@ -5906,7 +5986,8 @@ impl ConsoleRuntime {
             );
             let visible = launcher_visible_count(&self.command[..self.command_length]);
             let maximum = layout.app_launcher_scroll_geometry(visible).maximum_scroll;
-            let distance = vertical.signum() as i32 * (72 * layout.scale()) as i32;
+            let distance = crate::ui::input_preferences::current().wheel(vertical)
+                * (24 * layout.scale()) as i32;
             if crate::ui::app_launcher::launcher_scroll_by(distance, maximum) {
                 self.redraw();
             }
@@ -5948,7 +6029,12 @@ impl ConsoleRuntime {
             let viewport = height.saturating_sub(150 * scale);
             let _ = crate::runtime::with_runtime(|runtime| {
                 runtime.file_navigator.as_mut().map(|navigator| {
-                    navigator.scroll_by(vertical.signum() as isize * 28, total, viewport, extent);
+                    navigator.scroll_by(
+                        crate::ui::input_preferences::current().wheel(vertical) as isize * 12,
+                        total,
+                        viewport,
+                        extent,
+                    );
                 })
             });
             self.redraw();
@@ -6328,6 +6414,7 @@ impl ConsoleRuntime {
     // DESC: Handles pointer interaction input or state transitions.
     // ------------------=
     fn pointer_interaction(&mut self, buttons: u8) {
+        let buttons = crate::ui::input_preferences::current().buttons(buttons);
         // Activate on the press edge. VirtualBox can consume the release packet
         // used to capture a relative USB pointer, so release-edge activation
         // makes a visibly moving mouse appear unable to click.
@@ -7479,6 +7566,7 @@ impl ConsoleRuntime {
                     );
                     self.settings_window.scroll_offset = offset;
                     self.settings_scroll_target = offset;
+                    self.settings_window.scroll_offset = offset;
                 }
                 if released {
                     self.settings_scroll_dragging = false;
@@ -7638,7 +7726,7 @@ impl ConsoleRuntime {
                 match target {
                     SettingsTarget::Section(index) if clicked => {
                         self.system_focus = index;
-                        self.settings_window.row_count = if matches!(index, 1 | 6 | 7) {
+                        self.settings_window.row_count = if matches!(index, 1 | 6 | 7 | 10) {
                             8
                         } else if index == 3 {
                             7
@@ -11469,7 +11557,15 @@ pub fn ui_animation_tick() -> bool {
         );
         let visible = launcher_visible_count(&runtime.command[..runtime.command_length]);
         let maximum = layout.app_launcher_scroll_geometry(visible).maximum_scroll;
-        let tick = crate::ui::app_launcher::launcher_animation_tick(maximum);
+        let now = crate::ui::performance::monotonic_ns();
+        let elapsed_ms = now
+            .zip(runtime.launcher_tick_ns)
+            .map(|(now, previous)| now.saturating_sub(previous) / 1_000_000)
+            .unwrap_or(16)
+            .max(1)
+            .min(160) as usize;
+        runtime.launcher_tick_ns = now;
+        let tick = crate::ui::app_launcher::launcher_animation_advance(maximum, elapsed_ms);
         if tick.closed {
             runtime.enter_desktop();
             runtime.redraw();
@@ -11479,7 +11575,7 @@ pub fn ui_animation_tick() -> bool {
             frame_changed = true;
         }
         if frame_changed {
-            runtime.presenting_fast_motion_frame = motion_frame;
+            runtime.presenting_fast_motion_frame = true;
             runtime.redraw();
             runtime.presenting_fast_motion_frame = false;
         }

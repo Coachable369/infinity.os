@@ -18,13 +18,19 @@ fn example_layout() -> DesktopSessionLayout {
         command: WindowPlacement::new(255, 205, 522, 480, true, true),
         task_manager: WindowPlacement::new(188, 146, 720, 610, false, true),
         desktop_item_positions: [
-            [70, 150], [155, 182], [241, 211], [332, 244], [430, 280], [518, 316],
+            [70, 150],
+            [155, 182],
+            [241, 211],
+            [332, 244],
+            [430, 280],
+            [518, 316],
             [610, 350],
         ],
         focused_surface: DesktopResumeSurface::TextEditor,
         settings_section: 6,
         settings_expanded_row: Some(3),
         settings_scroll_offset: 91,
+        input_preferences: [0xa1, 7, 8, 3, 2, 3, 0, 0],
     }
 }
 

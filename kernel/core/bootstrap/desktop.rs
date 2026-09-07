@@ -1450,6 +1450,7 @@ impl super::DisplayDevice {
     // DESC: Restores and repaints only the desktop clock segment when wall time advances.
     // ------------------=
     pub(super) fn system_top_bar_clock(&mut self, clock: crate::storage::DateTimeConfiguration) {
+        crate::ui::status_menu::set_today(clock.year, clock.month, clock.day);
         let scale = self.ui_scale().max(1);
         let height = (38 * scale).min(self.height / 14).max(34 * scale);
         let repaint_width = (116 * scale).min(self.width);
@@ -1530,6 +1531,10 @@ impl super::DisplayDevice {
     // DESC: Draws a native vector-backed desktop menu for the active top-bar domain.
     // ------------------=
     pub(super) fn system_menu_panel(&mut self, menu_kind: usize, focus: usize, scale: usize) {
+        if menu_kind >= 8 {
+            self.status_menu_panel(menu_kind, focus, scale);
+            return;
+        }
         let (anchor, width, items): (usize, usize, &[&[u8]]) = match menu_kind {
             1 => (
                 298,
@@ -3372,6 +3377,115 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: status_menu_panel
+    // DESC: Paints actionable status dropdowns and a live-date Gregorian calendar using shared hit geometry.
+    // ------------------=
+    fn status_menu_panel(&mut self, menu: usize, focus: usize, scale: usize) {
+        let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
+        let (x, y, width, height, count) = layout.system_menu_geometry(menu);
+        self.glass_panel(x, y, width, height, true);
+        for (index, (label, _)) in crate::ui::status_menu::items(menu).iter().enumerate() {
+            let top = y + (11 + index * 34) * scale;
+            if index == focus {
+                self.fill_rounded_rect_alpha(
+                    x + 7 * scale,
+                    top,
+                    width.saturating_sub(14 * scale),
+                    30 * scale,
+                    7 * scale,
+                    8,
+                    84,
+                    126,
+                    220,
+                );
+            }
+            self.ui_text(x + 18 * scale, top + 5 * scale, label, 220, 237, 248, 1);
+        }
+        if menu < 15 {
+            return;
+        }
+        let (year, month, today) = crate::ui::status_menu::month();
+        let top = y + (22 + count * 34) * scale;
+        let months: [&[u8]; 12] = [
+            b"January",
+            b"February",
+            b"March",
+            b"April",
+            b"May",
+            b"June",
+            b"July",
+            b"August",
+            b"September",
+            b"October",
+            b"November",
+            b"December",
+        ];
+        let year_text = [
+            b'0' + (year / 1000) as u8,
+            b'0' + (year / 100 % 10) as u8,
+            b'0' + (year / 10 % 10) as u8,
+            b'0' + (year % 10) as u8,
+        ];
+        self.ui_text_strong(
+            x + 18 * scale,
+            top,
+            months[month as usize - 1],
+            114,
+            210,
+            250,
+            1,
+        );
+        self.ui_text(
+            x + width.saturating_sub(60 * scale),
+            top,
+            &year_text,
+            218,
+            236,
+            248,
+            1,
+        );
+        let cell = width.saturating_sub(20 * scale) / 7;
+        for (index, name) in [b"Su", b"Mo", b"Tu", b"We", b"Th", b"Fr", b"Sa"]
+            .iter()
+            .enumerate()
+        {
+            self.ui_text(
+                x + 10 * scale + index * cell + cell / 4,
+                top + 28 * scale,
+                *name,
+                127,
+                157,
+                182,
+                1,
+            );
+        }
+        let first = crate::ui::status_menu::weekday(year, month, 1);
+        for day in 1..=crate::ui::status_menu::days(year, month) {
+            let slot = first + day as usize - 1;
+            let left = x + 10 * scale + slot % 7 * cell;
+            let row = top + (54 + slot / 7 * 28) * scale;
+            if day == today {
+                self.fill_rounded_rect_alpha(
+                    left,
+                    row.saturating_sub(2 * scale),
+                    cell.saturating_sub(2 * scale),
+                    26 * scale,
+                    7 * scale,
+                    6,
+                    103,
+                    160,
+                    245,
+                );
+            }
+            let number = [
+                if day < 10 { b' ' } else { b'0' + day / 10 },
+                b'0' + day % 10,
+            ];
+            self.ui_text_strong(left + cell / 4, row, &number, 226, 240, 251, 1);
+        }
+    }
+
+    // ------------------------=
     // FUNC: desktop_native_performance_menu
     // DESC: Renders the shared native-application performance menu above application content.
     // ------------------=
@@ -4133,6 +4247,13 @@ impl super::DisplayDevice {
         editor_dialog_focus: usize,
     ) {
         self.mark_dirty_rect(0, 0, self.width, self.height);
+        if screen == 7 && super::launcher_backdrop::restore(self) {
+            self.launcher_reveal(input, focus);
+            return;
+        }
+        if screen != 7 {
+            super::launcher_backdrop::invalidate();
+        }
         if matches!(screen, 5 | 6) {
             self.paint_authentication_background();
             self.authentication_frame(screen == 6, step, input, focus, true);
@@ -4172,6 +4293,7 @@ impl super::DisplayDevice {
         }
 
         if screen == 7 {
+            super::launcher_backdrop::capture(self);
             let launcher_clip = self.render_clip;
             let reveal = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                 .app_launcher_visible_region();
@@ -4925,7 +5047,7 @@ impl super::DisplayDevice {
             76,
             180,
         );
-        let sections: [&[u8]; 10] = [
+        let sections: [&[u8]; 11] = [
             b"General",
             b"Themes & Skins",
             b"Users & Accounts",
@@ -4936,6 +5058,7 @@ impl super::DisplayDevice {
             b"Nodes & Mesh",
             b"Storage",
             b"About",
+            b"Input",
         ];
         self.intersect_render_clip(
             geometry.navigation.x.max(0) as usize,
@@ -4965,7 +5088,7 @@ impl super::DisplayDevice {
             self.authentication_icon(
                 left + 27 * scale,
                 row_top + row_height / 2,
-                [8usize, 13, 6, 7, 8, 11, 14, 6, 11, 12][index],
+                [8usize, 13, 6, 7, 8, 11, 14, 6, 11, 12, 11][index],
                 (crate::ui::system_layout::SETTINGS_SECTION_ICON_SIZE * scale)
                     .min(row_height.saturating_sub(6 * scale).max(12 * scale)),
                 focus == index,
@@ -4986,7 +5109,7 @@ impl super::DisplayDevice {
         self.ui_text_strong(
             content_x,
             content_y,
-            sections[focus.min(9)],
+            sections[focus.min(10)],
             238,
             244,
             249,
@@ -4995,7 +5118,11 @@ impl super::DisplayDevice {
         self.ui_text(
             content_x,
             content_y + 36 * scale,
-            b"Open a row to view its controls and configuration details.",
+            if focus == 10 {
+                b"Click a row to change its value. Changes apply immediately."
+            } else {
+                b"Open a row to view its controls and configuration details."
+            },
             143,
             160,
             176,
@@ -5072,7 +5199,14 @@ impl super::DisplayDevice {
             );
             return;
         }
-        let rows: [(&[u8], &[u8]); 8] = match focus.min(9) {
+        let preferences = crate::ui::input_preferences::current();
+        let rows: [(&[u8], &[u8]); 8] = match focus.min(10) {
+            10 => core::array::from_fn(|index| {
+                (
+                    crate::ui::input_preferences::LABELS[index],
+                    preferences.value(index),
+                )
+            }),
             0 => [
                 (b"Machine Name", input),
                 (b"Language", b"English (US)"),
@@ -7355,7 +7489,37 @@ impl super::DisplayDevice {
     // DESC: Renders the searchable native application and category panel above the installed desktop dock.
     // ------------------=
     pub(super) fn app_launcher(&mut self, scale: usize, query: &[u8], focus: usize) {
-        self.paint_app_launcher(scale, query, focus);
+        let panel = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .app_launcher_geometry()
+            .panel;
+        self.retained_window(
+            5,
+            (
+                panel.x.max(0) as usize,
+                panel.y.max(0) as usize,
+                panel.width as usize,
+                panel.height as usize,
+            ),
+            |target| target.paint_app_launcher(scale, query, focus),
+        );
+    }
+
+    // ------------------------=
+    // FUNC: launcher_reveal
+    // DESC: Reveals the cached launcher surface over a frozen backdrop with bounded damage.
+    // ------------------=
+    fn launcher_reveal(&mut self, query: &[u8], focus: usize) {
+        let clip = self.render_clip;
+        let reveal = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+            .app_launcher_visible_region();
+        self.intersect_render_clip(
+            reveal.x.max(0) as usize,
+            reveal.y.max(0) as usize,
+            reveal.width as usize,
+            reveal.height as usize,
+        );
+        self.app_launcher(self.ui_scale().max(1), query, focus);
+        self.render_clip = clip;
     }
 
     // ------------------------=
@@ -9740,7 +9904,7 @@ pub fn system_ui_present(
                 || content_changed
                 || file_navigator_changed
                 || focus_changed
-                || launcher_state_changed
+                || launcher_interaction_changed
                 || window_resized
                 || settings_content_changed
             {

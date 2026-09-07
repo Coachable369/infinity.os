@@ -59,6 +59,7 @@ pub struct DesktopSessionLayout {
     pub settings_section: usize,
     pub settings_expanded_row: Option<usize>,
     pub settings_scroll_offset: usize,
+    pub input_preferences: [u8; 8],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -289,6 +290,7 @@ fn write_layout(out: &mut [u8], at: usize, layout: DesktopSessionLayout) {
         layout.settings_scroll_offset.min(u32::MAX as usize) as u32,
     );
     write_placement(out, at + 133, layout.task_manager);
+    out[at + 150..at + 158].copy_from_slice(&layout.input_preferences);
 }
 
 // ------------------------=
@@ -326,6 +328,7 @@ fn read_layout(input: &[u8], at: usize) -> Option<DesktopSessionLayout> {
         settings_section: input[at + 125] as usize,
         settings_expanded_row: input[at + 126].checked_sub(1).map(|row| row as usize),
         settings_scroll_offset: get_u32(input, at + 128) as usize,
+        input_preferences: input[at + 150..at + 158].try_into().ok()?,
     })
 }
 

@@ -29,6 +29,8 @@ struct DisplayDevice {
     recording_surface: bool,
 }
 type PresentRegion = Region;
+#[path = "../kernel/core/bootstrap/launcher_backdrop.rs"]
+mod launcher_backdrop;
 #[path = "../kernel/core/bootstrap/retained_windows.rs"]
 mod retained_windows;
 #[path = "../kernel/core/bootstrap/window_chrome.rs"]
@@ -111,10 +113,56 @@ fn scene(display: &mut DisplayDevice) {
 }
 
 // ------------------------=
+// FUNC: launcher_backdrop_test
+// DESC: Verifies cached backdrop restoration is clipped and partial captures are rejected.
+// ------------------=
+fn launcher_backdrop_test() {
+    let mut pixels = vec![0x123456u32; 64 * 48];
+    let mut display = DisplayDevice {
+        buffer: pixels.as_mut_ptr(),
+        width: 64,
+        height: 48,
+        stride: 64,
+        format: 0,
+        render_clip: None,
+        fast_motion_frame: false,
+        submissions: 0,
+        recording_surface: false,
+    };
+    launcher_backdrop::invalidate();
+    assert!(!launcher_backdrop::restore(&mut display));
+    launcher_backdrop::capture(&display);
+    pixels.fill(0xabcdef);
+    display.render_clip = Some(Region {
+        left: 3,
+        top: 4,
+        right: 12,
+        bottom: 16,
+    });
+    assert!(launcher_backdrop::restore(&mut display));
+    for y in 0..48 {
+        for x in 0..64 {
+            assert_eq!(
+                pixels[y * 64 + x],
+                if (3..12).contains(&x) && (4..16).contains(&y) {
+                    0x123456
+                } else {
+                    0xabcdef
+                }
+            );
+        }
+    }
+    launcher_backdrop::invalidate();
+    launcher_backdrop::capture(&display);
+    assert!(!launcher_backdrop::restore(&mut display));
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    launcher_backdrop_test();
     window_controls_test();
     retained_window_benchmark();
     damage_test();

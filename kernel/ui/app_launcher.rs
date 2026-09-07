@@ -305,6 +305,7 @@ pub fn launcher_scroll_by(distance: i32, maximum: usize) -> bool {
         .saturating_add(distance)
         .clamp(0, maximum.min(i32::MAX as usize) as i32);
     LAUNCHER_SCROLL_TARGET.store(next, Ordering::Relaxed);
+    LAUNCHER_SCROLL.store(next, Ordering::Relaxed);
     previous != next
 }
 
@@ -317,6 +318,7 @@ pub fn launcher_scroll_to(offset: usize, maximum: usize) -> bool {
     let previous = LAUNCHER_SCROLL_TARGET.load(Ordering::Relaxed);
     let next = offset.min(maximum).min(i32::MAX as usize) as i32;
     LAUNCHER_SCROLL_TARGET.store(next, Ordering::Relaxed);
+    LAUNCHER_SCROLL.store(next, Ordering::Relaxed);
     previous != next
 }
 
@@ -404,12 +406,22 @@ pub fn launcher_finish_drag(query: &[u8]) -> LauncherRelease {
 // DESC: Advances entrance, exit, and eased scrolling by one display refresh interval.
 // ------------------=
 pub fn launcher_animation_tick(maximum_scroll: usize) -> LauncherTick {
+    launcher_animation_advance(maximum_scroll, 16)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
+// FUNC: launcher_animation_advance
+// DESC: Advances transitions by elapsed milliseconds so slow frames cannot stretch the animation duration.
+// ------------------=
+pub fn launcher_animation_advance(maximum_scroll: usize, elapsed_ms: usize) -> LauncherTick {
+    let step = (255 * elapsed_ms.min(160) / 160).max(1);
     let closing = LAUNCHER_CLOSING.load(Ordering::Relaxed);
     let progress = LAUNCHER_TRANSITION.load(Ordering::Relaxed);
     let next_progress = if closing {
-        progress.saturating_sub(LAUNCHER_TRANSITION_STEP)
+        progress.saturating_sub(step)
     } else {
-        progress.saturating_add(LAUNCHER_TRANSITION_STEP).min(255)
+        progress.saturating_add(step).min(255)
     };
     if next_progress != progress {
         LAUNCHER_TRANSITION.store(next_progress, Ordering::Relaxed);
@@ -421,11 +433,7 @@ pub fn launcher_animation_tick(maximum_scroll: usize) -> LauncherTick {
     LAUNCHER_SCROLL_TARGET.store(target, Ordering::Relaxed);
     let current = LAUNCHER_SCROLL.load(Ordering::Relaxed).clamp(0, maximum);
     let difference = target - current;
-    let next_scroll = if difference == 0 {
-        current
-    } else {
-        current + difference.signum() * (difference.abs() / 3).max(1).min(24)
-    };
+    let next_scroll = if difference == 0 { current } else { target };
     if next_scroll != current {
         LAUNCHER_SCROLL.store(next_scroll, Ordering::Relaxed);
     }
@@ -463,8 +471,7 @@ pub fn launcher_presentation() -> LauncherPresentation {
 // ------------------=
 pub fn launcher_state_hash() -> u64 {
     let presentation = launcher_presentation();
-    launcher_interaction_state_hash()
-        ^ u64::from(presentation.transition).rotate_left(19)
+    launcher_interaction_state_hash() ^ u64::from(presentation.transition).rotate_left(19)
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -600,6 +607,15 @@ pub fn launcher_animation_tick(_maximum_scroll: usize) -> LauncherTick {
         changed: false,
         closed: false,
     }
+}
+
+#[cfg(target_arch = "x86")]
+// ------------------------=
+// FUNC: launcher_animation_advance
+// DESC: Keeps elapsed-time animation calls available on legacy x86.
+// ------------------=
+pub fn launcher_animation_advance(maximum_scroll: usize, _elapsed_ms: usize) -> LauncherTick {
+    launcher_animation_tick(maximum_scroll)
 }
 
 #[cfg(target_arch = "x86")]

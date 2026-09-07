@@ -79,6 +79,8 @@ app-launcher-interaction-test:
 	@mkdir -p build/tools
 	@rustc --edition 2021 -A warnings tools/app-launcher-interaction-test.rs -o build/tools/app-launcher-interaction-test
 	@build/tools/app-launcher-interaction-test
+	@rustc --edition 2021 -A warnings tools/desktop-input-calendar-test.rs -o build/tools/desktop-input-calendar-test
+	@build/tools/desktop-input-calendar-test
 
 milestone-9-test:
 	@tools/milestone9-test.sh

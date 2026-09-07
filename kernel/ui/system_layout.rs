@@ -1072,7 +1072,7 @@ impl SystemLayout {
         )
         .contains(point)
         {
-            return Some(DesktopTarget::Status(6));
+            return Some(DesktopTarget::Status(7));
         }
 
         if window_visible {
@@ -1910,6 +1910,19 @@ impl SystemLayout {
     // DESC: Returns the shared top-menu origin, bounds, and row count for the selected native menu.
     // ------------------=
     pub fn system_menu_geometry(self, menu_kind: usize) -> (usize, usize, usize, usize, usize) {
+        if menu_kind >= 8 {
+            let width = (310 * self.scale).min(self.width.saturating_sub(16 * self.scale));
+            let x = self.width.saturating_sub(width + 8 * self.scale);
+            let count = super::status_menu::items(menu_kind).len();
+            let height = (22 + count * 34 + if menu_kind >= 15 { 238 } else { 0 }) * self.scale;
+            return (
+                x,
+                self.top_bar_height() + 6 * self.scale,
+                width,
+                height,
+                count,
+            );
+        }
         let (anchor, width, count) = match menu_kind {
             1 => (298usize, 248usize, 5usize),
             2 => (358, 230, 6),
@@ -2131,10 +2144,10 @@ impl SystemLayout {
         let navigation = geometry.navigation;
         let inset = 10 * self.scale;
         let usable_height = (navigation.height as usize).saturating_sub(inset * 2);
-        let row_height = (usable_height / 10).min(43 * self.scale).max(1);
+        let row_height = (usable_height / 11).min(43 * self.scale).max(1);
         rect(
             navigation.x.max(0) as usize + inset,
-            navigation.y.max(0) as usize + inset + index.min(9) * row_height,
+            navigation.y.max(0) as usize + inset + index.min(10) * row_height,
             (navigation.width as usize).saturating_sub(inset * 2),
             row_height,
         )
@@ -2190,7 +2203,7 @@ impl SystemLayout {
         if geometry.title.contains(point) {
             return Some(SettingsTarget::Title);
         }
-        for index in 0..10usize {
+        for index in 0..11usize {
             if self.settings_section_geometry(state, index).contains(point) {
                 return Some(SettingsTarget::Section(index));
             }

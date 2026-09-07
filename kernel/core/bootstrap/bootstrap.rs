@@ -878,7 +878,7 @@ fn activate_console(display: DisplayDevice) {
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             menu_height: 0,
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-            menu_backing: [0; 600 * 800],
+            menu_backing: [0; 640 * 800],
         });
     }
 }
@@ -934,7 +934,7 @@ impl ConsoleSurface {
         let layout =
             crate::ui::system_layout::SystemLayout::new(self.display.width, self.display.height);
         let (left, top, width, height) = layout.system_menu_damage_geometry(menu_kind);
-        let width = width.min(600);
+        let width = width.min(640);
         let height = height.min(800);
         for y in 0..height {
             for x in 0..width {
@@ -1278,6 +1278,7 @@ pub fn console_present(
 // DESC: Advances the active console animation on an input-driver timer tick.
 // ------------------=
 pub fn animation_tick() {
+    crate::drivers::input::keyboard_tick();
     if !animation_due() {
         return;
     }

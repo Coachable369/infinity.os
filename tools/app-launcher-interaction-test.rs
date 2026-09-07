@@ -38,7 +38,8 @@ fn main() {
     let first_scroll = app_launcher::launcher_presentation().scroll;
     let _ = app_launcher::launcher_animation_tick(240);
     let eased_scroll = app_launcher::launcher_presentation().scroll;
-    assert!(eased_scroll > first_scroll && eased_scroll < 180);
+    assert_eq!(first_scroll, 180);
+    assert_eq!(eased_scroll, 180);
     for _ in 0..32 {
         let _ = app_launcher::launcher_animation_tick(240);
     }
@@ -51,8 +52,14 @@ fn main() {
     let dragging = app_launcher::launcher_presentation();
     assert!(dragging.drag_moved);
     assert_eq!(app_launcher::launcher_display_slot(1, dragging), 0);
-    assert_eq!(app_launcher::launcher_finish_drag(b""), LauncherRelease::Reordered);
-    assert_eq!(app_launcher::launcher_visible_entry(b"", 0), Some(LAUNCHER_APPS[1]));
+    assert_eq!(
+        app_launcher::launcher_finish_drag(b""),
+        LauncherRelease::Reordered
+    );
+    assert_eq!(
+        app_launcher::launcher_visible_entry(b"", 0),
+        Some(LAUNCHER_APPS[1])
+    );
     assert_eq!(app_launcher::launcher_visible_entry(b"", 1), Some(third));
     assert_eq!(app_launcher::launcher_visible_entry(b"", 2), Some(first));
 

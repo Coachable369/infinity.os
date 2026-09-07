@@ -6,6 +6,8 @@ mod bootstrap;
 mod crash;
 mod desktop;
 mod installer;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+mod launcher_backdrop;
 mod primitives;
 mod retained_windows;
 mod template_compositor;
@@ -418,7 +420,7 @@ struct ConsoleSurface {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     menu_height: usize,
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    menu_backing: [u32; 600 * 800],
+    menu_backing: [u32; 640 * 800],
 }
 
 static mut CONSOLE: Option<ConsoleSurface> = None;

@@ -10,7 +10,14 @@ mod ui;
 mod console {
     #[derive(Clone, Copy)]
     pub enum ConsoleKey {
-        Character(u8), Backspace, Delete, Left, Right, Home, End, Enter,
+        Character(u8),
+        Backspace,
+        Delete,
+        Left,
+        Right,
+        Home,
+        End,
+        Enter,
     }
 }
 
@@ -47,6 +54,7 @@ fn layout() -> DesktopSessionLayout {
         settings_section: 4,
         settings_expanded_row: Some(5),
         settings_scroll_offset: 73,
+        input_preferences: [0xa1, 8, 2, 6, 3, 0, 0, 0],
     }
 }
 

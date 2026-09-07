@@ -32,6 +32,8 @@ pub struct InputStatus {
     pub mouse: bool,
     pub pointer: PointerCapabilities,
 }
+static mut KEY_REPEAT: crate::ui::input_preferences::Repeat =
+    crate::ui::input_preferences::Repeat::new();
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 // ------------------------=
@@ -74,13 +76,51 @@ pub fn run() -> ! {
 pub fn dispatch(event: InputEvent) {
     if matches!(
         (event.source, event.action),
+        (InputSource::Keyboard, InputAction::Released)
+    ) {
+        unsafe {
+            (&mut *(&raw mut KEY_REPEAT)).release(event.code);
+        }
+    }
+    if matches!(
+        (event.source, event.action),
         (InputSource::Keyboard, InputAction::Pressed)
     ) {
         if let Some(key) = console_key(event.code, event.modifiers & 1 != 0) {
+            if let Some(now) = crate::ui::performance::monotonic_ns() {
+                if !unsafe {
+                    (&mut *(&raw mut KEY_REPEAT)).press(
+                        event.code,
+                        event.modifiers,
+                        now / 1_000_000,
+                        crate::ui::input_preferences::current(),
+                    )
+                } {
+                    return;
+                }
+            }
             crate::console::input(key);
         }
     }
     let _ = (event.code, event.delta_x, event.delta_y);
+}
+
+// ------------------------=
+// FUNC: keyboard_tick
+// DESC: Services configured repeats on transports that report physical key-down and key-up events.
+// ------------------=
+pub fn keyboard_tick() {
+    if let Some(now) = crate::ui::performance::monotonic_ns() {
+        let next = unsafe {
+            (&mut *(&raw mut KEY_REPEAT))
+                .poll(now / 1_000_000, crate::ui::input_preferences::current())
+        };
+        if let Some((code, modifiers)) = next {
+            if let Some(key) = console_key(code, modifiers & 1 != 0) {
+                crate::console::input(key);
+            }
+        }
+    }
 }
 
 // ------------------------=
