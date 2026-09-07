@@ -141,6 +141,28 @@ impl InterfaceManager {
     }
 
     // ------------------------=
+    // FUNC: bind_native_device
+    // DESC: Replaces firmware metadata with an actual native NIC binding while retaining configured addresses.
+    // ------------------=
+    pub fn bind_native_device(&mut self, id: InterfaceId, device: NetworkDevice) -> Result<(), NetworkError> {
+        let interface = self.interfaces.iter_mut().flatten().find(|v| v.id == id).ok_or(NetworkError::InterfaceNotFound)?;
+        interface.device = device;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: update_native_counters
+    // DESC: Publishes observed descriptor completions and ingress drops into the authoritative interface state.
+    // ------------------=
+    pub fn update_native_counters(&mut self, id: InterfaceId, rx: u64, tx: u64, drops: u64) -> Result<(), NetworkError> {
+        let interface = self.interfaces.iter_mut().flatten().find(|v| v.id == id).ok_or(NetworkError::InterfaceNotFound)?;
+        interface.rx_packets = rx;
+        interface.tx_packets = tx;
+        interface.rx_drops = drops;
+        Ok(())
+    }
+
+    // ------------------------=
     // FUNC: interface_count
     // DESC: Returns the number of discovered and system interfaces.
     // ------------------=

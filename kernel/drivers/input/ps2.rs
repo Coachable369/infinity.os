@@ -265,6 +265,7 @@ pub fn run() -> ! {
     let mut shift = false;
     let mut extended = false;
     loop {
+        crate::drivers::network::poll();
         let status = unsafe { inb(STATUS_COMMAND) };
         if status & 1 == 0 {
             crate::bootstrap::animation_tick();

@@ -35,6 +35,7 @@ make milestone-7x-test
 make ai-test
 make object-test
 make network-test
+make network-wire-test
 make milestone-9-test
 make performance-test
 make resource-policy-test

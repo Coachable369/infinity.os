@@ -2,6 +2,9 @@ pub mod device;
 pub mod display;
 pub mod input;
 pub mod svga;
+pub mod network;
+#[cfg(target_arch = "x86_64")]
+mod e1000;
 
 use crate::{boot_info::BootInfo, bootstrap};
 use device::{DeviceIdentity, DeviceKind, DeviceState};

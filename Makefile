@@ -85,6 +85,20 @@ app-launcher-interaction-test:
 milestone-9-test:
 	@tools/milestone9-test.sh
 
+.PHONY: network-wire-test
+network-wire-test:
+	@mkdir -p build/tools
+	@rustc --edition 2021 tools/network-wire-test.rs -o build/tools/network-wire-test
+	@build/tools/network-wire-test
+	@rustc --edition 2021 -Awarnings tools/network-datagram-test.rs -o build/tools/network-datagram-test
+	@build/tools/network-datagram-test
+
+.PHONY: native-nic-test
+native-nic-test: $(BUILD)/x86_64/BOOTX64.EFI
+	RUSTC_BOOTSTRAP=1 cargo build --release -Z build-std=core --target x86_64-unknown-none --manifest-path tools/nic-probe/Cargo.toml
+	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $(BUILD)/nic-probe.elf tools/nic-probe/target/x86_64-unknown-none/release/libinfinity_native_nic_probe.a
+	python3 tools/nic-probe/run.py
+
 crash-screen-test:
 	@tools/crash-screen-test.sh
 

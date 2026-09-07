@@ -2,12 +2,14 @@
 //! independent of POSIX sockets and host network stacks.
 
 pub mod discovery;
+mod datagram;
 pub mod interface;
 pub mod policy;
 pub mod profile;
 pub mod resolver;
 pub mod transport;
 pub mod types;
+pub mod wire;
 
 use crate::runtime::capability::{
     CapabilityError, CapabilityId, CapabilityManager, CapabilityType,
@@ -65,6 +67,7 @@ pub struct NetworkRuntime {
     pub resolver: Resolver,
     pub connections: ConnectionManager,
     pub discovery: DiscoveryManager,
+    pub wire: wire::WireNetwork,
     initialized: bool,
     degraded_reason: u32,
     setup_mode: NetworkSetupMode,
@@ -83,6 +86,7 @@ impl NetworkRuntime {
             resolver: Resolver::new(),
             connections: ConnectionManager::new(),
             discovery: DiscoveryManager::new(),
+            wire: wire::WireNetwork::new(),
             initialized: false,
             degraded_reason: 0,
             setup_mode: NetworkSetupMode::Automatic,

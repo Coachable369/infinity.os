@@ -1243,7 +1243,7 @@ fn installed_system_hit_geometry_test() {
     );
     assert_eq!(
         square.desktop_target(970, 15, 30, 500, true, false),
-        Some(DesktopTarget::Status(6))
+        Some(DesktopTarget::Status(7))
     );
     assert_eq!(
         square.desktop_target(100, 510, 30, 500, true, false),

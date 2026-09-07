@@ -290,6 +290,7 @@ pub fn initialize(info: &BootInfo) -> InputStatus {
 // ------------------=
 pub fn run() -> ! {
     loop {
+        crate::drivers::network::poll();
         let input = unsafe { INPUT };
         let direct_keyboard = unsafe { USE_DIRECT_USB_KEYBOARD }
             && unsafe { POINTERS.as_ref() }
