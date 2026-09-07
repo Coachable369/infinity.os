@@ -251,6 +251,11 @@ final class TemplateStore: ObservableObject {
     func toggleMarqueeSelection() {
         marqueeSelectionEnabled.toggle()
         inlineEditorElementID = nil
+        if !marqueeSelectionEnabled {
+            selectedElementID = nil
+            gestureBaseline = nil
+            gestureFrames = [:]
+        }
         status = marqueeSelectionEnabled ? "Marquee Select enabled" : "Marquee Select disabled"
     }
 

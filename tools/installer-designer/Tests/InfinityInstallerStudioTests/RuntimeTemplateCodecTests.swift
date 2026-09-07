@@ -349,7 +349,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         store.selectElement(body.id)
         XCTAssertFalse(store.resizeHandlesVisible)
 
-        store.marqueeSelectionEnabled = true
+        store.toggleMarqueeSelection()
         XCTAssertTrue(store.resizeHandlesVisible)
 
         let second = store.selectedScreen!.elements.first { $0.role == .title }!
@@ -369,8 +369,12 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         XCTAssertFalse(store.resizeHandlesVisible)
 
         store.selectElement(body.id)
-        store.marqueeSelectionEnabled = false
+        store.toggleMarqueeSelection()
         XCTAssertFalse(store.resizeHandlesVisible)
+        XCTAssertTrue(store.selectedElementIDs.isEmpty)
+        XCTAssertNil(store.selectedElementID)
+        XCTAssertNil(store.inlineEditorElementID)
+        XCTAssertEqual(store.status, "Marquee Select disabled")
     }
 
     // ------------------------=

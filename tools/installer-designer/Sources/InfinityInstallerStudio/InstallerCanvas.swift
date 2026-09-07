@@ -78,15 +78,6 @@ struct InstallerCanvas: View {
                         endPoint: .bottom
                     )
                 )
-                VStack {
-                    HStack {
-                        CanvasSelectionToolPalette(store: store)
-                        Spacer()
-                    }
-                    Spacer()
-                }
-                .padding(16)
-                .zIndex(48_000)
                 if store.inlineEditorElementID != nil {
                     InlineElementEditor(store: store)
                         .padding(16)
@@ -264,31 +255,6 @@ struct InstallerCanvas: View {
 private enum CanvasDragMode: Equatable {
     case marquee
     case moveSelection
-}
-
-private struct CanvasSelectionToolPalette: View {
-    @ObservedObject var store: TemplateStore
-
-    var body: some View {
-        Button(action: store.toggleMarqueeSelection) {
-            Label(
-                store.marqueeSelectionEnabled ? "MARQUEE ON" : "MARQUEE SELECT",
-                systemImage: "rectangle.dashed"
-            )
-        }
-        .buttonStyle(InfinityStudioButtonStyle(
-            emphasis: store.marqueeSelectionEnabled ? .primary : .secondary
-        ))
-        .controlSize(.regular)
-        .accessibilityValue(store.marqueeSelectionEnabled ? "On" : "Off")
-        .help("Toggle Marquee Select. Drag anywhere on the artboard to select; drag a selected item to move the group.")
-        .padding(8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(InfinityUIKit.Palette.nativeAccent.opacity(0.35), lineWidth: 1)
-        }
-    }
 }
 
 private struct SnapGrid: View {

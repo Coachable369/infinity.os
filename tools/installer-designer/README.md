@@ -1,6 +1,6 @@
 # InfinityOS Installer Studio
 
-A native macOS visual editor for all eleven InfinityOS installation screens and all eight post-install OS configuration screens. Its two expandable screen collections share the zoomable snapping artboard, persistent-canvas Marquee Select with PowerPoint-style enclosure and uniform group dragging, layer ordering, eight-handle resizing while the selection tool is active, image import, editable copy, undo/redo, validation, and atomic JSON/runtime-template saving. Navigation buttons are visible but immutable.
+A native macOS visual editor for all eleven InfinityOS installation screens and all eight post-install OS configuration screens. Its two expandable screen collections share the zoomable snapping artboard, top-navigation Marquee Select with PowerPoint-style enclosure and uniform group dragging, layer ordering, eight-handle resizing while the selection tool is active, image import, editable copy, undo/redo, validation, and atomic JSON/runtime-template saving. Disabling Marquee clears the selection and all canvas handles. Navigation buttons are visible but immutable.
 
 Run `./run.sh`. Save writes:
 
