@@ -3,8 +3,9 @@ mod redraw;
 
 use redraw::{
     authentication_controls_require_repaint, clock_change_requires_structural_redraw,
-    desktop_clock_requires_bounded_redraw, desktop_window_move_requires_structural_redraw,
-    desktop_window_move_uses_bounded_reconstruction,
+    desktop_app_content_requires_bounded_redraw, desktop_clock_requires_bounded_redraw,
+    desktop_layer_focus_change_uses_bounded_reconstruction,
+    desktop_window_move_requires_structural_redraw, desktop_window_move_uses_bounded_reconstruction,
     focus_change_requires_structural_redraw, onboarding_controls_require_repaint,
 };
 
@@ -50,7 +51,18 @@ fn visible_clock_updates_are_damage_limited() {
     assert!(desktop_clock_requires_bounded_redraw(3, true));
     assert!(!clock_change_requires_structural_redraw(4, true));
     assert!(desktop_clock_requires_bounded_redraw(4, true));
+    assert!(!clock_change_requires_structural_redraw(10, true));
+    assert!(desktop_clock_requires_bounded_redraw(10, true));
     assert!(clock_change_requires_structural_redraw(5, true));
+}
+
+// ------------------------=
+// FUNC: live_task_manager_updates_are_window_bounded
+// DESC: Verifies animated task telemetry repaints only the active app window instead of the layered desktop.
+// ------------------=
+fn live_task_manager_updates_are_window_bounded() {
+    assert!(desktop_app_content_requires_bounded_redraw(10, true));
+    assert!(!desktop_app_content_requires_bounded_redraw(10, false));
 }
 
 // ------------------------=
@@ -92,6 +104,19 @@ fn desktop_drag_reconstructs_the_scene() {
 }
 
 // ------------------------=
+// FUNC: desktop_click_focus_reconstructs_only_window_layers
+// DESC: Verifies click-to-front transitions between native apps and File Navigator avoid a full desktop repaint.
+// ------------------=
+fn desktop_click_focus_reconstructs_only_window_layers() {
+    assert!(desktop_layer_focus_change_uses_bounded_reconstruction(2, 8));
+    assert!(desktop_layer_focus_change_uses_bounded_reconstruction(8, 9));
+    assert!(desktop_layer_focus_change_uses_bounded_reconstruction(9, 10));
+    assert!(desktop_layer_focus_change_uses_bounded_reconstruction(10, 2));
+    assert!(!desktop_layer_focus_change_uses_bounded_reconstruction(8, 8));
+    assert!(!desktop_layer_focus_change_uses_bounded_reconstruction(4, 9));
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Runs behavioral redraw-policy scenarios through the same functions used by the kernel presenter.
 // ------------------=
@@ -99,7 +124,9 @@ fn main() {
     onboarding_pointer_focus_is_bounded();
     non_pointer_focus_remains_structural();
     visible_clock_updates_are_damage_limited();
+    live_task_manager_updates_are_window_bounded();
     launcher_updates_are_damage_limited();
     ordinary_desktop_pointer_motion_is_cursor_only();
     desktop_drag_reconstructs_the_scene();
+    desktop_click_focus_reconstructs_only_window_layers();
 }

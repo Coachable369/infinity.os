@@ -10,14 +10,23 @@ use app_launcher::{LauncherRelease, LAUNCHER_APPS};
 fn main() {
     app_launcher::launcher_restore_default_order();
 
+    let settled_interaction = app_launcher::launcher_interaction_state_hash();
     app_launcher::launcher_open();
     let opening = app_launcher::launcher_presentation();
     assert!(opening.transition < 255);
+    assert_eq!(
+        app_launcher::launcher_interaction_state_hash(),
+        settled_interaction
+    );
     let mut previous_transition = opening.transition;
     for _ in 0..16 {
         let tick = app_launcher::launcher_animation_tick(240);
         let presentation = app_launcher::launcher_presentation();
         assert!(presentation.transition >= previous_transition);
+        assert_eq!(
+            app_launcher::launcher_interaction_state_hash(),
+            settled_interaction
+        );
         previous_transition = presentation.transition;
         if !tick.changed {
             break;

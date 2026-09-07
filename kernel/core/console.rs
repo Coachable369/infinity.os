@@ -2545,11 +2545,29 @@ impl ConsoleRuntime {
     // DESC: Hit-tests visible non-focused application windows for click-to-raise behavior.
     // ------------------=
     fn inactive_app_at_pointer(&self, layout: SystemLayout) -> Option<DesktopAppKind> {
+        if self.desktop_app == DesktopAppKind::None && self.home_window_visible {
+            let (left, top, width, height) = layout.home_window_geometry_sized(
+                self.home_window_x,
+                self.home_window_y,
+                self.home_window_width,
+                self.home_window_height,
+                self.home_window_maximized,
+            );
+            let pointer_x = self.system.framebuffer_width as i32 * self.pointer_x / 1000;
+            let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+            if pointer_x >= left as i32
+                && pointer_x < left.saturating_add(width) as i32
+                && pointer_y >= top as i32
+                && pointer_y < top.saturating_add(height) as i32
+            {
+                return None;
+            }
+        }
         let (editor, command, task_manager) = self.desktop_app_windows();
         for (app, state, is_editor) in [
+            (DesktopAppKind::TaskManager, task_manager, false),
             (DesktopAppKind::TextEditor, editor, true),
             (DesktopAppKind::CommandWindow, command, false),
-            (DesktopAppKind::TaskManager, task_manager, false),
         ] {
             if app == self.desktop_app || !state.visible {
                 continue;

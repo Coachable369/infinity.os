@@ -463,9 +463,19 @@ pub fn launcher_presentation() -> LauncherPresentation {
 // ------------------=
 pub fn launcher_state_hash() -> u64 {
     let presentation = launcher_presentation();
+    launcher_interaction_state_hash()
+        ^ u64::from(presentation.transition).rotate_left(19)
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
+// FUNC: launcher_interaction_state_hash
+// DESC: Produces a launcher change token that excludes presentation progress for bounded animation damage.
+// ------------------=
+pub fn launcher_interaction_state_hash() -> u64 {
+    let presentation = launcher_presentation();
     LAUNCHER_ORDER.load(Ordering::Relaxed)
         ^ (presentation.scroll as u64).rotate_left(7)
-        ^ u64::from(presentation.transition).rotate_left(19)
         ^ (presentation.drag_source.unwrap_or(0xff) as u64).rotate_left(27)
         ^ (presentation.drag_target.unwrap_or(0xff) as u64).rotate_left(35)
         ^ (presentation.drag_x as u32 as u64).rotate_left(43)
@@ -623,6 +633,15 @@ pub fn launcher_presentation() -> LauncherPresentation {
 // DESC: Returns the stable legacy x86 presentation token.
 // ------------------=
 pub fn launcher_state_hash() -> u64 {
+    0
+}
+
+#[cfg(target_arch = "x86")]
+// ------------------------=
+// FUNC: launcher_interaction_state_hash
+// DESC: Returns the stable legacy x86 interaction token.
+// ------------------=
+pub fn launcher_interaction_state_hash() -> u64 {
     0
 }
 

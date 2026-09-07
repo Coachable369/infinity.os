@@ -387,6 +387,20 @@ fn app_launcher_behavior_test() {
 
     let layout = SystemLayout::new(1920, 1080);
     let geometry = layout.app_launcher_geometry();
+    let hidden_launcher = layout.app_launcher_visible_region_for_progress(0);
+    let half_launcher = layout.app_launcher_visible_region_for_progress(128);
+    let shown_launcher = layout.app_launcher_visible_region_for_progress(255);
+    assert_eq!(hidden_launcher.height, 0);
+    assert_eq!(shown_launcher, geometry.panel);
+    assert_eq!(half_launcher.bottom(), geometry.panel.bottom());
+    assert!(half_launcher.height > 0 && half_launcher.height < geometry.panel.height);
+    let launcher_step_damage = layout.app_launcher_transition_damage(32, 64, 12);
+    assert!(launcher_step_damage.width >= geometry.panel.width);
+    assert!(launcher_step_damage.height < geometry.panel.height / 3);
+    assert!(
+        u64::from(launcher_step_damage.width) * u64::from(launcher_step_damage.height)
+            < 1920u64 * 1080u64 / 10
+    );
     let normalized = |x: i32, y: i32| (x * 1000 / 1920, y * 1000 / 1080);
     let (search_x, search_y) = normalized(
         geometry.search.x + geometry.search.width as i32 / 2,

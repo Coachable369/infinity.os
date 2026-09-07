@@ -17,7 +17,7 @@ pub const fn focus_change_requires_structural_redraw(
 // DESC: Determines whether a clock transition affects visible content on the active system surface.
 // ------------------=
 pub const fn clock_change_requires_structural_redraw(screen: u8, clock_changed: bool) -> bool {
-    clock_changed && !matches!(screen, 1 | 2 | 3 | 4 | 7 | 8 | 9)
+    clock_changed && !matches!(screen, 1 | 2 | 3 | 4 | 7 | 8 | 9 | 10)
 }
 
 // ------------------------=
@@ -25,18 +25,18 @@ pub const fn clock_change_requires_structural_redraw(screen: u8, clock_changed: 
 // DESC: Selects a top-bar-only repaint when the visible desktop clock advances.
 // ------------------=
 pub const fn desktop_clock_requires_bounded_redraw(screen: u8, clock_changed: bool) -> bool {
-    matches!(screen, 2 | 3 | 4 | 7 | 8 | 9) && clock_changed
+    matches!(screen, 2 | 3 | 4 | 7 | 8 | 9 | 10) && clock_changed
 }
 
 // ------------------------=
 // FUNC: desktop_app_content_requires_bounded_redraw
-// DESC: Selects app-window-only repainting when editor text or command output changes.
+// DESC: Selects app-window-only repainting when editor, command, or live task telemetry content changes.
 // ------------------=
 pub const fn desktop_app_content_requires_bounded_redraw(
     screen: u8,
     content_changed: bool,
 ) -> bool {
-    matches!(screen, 8 | 9) && content_changed
+    matches!(screen, 8 | 9 | 10) && content_changed
 }
 
 // ------------------------=
@@ -85,6 +85,19 @@ pub const fn desktop_window_move_uses_bounded_reconstruction(
     window_moved: bool,
 ) -> bool {
     window_moved && matches!(screen, 2 | 4 | 8 | 9 | 10)
+}
+
+// ------------------------=
+// FUNC: desktop_layer_focus_change_uses_bounded_reconstruction
+// DESC: Selects clipped old-and-new window composition when focus moves between desktop application layers.
+// ------------------=
+pub const fn desktop_layer_focus_change_uses_bounded_reconstruction(
+    previous_screen: u8,
+    screen: u8,
+) -> bool {
+    previous_screen != screen
+        && matches!(previous_screen, 2 | 8 | 9 | 10)
+        && matches!(screen, 2 | 8 | 9 | 10)
 }
 
 // ------------------------=

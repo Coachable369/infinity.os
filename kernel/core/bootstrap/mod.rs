@@ -177,6 +177,28 @@ impl DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: intersect_render_clip
+    // DESC: Narrows the active reconstruction clip without allowing a nested component to escape its caller's damage region.
+    // ------------------=
+    fn intersect_render_clip(&mut self, left: usize, top: usize, width: usize, height: usize) {
+        let requested = PresentRegion {
+            left: left.min(self.width),
+            top: top.min(self.height),
+            right: left.saturating_add(width).min(self.width),
+            bottom: top.saturating_add(height).min(self.height),
+        };
+        self.render_clip = Some(match self.render_clip {
+            Some(current) => PresentRegion {
+                left: current.left.max(requested.left),
+                top: current.top.max(requested.top),
+                right: current.right.min(requested.right),
+                bottom: current.bottom.min(requested.bottom),
+            },
+            None => requested,
+        });
+    }
+
+    // ------------------------=
     // FUNC: clear_render_clip
     // DESC: Restores unrestricted rendering after one bounded scene reconstruction.
     // ------------------=
@@ -356,6 +378,8 @@ struct ConsoleSurface {
     last_background_blur: u8,
     last_system_content: u32,
     last_launcher_state: u64,
+    last_launcher_interaction_state: u64,
+    last_launcher_transition: u8,
     last_system_validation_error: bool,
     last_home_window_x: i32,
     last_home_window_y: i32,

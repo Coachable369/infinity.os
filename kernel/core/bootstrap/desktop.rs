@@ -4057,7 +4057,17 @@ impl super::DisplayDevice {
 
         if screen == 7 {
             self.blur_framebuffer(4);
+            let launcher_clip = self.render_clip;
+            let reveal = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .app_launcher_visible_region();
+            self.intersect_render_clip(
+                reveal.x.max(0) as usize,
+                reveal.y.max(0) as usize,
+                reveal.width as usize,
+                reveal.height as usize,
+            );
             self.app_launcher(scale, input, focus);
+            self.render_clip = launcher_clip;
         }
 
         if matches!(screen, 2 | 8 | 9 | 10) {
@@ -7271,7 +7281,8 @@ impl super::DisplayDevice {
         );
         let visible = crate::ui::app_launcher::launcher_visible_count(query);
         let presentation = crate::ui::app_launcher::launcher_presentation();
-        self.set_render_clip(
+        let launcher_clip = self.render_clip;
+        self.intersect_render_clip(
             geometry.grid_viewport.x.max(0) as usize,
             geometry.grid_viewport.y.max(0) as usize,
             geometry.grid_viewport.width as usize,
@@ -7302,7 +7313,7 @@ impl super::DisplayDevice {
                 if selected { 255 } else { 146 },
             );
         }
-        self.clear_render_clip();
+        self.render_clip = launcher_clip;
         for index in 0..crate::ui::app_launcher::LAUNCHER_CATEGORIES.len() {
             let left = geometry.category_left + index * geometry.category_width + 6 * scale;
             let width = geometry.category_width.saturating_sub(12 * scale);
@@ -7476,7 +7487,8 @@ impl super::DisplayDevice {
         );
 
         let visible = crate::ui::app_launcher::launcher_visible_count(query);
-        self.set_render_clip(
+        let launcher_clip = self.render_clip;
+        self.intersect_render_clip(
             geometry.grid_viewport.x.max(0) as usize,
             geometry.grid_viewport.y.max(0) as usize,
             geometry.grid_viewport.width as usize,
@@ -7542,7 +7554,7 @@ impl super::DisplayDevice {
                 1,
             );
         }
-        self.clear_render_clip();
+        self.render_clip = launcher_clip;
         let scroll = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
             .app_launcher_scroll_geometry(visible);
         if scroll.maximum_scroll != 0 {
@@ -9587,14 +9599,26 @@ pub fn system_ui_present(
                     menu_kind,
                     focus_changed,
                 );
+            let desktop_layer_focus_changed =
+                crate::ui::redraw::desktop_layer_focus_change_uses_bounded_reconstruction(
+                    console.last_system_screen,
+                    screen,
+                );
             let launcher_state = crate::ui::app_launcher::launcher_state_hash();
+            let launcher_presentation = crate::ui::app_launcher::launcher_presentation();
+            let launcher_interaction_state =
+                crate::ui::app_launcher::launcher_interaction_state_hash();
+            let launcher_state_changed = console.last_launcher_state != launcher_state;
+            let launcher_interaction_changed =
+                console.last_launcher_interaction_state != launcher_interaction_state;
             let structural_change_without_window = (!bounded_menu_change
-                && (console.last_system_screen != screen
-                    || crate::ui::redraw::focus_change_requires_structural_redraw(
+                && ((console.last_system_screen != screen && !desktop_layer_focus_changed)
+                    || (!desktop_layer_focus_changed
+                        && crate::ui::redraw::focus_change_requires_structural_redraw(
                         screen,
                         pointer_changed,
                         focus_changed,
-                    )
+                    ))
                     || console.last_system_menu != menu_kind))
                 || console.last_system_step != step
                 || icon_theme_changed
@@ -9612,7 +9636,6 @@ pub fn system_ui_present(
                     screen,
                     clock_changed,
                 )
-                || (screen == 7 && console.last_launcher_state != launcher_state)
                 || settings_content_changed;
             let window_moved =
                 console.last_home_window_x != window_x || console.last_home_window_y != window_y;
@@ -9637,6 +9660,15 @@ pub fn system_ui_present(
                     window_maximized,
                 );
             let content_changed = console.last_system_content != content;
+            let bounded_launcher_change = screen == 7
+                && console.last_system_screen == 7
+                && launcher_state_changed
+                && !structural_change_without_window
+                && !content_changed
+                && !window_moved
+                && !window_resized
+                && !settings_geometry_changed
+                && !app_window_geometry_changed;
             let bounded_scene_geometry_change = !structural_change_without_window
                 && !content_changed
                 && console.last_system_screen == screen
@@ -9660,6 +9692,176 @@ pub fn system_ui_present(
                     focus,
                     clock,
                 );
+            } else if bounded_launcher_change {
+                let padding = (12 * layout.scale()) as u32;
+                let damage = if launcher_interaction_changed {
+                    let panel = layout.app_launcher_geometry().panel;
+                    crate::ui::system_layout::window_transition_damage(
+                        panel,
+                        panel,
+                        display_rect,
+                        padding,
+                    )
+                } else {
+                    layout.app_launcher_transition_damage(
+                        console.last_launcher_transition,
+                        launcher_presentation.transition,
+                        padding,
+                    )
+                };
+                console.display.set_render_clip(
+                    damage.x.max(0) as usize,
+                    damage.y.max(0) as usize,
+                    damage.width as usize,
+                    damage.height as usize,
+                );
+                console.display.system_ui_frame(
+                    screen,
+                    step,
+                    input,
+                    masked,
+                    focus,
+                    validation_error,
+                    window_x,
+                    window_y,
+                    window_width,
+                    window_height,
+                    window_visible,
+                    window_maximized,
+                    home_location,
+                    selected_item,
+                    dragging_item,
+                    note_location,
+                    desktop_items,
+                    desktop_item_positions,
+                    clock,
+                    settings_window,
+                    menu_kind,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    app_window_x,
+                    app_window_y,
+                    app_window_width,
+                    app_window_height,
+                    app_window_maximized,
+                    editor_saved,
+                    editor_input,
+                    command_input,
+                    editor_window,
+                    command_window,
+                    task_manager_window,
+                    editor_scroll_row,
+                    editor_dialog,
+                    editor_dialog_input,
+                    editor_dialog_focus,
+                );
+                console.display.clear_render_clip();
+            } else if desktop_layer_focus_changed && !structural_change_without_window {
+                let previous = if console.last_system_screen == 2 {
+                    let bounds = layout.home_window_geometry_sized(
+                        console.last_home_window_x,
+                        console.last_home_window_y,
+                        console.last_home_window_width,
+                        console.last_home_window_height,
+                        console.last_home_window_maximized,
+                    );
+                    crate::ui::geometry::Rect {
+                        x: bounds.0 as i32,
+                        y: bounds.1 as i32,
+                        width: bounds.2 as u32,
+                        height: bounds.3 as u32,
+                    }
+                } else {
+                    layout
+                        .desktop_app_window_geometry(
+                            console.last_app_window_x,
+                            console.last_app_window_y,
+                            console.last_app_window_width,
+                            console.last_app_window_height,
+                            console.last_app_window_maximized,
+                        )
+                        .window
+                };
+                let current = if screen == 2 {
+                    let bounds = layout.home_window_geometry_sized(
+                        window_x,
+                        window_y,
+                        window_width,
+                        window_height,
+                        window_maximized,
+                    );
+                    crate::ui::geometry::Rect {
+                        x: bounds.0 as i32,
+                        y: bounds.1 as i32,
+                        width: bounds.2 as u32,
+                        height: bounds.3 as u32,
+                    }
+                } else {
+                    layout
+                        .desktop_app_window_geometry(
+                            app_window_x,
+                            app_window_y,
+                            app_window_width,
+                            app_window_height,
+                            app_window_maximized,
+                        )
+                        .window
+                };
+                let damage = crate::ui::system_layout::window_transition_damage(
+                    previous,
+                    current,
+                    display_rect,
+                    (16 * layout.scale()) as u32,
+                );
+                console.display.set_render_clip(
+                    damage.x.max(0) as usize,
+                    damage.y.max(0) as usize,
+                    damage.width as usize,
+                    damage.height as usize,
+                );
+                console.display.system_ui_frame(
+                    screen,
+                    step,
+                    input,
+                    masked,
+                    focus,
+                    validation_error,
+                    window_x,
+                    window_y,
+                    window_width,
+                    window_height,
+                    window_visible,
+                    window_maximized,
+                    home_location,
+                    selected_item,
+                    dragging_item,
+                    note_location,
+                    desktop_items,
+                    desktop_item_positions,
+                    clock,
+                    settings_window,
+                    menu_kind,
+                    output_lines,
+                    output_lengths,
+                    output_count,
+                    app_window_x,
+                    app_window_y,
+                    app_window_width,
+                    app_window_height,
+                    app_window_maximized,
+                    editor_saved,
+                    editor_input,
+                    command_input,
+                    editor_window,
+                    command_window,
+                    task_manager_window,
+                    editor_scroll_row,
+                    editor_dialog,
+                    editor_dialog_input,
+                    editor_dialog_focus,
+                );
+                console.display.clear_render_clip();
             } else if bounded_scene_geometry_change {
                 let damage = if screen == 2 && (window_moved || window_resized) {
                     let current = console.display.desktop_window_rect(
@@ -9996,6 +10198,8 @@ pub fn system_ui_present(
             console.last_background_blur = background_blur;
             console.last_system_content = content;
             console.last_launcher_state = launcher_state;
+            console.last_launcher_interaction_state = launcher_interaction_state;
+            console.last_launcher_transition = launcher_presentation.transition;
             console.last_system_validation_error = validation_error;
             console.last_home_window_x = window_x;
             console.last_home_window_y = window_y;

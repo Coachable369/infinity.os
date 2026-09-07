@@ -1188,13 +1188,7 @@ impl SystemLayout {
         let final_panel_top = dock_top
             .saturating_sub(14 * self.scale)
             .saturating_sub(panel_height);
-        let transition = usize::from(super::app_launcher::launcher_presentation().transition);
-        let panel_top = final_panel_top.saturating_add(
-            panel_height
-                .saturating_add(18 * self.scale)
-                .saturating_mul(255usize.saturating_sub(transition))
-                / 255,
-        );
+        let panel_top = final_panel_top;
         let panel = rect(panel_left, panel_top, panel_width, panel_height);
         let search_width = panel_width * 62 / 100;
         let search_height = (50 * self.scale)
@@ -1244,6 +1238,64 @@ impl SystemLayout {
             category_width,
             category_height: panel_height * 16 / 100,
         }
+    }
+
+    // ------------------------=
+    // FUNC: app_launcher_visible_region_for_progress
+    // DESC: Returns the bottom-anchored portion of the fixed launcher surface revealed at one animation progress value.
+    // ------------------=
+    pub fn app_launcher_visible_region_for_progress(self, progress: u8) -> Rect {
+        let panel = self.app_launcher_geometry().panel;
+        let visible_height = (panel.height as usize)
+            .saturating_mul(usize::from(progress))
+            / 255;
+        rect(
+            panel.x.max(0) as usize,
+            panel.bottom().max(panel.y) as usize - visible_height,
+            panel.width as usize,
+            visible_height,
+        )
+    }
+
+    // ------------------------=
+    // FUNC: app_launcher_visible_region
+    // DESC: Returns the currently revealed fixed launcher surface for clipped composition and hit testing.
+    // ------------------=
+    pub fn app_launcher_visible_region(self) -> Rect {
+        self.app_launcher_visible_region_for_progress(
+            super::app_launcher::launcher_presentation().transition,
+        )
+    }
+
+    // ------------------------=
+    // FUNC: app_launcher_transition_damage
+    // DESC: Bounds one launcher reveal step to only the changed horizontal strip plus shadow padding.
+    // ------------------=
+    pub fn app_launcher_transition_damage(
+        self,
+        previous_progress: u8,
+        current_progress: u8,
+        padding: u32,
+    ) -> Rect {
+        let previous = self.app_launcher_visible_region_for_progress(previous_progress);
+        let current = self.app_launcher_visible_region_for_progress(current_progress);
+        let upper = previous.y.min(current.y).max(0) as usize;
+        let lower = previous.y.max(current.y).max(0) as usize;
+        let panel = self.app_launcher_geometry().panel;
+        let left = (panel.x - padding as i32).max(0) as usize;
+        let top = upper.saturating_sub(padding as usize);
+        let right = (panel.right() + padding as i32)
+            .max(0)
+            .min(self.width as i32) as usize;
+        let bottom = lower
+            .saturating_add(padding as usize)
+            .min(self.height);
+        rect(
+            left,
+            top,
+            right.saturating_sub(left),
+            bottom.saturating_sub(top),
+        )
     }
 
     // ------------------------=
