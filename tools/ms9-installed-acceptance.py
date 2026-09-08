@@ -361,7 +361,7 @@ class Guest:
     # FUNC: configure_peer
     # DESC: Uses native network Settings and Console IOP to provision one explicit endpoint on the installed system.
     # ------------------=
-    def configure_peer(self, network_label):
+    def configure_peer(self, network_label, rapid_input=True):
         self.launch(network_label, 8, 6)
         self.key("right")
         self.key("right")
@@ -374,9 +374,10 @@ class Guest:
         self.key("esc")
         self.wait(lambda state: state[4] == 5, "return to desktop")
         self.launch("command", 5)
-        self.fast_input_probe()
-        self.key("esc")
-        self.launch("command", 5)
+        if rapid_input:
+            self.fast_input_probe()
+            self.key("esc")
+            self.launch("command", 5)
         before = self.state()[20]
         self.text(f"node link-configure 1 local=10.42.0.{self.number} remote=10.42.0.{3-self.number} local-port=49152 remote-port=49152")
         self.key("ret")
@@ -583,6 +584,7 @@ def main():
     parser.add_argument("--height", type=int, default=2048)
     parser.add_argument("--confirmation-delay", type=int, default=5)
     parser.add_argument("--remote-installed", action="store_true")
+    parser.add_argument("--focus-pairing", action="store_true", help="Run protocol acceptance only; explicitly excludes rapid-input acceptance")
     args = parser.parse_args()
     assert 640 <= args.width <= 4096 and 480 <= args.height <= 4096
     assert 0 <= args.confirmation_delay <= 10
@@ -620,7 +622,7 @@ def main():
             for guest, current in zip(guests, authenticated):
                 assert struct.pack("<4Q", *current[16:20]).hex() == known[guest.number - 1]["node_id"]
             with ThreadPoolExecutor(max_workers=2) as workers:
-                list(workers.map(lambda guest: guest.configure_peer(args.network_label), guests))
+                list(workers.map(lambda guest: guest.configure_peer(args.network_label, not args.focus_pairing), guests))
             for guest in guests:
                 guest.wait(lambda state: state[24] == 1 and state[22] == 0, "installed discovery")
                 guest.select_peer(args.nodes_label)
@@ -650,7 +652,8 @@ def main():
                 guest.wait(lambda state: state[26] == 1, "installed secure session")
                 guest.screenshot("secure-session")
                 guest.frame_report("secure-session")
-            report = {"installed_discovery": True, "installed_dual_confirmation": True, "installed_secure_session": True, "full_ms9_lifecycle": False}
+            report = {"installed_discovery": True, "installed_dual_confirmation": True, "installed_secure_session": True, "full_ms9_lifecycle": False,
+                      "rapid_input_excluded_for_focused_pairing": args.focus_pairing}
             (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
             if args.remote_installed:
                 installed_remote_acceptance(a, b, args.nodes_label)
