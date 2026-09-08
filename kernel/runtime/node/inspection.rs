@@ -23,6 +23,10 @@ pub fn inspect(nodes: &NodeRuntime, operation: OperationId, request: NodeOperati
 // ------------------=
 fn record(nodes: &NodeRuntime, operation: OperationId, request: NodeOperationV1, data: &mut [u8; 640]) -> Result<usize, IopError> {
     let length = match operation {
+        OperationId::NodeLinkList => {
+            for (index, link) in nodes.configured_links.iter().enumerate() { if let Some(link) = link { data[index * 32..(index + 1) * 32].copy_from_slice(&link.encode()); } }
+            link_config::MAX_CONFIGURED_LINKS * 32
+        }
         OperationId::NodeList => {
             let mut count = 0;
             for node in nodes.discovered.iter().flatten() { data[count * 32..(count + 1) * 32].copy_from_slice(&node.id.0); count += 1; }

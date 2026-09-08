@@ -5189,7 +5189,7 @@ impl super::DisplayDevice {
                 geometry.viewport.width as usize,
                 geometry.viewport.height as usize,
             );
-            self.render_node_settings_dashboard(settings_window, scale);
+            self.render_node_settings_dashboard(settings_window, scale, input);
             self.render_clip = caller_clip;
             self.render_settings_overflow_chrome(
                 geometry,
@@ -5617,6 +5617,7 @@ impl super::DisplayDevice {
         &mut self,
         settings_window: crate::ui::system_layout::SettingsWindowState,
         scale: usize,
+        input: &[u8],
     ) {
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
         let geometry = layout.node_settings_geometry(settings_window);
@@ -5710,6 +5711,11 @@ impl super::DisplayDevice {
             );
         }
         let page = settings_window.expanded_row.unwrap_or(0).min(4);
+        let selected = crate::runtime::with_runtime(|runtime| {
+            let peer = runtime.node_selection?;
+            let verification = runtime.nodes.local_id().and_then(|local| runtime.node_transport.trust.verification(local, peer));
+            Some((peer, verification))
+        }).flatten();
         let tabs: [&[u8]; 5] = [
             b"TRUSTED NODES",
             b"PAIR NODE",
@@ -5881,7 +5887,25 @@ impl super::DisplayDevice {
                 193,
                 1,
             );
-            let (number, length) = Self::network_metric_text(values[index] as u64);
+            let (mut number, mut length) = Self::network_metric_text(values[index] as u64);
+            if page == 1 {
+                let verification = selected.and_then(|(_, verification)| verification);
+                let value: &[u8] = match index {
+                    0 => if selected.is_some() { b"Selected" } else { b"Choose" },
+                    1 => if verification.is_some() { b"Ready" } else { b"Begin" },
+                    2 => if verification.is_some() { b"Compare" } else { b"Waiting" },
+                    3 => b"Enter code",
+                    4 => b"Cancel",
+                    _ => match verification.map(|value| value.state) {
+                        Some(crate::runtime::node::wire_trust::WireState::LocallyConfirmed) => b"Peer pending",
+                        Some(crate::runtime::node::wire_trust::WireState::RemotelyConfirmed) => b"Your turn",
+                        Some(crate::runtime::node::wire_trust::WireState::Confirmed) => b"Confirmed",
+                        Some(_) => b"Verify",
+                        None => b"No transcript",
+                    },
+                };
+                length = value.len().min(number.len()); number[..length].copy_from_slice(&value[..length]);
+            }
             let number_width = self.ui_text_width(&number[..length], 1);
             self.ui_text(
                 card.right().max(0) as usize - number_width - 14 * scale,
@@ -5894,6 +5918,35 @@ impl super::DisplayDevice {
             );
         }
         let art = geometry.sidebar;
+        if page == 1 {
+            // Verification is live authenticated state, never decorative artwork.
+            let left = art.x.max(0) as usize + 15 * scale;
+            let top = art.y.max(0) as usize + 14 * scale;
+            let width = (art.width as usize).saturating_sub(30 * scale);
+            self.ui_text_fit_strong(left, top, width, b"COMPARE BOTH SCREENS", 220, 239, 249, 1);
+            if let Some((_, Some(verification))) = selected {
+                let mut code = [b'0'; 6]; let mut value = verification.code;
+                for digit in code.iter_mut().rev() { *digit += (value % 10) as u8; value /= 10; }
+                self.ui_text_fit_strong(left, top + 32 * scale, width, &code, outline_r, outline_g, outline_b, 2);
+                self.ui_text(left, top + 70 * scale, b"Transcript fingerprint", 145, 174, 193, 1);
+                let digits = b"0123456789abcdef";
+                for row in 0..4 {
+                    let mut line = [0; 16];
+                    for column in 0..8 { let byte = verification.fingerprint[row * 8 + column]; line[column * 2] = digits[(byte >> 4) as usize]; line[column * 2 + 1] = digits[(byte & 15) as usize]; }
+                    self.ui_text_fit_strong(left, top + (96 + row * 24) * scale, width, &line, 220, 239, 249, 1);
+                }
+                let remaining = crate::runtime::node_client::clock().map(|now| verification.expires.saturating_sub(now)).unwrap_or(0);
+                let (value, length) = Self::network_metric_text(remaining);
+                self.ui_text(left, top + 204 * scale, b"Seconds remaining", 145, 174, 193, 1);
+                self.ui_text(left, top + 228 * scale, &value[..length], outline_r, outline_g, outline_b, 1);
+                self.ui_text(left, top + 266 * scale, b"Enter peer code", 145, 174, 193, 1);
+                self.ui_text_fit_strong(left, top + 292 * scale, width, &input[..input.len().min(6)], 242, 248, 252, 2);
+                self.ui_text_fit_strong(left, top + 330 * scale, width, b"Enter: confirm  Esc: cancel", 145, 174, 193, 1);
+            } else {
+                self.ui_text_wrapped(left, top + 42 * scale, width, b"Select a peer and begin pairing. No authority is granted until both operators confirm the matching fingerprint and code.", 145, 174, 193, 10);
+            }
+            return;
+        }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         self.paint_bitmap_fit_rect(
             NODE_TRUST_TOPOLOGY_BMP,

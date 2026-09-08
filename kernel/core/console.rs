@@ -26,6 +26,9 @@ const OUTPUT_ROWS: usize = 6;
 const LINE_CAPACITY: usize = 96;
 const COMMAND_CAPACITY: usize = 160;
 
+#[path = "console_diagnostics.rs"]
+mod diagnostics;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EditorDialog {
     None,
@@ -436,6 +439,7 @@ struct ConsoleRuntime {
     current_session: crate::runtime::identity::StableId,
     settings_editing: bool,
     selected_node_id: Option<crate::runtime::node::types::NodeId>,
+    node_input_lease: Option<crate::ui::trusted::SecureInputLease>,
     settings_window: SettingsWindowState,
     settings_window_dragging: bool,
     settings_window_resizing: Option<usize>,
@@ -572,6 +576,7 @@ impl ConsoleRuntime {
             current_session: crate::runtime::identity::StableId::zero(),
             settings_editing: false,
             selected_node_id: None,
+            node_input_lease: None,
             settings_window: SettingsWindowState {
                 x: 160,
                 y: 210,
@@ -1051,6 +1056,7 @@ impl ConsoleRuntime {
     // DESC: Implements the redraw operation.
     // ------------------=
     fn redraw(&self) {
+        crate::runtime::with_runtime(|runtime| runtime.node_selection = self.selected_node_id);
         self.publish_text_input_presentation();
         if matches!(
             self.mode,
@@ -3881,19 +3887,23 @@ impl ConsoleRuntime {
         use crate::runtime::iop::{NodeOperationV1, OperationId, NODE_OPERATION_HUMAN_APPROVED};
         if self.command_length != 6 || self.command[..6].iter().any(|byte| !byte.is_ascii_digit()) { return false; }
         let Some(code) = parse_u32_decimal(&self.command[..6]) else { return false; };
-        let Some(now) = crate::ui::performance::monotonic_ns().map(|value| value / 1_000_000_000) else { return false; };
+        let Some(now) = crate::runtime::node_client::clock() else { return false; };
         let selected = self.selected_node_id;
         let prepared = crate::runtime::with_runtime(|runtime| {
             let peer = selected?;
             let verification = runtime.node_transport.trust.verification(runtime.nodes.local_id()?, peer)?;
-            let lease = runtime.ui.trusted.acquire_secure_input(true, 1, crate::ui::trusted::TrustedSurface::NodePairing, now.saturating_add(60)).ok()?;
+            let lease = self.node_input_lease?;
+            if now >= lease.expires_at || runtime.ui.trusted.authorize_trusted_window(lease).is_err() { return None; }
             Some((verification, lease))
         }).flatten();
         let Some((verification, lease)) = prepared else { return false; };
         let operation = OperationId::NodePairConfirm;
         let request = NodeOperationV1 { node_id: verification.peer.0, handle: verification.pairing, scope: verification.scope, lease_deadline: 0, operation: operation.machine_id(), rights: 0, value: code, flags: NODE_OPERATION_HUMAN_APPROVED, schema_version: 1 };
         let changed = crate::runtime::node_client::submit(self.current_user, self.current_session, operation, request).is_ok();
-        let _ = crate::runtime::with_runtime(|runtime| runtime.ui.trusted.release_secure_input(lease));
+        if changed {
+            let _ = crate::runtime::with_runtime(|runtime| runtime.ui.trusted.release_secure_input(lease));
+            self.node_input_lease = None;
+        }
         changed
     }
 
@@ -3915,7 +3925,11 @@ impl ConsoleRuntime {
             let pending = crate::runtime::with_runtime(|runtime| {
                 self.selected_node_id.and_then(|peer| runtime.nodes.local_id().and_then(|local| runtime.node_transport.trust.verification(local, peer))).is_some()
             }).unwrap_or(false);
-            if pending { self.settings_editing = true; self.onboarding_validation_error = false; self.reset_input(); }
+            if pending {
+                self.node_input_lease = crate::runtime::node_client::begin_pairing_input(self.current_user, self.current_session).ok();
+                if self.node_input_lease.is_some() { self.settings_editing = true; self.onboarding_validation_error = false; self.reset_input(); }
+                else { self.onboarding_validation_error = true; }
+            }
             return;
         }
         let selected = self.selected_node_id;
@@ -3925,6 +3939,7 @@ impl ConsoleRuntime {
             let operation = match (page, control) {
                 (0, 1) if matches!(node.trust, TrustState::Trusted | TrustState::Restricted) => OperationId::NodeRevokeTrust,
                 (0, 4) => OperationId::NodeBlock,
+                (0, 3) => OperationId::NodeSessionOpen,
                 (1, 1) => OperationId::NodePairBegin,
                 (1, 4) => {
                     request.handle = runtime.nodes.pairings().iter().flatten().find(|pairing| pairing.peer == node.id && pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation)?.id;
@@ -4954,6 +4969,7 @@ impl ConsoleRuntime {
         }
         if self.mode == ConsoleMode::Settings && self.system_focus == 7 && self.settings_editing {
             if matches!(key, ConsoleKey::Escape) {
+                if let Some(lease) = self.node_input_lease.take() { crate::runtime::with_runtime(|runtime| { let _ = runtime.ui.trusted.release_secure_input(lease); }); }
                 self.settings_editing = false;
                 self.onboarding_validation_error = false;
                 self.reset_input();
@@ -8585,6 +8601,7 @@ impl ConsoleRuntime {
             | OperationId::SettingsRead
             | OperationId::SettingsUpdate => return self.execute_identity_node(node),
             OperationId::NodeList
+            | OperationId::NodeLinkList
             | OperationId::NodeInspect
             | OperationId::NodeDiscoverStatus
             | OperationId::NodeTrustRead
@@ -8602,6 +8619,9 @@ impl ConsoleRuntime {
             | OperationId::MeshMemberList
             | OperationId::MeshPolicyRead => return self.execute_node_query(node),
             OperationId::NodePairBegin
+            | OperationId::NodeLinkConfigure
+            | OperationId::NodeLinkRemove
+            | OperationId::NodeSessionOpen
             | OperationId::NodePairConfirm
             | OperationId::NodePairCancel
             | OperationId::NodeTrustUpdate
@@ -8649,10 +8669,19 @@ impl ConsoleRuntime {
             let Some(id) = node.target.and_then(|target| parse_node_id(target.value)) else { self.output.write_line(b"A complete 64-digit node or domain identity is required."); return true; };
             input.node_id = id.0;
         }
-        if matches!(operation, OperationId::NodeList | OperationId::NodeInspect | OperationId::NodeSessionList | OperationId::NodeSessionInspect | OperationId::NodeDomainList | OperationId::NodeDomainInspect) {
+        if matches!(operation, OperationId::NodeList | OperationId::NodeInspect | OperationId::NodeSessionList | OperationId::NodeSessionInspect | OperationId::NodeDomainList | OperationId::NodeDomainInspect | OperationId::NodeLinkList) {
             let mut bytes = [0; 640];
             let Ok(length) = collect(input, &mut bytes, &mut query) else { self.output.write_line(b"Inspection denied, stale, or unavailable. Retry the query."); return true; };
             match operation {
+                OperationId::NodeLinkList => {
+                    for (index, row) in bytes[..length].chunks_exact(32).enumerate() {
+                        let slot = [b'1' + index as u8];
+                        if row[0] == 0 { self.output.write_segments(&[b"Link ", &slot, b": not configured"]); continue; }
+                        let (local, llen) = node_endpoint_text(&row[4..8], u16::from_le_bytes(row[12..14].try_into().unwrap()));
+                        let (remote, rlen) = node_endpoint_text(&row[8..12], u16::from_le_bytes(row[14..16].try_into().unwrap()));
+                        self.output.write_segments(&[b"Link ", &slot, b": ", &local[..llen], b" -> ", &remote[..rlen]]);
+                    }
+                }
                 OperationId::NodeList | OperationId::NodeDomainList => {
                     for id in bytes[..length].chunks_exact(32) { self.output.write_hex(b"Identity: ", id); }
                     if length == 0 { self.output.write_line(b"No records."); }
@@ -8727,6 +8756,17 @@ impl ConsoleRuntime {
         };
         let target = node.target.map(|reference| reference.value);
         match node.schema.operation {
+            OperationId::NodeLinkConfigure | OperationId::NodeLinkRemove => {
+                let Some(slot) = target.and_then(parse_u64_decimal).filter(|slot| (1..=4).contains(slot)) else { self.output.write_line(b"Choose link slot 1 through 4."); return true; };
+                request.handle = slot;
+                if node.schema.operation == OperationId::NodeLinkConfigure {
+                    let Some(local) = node_argument(node, b"local").and_then(parse_ipv4) else { self.output.write_line(b"A valid local IPv4 address is required."); return true; };
+                    let Some(remote) = node_argument(node, b"remote").and_then(parse_ipv4) else { self.output.write_line(b"A valid remote IPv4 address is required."); return true; };
+                    let Some(local_port) = node_argument(node, b"local-port").and_then(parse_u32_decimal) else { self.output.write_line(b"A local port is required."); return true; };
+                    let Some(remote_port) = node_argument(node, b"remote-port").and_then(parse_u32_decimal) else { self.output.write_line(b"A remote port is required."); return true; };
+                    request.node_id[..4].copy_from_slice(&local); request.node_id[4..8].copy_from_slice(&remote); request.rights = local_port; request.value = remote_port;
+                }
+            }
             OperationId::NodePairConfirm => {
                 let Some(pairing_id) = target.and_then(parse_u64_decimal) else {
                     self.output.write_line(b"Invalid pairing reference.");
@@ -8804,7 +8844,16 @@ impl ConsoleRuntime {
                 }
             };
         }
+        // This command is an explicit authenticated operator decision, never an
+        // agent-generated confirmation. Reserve the same exclusive surface as GUI.
+        let lease = if node.schema.operation == OperationId::NodePairConfirm {
+            match crate::runtime::node_client::begin_pairing_input(self.current_user, self.current_session) {
+                Ok(lease) => Some(lease),
+                Err(_) => { self.output.write_line(b"Trusted pairing input is unavailable."); return true; }
+            }
+        } else { None };
         let result = crate::runtime::node_client::submit(self.current_user, self.current_session, node.schema.operation, request);
+        if let Some(lease) = lease { crate::runtime::with_runtime(|runtime| { let _ = runtime.ui.trusted.release_secure_input(lease); }); }
         let Ok(response) = result else {
             self.output.write_line(b"Node operation denied, unavailable, or not committed.");
             return true;
@@ -8814,6 +8863,8 @@ impl ConsoleRuntime {
                 .write_number(b"Pairing transaction: pairing:", response.handle);
             self.output
                 .write_line(b"Pairing requested. Compare the authenticated verification view on both nodes before confirming.");
+        } else if node.schema.operation == OperationId::NodeSessionOpen {
+            self.output.write_line(b"Fresh session requested; authentication is pending.");
         } else {
             self.output.write_line(b"Node operation committed.");
         }
@@ -10655,6 +10706,20 @@ fn parse_node_id(value: &[u8]) -> Option<crate::runtime::node::types::NodeId> {
 }
 
 // ------------------------=
+// FUNC: node_endpoint_text
+// DESC: Formats a validated public IPv4 endpoint into bounded human-readable dotted decimal without allocating.
+// ------------------=
+fn node_endpoint_text(address: &[u8], port: u16) -> ([u8; 24], usize) {
+    let mut out = [0; 24]; let mut length = 0;
+    for (index, byte) in address.iter().take(4).enumerate() {
+        if index != 0 { out[length] = b'.'; length += 1; }
+        length += write_decimal(&mut out[length..], *byte as usize);
+    }
+    out[length] = b':'; length += 1; length += write_decimal(&mut out[length..], port as usize);
+    (out, length)
+}
+
+// ------------------------=
 // FUNC: hex_nibble
 // DESC: Converts one ASCII hexadecimal digit into its four-bit value.
 // ------------------=
@@ -10699,6 +10764,9 @@ fn is_node_console_mutation(operation: crate::runtime::iop::OperationId) -> bool
     matches!(
         operation,
         OperationId::NodePairBegin
+            | OperationId::NodeLinkConfigure
+            | OperationId::NodeLinkRemove
+            | OperationId::NodeSessionOpen
             | OperationId::NodePairConfirm
             | OperationId::NodePairCancel
             | OperationId::NodeTrustUpdate
@@ -11497,6 +11565,7 @@ pub fn clock_tick() {
     unsafe {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
+            diagnostics::publish(runtime);
             if !matches!(
                 runtime.mode,
                 ConsoleMode::Onboarding

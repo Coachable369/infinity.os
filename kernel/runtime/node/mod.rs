@@ -8,6 +8,7 @@ mod persistence;
 pub mod inspection;
 pub mod membership;
 pub mod reconciliation;
+pub mod link_config;
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -83,6 +84,7 @@ pub struct NodeRuntime {
     control_version: u64,
     paired_digests: [[u8; 32]; MAX_DISCOVERED_NODES],
     domains: [Option<membership::Domain>; membership::MAX_DOMAINS],
+    configured_links: [Option<link_config::LinkConfiguration>; link_config::MAX_CONFIGURED_LINKS],
     discovery_window: u64,
     discovery_count: u16,
 }
@@ -98,7 +100,7 @@ impl NodeRuntime {
             discovered: [None; MAX_DISCOVERED_NODES], pairings: [None; MAX_PAIRINGS],
             sessions: [None; MAX_SESSIONS], grants: [None; MAX_REMOTE_GRANTS],
             members: [None; MAX_MESH_MEMBERS], audit: [None; MAX_AUDIT_RECORDS],
-            next_id: 1, audit_sequence: 0, control_version: 0, paired_digests: [[0; 32]; MAX_DISCOVERED_NODES], domains: [None; membership::MAX_DOMAINS], discovery_window: 0, discovery_count: 0,
+            next_id: 1, audit_sequence: 0, control_version: 0, paired_digests: [[0; 32]; MAX_DISCOVERED_NODES], domains: [None; membership::MAX_DOMAINS], configured_links: [None; link_config::MAX_CONFIGURED_LINKS], discovery_window: 0, discovery_count: 0,
         }
     }
 
@@ -545,6 +547,7 @@ impl NodeRuntime {
         self.encode_audit(&mut out);
         self.encode_pairing_receipts(&mut out);
         self.encode_domains(&mut out);
+        self.encode_link_configuration(&mut out);
         let checksum = state_crc32(&out[..NODE_STATE_BYTES - 4]);
         out[NODE_STATE_BYTES - 4..].copy_from_slice(&checksum.to_le_bytes());
         Ok(out)
@@ -615,7 +618,7 @@ impl NodeRuntime {
         self.control_version = u64::from_le_bytes(input[104..112].try_into().map_err(|_| NodeError::StateCorrupt)?);
         if version >= 2 { self.decode_audit(input)?; }
         if version >= 3 { self.decode_pairing_receipts(input)?; }
-        if version >= 3 { self.decode_domains(input)?; }
+        if version >= 3 { self.decode_domains(input)?; self.decode_link_configuration(input)?; }
         Ok(id)
     }
 

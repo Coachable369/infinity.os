@@ -10,6 +10,7 @@ pub mod network;
 pub mod crypto;
 pub mod node;
 pub mod node_client;
+pub mod node_links;
 pub mod object_navigation;
 pub mod resource_policy;
 pub mod scheduler;
@@ -170,6 +171,7 @@ pub struct InfinityRuntime {
     pub network: network::NetworkRuntime,
     pub nodes: node::NodeRuntime,
     pub node_transport: node::transport::NodeTransport,
+    pub node_links: node_links::NodeLinks,
     pub resources: resource_policy::ApplicationResourceManager,
     pub task_manager: task_manager::TaskManager,
     pub shell_profiles: Option<object_navigation::ShellProfileService>,
@@ -186,6 +188,7 @@ pub struct InfinityRuntime {
     network_event_capabilities: [Option<u64>; NETWORK_EVENT_TYPES.len()],
     node_event_capabilities: [Option<u64>; NODE_EVENT_TYPES.len()],
     pub node_projection: node::reconciliation::Projection,
+    pub node_selection: Option<node::types::NodeId>,
     node_clock: Option<u64>,
     node_projection_tick: Option<u64>,
     node_checkpoint_notified: u64,
@@ -277,6 +280,8 @@ impl InfinityRuntime {
             network_event_capabilities: [None; NETWORK_EVENT_TYPES.len()],
             node_event_capabilities: [None; NODE_EVENT_TYPES.len()],
             node_projection: node::reconciliation::Projection::new(),
+            node_selection: None,
+            node_links: node_links::NodeLinks::new(),
             node_clock: None,
             node_projection_tick: None,
             node_checkpoint_notified: 0,
@@ -1260,8 +1265,8 @@ impl InfinityRuntime {
             SERVICE_NODE_DISCOVERY,
             [SERVICE_NODE_IDENTITY, SERVICE_NETWORK_DISCOVERY, SERVICE_EVENT, 0],
             3,
-            [OperationId::NodeList as u32, OperationId::NodeInspect as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            2,
+            [OperationId::NodeList as u32, OperationId::NodeInspect as u32, OperationId::NodeLinkConfigure as u32, OperationId::NodeLinkList as u32, OperationId::NodeLinkRemove as u32, OperationId::NodeDiscoverStatus as u32, 0, 0, 0, 0, 0, 0],
+            6,
             RestartPolicy::OnFailure,
             Criticality::Important,
         ))?;
@@ -1922,6 +1927,11 @@ pub fn initialize_node_identity(entropy: &[u8; 32], valid: bool) -> bool {
 // ------------------=
 pub fn poll_node_transport(now: u64) {
     with_runtime(|runtime| runtime.node_clock = Some(runtime.node_clock.unwrap_or(now).max(now)));
+    with_runtime(|runtime| {
+        if let Some(owner) = runtime.service_identity(SERVICE_NODE_DISCOVERY) {
+            runtime.node_links.reconcile(&mut runtime.nodes, &mut runtime.node_transport, &mut runtime.network, &mut runtime.capabilities, owner, now);
+        }
+    });
     let change = with_runtime(|runtime| runtime.node_transport.poll(&mut runtime.nodes, &mut runtime.network, &runtime.capabilities, now)).flatten();
     let committed = with_runtime(|runtime| {
         runtime.iop.poll_remote_node(&runtime.capabilities, &mut runtime.nodes, &mut runtime.node_transport.trust, now);

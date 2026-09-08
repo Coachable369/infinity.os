@@ -299,6 +299,12 @@ pub enum ConsoleLanguageError {
 }
 
 const NO_ARGS: &[ArgumentSchema] = &[];
+const NODE_LINK_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"local", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"remote", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"local-port", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"remote-port", value_type: ArgumentType::Text, required: true },
+];
 const FIND_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema {
         name: b"type",
@@ -1652,6 +1658,10 @@ pub static OPERATIONS: &[OperationSchema] = &[
         b"network service-discover",
     ),
     op(b"node", b"list", b"List signed discovered nodes without granting trust", OperationId::NodeList, ValueType::Unit, ValueType::NodeSet, None, NO_ARGS, 1, SideEffectClass::Query, b"node list"),
+    op(b"node", b"link-configure", b"Approve exact discovery endpoints without granting peer trust", OperationId::NodeLinkConfigure, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NODE_LINK_ARGS, 9, SideEffectClass::SecurityChange, b"node link-configure 1 local=10.42.0.1 remote=10.42.0.2 local-port=49152 remote-port=49152"),
+    op(b"node", b"link-list", b"Inspect persistent approved discovery endpoints", OperationId::NodeLinkList, ValueType::Unit, ValueType::NodeSet, None, NO_ARGS, 1, SideEffectClass::Query, b"node link-list"),
+    op(b"node", b"link-remove", b"Withdraw discovery endpoint authority", OperationId::NodeLinkRemove, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NO_ARGS, 9, SideEffectClass::SecurityChange, b"node link-remove 1"),
+    op(b"node", b"session-open", b"Establish fresh traffic keys with a previously confirmed peer", OperationId::NodeSessionOpen, ValueType::Unit, ValueType::NodeSessionSet, Some(ArgumentType::NodeRef), NO_ARGS, 9, SideEffectClass::SecurityChange, b"node session-open node:<complete-id>"),
     op(b"node", b"read", b"Inspect one stable cryptographic node identity", OperationId::NodeInspect, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NO_ARGS, 1, SideEffectClass::Query, b"node read node:7f84"),
     op(b"node", b"discover-status", b"Inspect bounded signed discovery state", OperationId::NodeDiscoverStatus, ValueType::Unit, ValueType::NodeSet, None, NO_ARGS, 1, SideEffectClass::Query, b"node discover-status"),
     op(b"node", b"pair", b"Begin an explicit verified node pairing", OperationId::NodePairBegin, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NO_ARGS, 9, SideEffectClass::SecurityChange, b"node pair node:7f84"),

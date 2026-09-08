@@ -7,6 +7,12 @@ pub const VERSION: u16 = 1;
 pub const FRAME_HISTORY: usize = 3600;
 pub const AGGREGATE_HISTORY: usize = 600;
 
+// Privileged debugger export only; each measured frame costs three fixed writes.
+// The host computes percentiles after capture, never in the input/render loop.
+#[used]
+#[no_mangle]
+static mut INFINITY_DIAGNOSTIC_FRAMES: [u64; FRAME_HISTORY * 3 + 2] = [0; FRAME_HISTORY * 3 + 2];
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(u8)]
 pub enum FallbackReason {
@@ -259,6 +265,15 @@ pub fn publish(sample: FramePerformanceSample) {
     }
     unsafe {
         (*TELEMETRY.history.get()).record(sample);
+        let sequence = (*TELEMETRY.history.get()).sequence;
+        let index = ((sequence - 1) % FRAME_HISTORY as u64) as usize * 3 + 2;
+        let pointer = (&raw mut INFINITY_DIAGNOSTIC_FRAMES).cast::<u64>();
+        core::ptr::write_volatile(pointer, 1);
+        core::ptr::write_volatile(pointer.add(index), sequence);
+        core::ptr::write_volatile(pointer.add(index + 1), sample.frame_ns.unwrap_or(u64::MAX));
+        core::ptr::write_volatile(pointer.add(index + 2), sample.timestamp_ns.unwrap_or(u64::MAX));
+        core::sync::atomic::compiler_fence(Ordering::Release);
+        core::ptr::write_volatile(pointer.add(1), sequence);
     }
     TELEMETRY.held.store(false, Ordering::Release);
 }

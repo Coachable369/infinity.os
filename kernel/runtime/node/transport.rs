@@ -115,10 +115,10 @@ impl NodeTransport {
             Ok(id)=>id,Err(_)=>{let _=network.connections.close(connection);return Err(NetworkError::ResourceLimitExceeded);}
         };
         let receive=match capabilities.grant(CapabilityType::NetworkReceive,connection as u64,1,0,authority.issuer,owner,authority.expires_at,0) {
-            Ok(id)=>id,Err(_)=>{let _=capabilities.revoke(send);let _=network.connections.close(connection);return Err(NetworkError::ResourceLimitExceeded);}
+            Ok(id)=>id,Err(_)=>{let _=capabilities.retire_leaf(send,authority.issuer);let _=network.connections.close(connection);return Err(NetworkError::ResourceLimitExceeded);}
         };
         if let Err(error)=self.attach(LinkAuthority {owner,connection,send,receive},network,capabilities,now) {
-            let _=capabilities.revoke(send);let _=capabilities.revoke(receive);let _=network.connections.close(connection);return Err(error);
+            let _=capabilities.retire_leaf(send,authority.issuer);let _=capabilities.retire_leaf(receive,authority.issuer);let _=network.connections.close(connection);return Err(error);
         }
         Ok(connection)
     }
@@ -151,6 +151,17 @@ impl NodeTransport {
                 *slot = None;
             }
         }
+    }
+
+    // ------------------------=
+    // FUNC: release
+    // DESC: Removes one owned provisioned link, closes its authenticated sessions and retires its nondelegable send/receive capabilities.
+    // ------------------=
+    pub fn release(&mut self, nodes: &mut NodeRuntime, network: &mut NetworkRuntime, caps: &mut CapabilityManager, connection: u32, owner: SecurityIdentity, now: u64) {
+        let Some(authority) = self.links.iter().flatten().find(|link| link.authority.connection == connection && link.authority.owner == owner).map(|link| link.authority) else { return; };
+        self.trust.disconnect(nodes, connection, now); self.detach(connection);
+        let _ = network.connections.close(connection);
+        for cap in [authority.send, authority.receive] { if let Some(issuer) = caps.get(cap).map(|cap| cap.issuer) { let _ = caps.retire_leaf(cap, issuer); } }
     }
 
     // ------------------------=

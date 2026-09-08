@@ -52,13 +52,15 @@ impl NodeRuntime {
         let mut response = request;
         let subject;
         match operation {
-            OperationId::NodePairBegin => {
+            OperationId::NodePairBegin | OperationId::NodeSessionOpen => {
                 subject = NodeId(request.node_id);
                 let link = link.filter(|link| link.peer == Some(subject)).ok_or(CommitError::InvalidState)?;
-                staged_wire.begin(&mut staged, link, request.scope, false, now).map_err(|_| CommitError::InvalidState)?;
-                let pairing = staged.pairings.iter().flatten().find(|pairing| pairing.peer == subject && pairing.state == PairingState::AwaitingConfirmation).ok_or(CommitError::InvalidState)?;
-                response.handle = pairing.id;
-                response.value = 0; // Only the completed wire verification view may disclose a verification code.
+                staged_wire.begin(&mut staged, link, request.scope, operation == OperationId::NodeSessionOpen, now).map_err(|_| CommitError::InvalidState)?;
+                if operation == OperationId::NodePairBegin {
+                    let pairing = staged.pairings.iter().flatten().find(|pairing| pairing.peer == subject && pairing.state == PairingState::AwaitingConfirmation).ok_or(CommitError::InvalidState)?;
+                    response.handle = pairing.id;
+                    response.value = 0; // Only the completed wire verification view may disclose a verification code.
+                } else { response.handle = 0; response.value = 2; } // Pending, not an established session.
             }
             OperationId::NodePairConfirm | OperationId::NodePairCancel => {
                 subject = staged.pairings.iter().flatten().find(|pairing| pairing.id == request.handle).ok_or(CommitError::InvalidState)?.peer;
@@ -154,6 +156,7 @@ impl NodeRuntime {
             control_version: version,
             paired_digests: self.paired_digests,
             domains: self.domains,
+            configured_links: self.configured_links,
             discovery_window: self.discovery_window,
             discovery_count: self.discovery_count,
         });

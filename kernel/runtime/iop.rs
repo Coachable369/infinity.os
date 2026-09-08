@@ -248,6 +248,9 @@ pub enum OperationId {
     NodeLeave = 0xd062,
     NodeDomainList = 0xd063,
     NodeDomainInspect = 0xd064,
+    NodeLinkConfigure = 0xd071,
+    NodeLinkList = 0xd072,
+    NodeLinkRemove = 0xd073,
     NodePolicyRead = 0xd065,
     NodePolicyUpdate = 0xd066,
     NodeHealth = 0xd067,
@@ -344,6 +347,7 @@ fn is_node_operation(operation: u32) -> bool {
             | 0xd041..=0xd042
             | 0xd051..=0xd052
             | 0xd061..=0xd068
+            | 0xd071..=0xd073
     )
 }
 
@@ -354,6 +358,7 @@ pub const NODE_OPERATION_HUMAN_APPROVED: u32 = 1;
 // DESC: Enumerates side-effect-free node service reads; every other operation requires a durable transaction dispatcher.
 // ------------------=
 pub fn node_read_operation(operation: OperationId) -> bool {
+    if operation == OperationId::NodeLinkList { return true; }
     matches!(operation, OperationId::NodeDiscoverStatus | OperationId::NodeList | OperationId::NodeInspect | OperationId::NodeTrustRead | OperationId::NodeHealth | OperationId::NodeDiagnostics | OperationId::NodePolicyRead | OperationId::NodeSessionList | OperationId::NodeSessionInspect | OperationId::NodeDomainList | OperationId::NodeDomainInspect | OperationId::NodeCapabilityList | OperationId::NodeAuditList | OperationId::NodeAuditInspect | OperationId::MeshStatus | OperationId::MeshMemberList | OperationId::MeshPolicyRead)
 }
 
@@ -396,7 +401,7 @@ pub fn execute_node_operation(
                 response.rights |= value << (index * 2);
             }
         }
-        OperationId::NodeInspect | OperationId::NodeSessionInspect | OperationId::NodeDomainInspect | OperationId::NodeDomainList | OperationId::NodeList | OperationId::NodeSessionList => {
+        OperationId::NodeInspect | OperationId::NodeSessionInspect | OperationId::NodeDomainInspect | OperationId::NodeDomainList | OperationId::NodeList | OperationId::NodeSessionList | OperationId::NodeLinkList => {
             return super::node::inspection::inspect(nodes, operation, request);
         }
         OperationId::NodeTrustRead
