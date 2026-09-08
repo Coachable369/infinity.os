@@ -60,7 +60,7 @@ fn manifest_commit_is_generation_fenced_and_crash_atomic() {
     let backing = store.create(b"manifest", ObjectType::Metadata, Space::System, &[]).unwrap();
     assert_ne!(app, backing);
     let first = Manifest { object: app.0, version: 1, length: 0, hash: Sha256::digest([]).into(),
-        policy: StorageClass::Critical, generation: 1, authority: NodeId([8; 32]), authority_generation: 1,
+        policy: StorageClass::Critical, minimum_available: 1, generation: 1, authority: NodeId([8; 32]), authority_generation: 1,
         chunks: [None; MAX_CHUNKS], placements: [None; MAX_PLACEMENTS], healing: None };
     commit_manifest(&mut store, backing, 0, &first).unwrap();
     assert_eq!(load_manifest(&mut store, backing, backing), Err(ManifestError::Conflict));

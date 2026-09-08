@@ -25,7 +25,7 @@ pub struct HealingClaim {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Manifest {
     pub object: [u8; 16], pub version: u64, pub length: u64, pub hash: [u8; 32],
-    pub policy: StorageClass, pub generation: u64,
+    pub policy: StorageClass, pub minimum_available: u8, pub generation: u64,
     pub authority: NodeId, pub authority_generation: u64,
     pub chunks: [Option<Chunk>; MAX_CHUNKS],
     pub placements: [Option<Placement>; MAX_PLACEMENTS],
@@ -41,7 +41,8 @@ impl Manifest {
     // ------------------=
     pub fn validate(&self) -> Result<(), ManifestError> {
         if self.object == [0; 16] || self.version == 0 || self.generation == 0
-            || self.authority.0 == [0; 32] || self.authority_generation == 0 {
+            || self.authority.0 == [0; 32] || self.authority_generation == 0
+            || self.minimum_available == 0 || self.minimum_available as usize > self.policy.replicas() {
             return Err(ManifestError::Invalid);
         }
         let mut size = 0u64;
@@ -129,6 +130,7 @@ impl Manifest {
         out[8..24].copy_from_slice(&self.object);
         put(out, 24, self.version); put(out, 32, self.length); out[40..72].copy_from_slice(&self.hash);
         out[72] = self.policy.replicas() as u8;
+        out[73] = self.minimum_available;
         put(out, 80, self.generation); out[88..120].copy_from_slice(&self.authority.0);
         put(out, 120, self.authority_generation);
         if let Some(claim) = self.healing {
@@ -164,7 +166,7 @@ impl Manifest {
             length: get(bytes, 32), hash: bytes[40..72].try_into().unwrap(),
             policy: match bytes[72] { 1 => StorageClass::Temporary, 2 => StorageClass::Protected,
                 3 => StorageClass::Critical, _ => return Err(ManifestError::Invalid) },
-            generation: get(bytes, 80), authority: NodeId(bytes[88..120].try_into().unwrap()),
+            minimum_available: bytes[73], generation: get(bytes, 80), authority: NodeId(bytes[88..120].try_into().unwrap()),
             authority_generation: get(bytes, 120), chunks: [None; MAX_CHUNKS], placements: [None; MAX_PLACEMENTS], healing: None };
         if bytes[128] == 1 {
             value.healing = Some(HealingClaim { owner: NodeId(bytes[136..168].try_into().unwrap()),
