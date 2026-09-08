@@ -421,6 +421,8 @@ class Guest:
         # Installed sessions restore their focused app. Return focus to the
         # desktop through its normal Escape action before using its launcher.
         state = self.state()
+        if state is not None and state[4] in (9, 10):
+            state = self.authenticate()
         if state is not None and state[4] == 5:
             self.key("esc")
         self.key("slash")

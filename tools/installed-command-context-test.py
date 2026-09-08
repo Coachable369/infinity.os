@@ -22,6 +22,19 @@ class CommandContext(unittest.TestCase):
             self.assertEqual(guest.authentications, int(mode != 5))
             self.assertEqual(guest.launched, int(mode != 5))
 
+    # ------------------------=
+    # FUNC: test_launcher_authenticates_after_other_peer_work
+    # DESC: Exercises the actual launcher method after idle lock, proving queries reach the launcher rather than the credential field.
+    # ------------------=
+    def test_launcher_authenticates_after_other_peer_work(self):
+        for mode in (9, 10, 5):
+            guest = LauncherGuest(mode)
+            result = installed.Guest.launch(guest, "nodes", 8, 7)
+            self.assertEqual(result[4], 8)
+            self.assertEqual(result[8], 7)
+            self.assertEqual(guest.authentications, int(mode != 5))
+            self.assertEqual(guest.submissions, 1)
+
 
 class ControlledGuest:
     # ------------------------=
@@ -49,6 +62,7 @@ class ControlledGuest:
         assert self.values[4] in (9, 10)
         self.authentications += 1
         self.values[4] = 5
+        return self.values
 
     # ------------------------=
     # FUNC: launch
@@ -75,6 +89,40 @@ class ControlledGuest:
         assert self.values[4] == 5 and self.values[71] > 1
         self.submissions += 1
         self.values[71] = 1
+
+
+class LauncherGuest(ControlledGuest):
+    # ------------------------=
+    # FUNC: state
+    # DESC: Supplies the fixture's current structured UI mode.
+    # ------------------=
+    def state(self):
+        return self.values
+
+    # ------------------------=
+    # FUNC: text
+    # DESC: Rejects search query input outside the real launcher's mode.
+    # ------------------=
+    def text(self, value):
+        assert self.values[4] == 6
+        self.values[71] = len(value) + 1
+
+    # ------------------------=
+    # FUNC: key
+    # DESC: Models normal focus return, launcher invocation and a single app selection without bypassing the locked state.
+    # ------------------=
+    def key(self, code):
+        if code == "esc":
+            assert self.values[4] == 5
+        elif code == "slash":
+            if self.values[4] == 5:
+                self.values[4] = 6
+        elif code == "ret":
+            assert self.values[4] == 6 and self.values[71] > 1
+            self.submissions += 1
+            self.values[4], self.values[8] = 8, 7
+        else:
+            raise AssertionError(code)
 
 
 if __name__ == "__main__":
