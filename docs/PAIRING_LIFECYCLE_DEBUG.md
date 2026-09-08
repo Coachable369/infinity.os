@@ -61,3 +61,18 @@ The native packet regression injects a failed final commit, asserts no trust and
 retained consent after 40 ticks, then retries under the original authority/lease.
 The 25 correlation/pairing and six service tests pass. Installed proof against
 fresh fixed ISOs remains a separate gate.
+
+Fixed-source `./build.sh` completed successfully, including extracted installed
+kernel parity. Release hashes:
+
+- x86_64: `ed0e2350735cec8ab6a9460229d4ba5af8313c98ecf5be8cfe5fc67b248660d1`
+- ARM64: `c5feb84d982a2bd0ca1862df21998cb0454f274d7a89ef66a68643e6d029f4bb`
+
+Build log: `/tmp/ms9-pairing-fix-build.log`. Post-build correlation, durable
+mutation, remote-IOP engineering-wire and native-NIC gates also passed
+(`/tmp/ms9-checkpoint-security-gates.log`). Run f uses fresh independent installs
+from these artifacts, not updated or injected kernels. Its two installations and
+first detached boots passed; the remaining installed lifecycle is in progress.
+`installed-object-test --bounded-node-checkpoint` adds a read-only artifact
+assertion for the one-version checkpoint and full 12-KiB payload. The previous
+run-e disk fails this assertion (six retained checkpoint versions), as expected.

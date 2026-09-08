@@ -85,5 +85,11 @@ fn main() {
     let mut bytes = [0u8; 256];
     assert_eq!(store.read(organization, None, &mut bytes).expect("read organization schema"), 256);
     assert!(storage::organization::organization_schema_valid(&bytes));
+    if std::env::args().any(|argument| argument == "--bounded-node-checkpoint") {
+        let node = store.resolve(b"/system/security/nodes/state").unwrap();
+        assert_eq!(store.history_count(node), 1);
+        let mut state = [0u8; 16_384];
+        assert_eq!(store.read(node, None, &mut state).unwrap(), 12_288);
+    }
     println!("PASS: installed native runtime, AI, organization schema, and date/time settings mount and validate");
 }
