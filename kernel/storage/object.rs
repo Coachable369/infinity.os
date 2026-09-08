@@ -3,6 +3,8 @@
 
 use super::organization;
 use super::{BlockDevice, DateTimeConfiguration};
+#[path = "object_extents.rs"]
+mod extents;
 
 #[path = "../runtime/ai/generation.rs"]
 mod ai_generation_asset;
@@ -318,6 +320,7 @@ impl Default for ObjectRecord {
 #[derive(Clone, Copy, Default)]
 struct VersionRecord {
     used: bool,
+    storage_role: u8,
     object: ObjectId,
     number: u32,
     extent: u32,
@@ -401,6 +404,7 @@ impl State {
                 tags: [0; 8],
             }; MAX_OBJECTS],
             versions: [VersionRecord {
+                storage_role: 0,
                 used: false,
                 object: ObjectId([0; 16]),
                 number: 0,
@@ -1182,6 +1186,16 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub(crate) fn replace_state(&mut self, id: ObjectId, content: &[u8]) -> Result<u32, ObjectError> {
         let before = self.begin()?;
+        let result = self.replace_state_record(id, content);
+        self.finish(before, result)
+    }
+
+    // ------------------------=
+    // FUNC: replace_state_record
+    // DESC: Replaces bounded checkpoint history within an already-owned atomic native transaction.
+    // ------------------=
+    fn replace_state_record(&mut self, id: ObjectId, content: &[u8]) -> Result<u32, ObjectError> {
+        let previous = self.state.versions;
         // Release metadata slots only. Old data remains allocated until the new
         // content is written, so a failed write cannot damage the committed root.
         for version in &mut self.state.versions {
@@ -1191,7 +1205,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         }
         let result = self.write_record(id, content);
         if result.is_ok() {
-            for version in &before.versions {
+            for version in &previous {
                 if version.used && version.object == id {
                     for block in version.extent as usize..version.extent as usize + version.blocks as usize {
                         self.release_unreferenced_block(block);
@@ -1199,7 +1213,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                 }
             }
         }
-        self.finish(before, result)
+        result
     }
 
     // ------------------------=
@@ -1223,6 +1237,9 @@ impl<D: BlockDevice> ObjectStore<D> {
             return Err(ObjectError::InsufficientCapacity);
         }
         let object = self.object_index(id)?;
+        if self.state.versions.iter().any(|v| v.used && v.object == id && v.storage_role != 0) {
+            return Err(ObjectError::Unauthorized);
+        }
         if self.state.objects[object].tombstone {
             return Err(ObjectError::NotFound);
         }
@@ -1243,6 +1260,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         let crc = crc32(content);
         self.state.versions[vslot] = VersionRecord {
             used: true,
+            storage_role: 0,
             object: id,
             number: version,
             extent,
@@ -1268,6 +1286,9 @@ impl<D: BlockDevice> ObjectStore<D> {
         out: &mut [u8],
     ) -> Result<usize, ObjectError> {
         let oi = self.object_index(id)?;
+        if self.state.versions.iter().any(|v| v.used && v.object == id && v.storage_role == 1) {
+            return Err(ObjectError::Busy);
+        }
         if self.state.objects[oi].tombstone {
             return Err(ObjectError::NotFound);
         }
@@ -2625,6 +2646,7 @@ fn decode_object(s: &[u8], o: usize) -> Result<ObjectRecord, ObjectError> {
 // ------------------=
 fn encode_version(x: &VersionRecord, s: &mut [u8], o: usize) {
     s[o] = x.used as u8;
+    s[o + 1] = x.storage_role;
     s[o + 4..o + 20].copy_from_slice(&x.object.0);
     put32(s, o + 20, x.number);
     put32(s, o + 24, x.extent);
@@ -2642,11 +2664,14 @@ fn decode_version(s: &[u8], o: usize) -> Result<VersionRecord, ObjectError> {
     let mut id = [0; 16];
     id.copy_from_slice(&s[o + 4..o + 20]);
     let blocks = get16(s, o + 28);
-    if blocks as usize > (MAX_CONTENT / 4096) || get32(s, o + 32) as usize > MAX_CONTENT {
+    let role = s[o + 1];
+    let limit = if role == 0 { MAX_CONTENT } else { extents::MAX_STAGED_CONTENT };
+    if role > 2 || blocks as usize > (limit / 4096) || get32(s, o + 32) as usize > limit {
         return Err(ObjectError::CorruptMetadata);
     }
     Ok(VersionRecord {
         used: s[o] != 0,
+        storage_role: role,
         object: ObjectId(id),
         number: get32(s, o + 20),
         extent: get32(s, o + 24),

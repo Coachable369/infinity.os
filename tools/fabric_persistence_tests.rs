@@ -48,6 +48,113 @@ fn descriptor(bytes: &[u8]) -> ReplicaDescriptor {
 }
 
 // ------------------------=
+// FUNC: streamed_large_replica_recovers_and_seals_without_content_sized_buffers
+// DESC: Transfers across the former 16-KiB boundary, loses all process state, resumes, verifies in 1-KiB steps and rejects corrupt chunk reads.
+// ------------------=
+#[test]
+fn streamed_large_replica_recovers_and_seals_without_content_sized_buffers() {
+    use crate::native_fabric::extent::NativeExtentReplica;
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let backing = store.create(b"stream", ObjectType::Metadata, Space::System, &[]).unwrap();
+    let payload: Vec<u8> = (0..65553).map(|n| (n % 251) as u8).collect();
+    let d = descriptor(&payload);
+    {
+        let mut native = NativeExtentReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+        let mut transfer = Transfer::begin(&mut native, d).unwrap();
+        for at in (0..32768).step_by(1024) { transfer.receive(&mut native, at as u64, &payload[at..at+1024]).unwrap(); }
+        assert_eq!(native.read_verified_chunk(0, &mut [0; 1024], [0; 32]), Err(ReplicaError::Incomplete));
+    }
+    let mut record = [0; 160]; store.read(backing, None, &mut record).unwrap();
+    let extent = crate::storage::object::ObjectId(record[128..144].try_into().unwrap());
+    assert_eq!(store.read(extent, None, &mut [0; 1]), Err(crate::storage::object::ObjectError::Busy));
+    drop(store);
+    let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+    {
+        let mut native = NativeExtentReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+        let mut transfer = Transfer::resume(native.inspect().unwrap()).unwrap();
+        assert_eq!(transfer.inspect().copied, 32768);
+        transfer.receive(&mut native, 0, &payload[..1024]).unwrap();
+        for at in (32768..payload.len()).step_by(1024) { transfer.receive(&mut native, at as u64, &payload[at..(at+1024).min(payload.len())]).unwrap(); }
+        for _ in 0..3 { assert_eq!(transfer.verify_tick(&mut native), Ok(ReplicaState::Verifying)); }
+        transfer.receive(&mut native, 0, &payload[..1024]).unwrap();
+        assert_eq!(transfer.verify_tick(&mut native), Ok(ReplicaState::Verifying));
+    }
+    drop(store);
+    let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+    {
+        let mut native = NativeExtentReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+        let mut transfer = Transfer::resume(native.inspect().unwrap()).unwrap();
+        for _ in 0..64 { assert_eq!(transfer.verify_tick(&mut native), Ok(ReplicaState::Verifying)); }
+        assert_eq!(transfer.verify_tick(&mut native), Ok(ReplicaState::Available));
+    }
+    drop(store);
+    let mut store = ObjectStore::mount(disk, 0).unwrap();
+    assert!(store.write_staging_range(extent, 0, &[0; 1024]).is_err());
+    {
+        let mut native = NativeExtentReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+        for at in (0..payload.len()).step_by(1024) {
+            let part = &payload[at..(at+1024).min(payload.len())];
+            let mut out = [0; 1024];
+            native.read_verified_chunk(at as u64, &mut out[..part.len()], Sha256::digest(part).into()).unwrap();
+            assert_eq!(&out[..part.len()], part);
+        }
+        let mut out = [0xff; 1024];
+        assert_eq!(native.read_verified_chunk(0, &mut out, [0; 32]), Err(ReplicaError::Integrity));
+        assert_eq!(out, [0; 1024]);
+    }
+    let mut out = vec![0; payload.len()];
+    assert_eq!(store.read(extent, None, &mut out), Ok(payload.len()));
+    assert_eq!(out, payload);
+}
+
+// ------------------------=
+// FUNC: streamed_reservation_and_seal_are_atomic
+// DESC: Injects every native write failure during initial reservation and final publication; no lost reservation or readable partial content survives remount.
+// ------------------=
+#[test]
+fn streamed_reservation_and_seal_are_atomic() {
+    use crate::native_fabric::extent::NativeExtentReplica;
+    for sealing in [false, true] {
+        let disk = Disk::default();
+        let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+        let backing = store.create(b"stream", ObjectType::Metadata, Space::System, &[]).unwrap();
+        let d = descriptor(&[]);
+        if sealing {
+            let mut native = NativeExtentReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+            Transfer::begin(&mut native, d).unwrap();
+            native.checkpoint(&Checkpoint { descriptor: d, copied: 0, state: ReplicaState::Verifying }).unwrap();
+        }
+        let baseline = disk.0.borrow().sectors.clone(); let original_usage = store.usage_blocks();
+        disk.0.borrow_mut().writes = 0;
+        {
+            let mut native = NativeExtentReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+            if sealing { Transfer::resume(native.inspect().unwrap()).unwrap().verify_tick(&mut native).unwrap(); }
+            else { Transfer::begin(&mut native, d).unwrap(); }
+        }
+        let count = disk.0.borrow().writes;
+        for cut in 0..=count {
+            let disk = Disk(Rc::new(RefCell::new(DiskState { sectors: baseline.clone(), writes_left: Some(cut), writes: 0 })));
+            let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+            {
+                let mut native = NativeExtentReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+                if sealing { let _ = Transfer::resume(native.inspect().unwrap()).unwrap().verify_tick(&mut native); }
+                else { let _ = Transfer::begin(&mut native, d); }
+            }
+            drop(store); disk.0.borrow_mut().writes_left = None;
+            let mut store = ObjectStore::mount(disk, 0).unwrap();
+            let usage = store.usage_blocks();
+            let mut native = NativeExtentReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+            if let Some(checkpoint) = native.inspect() {
+                let mut transfer = Transfer::resume(checkpoint).unwrap();
+                assert_eq!(transfer.verify_tick(&mut native), Ok(ReplicaState::Available));
+                native.read_verified_chunk(0, &mut [], d.hash).unwrap();
+            } else { assert!(!sealing); assert_eq!(usage, original_usage); }
+        }
+    }
+}
+
+// ------------------------=
 // FUNC: manifest_commit_is_generation_fenced_and_crash_atomic
 // DESC: Cuts every native manifest commit write, remounts, and proves readers only see a coherent old or new policy/version generation.
 // ------------------=

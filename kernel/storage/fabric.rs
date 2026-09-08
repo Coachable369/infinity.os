@@ -5,6 +5,8 @@ use crate::storage::{object::{ObjectId, ObjectStore, MAX_CONTENT}, BlockDevice};
 use crate::runtime::fabric::{replica::{Checkpoint, ReplicaDescriptor, ReplicaError, ReplicaState,
     ReplicaStore, Transfer, TRANSFER_CHUNK}, resources::ResourceId};
 use sha2::{Digest, Sha256};
+#[path = "fabric_extent.rs"]
+pub(crate) mod extent;
 
 const HEADER: usize = 128;
 pub(crate) const MAX_REPLICA_BYTES: usize = MAX_CONTENT - HEADER;
@@ -225,6 +227,17 @@ fn encode(checkpoint: &Checkpoint, out: &mut [u8]) {
 // DESC: Validates bounded checkpoint schema and payload extent before constructing recoverable typed state.
 // ------------------=
 fn decode(bytes: &[u8]) -> Result<Checkpoint, ReplicaError> {
+    let checkpoint = decode_header(bytes)?;
+    if checkpoint.descriptor.bytes > MAX_REPLICA_BYTES as u64 || checkpoint.copied > MAX_REPLICA_BYTES as u64
+        || bytes.len() != HEADER + checkpoint.copied as usize { return Err(ReplicaError::Invalid); }
+    Ok(checkpoint)
+}
+
+// ------------------------=
+// FUNC: decode_header
+// DESC: Decodes shared immutable transfer identity independently from inline or streamed payload storage.
+// ------------------=
+fn decode_header(bytes: &[u8]) -> Result<Checkpoint, ReplicaError> {
     if bytes.len() < HEADER || &bytes[..8] != b"INFREPL1" || bytes[9..16] != [0; 7] || bytes[120..128] != [0; 8] {
         return Err(ReplicaError::Invalid);
     }
@@ -235,8 +248,6 @@ fn decode(bytes: &[u8]) -> Result<Checkpoint, ReplicaError> {
     let checkpoint = Checkpoint { descriptor: ReplicaDescriptor { job: number(16), object: bytes[24..40].try_into().unwrap(),
         version: number(40), resource: ResourceId(bytes[48..64].try_into().unwrap()), generation: number(64),
         bytes: number(72), hash: bytes[80..112].try_into().unwrap() }, copied: number(112), state };
-    if checkpoint.descriptor.bytes > MAX_REPLICA_BYTES as u64 || checkpoint.copied > MAX_REPLICA_BYTES as u64
-        || bytes.len() != HEADER + checkpoint.copied as usize { return Err(ReplicaError::Invalid); }
     Transfer::resume(checkpoint)?;
     Ok(checkpoint)
 }

@@ -34,6 +34,11 @@ pub trait ReplicaStore {
     // ------------------=
     fn read_staging(&mut self, descriptor: &ReplicaDescriptor, offset: u64, bytes: &mut [u8]) -> Result<(), ReplicaError>;
     // ------------------------=
+    // FUNC: observe_verification
+    // DESC: Allows a durable adapter to independently track an ordered verification scan; duplicate-read probes never advance this state.
+    // ------------------=
+    fn observe_verification(&mut self, _descriptor: &ReplicaDescriptor, _offset: u64, _bytes: &[u8]) -> Result<(), ReplicaError> { Ok(()) }
+    // ------------------------=
     // FUNC: checkpoint
     // DESC: Durably records transfer state, returning success only after the normal native commit boundary.
     // ------------------=
@@ -121,6 +126,7 @@ impl Transfer {
             let size = (self.current.descriptor.bytes - self.verified).min(TRANSFER_CHUNK as u64) as usize;
             let mut bytes = [0u8; TRANSFER_CHUNK];
             store.read_staging(&self.current.descriptor, self.verified, &mut bytes[..size])?;
+            store.observe_verification(&self.current.descriptor, self.verified, &bytes[..size])?;
             self.digest.update(&bytes[..size]); self.verified += size as u64;
         }
         if self.verified != self.current.descriptor.bytes { return Ok(ReplicaState::Verifying); }
