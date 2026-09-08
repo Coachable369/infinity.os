@@ -92,6 +92,7 @@ milestone-9-service-test:
 .PHONY: milestone-9-durable-mutation-test milestone-9-correlation-test
 milestone-9-durable-mutation-test:
 	@CARGO_TARGET_DIR=build/milestone9-harness cargo test --quiet --manifest-path tools/milestone9-harness/Cargo.toml durable_
+	@RUST_MIN_STACK=16777216 CARGO_TARGET_DIR=build/behavior-harness cargo test --quiet --manifest-path tools/behavior-harness/Cargo.toml --bin runtime-test node::persistence::tests
 
 milestone-9-correlation-test:
 	@CARGO_TARGET_DIR=build/milestone9-harness cargo test --quiet --manifest-path tools/milestone9-harness/Cargo.toml
