@@ -1,5 +1,11 @@
 # InfinityOS testing
 
+`make milestone-9-wire-trust-test` runs two independent native engineering guests
+using the production node transport and E1000/UDP path. External binary operator
+commands compare independent verification material and explicitly approve it.
+See [9-A evidence and limits](MILESTONE_9A_WIRE_TRUST.md). This is not installed GUI
+or detached-media acceptance; log text is never a test oracle.
+
 `make milestone-9-test` behaviorally verifies identity, discovery, pairing, sessions, replay rejection, remote authority, mesh membership, bounds, persistence, and corruption handling. Installed boot is checked from framebuffer pixels and structured disk state, never rendered text. Two independently installed networked-node acceptance remains **SCAFFOLDED**.
 
 ## Milestone 8 native networking

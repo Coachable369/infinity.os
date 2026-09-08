@@ -2,6 +2,7 @@
 
 pub mod types;
 pub mod transport;
+pub mod wire_trust;
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;

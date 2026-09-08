@@ -1,5 +1,11 @@
 # InfinityOS architecture through Milestone 9
 
+Phase 9-A adds `node::wire_trust` as a bounded state machine below future remote
+IOP carriage. It owns negotiation/confirmation state and delegates directional
+cryptography to the existing NodeRuntime/Crypto boundary. NodeTransport owns
+capability-scoped native endpoints and cooperative packet admission. See
+[the wire contract](MILESTONE_9A_WIRE_TRUST.md). No compositor path is changed.
+
 Milestone 9 adds architecture-neutral Crypto, Node Identity, Node Discovery, Node Trust, Mesh, and Node Audit services above Network Service. Discovery is not trust; trust is not membership; membership is not capability. Remote operations require authenticated sessions and scoped, leased, revocable grants.
 
 ## Installability invariant

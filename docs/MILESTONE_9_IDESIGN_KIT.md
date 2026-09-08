@@ -1,5 +1,15 @@
 # InfinityOS Milestone 9 IDesign Kit
 
+## Phase 9-A evidence boundary
+
+This increment changes no visual controls. Its trusted engineering operator
+channel exposes local/remote NodeIds, transcript fingerprint, short code,
+PairingId, requested scope, expiry, compatibility and explicit confirmation state.
+Future GUI wiring must display locally computed values and require external
+approval; it must not fetch and auto-submit an expected code. Final installed
+two-screen human verification remains outside 9-A. See
+[wire trust](MILESTONE_9A_WIRE_TRUST.md).
+
 Status: IMPLEMENTED DESIGN CONTRACT
 
 ## Visual foundation

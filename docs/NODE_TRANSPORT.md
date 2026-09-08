@@ -1,24 +1,32 @@
 # Native node transport status
 
-Status: **PARTIAL — not Milestone 9 acceptance**.
+Status: Phase 9-A TESTED — PRODUCTION WIRE / ENGINEERING GUEST; evidence is recorded in
+[MILESTONE_9A_WIRE_TRUST.md](MILESTONE_9A_WIRE_TRUST.md). Overall Milestone 9 remains PARTIAL.
 
 `kernel/runtime/node/transport.rs` is an installed-runtime discovery adapter over
-the existing connected-datagram NetworkRuntime. It does not implement pairing,
-session negotiation, encrypted remote IOP or synchronized membership yet.
+the existing connected-datagram NetworkRuntime. Its `wire_trust` service adds
+signed pairing, external confirmation and authenticated encrypted duplex sessions.
+It does not implement encrypted remote IOP or synchronized membership.
 
 ## Authority and scheduling
 
-Four fixed link slots reference pre-existing connection-owner, send and receive
-capabilities. Attaching cannot create a connection, firewall allowance, trust,
-grant or membership. Every send/receive uses the network service's current
-capability and policy checks. Inspection is scoped to the connection owner.
+Four fixed link slots reference connection-owner, send and receive capabilities.
+`provision` validates the caller's scoped NetworkConnect capability, configured
+static IPv4 address and selected native interface route; creates a connected UDP
+endpoint; and derives only owner-scoped, connection-specific send/receive leases.
+It rolls back partial failures. It cannot create firewall allowances, trust,
+grants or membership. Every send/receive uses current network capability and policy
+checks. Inspection is scoped to the connection owner. Missing native addresses or
+routes fail; local-host fallback is forbidden.
 
 The native NIC service calls the adapter after bounded ingress processing.
 Each call visits one link; each link processes at most one received packet and
-one signature operation per second, and attempts at most one send per second.
-There is one pending response per link, no allocation, wait or unbounded retry.
-No links are registered by default. Operator-facing endpoint provisioning is
-still missing; the attached-link behavior is tested through explicit fixtures.
+one protocol transition per second, and attempts at most one send per second.
+A transition may verify, sign and perform agreement; it never waits for a peer.
+There is one pending discovery response per link and one handshake/data packet per
+transaction, no allocation or unbounded retry. No links or firewall allowances are
+registered by default. The trusted engineering operator path supplies explicit
+deployment policy and invokes the production provisioning API.
 
 ## Discovery envelope
 
@@ -44,9 +52,10 @@ bounded one-second retries for ARP/backpressure. Link detachment and disabled
 discovery discard outstanding challenge state. Discovery cannot grant trust.
 
 Successful discovery commits authoritative state before returning a change.
-The runtime then publishes Discovered/Recovered IEF outside the mutable runtime
-borrow. Full lifecycle events, event-delivery retry/reconciliation, offline
-transitions and authenticated reconnect remain incomplete.
+The runtime then publishes Discovered/Recovered/Offline IEF outside the mutable
+runtime borrow. Peer observations expire after 30 seconds. Address/link loss and
+Offline profile activation quiesce negotiation and close sessions. Full lifecycle
+event delivery/reconciliation remains outside 9-A.
 
 ## Evidence
 
@@ -57,7 +66,9 @@ binding, one discovery transition, no automatic trust/session/grant, replay
 without liveness refresh, invalid signatures with valid UDP checksums,
 malformed/oversized node payloads, revocation and Offline quiescence.
 
-This is **TESTED / HOST**, not native VM or detached-install node acceptance.
+Those cases are **TESTED / HOST**. `make milestone-9-wire-trust-test` additionally
+uses two independent native E1000 guests for production discovery and trust
+establishment; see the phase report for the exact engineering evidence boundary.
 The normal installed-kernel binary parity gate covers packaging of this module
-as part of the existing core node runtime. It does not prove the missing
-operator workflow or two-node installed lifecycle.
+as part of the existing core node runtime. It does not prove two-node installed
+lifecycle or final installed GUI acceptance.

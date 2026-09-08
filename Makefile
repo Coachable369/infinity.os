@@ -99,6 +99,12 @@ native-nic-test: $(BUILD)/x86_64/BOOTX64.EFI
 	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $(BUILD)/nic-probe.elf tools/nic-probe/target/x86_64-unknown-none/release/libinfinity_native_nic_probe.a
 	python3 tools/nic-probe/run.py
 
+.PHONY: milestone-9-wire-trust-test
+milestone-9-wire-trust-test: $(BUILD)/x86_64/BOOTX64.EFI
+	RUSTC_BOOTSTRAP=1 cargo build --release -Z build-std=core --target x86_64-unknown-none --manifest-path tools/wire-trust-probe/Cargo.toml
+	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $(BUILD)/wire-trust-probe.elf tools/wire-trust-probe/target/x86_64-unknown-none/release/libinfinity_wire_trust_probe.a
+	python3 tools/wire-trust-probe/run.py
+
 crash-screen-test:
 	@tools/crash-screen-test.sh
 

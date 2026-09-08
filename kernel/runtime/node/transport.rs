@@ -36,7 +36,7 @@ struct Link {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum DiscoveryChange { Discovered(NodeId), Recovered(NodeId) }
+pub enum DiscoveryChange { Discovered(NodeId), Recovered(NodeId), Offline(NodeId) }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct LinkSnapshot {
@@ -47,6 +47,7 @@ pub struct LinkSnapshot {
 }
 
 pub struct NodeTransport {
+    pub trust: super::wire_trust::WireTrust,
     seed: Option<[u8; 32]>,
     counter: u64,
     links: [Option<Link>; MAX_LINKS],
@@ -61,7 +62,7 @@ impl NodeTransport {
     // DESC: Creates no connections, authority, peer assumptions or traffic at boot.
     // ------------------=
     pub const fn new() -> Self {
-        Self { seed: None, counter: 0, links: [None; MAX_LINKS], cursor: 0, rejected_packets: 0, last_error: None }
+        Self { trust: super::wire_trust::WireTrust::new(), seed: None, counter: 0, links: [None; MAX_LINKS], cursor: 0, rejected_packets: 0, last_error: None }
     }
 
     // ------------------------=
@@ -72,6 +73,7 @@ impl NodeTransport {
         if !valid || entropy.iter().all(|byte| *byte == 0) { return Err(NodeError::EntropyUnavailable); }
         if self.seed.is_some() { return Err(NodeError::UnsupportedState); }
         self.seed = Some(*entropy);
+        self.trust.initialize(entropy);
         Ok(())
     }
 
@@ -89,6 +91,34 @@ impl NodeTransport {
         let slot = self.links.iter().position(Option::is_none).ok_or(NetworkError::ResourceLimitExceeded)?;
         self.links[slot] = Some(Link { authority, local: connection.local, remote: connection.remote, peer: None, nonce: [0; 32], expires: 0, next_challenge: now, next_send: now, crypto_tick: None, pending: None, pending_until: 0 });
         Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: provision
+    // DESC: Binds an explicitly authorized native IPv4 peer using existing interface configuration and policy, without loopback fallback.
+    // ------------------=
+    pub fn provision(&mut self, network: &mut NetworkRuntime, capabilities: &mut CapabilityManager, owner: SecurityIdentity, connect: u64, local: Endpoint, remote: Endpoint, now: u64) -> Result<u32, NetworkError> {
+        use crate::runtime::network::types::{AddressState, Subject};
+        if self.seed.is_none() { return Err(NetworkError::NetworkUnavailable); }
+        if self.links.iter().all(Option::is_some) { return Err(NetworkError::ResourceLimitExceeded); }
+        capabilities.validate(connect, owner, CapabilityType::NetworkConnect, 0, 1, 0, now).map_err(|_|NetworkError::AccessDenied)?;
+        let authority = *capabilities.get(connect).ok_or(NetworkError::AccessDenied)?;
+        if !matches!((local.address, remote.address), (IpAddress::V4(_),IpAddress::V4(_))) || local.address.is_host_local() || remote.address.is_host_local() || local.port==0 || remote.port==0 {return Err(NetworkError::InvalidEndpoint);}
+        let route=network.interfaces.select_route(remote.address,None)?;
+        if route.interface_id!=2 {return Err(NetworkError::NoRoute);}
+        let valid=(0..network.interfaces.address_count()).filter_map(|i|network.interfaces.address_nth(i)).any(|a|a.interface_id==2 && a.address==local.address && a.state==AddressState::Preferred && a.valid_until.map(|end|now<end).unwrap_or(true));
+        if !valid {return Err(NetworkError::AddressUnavailable);}
+        let connection=network.connections.connect(owner,Subject::Context(owner),connect,local,remote,TransportProtocol::Datagram,3,now,now.saturating_add(5),capabilities,&mut network.policy)?;
+        let send=match capabilities.grant(CapabilityType::NetworkSend,connection as u64,1,0,authority.issuer,owner,authority.expires_at,0) {
+            Ok(id)=>id,Err(_)=>{let _=network.connections.close(connection);return Err(NetworkError::ResourceLimitExceeded);}
+        };
+        let receive=match capabilities.grant(CapabilityType::NetworkReceive,connection as u64,1,0,authority.issuer,owner,authority.expires_at,0) {
+            Ok(id)=>id,Err(_)=>{let _=capabilities.revoke(send);let _=network.connections.close(connection);return Err(NetworkError::ResourceLimitExceeded);}
+        };
+        if let Err(error)=self.attach(LinkAuthority {owner,connection,send,receive},network,capabilities,now) {
+            let _=capabilities.revoke(send);let _=capabilities.revoke(receive);let _=network.connections.close(connection);return Err(error);
+        }
+        Ok(connection)
     }
 
     // ------------------------=
@@ -115,12 +145,23 @@ impl NodeTransport {
 
     // ------------------------=
     // FUNC: poll
-    // DESC: Services one link without waiting; performs at most one signature operation per link per second.
+    // DESC: Services one link without waiting; performs at most one bounded received-frame transition per link per second.
     // ------------------=
     pub fn poll(&mut self, nodes: &mut NodeRuntime, network: &mut NetworkRuntime, capabilities: &CapabilityManager, now: u64) -> Option<DiscoveryChange> {
         let seed = self.seed?;
+        let mut offline = None;
+        for peer in nodes.discovered.iter_mut().flatten() {
+            if peer.reachability == super::types::Reachability::Online && now.saturating_sub(peer.last_seen)>super::DISCOVERY_LEASE_TICKS {
+                peer.reachability=super::types::Reachability::Offline;offline=Some(DiscoveryChange::Offline(peer.id));break;
+            }
+        }
+        self.trust.tick(nodes, now);
+        if offline.is_some() {return offline;}
         if !network.profiles.active().map(|profile| profile.local_discovery_enabled && profile.interfaces_enabled).unwrap_or(false) {
-            for link in self.links.iter_mut().flatten() { link.pending = None; link.expires = 0; link.nonce.zeroize(); }
+            for link in self.links.iter_mut().flatten() {
+                self.trust.disconnect(nodes,link.authority.connection,now);
+                link.pending = None; link.expires = 0; link.nonce.zeroize();
+            }
             return None;
         }
         let index = self.cursor;
@@ -128,11 +169,20 @@ impl NodeTransport {
         let link = self.links[index].as_mut()?;
         if now >= link.pending_until { link.pending = None; }
         let authority = link.authority;
+        if network.inspect_connection(authority.connection,authority.owner,false).map(|c|c.state!=ConnectionState::Open).unwrap_or(true) {
+            self.trust.disconnect(nodes,authority.connection,now);
+            link.expires=0;link.pending=None;return None;
+        }
         let mut change = None;
         if link.crypto_tick != Some(now) {
             if let Ok(packet) = network.receive_datagram(authority.owner, authority.receive, authority.connection, now, capabilities) {
                 link.crypto_tick = Some(now);
-                match process_packet(link, nodes, &packet.bytes[..packet.length as usize], now) {
+                let bytes = &packet.bytes[..packet.length as usize];
+                let result = if super::wire_trust::accepts(bytes) {
+                    let snapshot = LinkSnapshot { connection: authority.connection, peer: link.peer, local: link.local, remote: link.remote };
+                    self.trust.ingest(nodes, snapshot, bytes, now).map(|_| None)
+                } else { process_packet(link, nodes, bytes, now) };
+                match result {
                     Ok(result) => change = result,
                     Err(error) => {
                         self.last_error = Some(error);
@@ -155,9 +205,12 @@ impl NodeTransport {
         }
         if now >= link.next_send {
             let challenge = challenge_packet(link.nonce);
-            let outgoing = link.pending.as_ref().or_else(|| if now < link.expires { Some(&challenge) } else { None });
+            let protocol = self.trust.outgoing(authority.connection, now);
+            let outgoing = protocol.as_ref().or(link.pending.as_ref()).or_else(|| if now < link.expires { Some(&challenge) } else { None });
             if let Some(packet) = outgoing {
-                if network.send_datagram(authority.owner, authority.send, authority.connection, &packet.bytes[..packet.length as usize], now, now.saturating_add(1), capabilities).is_ok() { link.pending = None; }
+                if network.send_datagram(authority.owner, authority.send, authority.connection, &packet.bytes[..packet.length as usize], now, now.saturating_add(1), capabilities).is_ok() {
+                    if protocol.is_some() { self.trust.sent(authority.connection); } else { link.pending = None; }
+                }
             }
             link.next_send = now.saturating_add(1);
         }
@@ -230,7 +283,7 @@ fn process_packet(link: &mut Link, nodes: &mut NodeRuntime, bytes: &[u8], now: u
 // FUNC: endpoint_bytes
 // DESC: Canonically encodes the reachable connected endpoint with explicit address family and network-order port.
 // ------------------=
-fn endpoint_bytes(endpoint: Endpoint) -> [u8; 19] {
+pub(super) fn endpoint_bytes(endpoint: Endpoint) -> [u8; 19] {
     let mut bytes = [0; 19];
     match endpoint.address {
         IpAddress::V4(address) => { bytes[0] = 4; bytes[1..5].copy_from_slice(&address); }

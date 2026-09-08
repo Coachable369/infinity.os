@@ -1865,6 +1865,7 @@ pub fn poll_node_transport(now: u64) {
     let event = match change {
         Some(node::transport::DiscoveryChange::Discovered(peer)) => Some((EVENT_NODE_DISCOVERED, peer)),
         Some(node::transport::DiscoveryChange::Recovered(peer)) => Some((EVENT_NODE_RECOVERED, peer)),
+        Some(node::transport::DiscoveryChange::Offline(peer)) => Some((EVENT_NODE_OFFLINE, peer)),
         None => None,
     };
     if let Some((kind, peer)) = event { let _ = publish_node_state_event(kind, peer, now, now); }

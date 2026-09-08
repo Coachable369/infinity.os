@@ -1,6 +1,9 @@
 # InfinityOS Native Networking
 
-Node services consume typed Network Service boundaries and do not identify peers by address. Real cross-machine signed discovery and encrypted session carriage remain **SCAFFOLDED** until native packet transport is complete.
+Node services consume typed Network Service boundaries and do not identify peers
+by address. Phase 9-A carries signed discovery, explicit pairing and encrypted
+duplex sessions over the native static IPv4/UDP reference path. See
+[wire trust](MILESTONE_9A_WIRE_TRUST.md); remote IOP remains outside this phase.
 
 The x86_64 QEMU reference NIC/ARP/IPv4/UDP path now has two-guest engineering
 evidence through the production typed datagram manager. This is **TESTED in the

@@ -13,7 +13,7 @@ mod event;
 #[path = "../../kernel/runtime/network/mod.rs"]
 mod network;
 mod runtime {
-    pub(crate) use crate::{capability, execution, network};
+    pub(crate) use crate::{capability, execution, network, node};
 }
 
 use node::types::{MeshRole, NodeError, TrustState};
@@ -21,6 +21,7 @@ use node::NodeRuntime;
 mod pairing_acceptance;
 mod duplex_acceptance;
 mod discovery_acceptance;
+mod wire_trust_acceptance;
 
 // ------------------------=
 // FUNC: dispatch_request
@@ -294,6 +295,7 @@ fn paired_nodes() -> (NodeRuntime, NodeRuntime, node::types::NodeId, node::types
 // DESC: Exercises node identity, discovery, trust, secure sessions, remote authority, membership, persistence, and bounds through behavior.
 // ------------------=
 fn main() {
+    wire_trust_acceptance::run();
     discovery_acceptance::run();
     duplex_acceptance::run();
     pairing_acceptance::run();

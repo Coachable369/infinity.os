@@ -2,6 +2,18 @@
 
 **Overall: PARTIAL. Do not label this release Milestone 9 COMPLETE.**
 
+## Phase 9-A superseding status
+
+**Milestone 9-A — Wire Trust Establishment: TESTED.** Evidence: PRODUCTION WIRE /
+ENGINEERING GUEST plus HOST. Overall Milestone 9 remains PARTIAL.
+
+The focused wire-trust increment adds endpoint provisioning, native signed
+pairing, independently derived verification, explicit external confirmation and
+authenticated duplex sessions. Current evidence and remaining boundaries are
+in [MILESTONE_9A_WIRE_TRUST.md](MILESTONE_9A_WIRE_TRUST.md). Older discovery-only
+status, missing-handshake descriptions and ISO hashes below are historical;
+they must not be read as the current Phase 9-A implementation status.
+
 ## Compact acceptance checklist
 
 1. Carry signed discovery and explicit pairing over the existing native UDP path.

@@ -10,7 +10,9 @@ is terminal: a cancelled transaction cannot later be confirmed.
 Status: explicit human approval, correct/wrong code, cancellation, expiry,
 revocation, blocking, and the bounded typed IOP pairing path are **TESTED** in the
 host behavioral harness. GUI code entry is **IMPLEMENTED BUT UNTESTED** in a
-two-machine UI run. Cross-machine transport remains **SCAFFOLDED**.
+two-machine UI run. Phase 9-A adds production wire pairing with independent
+verification and explicit external approvals; see
+[the phase evidence](MILESTONE_9A_WIRE_TRUST.md). It does not certify that GUI flow.
 
 ## Duplex mechanism
 
