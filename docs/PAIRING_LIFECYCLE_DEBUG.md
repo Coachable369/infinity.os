@@ -98,3 +98,41 @@ unchanged, as do nonce, discovery, pairing and input deadlines. Snapshot words
 verification. This is direct sparse-poll reproduction, not restoration of the
 previous rejected scheduling patch. Installed acceptance must be repeated from
 newly built artifacts before this second correction is accepted.
+
+## Installed repetition and authoritative lease ownership
+
+Run g (`/tmp/infinity-ms9-installed-20260908-g`) passed dual confirmation with
+the final digit deliberately delayed five node-clock ticks, fresh secure session,
+synchronized join/leave, and disk-only cold reboot preserving both distinct
+identities, trust and membership records. Its pinned x86 ISO SHA-256 is
+`44a9d74394bfb4ce19caae0ef591c457cddec1544a8a916ccf8a80fcaa1e1f6f`.
+This is installed QEMU evidence, not ARM64/VirtualBox evidence or full MS9 closure.
+
+Run h, rebuilt with the readability corrections, passed both clean installations,
+onboarding, detached cold authentication, discovery, matching verification, and
+both explicit operator submissions. It did NOT complete dual trust. At clock 673,
+A's last authenticated discovery observation was 642 and `WireTrust::tick`
+terminated the transaction, despite its pairing expiry of 727. B committed dual
+consent at 674; A rejected the subsequent signed confirmation because its state
+was already terminal. No persistence error occurred. The earlier occupied-slot
+fix therefore did not fully resolve installed pairing reliability.
+
+The confirmed remaining fault is lease coupling: discovery's 30-tick liveness
+hint owned destruction of an already mutually authenticated 120-tick pairing.
+`checked_transaction_peer` now preserves verified confirmation under the original
+transaction deadline, validating the stored peer public key and current
+block/revoke/protocol state. New handshakes and established sessions still use
+current discovery liveness. Explicit connection loss, Offline-profile shutdown,
+revocation, cancellation, and transaction expiry remain terminal. No deadline,
+retry limit, or automatic approval changed.
+
+`verified_pairing_outlives_discovery_hint` drops native discovery traffic for 40
+ticks after initial consent. Before the fix it loses the verification transaction;
+afterward, signed second consent completes both peers. It additionally rejects
+revoked and actually expired consent. All 28 HOST pairing/security tests pass.
+Fresh installed repetition of this last correction remains required.
+
+The run-h pairing screenshot was reviewed directly: the title/subtitle, wrapped
+tabs, control descriptions, code, fingerprint and footer no longer overlap at the
+tested 2048-by-2048 framebuffer. Frame telemetry returned zero usable samples;
+this is not a performance pass.
