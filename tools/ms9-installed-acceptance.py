@@ -59,6 +59,7 @@ class Guest:
         self.mesh_port = None
         self.width, self.height = width, height
         self.last_pairing = None
+        self.input_latency_ns = []
 
     # ------------------------=
     # FUNC: boot
@@ -203,11 +204,20 @@ class Guest:
         aliases = {" ": "spc", "-": "minus", ".": "dot", "=": "equal", "/": "slash"}
         for character in value:
             if character == ":":
-                self.key("shift", "semicolon")
+                codes = ("shift", "semicolon")
             elif character.isupper():
-                self.key("shift", character.lower())
+                codes = ("shift", character.lower())
             else:
-                self.key(aliases.get(character, character))
+                codes = (aliases.get(character, character),)
+            before = self.state()
+            if before is None or before[71] == 0:
+                self.key(*codes)
+                continue
+            started = time.monotonic_ns()
+            self.qmp("send-key", {"keys": [{"type": "qcode", "data": code} for code in codes], "hold-time": 150})
+            accepted = self.wait(lambda state: state[71] > before[71], "accepted non-secret input", timeout=30)
+            assert accepted[71] == before[71] + 1 and accepted[4] == before[4]
+            self.input_latency_ns.append(time.monotonic_ns() - started)
 
     # ------------------------=
     # FUNC: screenshot
@@ -254,6 +264,11 @@ class Guest:
     # ------------------=
     def stop(self):
         if self.process is not None:
+            if self.input_latency_ns:
+                (self.work / "input-observations.json").write_text(json.dumps({
+                    "boundary": "QEMU keyboard submission to accepted-length snapshot",
+                    "poll_resolution_ms": 250, "samples_ns": self.input_latency_ns,
+                    "performance_acceptance": False}))
             if self.process.poll() is None:
                 self.qmp("quit")
             self.process.wait(timeout=20)
