@@ -160,6 +160,9 @@ fn pairing_review_with_storage(first: u64, second: u64, expired: bool, storage_f
             assert_eq!(at.trust.last_error, Some(crate::node::types::NodeError::StateCorrupt));
             at.trust.persist_pairing = engineering_discovery_writer;
             let view = at.trust.verification(aid, bid).unwrap();
+            assert_eq!(at.trust.confirm(&mut an, view.transaction, view.code, false, tick), Err(crate::node::types::NodeError::HumanApprovalRequired));
+            assert_eq!(at.trust.confirm(&mut an, view.transaction, (view.code + 1) % 1_000_000, true, tick), Err(crate::node::types::NodeError::VerificationMismatch));
+            assert_eq!(at.trust.lifecycle(bid).unwrap(), before);
             at.trust.confirm(&mut an, view.transaction, view.code, true, tick).unwrap();
         }
         for _ in 0..4 {
