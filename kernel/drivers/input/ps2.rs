@@ -8,6 +8,39 @@ const DATA: u16 = 0x60;
 const STATUS_COMMAND: u16 = 0x64;
 const TIMEOUT: usize = 100_000;
 static mut MOUSE_DEVICE_ID: u8 = 0;
+static mut CAPTURED: super::buffer::Buffer = super::buffer::Buffer::new();
+
+// ------------------------=
+// FUNC: capture_pending
+// DESC: Saves at most 32 controller bytes during rendering without invoking any UI or runtime code.
+// ------------------=
+fn capture_pending() {
+    unsafe {
+        let queue = &mut *(&raw mut CAPTURED);
+        for _ in 0..32 {
+            if queue.full() { break; }
+            let status = inb(STATUS_COMMAND);
+            if status & 1 == 0 { break; }
+            queue.push(super::buffer::Byte { status, value: inb(DATA) });
+        }
+    }
+}
+
+// ------------------------=
+// FUNC: pending_status
+// DESC: Preserves queued device order ahead of newly arriving controller data.
+// ------------------=
+fn pending_status() -> u8 {
+    unsafe { (&*(&raw const CAPTURED)).peek().map(|byte| byte.status).unwrap_or_else(|| inb(STATUS_COMMAND)) }
+}
+
+// ------------------------=
+// FUNC: read_pending
+// DESC: Removes a captured byte first; reads hardware only after a ready status was observed.
+// ------------------=
+fn read_pending() -> u8 {
+    unsafe { (&mut *(&raw mut CAPTURED)).pop().map(|byte| byte.value).unwrap_or_else(|| inb(DATA)) }
+}
 
 // ------------------------=
 // FUNC: outb
@@ -254,6 +287,7 @@ pub fn initialize() -> InputStatus {
 // DESC: Implements the run operation.
 // ------------------=
 pub fn run() -> ! {
+    crate::ui::input_capture::install(capture_pending);
     let mut mouse_packet = [0u8; 4];
     let mut mouse_index = 0usize;
     let mouse_device_id = unsafe { MOUSE_DEVICE_ID };
@@ -266,13 +300,13 @@ pub fn run() -> ! {
     let mut extended = false;
     loop {
         crate::drivers::network::poll();
-        let status = unsafe { inb(STATUS_COMMAND) };
+        let status = pending_status();
         if status & 1 == 0 {
             crate::bootstrap::animation_tick();
             core::hint::spin_loop();
             continue;
         }
-        let value = unsafe { inb(DATA) };
+        let value = read_pending();
         if status & 0x20 != 0 {
             if mouse_index == 0 && value & 0x08 == 0 {
                 continue;
@@ -293,9 +327,9 @@ pub fn run() -> ! {
                 // Bounded drain preserves every make/break event. Do not consume
                 // mouse bytes here: pointer presses retain immediate presentation.
                 for _ in 1..64 {
-                    let next = unsafe { inb(STATUS_COMMAND) };
+                    let next = pending_status();
                     if next & 1 == 0 || next & 0x20 != 0 { break; }
-                    dispatch_keyboard(unsafe { inb(DATA) }, &mut shift, &mut extended);
+                    dispatch_keyboard(read_pending(), &mut shift, &mut extended);
                 }
             });
         }

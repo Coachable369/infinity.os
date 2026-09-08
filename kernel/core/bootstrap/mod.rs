@@ -255,6 +255,7 @@ impl DisplayDevice {
             let height = region.bottom.saturating_sub(region.top);
             if self.back_buffered {
                 for y in region.top..region.bottom {
+                    if y & 31 == 0 { crate::ui::input_capture::poll(); }
                     unsafe {
                         core::ptr::copy_nonoverlapping(
                             self.buffer.add(y * self.stride + region.left),

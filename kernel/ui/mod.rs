@@ -16,6 +16,7 @@ pub mod icon_theme;
 pub mod input;
 pub mod input_preferences;
 pub mod input_batch;
+pub mod input_capture;
 pub mod input_router;
 pub mod installer_layout;
 pub mod installer_template;

@@ -1185,6 +1185,7 @@ impl super::DisplayDevice {
         };
         let radius_squared = (radius * radius) as i64;
         for y in region.top..region.bottom {
+            if y & 31 == 0 { crate::ui::input_capture::poll(); }
             for x in region.left..region.right {
                 let dx = if x < left + radius {
                     left + radius - x

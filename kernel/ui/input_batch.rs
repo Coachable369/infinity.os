@@ -12,6 +12,11 @@ impl PresentationBatch {
     // ------------------=
     pub fn enter(&mut self) -> bool { let owner = !self.active; self.active = true; owner }
     // ------------------------=
+    // FUNC: active
+    // DESC: Identifies a deferred presentation so completion telemetry is published only after the outer flush.
+    // ------------------=
+    pub fn active(&self) -> bool { self.active }
+    // ------------------------=
     // FUNC: request
     // DESC: Records deferred damage while active; outside a drain presentation remains immediate.
     // ------------------=

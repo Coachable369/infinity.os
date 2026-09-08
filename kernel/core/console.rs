@@ -11572,7 +11572,7 @@ pub fn input(key: ConsoleKey) {
             // Publish after input and its presentation, not only on the coarse
             // firmware clock. Debugger latency then observes completed input
             // rather than time spent waiting for the next clock snapshot.
-            diagnostics::publish(runtime);
+            if !(&*(&raw const INPUT_PRESENTATION)).active() { diagnostics::publish(runtime); }
         }
     }
 }

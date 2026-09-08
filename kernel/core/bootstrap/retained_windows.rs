@@ -144,6 +144,7 @@ impl DisplayDevice {
                 self.blur_framebuffer_region(bounds.0, bounds.1, bounds.2, bounds.3, blur as usize);
             }
             for y in region.top..region.bottom {
+                if y & 31 == 0 { crate::ui::input_capture::poll(); }
                 for x in region.left..region.right {
                     let source = cache.pixels[(y - top) * width + x - left];
                     if source >> 24 == 0 {

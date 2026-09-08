@@ -1,4 +1,5 @@
 pub mod pointer;
+mod buffer;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod ps2;
 #[cfg(target_arch = "aarch64")]

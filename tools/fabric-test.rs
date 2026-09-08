@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 mod storage;
+#[path = "../kernel/drivers/input/buffer.rs"] mod input_buffer;
 #[path = "../kernel/storage/fabric.rs"] mod native_fabric;
 #[cfg(test)] mod fabric_persistence_tests;
 #[path = "../kernel/ui/mod.rs"] mod ui;
