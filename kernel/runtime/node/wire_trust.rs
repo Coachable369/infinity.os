@@ -87,6 +87,8 @@ struct Transaction {
     pending: Option<Packet>,
     next_send: u64,
     attempts: u8,
+    ended_at: u64,
+    end_site: u32,
 }
 
 #[derive(Clone)]
@@ -103,6 +105,13 @@ pub struct WireTrust {
 }
 
 impl WireTrust {
+    // ------------------------=
+    // FUNC: lifecycle
+    // DESC: Exposes only public transaction state for lifecycle diagnostics, including terminal transactions hidden from the confirmation UI.
+    // ------------------=
+    pub fn lifecycle(&self, peer: NodeId) -> Option<([u8; 32], WireState, u64, u8, u64, u32)> {
+        self.transactions.iter().flatten().find(|t| t.link.peer == Some(peer)).map(|t| (t.id, t.stage, t.expires, t.local_confirmed as u8 | ((t.remote_confirmed as u8) << 1), t.ended_at, t.end_site))
+    }
     // ------------------------=
     // FUNC: transaction_for_pairing
     // DESC: Resolves an exact local pairing handle to its authenticated wire transaction without exposing secret state.
@@ -245,6 +254,8 @@ impl WireTrust {
             pending: Some(packet),
             next_send: now,
             attempts: 0,
+            ended_at: 0,
+            end_site: 0,
         });
         nodes.record(0xda01, peer.id, now, correlation(id), kind);
         Ok(id)
@@ -505,7 +516,8 @@ impl WireTrust {
                 terminate(nodes, t, WireState::Expired, now);
                 continue;
             }
-            if checked_peer(nodes, t.link.peer.unwrap(), now).is_err() {
+            if let Err(error) = checked_peer(nodes, t.link.peer.unwrap(), now) {
+                self.last_error = Some(error);
                 terminate(nodes, t, WireState::Failed, now);
             } else if let Some(handle) = t.session {
                 if !nodes
@@ -755,6 +767,8 @@ impl WireTrust {
                 pending: Some(packet),
                 next_send: now,
                 attempts: 0,
+                ended_at: 0,
+                end_site: 0,
             });
             nodes.record(0xda01, peer.id, now, correlation(id), kind);
             return Ok(());
@@ -1318,7 +1332,10 @@ fn open(nodes: &mut NodeRuntime, t: &mut Transaction, now: u64) -> Result<(), No
 // FUNC: terminate
 // DESC: Clears pending trust and ephemeral material and zeroizes any established traffic keys on terminal failure.
 // ------------------=
+#[track_caller]
 fn terminate(nodes: &mut NodeRuntime, t: &mut Transaction, state: WireState, now: u64) {
+    t.ended_at = now;
+    t.end_site = core::panic::Location::caller().line();
     t.secret.zeroize();
     t.pending = None;
     if let Some(handle) = t.session {

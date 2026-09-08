@@ -45,6 +45,13 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         data[30] = runtime.nodes.audit_records().iter().flatten().count() as u64;
         if let Some(peer) = console.selected_node_id {
             words(&mut data[32..36], &peer.0);
+            if let Some((transaction, stage, expires, approvals, ended, site)) = runtime.node_transport.trust.lifecycle(peer) {
+                data[56] = stage as u64 + 1; data[57] = approvals as u64; data[58] = expires;
+                data[62] = ended; data[63] = site as u64; words(&mut data[64..68], &transaction);
+            }
+            data[59] = runtime.nodes.discovered_nodes().iter().flatten().find(|node| node.id == peer).map(|node| node.last_seen).unwrap_or(0);
+            data[60] = runtime.node_transport.trust.last_error.map(|error| error as u64 + 1).unwrap_or(0);
+            data[61] = runtime.node_transport.last_error.map(|error| error as u64 + 1).unwrap_or(0);
             if let Some(verification) = runtime.nodes.local_id().and_then(|local| runtime.node_transport.trust.verification(local, peer)) {
                 data[36] = verification.pairing; data[37] = verification.code as u64;
                 data[38] = verification.expires; data[39] = verification.state as u64;

@@ -56,6 +56,23 @@ fn authenticated_transcript_invalidates_node_presentation() {
     left.nodes.commit_wire_control(&mut left.node_transport.trust, Some(ll), OperationId::NodePairConfirm, approval, 12, 13, 14, |_| true).unwrap();
     assert_ne!(node_client::presentation(&left), ready);
     assert_eq!(left.nodes.discovered_nodes()[0].unwrap().trust, node::types::TrustState::PairingPending);
+    // Repeated Settings reads and authoritative IOP reconstruction are observers,
+    // not owners of the authenticated transaction or its confirmation bitmap.
+    let lifecycle = left.node_transport.trust.lifecycle(rid);
+    for now in 13..20 {
+        left.node_clock = Some(now);
+        let _ = node_client::presentation(&left);
+        refresh_node_projection(&mut left, now);
+        assert_eq!(left.node_transport.trust.lifecycle(rid), lifecycle);
+    }
+    let before = right.node_transport.trust.lifecycle(lid);
+    let mut right_approval = request(lid.0, OperationId::NodePairConfirm);
+    right_approval.handle = b.pairing;
+    right_approval.value = b.code;
+    right_approval.flags = iop::NODE_OPERATION_HUMAN_APPROVED;
+    assert!(right.nodes.commit_wire_control(&mut right.node_transport.trust, Some(rl), OperationId::NodePairConfirm, right_approval, 20, 21, 22, |_| false).is_err());
+    assert_eq!(right.node_transport.trust.lifecycle(lid), before);
+    assert!(right.node_transport.trust.verification(rid, lid).is_some());
     left.node_clock = Some(a.expires);
     left.node_transport.trust.tick(&mut left.nodes, a.expires);
     assert!(node_client::presentation(&left).verification.is_none());

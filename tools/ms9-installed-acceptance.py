@@ -56,6 +56,7 @@ class Guest:
         self.capture = 0
         self.mesh_port = None
         self.width, self.height = width, height
+        self.last_pairing = None
 
     # ------------------------=
     # FUNC: boot
@@ -126,6 +127,11 @@ class Guest:
         values = struct.unpack("<512Q", self.memory(self.address, self.length))
         if values[0] != 0x494e464449414731 or values[1] != 1 or values[2] & 1 or values[2] != values[511]:
             return None
+        lifecycle = values[32:37] + values[56:68]
+        if lifecycle != self.last_pairing:
+            self.last_pairing = lifecycle
+            with (self.work / "pairing-lifecycle.jsonl").open("a") as trace:
+                trace.write(json.dumps({"clock": values[10], "flags": values[9], "editor": values[54:56], "view": values[32:48], "lifecycle": values[56:68]}) + "\n")
         return values
 
     # ------------------------=
@@ -373,7 +379,7 @@ class Guest:
             self.qmp("send-key", {"keys": [{"type": "qcode", "data": digit}], "hold-time": 150})
             accepted = self.wait(lambda value: value[54] >= count or value[9] & 8, "accepted confirmation digit", timeout=15)
             assert accepted[54] == count and not accepted[9] & 8
-            assert accepted[10] < accepted[55] and accepted[36] == state[36]
+            assert accepted[10] < accepted[55] and accepted[36] == state[36], {"lost_pairing_during_input": accepted[:68]}
         self.qmp("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 150})
         result = self.wait(lambda value: not value[9] & 4 or value[9] & 8, "explicit operator confirmation", timeout=15)
         assert not result[9] & 12, {"confirmation_failure": result[:56]}
@@ -504,6 +510,16 @@ def main():
             (work / "onboarding-result.json").write_text(json.dumps(results, indent=2))
         else:
             (work / "install-result.json").write_text(json.dumps({"independent_installs": 2, "detached_onboarding": True, "full_ms9_lifecycle": False}, indent=2))
+    except Exception:
+        for guest in guests:
+            if guest.process is not None and guest.process.poll() is None:
+                try:
+                    state = guest.state()
+                    (guest.work / "failure-state.json").write_text(json.dumps(state))
+                    guest.screenshot("failure")
+                except Exception:
+                    pass
+        raise
     finally:
         for guest in guests:
             guest.stop()

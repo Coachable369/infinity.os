@@ -93,8 +93,28 @@ pub fn run() {
 // ------------------=
 #[test]
 fn pairing_keeps_discovery_live() {
-    let mut a = fixture::configured([2,0,0,0,0,1], [10,42,0,1], [10,42,0,2]);
-    let mut b = fixture::configured([2,0,0,0,0,2], [10,42,0,2], [10,42,0,1]);
+    pairing_review(45, 65, false);
+}
+
+// ------------------------=
+// FUNC: pairing_review_boundaries
+// DESC: Exercises immediate consent, prolonged normal traffic and exact expired-consent rejection without changing production leases.
+// ------------------=
+#[test]
+fn pairing_review_boundaries() {
+    pairing_review(20, 20, false);
+    pairing_review(20, 65, false);
+    pairing_review(20, 120, false);
+    pairing_review(20, 132, true);
+}
+
+// ------------------------=
+// FUNC: pairing_review
+// DESC: Runs independent native packet runtimes throughout a declared operator-review interval and checks transaction identity and trust transitions.
+// ------------------=
+fn pairing_review(first: u64, second: u64, expired: bool) {
+    let mut a = fixture::configured_until([2,0,0,0,0,1], [10,42,0,1], [10,42,0,2], 200);
+    let mut b = fixture::configured_until([2,0,0,0,0,2], [10,42,0,2], [10,42,0,1], 200);
     let mut an = NodeRuntime::new(); let mut bn = NodeRuntime::new();
     let aid = an.initialize(&[0x31;32], true).unwrap();
     let bid = bn.initialize(&[0x32;32], true).unwrap();
@@ -104,7 +124,10 @@ fn pairing_keeps_discovery_live() {
     at.attach(authority(&a), &a.network, &a.capabilities, 0).unwrap();
     bt.attach(authority(&b), &b.network, &b.capabilities, 0).unwrap();
     let mut capture = None;
-    for tick in 0..90 {
+    at.trust.persist_pairing = engineering_discovery_writer;
+    bt.trust.persist_pairing = engineering_discovery_writer;
+    let mut original = None;
+    for tick in 0..second + 20 {
         for _ in 0..4 {
             at.poll(&mut an, &mut a.network, &a.capabilities, tick);
             bt.poll(&mut bn, &mut b.network, &b.capabilities, tick);
@@ -115,14 +138,27 @@ fn pairing_keeps_discovery_live() {
             let link = at.inspect(a.connection, a.owner).unwrap();
             at.trust.begin(&mut an, link, 0, false, tick).unwrap();
         }
-        if tick == 45 || tick == 65 {
+        if tick == first || (tick == second && !expired) {
             let av = at.trust.verification(aid, bid).expect("left pairing must survive operator review");
             let bv = bt.trust.verification(bid, aid).expect("right pairing must survive operator review");
             assert_eq!(av.code, bv.code);
             assert_eq!(av.fingerprint, bv.fingerprint);
-            if tick == 45 { at.trust.confirm(&mut an, av.transaction, av.code, true, tick).unwrap(); }
-            else { bt.trust.confirm(&mut bn, bv.transaction, bv.code, true, tick).unwrap(); }
+            assert_eq!(av.transaction, bv.transaction);
+            if let Some(prior) = original { assert_eq!((bv.transaction, bv.code), prior); }
+            else { original = Some((bv.transaction, bv.code)); }
+            if tick == first { at.trust.confirm(&mut an, av.transaction, av.code, true, tick).unwrap(); }
+            if tick == second { bt.trust.confirm(&mut bn, bv.transaction, bv.code, true, tick).unwrap(); }
         }
+        if tick == second && expired {
+            let (transaction, code) = original.unwrap();
+            assert_eq!(bt.trust.confirm(&mut bn, transaction, code, true, tick), Err(crate::node::types::NodeError::PairingExpired));
+            assert!(bt.trust.verification(bid, aid).is_none());
+        }
+    }
+    if expired {
+        assert!(an.discovered_nodes().iter().flatten().all(|peer| peer.trust != TrustState::Trusted));
+        assert!(bn.discovered_nodes().iter().flatten().all(|peer| peer.trust != TrustState::Trusted));
+        return;
     }
     assert_eq!(an.discovered_nodes().iter().flatten().find(|peer| peer.id == bid).unwrap().trust, TrustState::Trusted);
     assert_eq!(bn.discovered_nodes().iter().flatten().find(|peer| peer.id == aid).unwrap().trust, TrustState::Trusted);
