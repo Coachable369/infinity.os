@@ -43,6 +43,9 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         data[26] = runtime.nodes.sessions().iter().flatten().filter(|session| session.state == crate::runtime::node::types::SessionState::Established).count() as u64;
         data[29] = runtime.nodes.configured_links().iter().flatten().count() as u64;
         data[30] = runtime.nodes.audit_records().iter().flatten().count() as u64;
+        data[68] = runtime.node_transport.poll_calls;
+        data[69] = runtime.node_transport.serviced_links;
+        data[70] = runtime.node_transport.received_packets;
         if let Some(peer) = console.selected_node_id {
             words(&mut data[32..36], &peer.0);
             if let Some((transaction, stage, expires, approvals, ended, site)) = runtime.node_transport.trust.lifecycle(peer) {

@@ -56,6 +56,9 @@ pub struct NodeTransport {
     cursor: usize,
     pub rejected_packets: u64,
     pub last_error: Option<NodeError>,
+    pub poll_calls: u64,
+    pub serviced_links: u64,
+    pub received_packets: u64,
 }
 
 impl NodeTransport {
@@ -64,7 +67,7 @@ impl NodeTransport {
     // DESC: Creates no connections, authority, peer assumptions or traffic at boot.
     // ------------------=
     pub const fn new() -> Self {
-        Self { persist_discovery: reject_unconfigured_discovery, last_offline_attempt: None, trust: super::wire_trust::WireTrust::new(), seed: None, counter: 0, links: [None; MAX_LINKS], cursor: 0, rejected_packets: 0, last_error: None }
+        Self { persist_discovery: reject_unconfigured_discovery, last_offline_attempt: None, trust: super::wire_trust::WireTrust::new(), seed: None, counter: 0, links: [None; MAX_LINKS], cursor: 0, rejected_packets: 0, last_error: None, poll_calls: 0, serviced_links: 0, received_packets: 0 }
     }
 
     // ------------------------=
@@ -169,6 +172,7 @@ impl NodeTransport {
     // DESC: Services one link without waiting; performs at most one bounded received-frame transition per link per second.
     // ------------------=
     pub fn poll(&mut self, nodes: &mut NodeRuntime, network: &mut NetworkRuntime, capabilities: &CapabilityManager, now: u64) -> Option<DiscoveryChange> {
+        self.poll_calls = self.poll_calls.saturating_add(1);
         let seed = self.seed?;
         let mut offline = None;
         for peer in nodes.discovered.iter().flatten() {
@@ -192,9 +196,14 @@ impl NodeTransport {
             }
             return None;
         }
-        let index = self.cursor;
-        self.cursor = (self.cursor + 1) % MAX_LINKS;
+        // Empty capacity is not work: select the next occupied slot without
+        // spending three UI polling opportunities on absent links. Still service
+        // only one link and at most one received transition per second.
+        let index = (0..MAX_LINKS).map(|offset| (self.cursor + offset) % MAX_LINKS)
+            .find(|index| self.links[*index].is_some())?;
+        self.cursor = (index + 1) % MAX_LINKS;
         let link = self.links[index].as_mut()?;
+        self.serviced_links = self.serviced_links.saturating_add(1);
         if now >= link.pending_until { link.pending = None; }
         let authority = link.authority;
         if network.inspect_connection(authority.connection,authority.owner,false).map(|c|c.state!=ConnectionState::Open).unwrap_or(true) {
@@ -204,6 +213,7 @@ impl NodeTransport {
         let mut change = None;
         if link.crypto_tick != Some(now) {
             if let Ok(packet) = network.receive_datagram(authority.owner, authority.receive, authority.connection, now, capabilities) {
+                self.received_packets = self.received_packets.saturating_add(1);
                 link.crypto_tick = Some(now);
                 let bytes = &packet.bytes[..packet.length as usize];
                 let result = if super::wire_trust::accepts(bytes) {

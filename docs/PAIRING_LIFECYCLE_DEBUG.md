@@ -76,3 +76,25 @@ first detached boots passed; the remaining installed lifecycle is in progress.
 `installed-object-test --bounded-node-checkpoint` adds a read-only artifact
 assertion for the one-version checkpoint and full 12-KiB payload. The previous
 run-e disk fails this assertion (six retained checkpoint versions), as expected.
+
+## Second installed failure: sparse polling
+
+Run f passed installation, onboarding, cold authentication, native endpoint
+configuration, discovery and matching verification. Both installed checkpoint
+artifacts now pass the bounded-history assertion. Pairing nevertheless expired
+through stale-peer cleanup during digit entry: A last_seen 906, termination 937,
+pairing expiry 1001, input expiry 963. No durable-write error occurred. B likewise
+stopped updating liveness at 908 and was terminated at 940.
+
+`pairing_single_runtime_poll` deterministically reproduced transcript loss when
+each runtime receives one polling opportunity per tick instead of the fixture's
+four. The transport advanced its cursor through all four capacity slots, including
+three absent links. It therefore serviced the only active link once every four
+calls, allowing the five-tick discovery challenge to expire before its response
+was consumed. Selecting the next occupied slot makes the regression pass. The
+per-call one-link bound and per-link one-received-packet-per-second limit remain
+unchanged, as do nonce, discovery, pairing and input deadlines. Snapshot words
+68–70 now expose poll calls, serviced links and received packets for installed
+verification. This is direct sparse-poll reproduction, not restoration of the
+previous rejected scheduling patch. Installed acceptance must be repeated from
+newly built artifacts before this second correction is accepted.

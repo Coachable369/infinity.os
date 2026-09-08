@@ -113,7 +113,7 @@ fn pairing_review_boundaries() {
 // DESC: Runs independent native packet runtimes throughout a declared operator-review interval and checks transaction identity and trust transitions.
 // ------------------=
 fn pairing_review(first: u64, second: u64, expired: bool) {
-    pairing_review_with_storage(first, second, expired, false);
+    pairing_review_with_storage(first, second, expired, false, false);
 }
 
 // ------------------------=
@@ -122,7 +122,16 @@ fn pairing_review(first: u64, second: u64, expired: bool) {
 // ------------------=
 #[test]
 fn pairing_storage_retry() {
-    pairing_review_with_storage(20, 25, false, true);
+    pairing_review_with_storage(20, 25, false, true, false);
+}
+
+// ------------------------=
+// FUNC: pairing_single_runtime_poll
+// DESC: Keeps one active link live when the UI gives transport one normal polling opportunity per tick.
+// ------------------=
+#[test]
+fn pairing_single_runtime_poll() {
+    pairing_review_with_storage(20, 65, false, false, true);
 }
 
 // ------------------------=
@@ -135,7 +144,7 @@ fn rejected_pairing_writer(_: &[u8; crate::node::types::NODE_STATE_BYTES]) -> bo
 // FUNC: pairing_review_with_storage
 // DESC: Exercises normal transport and optional durable failure throughout the unchanged confirmation lease.
 // ------------------=
-fn pairing_review_with_storage(first: u64, second: u64, expired: bool, storage_failure: bool) {
+fn pairing_review_with_storage(first: u64, second: u64, expired: bool, storage_failure: bool, sparse_poll: bool) {
     let mut a = fixture::configured_until([2,0,0,0,0,1], [10,42,0,1], [10,42,0,2], 200);
     let mut b = fixture::configured_until([2,0,0,0,0,2], [10,42,0,2], [10,42,0,1], 200);
     let mut an = NodeRuntime::new(); let mut bn = NodeRuntime::new();
@@ -165,7 +174,7 @@ fn pairing_review_with_storage(first: u64, second: u64, expired: bool, storage_f
             assert_eq!(at.trust.lifecycle(bid).unwrap(), before);
             at.trust.confirm(&mut an, view.transaction, view.code, true, tick).unwrap();
         }
-        for _ in 0..4 {
+        for _ in 0..if sparse_poll && tick >= 20 { 1 } else { 4 } {
             at.poll(&mut an, &mut a.network, &a.capabilities, tick);
             bt.poll(&mut bn, &mut b.network, &b.capabilities, tick);
             deliver(&mut a, &mut b, tick, &mut capture);
