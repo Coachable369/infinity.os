@@ -88,6 +88,7 @@ milestone-9-test:
 .PHONY: milestone-9-service-test
 milestone-9-service-test:
 	@RUST_MIN_STACK=16777216 CARGO_TARGET_DIR=build/behavior-harness cargo test --quiet --manifest-path tools/behavior-harness/Cargo.toml --bin runtime-test node_reconciliation_tests
+	@RUST_MIN_STACK=16777216 CARGO_TARGET_DIR=build/behavior-harness cargo test --quiet --manifest-path tools/behavior-harness/Cargo.toml --bin runtime-test node_operator::tests
 
 .PHONY: milestone-9-durable-mutation-test milestone-9-correlation-test
 milestone-9-durable-mutation-test:
