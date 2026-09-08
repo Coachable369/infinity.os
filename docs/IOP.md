@@ -1,5 +1,11 @@
 # Infinity Operation Protocol (IOP)
 
+The [latest control-plane increment](MILESTONE_9_FINAL_COMPLETION_STATUS.md)
+supersedes the earlier installed-write disablement below: the kernel router now
+uses a staged native-object commit path. HOST tests verify failure isolation and
+checkpoint reconstruction; installed acceptance remains untested. The same report
+defines complete Policy.Read fields and the appended PersistenceFailed error.
+
 The [9-B increment](MILESTONE_9B_CONTROL_PLANE.md) adds bounded authenticated remote
 NodeOperationV1 admission/dispatch to this router. Scope is partial: reads and
 engineering mutation authorization are exercised; installed writes fail closed

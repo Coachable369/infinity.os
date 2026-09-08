@@ -102,6 +102,7 @@ pub const EVENT_NODE_DEGRADED: u32 = 0x9e00d;
 pub const EVENT_NODE_RECOVERED: u32 = 0x9e00e;
 pub const EVENT_NODE_OFFLINE: u32 = 0x9e00f;
 pub const EVENT_NODE_COMPATIBILITY_CHANGED: u32 = 0x9e010;
+pub const EVENT_NODE_POLICY_CHANGED: u32 = 0x9e011;
 
 const NETWORK_EVENT_TYPES: [u32; 15] = [
     EVENT_NETWORK_INTERFACE_STATE_CHANGED,
@@ -121,12 +122,13 @@ const NETWORK_EVENT_TYPES: [u32; 15] = [
     EVENT_NETWORK_RECOVERED,
 ];
 
-const NODE_EVENT_TYPES: [u32; 16] = [
+const NODE_EVENT_TYPES: [u32; 17] = [
     EVENT_NODE_DISCOVERED, EVENT_NODE_PAIRING_REQUESTED, EVENT_NODE_PAIRED,
     EVENT_NODE_PAIRING_REJECTED, EVENT_NODE_TRUST_CHANGED, EVENT_NODE_TRUST_REVOKED,
     EVENT_NODE_BLOCKED, EVENT_NODE_UNBLOCKED, EVENT_NODE_SESSION_ESTABLISHED,
     EVENT_NODE_SESSION_CLOSED, EVENT_NODE_JOINED, EVENT_NODE_LEFT, EVENT_NODE_DEGRADED,
     EVENT_NODE_RECOVERED, EVENT_NODE_OFFLINE, EVENT_NODE_COMPATIBILITY_CHANGED,
+    EVENT_NODE_POLICY_CHANGED,
 ];
 
 const UI_EVENT_TYPES: [u32; 12] = [
@@ -1862,10 +1864,11 @@ pub fn initialize_node_identity(entropy: &[u8; 32], valid: bool) -> bool {
 // ------------------=
 pub fn poll_node_transport(now: u64) {
     let change = with_runtime(|runtime| runtime.node_transport.poll(&mut runtime.nodes, &mut runtime.network, &runtime.capabilities, now)).flatten();
-    let _ = with_runtime(|runtime| {
+    let committed = with_runtime(|runtime| {
         runtime.iop.poll_remote_node(&runtime.capabilities, &mut runtime.nodes, &mut runtime.node_transport.trust, now);
-        runtime.iop.execute_remote_node(&mut runtime.nodes, now);
-    });
+        runtime.iop.execute_remote_node_durable(&mut runtime.nodes, now, &mut persist_control_state)
+    }).flatten();
+    if let Some(committed) = committed { let _ = publish_committed_node_control(committed, now); }
     let event = match change {
         Some(node::transport::DiscoveryChange::Discovered(peer)) => Some((EVENT_NODE_DISCOVERED, peer)),
         Some(node::transport::DiscoveryChange::Recovered(peer)) => Some((EVENT_NODE_RECOVERED, peer)),
@@ -1873,6 +1876,49 @@ pub fn poll_node_transport(now: u64) {
         None => None,
     };
     if let Some((kind, peer)) = event { let _ = publish_node_state_event(kind, peer, now, now); }
+}
+
+// ------------------------=
+// FUNC: persist_control_state
+// DESC: Uses the native transactional object writer; non-kernel hosts cannot pretend that a durable installed commit succeeded.
+// ------------------=
+fn persist_control_state(bytes: &[u8; node::types::NODE_STATE_BYTES]) -> bool {
+    #[cfg(target_os = "none")]
+    { crate::storage::node_state_commit(bytes).is_ok() }
+    #[cfg(not(target_os = "none"))]
+    { let _ = bytes; false }
+}
+
+// ------------------------=
+// FUNC: publish_committed_node_control
+// DESC: Publishes only after durable replacement, carrying the control-service checkpoint for gap recovery; event failure never undoes a commit.
+// ------------------=
+fn publish_committed_node_control(notice: node::control::CommittedControl, now: u64) -> bool {
+    use iop::OperationId;
+    let kind = match notice.operation {
+        OperationId::NodePolicyUpdate => EVENT_NODE_POLICY_CHANGED,
+        OperationId::NodeRevokeTrust => EVENT_NODE_TRUST_REVOKED,
+        OperationId::NodeBlock => EVENT_NODE_BLOCKED,
+        OperationId::NodeUnblock => EVENT_NODE_UNBLOCKED,
+        OperationId::NodeSessionClose => EVENT_NODE_SESSION_CLOSED,
+        OperationId::NodeTrustUpdate if notice.value == 5 => EVENT_NODE_TRUST_REVOKED,
+        OperationId::NodeTrustUpdate if notice.value == 6 => EVENT_NODE_BLOCKED,
+        OperationId::NodeTrustUpdate if notice.value == 1 => EVENT_NODE_UNBLOCKED,
+        _ => EVENT_NODE_TRUST_CHANGED,
+    };
+    let mut payload = [0; 44];
+    payload[..32].copy_from_slice(&notice.subject.0);
+    payload[32..40].copy_from_slice(&notice.version.to_le_bytes());
+    payload[40..44].copy_from_slice(&notice.operation.machine_id().to_le_bytes());
+    with_runtime(|runtime| {
+        let Some(index) = NODE_EVENT_TYPES.iter().position(|t| *t == kind) else { return false; };
+        let Some(capability) = runtime.node_event_capabilities[index] else { return false; };
+        let Some(source) = runtime.service_identity(SERVICE_NODE_TRUST) else { return false; };
+        runtime.events.publish(EventClass::Record, RoutingDomain::Mesh, kind, source,
+            u64::from_le_bytes(notice.subject.0[..8].try_into().unwrap()),
+            notice.correlation, notice.causation, &payload, 180, now,
+            &runtime.capabilities, capability).is_ok()
+    }).unwrap_or(false)
 }
 
 // ------------------------=

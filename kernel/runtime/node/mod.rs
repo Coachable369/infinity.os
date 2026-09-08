@@ -3,6 +3,7 @@
 pub mod types;
 pub mod transport;
 pub mod wire_trust;
+pub mod control;
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -74,6 +75,7 @@ pub struct NodeRuntime {
     audit: [Option<AuditRecord>; MAX_AUDIT_RECORDS],
     next_id: u64,
     audit_sequence: u64,
+    control_version: u64,
     discovery_window: u64,
     discovery_count: u16,
 }
@@ -89,7 +91,7 @@ impl NodeRuntime {
             discovered: [None; MAX_DISCOVERED_NODES], pairings: [None; MAX_PAIRINGS],
             sessions: [None; MAX_SESSIONS], grants: [None; MAX_REMOTE_GRANTS],
             members: [None; MAX_MESH_MEMBERS], audit: [None; MAX_AUDIT_RECORDS],
-            next_id: 1, audit_sequence: 0, discovery_window: 0, discovery_count: 0,
+            next_id: 1, audit_sequence: 0, control_version: 0, discovery_window: 0, discovery_count: 0,
         }
     }
 
@@ -508,6 +510,7 @@ impl NodeRuntime {
         out[82..84].copy_from_slice(&(self.members.iter().flatten().count() as u16).to_le_bytes());
         out[88..96].copy_from_slice(&self.next_id.to_le_bytes());
         out[96..104].copy_from_slice(&self.audit_sequence.to_le_bytes());
+        out[104..112].copy_from_slice(&self.control_version.to_le_bytes());
         for (index, node) in self.discovered.iter().flatten().enumerate() {
             let at = NODE_RECORD_OFFSET + index * NODE_RECORD_BYTES;
             out[at..at + 32].copy_from_slice(&node.id.0);
@@ -573,6 +576,7 @@ impl NodeRuntime {
         }
         self.next_id = u64::from_le_bytes(input[88..96].try_into().map_err(|_| NodeError::StateCorrupt)?).max(1);
         self.audit_sequence = u64::from_le_bytes(input[96..104].try_into().map_err(|_| NodeError::StateCorrupt)?);
+        self.control_version = u64::from_le_bytes(input[104..112].try_into().map_err(|_| NodeError::StateCorrupt)?);
         Ok(id)
     }
 

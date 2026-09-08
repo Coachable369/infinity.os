@@ -1,5 +1,10 @@
 # Node Trust and Pairing
 
+The [final-completion increment](MILESTONE_9_FINAL_COMPLETION_STATUS.md) supersedes
+the disabled-write status below for remote controls: native durable staging is
+wired, while installed proof and unification of direct GUI/Console mutations remain
+outstanding. It does not alter wire verification or cryptographic trust negotiation.
+
 Remote IOP revalidates current peer trust and narrow authority after dequeue;
 authenticated transport is insufficient. [9-B remains partial](MILESTONE_9B_CONTROL_PLANE.md),
 with installed remote mutations disabled pending the commit/IEF lifecycle.

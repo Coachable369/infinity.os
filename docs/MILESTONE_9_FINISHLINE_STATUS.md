@@ -2,6 +2,11 @@
 
 **Overall: PARTIAL. Do not label this release Milestone 9 COMPLETE.**
 
+The latest [final-completion pass](MILESTONE_9_FINAL_COMPLETION_STATUS.md) adds
+staged durable remote controls, complete bounded Policy.Read fields and focused
+correlation/session-loss regressions. It does not close the frontend, reconciliation,
+membership or independently installed two-node acceptance blockers.
+
 **Milestone 9-B: PARTIAL.** The native remote IOP slice is described in
 [MILESTONE_9B_CONTROL_PLANE.md](MILESTONE_9B_CONTROL_PLANE.md). Mandatory frontend,
 inspection, commit/IEF reconstruction and synchronized membership gaps remain.

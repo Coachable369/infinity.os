@@ -1,6 +1,11 @@
 # Milestone 9-B control-plane increment
 
 **Milestone 9-B: PARTIAL. Overall Milestone 9: PARTIAL.**
+
+Historical increment report: the subsequent [final-completion pass](MILESTONE_9_FINAL_COMPLETION_STATUS.md)
+supersedes the installed-write-disabled and abbreviated Policy.Read descriptions
+below. It does not supersede the outstanding GUI/Console, reconciliation,
+membership and installed-lifecycle blockers.
 M9-A remains a separate regression-tested engineering wire foundation.
 This increment does not meet the complete 9-B stop condition and does not begin
 9-C or M10. No final installed-system acceptance is claimed.

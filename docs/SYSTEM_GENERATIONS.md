@@ -1,5 +1,11 @@
 # InfinityOS System Generations
 
+The [final M9 control increment](MILESTONE_9_FINAL_COMPLETION_STATUS.md) is linked
+into the same kernel payload for live and installed boot. The existing extracted
+installed-kernel byte-parity gate covers it in both UEFI architecture builds;
+there is no live-only service file or extra host dependency. Detached-media
+two-node runtime acceptance remains outstanding.
+
 Crypto/node/mesh services, schemas, and mesh artwork are CORE payloads in both architecture-specific installed generations. The ISO and installed boot use the same runtime implementation.
 
 **Status: TESTED on x86_64 UEFI/QEMU and AArch64 UEFI/VirtualBox, including a fresh ISO install followed by boot of the installed System Generation.**

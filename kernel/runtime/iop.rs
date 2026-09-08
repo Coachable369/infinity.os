@@ -368,7 +368,24 @@ pub fn execute_node_operation(
         OperationId::NodeList | OperationId::NodeDiscoverStatus => {
             response.value = nodes.discovered_nodes().iter().flatten().count() as u32;
         }
-        OperationId::NodeInspect | OperationId::NodeTrustRead | OperationId::NodePolicyRead
+        OperationId::NodePolicyRead => {
+            let node = nodes.discovered_nodes().iter().flatten().find(|node| node.id == peer)
+                .ok_or(IopError::InvalidPayload)?;
+            response.handle = nodes.control_version();
+            response.scope = node.policy.scope;
+            response.lease_deadline = node.policy.expires_at;
+            response.value = node.policy.version;
+            response.flags = 12;
+            response.rights = 0;
+            for (index, category) in node.policy.categories.iter().enumerate() {
+                let value = match category {
+                    PolicyDecision::Deny => 0, PolicyDecision::Allow => 1,
+                    PolicyDecision::SessionOnly => 2, PolicyDecision::Leased => 3,
+                };
+                response.rights |= value << (index * 2);
+            }
+        }
+        OperationId::NodeInspect | OperationId::NodeTrustRead
         | OperationId::NodeHealth | OperationId::NodeDiagnostics => {
             let node = nodes.discovered_nodes().iter().flatten().find(|node| node.id == peer)
                 .ok_or(IopError::InvalidPayload)?;

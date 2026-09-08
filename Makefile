@@ -85,6 +85,13 @@ app-launcher-interaction-test:
 milestone-9-test:
 	@tools/milestone9-test.sh
 
+.PHONY: milestone-9-durable-mutation-test milestone-9-correlation-test
+milestone-9-durable-mutation-test:
+	@CARGO_TARGET_DIR=build/milestone9-harness cargo test --quiet --manifest-path tools/milestone9-harness/Cargo.toml durable_
+
+milestone-9-correlation-test:
+	@CARGO_TARGET_DIR=build/milestone9-harness cargo test --quiet --manifest-path tools/milestone9-harness/Cargo.toml
+
 .PHONY: network-wire-test
 network-wire-test:
 	@mkdir -p build/tools

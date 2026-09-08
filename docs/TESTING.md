@@ -1,5 +1,12 @@
 # InfinityOS testing
 
+`make milestone-9-correlation-test` runs nine HOST router-boundary tests, including
+durable mutation rollback and complete Policy.Read reconstruction.
+`make milestone-9-durable-mutation-test` selects the three durable cases.
+Both are included in `make milestone-9-test` and therefore `./build.sh`.
+See the [final-completion matrix](MILESTONE_9_FINAL_COMPLETION_STATUS.md): these
+targets do not certify the mandatory detached-media two-node lifecycle.
+
 `make milestone-9-remote-iop-test` adds native two-guest remote read, engineering
 mutation, policy, scoped-grant, queued-revocation and timeout assertions to 9-A.
 It is NOT the full mandatory `9b-test`; see [coverage gaps](MILESTONE_9B_CONTROL_PLANE.md).

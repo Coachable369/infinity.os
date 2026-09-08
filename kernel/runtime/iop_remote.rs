@@ -40,6 +40,7 @@ pub enum RemoteError {
     UnknownResponse,
     RemoteFailure,
     ServiceUnavailable,
+    PersistenceFailed,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -217,11 +218,12 @@ impl IopRouter {
     // ------------------=
     pub fn receive_remote_node(
         &mut self,
+        capabilities: &CapabilityManager,
         nodes: &NodeRuntime,
         data: ReceivedData,
         now: u64,
     ) -> Result<(), RemoteError> {
-        let result = self.admit_remote_node(nodes, data, now);
+        let result = self.admit_remote_node(capabilities, nodes, data, now);
         if result.is_err() {
             self.remote.rejected = self.remote.rejected.saturating_add(1);
         }
@@ -233,6 +235,7 @@ impl IopRouter {
     // ------------------=
     fn admit_remote_node(
         &mut self,
+        capabilities: &CapabilityManager,
         nodes: &NodeRuntime,
         data: ReceivedData,
         now: u64,
@@ -268,8 +271,31 @@ impl IopRouter {
                 || pending.request.message.correlation != message.correlation
                 || pending.request.message.id != message.causation
                 || pending.request.message.payload.operation != message.payload.operation
+                || pending.request.message.payload.node_id != message.payload.node_id
             {
                 return Err(RemoteError::UnknownResponse);
+            }
+            // A reply is not a durable entitlement to disclose a result. Authority
+            // can be revoked while the authenticated reply waits in the RX queue.
+            if capabilities
+                .validate(
+                    pending.capability,
+                    pending.caller,
+                    CapabilityType::ServiceCall,
+                    pending.request.message.payload.operation as u64,
+                    1,
+                    0,
+                    now,
+                )
+                .is_err()
+            {
+                pending.result = Some(RemoteResult {
+                    request_id: message.id,
+                    correlation_id: message.correlation,
+                    causation_id: message.id,
+                    result: Err(RemoteError::AccessDenied),
+                });
+                return Err(RemoteError::AccessDenied);
             }
             let result = if message.error == 0 {
                 Ok(message.payload)
@@ -338,17 +364,65 @@ impl IopRouter {
     // DESC: Dequeues one request and revalidates live session, current trust, exact grant and policy before the shared service executor.
     // ------------------=
     pub fn execute_remote_node(&mut self, nodes: &mut NodeRuntime, now: u64) {
+        self.execute_remote_node_inner(nodes, now, None);
+    }
+    // ------------------------=
+    // FUNC: execute_remote_node_durable
+    // DESC: Uses the same dequeue-time checks with a real durable writer; returns a notice only after commit for post-commit IEF.
+    // ------------------=
+    pub fn execute_remote_node_durable(
+        &mut self,
+        nodes: &mut NodeRuntime,
+        now: u64,
+        persist: &mut dyn FnMut(&[u8; super::super::node::types::NODE_STATE_BYTES]) -> bool,
+    ) -> Option<super::super::node::control::CommittedControl> {
+        self.execute_remote_node_inner(nodes, now, Some(persist))
+    }
+    // ------------------------=
+    // FUNC: execute_remote_node_inner
+    // DESC: Reserves response capacity and authorizes the actual execution before staging any durable mutation.
+    // ------------------=
+    fn execute_remote_node_inner(
+        &mut self,
+        nodes: &mut NodeRuntime,
+        now: u64,
+        mut persist: Option<
+            &mut dyn FnMut(&[u8; super::super::node::types::NODE_STATE_BYTES]) -> bool,
+        >,
+    ) -> Option<super::super::node::control::CommittedControl> {
         let Some(output) = self.remote.responses.iter().position(Option::is_none) else {
-            return;
+            return None;
         };
         let Some(index) = self.remote.incoming.iter().position(Option::is_some) else {
-            return;
+            return None;
         };
         let mut request = self.remote.incoming[index].take().unwrap();
+        let mut committed = None;
         let result = validate_authority(nodes, &request, now).and_then(|_| {
             let op = operation(request.message.payload.operation)?;
-            if !is_read(op.machine_id()) && !self.remote.mutation_service_ready {
-                return Err(RemoteError::ServiceUnavailable);
+            if !is_read(op.machine_id()) {
+                if let Some(writer) = persist.as_mut() {
+                    let (response, notice) = nodes
+                        .commit_control(
+                            op,
+                            request.message.payload,
+                            now,
+                            request.message.correlation,
+                            request.message.id,
+                            |bytes| writer(bytes),
+                        )
+                        .map_err(|e| match e {
+                            super::super::node::control::CommitError::PersistenceFailed => {
+                                RemoteError::PersistenceFailed
+                            }
+                            _ => RemoteError::InvalidState,
+                        })?;
+                    committed = Some(notice);
+                    return Ok(response);
+                }
+                if !self.remote.mutation_service_ready {
+                    return Err(RemoteError::ServiceUnavailable);
+                }
             }
             super::execute_node_operation(
                 nodes,
@@ -380,6 +454,7 @@ impl IopRouter {
         }
         request.expires = now.saturating_add(5);
         self.remote.responses[output] = Some(request);
+        committed
     }
     // ------------------------=
     // FUNC: poll_remote_node
@@ -403,7 +478,7 @@ impl IopRouter {
             }
         }
         if let Some(data) = trust.receive_protocol(MAGIC) {
-            let _ = self.receive_remote_node(nodes, data, now);
+            let _ = self.receive_remote_node(capabilities, nodes, data, now);
         }
         for slot in &mut self.remote.responses {
             let Some(request) = *slot else {
@@ -657,6 +732,7 @@ fn error_from_byte(value: u8) -> Result<RemoteError, RemoteError> {
         UnknownResponse,
         RemoteFailure,
         ServiceUnavailable,
+        PersistenceFailed,
     ]
     .into_iter()
     .find(|e| *e as u8 == value)
@@ -670,3 +746,7 @@ fn error_from_byte(value: u8) -> Result<RemoteError, RemoteError> {
 fn is_read(operation: u32) -> bool {
     matches!(operation, 0xd002 | 0xd006 | 0xd065 | 0xd067 | 0xd068)
 }
+
+#[cfg(test)]
+#[path = "iop_remote_tests.rs"]
+mod tests;
