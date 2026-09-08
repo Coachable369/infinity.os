@@ -378,6 +378,24 @@ class Guest:
         result = self.wait(lambda value: not value[9] & 4 or value[9] & 8, "explicit operator confirmation", timeout=15)
         assert not result[9] & 12, {"confirmation_failure": result[:56]}
 
+    # ------------------------=
+    # FUNC: approve_membership
+    # DESC: Grants node-control policy through existing Settings controls and submits explicit local join consent.
+    # ------------------=
+    def approve_membership(self, page):
+        for _ in range(3 - page):
+            self.key("right")
+        self.key("down")
+        for _ in range(2):
+            before = self.state()[20]
+            self.key("ret")
+            changed = self.wait(lambda value: value[20] > before or value[9] & 8, "node-control policy commit")
+            assert not changed[9] & 8
+        self.key("left")
+        self.key("down")
+        self.key("ret")
+        assert not self.state()[9] & 8
+
 # ------------------------=
 # FUNC: main
 # DESC: Runs two independent fresh installs; artifacts and evidence remain in a newly created output directory.
@@ -441,7 +459,32 @@ def main():
             for guest in guests:
                 guest.wait(lambda state: state[26] == 1, "installed secure session")
                 guest.screenshot("secure-session")
-            (work / "mesh-result.json").write_text(json.dumps({"installed_discovery": True, "installed_dual_confirmation": True, "installed_secure_session": True, "full_ms9_lifecycle": False}, indent=2))
+            report = {"installed_discovery": True, "installed_dual_confirmation": True, "installed_secure_session": True, "full_ms9_lifecycle": False}
+            (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                list(workers.map(lambda item: item[0].approve_membership(item[1]), [(a, 0), (b, 1)]))
+            joined = [guest.wait(lambda state: state[27] == 1 and state[28] == 0 and state[22] == 0, "installed synchronized join") for guest in guests]
+            assert joined[0][384:394] == joined[1][384:394]
+            for guest in guests:
+                guest.screenshot("synchronized-join")
+            for _ in range(3):
+                a.key("down")
+            a.key("ret")
+            left = [guest.wait(lambda state: state[27] == 0 and state[28] == 0 and state[392] > joined[index][392], "installed synchronized leave") for index, guest in enumerate(guests)]
+            assert left[0][384:394] == left[1][384:394]
+            report["installed_join_leave"] = True
+            (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
+            for guest in guests:
+                guest.stop()
+            for guest in guests:
+                guest.boot(False)
+            for index, guest in enumerate(guests):
+                state = guest.authenticate()
+                assert state[16:20] == joined[index][16:20]
+                restored = guest.wait(lambda value: value[25] == 1 and value[29] == 1 and value[48] > 0 and value[22] == 0, "installed trusted state restored")
+                assert restored[26] == 0 and restored[384:394] == left[index][384:394]
+            report["installed_trust_membership_cold_boot"] = True
+            (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
             return
         for number in [1, 2]:
             guest = Guest(work, number, args.firmware, reuse=args.resume_installed, width=args.width, height=args.height)
