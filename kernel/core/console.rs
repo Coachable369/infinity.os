@@ -3729,7 +3729,9 @@ impl ConsoleRuntime {
     // ------------------=
     fn activate_network_control(&mut self, control: usize) {
         if self.settings_editing {
-            if !self.commit_network_edit() { return; }
+            if !self.commit_network_edit() {
+                return;
+            }
             self.settings_editing = false;
             self.reset_input();
         }
@@ -3785,11 +3787,24 @@ impl ConsoleRuntime {
                 let _ = crate::runtime::configure_resolver_from_settings(true, None, None, 0);
             }
             (3, 5) => {
-                if let Some((enabled, primary, secondary)) = crate::runtime::with_runtime(|runtime| {
-                    let ipv4 = |address| match address { Some(crate::runtime::network::types::IpAddress::V4(value)) => Some(value), _ => None };
-                    (runtime.network.resolver.enabled(), ipv4(runtime.network.resolver.server(0)), ipv4(runtime.network.resolver.server(1)))
-                }) {
-                    let _ = crate::runtime::configure_resolver_from_settings(enabled, primary, secondary, 0);
+                if let Some((enabled, primary, secondary)) =
+                    crate::runtime::with_runtime(|runtime| {
+                        let ipv4 = |address| match address {
+                            Some(crate::runtime::network::types::IpAddress::V4(value)) => {
+                                Some(value)
+                            }
+                            _ => None,
+                        };
+                        (
+                            runtime.network.resolver.enabled(),
+                            ipv4(runtime.network.resolver.server(0)),
+                            ipv4(runtime.network.resolver.server(1)),
+                        )
+                    })
+                {
+                    let _ = crate::runtime::configure_resolver_from_settings(
+                        enabled, primary, secondary, 0,
+                    );
                 }
             }
             (4, 5) => {
@@ -6808,8 +6823,16 @@ impl ConsoleRuntime {
                             scroll_geometry,
                         ) {
                             match scroll_target {
-                                EditorScrollTarget::Page(down) => {
-                                    self.scroll_editor(if down { 6 } else { -6 });
+                                EditorScrollTarget::Page(_) => {
+                                    self.editor_scroll_grab_offset =
+                                        scroll_geometry.thumb.height as i32 / 2;
+                                    self.editor_scroll_row = layout
+                                        .desktop_editor_scroll_offset_for_thumb(
+                                            self.pointer_y,
+                                            scroll_geometry,
+                                            self.editor_scroll_grab_offset,
+                                        );
+                                    self.editor_scroll_dragging = true;
                                 }
                                 EditorScrollTarget::Thumb => {
                                     let pointer_y = self.system.framebuffer_height as i32
@@ -7771,8 +7794,22 @@ impl ConsoleRuntime {
                             self.activate_settings_content_row(row);
                         }
                     }
-                    SettingsTarget::ScrollPage(down) if clicked => {
-                        self.scroll_settings(if down { 4 } else { -4 })
+                    SettingsTarget::ScrollPage(_) if clicked => {
+                        let geometry = layout.settings_window_geometry_for_section(
+                            self.settings_window,
+                            self.system_focus,
+                        );
+                        self.settings_scroll_grab_offset =
+                            geometry.scrollbar_thumb.height as i32 / 2;
+                        self.settings_window.scroll_offset = layout
+                            .settings_scroll_offset_for_thumb_in_section(
+                                self.pointer_y,
+                                self.settings_window,
+                                self.settings_scroll_grab_offset,
+                                self.system_focus,
+                            );
+                        self.settings_scroll_target = self.settings_window.scroll_offset;
+                        self.settings_scroll_dragging = true;
                     }
                     SettingsTarget::ScrollThumb if clicked => {
                         let geometry = layout.settings_window_geometry_for_section(

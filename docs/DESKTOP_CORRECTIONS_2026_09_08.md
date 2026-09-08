@@ -2,7 +2,7 @@
 
 ## Source fixes and behavioral checks
 
-1. Scrollbar thumbs share their track's horizontal grab tolerance. Launcher track clicks begin a captured drag. Launcher, Settings and Text Editor consume final release coordinates before releasing capture. Geometry tests cover increasing/decreasing offsets and padded thumb hits.
+1. Scrollbar thumbs share their track's horizontal grab tolerance. Launcher, Settings and Text Editor track clicks position the thumb and begin a captured drag; all three consume final release coordinates before releasing capture. Geometry tests cover increasing/decreasing offsets and padded thumb hits.
 2. Resize grips take precedence over overlapping chat-widget click handlers. Native, Navigator and Settings resizing consume release coordinates. Tests cover the complete lower-right grip at both UI scales and two-axis size changes.
 3. Boot no longer starts a File Navigator task or defaults its window to visible. Login recreates tasks for saved visible Navigator, Text Editor, Command Window and Task Manager windows; unlocking does not duplicate running tasks. Existing per-user geometry persistence remains in use. This does not add persistence for unsaved editor contents, multiple Navigator paths, or a separate minimized-versus-closed application record.
 4. Adapter rediscovery updates link state. The Network panel distinguishes disabled adapters, offline policy, unknown/disconnected links and links without addresses. Changes to observed network state invalidate the Settings surface without requiring a full-desktop repaint. This does not fabricate connectivity when the device/transport has not established it.
