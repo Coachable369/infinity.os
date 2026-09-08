@@ -8,6 +8,9 @@ use app_launcher::{LauncherRelease, LAUNCHER_APPS};
 // DESC: Verifies native launcher transition, smooth-scroll, and drag-reorder state behavior.
 // ------------------=
 fn main() {
+    for section in [6, 7, 8, 9] {
+        assert_eq!(LAUNCHER_APPS.iter().filter(|entry| entry.action == app_launcher::LauncherAction::Settings(section)).count(), 1);
+    }
     app_launcher::launcher_restore_default_order();
 
     let settled_interaction = app_launcher::launcher_interaction_state_hash();

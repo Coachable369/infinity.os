@@ -5789,7 +5789,7 @@ impl super::DisplayDevice {
             251,
             1,
         );
-        let labels: [[&[u8]; 2]; 6] = match page {
+        let mut labels: [[&[u8]; 2]; 6] = match page {
             0 => [
                 [b"DISCOVERED", b"Observed, not trusted"],
                 [b"TRUSTED", b"Explicit relationships"],
@@ -5845,6 +5845,16 @@ impl super::DisplayDevice {
                 audit
             },
         ];
+        let (policy_offset, policy) = crate::runtime::with_runtime(|runtime| {
+            (runtime.node_policy_offset, selected.and_then(|(peer, _)| runtime.node_projection.nodes[..runtime.node_projection.node_count].iter().find(|record| record[..32] == peer.0).copied()))
+        }).unwrap_or((0, None));
+        if page == 3 {
+            let categories: [&[u8]; 12] = [b"OBJECT", b"NAMESPACE", b"COMPUTE", b"AI", b"SERVICE", b"EVENT", b"STORAGE", b"CLIPBOARD", b"DEVICE", b"DIAGNOSTICS", b"MESH", b"ADMINISTRATIVE"];
+            for index in 0..5 {
+                labels[index] = if policy_offset + index < 12 { [categories[policy_offset + index], b"Deny / session / allow"] } else { [b"", b""] };
+            }
+            labels[5] = [b"NEXT CATEGORIES", b"Twelve independent policies"];
+        }
         for index in 0..6 {
             let card = geometry.controls[index];
             let active = settings_window.control_focus.min(5) == index;
@@ -5904,6 +5914,12 @@ impl super::DisplayDevice {
                         None => b"No transcript",
                     },
                 };
+                length = value.len().min(number.len()); number[..length].copy_from_slice(&value[..length]);
+            }
+            if page == 3 {
+                let value: &[u8] = if index == 5 { match policy_offset { 0 => b"1 / 3", 5 => b"2 / 3", _ => b"3 / 3" } }
+                else if policy_offset + index >= 12 { b"" }
+                else { match policy.map(|record| record[86 + policy_offset + index]) { Some(0) => b"Deny", Some(1) => b"Allow", Some(2) => b"Session", Some(3) => b"Leased", _ => b"Select peer" } };
                 length = value.len().min(number.len()); number[..length].copy_from_slice(&value[..length]);
             }
             let number_width = self.ui_text_width(&number[..length], 1);

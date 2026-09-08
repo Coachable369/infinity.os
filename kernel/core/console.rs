@@ -440,6 +440,7 @@ struct ConsoleRuntime {
     settings_editing: bool,
     selected_node_id: Option<crate::runtime::node::types::NodeId>,
     node_input_lease: Option<crate::ui::trusted::SecureInputLease>,
+    node_policy_offset: usize,
     settings_window: SettingsWindowState,
     settings_window_dragging: bool,
     settings_window_resizing: Option<usize>,
@@ -577,6 +578,7 @@ impl ConsoleRuntime {
             settings_editing: false,
             selected_node_id: None,
             node_input_lease: None,
+            node_policy_offset: 0,
             settings_window: SettingsWindowState {
                 x: 160,
                 y: 210,
@@ -1056,7 +1058,7 @@ impl ConsoleRuntime {
     // DESC: Implements the redraw operation.
     // ------------------=
     fn redraw(&self) {
-        crate::runtime::with_runtime(|runtime| runtime.node_selection = self.selected_node_id);
+        crate::runtime::with_runtime(|runtime| { runtime.node_selection = self.selected_node_id; runtime.node_policy_offset = self.node_policy_offset; });
         self.publish_text_input_presentation();
         if matches!(
             self.mode,
@@ -3917,6 +3919,11 @@ impl ConsoleRuntime {
         let page = self.node_settings_page();
         let control = control.min(5);
         self.settings_window.control_focus = control;
+        if page == 3 && control == 5 {
+            self.node_policy_offset = (self.node_policy_offset + 5) % 15;
+            return;
+        }
+        if page == 3 && self.node_policy_offset + control >= 12 { return; }
         if matches!((page, control), (0, 0) | (1, 0) | (2, 0)) {
             self.select_next_node();
             return;
@@ -3948,11 +3955,11 @@ impl ConsoleRuntime {
                 (2, 1) => OperationId::NodeJoin,
                 (2, 4) => OperationId::NodeLeave,
                 (3, category @ 0..=4) => {
+                    let category = self.node_policy_offset + category;
                     request.flags = category as u32;
-                    request.value = match node.policy.categories[category] { PolicyDecision::Deny => 2, PolicyDecision::SessionOnly => 3, _ => 0 };
+                    request.value = match node.policy.categories[category] { PolicyDecision::Deny => 2, PolicyDecision::SessionOnly => 1, _ => 0 };
                     OperationId::NodePolicyUpdate
                 }
-                (3, 5) => { request.flags = 0xffff; request.scope = 0; request.lease_deadline = 0; OperationId::NodePolicyUpdate }
                 _ => return None,
             };
             request.operation = operation.machine_id();

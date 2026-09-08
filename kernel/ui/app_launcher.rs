@@ -128,7 +128,7 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
     },
 ];
 
-pub const LAUNCHER_APPS: [LauncherEntry; 13] = [
+pub const LAUNCHER_APPS: [LauncherEntry; 15] = [
     LauncherEntry {
         label: b"File Navigator",
         icon_role: 4,
@@ -177,12 +177,12 @@ pub const LAUNCHER_APPS: [LauncherEntry; 13] = [
     LauncherEntry {
         label: b"Storage",
         icon_role: 12,
-        action: LauncherAction::Settings(6),
+        action: LauncherAction::Settings(8),
     },
     LauncherEntry {
         label: b"About",
         icon_role: 28,
-        action: LauncherAction::Settings(7),
+        action: LauncherAction::Settings(9),
     },
     LauncherEntry {
         label: b"Command Window",
@@ -193,6 +193,16 @@ pub const LAUNCHER_APPS: [LauncherEntry; 13] = [
         label: b"Task Manager",
         icon_role: 19,
         action: LauncherAction::TaskManager,
+    },
+    LauncherEntry {
+        label: b"Network",
+        icon_role: 13,
+        action: LauncherAction::Settings(6),
+    },
+    LauncherEntry {
+        label: b"Nodes & Mesh",
+        icon_role: 32,
+        action: LauncherAction::Settings(7),
     },
 ];
 
