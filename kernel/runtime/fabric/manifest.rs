@@ -20,7 +20,7 @@ pub struct Placement {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HealingClaim {
     pub owner: NodeId, pub token: u64, pub expires: u64,
-    pub destination: ResourceId, pub reserved: u64,
+    pub destination: ResourceId, pub destination_generation: u64, pub reserved: u64,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Manifest {
@@ -79,7 +79,7 @@ impl Manifest {
         }
         if let Some(claim) = self.healing {
             if claim.owner != self.authority || claim.token == 0 || claim.expires == 0
-                || claim.destination.0 == [0; 16] || claim.reserved < self.length {
+                || claim.destination.0 == [0; 16] || claim.destination_generation == 0 || claim.reserved < self.length {
                 return Err(ManifestError::Invalid);
             }
         }
@@ -137,6 +137,7 @@ impl Manifest {
             out[128] = 1; out[136..168].copy_from_slice(&claim.owner.0);
             put(out, 168, claim.token); put(out, 176, claim.expires);
             out[184..200].copy_from_slice(&claim.destination.0); put(out, 200, claim.reserved);
+            put(out, 208, claim.destination_generation);
         }
         for (index, chunk) in self.chunks.iter().enumerate() {
             if let Some(chunk) = chunk {
@@ -170,7 +171,8 @@ impl Manifest {
             authority_generation: get(bytes, 120), chunks: [None; MAX_CHUNKS], placements: [None; MAX_PLACEMENTS], healing: None };
         if bytes[128] == 1 {
             value.healing = Some(HealingClaim { owner: NodeId(bytes[136..168].try_into().unwrap()),
-                token: get(bytes, 168), expires: get(bytes, 176), destination: ResourceId(bytes[184..200].try_into().unwrap()), reserved: get(bytes, 200) });
+                token: get(bytes, 168), expires: get(bytes, 176), destination: ResourceId(bytes[184..200].try_into().unwrap()),
+                destination_generation: get(bytes, 208), reserved: get(bytes, 200) });
         } else if bytes[128] != 0 { return Err(ManifestError::Invalid); }
         for (index, chunk) in value.chunks.iter_mut().enumerate() {
             let at = 256 + index * 64;

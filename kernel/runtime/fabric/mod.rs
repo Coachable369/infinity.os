@@ -4,5 +4,6 @@ pub mod resources;
 pub mod placement;
 pub mod replica;
 pub mod manifest;
+pub mod healing;
 #[cfg(test)]
 mod tests;

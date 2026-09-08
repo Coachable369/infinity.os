@@ -86,6 +86,23 @@ impl Directory {
     pub fn entries(&self) -> &[Option<Resource>; MAX_RESOURCES] { &self.entries }
 
     // ------------------------=
+    // FUNC: restore_reservations
+    // DESC: Reconstructs only durable generation-bound claims after reboot; offline capacity remains reserved and invalid recovery cannot partially replace accounting.
+    // ------------------=
+    pub(super) fn restore_reservations(&mut self, claims: impl Iterator<Item = (ResourceId, u64, u64)>) -> Result<(), ResourceError> {
+        let mut restored = [0u64; MAX_RESOURCES];
+        for (id, generation, bytes) in claims {
+            if bytes == 0 { return Err(ResourceError::Invalid); }
+            let index = self.entries.iter().position(|r| r.is_some_and(|r|
+                r.id == id && r.generation == generation)).ok_or(ResourceError::Stale)?;
+            restored[index] = restored[index].checked_add(bytes).ok_or(ResourceError::Capacity)?;
+            if restored[index] > self.entries[index].unwrap().capacity { return Err(ResourceError::Capacity); }
+        }
+        self.reserved = restored;
+        Ok(())
+    }
+
+    // ------------------------=
     // FUNC: usable
     // DESC: Computes unreserved capacity only for currently healthy, writable storage advertisements.
     // ------------------=
