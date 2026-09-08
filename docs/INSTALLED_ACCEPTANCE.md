@@ -72,6 +72,7 @@ existing UI clock; a stalled clock must not be interpreted as fresh evidence.
 | 24–30 | Discovered peers, trusted peers, established sessions, projected active domains, projected pending domains, configured links, audit records |
 | 32–47 | Selected peer, pairing handle/code/expiry/state, transcript fingerprint, transaction ID |
 | 48–49 | Connection and capability counts |
+| 50–53 | Native endpoint binding errors, zero for none, otherwise NetworkError discriminator plus one |
 | 128–383 | Sixteen 128-byte public node projection records |
 | 384–487 | Eight 104-byte public domain projection records |
 

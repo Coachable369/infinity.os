@@ -146,6 +146,31 @@ fn configurable_state_behavior() {
         .find(|value| value.interface_id == 2 && value.source == AddressSource::Static)
         .unwrap();
     assert_eq!(unchanged.address, IpAddress::V4([10, 20, 30, 40]));
+    restored.interfaces.set_state(2, true).unwrap();
+    let connected = restored.interfaces.select_route(IpAddress::V4([10, 20, 30, 99]), None).unwrap();
+    assert_eq!((connected.destination, connected.prefix_length, connected.next_hop, connected.source),
+        (IpAddress::V4([10, 20, 30, 0]), 24, None, RouteSource::Interface));
+    restored.interfaces.replace_static_ipv4(2, IpAddress::V4([10, 42, 0, 1]), 24, None, 100).unwrap();
+    assert_eq!(restored.interfaces.select_route(IpAddress::V4([10, 20, 30, 99]), None), Err(NetworkError::NoRoute));
+    assert_eq!(restored.interfaces.select_route(IpAddress::V4([10, 42, 0, 2]), None).unwrap().next_hop, None);
+    let saved = restored.encode_state();
+    let mut rebooted = NetworkRuntime::new();
+    rebooted.initialize().unwrap();
+    rebooted.interfaces.add_interface(adapter).unwrap();
+    rebooted.restore_state(&saved).unwrap();
+    assert_eq!(rebooted.interfaces.select_route(IpAddress::V4([10, 42, 0, 2]), None).unwrap().interface_id, 2);
+    let original = rebooted.interfaces.select_route(IpAddress::V4([10, 42, 0, 2]), None).unwrap();
+    for octet in 1..MAX_ROUTES as u8 {
+        if rebooted.interfaces.add_route(IpAddress::V4([172, octet, 0, 0]), 16, None, 2, 10, RouteSource::Static, None).is_err() { break; }
+    }
+    let count = rebooted.interfaces.route_count();
+    assert_eq!(count, MAX_ROUTES);
+    assert_eq!(rebooted.interfaces.replace_static_ipv4(2, IpAddress::V4([10, 43, 0, 1]), 24, Some(IpAddress::V4([10, 43, 0, 254])), 100), Err(NetworkError::ResourceLimitExceeded));
+    assert_eq!(rebooted.interfaces.route_count(), count);
+    assert_eq!(rebooted.interfaces.select_route(IpAddress::V4([10, 42, 0, 2]), None).unwrap(), original);
+    assert_eq!(rebooted.interfaces.select_route(IpAddress::V4([10, 43, 0, 2]), None), Err(NetworkError::NoRoute));
+    rebooted.interfaces.remove_static_addresses(2);
+    assert_eq!(rebooted.interfaces.select_route(IpAddress::V4([10, 42, 0, 2]), None), Err(NetworkError::NoRoute));
 }
 
 // ------------------------=

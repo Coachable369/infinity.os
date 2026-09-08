@@ -104,8 +104,7 @@ fn durable_link_configuration_provisions_and_reclaims_exact_authority() {
     for tick in 2..50 { runtime.node_links.reconcile(&mut runtime.nodes, &mut runtime.node_transport, &mut runtime.network, &mut runtime.capabilities, owner, tick); }
     assert!(runtime.node_links.errors[0].is_some()); assert_eq!(runtime.capabilities.count(), caps_before); assert_eq!(runtime.network.policy.count(), rules_before);
     runtime.network.register_firmware_device(FirmwareNetworkDevice { firmware_handle: 0, device_id: 0x100e8086, hardware_address: Some([2, 0, 0, 0, 0, 1]), link_state: LinkState::Up, maximum_frame_size: 1500, can_receive: true, can_transmit: true }).unwrap();
-    runtime.network.interfaces.add_address(2, IpAddress::V4([10, 42, 0, 1]), 24, AddressScope::Private, AddressSource::Static, None, None).unwrap();
-    runtime.network.interfaces.add_route(IpAddress::V4([10, 42, 0, 0]), 24, None, 2, 0, RouteSource::Static, None).unwrap();
+    runtime.network.interfaces.replace_static_ipv4(2, IpAddress::V4([10, 42, 0, 1]), 24, None, 100).unwrap();
     runtime.network.connections.bind_native_address(Some([10, 42, 0, 1]));
     runtime.node_links.reconcile(&mut runtime.nodes, &mut runtime.node_transport, &mut runtime.network, &mut runtime.capabilities, owner, 50);
     assert_eq!(runtime.node_links.errors[0], None); assert_eq!(runtime.network.connections.count(), 1); assert_eq!(runtime.capabilities.count(), caps_before + 3); assert_eq!(runtime.network.policy.count(), rules_before + 2);

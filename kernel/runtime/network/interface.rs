@@ -270,6 +270,17 @@ impl InterfaceManager {
     // DESC: Removes only user-configured static addresses from one interface before atomic replacement.
     // ------------------=
     pub fn remove_static_addresses(&mut self, interface_id: InterfaceId) {
+        for address in self.addresses.iter().flatten().filter(|value| value.interface_id == interface_id && value.source == AddressSource::Static) {
+            if let IpAddress::V4(ip) = address.address {
+                let mask = u32::MAX.checked_shl(32 - address.prefix_length as u32).unwrap_or(0);
+                let destination = IpAddress::V4((u32::from_be_bytes(ip) & mask).to_be_bytes());
+                for route in &mut self.routes {
+                    if route.map(|value| value.interface_id == interface_id && value.source == RouteSource::Interface && value.destination == destination && value.prefix_length == address.prefix_length && value.next_hop.is_none()).unwrap_or(false) {
+                        *route = None;
+                    }
+                }
+            }
+        }
         for address in &mut self.addresses {
             if address
                 .map(|value| {
@@ -453,6 +464,7 @@ impl InterfaceManager {
         }
         let addresses = self.addresses;
         let routes = self.routes;
+        let counters = (self.next_address, self.next_route);
         self.remove_static_addresses(interface_id);
         self.remove_static_default_routes(interface_id);
         let configured = self.add_address(
@@ -469,9 +481,19 @@ impl InterfaceManager {
             Err(error) => {
                 self.addresses = addresses;
                 self.routes = routes;
+                (self.next_address, self.next_route) = counters;
                 return Err(error);
             }
         };
+        let IpAddress::V4(ip) = address else { unreachable!() };
+        let mask = u32::MAX.checked_shl(32 - prefix_length as u32).unwrap_or(0);
+        let destination = IpAddress::V4((u32::from_be_bytes(ip) & mask).to_be_bytes());
+        if let Err(error) = self.add_route(destination, prefix_length, None, interface_id, 0, RouteSource::Interface, None) {
+            self.addresses = addresses;
+            self.routes = routes;
+            (self.next_address, self.next_route) = counters;
+            return Err(error);
+        }
         let route_id = if let Some(next_hop) = gateway {
             match self.add_route(
                 IpAddress::V4([0, 0, 0, 0]),
@@ -486,6 +508,7 @@ impl InterfaceManager {
                 Err(error) => {
                     self.addresses = addresses;
                     self.routes = routes;
+                    (self.next_address, self.next_route) = counters;
                     return Err(error);
                 }
             }
