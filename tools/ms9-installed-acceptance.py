@@ -500,10 +500,9 @@ def main():
         for number in [1, 2]:
             guest = Guest(work, number, args.firmware, reuse=args.resume_installed, width=args.width, height=args.height)
             guests.append(guest)
-            if args.resume_installed:
-                results.append(guest.onboard())
-            else:
-                guest.install()
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            results = list(workers.map(lambda guest: guest.onboard() if args.resume_installed else guest.install(), guests))
+        for guest in guests:
             guest.stop()
         if args.resume_installed:
             assert results[0]["node_id"] != results[1]["node_id"]

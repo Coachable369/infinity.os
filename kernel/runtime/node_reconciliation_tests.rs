@@ -13,6 +13,8 @@ fn authenticated_transcript_invalidates_node_presentation() {
     use node::transport::LinkSnapshot;
     let mut left = InfinityRuntime::new(false);
     let mut right = InfinityRuntime::new(false);
+    left.define_bootstrap().unwrap(); left.start_all(0);
+    right.define_bootstrap().unwrap(); right.start_all(0);
     let lid = left.nodes.initialize(&[81; 32], true).unwrap();
     let rid = right.nodes.initialize(&[82; 32], true).unwrap();
     left.nodes.discover(right.nodes.advertise(1, 1, 1).unwrap(), 1).unwrap();
@@ -63,6 +65,8 @@ fn authenticated_transcript_invalidates_node_presentation() {
         left.node_clock = Some(now);
         let _ = node_client::presentation(&left);
         refresh_node_projection(&mut left, now);
+        assert!(!left.node_projection.stale);
+        assert_eq!(left.node_projection.node_count, 1);
         assert_eq!(left.node_transport.trust.lifecycle(rid), lifecycle);
     }
     let before = right.node_transport.trust.lifecycle(lid);
