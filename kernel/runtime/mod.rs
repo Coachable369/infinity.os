@@ -162,6 +162,7 @@ pub struct InfinityRuntime {
     pub ui: crate::ui::InfinityUiRuntime,
     pub network: network::NetworkRuntime,
     pub nodes: node::NodeRuntime,
+    pub node_transport: node::transport::NodeTransport,
     pub resources: resource_policy::ApplicationResourceManager,
     pub task_manager: task_manager::TaskManager,
     pub shell_profiles: Option<object_navigation::ShellProfileService>,
@@ -201,6 +202,7 @@ impl InfinityRuntime {
             ui: crate::ui::InfinityUiRuntime::new(),
             network: network::NetworkRuntime::new(),
             nodes: node::NodeRuntime::new(),
+            node_transport: node::transport::NodeTransport::new(),
             resources: resource_policy::ApplicationResourceManager::new(),
             task_manager: task_manager::TaskManager::new(),
             shell_profiles: None,
@@ -1849,7 +1851,23 @@ pub fn initialize(live_profile: bool) {
 // DESC: Initializes cryptographic node identity from boot-scoped firmware entropy.
 // ------------------=
 pub fn initialize_node_identity(entropy: &[u8; 32], valid: bool) -> bool {
-    runtime_mut().nodes.initialize(entropy, valid).is_ok()
+    let runtime = runtime_mut();
+    runtime.node_transport.initialize(entropy, valid).is_ok()
+        && runtime.nodes.initialize(entropy, valid).is_ok()
+}
+
+// ------------------------=
+// FUNC: poll_node_transport
+// DESC: Pumps one explicitly registered native node link and publishes discovery only after commit.
+// ------------------=
+pub fn poll_node_transport(now: u64) {
+    let change = with_runtime(|runtime| runtime.node_transport.poll(&mut runtime.nodes, &mut runtime.network, &runtime.capabilities, now)).flatten();
+    let event = match change {
+        Some(node::transport::DiscoveryChange::Discovered(peer)) => Some((EVENT_NODE_DISCOVERED, peer)),
+        Some(node::transport::DiscoveryChange::Recovered(peer)) => Some((EVENT_NODE_RECOVERED, peer)),
+        None => None,
+    };
+    if let Some((kind, peer)) = event { let _ = publish_node_state_event(kind, peer, now, now); }
 }
 
 // ------------------------=

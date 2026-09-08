@@ -16,6 +16,46 @@ NIC development and Milestone 10 remain out of scope.
 
 ## Verification for this increment — 2026-09-07
 
+### Absolute-closure increment
+
+The installed runtime now contains a bounded, capability-scoped discovery
+adapter over connected native UDP. It is called after native NIC ingress and
+publishes Discovered/Recovered only after authoritative state commits. See
+[NODE_TRANSPORT.md](NODE_TRANSPORT.md) for envelope, bounds and evidence.
+
+`make milestone-9-test` passes new actual-wire host behavior assertions for
+signed challenge freshness with independent clocks, endpoint binding, replay,
+invalid signatures, malformed payloads, revocation and offline quiescence.
+No pairing, session or remote authority is implicitly granted.
+
+**The full closure request remains unfinished.** Default operator endpoint
+provisioning, pairing/handshake wire messages, encrypted remote IOP, GUI/Console
+router convergence, full inspection, IEF reconciliation, synchronized membership
+and the independent detached-install interactive acceptance are still missing.
+No native-node UI-load performance or COMPLETE claim is made.
+
+Current increment verification:
+
+- `./build.sh`: exit 0 after the final source change; x86_64/ARM64 ISO builds,
+  exact installed-kernel/loader parity, UI/input, node/network behavior,
+  retained-drag and resource-policy gates passed.
+- `make milestone-9-test`: exit 0 with discovery adversarial cases and existing
+  duplex/pairing/IOP security regressions.
+- `make native-nic-test`: exit 0; engineering guest outcomes `[33, 33]` and
+  absent-peer `[35]`. This does not exercise installed node transport.
+- Host retained-drag: 300 frames, average 33,925 ns, p95 50,917 ns,
+  worst 100,292 ns. No active native-node GUI-load measurement was performed.
+- x86_64 ISO SHA-256:
+  `33cfc3f04c446e02f299f73d0aca8e0debd4e21d19465c9b1013a023cf7c511d`
+- ARM64 ISO SHA-256:
+  `5210a544f4537ec6b1d80d5e8887d6d421997e53f08fcc629ef4a446728798c3`
+
+The current checkout's pre-existing authored UI/asset changes were preserved;
+the ISO build consumes that working tree. This increment does not commit those
+unrelated source changes.
+
+### Previous increment evidence (not current ISO hashes)
+
 - `make milestone-9-test`: exit 0, including the new duplex and fresh reconnect regressions.
 - `./build.sh`: exit 0; both architecture builds, installed-kernel/asset parity,
   UI/input, network-wire, security, performance and resource-policy gates passed.
@@ -58,8 +98,8 @@ before calling it. The new KDF does not itself authenticate that transcript.
 
 ## Exact remaining implementation blockers
 
-- No production Node Transport Adapter routes discovery, pairing, handshake
-  and encrypted IOP requests through the native connected-datagram service.
+- The discovery adapter exists, but operator endpoint registration and production
+  pairing, handshake and encrypted IOP carriage remain missing.
 - Console `execute_node_mutation` still calls `execute_node_operation` directly;
   GUI node actions also have direct mutations. Admission to a typed schema is
   not IOP router execution.
@@ -68,7 +108,7 @@ before calling it. The new KDF does not itself authenticate that transcript.
 - Node subscribers do not yet demonstrate automatic sequence-gap detection,
   stale projection handling and authoritative IOP reconstruction.
 - The required two independently installed, media-detached nodes have not
-  exercised the 55-step native lifecycle, interactive parity and performance flow.
+  exercised the 56-step native lifecycle, interactive parity and performance flow.
 
 These are missing implementation and acceptance evidence, not merely missing
 documentation. Engineering packet tests cannot close them.
@@ -82,7 +122,7 @@ It does **not** satisfy a mandatory native/installed acceptance item.
 | --- | --- | --- |
 | Reference NIC Path | TESTED | Native QEMU engineering fixture |
 | Native A↔B Packet Exchange | TESTED | Native QEMU engineering fixture, not installed |
-| Signed Wire Discovery | SCAFFOLDED | No production wire adapter |
+| Signed Wire Discovery | PARTIAL | Actual-wire HOST test; operator endpoint setup and native installed acceptance absent |
 | Node Inventory | PARTIAL | No native discovered-peer UI acceptance |
 | Pairing Begin | TESTED | HOST |
 | Independent Verification | PARTIAL | Two independently displayed systems unverified |

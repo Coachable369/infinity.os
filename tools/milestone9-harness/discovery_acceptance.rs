@@ -1,0 +1,135 @@
+//! Behavioral packet tests use the actual NetworkRuntime wire and datagram paths.
+#[path = "../nic-probe/fixture.rs"]
+mod fixture;
+use crate::node::{NodeRuntime, transport::{NodeTransport, LinkAuthority, DiscoveryChange}, types::TrustState};
+use crate::network::wire::Frame;
+
+// ------------------------=
+// FUNC: deliver
+// DESC: Transfers real Ethernet bytes then admits decoded UDP using current peer policy and capabilities.
+// ------------------=
+fn deliver(from: &mut fixture::Fixture, to: &mut fixture::Fixture, now: u64, capture: &mut Option<Frame>) {
+    for _ in 0..8 {
+        let Some(frame) = from.network.wire.peek_transmit().copied() else { break; };
+        // Binary protocol capture, not rendered or diagnostic text acceptance.
+        if frame.length == 241 { *capture = Some(frame); }
+        from.network.wire.complete_transmit();
+        to.network.wire.ingest(&frame.bytes[..frame.length], now).unwrap();
+    }
+    while let Some(packet) = to.network.wire.receive_datagram() {
+        to.network.connections.deliver_datagram(packet, &mut to.network.policy, &to.capabilities, now).unwrap();
+    }
+}
+
+// ------------------------=
+// FUNC: authority
+// DESC: References only the explicit fixture's connected-peer capabilities.
+// ------------------=
+fn authority(fixture: &fixture::Fixture) -> LinkAuthority {
+    LinkAuthority { owner: fixture.owner, connection: fixture.connection, send: fixture.send, receive: fixture.receive }
+}
+
+// ------------------------=
+// FUNC: run
+// DESC: Verifies native signed discovery, independent clocks, replay denial, authority revocation and offline quiescence.
+// ------------------=
+pub fn run() {
+    reject_invalid_announcement();
+    let mut a = fixture::configured([2,0,0,0,0,1], [10,42,0,1], [10,42,0,2]);
+    let mut b = fixture::configured([2,0,0,0,0,2], [10,42,0,2], [10,42,0,1]);
+    let mut an = NodeRuntime::new(); let mut bn = NodeRuntime::new();
+    let aid = an.initialize(&[0x31;32], true).unwrap();
+    let bid = bn.initialize(&[0x32;32], true).unwrap();
+    let mut at = NodeTransport::new(); let mut bt = NodeTransport::new();
+    at.initialize(&[0x41;32], true).unwrap(); bt.initialize(&[0x42;32], true).unwrap();
+    let mut wrong = authority(&a); wrong.send = a.receive;
+    assert!(at.attach(wrong, &a.network, &a.capabilities, 0).is_err());
+    at.attach(authority(&a), &a.network, &a.capabilities, 0).unwrap();
+    bt.attach(authority(&b), &b.network, &b.capabilities, 0).unwrap();
+    assert!(at.attach(authority(&a), &a.network, &a.capabilities, 0).is_err());
+    let mut a_changes = 0; let mut b_changes = 0;
+    let mut captured_a = None; let mut captured_b = None;
+    for tick in 0..9 {
+        for _ in 0..4 {
+            if let Some(change) = at.poll(&mut an, &mut a.network, &a.capabilities, tick) {
+                assert_eq!(change, DiscoveryChange::Discovered(bid)); a_changes += 1;
+            }
+            if let Some(change) = bt.poll(&mut bn, &mut b.network, &b.capabilities, tick + 4) {
+                assert_eq!(change, DiscoveryChange::Discovered(aid)); b_changes += 1;
+            }
+            deliver(&mut a, &mut b, tick+4, &mut captured_a);
+            deliver(&mut b, &mut a, tick, &mut captured_b);
+        }
+    }
+    assert_eq!((a_changes, b_changes), (1, 1));
+    let before = an.discovered_nodes().iter().flatten().find(|peer| peer.id == bid).copied().unwrap();
+    assert_eq!(before.trust, TrustState::Untrusted);
+    assert_eq!(at.inspect(a.connection, a.owner).unwrap().peer, Some(bid));
+    assert!(at.inspect(a.connection, crate::execution::SecurityIdentity([0;16])).is_none());
+    assert!(an.sessions().iter().all(Option::is_none));
+    assert!(an.remote_grants().iter().all(Option::is_none));
+    let replay = captured_b.unwrap();
+    a.network.wire.ingest(&replay.bytes[..replay.length], 9).unwrap();
+    while let Some(packet) = a.network.wire.receive_datagram() {
+        a.network.connections.deliver_datagram(packet, &mut a.network.policy, &a.capabilities, 9).unwrap();
+    }
+    for _ in 0..4 { assert_eq!(at.poll(&mut an, &mut a.network, &a.capabilities, 9), None); }
+    assert_eq!(at.rejected_packets, 1);
+    assert_eq!(an.discovered_nodes().iter().flatten().find(|peer| peer.id == bid).unwrap().last_seen, before.last_seen);
+    a.capabilities.revoke(a.send).unwrap();
+    for _ in 0..4 { at.poll(&mut an, &mut a.network, &a.capabilities, 10); }
+    assert!(a.network.wire.peek_transmit().is_none());
+    b.network.activate_profile(3).unwrap();
+    for _ in 0..4 { bt.poll(&mut bn, &mut b.network, &b.capabilities, 13); }
+    assert!(b.network.wire.peek_transmit().is_none());
+    at.detach(a.connection);
+    for _ in 0..8 { assert_eq!(at.poll(&mut an, &mut a.network, &a.capabilities, 14), None); }
+}
+
+// ------------------------=
+// FUNC: reject_invalid_announcement
+// DESC: Verifies a live receiver nonce cannot make an invalid signature or malformed payload refresh peer state.
+// ------------------=
+fn reject_invalid_announcement() {
+    let mut a = fixture::configured([2,0,0,0,0,1], [10,42,0,1], [10,42,0,2]);
+    let mut b = fixture::configured([2,0,0,0,0,2], [10,42,0,2], [10,42,0,1]);
+    let mut an = NodeRuntime::new(); let mut bn = NodeRuntime::new();
+    an.initialize(&[0x31;32], true).unwrap(); bn.initialize(&[0x32;32], true).unwrap();
+    let mut at = NodeTransport::new(); let mut bt = NodeTransport::new();
+    at.initialize(&[0x51;32], true).unwrap(); bt.initialize(&[0x52;32], true).unwrap();
+    at.attach(authority(&a), &a.network, &a.capabilities, 0).unwrap();
+    bt.attach(authority(&b), &b.network, &b.capabilities, 0).unwrap();
+    let mut capture = None;
+    for tick in 0..5 {
+        for _ in 0..4 {
+            at.poll(&mut an, &mut a.network, &a.capabilities, tick);
+            bt.poll(&mut bn, &mut b.network, &b.capabilities, tick);
+            deliver(&mut a, &mut b, tick, &mut capture);
+            // Replace just the signed announcement body; NetworkRuntime constructs
+            // a valid UDP checksum, so rejection must occur at node authentication.
+            let mut queued = [None; 8];
+            for slot in &mut queued {
+                let Some(frame) = b.network.wire.peek_transmit().copied() else { break; };
+                b.network.wire.complete_transmit(); *slot = Some(frame);
+            }
+            for frame in queued.iter().flatten() {
+                if frame.length == 241 {
+                    let mut payload = [0; 199]; payload.copy_from_slice(&frame.bytes[42..241]);
+                    payload[198] ^= 1;
+                    b.network.send_datagram(b.owner, b.send, b.connection, &payload, tick, tick+1, &b.capabilities).unwrap();
+                } else { a.network.wire.ingest(&frame.bytes[..frame.length], tick).unwrap(); }
+            }
+            deliver(&mut b, &mut a, tick, &mut capture);
+        }
+    }
+    assert!(at.rejected_packets > 0);
+    assert_eq!(at.last_error, Some(crate::node::types::NodeError::SignatureInvalid));
+    assert!(an.discovered_nodes().iter().all(Option::is_none));
+    for (tick, payload) in [(5, &[0u8; 7][..]), (6, &[0u8; 512][..])] {
+        while a.network.receive_datagram(a.owner, a.receive, a.connection, tick, &a.capabilities).is_ok() {}
+        b.network.send_datagram(b.owner, b.send, b.connection, payload, tick, tick+1, &b.capabilities).unwrap();
+        deliver(&mut b, &mut a, tick, &mut capture);
+        for _ in 0..4 { at.poll(&mut an, &mut a.network, &a.capabilities, tick); }
+        assert_eq!(at.last_error, Some(crate::node::types::NodeError::InvalidAdvertisement));
+    }
+}

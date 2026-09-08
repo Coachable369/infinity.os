@@ -1,6 +1,7 @@
 //! Secure node identity, discovery, pairing, sessions, remote authority, and mesh membership.
 
 pub mod types;
+pub mod transport;
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -142,6 +143,16 @@ impl NodeRuntime {
         if advertisement.protocol_min > NODE_PROTOCOL_VERSION || advertisement.protocol_max < NODE_PROTOCOL_VERSION { return Err(NodeError::UnsupportedVersion); }
         if self.local_id == Some(advertisement.node) { return Err(NodeError::InvalidAdvertisement); }
         NodeCrypto::verify(&advertisement.public_key, &advertisement.transcript(), &advertisement.signature).map_err(map_crypto_error)?;
+        self.record_discovery(advertisement, now)
+    }
+
+    // ------------------------=
+    // FUNC: record_discovery
+    // DESC: Commits authenticated discovery using receiver-local liveness time without granting authority.
+    // ------------------=
+    fn record_discovery(&mut self, advertisement: DiscoveryAdvertisement, now: u64) -> Result<(), NodeError> {
+        if advertisement.protocol_min > NODE_PROTOCOL_VERSION || advertisement.protocol_max < NODE_PROTOCOL_VERSION { return Err(NodeError::UnsupportedVersion); }
+        if self.local_id == Some(advertisement.node) { return Err(NodeError::InvalidAdvertisement); }
         let expected = node_id_from_public(&advertisement.public_key);
         if expected != advertisement.node { return Err(NodeError::InvalidAdvertisement); }
         let window = now / 10;
