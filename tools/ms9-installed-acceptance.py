@@ -53,6 +53,7 @@ class Guest:
         self.process = None
         self.channel = None
         self.capture = 0
+        self.mesh_port = None
 
     # ------------------------=
     # FUNC: boot
@@ -70,7 +71,7 @@ class Guest:
         command = ["qemu-system-x86_64", "-machine", "pc", "-cpu", "max", "-m", "4096M",
                    "-drive", f"if=pflash,format=raw,readonly=on,file={self.firmware}",
                    "-drive", f"if=ide,index=0,format=raw,file={self.disk}",
-                   "-netdev", "user,id=net", "-device", f"e1000,netdev=net,mac=02:00:00:00:09:{self.number:02x}",
+                   "-netdev", (f"socket,id=net,{'listen' if self.number == 1 else 'connect'}=127.0.0.1:{self.mesh_port}" if self.mesh_port else "user,id=net"), "-device", f"e1000,netdev=net,mac=02:00:00:00:09:{self.number:02x}",
                    "-object", "rng-random,id=rng0,filename=/dev/urandom", "-device", "virtio-rng-pci,rng=rng0",
                    "-qmp", f"unix:{qmp},server=on,wait=off", "-display", "none", "-serial", "stdio", "-no-reboot"]
         if installer:
@@ -135,18 +136,53 @@ class Guest:
             assert self.process.poll() is None, {"stage": label, "exit": self.process.returncode}
             last = self.state()
             if last is not None and predicate(last):
+                if label != "guest input-loop progress":
+                    print(json.dumps({"node": self.number, "stage": label, "snapshot": last[2]}), flush=True)
                 return last
             time.sleep(.25)
         self.screenshot("failure")
+        self.frame_report("failure")
         raise AssertionError({"stage": label, "state": last})
 
     # ------------------------=
+    # FUNC: frame_report
+    # DESC: Captures measured guest frame samples without treating telemetry availability as performance acceptance.
+    # ------------------=
+    def frame_report(self, label):
+        self.qmp("stop")
+        try:
+            values = struct.unpack("<10802Q", self.memory(self.frames_address, self.frames_length))
+        finally:
+            self.qmp("cont")
+        if values[0] != 1:
+            return {"sample_count": 0, "available": False, "performance_acceptance": False}
+        latest = values[1]
+        samples = []
+        for index in range(3600):
+            sequence, duration, timestamp = values[2 + index * 3:5 + index * 3]
+            if max(1, latest - 3599) <= sequence <= latest and (sequence - 1) % 3600 == index and duration != 0xffffffffffffffff:
+                samples.append(duration)
+        samples.sort()
+        report = {"boundary": "INSTALLED QEMU OBSERVATION", "latest_sequence": latest,
+                  "sample_count": len(samples), "performance_acceptance": False}
+        if samples:
+            report.update({"average_ns": sum(samples) // len(samples),
+                           "p95_ns": samples[(len(samples) * 95 + 99) // 100 - 1],
+                           "worst_ns": samples[-1]})
+        (self.work / f"{label}-frames.json").write_text(json.dumps(report, indent=2))
+        return report
+
+    # ------------------------=
     # FUNC: key
-    # DESC: Sends a real make/break key event and waits beyond the guest keyboard repeat interval.
+    # DESC: Sends a real make/break event and applies backpressure against actual guest event-loop progress.
     # ------------------=
     def key(self, *codes):
-        self.qmp("send-key", {"keys": [{"type": "qcode", "data": code} for code in codes], "hold-time": 80})
-        time.sleep(.15)
+        before = self.state()
+        self.qmp("send-key", {"keys": [{"type": "qcode", "data": code} for code in codes], "hold-time": 150})
+        if before is not None:
+            self.wait(lambda state: state[2] >= before[2] + 4, "guest input-loop progress", timeout=30)
+        else:
+            time.sleep(.5)
 
     # ------------------------=
     # FUNC: text
@@ -278,6 +314,50 @@ class Guest:
         self.screenshot("cold-boot-desktop")
         return {"node_id": struct.pack("<4Q", *after[16:20]).hex(), "cold_boot_identity": True, "authenticated_desktop": True}
 
+    # ------------------------=
+    # FUNC: launch
+    # DESC: Uses the real searchable application launcher and verifies its resulting native surface.
+    # ------------------=
+    def launch(self, query, mode, section=None):
+        self.key("slash")
+        self.wait(lambda state: state[4] == 6, "launcher opened")
+        self.text(query)
+        self.key("ret")
+        return self.wait(lambda state: state[4] == mode and (section is None or state[8] == section), f"launch {query}")
+
+    # ------------------------=
+    # FUNC: configure_peer
+    # DESC: Uses native network Settings and Console IOP to provision one explicit endpoint on the installed system.
+    # ------------------=
+    def configure_peer(self, network_label):
+        self.launch(network_label, 8, 6)
+        self.key("right")
+        self.key("right")
+        self.key("down")
+        self.key("ret")
+        self.wait(lambda state: state[9] & 4, "static address editor")
+        self.text(f"10.42.0.{self.number}")
+        self.key("ret")
+        self.wait(lambda state: not state[9] & 12, "static address committed")
+        self.key("esc")
+        self.wait(lambda state: state[4] == 5, "return to desktop")
+        self.launch("command", 5)
+        before = self.state()[20]
+        self.text(f"node link-configure 1 local=10.42.0.{self.number} remote=10.42.0.{3-self.number} local-port=49152 remote-port=49152")
+        self.key("ret")
+        self.wait(lambda state: state[20] > before and state[29] == 1 and state[48] > 0, "durable native peer connection")
+        self.key("esc")
+        self.wait(lambda state: state[4] == 5, "command window closed")
+
+    # ------------------------=
+    # FUNC: select_peer
+    # DESC: Opens the native node inspector and selects an actually discovered peer.
+    # ------------------=
+    def select_peer(self, nodes_label):
+        self.launch(nodes_label, 8, 7)
+        self.key("ret")
+        return self.wait(lambda state: any(state[32:36]), "selected discovered node")
+
 # ------------------------=
 # FUNC: main
 # DESC: Runs two independent fresh installs; artifacts and evidence remain in a newly created output directory.
@@ -287,15 +367,64 @@ def main():
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--firmware", default="/opt/homebrew/share/qemu/edk2-x86_64-code.fd")
     parser.add_argument("--resume-installed", action="store_true")
+    parser.add_argument("--mesh-installed", action="store_true")
+    parser.add_argument("--network-label", default="network")
+    parser.add_argument("--nodes-label", default="nodes")
     args = parser.parse_args()
     work = args.output.resolve()
-    if args.resume_installed:
+    if args.resume_installed or args.mesh_installed:
         assert json.loads((work / "install-result.json").read_text())["independent_installs"] == 2
     else:
         work.mkdir(parents=True, exist_ok=False)
     guests = []
     results = []
     try:
+        if args.mesh_installed:
+            known = json.loads((work / "onboarding-result.json").read_text())
+            with socket.socket() as reserve:
+                reserve.bind(("127.0.0.1", 0))
+                port = reserve.getsockname()[1]
+            for number in [1, 2]:
+                guest = Guest(work, number, args.firmware, reuse=True)
+                guests.append(guest)
+                guest.mesh_port = port
+                guest.boot(False)
+            for guest in guests:
+                current = guest.authenticate()
+                assert struct.pack("<4Q", *current[16:20]).hex() == known[guest.number - 1]["node_id"]
+                guest.configure_peer(args.network_label)
+            for guest in guests:
+                guest.wait(lambda state: state[24] == 1 and state[22] == 0, "installed discovery")
+                guest.select_peer(args.nodes_label)
+                guest.key("right")
+            a, b = guests
+            a.key("down")
+            a.key("ret")
+            av = a.wait(lambda state: state[36] != 0, "local authenticated pairing transcript")
+            bv = b.wait(lambda state: state[36] != 0, "peer authenticated pairing transcript")
+            assert av[37] == bv[37] and av[40:48] == bv[40:48]
+            assert av[32:36] == bv[16:20] and bv[32:36] == av[16:20]
+            a.screenshot("pairing-verification")
+            b.screenshot("pairing-verification")
+            for guest, state, moves in [(a, av, 2), (b, bv, 3)]:
+                for _ in range(moves):
+                    guest.key("down")
+                guest.key("ret")
+                guest.wait(lambda value: value[9] & 4, "trusted confirmation input")
+                guest.text(f"{state[37]:06d}")
+                guest.key("ret")
+                guest.wait(lambda value: not value[9] & 12, "explicit operator confirmation")
+            for guest in guests:
+                guest.wait(lambda state: state[25] == 1, "dual-confirmed installed trust")
+            a.key("left")
+            for _ in range(3):
+                a.key("down")
+            a.key("ret")
+            for guest in guests:
+                guest.wait(lambda state: state[26] == 1, "installed secure session")
+                guest.screenshot("secure-session")
+            (work / "mesh-result.json").write_text(json.dumps({"installed_discovery": True, "installed_dual_confirmation": True, "installed_secure_session": True, "full_ms9_lifecycle": False}, indent=2))
+            return
         for number in [1, 2]:
             guest = Guest(work, number, args.firmware, reuse=args.resume_installed)
             guests.append(guest)

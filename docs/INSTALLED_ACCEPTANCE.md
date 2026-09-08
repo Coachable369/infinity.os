@@ -7,6 +7,38 @@ installation and detached first-boot onboarding, not the full MS9 lifecycle.
 It preserves screenshots, disks and diagnostic logs for investigation. Logs are
 not acceptance oracles. Existing user VMs and disks are not selected or modified.
 
+`--resume-installed` continues only disks owned by a previous run, completes the
+real account wizard, then terminates and cold-boots each guest without installation
+media. It checks authentication and preservation of the public node identity.
+
+`--mesh-installed` continues those authenticated installations on a private virtual
+Ethernet link. It uses native Settings for static addressing, the native Command
+Window for explicit peer endpoints, and the node Settings controls for discovery,
+dual operator confirmation and a fresh secure session. Each stage asserts binary
+state transitions. This phase does not yet cover the entire required MS9 lifecycle.
+The runner applies keyboard backpressure using actual guest snapshot progress;
+passing with that pacing would not prove fast-typing or UI performance acceptance.
+
+## Observed acceptance, 2026-09-08
+
+Two independent blank-disk installations, detached-media account setup and
+authenticated cold boots passed in `/tmp/infinity-ms9-installed-20260908-a`.
+Both nodes preserved distinct public identities. These were QEMU x86_64 installed
+guests, not physical VirtualBox or ARM64 proof. `install-result.json` and
+`onboarding-result.json` record those specific boundaries.
+
+The subsequent installed mesh run exposed dropped keyboard input in the network
+editor and Command Window. Static address commit passed after slower input, but
+the peer endpoint transaction did not commit: its checkpoint and configured-link
+count remained zero. Captured screenshots also show overlapping header text and
+clipped Network details. Pairing, membership, installed remote IOP and installed
+UI responsiveness must not be marked passed on this evidence.
+
+The ISO used for these runs precedes commits `fbc8900` (launcher/policy controls)
+and `dbd6e29` (trusted input dismissal). Those changes require a new ISO build and
+installed verification; the existing build must not be represented as containing
+them. No repository remote is configured for publishing these commits.
+
 The debugger reads two fixed binary exports using QEMU physical-memory reads.
 ELF symbols locate the data; symbol presence alone cannot pass an acceptance test.
 Neither export accepts commands, grants capabilities, or changes authoritative
