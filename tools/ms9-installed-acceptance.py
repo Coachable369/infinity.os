@@ -700,7 +700,6 @@ def main():
                                "persisted peer authority and link")
                     guest.select_peer(args.nodes_label)
                 a, b = guests
-                a.key("left")
                 for _ in range(3):
                     a.key("down")
                 a.key("ret")
