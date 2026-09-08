@@ -35,6 +35,7 @@ class Guest:
             "-object", "rng-random,id=rng0,filename=/dev/urandom", "-device", "virtio-rng-pci,rng=rng0",
             "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
             "-qmp", f"unix:{self.qmp_path},server=on,wait=off", "-display", "none",
+            "-d", "guest_errors,cpu_reset,int", "-D", str(work / f"cpu-{node}.log"),
             "-serial", "stdio", "-no-reboot"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log)
         self.buffer = bytearray()
 
@@ -310,6 +311,9 @@ def run():
             for guest in guests:
                 guest.log.flush()
                 print({"guest_exit": guest.process.poll(), "operator_buffer_hex": guest.buffer[-128:].hex()})
+            # Retain diagnostic evidence only; no log content is a success oracle.
+            for source in work.glob("cpu-*.log"):
+                shutil.copyfile(source, ROOT / "build" / f"wire-failure-{source.name}")
             raise
         finally:
             for guest in guests:

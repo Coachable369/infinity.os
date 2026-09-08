@@ -12,6 +12,29 @@ mod operator;
 mod runtime;
 use runtime::network::types::Packet;
 
+static mut FIXTURE: core::mem::MaybeUninit<fixture::Fixture> = core::mem::MaybeUninit::uninit();
+static mut COMMITTED_STATE: [u8; runtime::node::types::NODE_STATE_BYTES] = [0; runtime::node::types::NODE_STATE_BYTES];
+
+// ------------------------=
+// FUNC: engineering_commit
+// DESC: Stores the actual binary commit in explicit engineering RAM storage; this is not an installed durability claim.
+// ------------------=
+fn engineering_commit(bytes: &[u8; runtime::node::types::NODE_STATE_BYTES]) -> bool {
+    unsafe { core::ptr::copy_nonoverlapping(bytes.as_ptr(), (&raw mut COMMITTED_STATE).cast::<u8>(), bytes.len()); }
+    true
+}
+
+#[inline(never)]
+// ------------------------=
+// FUNC: initialize_fixture
+// DESC: Constructs the bounded engineering runtime outside the event-loop stack so durable transaction frames cannot overwrite boot page tables.
+// ------------------=
+unsafe fn initialize_fixture(mac: [u8; 6], entropy: [u8; 32]) -> &'static mut fixture::Fixture {
+    let pointer = (&raw mut FIXTURE).cast::<fixture::Fixture>();
+    pointer.write(fixture::configured(mac, entropy));
+    &mut *pointer
+}
+
 // ------------------------=
 // FUNC: exit
 // DESC: Reports a binary engineering outcome through QEMU debug-exit.
@@ -112,7 +135,7 @@ pub extern "C" fn infinity_kernel_entry(info: *const boot_info::BootInfo) -> ! {
     let Some(start) = nic.reference_clock_ns() else {
         exit(0x17);
     };
-    let mut f = fixture::configured(nic.mac, info.firmware_entropy);
+    let f = unsafe { initialize_fixture(nic.mac, info.firmware_entropy) };
     let mut op = operator::Operator::new();
     operator::Operator::ready();
     let mut last_tx: Option<Packet> = None;
@@ -153,7 +176,7 @@ pub extern "C" fn infinity_kernel_entry(info: *const boot_info::BootInfo) -> ! {
             f.transport
                 .poll(&mut f.nodes, &mut f.network, &f.capabilities, now);
             f.iop.poll_remote_node(&f.capabilities, &mut f.nodes, &mut f.transport.trust, now);
-            if f.execute_remote { f.iop.execute_remote_node(&mut f.nodes, now); }
+            if f.execute_remote { f.iop.execute_remote_node_durable(&mut f.nodes, now, &mut engineering_commit); }
             for _ in 0..4 {
                 let Some(frame) = f.network.wire.peek_transmit() else {
                     break;
@@ -167,7 +190,7 @@ pub extern "C" fn infinity_kernel_entry(info: *const boot_info::BootInfo) -> ! {
                 f.network.wire.complete_transmit();
             }
         }
-        op.poll(&mut f, now, &last_tx, &last_rx, &mut saved);
+        op.poll(f, now, &last_tx, &last_rx, &mut saved);
         core::hint::spin_loop();
     }
 }

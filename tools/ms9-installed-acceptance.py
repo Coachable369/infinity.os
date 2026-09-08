@@ -38,14 +38,18 @@ class Guest:
     # FUNC: __init__
     # DESC: Creates one isolated machine with a unique blank disk and independently booted installed generation.
     # ------------------=
-    def __init__(self, work, number, firmware):
+    def __init__(self, work, number, firmware, reuse=False):
         self.work = work / f"node-{number}"
-        self.work.mkdir()
+        if not reuse:
+            self.work.mkdir()
         self.number = number
         self.firmware = firmware
         self.disk = self.work / "installed.raw"
-        with self.disk.open("xb") as stream:
-            stream.truncate(32 * 1024**3)
+        if reuse:
+            assert self.disk.is_file() and self.disk.stat().st_size == 32 * 1024**3
+        else:
+            with self.disk.open("xb") as stream:
+                stream.truncate(32 * 1024**3)
         self.process = None
         self.channel = None
         self.capture = 0
@@ -211,6 +215,69 @@ class Guest:
             self.log.close()
             self.process = None
 
+    # ------------------------=
+    # FUNC: onboard
+    # DESC: Configures a synthetic local operator through real first-boot fields and verifies a cold-boot authenticated desktop.
+    # ------------------=
+    def onboard(self):
+        self.boot(False)
+        initial = self.wait(lambda state: state[3] == 1 and state[4] in (4, 9), "installed local UI")
+        if initial[4] == 9:
+            before = self.authenticate()
+            return self.cold_boot_proof(before)
+        self.key("ret")
+        for step in range(1, 5):
+            self.wait(lambda state: state[7] == step, f"configuration input {step}")
+            self.key("home")
+            for _ in range(32):
+                self.key("delete")
+            self.text("MeshProof901" if step == 4 else f"ms9node0{self.number}")
+            self.key("ret")
+            self.wait(lambda state: state[7] == step + 1 and not state[9] & 8, f"configuration commit {step}")
+        self.key("ret")
+        state = self.wait(lambda state: state[7] == 6, "network configuration")
+        # NAT presents a wired adapter. Select the real wired operation, not Offline.
+        while state[8] != 2:
+            self.key("down")
+            state = self.wait(lambda value: value[8] != state[8], "wired focus")
+        self.key("ret")
+        self.wait(lambda state: state[8] == 1 and not state[9] & 8, "wired selected")
+        self.key("ret")
+        self.wait(lambda state: state[7] == 7 and not state[9] & 8, "network committed")
+        self.key("ret")
+        before = self.wait(lambda state: state[4] == 5 and state[9] & 3 == 3, "authenticated desktop")
+        assert any(before[16:20]), "Node identity must exist on the installed system"
+        self.screenshot("first-desktop")
+        return self.cold_boot_proof(before)
+
+    # ------------------------=
+    # FUNC: authenticate
+    # DESC: Uses the actual focused password field rather than assuming an extra Tab is necessary.
+    # ------------------=
+    def authenticate(self):
+        state = self.wait(lambda state: state[3] == 1 and state[4] == 9, "cold boot authentication")
+        for _ in range(11):
+            if state[8] == 1:
+                break
+            self.key("tab")
+            state = self.wait(lambda value: value[8] != state[8], "password focus")
+        assert state[8] == 1
+        self.text("MeshProof901")
+        self.key("ret")
+        return self.wait(lambda state: state[4] == 5 and state[9] & 3 == 3, "authenticated desktop")
+
+    # ------------------------=
+    # FUNC: cold_boot_proof
+    # DESC: Verifies authentication and identity preservation across termination and a new emulator process without media.
+    # ------------------=
+    def cold_boot_proof(self, before):
+        self.stop()
+        self.boot(False)
+        after = self.authenticate()
+        assert after[16:20] == before[16:20], "Cold boot must preserve the public node identity"
+        self.screenshot("cold-boot-desktop")
+        return {"node_id": struct.pack("<4Q", *after[16:20]).hex(), "cold_boot_identity": True, "authenticated_desktop": True}
+
 # ------------------------=
 # FUNC: main
 # DESC: Runs two independent fresh installs; artifacts and evidence remain in a newly created output directory.
@@ -219,17 +286,29 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--firmware", default="/opt/homebrew/share/qemu/edk2-x86_64-code.fd")
+    parser.add_argument("--resume-installed", action="store_true")
     args = parser.parse_args()
     work = args.output.resolve()
-    work.mkdir(parents=True, exist_ok=False)
+    if args.resume_installed:
+        assert json.loads((work / "install-result.json").read_text())["independent_installs"] == 2
+    else:
+        work.mkdir(parents=True, exist_ok=False)
     guests = []
+    results = []
     try:
         for number in [1, 2]:
-            guest = Guest(work, number, args.firmware)
+            guest = Guest(work, number, args.firmware, reuse=args.resume_installed)
             guests.append(guest)
-            guest.install()
+            if args.resume_installed:
+                results.append(guest.onboard())
+            else:
+                guest.install()
             guest.stop()
-        (work / "install-result.json").write_text(json.dumps({"independent_installs": 2, "detached_onboarding": True, "full_ms9_lifecycle": False}, indent=2))
+        if args.resume_installed:
+            assert results[0]["node_id"] != results[1]["node_id"]
+            (work / "onboarding-result.json").write_text(json.dumps(results, indent=2))
+        else:
+            (work / "install-result.json").write_text(json.dumps({"independent_installs": 2, "detached_onboarding": True, "full_ms9_lifecycle": False}, indent=2))
     finally:
         for guest in guests:
             guest.stop()
