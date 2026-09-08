@@ -167,12 +167,89 @@ fn payload(node: NodeId, op: OperationId) -> NodeOperationV1 {
 // ------------------=
 fn data(peer: NodeId, reference: [u8; 16], envelope: Envelope) -> ReceivedData {
     let mut bytes = [0; 192];
-    bytes[..FRAME_BYTES].copy_from_slice(&encode(envelope));
+    let (encoded, length) = encode(envelope).unwrap();
+    bytes[..length].copy_from_slice(&encoded[..length]);
     ReceivedData {
         peer,
         reference,
-        length: FRAME_BYTES,
+        length,
         bytes,
+    }
+}
+
+// ------------------------=
+// FUNC: storage_payload
+// DESC: Constructs a full-identity HOST schema fixture; it is not an installed storage replica.
+// ------------------=
+fn storage_payload() -> StorageOperationV1 {
+    StorageOperationV1 { operation: super::super::storage_protocol::Operation::TransferChunk,
+        object: [239; 16], authority_generation: 9, manifest_generation: 17, object_version: 3,
+        offset: 65536, scope: 0, value: 4, length: 64, data: [42; 64] }
+}
+
+// ------------------------=
+// FUNC: storage_requests_share_authenticated_iop_and_owned_completion
+// DESC: Exercises the actual shared router across admission, execution, correlated response, typed mailbox isolation and replay rejection.
+// ------------------=
+#[test]
+fn storage_requests_share_authenticated_iop_and_owned_completion() {
+    let mut f = Fixture::new(); let payload = storage_payload();
+    let grant = f.nodes.grant_remote(f.peer, payload.operation as u32, 0, 1, 100, 5, 1).unwrap();
+    let cap = f.caps.grant(CapabilityType::ServiceCall, payload.operation as u64, 1, 0,
+        f.caller, f.caller, Some(100), 0).unwrap();
+    let id = f.router.request_remote_storage(&f.caps, &f.nodes, f.caller, cap, f.peer,
+        grant, payload, 71, 72, 6, 30).unwrap();
+    let pending = f.router.remote.pending.iter_mut().flatten().find(|p| p.request.message.id == id).unwrap();
+    pending.sent = true;
+    let request = pending.request;
+    assert_eq!(encode(request.message).unwrap().1, STORAGE_FRAME_BYTES);
+    f.admit(data(f.peer, request.reference, request.message), 7).unwrap();
+    f.router.execute_remote_node(&mut f.nodes, 8);
+    assert_eq!(f.router.remote.incoming_count(), 1);
+    assert_eq!(f.router.execute_remote_storage(&mut f.nodes, 8, |call| {
+        assert_eq!(call.peer, f.peer); assert_eq!(call.payload, payload);
+        assert_eq!((call.request_id, call.correlation, call.causation), (id, 71, 72));
+        Ok((call.payload, 19u64))
+    }), Some(19));
+    assert_eq!(f.router.remote.executed, 1);
+    assert_eq!(f.admit(data(f.peer, request.reference, request.message), 8), Err(RemoteError::ReplayRejected));
+    let index = f.router.remote.responses.iter().position(Option::is_some).unwrap();
+    let response = f.router.remote.responses[index].take().unwrap();
+    f.admit(data(f.peer, response.reference, response.message), 9).unwrap();
+    assert!(f.router.remote.take_result(f.caller, id).is_none());
+    let result = f.router.remote.take_storage_result(f.caller, id).unwrap();
+    assert_eq!(result.result, Ok(payload));
+    assert_eq!((result.request_id, result.correlation_id, result.causation_id), (id, 71, id));
+    assert!(f.router.remote.take_storage_result(f.caller, id).is_none());
+}
+
+// ------------------------=
+// FUNC: queued_storage_chunk_revalidates_revocation_scope_and_lease
+// DESC: Proves an admitted chunk cannot execute after authority changes, using the same real remote dequeue gate as node operations.
+// ------------------=
+#[test]
+fn queued_storage_chunk_revalidates_revocation_scope_and_lease() {
+    for scenario in 0..4 {
+        let mut f = Fixture::new(); let payload = storage_payload();
+        let operation = if scenario == 1 { 0xe021 } else { payload.operation as u32 };
+        let grant = f.nodes.grant_remote(f.peer, operation, 0, 1, 100, 5, 1).unwrap();
+        let reference = f.nodes.sessions().iter().flatten().find(|s| s.id == f.session).unwrap().protocol_reference;
+        let request = Envelope { kind: 1, error: 0, id: 1, correlation: 4, causation: 3, grant,
+            lease: 10, payload: Payload::Storage(payload) };
+        f.admit(data(f.peer, reference, request), 6).unwrap();
+        let expected = match scenario {
+            0 => { f.nodes.revoke_remote(grant, 7, 1).unwrap(); RemoteError::CapabilityRevoked },
+            1 => RemoteError::CapabilityScopeDenied,
+            2 => RemoteError::DeadlineExceeded,
+            _ => { let mut policy = f.nodes.discovered_nodes()[0].unwrap().policy;
+                policy.categories[0] = PolicyDecision::Deny;
+                f.nodes.update_policy(f.peer, policy, 7, 1).unwrap(); RemoteError::PolicyDenied },
+        };
+        let result: Option<()> = f.router.execute_remote_storage(&mut f.nodes, if scenario == 2 { 17 } else { 8 },
+            |_| panic!("unauthorized storage execution"));
+        assert_eq!(result, None); assert_eq!(f.router.remote.executed, 0);
+        let response = f.router.remote.responses.iter().flatten().next().unwrap();
+        assert_eq!(response.message.error, expected as u8);
     }
 }
 
@@ -244,7 +321,7 @@ fn exact_response_identity_and_correlation() {
             causation: id,
             grant: 1,
             lease: 10,
-            payload: payload(f.nodes.local_id().unwrap(), OperationId::NodeTrustRead),
+            payload: payload(f.nodes.local_id().unwrap(), OperationId::NodeTrustRead).into(),
         },
     );
     assert_eq!(f.admit(late, 13), Err(RemoteError::UnknownResponse));
@@ -343,7 +420,7 @@ fn duplicate_mutation_executes_only_once() {
         causation: 3,
         grant: f.grant,
         lease: 20,
-        payload: payload(f.peer, OperationId::NodePolicyUpdate),
+        payload: payload(f.peer, OperationId::NodePolicyUpdate).into(),
     };
     f.admit(data(f.peer, reference, message), 10).unwrap();
     assert_eq!(
@@ -399,7 +476,7 @@ fn durable_policy_commit_and_restart_checkpoint() {
             causation: 13,
             grant: f.grant,
             lease: 20,
-            payload: operation,
+            payload: operation.into(),
         };
         f.admit(data(f.peer, reference, request), 10).unwrap();
         let before = f.nodes.control_version();
@@ -464,7 +541,7 @@ fn durable_failed_persistence_cannot_change_authority_or_emit_commit_notice() {
         causation: 3,
         grant: f.grant,
         lease: 20,
-        payload: payload(f.peer, OperationId::NodePolicyUpdate),
+        payload: payload(f.peer, OperationId::NodePolicyUpdate).into(),
     };
     f.admit(data(f.peer, reference, request), 10).unwrap();
     assert!(f
@@ -514,7 +591,7 @@ fn durable_dispatch_revalidates_before_invoking_storage() {
         causation: 3,
         grant: f.grant,
         lease: 20,
-        payload: payload(f.peer, OperationId::NodePolicyUpdate),
+        payload: payload(f.peer, OperationId::NodePolicyUpdate).into(),
     };
     f.admit(data(f.peer, reference, request), 10).unwrap();
     f.nodes.revoke_remote(f.grant, 11, 1).unwrap();
@@ -608,7 +685,7 @@ fn policy_read_returns_every_committed_field_within_wire_bounds() {
                 causation: 3,
                 grant,
                 lease: 20,
-                payload: op,
+                payload: op.into(),
             },
         ),
         11,
@@ -625,8 +702,8 @@ fn policy_read_returns_every_committed_field_within_wire_bounds() {
         .unwrap()
         .message;
     assert_eq!(response.error, 0);
-    assert_eq!(encode(response).len(), FRAME_BYTES);
-    let decoded = NodeOperationV1::decode(&response.payload.encode()).unwrap();
+    assert_eq!(encode(response).unwrap().1, FRAME_BYTES);
+    let decoded = NodeOperationV1::decode(&response.payload.node().unwrap().encode()).unwrap();
     let mut restored = NodeRuntime::new();
     restored.restore_state(&durable).unwrap();
     let expected = restored.discovered_nodes()[0].unwrap().policy;

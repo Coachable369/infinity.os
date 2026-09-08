@@ -8,9 +8,14 @@ use super::super::node::{
 use super::{
     CapabilityManager, CapabilityType, IopRouter, NodeOperationV1, OperationId, SecurityIdentity,
 };
+#[path = "iop_remote_payload.rs"]
+mod payload;
+use payload::Payload;
+use super::storage_protocol::StorageOperationV1;
 
 const MAGIC: &[u8; 4] = b"IOP9";
 const FRAME_BYTES: usize = 128;
+const STORAGE_FRAME_BYTES: usize = 48 + super::storage_protocol::OPERATION_BYTES;
 const CAPACITY: usize = 8;
 const MAX_LEASE: u64 = 30;
 
@@ -44,11 +49,22 @@ pub enum RemoteError {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct RemoteResult {
+pub struct RemoteResult<T = NodeOperationV1> {
     pub request_id: u64,
     pub correlation_id: u64,
     pub causation_id: u64,
-    pub result: Result<NodeOperationV1, RemoteError>,
+    pub result: Result<T, RemoteError>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AuthenticatedStorageRequest {
+    pub peer: NodeId,
+    pub session_reference: [u8; 16],
+    pub grant: u64,
+    pub request_id: u64,
+    pub correlation: u64,
+    pub causation: u64,
+    pub payload: StorageOperationV1,
 }
 
 #[derive(Clone, Copy)]
@@ -60,7 +76,7 @@ struct Envelope {
     causation: u64,
     grant: u64,
     lease: u32,
-    payload: NodeOperationV1,
+    payload: Payload,
 }
 #[derive(Clone, Copy)]
 struct Request {
@@ -75,7 +91,7 @@ struct Pending {
     caller: SecurityIdentity,
     capability: u64,
     sent: bool,
-    result: Option<RemoteResult>,
+    result: Option<RemoteResult<Payload>>,
 }
 #[derive(Clone, Copy)]
 struct ReplayStream {
@@ -127,10 +143,25 @@ impl RemoteState {
     pub fn take_result(&mut self, caller: SecurityIdentity, id: u64) -> Option<RemoteResult> {
         let index = self.pending.iter().position(|p| {
             p.as_ref()
-                .map(|p| p.caller == caller && p.request.message.id == id && p.result.is_some())
+                .map(|p| p.caller == caller && p.request.message.id == id && p.result.is_some()
+                     && matches!(p.request.message.payload, Payload::Node(_)))
                 .unwrap_or(false)
         })?;
-        self.pending[index].take()?.result
+        let result = self.pending[index].take()?.result?;
+        Some(RemoteResult { request_id: result.request_id, correlation_id: result.correlation_id,
+            causation_id: result.causation_id, result: result.result.and_then(Payload::node) })
+    }
+    // ------------------------=
+    // FUNC: take_storage_result
+    // DESC: Collects one caller-owned storage completion from the same bounded remote mailbox without consuming another service's result.
+    // ------------------=
+    pub fn take_storage_result(&mut self, caller: SecurityIdentity, id: u64) -> Option<RemoteResult<StorageOperationV1>> {
+        let index = self.pending.iter().position(|p| p.as_ref().is_some_and(|p|
+            p.caller == caller && p.request.message.id == id && p.result.is_some()
+            && matches!(p.request.message.payload, Payload::Storage(_))))?;
+        let result = self.pending[index].take()?.result?;
+        Some(RemoteResult { request_id: result.request_id, correlation_id: result.correlation_id,
+            causation_id: result.causation_id, result: result.result.and_then(Payload::storage) })
     }
     // ------------------------=
     // FUNC: incoming_count
@@ -172,6 +203,27 @@ impl IopRouter {
     ) -> Result<u64, RemoteError> {
         operation(payload.operation)?;
         NodeOperationV1::decode(&payload.encode()).map_err(|_| RemoteError::MalformedRequest)?;
+        self.request_remote_payload(capabilities, nodes, caller, capability, peer, grant,
+            Payload::Node(payload), correlation, causation, now, deadline)
+    }
+    // ------------------------=
+    // FUNC: request_remote_storage
+    // DESC: Uses the existing secure-session, correlation and bounded-mailbox lifecycle for versioned storage IOP requests; no parallel RPC transport exists.
+    // ------------------=
+    pub fn request_remote_storage(&mut self, capabilities: &CapabilityManager, nodes: &NodeRuntime,
+        caller: SecurityIdentity, capability: u64, peer: NodeId, grant: u64, payload: StorageOperationV1,
+        correlation: u64, causation: u64, now: u64, deadline: u64) -> Result<u64, RemoteError> {
+        payload.encode().map_err(|_| RemoteError::MalformedRequest)?;
+        self.request_remote_payload(capabilities, nodes, caller, capability, peer, grant,
+            Payload::Storage(payload), correlation, causation, now, deadline)
+    }
+    // ------------------------=
+    // FUNC: request_remote_payload
+    // DESC: Admits all remote native service payloads through one bounded, locally capability-validated request table.
+    // ------------------=
+    fn request_remote_payload(&mut self, capabilities: &CapabilityManager, nodes: &NodeRuntime,
+        caller: SecurityIdentity, capability: u64, peer: NodeId, grant: u64, payload: Payload,
+        correlation: u64, causation: u64, now: u64, deadline: u64) -> Result<u64, RemoteError> {
         if deadline <= now || deadline - now > MAX_LEASE {
             return Err(RemoteError::DeadlineExceeded);
         }
@@ -180,7 +232,7 @@ impl IopRouter {
                 capability,
                 caller,
                 CapabilityType::ServiceCall,
-                payload.operation as u64,
+                payload.operation() as u64,
                 1,
                 0,
                 now,
@@ -282,8 +334,7 @@ impl IopRouter {
                 || pending.request.reference != data.reference
                 || pending.request.message.correlation != message.correlation
                 || pending.request.message.id != message.causation
-                || pending.request.message.payload.operation != message.payload.operation
-                || pending.request.message.payload.node_id != message.payload.node_id
+                || !pending.request.message.payload.same_target(message.payload)
             {
                 return Err(RemoteError::UnknownResponse);
             }
@@ -294,7 +345,7 @@ impl IopRouter {
                     pending.capability,
                     pending.caller,
                     CapabilityType::ServiceCall,
-                    pending.request.message.payload.operation as u64,
+                    pending.request.message.payload.operation() as u64,
                     1,
                     0,
                     now,
@@ -405,19 +456,20 @@ impl IopRouter {
         let Some(output) = self.remote.responses.iter().position(Option::is_none) else {
             return None;
         };
-        let Some(index) = self.remote.incoming.iter().position(Option::is_some) else {
+        let Some(index) = self.remote.incoming.iter().position(|r| r.is_some_and(|r| matches!(r.message.payload, Payload::Node(_)))) else {
             return None;
         };
         let mut request = self.remote.incoming[index].take().unwrap();
         let mut committed = None;
         let result = validate_authority(nodes, &request, now).and_then(|_| {
-            let op = operation(request.message.payload.operation)?;
+            let payload = request.message.payload.node()?;
+            let op = operation(payload.operation)?;
             if !is_read(op.machine_id()) {
                 if let Some(writer) = persist.as_mut() {
                     let (response, notice) = nodes
                         .commit_control(
                             op,
-                            request.message.payload,
+                            payload,
                             now,
                             request.message.correlation,
                             request.message.id,
@@ -435,7 +487,7 @@ impl IopRouter {
                 return Err(RemoteError::ServiceUnavailable);
             }
             if matches!(op, OperationId::NodeInspect | OperationId::NodeSessionInspect | OperationId::NodeDomainInspect) {
-                let mut payload = request.message.payload;
+                let mut payload = payload;
                 if op == OperationId::NodeSessionInspect {
                     // The authenticated wire reference selects this session, never a sender-local handle.
                     if payload.lease_deadline != 0 { return Err(RemoteError::CapabilityScopeDenied); }
@@ -446,7 +498,7 @@ impl IopRouter {
             super::execute_node_operation(
                 nodes,
                 op,
-                request.message.payload,
+                payload,
                 now,
                 request.message.correlation,
             )
@@ -469,8 +521,40 @@ impl IopRouter {
         request.message.causation = request.message.id;
         request.message.error = result.as_ref().err().map(|e| *e as u8).unwrap_or(0);
         if let Ok(value) = result {
-            request.message.payload = value;
+            request.message.payload = Payload::Node(value);
         }
+        request.expires = now.saturating_add(5);
+        self.remote.responses[output] = Some(request);
+        committed
+    }
+    // ------------------------=
+    // FUNC: execute_remote_storage
+    // DESC: Revalidates every storage operation, including chunks, after dequeue and reserves reply capacity before invoking the owning object-authority/transaction service.
+    // ------------------=
+    pub fn execute_remote_storage<T>(&mut self, nodes: &mut NodeRuntime, now: u64,
+        execute: impl FnOnce(AuthenticatedStorageRequest) -> Result<(StorageOperationV1, T), RemoteError>) -> Option<T> {
+        let output = self.remote.responses.iter().position(Option::is_none)?;
+        let index = self.remote.incoming.iter().position(|r| r.is_some_and(|r| matches!(r.message.payload, Payload::Storage(_))))?;
+        let mut request = self.remote.incoming[index].take()?;
+        let mut committed = None;
+        let result = validate_authority(nodes, &request, now).and_then(|_| {
+            let payload = request.message.payload.storage()?;
+            let (response, notice) = execute(AuthenticatedStorageRequest { peer: request.peer,
+                session_reference: request.reference, grant: request.message.grant,
+                request_id: request.message.id, correlation: request.message.correlation,
+                causation: request.message.causation, payload })?;
+            response.encode().map_err(|_| RemoteError::RemoteFailure)?;
+            if !request.message.payload.same_target(Payload::Storage(response)) { return Err(RemoteError::RemoteFailure); }
+            committed = Some(notice);
+            Ok(response)
+        });
+        if result.is_ok() { self.remote.executed = self.remote.executed.saturating_add(1); }
+        nodes.record(0xdb01, request.peer, now, request.message.correlation,
+            result.as_ref().err().map(|e| *e as u8).unwrap_or(0));
+        request.message.kind = 2;
+        request.message.causation = request.message.id;
+        request.message.error = result.as_ref().err().map(|e| *e as u8).unwrap_or(0);
+        if let Ok(payload) = result { request.message.payload = Payload::Storage(payload); }
         request.expires = now.saturating_add(5);
         self.remote.responses[output] = Some(request);
         committed
@@ -507,11 +591,10 @@ impl IopRouter {
                 *slot = None;
                 continue;
             }
-            if trust
-                .send_data(nodes, request.peer, &encode(request.message), false, now)
-                .is_ok()
-            {
-                *slot = None;
+            if let Ok((bytes, length)) = encode(request.message) {
+                if trust.send_data(nodes, request.peer, &bytes[..length], false, now).is_ok() {
+                    *slot = None;
+                }
             }
             break;
         }
@@ -528,7 +611,7 @@ impl IopRouter {
                     pending.capability,
                     pending.caller,
                     CapabilityType::ServiceCall,
-                    pending.request.message.payload.operation as u64,
+                    pending.request.message.payload.operation() as u64,
                     1,
                     0,
                     now,
@@ -558,11 +641,10 @@ impl IopRouter {
         {
             let mut message = p.request.message;
             message.lease = (p.request.expires - now) as u32;
-            if trust
-                .send_data(nodes, p.request.peer, &encode(message), false, now)
-                .is_ok()
-            {
-                p.sent = true;
+            if let Ok((bytes, length)) = encode(message) {
+                if trust.send_data(nodes, p.request.peer, &bytes[..length], false, now).is_ok() {
+                    p.sent = true;
+                }
             }
         }
     }
@@ -628,9 +710,14 @@ fn validate_authority(nodes: &NodeRuntime, r: &Request, now: u64) -> Result<(), 
         TrustState::Blocked => return Err(RemoteError::NodeBlocked),
         _ => return Err(RemoteError::TrustRequired),
     }
-    let selected = if r.message.payload.operation == OperationId::NodeDomainInspect.machine_id() {
-        nodes.local_id().map(|local| super::super::node::membership::domain_id(local, r.peer).0 == r.message.payload.node_id).unwrap_or(false)
-    } else { r.message.payload.node_id == r.peer.0 };
+    let selected = match r.message.payload {
+        Payload::Node(p) if p.operation == OperationId::NodeDomainInspect.machine_id() =>
+            nodes.local_id().map(|local| super::super::node::membership::domain_id(local, r.peer).0 == p.node_id).unwrap_or(false),
+        Payload::Node(p) => p.node_id == r.peer.0,
+        // Storage's full ObjectId is validated by its owning service, never
+        // reinterpreted as a node identity or replaced with a 64-bit scope.
+        Payload::Storage(_) => true,
+    };
     if !selected {
         return Err(RemoteError::CapabilityScopeDenied);
     }
@@ -646,8 +733,8 @@ fn validate_authority(nodes: &NodeRuntime, r: &Request, now: u64) -> Result<(), 
         .authorize_remote(
             r.message.grant,
             r.peer,
-            r.message.payload.operation,
-            r.message.payload.scope,
+            r.message.payload.operation(),
+            r.message.payload.scope(),
             1,
             now,
         )
@@ -657,12 +744,11 @@ fn validate_authority(nodes: &NodeRuntime, r: &Request, now: u64) -> Result<(), 
             _ => RemoteError::CapabilityScopeDenied,
         })?;
     // Category 0 is peer metadata; category 1 is explicitly delegated node control.
-    let category = if is_read(r.message.payload.operation) {
-        0
-    } else {
-        1
+    let category = match r.message.payload {
+        Payload::Node(p) => if is_read(p.operation) { 0 } else { 1 },
+        Payload::Storage(_) => 0,
     };
-    if peer.policy.scope != r.message.payload.scope {
+    if peer.policy.scope != r.message.payload.scope() {
         return Err(RemoteError::PolicyDenied);
     }
     match peer.policy.categories[category] {
@@ -674,12 +760,11 @@ fn validate_authority(nodes: &NodeRuntime, r: &Request, now: u64) -> Result<(), 
 }
 // ------------------------=
 // FUNC: encode
-// DESC: Encodes a 128-byte architecture-neutral schema inside the existing authenticated 192-byte session payload limit.
+// DESC: Preserves the 128-byte node schema and adds a bounded versioned storage payload inside the same authenticated IOP envelope.
 // ------------------=
-fn encode(m: Envelope) -> [u8; FRAME_BYTES] {
-    let mut out = [0; FRAME_BYTES];
+fn encode(m: Envelope) -> Result<([u8; 192], usize), RemoteError> {
+    let mut out = [0; 192];
     out[..4].copy_from_slice(MAGIC);
-    out[4] = 1;
     out[5] = m.kind;
     out[6] = m.error;
     out[8..16].copy_from_slice(&m.id.to_le_bytes());
@@ -687,22 +772,26 @@ fn encode(m: Envelope) -> [u8; FRAME_BYTES] {
     out[24..32].copy_from_slice(&m.causation.to_le_bytes());
     out[32..40].copy_from_slice(&m.grant.to_le_bytes());
     out[40..44].copy_from_slice(&m.lease.to_le_bytes());
-    out[48..].copy_from_slice(&m.payload.encode());
-    out
+    let length = match m.payload {
+        Payload::Node(p) => { out[4] = 1; out[48..FRAME_BYTES].copy_from_slice(&p.encode()); FRAME_BYTES },
+        Payload::Storage(p) => { out[4] = 2; out[48..STORAGE_FRAME_BYTES].copy_from_slice(
+            &p.encode().map_err(|_| RemoteError::MalformedRequest)?); STORAGE_FRAME_BYTES },
+    };
+    Ok((out, length))
 }
 // ------------------------=
 // FUNC: decode
 // DESC: Rejects malformed, oversized, reserved-field and unsupported-version frames before any queue or authority mutation.
 // ------------------=
 fn decode(bytes: &[u8]) -> Result<Envelope, RemoteError> {
-    if bytes.len() != FRAME_BYTES
+    if !matches!(bytes.len(), FRAME_BYTES | STORAGE_FRAME_BYTES)
         || &bytes[..4] != MAGIC
         || bytes[7] != 0
         || bytes[44..48] != [0; 4]
     {
         return Err(RemoteError::MalformedRequest);
     }
-    if bytes[4] != 1 {
+    if !matches!(bytes[4], 1 | 2) {
         return Err(RemoteError::UnsupportedSchemaVersion);
     }
     if !matches!(bytes[5], 1 | 2) || (bytes[5] == 1 && bytes[6] != 0) {
@@ -713,8 +802,11 @@ fn decode(bytes: &[u8]) -> Result<Envelope, RemoteError> {
     if id == 0 || lease == 0 || lease as u64 > MAX_LEASE {
         return Err(RemoteError::DeadlineExceeded);
     }
-    let payload =
-        NodeOperationV1::decode(&bytes[48..]).map_err(|_| RemoteError::MalformedRequest)?;
+    let payload = match bytes[4] {
+        1 if bytes.len() == FRAME_BYTES => Payload::Node(NodeOperationV1::decode(&bytes[48..]).map_err(|_| RemoteError::MalformedRequest)?),
+        2 if bytes.len() == STORAGE_FRAME_BYTES => Payload::Storage(StorageOperationV1::decode(&bytes[48..]).map_err(|_| RemoteError::MalformedRequest)?),
+        _ => return Err(RemoteError::MalformedRequest),
+    };
     Ok(Envelope {
         kind: bytes[5],
         error: bytes[6],

@@ -1,7 +1,7 @@
 use super::super::node::{NodeRuntime, types::{NodeId, SessionState}};
 
 pub const MAX_RESOURCES: usize = 32;
-pub const ADVERTISE_OPERATION: u32 = 0xe001;
+pub const ADVERTISE_OPERATION: u32 = super::super::iop::OperationId::ResourceAdvertise as u32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ResourceId(pub [u8; 16]);

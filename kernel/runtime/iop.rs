@@ -6,6 +6,8 @@ use super::execution::SecurityIdentity;
 
 #[path = "iop_remote.rs"]
 pub mod remote;
+#[path = "iop_storage.rs"]
+pub mod storage_protocol;
 #[path = "iop_local_node.rs"]
 mod local_node;
 
@@ -255,6 +257,15 @@ pub enum OperationId {
     NodePolicyUpdate = 0xd066,
     NodeHealth = 0xd067,
     NodeDiagnostics = 0xd068,
+    ResourceAdvertise = 0xe001,
+    ResourceInspect = 0xe002,
+    PoolInspect = 0xe010,
+    ObjectSetPolicy = 0xe011,
+    ReplicaInspect = 0xe020,
+    ReplicaTransferBegin = 0xe021,
+    ReplicaTransferChunk = 0xe022,
+    ReplicaTransferCommit = 0xe023,
+    PoolHeal = 0xe030,
 }
 impl OperationId {
     // ------------------------=
