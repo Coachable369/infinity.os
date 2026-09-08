@@ -140,12 +140,37 @@ existing UI clock; a stalled clock must not be interpreted as fresh evidence.
 | 32–47 | Selected peer, pairing handle/code/expiry/state, transcript fingerprint, transaction ID |
 | 48–49 | Connection and capability counts |
 | 50–53 | Native endpoint binding errors, zero for none, otherwise NetworkError discriminator plus one |
+| 54–55 | Pairing editor accepted-character count and secure-input lease expiry; zero outside that editor, no entered digits copied |
 | 128–383 | Sixteen 128-byte public node projection records |
 | 384–487 | Eight 104-byte public domain projection records |
 
 Projection records remain explicitly distinguished from authoritative checkpoints.
 The pairing values are the actual authenticated verification view. No password,
 private signing key, traffic key, or payload is copied.
+
+### Pairing presentation correction
+
+Commit `b015e31` adds a bounded retained-view snapshot for selected node, live
+authenticated verification, remaining lease time, authoritative/projection
+checkpoints, staleness, established session count and policy page. Changes use the
+existing bounded Settings reconstruction path; idle clock ticks without a visible
+countdown leave the snapshot unchanged. It does not create another authority store.
+HOST tests exchange signed pairing frames to verify that transcript arrival and
+expiry invalidate the view without requiring an extra user control action.
+
+The installed runner now enters verification codes concurrently through each
+independent guest's normal keyboard input, waiting for actual accepted character
+counts. Each original security lease must remain valid; no timeout is extended.
+Validation failure is captured immediately rather than waiting until the transcript
+has also expired. This instrumentation remains read-only.
+
+The rebuilt x86_64 ISO SHA-256 is
+`4398026d9e61eacd4cc623e1a585e45126a45cc0833bf603b2414487e89c92bf`;
+the rebuilt AArch64 ISO is
+`444ced157be04139d2f9b6b6566190f698e658b35a8cee242eee2caeb4c982eb`.
+Post-build durability, correlation, production-wire engineering and native NIC
+gates passed. HOST retained drag measured 300 frames, average 30,000 ns, p95
+32,041 ns and worst 49,917 ns. These are not installed performance measurements.
 
 ## Frame measurements
 
