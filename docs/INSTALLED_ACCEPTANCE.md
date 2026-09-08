@@ -94,6 +94,33 @@ identity, policies and checkpoint 41 across v2-to-v3 reconstruction while keepin
 absent pairing receipts, sessions and grants absent. It is not installed migration
 or installed cold-reconnect evidence.
 
+### Installed mesh result after the route correction
+
+Both installed nodes opened a native connection after committing their endpoint
+intent. Both discovered the other node and selected its exact public identity.
+The pairing verifier asserted matching six-digit codes, transcript fingerprints
+and transaction IDs, with each selected peer matching the other local NodeId.
+This verifies the route/binding correction beyond the HOST fixture.
+
+The run then **failed** at the first explicit operator confirmation. Final node-1
+snapshot: checkpoint/projection 4/4, one discovered node, one configured link,
+one connection, zero trusted peers, zero established sessions, and editing plus
+validation-error flags set. The pairing transcript was absent by that final
+snapshot. Do not infer the exact initiating error merely from later expiry.
+`pairing-verification.ppm` showed Waiting/No transcript despite the earlier binary
+verification being present; `failure.ppm` also showed no usable confirmation
+editor. These are unresolved presentation/input findings, not a passed Trusted
+UI acceptance. Security deadlines were not extended to make this run pass.
+
+Evidence: `/tmp/ms9-fresh-route-mesh.log`, and the two node directories in
+`/tmp/infinity-ms9-installed-20260908-c`. Both owned test guests were shut down.
+The run did not reach installed remote IOP, synchronized membership, revocation
+or trust/session cold-reboot recovery. MS9 remains incomplete.
+
+The post-build HOST retained-drag fixture also passed: 300 frames, average
+30,119 ns, p95 35,083 ns, worst 55,584 ns. These are observed HOST measurements
+only; the paced installed run does not satisfy installed performance acceptance.
+
 ## UI/service snapshot, schema 1
 
 `INFINITY_DIAGNOSTIC_SNAPSHOT` contains 512 little-endian u64 words. Word 0 is
