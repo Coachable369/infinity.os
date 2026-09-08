@@ -35,7 +35,7 @@ fn main() {
     );
     let final_entry = 32 + (component_manifest::COMPONENT_COUNT as usize - 1) * 48;
     assert!(final_entry >= 512);
-    assert_eq!(read_u32(&manifest, final_entry), 11);
+    assert_eq!(read_u32(&manifest, final_entry), 12);
     assert!(component_manifest::validate(
         &manifest,
         architecture,

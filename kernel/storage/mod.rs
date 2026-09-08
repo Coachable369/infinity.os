@@ -276,6 +276,8 @@ type NativeObjectStore = object::ObjectStore<ata::AtaDevice>;
 type NativeObjectStore = object::ObjectStore<uefi::UefiBlockDevice>;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 static mut OBJECT_STORE: Option<NativeObjectStore> = None;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+static mut REPLICA_SERVICE: Option<fabric::service::ReplicaService> = None;
 
 // ------------------------=
 // FUNC: initialize_object_store
@@ -297,11 +299,11 @@ pub fn initialize_object_store() {
         let Some(mut device) = device else {
             return;
         };
-        let Ok((container, _, _)) = object::find_container(&mut device) else {
+        let Ok((container, _, container_id)) = object::find_container(&mut device) else {
             return;
         };
         match object::ObjectStore::mount(device, container) {
-            Ok(store) => unsafe {
+            Ok(mut store) => unsafe {
                 crate::output_text(b"[storage] container valid\n[storage] pool online\n");
                 crate::output_text(
                     b"[object] committed generation loaded\n[object] object index online\n",
@@ -309,13 +311,41 @@ pub fn initialize_object_store() {
                 crate::output_text(
                     b"[namespace] namespace online\n[storage] Infinity Object Store online.\n",
                 );
+                REPLICA_SERVICE = fabric::service::ReplicaService::mount(&mut store,
+                    crate::runtime::fabric::resources::ResourceId(container_id), 1).ok();
                 OBJECT_STORE = Some(store);
+                if REPLICA_SERVICE.is_some() {
+                    crate::runtime::register_storage_backend(execute_replica_request);
+                }
             },
             Err(_) => {
                 crate::output_text(b"[storage] object store unavailable; disk was not modified\n")
             }
         }
     }
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
+// FUNC: execute_replica_request
+// DESC: Executes one authenticated request against mounted native state and emits a notice only for a committed generation change.
+// ------------------=
+fn execute_replica_request(request: crate::runtime::iop::remote::AuthenticatedStorageRequest)
+    -> Result<(crate::runtime::iop::storage_protocol::StorageOperationV1,
+        Option<crate::runtime::iop::storage_protocol::StorageCommit>), crate::runtime::iop::remote::RemoteError> {
+    use crate::runtime::iop::{remote::RemoteError, storage_protocol::StorageCommit};
+    with_store(|store| {
+        let before = store.generation();
+        let response = unsafe { REPLICA_SERVICE.as_mut().ok_or(RemoteError::ServiceUnavailable)
+            .and_then(|service| service.execute(store, request)) };
+        Ok(response.map(|response| {
+            let notice = (store.generation() != before).then_some(StorageCommit {
+                object: request.payload.object, generation: store.generation(), copied: response.offset,
+                state: response.data[0], correlation: request.correlation, causation: request.request_id,
+            });
+            (response, notice)
+        }))
+    }).map_err(|_| RemoteError::ServiceUnavailable)?
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

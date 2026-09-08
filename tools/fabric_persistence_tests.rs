@@ -48,6 +48,117 @@ fn descriptor(bytes: &[u8]) -> ReplicaDescriptor {
 }
 
 // ------------------------=
+// FUNC: replica_request
+// DESC: Builds an authenticated-boundary host fixture; separate router tests exercise actual session, grant, revocation and correlation validation.
+// ------------------=
+fn replica_request(payload: &[u8]) -> crate::runtime::iop::remote::AuthenticatedStorageRequest {
+    use crate::runtime::{node::types::NodeId, iop::{remote::AuthenticatedStorageRequest,
+        storage_protocol::{Operation, StorageOperationV1}}};
+    let d = descriptor(payload);
+    let mut data = [0; 64]; data[..16].copy_from_slice(&d.resource.0);
+    data[16..24].copy_from_slice(&d.generation.to_le_bytes()); data[24..56].copy_from_slice(&d.hash);
+    AuthenticatedStorageRequest { peer: NodeId([19; 32]), session_reference: [20; 16], grant: 1,
+        request_id: 7, correlation: 8, causation: 9,
+        payload: StorageOperationV1 { operation: Operation::TransferBegin, object: d.object,
+            authority_generation: 1, manifest_generation: 2, object_version: d.version,
+            offset: d.bytes, scope: 42, value: d.job, length: 56, data } }
+}
+
+// ------------------------=
+// FUNC: native_recipient_fences_every_chunk_and_recovers_ownership
+// DESC: Exercises real native transactions across service loss, owner/version/scope attacks, duplicate retries, empty content and bounded verification.
+// ------------------=
+#[test]
+fn native_recipient_fences_every_chunk_and_recovers_ownership() {
+    use crate::{native_fabric::service::ReplicaService,
+        runtime::iop::{remote::RemoteError, storage_protocol::Operation}};
+    for length in [0, 32769] {
+        let disk = Disk::default();
+        let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+        let payload: Vec<u8> = (0..length).map(|n| (n % 251) as u8).collect();
+        let request = replica_request(&payload); let d = descriptor(&payload);
+        let mut service = ReplicaService::mount(&mut store, d.resource, d.generation).unwrap();
+        let initial_usage = store.usage_blocks();
+        let initial_generation = store.generation();
+        let mut wrong = request; wrong.payload.data[0] ^= 1;
+        assert_eq!(service.execute(&mut store, wrong), Err(RemoteError::Conflict));
+        assert_eq!(store.usage_blocks(), initial_usage); assert_eq!(store.generation(), initial_generation);
+        assert_eq!(service.execute(&mut store, request).unwrap().data[0], 1);
+        let admitted = store.generation(); let usage = store.usage_blocks();
+        assert_eq!(service.execute(&mut store, request).unwrap().offset, 0);
+        assert_eq!(store.generation(), admitted); assert_eq!(store.usage_blocks(), usage);
+        for attack in 0..5 {
+            let mut denied = request; denied.payload.operation = Operation::TransferChunk;
+            denied.payload.length = 1; denied.payload.offset = 0; denied.payload.data = [0; 64];
+            match attack { 0 => denied.peer.0[31] ^= 1, 1 => denied.payload.authority_generation += 1,
+                2 => denied.payload.scope += 1, 3 => denied.payload.object_version += 1,
+                _ => denied.payload.manifest_generation += 1 }
+            assert!(matches!(service.execute(&mut store, denied), Err(RemoteError::AccessDenied | RemoteError::Conflict)));
+            assert_eq!(store.generation(), admitted);
+        }
+        for at in (0..payload.len()).step_by(64) {
+            let mut chunk = request; chunk.payload.operation = Operation::TransferChunk;
+            chunk.payload.offset = at as u64; chunk.payload.data = [0; 64];
+            let end = (at+64).min(payload.len()); chunk.payload.length = (end-at) as u16;
+            chunk.payload.data[..end-at].copy_from_slice(&payload[at..end]);
+            assert_eq!(service.execute(&mut store, chunk).unwrap().offset, end as u64);
+            let committed = store.generation();
+            assert_eq!(service.execute(&mut store, chunk).unwrap().offset, end as u64);
+            assert_eq!(store.generation(), committed);
+        }
+        let mut commit = request; commit.payload.operation = Operation::TransferCommit;
+        commit.payload.data = [0; 64]; commit.payload.length = 0; commit.payload.offset = 0;
+        let first = service.execute(&mut store, commit).unwrap();
+        assert_eq!(first.data[0], if length == 0 { 4 } else { 3 });
+        drop(service); drop(store);
+        let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+        let mut service = ReplicaService::mount(&mut store, d.resource, d.generation).unwrap();
+        let mut foreign = commit; foreign.peer.0[0] ^= 1;
+        assert_eq!(service.execute(&mut store, foreign), Err(RemoteError::AccessDenied));
+        let ticks = ((length + 1023) / 1024).max(1);
+        for step in 1..=ticks {
+            let response = service.execute(&mut store, commit).unwrap();
+            assert_eq!(response.offset, length as u64);
+            assert_eq!(response.data[0], if step == ticks { 4 } else { 3 });
+            assert_eq!(u64::from_le_bytes(response.data[41..49].try_into().unwrap()), (step * 1024).min(length) as u64);
+        }
+        let published = store.generation();
+        assert_eq!(service.execute(&mut store, commit).unwrap().data[0], 4);
+        assert_eq!(store.generation(), published);
+    }
+}
+
+// ------------------------=
+// FUNC: recipient_admission_has_no_orphan_reservation_at_any_sector_cut
+// DESC: Cuts every write in the actual recipient admission transaction and proves retry/remount preserve ownership and exact physical allocation.
+// ------------------=
+#[test]
+fn recipient_admission_has_no_orphan_reservation_at_any_sector_cut() {
+    use crate::native_fabric::service::ReplicaService;
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let payload = [41; 1025]; let request = replica_request(&payload); let d = descriptor(&payload);
+    let mut service = ReplicaService::mount(&mut store, d.resource, d.generation).unwrap();
+    let baseline = disk.0.borrow().sectors.clone(); let old_usage = store.usage_blocks();
+    disk.0.borrow_mut().writes = 0;
+    service.execute(&mut store, request).unwrap();
+    let writes = disk.0.borrow().writes; let new_usage = store.usage_blocks();
+    assert!(new_usage > old_usage);
+    for cut in 0..=writes {
+        let disk = Disk(Rc::new(RefCell::new(DiskState { sectors: baseline.clone(), writes_left: Some(cut), writes: 0 })));
+        let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+        let mut service = ReplicaService::mount(&mut store, d.resource, d.generation).unwrap();
+        let _ = service.execute(&mut store, request);
+        drop(service); drop(store); disk.0.borrow_mut().writes_left = None;
+        let mut store = ObjectStore::mount(disk, 0).unwrap();
+        assert!(store.usage_blocks() == old_usage || store.usage_blocks() == new_usage);
+        let mut service = ReplicaService::mount(&mut store, d.resource, d.generation).unwrap();
+        assert_eq!(service.execute(&mut store, request).unwrap().data[0], 1);
+        assert_eq!(store.usage_blocks(), new_usage);
+    }
+}
+
+// ------------------------=
 // FUNC: oversized_extent_cannot_allocate_beyond_native_capacity
 // DESC: Rejects a valid-sized transfer larger than the actual native pool without modifying allocation or corrupting the rebootable root.
 // ------------------=

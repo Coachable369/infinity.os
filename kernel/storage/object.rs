@@ -577,8 +577,8 @@ impl<D: BlockDevice> ObjectStore<D> {
         let mut service_registry = [0u8; 160];
         service_registry[..8].copy_from_slice(b"INFSVC1\0");
         service_registry[8..10].copy_from_slice(&1u16.to_le_bytes());
-        service_registry[10..12].copy_from_slice(&34u16.to_le_bytes());
-        for id in 1..=34u32 {
+        service_registry[10..12].copy_from_slice(&35u16.to_le_bytes());
+        for id in 1..=35u32 {
             let at = 12 + (id as usize - 1) * 4;
             service_registry[at..at + 4].copy_from_slice(&id.to_le_bytes());
         }

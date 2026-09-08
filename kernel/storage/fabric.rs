@@ -7,6 +7,8 @@ use crate::runtime::fabric::{replica::{Checkpoint, ReplicaDescriptor, ReplicaErr
 use sha2::{Digest, Sha256};
 #[path = "fabric_extent.rs"]
 pub(crate) mod extent;
+#[path = "fabric_service.rs"]
+pub(crate) mod service;
 
 const HEADER: usize = 128;
 pub(crate) const MAX_REPLICA_BYTES: usize = MAX_CONTENT - HEADER;

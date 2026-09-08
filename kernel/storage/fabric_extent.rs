@@ -94,7 +94,7 @@ impl<'a, D: BlockDevice> NativeExtentReplica<'a, D> {
     // FUNC: record
     // DESC: Encodes the stable application identity and its separate internal physical extent reference.
     // ------------------=
-    fn record(next: &Checkpoint, extent: ObjectId) -> [u8; RECORD_BYTES] {
+    pub(super) fn record(next: &Checkpoint, extent: ObjectId) -> [u8; RECORD_BYTES] {
         let mut out = [0; RECORD_BYTES]; encode(next, &mut out[..128]);
         out[128..144].copy_from_slice(&extent.0); out[144..152].copy_from_slice(b"EXTENT01"); out
     }

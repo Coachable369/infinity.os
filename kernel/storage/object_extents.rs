@@ -5,6 +5,27 @@ pub(super) const MAX_STAGED_CONTENT: usize = 1024 * 1024;
 
 impl<D: BlockDevice> ObjectStore<D> {
     // ------------------------=
+    // FUNC: create_replica_binding
+    // DESC: Commits replica ownership, checkpoint and physical reservation together so interrupted admission cannot leak an orphan extent.
+    // ------------------=
+    pub(crate) fn create_replica_binding<const N: usize, const M: usize>(&mut self,
+        catalog: ObjectId, size: u32, encode: impl FnOnce(ObjectId, ObjectId) -> ([u8; N], [u8; M]))
+        -> Result<ObjectId, ObjectError> {
+        if size as usize > MAX_STAGED_CONTENT || N > MAX_CONTENT || M > MAX_CONTENT {
+            return Err(ObjectError::InsufficientCapacity);
+        }
+        let before = self.begin()?;
+        let result = (|| {
+            let backing = self.create_record(b"pool-replica", ObjectType::Metadata, Space::System)?;
+            let extent = self.staging_extent_record(size)?;
+            let (catalog_bytes, checkpoint) = encode(backing, extent);
+            self.replace_state_record(backing, &checkpoint)?;
+            self.replace_state_record(catalog, &catalog_bytes)?;
+            Ok(backing)
+        })();
+        self.finish(before, result)
+    }
+    // ------------------------=
     // FUNC: create_staging_checkpoint
     // DESC: Reserves the staging extent and records its owning transfer in one commit, preventing orphan reservations after failed admission.
     // ------------------=

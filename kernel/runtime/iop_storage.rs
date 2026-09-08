@@ -3,6 +3,16 @@
 pub const OPERATION_BYTES: usize = 136;
 pub const DATA_BYTES: usize = 64;
 
+/// Postcommit replica state; the renderer is not the authoritative subscriber.
+pub const EVENT_REPLICA_CHANGED: u32 = 0xe041;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StorageCommit {
+    pub object: [u8; 16], pub generation: u64, pub copied: u64,
+    pub state: u8, pub correlation: u64, pub causation: u64,
+}
+pub type StorageHandler = fn(super::remote::AuthenticatedStorageRequest)
+    -> Result<(StorageOperationV1, Option<StorageCommit>), super::remote::RemoteError>;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Operation {

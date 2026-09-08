@@ -2,7 +2,7 @@
 
 pub const MANIFEST_BYTES: usize = 1024;
 pub const MANIFEST_SECTORS: usize = MANIFEST_BYTES / 512;
-pub const COMPONENT_COUNT: u32 = 11;
+pub const COMPONENT_COUNT: u32 = 12;
 const MANIFEST_VERSION: u32 = 2;
 const HEADER_BYTES: usize = 32;
 const ENTRY_BYTES: usize = 48;
@@ -83,6 +83,14 @@ const SYSTEM_COMPONENT_REGISTRY: [ComponentRegistration; COMPONENT_COUNT as usiz
     ComponentRegistration {
         id: 11,
         kind: 11,
+        architecture_specific: false,
+        reference_kind: 1,
+    },
+    // Native recipient-side replica authority and streamed persistence, linked
+    // into the same verified kernel on both live and installed boot paths.
+    ComponentRegistration {
+        id: 12,
+        kind: 12,
         architecture_specific: false,
         reference_kind: 1,
     },

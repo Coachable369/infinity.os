@@ -161,6 +161,8 @@ pub enum UiOperationError {
     Window(crate::ui::window::WindowError),
 }
 pub struct InfinityRuntime {
+    storage_handler: Option<iop::storage_protocol::StorageHandler>,
+    storage_event_cap: Option<u64>,
     pub execution: ExecutionManager,
     pub scheduler: Scheduler,
     pub capabilities: CapabilityManager,
@@ -256,6 +258,8 @@ impl InfinityRuntime {
     // ------------------=
     pub const fn new(live_profile: bool) -> Self {
         Self {
+            storage_handler: None,
+            storage_event_cap: None,
             execution: ExecutionManager::new(),
             scheduler: Scheduler::new(),
             capabilities: CapabilityManager::new(),
@@ -1315,6 +1319,15 @@ impl InfinityRuntime {
             RestartPolicy::OnFailure,
             Criticality::Important,
         ))?;
+        self.services.define(manifest(
+            SERVICE_REPLICA_STORAGE,
+            [SERVICE_OBJECT, SERVICE_NODE_TRUST, SERVICE_EVENT, 0],
+            3,
+            [OperationId::ReplicaInspect as u32, OperationId::ReplicaTransferBegin as u32,
+                OperationId::ReplicaTransferChunk as u32, OperationId::ReplicaTransferCommit as u32,
+                0, 0, 0, 0, 0, 0, 0, 0],
+            4, RestartPolicy::OnFailure, Criticality::Important,
+        ))?;
         if self.live_profile {
             self.services.define(manifest(
                 SERVICE_INSTALLER,
@@ -1335,7 +1348,8 @@ impl InfinityRuntime {
     pub fn start_all(&mut self, now: u64) {
         for _ in 0..MAX_SERVICES {
             self.services.start_ready(&mut self.execution, now);
-            for id in 1..=SERVICE_NODE_AUDIT {
+            for id in 1..=SERVICE_REPLICA_STORAGE {
+                if id == SERVICE_REPLICA_STORAGE && self.storage_handler.is_none() { continue; }
                 if self
                     .services
                     .inspect(id)
@@ -1945,6 +1959,13 @@ pub fn poll_node_transport(now: u64) {
         runtime.iop.execute_remote_node_durable(&mut runtime.nodes, now, &mut persist_control_state)
     }).flatten();
     if let Some(committed) = committed { let _ = publish_committed_node_control(committed, now); }
+    let storage_commit = with_runtime(|runtime| {
+        let handler = runtime.storage_handler;
+        runtime.iop.execute_remote_storage(&mut runtime.nodes, now, |request| {
+            handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?(request)
+        })
+    }).flatten().flatten();
+    if let Some(notice) = storage_commit { publish_storage_commit(notice, now); }
     let membership = with_runtime(|runtime| runtime.iop.poll_membership(&mut runtime.nodes, &mut runtime.node_transport.trust, now, persist_control_state)).flatten();
     if let Some(notice) = membership { let _ = publish_committed_node_control(notice, now); }
     let event = match change {
@@ -1960,6 +1981,38 @@ pub fn poll_node_transport(now: u64) {
             publish_node_checkpoint(runtime, checkpoint, 0, 0, now);
         }
         refresh_node_projection(runtime, now);
+    });
+}
+
+// ------------------------=
+// FUNC: register_storage_backend
+// DESC: Registers the mounted native recipient backend; remote callers still pass through live IOP capability, session and policy checks.
+// ------------------=
+pub fn register_storage_backend(handler: iop::storage_protocol::StorageHandler) {
+    runtime_mut().storage_handler = Some(handler);
+}
+
+// ------------------------=
+// FUNC: publish_storage_commit
+// DESC: Publishes bounded typed replica state only after the native transaction committed, retaining full ObjectId and causation.
+// ------------------=
+fn publish_storage_commit(notice: iop::storage_protocol::StorageCommit, now: u64) {
+    use iop::storage_protocol::EVENT_REPLICA_CHANGED;
+    with_runtime(|runtime| {
+        let Some(source) = runtime.service_identity(SERVICE_REPLICA_STORAGE) else { return; };
+        let Some(issuer) = runtime.service_identity(SERVICE_RUNTIME) else { return; };
+        if runtime.storage_event_cap.is_none() {
+            runtime.storage_event_cap = runtime.capabilities.grant(CapabilityType::EventPublish,
+                EVENT_REPLICA_CHANGED as u64, 1, 0, issuer, source, None, 0).ok();
+        }
+        let Some(capability) = runtime.storage_event_cap else { return; };
+        let mut payload = [0; 40];
+        payload[..16].copy_from_slice(&notice.object);
+        payload[16..24].copy_from_slice(&notice.generation.to_le_bytes());
+        payload[24..32].copy_from_slice(&notice.copied.to_le_bytes()); payload[32] = notice.state;
+        let _ = runtime.events.publish(EventClass::StateChange, RoutingDomain::Mesh, EVENT_REPLICA_CHANGED,
+            source, 0, notice.correlation, notice.causation, &payload, 140, now,
+            &runtime.capabilities, capability);
     });
 }
 
@@ -2111,7 +2164,9 @@ pub fn storage_initialized() {
                 SERVICE_NODE_TRUST,
                 SERVICE_MESH,
                 SERVICE_NODE_AUDIT,
+                SERVICE_REPLICA_STORAGE,
             ] {
+                if id == SERVICE_REPLICA_STORAGE && runtime.storage_handler.is_none() { continue; }
                 if runtime
                     .services
                     .inspect(id)
@@ -2830,6 +2885,7 @@ pub fn announce_services() {
         (SERVICE_NODE_TRUST, b"node-trust".as_slice()),
         (SERVICE_MESH, b"mesh".as_slice()),
         (SERVICE_NODE_AUDIT, b"node-audit".as_slice()),
+        (SERVICE_REPLICA_STORAGE, b"replica-storage".as_slice()),
     ] {
         if runtime
             .services
