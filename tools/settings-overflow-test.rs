@@ -3,7 +3,7 @@ mod ui;
 
 use ui::system_layout::{
     eased_scroll_offset, SettingsTarget, SettingsWindowState, SystemLayout,
-    SETTINGS_DASHBOARD_CONTENT_HEIGHT, SETTINGS_NETWORK_SECTION, SETTINGS_NODE_SECTION,
+    SETTINGS_DASHBOARD_CONTENT_HEIGHT, SETTINGS_NODE_CONTENT_HEIGHT, SETTINGS_NETWORK_SECTION, SETTINGS_NODE_SECTION,
     SETTINGS_SECTION_ICON_SIZE,
 };
 
@@ -13,6 +13,17 @@ use ui::system_layout::{
 // ------------------=
 fn main() {
     verify_configuration_network_targets();
+    for width in [1024, 1366, 1920, 2560] {
+        let layout = SystemLayout::new(width, 1440);
+        let state = SettingsWindowState { x: 145, y: 155, width: 690, height: 500,
+            maximized: false, expanded_row: Some(1), scroll_offset: 0, control_focus: 0, row_count: 8 };
+        let geometry = layout.node_settings_geometry(state);
+        assert!(!geometry.main.intersects(geometry.sidebar));
+        assert!(geometry.sidebar.width >= 220 * layout.scale() as u32);
+        for control in geometry.controls {
+            assert_eq!(geometry.main.intersection(control), control);
+        }
+    }
     let layout = SystemLayout::new(2560, 1440);
     let state = SettingsWindowState {
         x: 145,
@@ -40,10 +51,10 @@ fn main() {
     }
 
     assert!(window.maximum_scroll > 0);
-    assert_eq!(window.total_content_height, SETTINGS_DASHBOARD_CONTENT_HEIGHT);
+    assert_eq!(window.total_content_height, SETTINGS_NODE_CONTENT_HEIGHT + 632);
     let top = layout.node_settings_geometry(state);
     for index in 0..5 {
-        assert!(top.tabs[index].width >= (112 * layout.scale()) as u32);
+        assert!(top.tabs[index].width >= (184 * layout.scale()) as u32);
         for following in (index + 1)..5 {
             assert!(!top.tabs[index].intersects(top.tabs[following]));
         }
@@ -56,9 +67,8 @@ fn main() {
     assert!(top.summary.y > tab_bottom);
     assert!(!top.main.intersects(top.sidebar));
     for (index, control) in top.controls.iter().enumerate() {
-        assert_eq!(control.height, (58 * layout.scale()) as u32);
-        assert!(top.main.intersection(*control).width > 0);
-        assert!(top.main.intersection(*control).height > 0);
+        assert!(control.height >= (12 + 28 + 4 + 28 + 8) * layout.scale() as u32);
+        assert_eq!(top.main.intersection(*control), *control);
         if index > 0 {
             assert!(top.controls[index - 1].bottom() < control.y);
         }

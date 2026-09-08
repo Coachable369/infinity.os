@@ -27,6 +27,7 @@ pub const SETTINGS_SECTION_ICON_SIZE: usize = 25;
 pub const SETTINGS_NETWORK_SECTION: usize = 6;
 pub const SETTINGS_NODE_SECTION: usize = 7;
 pub const SETTINGS_DASHBOARD_CONTENT_HEIGHT: usize = 670;
+pub const SETTINGS_NODE_CONTENT_HEIGHT: usize = 1110;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OnboardingTarget {
@@ -2046,7 +2047,9 @@ impl SystemLayout {
         let viewport_top = top + title_height + 98 * self.scale;
         let viewport_height = height.saturating_sub(title_height + 116 * self.scale);
         let total_content_height =
-            if matches!(section, SETTINGS_NETWORK_SECTION | SETTINGS_NODE_SECTION) {
+            if section == SETTINGS_NODE_SECTION {
+                SETTINGS_NODE_CONTENT_HEIGHT + if content_width < 840 * self.scale { 632 } else { 0 }
+            } else if section == SETTINGS_NETWORK_SECTION {
                 SETTINGS_DASHBOARD_CONTENT_HEIGHT
             } else {
                 let detail_height = state.expanded_row.map(settings_detail_height).unwrap_or(0);
@@ -2300,11 +2303,12 @@ impl SystemLayout {
         let window = self.settings_window_geometry_for_section(state, section);
         let content = window.content;
         let gap = 12 * self.scale;
-        let top = content.y.max(0) as usize + 68 * self.scale;
+        let node_panel = section == SETTINGS_NODE_SECTION;
+        let top = content.y.max(0) as usize + if node_panel { 104 } else { 68 } * self.scale;
         let left = content.x.max(0) as usize;
         let width = content.width as usize;
         let tab_gap = 6 * self.scale;
-        let minimum_tab_width = 112 * self.scale;
+        let minimum_tab_width = if node_panel { 184 } else { 112 } * self.scale;
         let columns =
             ((width + tab_gap) / (minimum_tab_width + tab_gap)).clamp(1, page_count.max(1));
         let tab_width = width.saturating_sub(tab_gap * columns.saturating_sub(1)) / columns;
@@ -2325,29 +2329,34 @@ impl SystemLayout {
             top + tab_rows * tab_height + tab_rows.saturating_sub(1) * tab_gap + 12 * self.scale;
         let summary_height = 88 * self.scale;
         let body_top = summary_top + summary_height + gap;
-        let preferred_body_height = 420 * self.scale;
+        let preferred_body_height = if node_panel { 620 } else { 420 } * self.scale;
         let available_body_height =
             content.bottom().saturating_sub(body_top as i32).max(0) as usize;
-        let body_height = if available_body_height >= 120 * self.scale {
+        let body_height = if node_panel {
+            preferred_body_height
+        } else if available_body_height >= 120 * self.scale {
             preferred_body_height.min(available_body_height)
         } else {
             preferred_body_height
         };
-        let main_width = width * 68 / 100;
+        let stacked = node_panel && width < 840 * self.scale;
+        let main_width = if stacked { width } else { width * 68 / 100 };
         let main = rect(
             left,
             body_top,
-            main_width.saturating_sub(gap / 2),
+            main_width.saturating_sub(if stacked { 0 } else { gap / 2 }),
             body_height,
         );
         let sidebar = rect(
-            left + main_width + gap / 2,
-            body_top,
-            width.saturating_sub(main_width + gap / 2),
+            if stacked { left } else { left + main_width + gap / 2 },
+            if stacked { body_top + body_height + gap } else { body_top },
+            if stacked { width } else { width.saturating_sub(main_width + gap / 2) },
             body_height,
         );
         let control_gap = 8 * self.scale;
-        let control_height = if body_height < preferred_body_height {
+        let control_height = if node_panel {
+            80 * self.scale
+        } else if body_height < preferred_body_height {
             body_height
                 .saturating_sub(24 * self.scale)
                 .saturating_sub(control_gap * 5)

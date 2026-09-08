@@ -5117,7 +5117,7 @@ impl super::DisplayDevice {
         );
         self.ui_text(
             content_x,
-            content_y + 36 * scale,
+            content_y + if focus == 7 { 64 } else { 36 } * scale,
             if focus == 10 {
                 b"Click a row to change its value. Changes apply immediately."
             } else {
@@ -5778,7 +5778,7 @@ impl super::DisplayDevice {
         );
         self.ui_text_strong(
             summary_left + 74 * scale,
-            summary_top + 39 * scale,
+            summary_top + 46 * scale,
             if identity_ready {
                 b"Cryptographic identity ready"
             } else {
@@ -5881,7 +5881,7 @@ impl super::DisplayDevice {
             );
             self.ui_text_strong(
                 card.x.max(0) as usize + 15 * scale,
-                card.y.max(0) as usize + 9 * scale,
+                card.y.max(0) as usize + 12 * scale,
                 labels[index][0],
                 220,
                 239,
@@ -5890,7 +5890,7 @@ impl super::DisplayDevice {
             );
             self.ui_text(
                 card.x.max(0) as usize + 15 * scale,
-                card.y.max(0) as usize + 31 * scale,
+                card.y.max(0) as usize + 44 * scale,
                 labels[index][1],
                 145,
                 174,
@@ -5939,25 +5939,26 @@ impl super::DisplayDevice {
             let left = art.x.max(0) as usize + 15 * scale;
             let top = art.y.max(0) as usize + 14 * scale;
             let width = (art.width as usize).saturating_sub(30 * scale);
-            self.ui_text_fit_strong(left, top, width, b"COMPARE BOTH SCREENS", 220, 239, 249, 1);
+            self.ui_text_wrapped(left, top, width, b"COMPARE BOTH SCREENS", 220, 239, 249, 2);
             if let Some((_, Some(verification))) = selected {
                 let mut code = [b'0'; 6]; let mut value = verification.code;
                 for digit in code.iter_mut().rev() { *digit += (value % 10) as u8; value /= 10; }
-                self.ui_text_fit_strong(left, top + 32 * scale, width, &code, outline_r, outline_g, outline_b, 2);
-                self.ui_text(left, top + 70 * scale, b"Transcript fingerprint", 145, 174, 193, 1);
+                self.ui_text_fit_strong(left, top + 72 * scale, width, &code, outline_r, outline_g, outline_b, 2);
+                self.ui_text(left, top + 144 * scale, b"Transcript fingerprint", 145, 174, 193, 1);
                 let digits = b"0123456789abcdef";
                 for row in 0..4 {
                     let mut line = [0; 16];
                     for column in 0..8 { let byte = verification.fingerprint[row * 8 + column]; line[column * 2] = digits[(byte >> 4) as usize]; line[column * 2 + 1] = digits[(byte & 15) as usize]; }
-                    self.ui_text_fit_strong(left, top + (96 + row * 24) * scale, width, &line, 220, 239, 249, 1);
+                    self.ui_text_fit_strong(left, top + (176 + row * 32) * scale, width, &line, 220, 239, 249, 1);
                 }
                 let remaining = crate::runtime::node_client::clock().map(|now| verification.expires.saturating_sub(now)).unwrap_or(0);
                 let (value, length) = Self::network_metric_text(remaining);
-                self.ui_text(left, top + 204 * scale, b"Seconds remaining", 145, 174, 193, 1);
-                self.ui_text(left, top + 228 * scale, &value[..length], outline_r, outline_g, outline_b, 1);
-                self.ui_text(left, top + 266 * scale, b"Enter peer code", 145, 174, 193, 1);
-                self.ui_text_fit_strong(left, top + 292 * scale, width, &input[..input.len().min(6)], 242, 248, 252, 2);
-                self.ui_text_fit_strong(left, top + 330 * scale, width, b"Enter: confirm  Esc: cancel", 145, 174, 193, 1);
+                self.ui_text(left, top + 328 * scale, b"Seconds remaining", 145, 174, 193, 1);
+                self.ui_text(left, top + 360 * scale, &value[..length], outline_r, outline_g, outline_b, 1);
+                self.ui_text(left, top + 408 * scale, b"Enter peer code", 145, 174, 193, 1);
+                self.ui_text_fit_strong(left, top + 440 * scale, width, &input[..input.len().min(6)], 242, 248, 252, 2);
+                self.ui_text(left, top + 520 * scale, b"Enter: confirm", 145, 174, 193, 1);
+                self.ui_text(left, top + 552 * scale, b"Esc: cancel", 145, 174, 193, 1);
             } else {
                 self.ui_text_wrapped(left, top + 42 * scale, width, b"Select a peer and begin pairing. No authority is granted until both operators confirm the matching fingerprint and code.", 145, 174, 193, 10);
             }
