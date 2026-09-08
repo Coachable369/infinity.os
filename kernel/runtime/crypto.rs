@@ -123,6 +123,27 @@ impl NodeCrypto {
     }
 
     // ------------------------=
+    // FUNC: derive_duplex_keys
+    // DESC: Derives identity-bound directional keys and a shared protocol reference; rejects non-contributory agreement.
+    // ------------------=
+    pub fn derive_duplex_keys(secret: &[u8; 32], peer_public: &[u8; 32], local: &[u8; 32], peer: &[u8; 32], transcript: &[u8]) -> Result<([u8; 32], [u8; 32], [u8; 16]), CryptoError> {
+        if local == peer || transcript.is_empty() { return Err(CryptoError::InvalidSignature); }
+        let shared = StaticSecret::from(*secret).diffie_hellman(&AgreementPublicKey::from(*peer_public));
+        if !shared.was_contributory() { return Err(CryptoError::InvalidSignature); }
+        let forward = local < peer;
+        let (first, second) = if forward { (local, peer) } else { (peer, local) };
+        let mut hash = Sha256::new();
+        hash.update(b"InfinityOS authenticated duplex v2"); hash.update(first); hash.update(second); hash.update(transcript);
+        let digest = hash.finalize();
+        let hkdf = Hkdf::<Sha256>::new(Some(&digest), shared.as_bytes());
+        let mut ab = [0; 32]; let mut ba = [0; 32]; let mut reference = [0; 16];
+        hkdf.expand(b"traffic/low-to-high", &mut ab).map_err(|_| CryptoError::OutputTooSmall)?;
+        hkdf.expand(b"traffic/high-to-low", &mut ba).map_err(|_| CryptoError::OutputTooSmall)?;
+        hkdf.expand(b"protocol/session-reference", &mut reference).map_err(|_| CryptoError::OutputTooSmall)?;
+        Ok(if forward { (ab, ba, reference) } else { (ba, ab, reference) })
+    }
+
+    // ------------------------=
     // FUNC: seal
     // DESC: Authenticates and encrypts a bounded payload in place using ChaCha20-Poly1305.
     // ------------------=

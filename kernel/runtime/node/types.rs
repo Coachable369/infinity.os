@@ -71,12 +71,14 @@ pub struct Pairing {
     pub state: PairingState,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct SecureSession {
     pub id: u64,
     pub peer: NodeId,
     pub state: SessionState,
-    pub key: [u8; 32],
+    pub protocol_reference: [u8; 16],
+    pub(super) tx_key: [u8; 32],
+    pub(super) rx_key: [u8; 32],
     pub send_sequence: u64,
     pub receive_sequence: u64,
     pub expires_at: u64,

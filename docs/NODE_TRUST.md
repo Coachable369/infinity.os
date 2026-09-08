@@ -11,3 +11,13 @@ Status: explicit human approval, correct/wrong code, cancellation, expiry,
 revocation, blocking, and the bounded typed IOP pairing path are **TESTED** in the
 host behavioral harness. GUI code entry is **IMPLEMENTED BUT UNTESTED** in a
 two-machine UI run. Cross-machine transport remains **SCAFFOLDED**.
+
+## Duplex mechanism
+
+Sessions now use identity/transcript-bound directional keys, separate TX/RX
+sequence state and a shared protocol reference independent of local handles.
+Both traffic keys are zeroized on session invalidation. Reused session material
+is rejected while its reference remains in the bounded session table. Reconnect
+must supply fresh agreement material and a fresh authenticated transcript.
+The duplex mechanism is host-tested; native handshake and installed two-node
+acceptance remain unfinished. See [the finish-line report](MILESTONE_9_FINISHLINE_STATUS.md).

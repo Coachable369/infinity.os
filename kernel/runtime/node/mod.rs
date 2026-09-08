@@ -220,7 +220,7 @@ impl NodeRuntime {
     pub fn revoke_trust(&mut self, peer: NodeId, now: u64, correlation_id: u64) -> Result<(), NodeError> {
         self.discovered.iter_mut().flatten().find(|node| node.id == peer).ok_or(NodeError::UnknownNode)?.trust = TrustState::Revoked;
         self.cancel_pending_pairings(peer);
-        for session in self.sessions.iter_mut().flatten().filter(|session| session.peer == peer) { session.state = SessionState::Closed; session.key.zeroize(); }
+        for session in self.sessions.iter_mut().flatten().filter(|session| session.peer == peer) { session.state = SessionState::Closed; session.tx_key.zeroize(); session.rx_key.zeroize(); }
         for grant in self.grants.iter_mut().flatten().filter(|grant| grant.peer == peer) { grant.revoked = true; }
         self.record(AUDIT_NODE_REVOKED, peer, now, correlation_id, 1);
         Ok(())
@@ -243,7 +243,7 @@ impl NodeRuntime {
         self.cancel_pending_pairings(peer);
         let event = if state == TrustState::Blocked { AUDIT_NODE_BLOCKED } else if matches!(state, TrustState::Untrusted | TrustState::Discovered) { AUDIT_NODE_UNBLOCKED } else { AUDIT_POLICY_CHANGED };
         if state != TrustState::Trusted {
-            for session in self.sessions.iter_mut().flatten().filter(|session| session.peer == peer) { session.state = SessionState::Closed; session.key.zeroize(); }
+            for session in self.sessions.iter_mut().flatten().filter(|session| session.peer == peer) { session.state = SessionState::Closed; session.tx_key.zeroize(); session.rx_key.zeroize(); }
             for grant in self.grants.iter_mut().flatten().filter(|grant| grant.peer == peer) { grant.revoked = true; }
         }
         self.record(event, peer, now, correlation_id, 1);
@@ -305,10 +305,15 @@ impl NodeRuntime {
     pub fn open_session(&mut self, peer: NodeId, local_secret: &[u8; 32], peer_ephemeral: &[u8; 32], transcript: &[u8], now: u64, correlation_id: u64) -> Result<u64, NodeError> {
         let trusted = self.discovered.iter().flatten().any(|node| node.id == peer && node.trust == TrustState::Trusted);
         if !trusted { self.record(AUDIT_SESSION_REJECTED, peer, now, correlation_id, 0); return Err(NodeError::NotTrusted); }
+        let local = self.local_id.ok_or(NodeError::EntropyUnavailable)?;
+        let (tx_key, rx_key, protocol_reference) = NodeCrypto::derive_duplex_keys(local_secret, peer_ephemeral, &local.0, &peer.0, transcript).map_err(map_crypto_error)?;
+        if self.sessions.iter().flatten().any(|session| session.protocol_reference == protocol_reference) {
+            return Err(NodeError::ReplayDetected);
+        }
         let slot = self.sessions.iter().position(Option::is_none).ok_or(NodeError::ResourceLimit)?;
         let id = self.take_id();
         self.sessions[slot] = Some(SecureSession { id, peer, state: SessionState::Established,
-            key: NodeCrypto::derive_session_key(local_secret, peer_ephemeral, transcript), send_sequence: 0,
+            tx_key, rx_key, protocol_reference, send_sequence: 0,
             receive_sequence: 0, expires_at: now.saturating_add(SESSION_LEASE_TICKS) });
         self.record(AUDIT_SESSION_OPENED, peer, now, correlation_id, 1);
         Ok(id)
@@ -323,8 +328,8 @@ impl NodeRuntime {
         if session.state != SessionState::Established || now >= session.expires_at { return Err(NodeError::SessionExpired); }
         session.send_sequence = session.send_sequence.checked_add(1).ok_or(NodeError::SessionExpired)?;
         let sequence = session.send_sequence;
-        let nonce = session_nonce(session.id, sequence);
-        NodeCrypto::seal(&session.key, &nonce, aad, payload).map(|tag| (sequence, tag)).map_err(map_crypto_error)
+        let nonce = session_nonce(sequence);
+        NodeCrypto::seal(&session.tx_key, &nonce, aad, payload).map(|tag| (sequence, tag)).map_err(map_crypto_error)
     }
 
     // ------------------------=
@@ -335,8 +340,8 @@ impl NodeRuntime {
         let session = self.sessions.iter_mut().flatten().find(|session| session.id == session_id).ok_or(NodeError::SessionNotFound)?;
         if session.state != SessionState::Established || now >= session.expires_at { return Err(NodeError::SessionExpired); }
         if sequence <= session.receive_sequence { return Err(NodeError::ReplayDetected); }
-        let nonce = session_nonce(session.id, sequence);
-        NodeCrypto::open(&session.key, &nonce, aad, payload, tag).map_err(map_crypto_error)?;
+        let nonce = session_nonce(sequence);
+        NodeCrypto::open(&session.rx_key, &nonce, aad, payload, tag).map_err(map_crypto_error)?;
         session.receive_sequence = sequence;
         Ok(())
     }
@@ -387,7 +392,7 @@ impl NodeRuntime {
     pub fn close_session(&mut self, session_id: u64, now: u64, correlation_id: u64) -> Result<(), NodeError> {
         let session = self.sessions.iter_mut().flatten().find(|session| session.id == session_id).ok_or(NodeError::SessionNotFound)?;
         session.state = SessionState::Closed;
-        session.key.zeroize();
+        session.tx_key.zeroize(); session.rx_key.zeroize();
         let peer = session.peer;
         self.record(AUDIT_SESSION_REJECTED, peer, now, correlation_id, 1);
         Ok(())
@@ -435,7 +440,7 @@ impl NodeRuntime {
     pub fn sweep(&mut self, now: u64) {
         for node in self.discovered.iter_mut().flatten() { if now.saturating_sub(node.last_seen) > DISCOVERY_LEASE_TICKS { node.reachability = Reachability::Offline; } }
         self.expire_pairings(now);
-        for session in self.sessions.iter_mut().flatten() { if session.state == SessionState::Established && now >= session.expires_at { session.state = SessionState::Closed; session.key.zeroize(); } }
+        for session in self.sessions.iter_mut().flatten() { if session.state == SessionState::Established && now >= session.expires_at { session.state = SessionState::Closed; session.tx_key.zeroize(); session.rx_key.zeroize(); } }
     }
 
     // ------------------------=
@@ -600,11 +605,11 @@ fn fingerprint(public: &[u8; 32]) -> [u8; 16] {
 
 // ------------------------=
 // FUNC: session_nonce
-// DESC: Encodes the session and strictly monotonic sequence into a unique AEAD nonce.
+// DESC: Encodes the direction-local sequence; directional keys carry session identity, never local handles.
 // ------------------=
-fn session_nonce(session_id: u64, sequence: u64) -> [u8; 12] {
+fn session_nonce(sequence: u64) -> [u8; 12] {
     let mut nonce = [0u8; 12];
-    nonce[..4].copy_from_slice(&(session_id as u32).to_le_bytes());
+    nonce[..4].copy_from_slice(b"IN92");
     nonce[4..].copy_from_slice(&sequence.to_le_bytes());
     nonce
 }

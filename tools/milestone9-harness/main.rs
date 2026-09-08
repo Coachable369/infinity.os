@@ -14,6 +14,7 @@ mod event;
 use node::types::{MeshRole, NodeError, TrustState};
 use node::NodeRuntime;
 mod pairing_acceptance;
+mod duplex_acceptance;
 
 // ------------------------=
 // FUNC: dispatch_request
@@ -287,6 +288,7 @@ fn paired_nodes() -> (NodeRuntime, NodeRuntime, node::types::NodeId, node::types
 // DESC: Exercises node identity, discovery, trust, secure sessions, remote authority, membership, persistence, and bounds through behavior.
 // ------------------=
 fn main() {
+    duplex_acceptance::run();
     pairing_acceptance::run();
     iop_pairing_round_trip();
     iop_node_management_operations();
@@ -301,7 +303,7 @@ fn main() {
     let (_, public_b) = crypto::NodeCrypto::agreement_keypair(&secret_b);
     let session_a = a.open_session(b_id, &secret_a, &public_b, b"iop-v1/a-b", 20, 8).unwrap();
     let session_b = b.open_session(a_id, &secret_b, &public_a, b"iop-v1/a-b", 20, 8).unwrap();
-    assert_eq!(session_a, session_b);
+    // Local handles are not part of the cryptographic wire identity.
     let aad = b"typed-operation";
     let mut outgoing = *b"hello remote node";
     let (sequence, tag) = a.protect(session_a, aad, &mut outgoing, 21).unwrap();
