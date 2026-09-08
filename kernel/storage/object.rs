@@ -448,6 +448,15 @@ impl<D: BlockDevice> ObjectStore<D> {
         container_blocks: u64,
         seed: [u8; 16],
     ) -> Result<Self, ObjectError> {
+        Self::format_with_progress(device, container_lba, container_blocks, seed, &mut |_, _| {})
+    }
+
+    // ------------------------=
+    // FUNC: format_with_progress
+    // DESC: Creates the durable object store while reporting the actual bootstrap component currently being installed.
+    // ------------------=
+    pub fn format_with_progress<F: FnMut(u8, &[u8])>(device: D, container_lba: u64,
+        container_blocks: u64, seed: [u8; 16], progress: &mut F) -> Result<Self, ObjectError> {
         let available = container_blocks
             .checked_sub(STORE_RELATIVE_LBA + CONTENT)
             .ok_or(ObjectError::InsufficientCapacity)?
@@ -461,7 +470,8 @@ impl<D: BlockDevice> ObjectStore<D> {
         };
         store.state.next_identity =
             u64::from_le_bytes(seed[..8].try_into().unwrap_or([1; 8])).max(1);
-        store.initialize_namespace()?;
+        store.initialize_namespace(progress)?;
+        progress(66, b"COMMITTING OBJECT STORE AND BOOTSTRAP CONFIGURATION");
         store.commit()?;
         Ok(store)
     }
@@ -505,7 +515,8 @@ impl<D: BlockDevice> ObjectStore<D> {
     // FUNC: initialize_namespace
     // DESC: Initializes initialize namespace state.
     // ------------------=
-    fn initialize_namespace(&mut self) -> Result<(), ObjectError> {
+    fn initialize_namespace<F: FnMut(u8, &[u8])>(&mut self, progress: &mut F) -> Result<(), ObjectError> {
+        progress(56, b"CREATING SYSTEM AND PERSONAL NAMESPACES");
         let paths: [&[u8]; 15] = [
             b"/",
             b"/home",
@@ -547,6 +558,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.write_record(recovery, b"native object-store recovery metadata")?;
         // Versioned native binary bootstrap objects. These are deliberately
         // small enough to load before the human namespace/service database.
+        progress(57, b"INSTALLING RUNTIME AND SERVICE REGISTRY");
         let runtime =
             self.create_record(b"runtime-core", ObjectType::SystemComponent, Space::System)?;
         self.write_record(
@@ -568,6 +580,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         }
         self.write_record(registry, &service_registry)?;
         self.attach_record(b"/system/service-registry", registry)?;
+        progress(59, b"INSTALLING CAPABILITY AND SECURITY POLICY");
         let policy =
             self.create_record(b"capability-policy", ObjectType::Metadata, Space::System)?;
         // INFCAP1, schema v1, deny-ambient, followed by the first durable
@@ -580,6 +593,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             ],
         )?;
         self.attach_record(b"/system/capability-policy", policy)?;
+        progress(60, b"INSTALLING LOCAL AI MODEL REGISTRY AND BOOTSTRAP");
         let model = self.create_record(
             b"local-intent-v1",
             ObjectType::SystemComponent,
@@ -620,6 +634,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         ));
         self.write_record(ai_service, &ai_bootstrap)?;
         self.attach_record(b"/system/ai/bootstrap", ai_service)?;
+        progress(62, b"INSTALLING VOICE, AGENT AND ORGANIZATION POLICY");
         let voice = self.create_record(
             b"voice-framework",
             ObjectType::SystemComponent,
@@ -640,6 +655,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             self.create_record(b"organization-schema", ObjectType::Metadata, Space::System)?;
         self.write_record(organization, &organization::organization_schema_object())?;
         self.attach_record(b"/system/organization/schema", organization)?;
+        progress(64, b"INSTALLING IDENTITY, NETWORK AND NODE TRUST STATE");
         let identity =
             self.create_record(b"identity-state", ObjectType::IdentityData, Space::System)?;
         self.write_record(identity, b"INFIDN1\0FIRST-BOOT-REQUIRED")?;
@@ -657,6 +673,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             self.create_record(b"node-trust-state", ObjectType::IdentityData, Space::System)?;
         self.write_record(node_state, b"INFNOD01\x01\0FIRST-BOOT-KEY-GENERATION")?;
         self.attach_record(b"/system/security/nodes/state", node_state)?;
+        progress(65, b"INSTALLING SHELL SETTINGS PROFILES");
         let shell_profiles =
             self.create_record(b"shell-profile-state", ObjectType::Metadata, Space::System)?;
         self.write_record(shell_profiles, b"INFSHL01\x01\0")?;

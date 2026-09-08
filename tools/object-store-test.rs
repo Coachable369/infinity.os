@@ -161,8 +161,11 @@ fn main() {
     checkpoint_replacement(test_sectors);
     let disk = MemoryDisk::new(test_sectors);
     let seed = [0x41; 16];
-    let mut store =
-        ObjectStore::format(disk.clone(), 0, test_sectors as u64, seed).expect("format");
+    let mut completed_stages = Vec::new();
+    let mut store = ObjectStore::format_with_progress(disk.clone(), 0, test_sectors as u64, seed,
+        &mut |stage, _| completed_stages.push(stage)).expect("format");
+    assert_eq!(completed_stages, [56, 57, 59, 60, 62, 64, 65, 66]);
+    assert!(completed_stages.windows(2).all(|pair| pair[0] < pair[1]));
     assert!(store.runtime_bootstrap_valid());
     assert!(store.resolve(b"/home/default/documents").is_ok());
     let documents = store

@@ -3967,10 +3967,15 @@ impl super::DisplayDevice {
     }
 }
 
+// Read-only debugger progress; no installer authority or input channel.
+#[used]
+#[no_mangle]
+static mut INFINITY_INSTALL_PROGRESS: [u64; 4] = [0x494e46494e535431, 0, 0, 0];
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 // ------------------------=
 // FUNC: installer_progress_update
-// DESC: Animates the graphical installer from its last verified checkpoint to the next one.
+// DESC: Presents measured installation progress without inventing intermediate completion or delaying disk work.
 // ------------------=
 pub fn installer_progress_update(percent: u8, label: &[u8]) {
     unsafe {
@@ -3978,19 +3983,17 @@ pub fn installer_progress_update(percent: u8, label: &[u8]) {
         if let Some(console) = (*slot).as_mut() {
             console.restore_cursor();
             let target = (percent as usize).min(100);
-            let start = console.installer_progress.min(target);
-            for value in start..=target {
-                console.installer_animation_phase = (console.installer_animation_phase + 5) % 384;
-                console.display.installer_progress_frame(
-                    value,
-                    label,
-                    console.installer_animation_phase,
-                );
-                console.display.present_damage();
-                super::bootstrap::wait_frame(12);
-            }
+            console.installer_animation_phase = (console.installer_animation_phase + 5) % 384;
+            console.display.installer_progress_frame(target, label, console.installer_animation_phase);
             console.installer_progress = target;
             console.save_and_draw_cursor(console.cursor_x, console.cursor_y);
+            console.display.present_damage();
+            let state = &raw mut INFINITY_INSTALL_PROGRESS;
+            let sequence = (*state)[1].wrapping_add(2) & !1;
+            core::ptr::write_volatile(state.cast::<u64>().add(1), sequence | 1);
+            core::ptr::write_volatile(state.cast::<u64>().add(2), target as u64);
+            core::ptr::write_volatile(state.cast::<u64>().add(3), sequence);
+            core::ptr::write_volatile(state.cast::<u64>().add(1), sequence);
         }
     }
 }

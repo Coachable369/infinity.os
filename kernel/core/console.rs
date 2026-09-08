@@ -6502,11 +6502,12 @@ impl ConsoleRuntime {
             if over_primary {
                 self.installer_focus = 1;
             }
-            // Installer buttons render their depressed frame on press and
-            // activate on release. This keeps the interaction visible while
-            // preserving the startup selector's firmware-specific press-edge
-            // fallback.
-            if released && (over_back || over_primary) {
+            // Match the startup selector's press-edge activation: firmware
+            // pointer capture can consume release packets. Paint the depressed
+            // state first; held motion and the later release cannot activate
+            // another step because neither is a new press edge.
+            if clicked && (over_back || over_primary) {
+                self.redraw();
                 crate::output_text(if over_back {
                     b"[installer] mouse=back\n"
                 } else {

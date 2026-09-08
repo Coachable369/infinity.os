@@ -99,7 +99,8 @@ pub fn provision<D: BlockDevice, F: FnMut(u8, &[u8])>(
     write_gpt(device, plan).map_err(|_| StorageError::WriteGpt)?;
     progress(12, b"PARTITION TABLE WRITTEN");
     crate::output_text(b"[write] Partition table\n");
-    write_esp(device, plan).map_err(|_| StorageError::WriteBootRegion)?;
+    progress(12, b"INSTALLING EFI BOOTLOADER AND BOOT ASSETS");
+    write_esp(device, plan, progress).map_err(|_| StorageError::WriteBootRegion)?;
     progress(24, b"EFI BOOT ENVIRONMENT INSTALLED");
     crate::output_text(b"[write] EFI boot environment\n");
     write_native_metadata(device, plan, 1).map_err(|_| StorageError::WriteContainer)?;
@@ -110,13 +111,15 @@ pub fn provision<D: BlockDevice, F: FnMut(u8, &[u8])>(
     progress(43, b"SYSTEM GENERATION 1 CREATED");
     crate::output_text(b"[generation] Generation 1 state=INSTALLING\n");
     crate::output_text(b"[write] System component manifest (CORE)\n");
-    write_kernel(device, plan).map_err(|_| StorageError::WriteKernel)?;
+    progress(43, b"INSTALLING KERNEL, DRIVERS AND CORE COMPONENTS");
+    write_kernel(device, plan, progress).map_err(|_| StorageError::WriteKernel)?;
     progress(56, b"KERNEL AND CORE COMPONENTS WRITTEN");
-    let mut object_store = super::object::ObjectStore::format(
+    let mut object_store = super::object::ObjectStore::format_with_progress(
         &mut *device,
         plan.container_first_lba,
         plan.expected_pool_blocks,
         plan.container_uuid,
+        progress,
     )
     .map_err(|_| StorageError::WriteContainer)?;
     object_store
@@ -137,7 +140,8 @@ pub fn provision<D: BlockDevice, F: FnMut(u8, &[u8])>(
     device.flush();
     write_container_header(device, plan, 3).map_err(|_| StorageError::WriteContainer)?;
     crate::output_text(b"[provision] state=verifying\n");
-    verify(device, plan)?;
+    progress(67, b"VERIFYING PARTITION TABLE AND BOOT ASSETS");
+    verify(device, plan, progress)?;
     progress(79, b"STORAGE AND BOOT ASSETS VERIFIED");
     crate::output_text(b"[verify] Partition table\n[verify] EFI boot environment\n");
     crate::output_text(
@@ -321,13 +325,14 @@ fn write_partition(
 // FUNC: write_esp
 // DESC: Writes or updates write esp data.
 // ------------------=
-fn write_esp<D: BlockDevice>(device: &mut D, plan: &StorageProvisioningPlan) -> Result<(), ()> {
+fn write_esp<D: BlockDevice, F: FnMut(u8, &[u8])>(device: &mut D, plan: &StorageProvisioningPlan, progress: &mut F) -> Result<(), ()> {
     for (index, chunk) in ESP_IMAGE.chunks(512).enumerate() {
         let mut sector = [0u8; 512];
         sector[..chunk.len()].copy_from_slice(chunk);
         if !device.write_sector(plan.esp_first_lba + index as u64, &sector) {
             return Err(());
         }
+        report_transfer(progress, index, ESP_IMAGE.len(), 12, 23, b"INSTALLING EFI BOOTLOADER AND BOOT ASSETS");
     }
     Ok(())
 }
@@ -629,16 +634,42 @@ fn verify_system_generation<D: BlockDevice>(
 }
 
 // ------------------------=
+// FUNC: report_transfer
+// DESC: Reports completed sector work at bounded percentage boundaries, including actual KiB transferred.
+// ------------------=
+fn report_transfer<F: FnMut(u8, &[u8])>(progress: &mut F, index: usize, bytes: usize, start: u8, end: u8, label: &[u8]) {
+    let total = bytes.div_ceil(512).max(1);
+    let completed = (index + 1).min(total);
+    let span = usize::from(end - start);
+    let current = completed * span / total;
+    if current == index * span / total && completed != total { return; }
+    let mut detail = [0u8; 128];
+    let mut length = label.len().min(72);
+    detail[..length].copy_from_slice(&label[..length]);
+    for byte in b" - " { detail[length] = *byte; length += 1; }
+    for (value, suffix) in [(completed.saturating_mul(512).min(bytes).div_ceil(1024), b" / " as &[u8]), (bytes.div_ceil(1024), b" KiB" as &[u8])] {
+        let mut digits = [0u8; 20];
+        let mut count = 0;
+        let mut value = value;
+        loop { digits[count] = b'0' + (value % 10) as u8; count += 1; value /= 10; if value == 0 { break; } }
+        for digit in digits[..count].iter().rev() { detail[length] = *digit; length += 1; }
+        detail[length..length + suffix.len()].copy_from_slice(suffix); length += suffix.len();
+    }
+    progress(start + current as u8, &detail[..length]);
+}
+
+// ------------------------=
 // FUNC: write_kernel
 // DESC: Writes or updates write kernel data.
 // ------------------=
-fn write_kernel<D: BlockDevice>(device: &mut D, plan: &StorageProvisioningPlan) -> Result<(), ()> {
+fn write_kernel<D: BlockDevice, F: FnMut(u8, &[u8])>(device: &mut D, plan: &StorageProvisioningPlan, progress: &mut F) -> Result<(), ()> {
     for (index, chunk) in KERNEL_IMAGE.chunks(512).enumerate() {
         let mut sector = [0u8; 512];
         sector[..chunk.len()].copy_from_slice(chunk);
         if !device.write_sector(plan.kernel_lba + index as u64, &sector) {
             return Err(());
         }
+        report_transfer(progress, index, KERNEL_IMAGE.len(), 43, 55, b"INSTALLING KERNEL, DRIVERS AND CORE COMPONENTS");
     }
     Ok(())
 }
@@ -647,9 +678,10 @@ fn write_kernel<D: BlockDevice>(device: &mut D, plan: &StorageProvisioningPlan) 
 // FUNC: verify
 // DESC: Implements the verify operation.
 // ------------------=
-fn verify<D: BlockDevice>(
+fn verify<D: BlockDevice, F: FnMut(u8, &[u8])>(
     device: &mut D,
     plan: &StorageProvisioningPlan,
+    progress: &mut F,
 ) -> Result<(), StorageError> {
     let mut sector = [0u8; 512];
     if !device.read_sector(1, &mut sector) || &sector[..8] != b"EFI PART" {
@@ -693,6 +725,7 @@ fn verify<D: BlockDevice>(
         {
             return Err(StorageError::VerifyBootEnvironment);
         }
+        report_transfer(progress, index, ESP_IMAGE.len(), 67, 73, b"VERIFYING EFI BOOTLOADER AND BOOT ASSETS");
     }
     if !device.read_sector(plan.container_first_lba, &mut sector)
         || &sector[..8] != b"INFCONT1"
@@ -719,6 +752,7 @@ fn verify<D: BlockDevice>(
         {
             return Err(StorageError::VerifyKernel);
         }
+        report_transfer(progress, index, KERNEL_IMAGE.len(), 73, 78, b"VERIFYING INSTALLED KERNEL AND CORE COMPONENTS");
     }
     Ok(())
 }

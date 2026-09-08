@@ -255,7 +255,10 @@ class Guest:
                 self.key("tab")
                 state = self.wait(lambda value: value[6] != state[6], "focus advanced")
             assert state[6] == 1
-            self.key("ret")
+            if getattr(self, "installer_clicks", False):
+                self.installer_click(step)
+            else:
+                self.key("ret")
             # TCG verification reads the complete installed kernel. This is a
             # host acceptance bound, not a guest protocol/authority deadline.
             self.wait(lambda state: state[5] > step and state[5] != 9, f"advance {step}", 900 if step == 6 else 300)
@@ -265,6 +268,58 @@ class Guest:
         self.boot(False)
         self.wait(lambda state: state[3] == 1 and state[4] == 4, "detached-media installed onboarding", 180)
         self.screenshot("detached-onboarding")
+
+    # ------------------------=
+    # FUNC: installer_click
+    # DESC: Moves the real PS/2 pointer to a primary action and verifies exactly one transition on press, even without release.
+    # ------------------=
+    def installer_click(self, step):
+        target = (655, 838) if step == 0 else (680, 848) if step == 1 else (660, 857)
+        if step == 6:
+            target = (625, 568)
+        for _ in range(45):
+            state = self.state()
+            dx, dy = target[0] - state[13], target[1] - state[14]
+            if abs(dx) < 6 and abs(dy) < 6:
+                break
+            events = [{"type": "rel", "data": {"axis": axis, "value": max(-60, min(60, int(delta / 3) or (1 if delta > 0 else -1)))}}
+                      for axis, delta in [("x", dx), ("y", dy)] if abs(delta) >= 6]
+            self.qmp("input-send-event", {"events": events})
+            self.wait(lambda value: value[13:15] != state[13:15], "pointer moved")
+        else:
+            raise AssertionError("pointer did not reach installer control")
+        self.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": True}}]})
+        if step == 6:
+            address, size = symbol(self.work.parent / "artifacts/kernel.elf", "INFINITY_INSTALL_PROGRESS")
+            assert size == 32
+            samples = []
+            deadline = time.monotonic() + 900
+            captured = False
+            while True:
+                current = struct.unpack("<4Q", self.memory(address, size))
+                if current[1] and current[1] == current[3] and not current[1] & 1:
+                    assert current[0] == 0x494e46494e535431 and current[2] <= 100
+                    if not samples or current[1] != samples[-1][0]:
+                        assert not samples or current[2] >= samples[-1][1]
+                        samples.append((current[1], current[2]))
+                    if 43 < current[2] < 56 and not captured:
+                        self.screenshot("measured-kernel-install-progress")
+                        captured = True
+                after = self.state()
+                if after and after[5] == 8:
+                    break
+                assert time.monotonic() < deadline and (after is None or after[5] != 9)
+                time.sleep(.25)
+            assert samples[-1][1] == 100 and len(samples) >= 15
+            (self.work / "measured-install-progress.json").write_text(json.dumps(samples))
+        else:
+            after = self.wait(lambda value: value[5] > step and value[5] != 9, "single press advanced installer")
+        self.qmp("input-send-event", {"events": [{"type": "rel", "data": {"axis": "x", "value": 1}}]})
+        held = self.wait(lambda value: value[2] > after[2], "held pointer processed")
+        assert held[5] == after[5]
+        self.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": False}}]})
+        released = self.wait(lambda value: value[15] == 0, "pointer release processed")
+        assert released[5] == after[5]
 
     # ------------------------=
     # FUNC: stop
@@ -585,6 +640,7 @@ def main():
     parser.add_argument("--confirmation-delay", type=int, default=5)
     parser.add_argument("--remote-installed", action="store_true")
     parser.add_argument("--focus-pairing", action="store_true", help="Run protocol acceptance only; explicitly excludes rapid-input acceptance")
+    parser.add_argument("--installer-clicks", action="store_true")
     args = parser.parse_args()
     assert 640 <= args.width <= 4096 and 480 <= args.height <= 4096
     assert 0 <= args.confirmation_delay <= 10
@@ -690,6 +746,7 @@ def main():
             return
         for number in [1, 2]:
             guest = Guest(work, number, args.firmware, reuse=args.resume_installed, width=args.width, height=args.height)
+            guest.installer_clicks = args.installer_clicks
             guests.append(guest)
         with ThreadPoolExecutor(max_workers=2) as workers:
             results = list(workers.map(lambda guest: guest.onboard() if args.resume_installed else guest.install(), guests))
