@@ -3,6 +3,36 @@ use super::*;
 use identity::{StableId, SessionState, MAX_SESSIONS, SESSION_IDENTITY_MANAGE};
 use iop::{IopError, IopMessage, NodeOperationV1, OperationId};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NodePresentation {
+    pub selected: Option<node::types::NodeId>,
+    pub verification: Option<node::wire_trust::Verification>,
+    pub remaining: u64,
+    pub checkpoint: u64,
+    pub projection: u64,
+    pub stale: bool,
+    pub sessions: usize,
+    pub policy_offset: usize,
+}
+
+// ------------------------=
+// FUNC: presentation
+// DESC: Captures bounded visible node state for retained Settings invalidation without treating the view as authority.
+// ------------------=
+pub fn presentation(runtime: &InfinityRuntime) -> NodePresentation {
+    let verification = runtime.node_selection.and_then(|peer| runtime.nodes.local_id().and_then(|local| runtime.node_transport.trust.verification(local, peer)));
+    NodePresentation {
+        selected: runtime.node_selection,
+        verification,
+        remaining: verification.map(|value| value.expires.saturating_sub(runtime.node_clock.unwrap_or(value.expires))).unwrap_or(0),
+        checkpoint: runtime.nodes.control_version(),
+        projection: runtime.node_projection.version,
+        stale: runtime.node_projection.stale,
+        sessions: runtime.nodes.sessions().iter().flatten().filter(|session| session.state == node::types::SessionState::Established).count(),
+        policy_offset: runtime.node_policy_offset,
+    }
+}
+
 // ------------------------=
 // FUNC: submit
 // DESC: Routes an explicit authenticated human action through ordinary IOP and publishes only a durable committed notice.

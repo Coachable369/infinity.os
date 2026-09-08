@@ -9883,6 +9883,10 @@ pub fn system_ui_present(
                 crate::runtime::with_runtime(|runtime| (runtime.network.status(), runtime.network.interfaces.interface(2).copied(), runtime.network.resolver.server(0), runtime.network.resolver.server(1)))
             } else { None };
             let network_settings_changed = network_settings != console.last_network_settings;
+            let node_settings = if screen == 4 && focus == 7 {
+                crate::runtime::with_runtime(|runtime| crate::runtime::node_client::presentation(runtime))
+            } else { None };
+            let node_settings_changed = node_settings != console.last_node_settings;
             let settings_content_changed = console.last_settings_window.expanded_row
                 != settings_window.expanded_row
                 || console.last_settings_window.scroll_offset != settings_window.scroll_offset
@@ -9972,7 +9976,7 @@ pub fn system_ui_present(
             {
                 super::retained_windows::invalidate();
             }
-            if network_settings_changed {
+            if network_settings_changed || node_settings_changed {
                 super::retained_windows::invalidate();
             }
             let bounded_launcher_change = screen == 7
@@ -9989,6 +9993,7 @@ pub fn system_ui_present(
                 && console.last_system_screen == screen
                 && (navigator_surface_changed
                     || network_settings_changed
+                    || node_settings_changed
                     || window_moved
                     || window_resized
                     || settings_geometry_changed
@@ -10578,6 +10583,7 @@ pub fn system_ui_present(
             console.last_system_clock = clock;
             console.last_settings_window = settings_window;
             console.last_network_settings = network_settings;
+            console.last_node_settings = node_settings;
             console.last_app_window_x = app_window_x;
             console.last_app_window_y = app_window_y;
             console.last_app_window_width = app_window_width;

@@ -359,6 +359,25 @@ class Guest:
         self.key("ret")
         return self.wait(lambda state: any(state[32:36]), "selected discovered node")
 
+    # ------------------------=
+    # FUNC: confirm_peer
+    # DESC: Enters each public verification digit through normal key events and waits for its actual acceptance within unchanged security leases.
+    # ------------------=
+    def confirm_peer(self, state, moves):
+        for _ in range(moves):
+            self.key("down")
+        self.key("ret")
+        ready = self.wait(lambda value: value[9] & 4, "trusted confirmation input")
+        assert ready[54] == 0 and ready[55] > ready[10]
+        for count, digit in enumerate(f"{state[37]:06d}", 1):
+            self.qmp("send-key", {"keys": [{"type": "qcode", "data": digit}], "hold-time": 150})
+            accepted = self.wait(lambda value: value[54] >= count or value[9] & 8, "accepted confirmation digit", timeout=15)
+            assert accepted[54] == count and not accepted[9] & 8
+            assert accepted[10] < accepted[55] and accepted[36] == state[36]
+        self.qmp("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 150})
+        result = self.wait(lambda value: not value[9] & 4 or value[9] & 8, "explicit operator confirmation", timeout=15)
+        assert not result[9] & 12, {"confirmation_failure": result[:56]}
+
 # ------------------------=
 # FUNC: main
 # DESC: Runs two independent fresh installs; artifacts and evidence remain in a newly created output directory.
@@ -411,14 +430,8 @@ def main():
             assert av[32:36] == bv[16:20] and bv[32:36] == av[16:20]
             a.screenshot("pairing-verification")
             b.screenshot("pairing-verification")
-            for guest, state, moves in [(a, av, 2), (b, bv, 3)]:
-                for _ in range(moves):
-                    guest.key("down")
-                guest.key("ret")
-                guest.wait(lambda value: value[9] & 4, "trusted confirmation input")
-                guest.text(f"{state[37]:06d}")
-                guest.key("ret")
-                guest.wait(lambda value: not value[9] & 12, "explicit operator confirmation")
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                list(workers.map(lambda item: item[0].confirm_peer(item[1], item[2]), [(a, av, 2), (b, bv, 3)]))
             for guest in guests:
                 guest.wait(lambda state: state[25] == 1, "dual-confirmed installed trust")
             a.key("left")

@@ -4,6 +4,82 @@ use iop::OperationId;
 use node::reconciliation::request;
 
 // ------------------------=
+// FUNC: authenticated_transcript_invalidates_node_presentation
+// DESC: Exchanges real signed pairing frames and checks that asynchronous verification arrival changes the retained view without a control action.
+// ------------------=
+#[test]
+fn authenticated_transcript_invalidates_node_presentation() {
+    use network::types::{Endpoint, IpAddress};
+    use node::transport::LinkSnapshot;
+    let mut left = InfinityRuntime::new(false);
+    let mut right = InfinityRuntime::new(false);
+    let lid = left.nodes.initialize(&[81; 32], true).unwrap();
+    let rid = right.nodes.initialize(&[82; 32], true).unwrap();
+    left.nodes.discover(right.nodes.advertise(1, 1, 1).unwrap(), 1).unwrap();
+    right.nodes.discover(left.nodes.advertise(1, 1, 1).unwrap(), 1).unwrap();
+    left.node_transport.trust.initialize(&[83; 32]);
+    right.node_transport.trust.initialize(&[84; 32]);
+    left.node_selection = Some(rid);
+    right.node_selection = Some(lid);
+    let local = Endpoint { address: IpAddress::V4([10, 42, 0, 1]), port: 49152 };
+    let remote = Endpoint { address: IpAddress::V4([10, 42, 0, 2]), port: 49152 };
+    let ll = LinkSnapshot { connection: 1, peer: Some(rid), local, remote };
+    let rl = LinkSnapshot { connection: 2, peer: Some(lid), local: remote, remote: local };
+    left.node_transport.trust.begin(&mut left.nodes, ll, 0, false, 2).unwrap();
+    let waiting = node_client::presentation(&left);
+    assert!(waiting.verification.is_none());
+    for now in 3..12 {
+        left.node_clock = Some(now);
+        right.node_clock = Some(now);
+        if let Some(packet) = left.node_transport.trust.outgoing(1, now) {
+            right.node_transport.trust.ingest(&mut right.nodes, rl, &packet.bytes[..packet.length as usize], now).unwrap();
+            left.node_transport.trust.sent(1);
+        }
+        if let Some(packet) = right.node_transport.trust.outgoing(2, now) {
+            left.node_transport.trust.ingest(&mut left.nodes, ll, &packet.bytes[..packet.length as usize], now).unwrap();
+            right.node_transport.trust.sent(2);
+        }
+        if node_client::presentation(&left).verification.is_some() && node_client::presentation(&right).verification.is_some() { break; }
+    }
+    let ready = node_client::presentation(&left);
+    assert_ne!(ready, waiting);
+    let a = ready.verification.unwrap();
+    let b = node_client::presentation(&right).verification.unwrap();
+    assert_eq!(a.fingerprint, b.fingerprint);
+    assert_eq!(a.code, b.code);
+    assert_eq!(a.peer, b.local);
+    assert!(ready.remaining > 0);
+    left.node_clock = Some(a.expires);
+    left.node_transport.trust.tick(&mut left.nodes, a.expires);
+    assert!(node_client::presentation(&left).verification.is_none());
+}
+
+// ------------------------=
+// FUNC: node_presentation_tracks_visible_state_not_idle_clock
+// DESC: Exercises retained-view invalidation for selection, committed changes and projection recovery while idle ticks remain equal.
+// ------------------=
+#[test]
+fn node_presentation_tracks_visible_state_not_idle_clock() {
+    let mut runtime = InfinityRuntime::new(false);
+    runtime.nodes.initialize(&[51; 32], true).unwrap();
+    let mut peer = node::NodeRuntime::new();
+    let id = peer.initialize(&[52; 32], true).unwrap();
+    runtime.nodes.discover(peer.advertise(1, 1, 1).unwrap(), 1).unwrap();
+    let initial = node_client::presentation(&runtime);
+    runtime.node_clock = Some(123);
+    assert_eq!(node_client::presentation(&runtime), initial);
+    runtime.node_selection = Some(id);
+    let selected = node_client::presentation(&runtime);
+    assert_ne!(selected, initial);
+    runtime.nodes.commit_control(OperationId::NodeBlock, request(id.0, OperationId::NodeBlock), 2, 3, 4, |_| true).unwrap();
+    assert_ne!(node_client::presentation(&runtime), selected);
+    let committed = node_client::presentation(&runtime);
+    runtime.node_projection.stale = !runtime.node_projection.stale;
+    assert_ne!(node_client::presentation(&runtime), committed);
+    assert!(!crate::ui::redraw::clock_change_requires_structural_redraw(4, true));
+}
+
+// ------------------------=
 // FUNC: pairing_input_is_exclusive_scoped_and_expires
 // DESC: Exercises trusted input ownership, surface isolation, expiry and stale-lease rejection without a textual oracle.
 // ------------------=

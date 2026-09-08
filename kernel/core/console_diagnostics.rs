@@ -30,6 +30,10 @@ pub(super) fn publish(console: &ConsoleRuntime) {
     data[9] = (!console.current_user.is_zero()) as u64 | ((!console.current_session.is_zero()) as u64) << 1 | (console.settings_editing as u64) << 2 | (console.onboarding_validation_error as u64) << 3;
     data[11] = console.system.framebuffer_width as u64; data[12] = console.system.framebuffer_height as u64;
     data[10] = crate::runtime::node_client::clock().unwrap_or(u64::MAX);
+    if console.mode == super::ConsoleMode::Settings && console.system_focus == 7 && console.settings_editing {
+        data[54] = console.command_length as u64;
+        data[55] = console.node_input_lease.map(|lease| lease.expires_at).unwrap_or(0);
+    }
     crate::runtime::with_runtime(|runtime| {
         if let Some(local) = runtime.nodes.local_id() { words(&mut data[16..20], &local.0); }
         data[20] = runtime.nodes.control_version(); data[21] = runtime.node_projection.version;
