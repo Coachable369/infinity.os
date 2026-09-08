@@ -54,6 +54,22 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         data[68] = runtime.node_transport.poll_calls;
         data[69] = runtime.node_transport.serviced_links;
         data[70] = runtime.node_transport.received_packets;
+        data[72] = runtime.node_operator.last_submitted;
+        if let Some(completion) = runtime.node_operator.last_completion {
+            data[73] = completion.request_id;
+            data[74] = completion.correlation_id;
+            data[75] = completion.causation_id;
+            match completion.result {
+                Ok(response) => { data[76] = 1; words(&mut data[77..87], &response.encode()); }
+                Err(error) => data[76] = error as u64 + 1,
+            }
+        }
+        if let Some(grant) = runtime.nodes.remote_grants().iter().flatten().max_by_key(|grant| grant.id) {
+            data[87] = grant.id;
+            data[88] = grant.revoked as u64;
+            data[89] = grant.expires_at;
+            data[90] = grant.operation as u64;
+        }
         if let Some(peer) = console.selected_node_id {
             words(&mut data[32..36], &peer.0);
             if let Some((transaction, stage, expires, approvals, ended, site)) = runtime.node_transport.trust.lifecycle(peer) {

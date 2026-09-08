@@ -10,6 +10,7 @@ pub mod network;
 pub mod crypto;
 pub mod node;
 pub mod node_client;
+pub mod node_operator;
 pub mod node_links;
 pub mod object_navigation;
 pub mod resource_policy;
@@ -190,6 +191,7 @@ pub struct InfinityRuntime {
     pub node_projection: node::reconciliation::Projection,
     pub node_selection: Option<node::types::NodeId>,
     pub node_policy_offset: usize,
+    pub node_operator: node_operator::OperatorRequests,
     node_clock: Option<u64>,
     node_projection_tick: Option<u64>,
     node_checkpoint_notified: u64,
@@ -283,6 +285,7 @@ impl InfinityRuntime {
             node_projection: node::reconciliation::Projection::new(),
             node_selection: None,
             node_policy_offset: 0,
+            node_operator: node_operator::OperatorRequests::new(),
             node_links: node_links::NodeLinks::new(),
             node_clock: None,
             node_projection_tick: None,
@@ -1936,6 +1939,7 @@ pub fn poll_node_transport(now: u64) {
     });
     let change = with_runtime(|runtime| runtime.node_transport.poll(&mut runtime.nodes, &mut runtime.network, &runtime.capabilities, now)).flatten();
     let committed = with_runtime(|runtime| {
+        node_operator::prune(runtime, now);
         runtime.iop.poll_remote_node(&runtime.capabilities, &mut runtime.nodes, &mut runtime.node_transport.trust, now);
         runtime.iop.execute_remote_node_durable(&mut runtime.nodes, now, &mut persist_control_state)
     }).flatten();

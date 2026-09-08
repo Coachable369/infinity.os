@@ -305,6 +305,19 @@ const NODE_LINK_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema { name: b"local-port", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"remote-port", value_type: ArgumentType::Text, required: true },
 ];
+const NODE_GRANT_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"name", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"seconds", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"confirm", value_type: ArgumentType::Boolean, required: false },
+];
+const NODE_REMOTE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: true },
+];
+const NODE_REMOTE_POLICY_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"name", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"value", value_type: ArgumentType::Text, required: true },
+];
 const FIND_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema {
         name: b"type",
@@ -1658,6 +1671,13 @@ pub static OPERATIONS: &[OperationSchema] = &[
         b"network service-discover",
     ),
     op(b"node", b"list", b"List signed discovered nodes without granting trust", OperationId::NodeList, ValueType::Unit, ValueType::NodeSet, None, NO_ARGS, 1, SideEffectClass::Query, b"node list"),
+    op(b"node", b"capability-grant", b"Review and approve one leased peer operation in scope zero", OperationId::NodeCapabilityGrant, ValueType::Unit, ValueType::NodePolicy, Some(ArgumentType::NodeRef), NODE_GRANT_ARGS, 9, SideEffectClass::SecurityChange, b"node capability-grant node:<complete-id> name=inspect seconds=600 confirm=true"),
+    op(b"node", b"capability-revoke", b"Revoke one peer grant immediately", OperationId::NodeCapabilityRevoke, ValueType::Unit, ValueType::NodePolicy, Some(ArgumentType::NodeRef), NO_ARGS, 9, SideEffectClass::SecurityChange, b"node capability-revoke 1"),
+    op(b"node", b"capability-list", b"Inspect bounded peer grants", OperationId::NodeCapabilityList, ValueType::Unit, ValueType::NodePolicy, None, NO_ARGS, 1, SideEffectClass::Query, b"node capability-list"),
+    op(b"node", b"remote-read", b"Queue authenticated inspection of this node at a peer", OperationId::NodeInspect, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NODE_REMOTE_ARGS, 1, SideEffectClass::Query, b"node remote-read node:<complete-id> grant=1"),
+    op(b"node", b"remote-domain", b"Queue authenticated shared-domain inspection at a peer", OperationId::NodeDomainInspect, ValueType::Unit, ValueType::MeshDomainSet, Some(ArgumentType::NodeRef), NODE_REMOTE_ARGS, 1, SideEffectClass::Query, b"node remote-domain node:<complete-id> grant=1"),
+    op(b"node", b"remote-result", b"Collect only this operator session's pending remote result", OperationId::NodeDiagnostics, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NO_ARGS, 1, SideEffectClass::Query, b"node remote-result 1"),
+    op(b"node", b"remote-policy-update", b"Queue a separately authorized mutation of this node's peer policy", OperationId::NodePolicyUpdate, ValueType::Unit, ValueType::NodePolicy, Some(ArgumentType::NodeRef), NODE_REMOTE_POLICY_ARGS, 9, SideEffectClass::SecurityChange, b"node remote-policy-update node:<complete-id> grant=1 name=object value=deny"),
     op(b"node", b"link-configure", b"Approve exact discovery endpoints without granting peer trust", OperationId::NodeLinkConfigure, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NODE_LINK_ARGS, 9, SideEffectClass::SecurityChange, b"node link-configure 1 local=10.42.0.1 remote=10.42.0.2 local-port=49152 remote-port=49152"),
     op(b"node", b"link-list", b"Inspect persistent approved discovery endpoints", OperationId::NodeLinkList, ValueType::Unit, ValueType::NodeSet, None, NO_ARGS, 1, SideEffectClass::Query, b"node link-list"),
     op(b"node", b"link-remove", b"Withdraw discovery endpoint authority", OperationId::NodeLinkRemove, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NO_ARGS, 9, SideEffectClass::SecurityChange, b"node link-remove 1"),

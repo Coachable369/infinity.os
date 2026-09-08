@@ -139,6 +139,16 @@ impl RemoteState {
     pub fn incoming_count(&self) -> usize {
         self.incoming.iter().flatten().count()
     }
+    // ------------------------=
+    // FUNC: discard
+    // DESC: Removes only a caller-owned pending request when its submitting session ends or result retention expires.
+    // ------------------=
+    pub fn discard(&mut self, caller: SecurityIdentity, id: u64) {
+        if let Some(index) = self.pending.iter().position(|entry| entry.as_ref().map(|p|
+            p.caller == caller && p.request.message.id == id).unwrap_or(false)) {
+            self.pending[index] = None;
+        }
+    }
 }
 
 impl IopRouter {

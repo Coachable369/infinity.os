@@ -48,6 +48,10 @@ pub fn submit(user: StableId, session: StableId, operation: OperationId, request
             let context = runtime.services.inspect(SERVICE_CONSOLE).and_then(|service| service.context).ok_or(IopError::AccessDenied)?;
             if !runtime.ui.trusted.input_is_for(context.0 as u32, crate::ui::trusted::TrustedSurface::NodePairing, now) { return Err(IopError::AccessDenied); }
         }
+        if operation == OperationId::NodeCapabilityGrant {
+            let context = runtime.services.inspect(SERVICE_CONSOLE).and_then(|service| service.context).ok_or(IopError::AccessDenied)?;
+            if !runtime.ui.trusted.input_is_for(context.0 as u32, crate::ui::trusted::TrustedSurface::CapabilityConsent, now) { return Err(IopError::AccessDenied); }
+        }
         let caller = runtime.service_identity(SERVICE_CONSOLE).ok_or(IopError::AccessDenied)?;
         let service = runtime.service_identity(SERVICE_NODE_TRUST).ok_or(IopError::AccessDenied)?;
         runtime.iop.ensure_owned_endpoint(0xd001, service)?;
@@ -131,12 +135,28 @@ pub fn clock() -> Option<u64> { with_runtime(|runtime| runtime.node_clock).flatt
 // DESC: Reserves the native trusted pairing input surface for the complete active operator identity before accepting a verification decision.
 // ------------------=
 pub fn begin_pairing_input(user: StableId, session: StableId) -> Result<crate::ui::trusted::SecureInputLease, IopError> {
+    begin_operator_input(user, session, crate::ui::trusted::TrustedSurface::NodePairing)
+}
+
+// ------------------------=
+// FUNC: begin_capability_input
+// DESC: Reserves exclusive native capability-consent input for a scoped human grant decision.
+// ------------------=
+pub fn begin_capability_input(user: StableId, session: StableId) -> Result<crate::ui::trusted::SecureInputLease, IopError> {
+    begin_operator_input(user, session, crate::ui::trusted::TrustedSurface::CapabilityConsent)
+}
+
+// ------------------------=
+// FUNC: begin_operator_input
+// DESC: Authorizes the complete active operator before acquiring one kernel-selected protected input surface.
+// ------------------=
+fn begin_operator_input(user: StableId, session: StableId, surface: crate::ui::trusted::TrustedSurface) -> Result<crate::ui::trusted::SecureInputLease, IopError> {
     let now = clock().ok_or(IopError::DeadlineExceeded)?;
     with_runtime(|runtime| {
         let active = (0..MAX_SESSIONS).filter_map(|index| runtime.identity.session_nth(index)).any(|candidate| candidate.id == session && candidate.user == user && candidate.state == SessionState::Active && candidate.capabilities & SESSION_IDENTITY_MANAGE != 0);
         if !active { return Err(IopError::AccessDenied); }
         let context = runtime.services.inspect(SERVICE_CONSOLE).and_then(|service| service.context).ok_or(IopError::AccessDenied)?;
         runtime.ui.trusted.expire(now);
-        runtime.ui.trusted.acquire_secure_input(true, context.0 as u32, crate::ui::trusted::TrustedSurface::NodePairing, now.saturating_add(60)).map_err(|_| IopError::AccessDenied)
+        runtime.ui.trusted.acquire_secure_input(true, context.0 as u32, surface, now.saturating_add(60)).map_err(|_| IopError::AccessDenied)
     }).ok_or(IopError::UnknownEndpoint)?
 }

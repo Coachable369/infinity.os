@@ -8656,6 +8656,7 @@ impl ConsoleRuntime {
             | OperationId::NodeBlock
             | OperationId::NodeUnblock
             | OperationId::NodeSessionClose
+            | OperationId::NodeCapabilityGrant
             | OperationId::NodeCapabilityRevoke
             | OperationId::NodePolicyUpdate
             | OperationId::MeshPolicyUpdate
@@ -8683,6 +8684,9 @@ impl ConsoleRuntime {
         use crate::runtime::iop::OperationId;
         use crate::runtime::node::reconciliation::{collect, request};
         let operation = node.schema.operation;
+        if matches!(node.schema.action, b"remote-read" | b"remote-domain" | b"remote-result") {
+            return self.execute_remote_node(node);
+        }
         let user = self.current_user; let session = self.current_session;
         let mut query = |input| crate::runtime::node_client::query(user, session, input);
         let mut input = request([0; 32], operation);
@@ -8761,6 +8765,59 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: execute_remote_node
+    // DESC: Submits native asynchronous peer IOP or retrieves a caller-owned structured completion without parsing transport prose.
+    // ------------------=
+    fn execute_remote_node(&mut self, node: &crate::runtime::console_language::OperationNode<'_>) -> bool {
+        use crate::runtime::{iop::OperationId, node::reconciliation::request, node_operator};
+        if node.schema.action == b"remote-result" {
+            let Some(id) = node.target.and_then(|target| parse_u64_decimal(target.value)) else {
+                self.output.write_line(b"A numeric remote request ID is required."); return true;
+            };
+            match node_operator::take_result(self.current_user, self.current_session, id) {
+                Ok(Some(completion)) => {
+                    self.output.write_number(b"Request: ", completion.request_id);
+                    self.output.write_number(b"Correlation: ", completion.correlation_id);
+                    match completion.result {
+                        Ok(value) => {
+                            self.output.write_number(b"Operation: ", value.operation as u64);
+                            self.output.write_number(b"Value: ", value.value as u64);
+                            self.output.write_number(b"State: ", value.flags as u64);
+                            self.output.write_hex(b"Typed response: ", &value.encode());
+                        }
+                        Err(error) => self.output.write_number(b"Remote error code: ", error as u64),
+                    }
+                }
+                Ok(None) => self.output.write_line(b"Request pending; collect it again after normal network processing."),
+                Err(error) => self.output.write_number(b"Result access error: ", error as u64),
+            }
+            return true;
+        }
+        let Some(peer) = node.target.and_then(|target| parse_node_id(target.value)) else {
+            self.output.write_line(b"A complete peer NodeId is required."); return true;
+        };
+        let Some(grant) = node_argument(node, b"grant").and_then(parse_u64_decimal) else {
+            self.output.write_line(b"A peer-issued grant handle is required."); return true;
+        };
+        let mut payload = request([0; 32], node.schema.operation);
+        if node.schema.operation == OperationId::NodePolicyUpdate {
+            let Some(category) = node_argument(node, b"name").and_then(node_policy_category) else {
+                self.output.write_line(b"A valid policy category is required."); return true;
+            };
+            payload.flags = category as u32;
+            payload.value = match node_argument(node, b"value") {
+                Some(b"deny") => 0, Some(b"allow") => 1, Some(b"session") => 2,
+                _ => { self.output.write_line(b"Choose deny, allow, or session."); return true; }
+            };
+        }
+        match node_operator::submit(self.current_user, self.current_session, peer, grant, payload) {
+            Ok(id) => self.output.write_number(b"Queued remote request: ", id),
+            Err(error) => self.output.write_number(b"Request admission error: ", error as u64),
+        }
+        true
+    }
+
+    // ------------------------=
     // FUNC: execute_node_mutation
     // DESC: Executes one deterministic Console node mutation through the shared typed node-operation service adapter and reports committed state only.
     // ------------------=
@@ -8769,6 +8826,7 @@ impl ConsoleRuntime {
         node: &crate::runtime::console_language::OperationNode<'_>,
     ) -> bool {
         use crate::runtime::iop::{NodeOperationV1, OperationId, NODE_OPERATION_HUMAN_APPROVED};
+        if node.schema.action == b"remote-policy-update" { return self.execute_remote_node(node); }
 
         let mut request = NodeOperationV1 {
             node_id: [0; 32],
@@ -8833,6 +8891,29 @@ impl ConsoleRuntime {
                 request.node_id = id.0;
             }
         }
+        if node.schema.operation == OperationId::NodeCapabilityGrant {
+            request.value = match node_argument(node, b"name") {
+                Some(b"inspect") => OperationId::NodeInspect.machine_id(),
+                Some(b"domain-inspect") => OperationId::NodeDomainInspect.machine_id(),
+                Some(b"policy-update") => OperationId::NodePolicyUpdate.machine_id(),
+                _ => { self.output.write_line(b"Choose inspect, domain-inspect, or policy-update."); return true; }
+            };
+            let Some(seconds) = node_argument(node, b"seconds").and_then(parse_u64_decimal).filter(|v| (1..=3600).contains(v)) else {
+                self.output.write_line(b"Choose a grant duration from 1 to 3600 seconds."); return true;
+            };
+            self.output.write_hex(b"Requesting peer: ", &request.node_id);
+            self.output.write_number(b"Exact operation: ", request.value as u64);
+            self.output.write_number(b"Duration in seconds: ", seconds);
+            self.output.write_line(b"Scope: 0. One operation only; peer policy must separately allow it.");
+            self.output.write_line(b"Policy source: authenticated local operator. Grant ends at expiry or revocation.");
+            if node_argument(node, b"confirm") != Some(b"true".as_slice()) {
+                self.output.write_line(b"No authority changed. Repeat with confirm=true to approve this scope."); return true;
+            }
+            let Some(now) = crate::runtime::node_client::clock() else { return true; };
+            request.lease_deadline = now.saturating_add(seconds);
+            request.rights = 1;
+            request.flags = NODE_OPERATION_HUMAN_APPROVED;
+        }
         if node.schema.operation == OperationId::NodeTrustUpdate {
             if node_argument(node, b"name") != Some(b"state".as_slice()) {
                 self.output.write_line(b"Supported trust field: state");
@@ -8878,6 +8959,11 @@ impl ConsoleRuntime {
                 Ok(lease) => Some(lease),
                 Err(_) => { self.output.write_line(b"Trusted pairing input is unavailable."); return true; }
             }
+        } else if node.schema.operation == OperationId::NodeCapabilityGrant {
+            match crate::runtime::node_client::begin_capability_input(self.current_user, self.current_session) {
+                Ok(lease) => Some(lease),
+                Err(_) => { self.output.write_line(b"Trusted capability consent is unavailable."); return true; }
+            }
         } else { None };
         let result = crate::runtime::node_client::submit(self.current_user, self.current_session, node.schema.operation, request);
         if let Some(lease) = lease { crate::runtime::with_runtime(|runtime| { let _ = runtime.ui.trusted.release_secure_input(lease); }); }
@@ -8885,7 +8971,9 @@ impl ConsoleRuntime {
             self.output.write_line(b"Node operation denied, unavailable, or not committed.");
             return true;
         };
-        if node.schema.operation == OperationId::NodePairBegin {
+        if node.schema.operation == OperationId::NodeCapabilityGrant {
+            self.output.write_number(b"Granted capability: ", response.handle);
+        } else if node.schema.operation == OperationId::NodePairBegin {
             self.output
                 .write_number(b"Pairing transaction: pairing:", response.handle);
             self.output
@@ -10801,6 +10889,7 @@ fn is_node_console_mutation(operation: crate::runtime::iop::OperationId) -> bool
             | OperationId::NodeBlock
             | OperationId::NodeUnblock
             | OperationId::NodeSessionClose
+            | OperationId::NodeCapabilityGrant
             | OperationId::NodeCapabilityRevoke
             | OperationId::NodePolicyUpdate
             | OperationId::MeshPolicyUpdate
