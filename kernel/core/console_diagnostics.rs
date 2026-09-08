@@ -32,7 +32,7 @@ pub(super) fn publish(console: &ConsoleRuntime) {
     data[10] = crate::runtime::node_client::clock().unwrap_or(u64::MAX);
     // Non-secret editor acceptance only. Zero means unavailable; otherwise this
     // is length plus one, never buffer contents. Authentication is excluded.
-    if matches!(console.mode, super::ConsoleMode::Console | super::ConsoleMode::Repair | super::ConsoleMode::Launcher)
+    if matches!(console.mode, super::ConsoleMode::Console | super::ConsoleMode::Repair | super::ConsoleMode::AppLauncher)
         || (console.mode == super::ConsoleMode::Desktop && console.command_window.visible)
         || (console.mode == super::ConsoleMode::Settings && console.system_focus == 6 && console.settings_editing)
     {
