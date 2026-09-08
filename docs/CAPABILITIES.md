@@ -1,5 +1,10 @@
 # Capability Security
 
+The [9-B remote router](MILESTONE_9B_CONTROL_PLANE.md) validates caller ServiceCall
+authority locally and exact peer-issued operation/scope/right/lease remotely, then
+rechecks after dequeue. Engineering native tests revoke a queued grant and assert
+typed denial with no authoritative mutation. No remote-root capability is added.
+
 Milestone 9 adds `NodeInspect`, `NodePair`, `NodeTrustModify`, `NodeSessionOpen`, `NodeRemoteCall`, `NodeCapabilityGrant`, `MeshInspect`, `MeshModify`, and `NodeAuditInspect`. Remote grants can only narrow peer, operation, scope, rights, and lease; revocation is checked without restarting the holder.
 
 Authority is explicit and deny-by-default. A capability stores its reference, type, numeric target, rights mask, constraints, issuer, 128-bit holder, optional monotonic expiry, delegation rights, parent, and revocation state.

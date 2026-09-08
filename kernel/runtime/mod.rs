@@ -1862,6 +1862,10 @@ pub fn initialize_node_identity(entropy: &[u8; 32], valid: bool) -> bool {
 // ------------------=
 pub fn poll_node_transport(now: u64) {
     let change = with_runtime(|runtime| runtime.node_transport.poll(&mut runtime.nodes, &mut runtime.network, &runtime.capabilities, now)).flatten();
+    let _ = with_runtime(|runtime| {
+        runtime.iop.poll_remote_node(&runtime.capabilities, &mut runtime.nodes, &mut runtime.node_transport.trust, now);
+        runtime.iop.execute_remote_node(&mut runtime.nodes, now);
+    });
     let event = match change {
         Some(node::transport::DiscoveryChange::Discovered(peer)) => Some((EVENT_NODE_DISCOVERED, peer)),
         Some(node::transport::DiscoveryChange::Recovered(peer)) => Some((EVENT_NODE_RECOVERED, peer)),

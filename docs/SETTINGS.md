@@ -1,5 +1,9 @@
 # Settings Service
 
+9-B GUI→IOP convergence and event-gap reconstruction are unresolved. Shared
+NodeRuntime state must not be confused with a shared authority-validated operation
+path. See [9-B status](MILESTONE_9B_CONTROL_PLANE.md); this increment changes no UI.
+
 Nodes & Mesh provides five views: Trusted Nodes, Secure Pairing, Mesh Health, Per-Node Access Policy, and Security Audit. It uses the same bounded runtime state as IOP and Console and packages its topology visual into the installed System Generation.
 
 Appearance settings are typed and scoped to machine, user, or session. Skin,

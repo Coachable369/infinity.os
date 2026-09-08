@@ -1,5 +1,9 @@
 # Node Trust and Pairing
 
+Remote IOP revalidates current peer trust and narrow authority after dequeue;
+authenticated transport is insufficient. [9-B remains partial](MILESTONE_9B_CONTROL_PLANE.md),
+with installed remote mutations disabled pending the commit/IEF lifecycle.
+
 Trust is explicit and independent from discovery and mesh membership. Pairing is a leased transaction with a human-verifiable fingerprint and six-digit code. Confirmation is reserved to Trusted UI. Revocation and blocking close and zeroize sessions and revoke remote grants without reboot.
 
 The Settings flow now keeps selection by stable `NodeId` and requires a six-digit

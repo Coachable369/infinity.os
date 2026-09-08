@@ -2,6 +2,10 @@
 
 **Overall: PARTIAL. Do not label this release Milestone 9 COMPLETE.**
 
+**Milestone 9-B: PARTIAL.** The native remote IOP slice is described in
+[MILESTONE_9B_CONTROL_PLANE.md](MILESTONE_9B_CONTROL_PLANE.md). Mandatory frontend,
+inspection, commit/IEF reconstruction and synchronized membership gaps remain.
+
 ## Phase 9-A superseding status
 
 **Milestone 9-A — Wire Trust Establishment: TESTED.** Evidence: PRODUCTION WIRE /

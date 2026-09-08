@@ -13,7 +13,7 @@ mod event;
 #[path = "../../kernel/runtime/network/mod.rs"]
 mod network;
 mod runtime {
-    pub(crate) use crate::{capability, execution, network, node};
+    pub(crate) use crate::{capability, execution, network, node, iop};
 }
 
 use node::types::{MeshRole, NodeError, TrustState};

@@ -145,6 +145,61 @@ def rejected(sender, receiver, mode):
     assert receiver.rpc(7, allow_error=True) is None
 
 # ------------------------=
+# FUNC: remote_request
+# DESC: Asks the local caller router to send a scoped request; no host-forwarded protocol bytes are used.
+# ------------------=
+def remote_request(guest, peer, grant, operation, value=0, lease=30):
+    return guest.rpc(17, peer + grant + struct.pack("<III", operation, value, 0) + bytes([lease]))
+
+# ------------------------=
+# FUNC: remote_result
+# DESC: Checks binary correlation, causation, typed outcome and one-time result consumption.
+# ------------------=
+def remote_result(guest, request, error=0):
+    response = eventually(lambda: guest.rpc(18, request, allow_error=True), timeout=40)
+    assert response[0] == error, (response[0], error)
+    assert response[1:9] == request
+    assert struct.unpack("<QQ", response[9:25]) == (0xabc, int.from_bytes(request, "little"))
+    assert guest.rpc(18, request, allow_error=True) is None
+    return response[25:]
+
+# ------------------------=
+# FUNC: remote_iop_test
+# DESC: Exercises bidirectional peer-router dispatch, mutation, policy and queued capability revocation over native encrypted sessions.
+# ------------------=
+def remote_iop_test(a, b, aid, bid):
+    read = 0xd006
+    policy = 0xd066
+    ar = b.rpc(16, aid + struct.pack("<I", read))
+    br = a.rpc(16, bid + struct.pack("<I", read))
+    value = remote_result(a, remote_request(a, bid, ar, read))
+    assert struct.unpack("<I", value[64:68])[0] == 3
+    value = remote_result(b, remote_request(b, aid, br, read))
+    assert struct.unpack("<I", value[64:68])[0] == 3
+    remote_result(a, remote_request(a, bid, ar, policy), error=12)
+    mutation = b.rpc(16, aid + struct.pack("<I", policy))
+    b.rpc(19, b"\x00")
+    pending = remote_request(a, bid, mutation, policy)
+    eventually(lambda: struct.unpack("<I", b.rpc(20, aid)[:4])[0] == 1)
+    before = b.rpc(20, aid)[4:12]
+    b.rpc(21, mutation)
+    b.rpc(19, b"\x01")
+    remote_result(a, pending, error=11)
+    assert b.rpc(20, aid)[4:12] == before and b.rpc(20, aid)[12] == 1
+    remote_result(a, remote_request(a, bid, mutation, policy), error=11)
+    replacement = b.rpc(16, aid + struct.pack("<I", policy))
+    remote_result(a, remote_request(a, bid, replacement, policy, value=0))
+    assert b.rpc(20, aid)[12] == 0
+    remote_result(a, remote_request(a, bid, ar, read), error=13)
+    remote_result(a, remote_request(a, bid, replacement, policy, value=1))
+    assert b.rpc(20, aid)[12] == 1
+    remote_result(a, remote_request(a, bid, ar, read))
+    b.qmp("stop")
+    pending = remote_request(a, bid, ar, read, lease=5)
+    remote_result(a, pending, error=15)
+    b.qmp("cont")
+
+# ------------------------=
 # FUNC: run
 # DESC: Proves the bounded phase-9A flow on two independently running native guests with external explicit confirmation.
 # ------------------=
@@ -213,6 +268,8 @@ def run():
             rejected(a, b, 0); rejected(b, a, 0)
             for mode in [2, 3, 4, 5, 6]:
                 rejected(a, b, mode)
+            if os.environ.get("INFINITY_9B_TEST") == "1":
+                remote_iop_test(a, b, aid, bid)
             a.rpc(8, bid)
             eventually(lambda: b.rpc(5, aid, allow_error=True) is None)
             assert a.rpc(5, bid, allow_error=True) is None
@@ -240,6 +297,13 @@ def run():
                 "offline_during_pair_begin": True,
                 "native_duplex": True, "fresh_session_references": [first_reference.hex(), sa2[8:24].hex(), sa3[8:24].hex()],
                 "peer_return": "QEMU stop/cont; not an installed cold reboot", "installed_gui_acceptance": False}
+            if os.environ.get("INFINITY_9B_TEST") == "1":
+                report["remote_iop_bidirectional"] = True
+                report["remote_iop_queued_revocation"] = True
+                report["remote_iop_policy_enforced"] = True
+                report["remote_iop_deadline"] = True
+                report["overall_9B"] = "PARTIAL"
+                (ROOT / "build/milestone-9b-remote-iop-proof.json").write_text(json.dumps(report, indent=2) + "\n")
             (ROOT / "build/milestone-9a-wire-proof.json").write_text(json.dumps(report, indent=2) + "\n")
             print(json.dumps(report))
         except Exception:

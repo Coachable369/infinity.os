@@ -9,3 +9,5 @@ pub mod execution;
 pub mod network;
 #[path = "../../kernel/runtime/node/mod.rs"]
 pub mod node;
+#[path = "../../kernel/runtime/iop.rs"]
+pub mod iop;

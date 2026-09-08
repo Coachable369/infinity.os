@@ -152,6 +152,8 @@ pub extern "C" fn infinity_kernel_entry(info: *const boot_info::BootInfo) -> ! {
             }
             f.transport
                 .poll(&mut f.nodes, &mut f.network, &f.capabilities, now);
+            f.iop.poll_remote_node(&f.capabilities, &mut f.nodes, &mut f.transport.trust, now);
+            if f.execute_remote { f.iop.execute_remote_node(&mut f.nodes, now); }
             for _ in 0..4 {
                 let Some(frame) = f.network.wire.peek_transmit() else {
                     break;

@@ -1,5 +1,10 @@
 # Infinity Operation Protocol (IOP)
 
+The [9-B increment](MILESTONE_9B_CONTROL_PLANE.md) adds bounded authenticated remote
+NodeOperationV1 admission/dispatch to this router. Scope is partial: reads and
+engineering mutation authorization are exercised; installed writes fail closed
+until commit/IEF readiness. Full frontend convergence and inspection are missing.
+
 Milestone 9 registers versioned typed `Node.*` and `Mesh.*` operation identifiers and an 80-byte bounded `NodeOperationV1` payload. Node targets remain stable cryptographic identities, not network addresses or Console strings.
 
 Milestone 6.5 reserves stable IDs for Object.Filter/Object.Destroy,

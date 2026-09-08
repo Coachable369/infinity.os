@@ -100,6 +100,10 @@ native-nic-test: $(BUILD)/x86_64/BOOTX64.EFI
 	python3 tools/nic-probe/run.py
 
 .PHONY: milestone-9-wire-trust-test
+.PHONY: milestone-9-remote-iop-test
+milestone-9-remote-iop-test:
+	INFINITY_9B_TEST=1 $(MAKE) milestone-9-wire-trust-test
+
 milestone-9-wire-trust-test: $(BUILD)/x86_64/BOOTX64.EFI
 	RUSTC_BOOTSTRAP=1 cargo build --release -Z build-std=core --target x86_64-unknown-none --manifest-path tools/wire-trust-probe/Cargo.toml
 	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $(BUILD)/wire-trust-probe.elf tools/wire-trust-probe/target/x86_64-unknown-none/release/libinfinity_wire_trust_probe.a

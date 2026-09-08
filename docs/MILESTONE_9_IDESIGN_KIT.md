@@ -1,5 +1,9 @@
 # InfinityOS Milestone 9 IDesign Kit
 
+9-B introduces no visual redesign. Existing node frontends still require shared
+typed routing, selected-resource detail and stale/reconciling states. The remote
+engineering fixture is not visual acceptance. See [9-B status](MILESTONE_9B_CONTROL_PLANE.md).
+
 ## Phase 9-A evidence boundary
 
 This increment changes no visual controls. Its trusted engineering operator

@@ -2,6 +2,8 @@
 mod fixture;
 use crate::node::types::TrustState;
 use fixture::Fixture;
+#[path = "remote_iop_acceptance.rs"]
+mod remote_iop_acceptance;
 
 // ------------------------=
 // FUNC: transfer
@@ -36,6 +38,10 @@ fn advance(a: &mut Fixture, b: &mut Fixture, now: &mut u64, count: u64) {
                 .poll(&mut a.nodes, &mut a.network, &a.capabilities, *now);
             b.transport
                 .poll(&mut b.nodes, &mut b.network, &b.capabilities, *now);
+            for f in [&mut *a, &mut *b] {
+                f.iop.poll_remote_node(&f.capabilities, &mut f.nodes, &mut f.transport.trust, *now);
+                if f.execute_remote { f.iop.execute_remote_node(&mut f.nodes, *now); }
+            }
             transfer(a, b, *now);
             transfer(b, a, *now);
         }
@@ -138,6 +144,7 @@ pub fn run() {
     advance(&mut a, &mut b, &mut now, 16);
     let ah = a.transport.trust.session(bid).unwrap();
     let bh = b.transport.trust.session(aid).unwrap();
+    remote_iop_acceptance::run(&mut a, &mut b, &mut now);
     let ar = a
         .nodes
         .sessions()

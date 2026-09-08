@@ -1,5 +1,8 @@
 # Nodes
 
+See [9-B control-plane status](MILESTONE_9B_CONTROL_PLANE.md) for the tested remote
+IOP slice and the explicit blockers preventing a complete distributed-control claim.
+
 Discovery identifies reachable peers but grants no trust, session, membership or
 capability. [Node transport](NODE_TRANSPORT.md) owns scoped native endpoints;
 [wire trust](MILESTONE_9A_WIRE_TRUST.md) defines Phase 9-A pairing and authenticated

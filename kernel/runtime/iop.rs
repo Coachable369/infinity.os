@@ -4,6 +4,9 @@
 use super::capability::{CapabilityError, CapabilityId, CapabilityManager, CapabilityType};
 use super::execution::SecurityIdentity;
 
+#[path = "iop_remote.rs"]
+pub mod remote;
+
 pub const IOP_VERSION: u16 = 1;
 pub const HEADER_BYTES: usize = 80;
 pub const MAX_PAYLOAD: usize = 192;
@@ -900,6 +903,7 @@ impl From<CapabilityError> for IopError {
 }
 
 pub struct IopRouter {
+    pub remote: remote::RemoteState,
     endpoints: [Option<Endpoint>; MAX_ENDPOINTS],
     cancelled: [u64; 16],
     cancelled_len: usize,
@@ -911,6 +915,7 @@ impl IopRouter {
     // ------------------=
     pub const fn new() -> Self {
         Self {
+            remote: remote::RemoteState::new(),
             endpoints: [None; MAX_ENDPOINTS],
             cancelled: [0; 16],
             cancelled_len: 0,

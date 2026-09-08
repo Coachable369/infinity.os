@@ -1,5 +1,9 @@
 # Node wire security boundary
 
+The [9-B increment](MILESTONE_9B_CONTROL_PLANE.md) adds execution-time remote grant,
+current-trust and current-policy checks, bounded correlation and fail-closed
+installed mutation readiness. It does not complete the durable control plane.
+
 Phase 9-A uses the existing protected identity and directional session services;
 it does not invent a new cryptographic primitive or grant remote application
 authority. Discovery never grants trust. Both signed identities, fresh agreement

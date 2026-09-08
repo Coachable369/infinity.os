@@ -1,5 +1,8 @@
 # Native node transport status
 
+The [partial 9-B remote IOP layer](MILESTONE_9B_CONTROL_PLANE.md) consumes a bounded
+authenticated protocol subchannel above 9-A. Transport does not execute services.
+
 Status: Phase 9-A TESTED — PRODUCTION WIRE / ENGINEERING GUEST; evidence is recorded in
 [MILESTONE_9A_WIRE_TRUST.md](MILESTONE_9A_WIRE_TRUST.md). Overall Milestone 9 remains PARTIAL.
 

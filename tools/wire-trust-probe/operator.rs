@@ -154,6 +154,132 @@ fn execute(
     out: &mut [u8; 512],
 ) -> Result<usize, NodeError> {
     match command {
+        16 => {
+            if input.len() != 36 {
+                return Err(NodeError::InvalidAdvertisement);
+            }
+            let peer = node(input)?;
+            let operation = u32::from_le_bytes(input[32..36].try_into().unwrap());
+            let mut policy = f
+                .nodes
+                .discovered_nodes()
+                .iter()
+                .flatten()
+                .find(|p| p.id == peer)
+                .ok_or(NodeError::UnknownNode)?
+                .policy;
+            policy.categories[0] = crate::runtime::node::types::PolicyDecision::Allow;
+            policy.categories[1] = crate::runtime::node::types::PolicyDecision::Allow;
+            f.nodes.update_policy(peer, policy, now, now)?;
+            let grant = f
+                .nodes
+                .grant_remote(peer, operation, 0, 1, now + 300, now, now)?;
+            out[..8].copy_from_slice(&grant.to_le_bytes());
+            Ok(8)
+        }
+        17 => {
+            use crate::runtime::{capability::CapabilityType, iop::NodeOperationV1};
+            if input.len() != 53 {
+                return Err(NodeError::InvalidAdvertisement);
+            }
+            let peer = node(input)?;
+            let grant = u64::from_le_bytes(input[32..40].try_into().unwrap());
+            let operation = u32::from_le_bytes(input[40..44].try_into().unwrap());
+            let value = u32::from_le_bytes(input[44..48].try_into().unwrap());
+            let flags = u32::from_le_bytes(input[48..52].try_into().unwrap());
+            let capability = f
+                .capabilities
+                .grant(
+                    CapabilityType::ServiceCall,
+                    operation as u64,
+                    1,
+                    0,
+                    f.owner,
+                    f.owner,
+                    Some(now + 100),
+                    0,
+                )
+                .map_err(|_| NodeError::ResourceLimit)?;
+            let payload = NodeOperationV1 {
+                node_id: f.nodes.local_id().unwrap().0,
+                handle: 0,
+                scope: 0,
+                lease_deadline: 0,
+                operation,
+                rights: 1,
+                value,
+                flags,
+                schema_version: 1,
+            };
+            let id = f
+                .iop
+                .request_remote_node(
+                    &f.capabilities,
+                    &f.nodes,
+                    f.owner,
+                    capability,
+                    peer,
+                    grant,
+                    payload,
+                    0xabc,
+                    0xdef,
+                    now,
+                    now + input[52] as u64,
+                )
+                .map_err(|_| NodeError::CapabilityDenied)?;
+            out[..8].copy_from_slice(&id.to_le_bytes());
+            Ok(8)
+        }
+        18 => {
+            if input.len() != 8 {
+                return Err(NodeError::InvalidAdvertisement);
+            }
+            let id = u64::from_le_bytes(input.try_into().unwrap());
+            let result = f
+                .iop
+                .remote
+                .take_result(f.owner, id)
+                .ok_or(NodeError::UnsupportedState)?;
+            out[0] = result.result.as_ref().err().map(|e| *e as u8).unwrap_or(0);
+            out[1..9].copy_from_slice(&result.request_id.to_le_bytes());
+            out[9..17].copy_from_slice(&result.correlation_id.to_le_bytes());
+            out[17..25].copy_from_slice(&result.causation_id.to_le_bytes());
+            if let Ok(value) = result.result {
+                out[25..105].copy_from_slice(&value.encode());
+            }
+            Ok(105)
+        }
+        19 => {
+            if input.len() != 1 {
+                return Err(NodeError::InvalidAdvertisement);
+            }
+            f.execute_remote = input[0] != 0;
+            Ok(0)
+        }
+        20 => {
+            out[..4].copy_from_slice(&(f.iop.remote.incoming_count() as u32).to_le_bytes());
+            out[4..12].copy_from_slice(&f.iop.remote.executed.to_le_bytes());
+            if let Ok(peer) = node(input) {
+                out[12] = f
+                    .nodes
+                    .discovered_nodes()
+                    .iter()
+                    .flatten()
+                    .find(|p| p.id == peer)
+                    .ok_or(NodeError::UnknownNode)?
+                    .policy
+                    .categories[0] as u8;
+            }
+            Ok(13)
+        }
+        21 => {
+            if input.len() != 8 {
+                return Err(NodeError::InvalidAdvertisement);
+            }
+            f.nodes
+                .revoke_remote(u64::from_le_bytes(input.try_into().unwrap()), now, now)?;
+            Ok(0)
+        }
         0 => {
             out[..32].copy_from_slice(&f.nodes.local_id().ok_or(NodeError::EntropyUnavailable)?.0);
             out[32..40].copy_from_slice(&now.to_le_bytes());

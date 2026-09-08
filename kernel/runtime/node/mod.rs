@@ -586,7 +586,7 @@ impl NodeRuntime {
     // FUNC: record
     // DESC: Appends a structured bounded security record after the authoritative state change.
     // ------------------=
-    fn record(&mut self, event_type: u32, subject: NodeId, timestamp: u64, correlation_id: u64, result: u8) {
+    pub(super) fn record(&mut self, event_type: u32, subject: NodeId, timestamp: u64, correlation_id: u64, result: u8) {
         self.audit_sequence = self.audit_sequence.wrapping_add(1).max(1);
         let index = (self.audit_sequence as usize - 1) % MAX_AUDIT_RECORDS;
         self.audit[index] = Some(AuditRecord { sequence: self.audit_sequence, event_type, subject, timestamp, correlation_id, result });

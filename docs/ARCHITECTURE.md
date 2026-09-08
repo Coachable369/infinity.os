@@ -1,5 +1,10 @@
 # InfinityOS architecture through Milestone 9
 
+The [partial 9-B layer](MILESTONE_9B_CONTROL_PLANE.md) keeps authenticated transport
+below the normal IOP router and revalidates authority at execution. The installed
+mutation service is not ready until durable commit/IEF is integrated. No NIC,
+cryptographic primitive, compositor or application-resource model is redesigned.
+
 Phase 9-A adds `node::wire_trust` as a bounded state machine below future remote
 IOP carriage. It owns negotiation/confirmation state and delegates directional
 cryptography to the existing NodeRuntime/Crypto boundary. NodeTransport owns

@@ -423,6 +423,18 @@ impl WireTrust {
     }
 
     // ------------------------=
+    // FUNC: receive_protocol
+    // DESC: Demultiplexes one authenticated protocol payload without consuming unrelated application data.
+    // ------------------=
+    pub fn receive_protocol(&mut self, prefix: &[u8]) -> Option<ReceivedData> {
+        let index = self.received.iter().position(|slot| slot.as_ref().map(|v| v.bytes[..v.length].starts_with(prefix)).unwrap_or(false))?;
+        let value = self.received[index].take();
+        self.received[index..].rotate_left(1);
+        self.received[7] = None;
+        value
+    }
+
+    // ------------------------=
     // FUNC: outgoing
     // DESC: Returns at most one due frame for a selected connected endpoint without a blocking retry loop.
     // ------------------=

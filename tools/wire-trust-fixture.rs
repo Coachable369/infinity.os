@@ -10,6 +10,8 @@ use crate::runtime::{
     node::{transport::NodeTransport, NodeRuntime},
 };
 pub struct Fixture {
+    pub iop: crate::runtime::iop::IopRouter,
+    pub execute_remote: bool,
     pub network: NetworkRuntime,
     pub capabilities: CapabilityManager,
     pub owner: SecurityIdentity,
@@ -130,7 +132,13 @@ pub fn configured(mac: [u8; 6], entropy: [u8; 32]) -> Fixture {
         .unwrap();
     let mut nodes = NodeRuntime::new();
     nodes.initialize(&entropy, true).unwrap();
+    // Engineering-only in-memory service lifecycle. Installed runtime leaves
+    // mutation readiness false until durable commit and IEF integration exists.
+    let mut iop = crate::runtime::iop::IopRouter::new();
+    iop.remote.set_mutation_service_ready(true);
     Fixture {
+        iop,
+        execute_remote: true,
         network,
         capabilities,
         owner,

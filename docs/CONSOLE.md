@@ -1,5 +1,9 @@
 # Infinity Console Language v1
 
+9-B note: the Console direct node-mutation bypass remains unresolved; the new
+remote router does not establish Console/GUI lockstep by itself. See
+[the control-plane gap report](MILESTONE_9B_CONTROL_PLANE.md).
+
 Each interactive session owns an explicit `ConsoleNavigationContext.CurrentNamespaceRef`; `path`, `idir`, and native `cd` operate only on that state. There is no kernel or process CWD. Compatibility Shell Profiles are validated command mappings, and `pwd` resolves to `path` only while a profile that provides it is enabled.
 
 The Infinity Console is a human interface to typed InfinityOS operations. It

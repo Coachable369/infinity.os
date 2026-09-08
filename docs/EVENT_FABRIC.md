@@ -1,5 +1,9 @@
 # Infinity Event Fabric (IEF)
 
+9-B caution: router audit records are not IEF publication. Remote durable commit,
+authoritative stream sequencing and subscriber IOP reconstruction are still
+missing; installed remote writes remain disabled. See [the gap report](MILESTONE_9B_CONTROL_PLANE.md).
+
 The Mesh routing domain defines typed Node discovered/lost, pairing, trust, session, capability, membership, health, policy, degraded, and recovered events. Security changes are Record class; high-frequency health is coalescible. Events announce committed state and are never authoritative.
 
 IOP asks; IEF announces. Services remain authoritative state owners.

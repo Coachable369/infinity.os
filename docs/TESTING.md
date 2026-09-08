@@ -1,5 +1,9 @@
 # InfinityOS testing
 
+`make milestone-9-remote-iop-test` adds native two-guest remote read, engineering
+mutation, policy, scoped-grant, queued-revocation and timeout assertions to 9-A.
+It is NOT the full mandatory `9b-test`; see [coverage gaps](MILESTONE_9B_CONTROL_PLANE.md).
+
 `make milestone-9-wire-trust-test` runs two independent native engineering guests
 using the production node transport and E1000/UDP path. External binary operator
 commands compare independent verification material and explicitly approve it.
