@@ -369,7 +369,7 @@ class Guest:
     # FUNC: confirm_peer
     # DESC: Enters each public verification digit through normal key events and waits for its actual acceptance within unchanged security leases.
     # ------------------=
-    def confirm_peer(self, state, moves):
+    def confirm_peer(self, state, moves, delay_last=0):
         for _ in range(moves):
             self.key("down")
         self.key("ret")
@@ -380,6 +380,9 @@ class Guest:
             accepted = self.wait(lambda value: value[54] >= count or value[9] & 8, "accepted confirmation digit", timeout=15)
             assert accepted[54] == count and not accepted[9] & 8
             assert accepted[10] < accepted[55] and accepted[36] == state[36], {"lost_pairing_during_input": accepted[:68]}
+            if count == 5 and delay_last:
+                resumed = self.wait(lambda value: value[10] >= accepted[10] + delay_last or value[36] != state[36], "normal runtime before final digit", timeout=30)
+                assert resumed[36] == state[36] and resumed[10] < resumed[55], {"lost_pairing_during_review": resumed[:68]}
         self.qmp("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 150})
         result = self.wait(lambda value: not value[9] & 4 or value[9] & 8, "explicit operator confirmation", timeout=15)
         assert not result[9] & 12, {"confirmation_failure": result[:56]}
@@ -459,7 +462,7 @@ def main():
             a.screenshot("pairing-verification")
             b.screenshot("pairing-verification")
             with ThreadPoolExecutor(max_workers=2) as workers:
-                list(workers.map(lambda item: item[0].confirm_peer(item[1], item[2]), [(a, av, 2), (b, bv, 3)]))
+                list(workers.map(lambda item: item[0].confirm_peer(item[1], item[2], item[3]), [(a, av, 2, 0), (b, bv, 3, 5)]))
             for guest in guests:
                 guest.wait(lambda state: state[25] == 1, "dual-confirmed installed trust")
             a.key("left")
