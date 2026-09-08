@@ -166,7 +166,7 @@ class Guest:
             if max(1, latest - 3599) <= sequence <= latest and (sequence - 1) % 3600 == index and duration != 0xffffffffffffffff:
                 samples.append(duration)
         samples.sort()
-        report = {"boundary": "INSTALLED QEMU OBSERVATION", "latest_sequence": latest,
+        report = {"boundary": "LIVE INSTALLER QEMU OBSERVATION" if self.installer else "INSTALLED QEMU OBSERVATION", "latest_sequence": latest,
                   "sample_count": len(samples), "performance_acceptance": False}
         if samples:
             report.update({"average_ns": sum(samples) // len(samples),
@@ -182,7 +182,7 @@ class Guest:
     def key(self, *codes):
         before = self.state()
         self.qmp("send-key", {"keys": [{"type": "qcode", "data": code} for code in codes], "hold-time": 150})
-        if before is not None:
+        if before is not None and not (before[4] == 3 and before[5] == 6 and codes == ("ret",)):
             self.wait(lambda state: state[2] >= before[2] + 4, "guest input-loop progress", timeout=30)
         else:
             time.sleep(.5)
@@ -264,12 +264,10 @@ class Guest:
         if initial[4] == 9:
             before = self.authenticate()
             return self.cold_boot_proof(before)
+        assert initial[7] == 0, "Fresh account setup must begin at the welcome step"
         self.key("ret")
         for step in range(1, 5):
             self.wait(lambda state: state[7] == step, f"configuration input {step}")
-            self.key("home")
-            for _ in range(32):
-                self.key("delete")
             self.text("MeshProof901" if step == 4 else f"ms9node0{self.number}")
             self.key("ret")
             self.wait(lambda state: state[7] == step + 1 and not state[9] & 8, f"configuration commit {step}")

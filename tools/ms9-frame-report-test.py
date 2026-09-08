@@ -13,6 +13,7 @@ def main():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     guest = object.__new__(module.Guest)
+    guest.installer = False
     guest.frames_address = 0
     guest.frames_length = 10802 * 8
     words = [0] * 10802
