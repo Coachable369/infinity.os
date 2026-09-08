@@ -1999,6 +1999,7 @@ impl ConsoleRuntime {
     // DESC: Enters the minimal authenticated graphical shell.
     // ------------------=
     fn enter_desktop(&mut self) {
+        self.cancel_node_pairing_input();
         self.mode = ConsoleMode::Desktop;
         self.desktop_app = DesktopAppKind::None;
         self.system_focus = 0;
@@ -2672,6 +2673,7 @@ impl ConsoleRuntime {
         .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState))
         .is_ok();
         if locked {
+            self.cancel_node_pairing_input();
             let _ = self.persist_desktop_layout();
             self.locked_desktop_layout.save(layout);
             self.mode = ConsoleMode::Locked;
@@ -3099,6 +3101,7 @@ impl ConsoleRuntime {
     // DESC: Opens one Settings section without accidentally activating its first value.
     // ------------------=
     fn open_settings(&mut self, section: usize) {
+        self.cancel_node_pairing_input();
         self.store_active_app_window();
         self.mode = ConsoleMode::Settings;
         self.system_focus = section.min(10);
@@ -3628,6 +3631,21 @@ impl ConsoleRuntime {
     // ------------------=
     fn network_page(&self) -> usize {
         self.settings_window.expanded_row.unwrap_or(0).min(6)
+    }
+
+    // ------------------------=
+    // FUNC: cancel_node_pairing_input
+    // DESC: Releases the exact trusted input lease and erases its transient input when its owning surface is dismissed.
+    // ------------------=
+    fn cancel_node_pairing_input(&mut self) {
+        if let Some(lease) = self.node_input_lease.take() {
+            crate::runtime::with_runtime(|runtime| {
+                let _ = runtime.ui.trusted.release_secure_input(lease);
+            });
+            self.settings_editing = false;
+            self.onboarding_validation_error = false;
+            self.reset_input();
+        }
     }
 
     // ------------------------=
@@ -4976,7 +4994,7 @@ impl ConsoleRuntime {
         }
         if self.mode == ConsoleMode::Settings && self.system_focus == 7 && self.settings_editing {
             if matches!(key, ConsoleKey::Escape) {
-                if let Some(lease) = self.node_input_lease.take() { crate::runtime::with_runtime(|runtime| { let _ = runtime.ui.trusted.release_secure_input(lease); }); }
+                self.cancel_node_pairing_input();
                 self.settings_editing = false;
                 self.onboarding_validation_error = false;
                 self.reset_input();
@@ -7647,6 +7665,7 @@ impl ConsoleRuntime {
                     match target {
                         NetworkSettingsTarget::Page(index) => {
                             self.settings_window.expanded_row = Some(index.min(4));
+                            self.cancel_node_pairing_input();
                             self.settings_window.scroll_offset = 0;
                             self.settings_scroll_target = 0;
                             self.settings_window.control_focus = 0;
@@ -7665,6 +7684,7 @@ impl ConsoleRuntime {
             ) {
                 match target {
                     SettingsTarget::Section(index) if clicked => {
+                        self.cancel_node_pairing_input();
                         self.system_focus = index;
                         self.settings_window.row_count = if matches!(index, 1 | 6 | 7 | 10) {
                             8
