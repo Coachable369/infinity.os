@@ -113,6 +113,29 @@ fn pairing_review_boundaries() {
 // DESC: Runs independent native packet runtimes throughout a declared operator-review interval and checks transaction identity and trust transitions.
 // ------------------=
 fn pairing_review(first: u64, second: u64, expired: bool) {
+    pairing_review_with_storage(first, second, expired, false);
+}
+
+// ------------------------=
+// FUNC: pairing_storage_retry
+// DESC: Preserves authenticated consent across durable failure without granting trust, then commits on recovery.
+// ------------------=
+#[test]
+fn pairing_storage_retry() {
+    pairing_review_with_storage(20, 25, false, true);
+}
+
+// ------------------------=
+// FUNC: rejected_pairing_writer
+// DESC: Injects a durable checkpoint failure without weakening other protocol boundaries.
+// ------------------=
+fn rejected_pairing_writer(_: &[u8; crate::node::types::NODE_STATE_BYTES]) -> bool { false }
+
+// ------------------------=
+// FUNC: pairing_review_with_storage
+// DESC: Exercises normal transport and optional durable failure throughout the unchanged confirmation lease.
+// ------------------=
+fn pairing_review_with_storage(first: u64, second: u64, expired: bool, storage_failure: bool) {
     let mut a = fixture::configured_until([2,0,0,0,0,1], [10,42,0,1], [10,42,0,2], 200);
     let mut b = fixture::configured_until([2,0,0,0,0,2], [10,42,0,2], [10,42,0,1], 200);
     let mut an = NodeRuntime::new(); let mut bn = NodeRuntime::new();
@@ -127,7 +150,18 @@ fn pairing_review(first: u64, second: u64, expired: bool) {
     at.trust.persist_pairing = engineering_discovery_writer;
     bt.trust.persist_pairing = engineering_discovery_writer;
     let mut original = None;
-    for tick in 0..second + 20 {
+    for tick in 0..second + if storage_failure { 60 } else { 20 } {
+        if storage_failure && tick == second { at.trust.persist_pairing = rejected_pairing_writer; }
+        if storage_failure && tick == second + 40 {
+            let before = at.trust.lifecycle(bid).unwrap();
+            assert_eq!(before.3, 3);
+            assert_eq!(before.1, crate::node::wire_trust::WireState::LocallyConfirmed);
+            assert_ne!(an.discovered_nodes().iter().flatten().find(|p| p.id == bid).unwrap().trust, TrustState::Trusted);
+            assert_eq!(at.trust.last_error, Some(crate::node::types::NodeError::StateCorrupt));
+            at.trust.persist_pairing = engineering_discovery_writer;
+            let view = at.trust.verification(aid, bid).unwrap();
+            at.trust.confirm(&mut an, view.transaction, view.code, true, tick).unwrap();
+        }
         for _ in 0..4 {
             at.poll(&mut an, &mut a.network, &a.capabilities, tick);
             bt.poll(&mut bn, &mut b.network, &b.capabilities, tick);

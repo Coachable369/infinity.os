@@ -158,6 +158,7 @@ impl ObjectCapabilityPolicy for Deny {
 // ------------------=
 fn main() {
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
+    checkpoint_replacement(test_sectors);
     let disk = MemoryDisk::new(test_sectors);
     let seed = [0x41; 16];
     let mut store =
@@ -564,4 +565,45 @@ fn main() {
     );
 
     println!("PASS: native IDs, typed metadata/query, persistent date/time settings, persistent relationships, multi-extent COW, per-Space accounting, conservative GC, namespace identity, reboot/restore, five crash boundaries, format rejection, root/allocation/object/namespace/relationship/content corruption detection");
+}
+
+// ------------------------=
+// FUNC: checkpoint_replacement
+// DESC: Verifies saturated checkpoint replacement, retained user history, and interrupted-write recovery.
+// ------------------=
+fn checkpoint_replacement(sectors: usize) {
+    for failure in [None, Some(0usize), Some(8), Some(20), Some(33)] {
+        let backing = MemoryDisk::new(sectors);
+        let disk = FailingDisk::new(backing.clone());
+        let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0x42; 16]).unwrap();
+        let user = store.create(b"user", ObjectType::Text, Space::Personal, b"original").unwrap();
+        store.write(user, b"edited").unwrap();
+        let state = store.resolve(b"/system/security/nodes/state").unwrap();
+        // Reproduce the installed failure through the existing versioned API.
+        while store.write(state, b"before").is_ok() {}
+        assert_eq!(store.write(state, b"after"), Err(ObjectError::InsufficientCapacity));
+        let generation = store.generation();
+        if let Some(writes) = failure { disk.arm(writes); }
+        let result = store.replace_state(state, b"after");
+        disk.disarm();
+        if failure.is_some() {
+            assert_eq!(result, Err(ObjectError::TransactionFailed));
+            assert_eq!(store.generation(), generation);
+        } else {
+            result.unwrap();
+            for _ in 0..64 { store.replace_state(state, b"after").unwrap(); }
+            assert_eq!(store.history_count(state), 1);
+        }
+        drop(store);
+        let mut recovered = ObjectStore::mount(backing, 0).unwrap();
+        let mut data = [0u8; 32];
+        let length = recovered.read(state, None, &mut data).unwrap();
+        assert_eq!(&data[..length], if failure.is_some() { &b"before"[..] } else { &b"after"[..] });
+        assert_eq!(recovered.history_count(user), 2);
+        let length = recovered.read(user, Some(1), &mut data).unwrap();
+        assert_eq!(&data[..length], b"original");
+        recovered.replace_state(state, b"retry").unwrap();
+        let length = recovered.read(state, None, &mut data).unwrap();
+        assert_eq!(&data[..length], b"retry");
+    }
 }

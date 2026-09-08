@@ -611,7 +611,18 @@ pub fn node_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError> {
 // DESC: Transactionally commits the typed node trust object as a new native object version.
 // ------------------=
 pub fn node_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
-    object_write_path(b"/system/security/nodes/state", content)
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        with_store(|store| {
+            let id = store.resolve(b"/system/security/nodes/state")?;
+            store.replace_state(id, content)
+        })
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = content;
+        Err(object::ObjectError::SpaceUnavailable)
+    }
 }
 
 // ------------------------=

@@ -319,7 +319,7 @@ impl WireTrust {
         if !matches!(
             t.stage,
             WireState::PendingVerification | WireState::RemotelyConfirmed
-        ) {
+        ) && !(t.stage == WireState::LocallyConfirmed && t.remote_confirmed) {
             return Err(NodeError::UnsupportedState);
         }
         if code != verification_code(t.digest) {
@@ -920,6 +920,12 @@ impl WireTrust {
                     return Err(NodeError::VerificationMismatch);
                 }
                 t.remote_confirmed = true;
+                // Authenticated consent proves peer liveness even if the local
+                // durable write fails. Keep the transaction retryable within its
+                // original lease; this does not grant trust before persistence.
+                if let Some(live) = nodes.discovered.iter_mut().flatten().find(|p| p.id == peer.id) {
+                    live.last_seen = now;
+                }
                 commit_confirmation(nodes, t, now, self.persist_pairing)?;
             }
             CANCEL => {

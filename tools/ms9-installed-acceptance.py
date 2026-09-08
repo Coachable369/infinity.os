@@ -439,8 +439,9 @@ def main():
                 guests.append(guest)
                 guest.mesh_port = port
                 guest.boot(False)
-            for guest in guests:
-                current = guest.authenticate()
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                authenticated = list(workers.map(lambda guest: guest.authenticate(), guests))
+            for guest, current in zip(guests, authenticated):
                 assert struct.pack("<4Q", *current[16:20]).hex() == known[guest.number - 1]["node_id"]
             with ThreadPoolExecutor(max_workers=2) as workers:
                 list(workers.map(lambda guest: guest.configure_peer(args.network_label), guests))

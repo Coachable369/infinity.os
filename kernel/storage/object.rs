@@ -1155,6 +1155,32 @@ impl<D: BlockDevice> ObjectStore<D> {
     }
 
     // ------------------------=
+    // FUNC: replace_state
+    // DESC: Replaces a checkpoint object with bounded history using copy-on-write data and atomic metadata.
+    // ------------------=
+    pub(crate) fn replace_state(&mut self, id: ObjectId, content: &[u8]) -> Result<u32, ObjectError> {
+        let before = self.begin()?;
+        // Release metadata slots only. Old data remains allocated until the new
+        // content is written, so a failed write cannot damage the committed root.
+        for version in &mut self.state.versions {
+            if version.used && version.object == id {
+                version.used = false;
+            }
+        }
+        let result = self.write_record(id, content);
+        if result.is_ok() {
+            for version in &before.versions {
+                if version.used && version.object == id {
+                    for block in version.extent as usize..version.extent as usize + version.blocks as usize {
+                        set_bit(&mut self.state.allocation, block, false);
+                    }
+                }
+            }
+        }
+        self.finish(before, result)
+    }
+
+    // ------------------------=
     // FUNC: write_record
     // DESC: Writes or updates write record data.
     // ------------------=

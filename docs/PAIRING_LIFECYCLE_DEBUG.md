@@ -35,3 +35,29 @@ ARM64: `ea4a39ebb790291e8ef53792bba3486ba045a92721364ddd4e43222ede282773`.
 The independent installed evidence directory is
 `/tmp/infinity-ms9-installed-20260908-e`. No installed pairing success is claimed
 until that run passes. The previous rejected scheduling patch remains absent.
+
+## Confirmed installed failure and correction
+
+Run e reached both consent bits on A at clock 1035, but the native durable
+commit returned StateCorrupt. At 1042 stale-peer cleanup terminated that still
+uncommitted transaction, before its 1084 pairing deadline. B committed successfully.
+Read-only inspection of the independently installed object stores found A at
+generation 19 with all 32 version slots occupied, versus B at generation 18 with
+31 occupied. Six A versions belonged to the mutable node checkpoint. This is
+version-table exhaustion, not a Settings ownership or scheduling defect.
+
+`node_state_commit` now uses an explicit bounded checkpoint replacement. Old data
+remains allocated while new content is written; only the atomic metadata commit
+retires the checkpoint's old versions. Ordinary document writes retain history.
+The checkpoint still contains its own bounded durable audit and receipt state.
+Authenticated valid CONFIRM refreshes peer liveness even when local storage fails;
+the same dual-confirmed, unexpired transaction permits an explicit operator retry.
+No trust is granted before durable success and no lease/retransmission limit changes.
+
+Behavioral storage coverage saturates the old version API, verifies bounded
+replacement across 64 subsequent commits, preserves another object's history,
+injects content/metadata write failures, remounts, and retries successfully.
+The native packet regression injects a failed final commit, asserts no trust and
+retained consent after 40 ticks, then retries under the original authority/lease.
+The 25 correlation/pairing and six service tests pass. Installed proof against
+fresh fixed ISOs remains a separate gate.
