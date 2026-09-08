@@ -69,6 +69,47 @@ fn oversized_extent_cannot_allocate_beyond_native_capacity() {
 }
 
 // ------------------------=
+// FUNC: verification_releases_store_between_bounded_ticks_and_rejects_stale_jobs
+// DESC: Runs independent native work between verification ticks, proves forward progress, and rejects an obsolete verifier after another job publishes.
+// ------------------=
+#[test]
+fn verification_releases_store_between_bounded_ticks_and_rejects_stale_jobs() {
+    use crate::native_fabric::extent::{ExtentVerification, NativeExtentReplica};
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let backing = store.create(b"stream", ObjectType::Metadata, Space::System, &[]).unwrap();
+    let other = store.create(b"local-work", ObjectType::Metadata, Space::Personal, &[]).unwrap();
+    let payload: Vec<u8> = (0..65553).map(|n| (n % 251) as u8).collect();
+    let d = descriptor(&payload);
+    {
+        let mut native = NativeExtentReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+        let mut transfer = Transfer::begin(&mut native, d).unwrap();
+        for at in (0..payload.len()).step_by(1024) {
+            transfer.receive(&mut native, at as u64, &payload[at..(at+1024).min(payload.len())]).unwrap();
+        }
+    }
+    let mut old = ExtentVerification::resume(&mut store, backing, d.resource, d.generation).unwrap();
+    assert_eq!(old.tick(&mut store), Ok(ReplicaState::Verifying));
+    let mut job = ExtentVerification::resume(&mut store, backing, d.resource, d.generation).unwrap();
+    assert_eq!(job.verified_bytes(), 0);
+    for step in 1..=65u64 {
+        assert_eq!(job.tick(&mut store), Ok(if step == 65 { ReplicaState::Available } else { ReplicaState::Verifying }));
+        assert_eq!(job.verified_bytes(), (step * 1024).min(d.bytes));
+        store.replace_state(other, &step.to_le_bytes()).unwrap();
+        let mut out = [0; 8]; assert_eq!(store.read(other, None, &mut out), Ok(8));
+        assert_eq!(u64::from_le_bytes(out), step);
+    }
+    assert_eq!(old.tick(&mut store), Err(ReplicaError::Stale));
+    drop(store);
+    let mut restored = ObjectStore::mount(disk, 0).unwrap();
+    let mut native = NativeExtentReplica::open(&mut restored, backing, d.resource, d.generation).unwrap();
+    assert_eq!(native.inspect().unwrap().state, ReplicaState::Available);
+    let mut out = [0; 1024];
+    native.read_verified_chunk(0, &mut out, Sha256::digest(&payload[..1024]).into()).unwrap();
+    assert_eq!(out, payload[..1024]);
+}
+
+// ------------------------=
 // FUNC: streamed_large_replica_recovers_and_seals_without_content_sized_buffers
 // DESC: Transfers across the former 16-KiB boundary, loses all process state, resumes, verifies in 1-KiB steps and rejects corrupt chunk reads.
 // ------------------=

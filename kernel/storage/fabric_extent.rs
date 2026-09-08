@@ -2,6 +2,54 @@
 //! transactions, and a single atomic content seal plus Available publication.
 use super::*;
 const RECORD_BYTES: usize = 160;
+
+/// Volatile verifier state owned by a bounded service job, never serialized or
+/// supplied by a remote peer. The object-store borrow lasts only for one tick.
+pub(crate) struct ExtentVerification {
+    backing: ObjectId, extent: ObjectId, transfer: Transfer,
+    verified: u64, digest: Sha256, crc: u32,
+}
+impl ExtentVerification {
+    // ------------------------=
+    // FUNC: resume
+    // DESC: Creates an identity-bound volatile verifier from durable state; recovery always starts integrity checking at byte zero.
+    // ------------------=
+    pub(crate) fn resume<D: BlockDevice>(store: &mut ObjectStore<D>, backing: ObjectId,
+        resource: ResourceId, generation: u64) -> Result<Self, ReplicaError> {
+        let native = NativeExtentReplica::open(store, backing, resource, generation)?;
+        let current = native.inspect().ok_or(ReplicaError::Incomplete)?;
+        if current.copied != current.descriptor.bytes { return Err(ReplicaError::Incomplete); }
+        Ok(Self { backing, extent: native.extent, transfer: Transfer::resume(current)?,
+            verified: 0, digest: Sha256::new(), crc: 0xffff_ffff })
+    }
+    // ------------------------=
+    // FUNC: verified_bytes
+    // DESC: Reports observed verification progress independently from durable copied bytes and availability.
+    // ------------------=
+    pub(crate) fn verified_bytes(&self) -> u64 { self.verified }
+    // ------------------------=
+    // FUNC: tick
+    // DESC: Reopens the exact durable replica and verifies at most one KiB; no object-store borrow or whole-content buffer survives the tick.
+    // ------------------=
+    pub(crate) fn tick<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>) -> Result<ReplicaState, ReplicaError> {
+        let expected = self.transfer.inspect();
+        let mut native = NativeExtentReplica::open(store, self.backing,
+            expected.descriptor.resource, expected.descriptor.generation)?;
+        if native.extent != self.extent || native.inspect() != Some(expected) { return Err(ReplicaError::Stale); }
+        native.verified = self.verified; native.digest = self.digest.clone(); native.crc = self.crc;
+        let result = self.transfer.verify_tick(&mut native);
+        if result.is_ok() {
+            self.verified = native.verified; self.digest = native.digest.clone(); self.crc = native.crc;
+        } else {
+            // A failed publication may have advanced either verifier before its
+            // durable commit. Never carry those partial hashes into a retry.
+            self.transfer = Transfer::resume(native.inspect().ok_or(ReplicaError::Incomplete)?)?;
+            self.verified = 0; self.digest = Sha256::new(); self.crc = 0xffff_ffff;
+        }
+        result
+    }
+}
+
 pub(crate) struct NativeExtentReplica<'a, D: BlockDevice> {
     store: &'a mut ObjectStore<D>, backing: ObjectId, resource: ResourceId, generation: u64,
     extent: ObjectId, current: Option<Checkpoint>, pending_end: Option<u64>,
