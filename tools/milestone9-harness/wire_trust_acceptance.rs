@@ -2,6 +2,49 @@
 mod fixture;
 use crate::node::types::TrustState;
 use fixture::Fixture;
+
+// ------------------------=
+// FUNC: verified_pairing_outlives_discovery_hint
+// DESC: Drops ordinary discovery traffic beyond its liveness lease while preserving an authenticated unexpired pairing, then requires signed dual consent and rejects actual expiry or revocation.
+// ------------------=
+#[test]
+fn verified_pairing_outlives_discovery_hint() {
+    for revoke in [false, true] {
+        let mut a = fixture::configured([2, 0, 0, 0, 0, 1], [0x71; 32]);
+        let mut b = fixture::configured([2, 0, 0, 0, 0, 2], [0x72; 32]);
+        let mut now = 0;
+        advance(&mut a, &mut b, &mut now, 8);
+        let aid = a.nodes.local_id().unwrap();
+        let bid = b.nodes.local_id().unwrap();
+        let link = a.transport.inspect(a.connection, a.owner).unwrap();
+        a.transport.trust.begin(&mut a.nodes, link, 0, false, now).unwrap();
+        advance(&mut a, &mut b, &mut now, 16);
+        let av = a.transport.trust.verification(aid, bid).unwrap();
+        let bv = b.transport.trust.verification(bid, aid).unwrap();
+        a.transport.trust.confirm(&mut a.nodes, av.transaction, av.code, true, now).unwrap();
+        advance(&mut a, &mut b, &mut now, 6);
+        for _ in 0..40 {
+            for f in [&mut a, &mut b] {
+                f.transport.poll(&mut f.nodes, &mut f.network, &f.capabilities, now);
+                while f.network.wire.peek_transmit().is_some() { f.network.wire.complete_transmit(); }
+            }
+            now += 1;
+        }
+        assert!(now < av.expires && now < bv.expires);
+        assert_eq!(a.transport.trust.verification(aid, bid).unwrap().transaction, av.transaction);
+        assert_eq!(b.transport.trust.verification(bid, aid).unwrap().transaction, bv.transaction);
+        if revoke {
+            b.nodes.revoke_trust(aid, now, now).unwrap();
+            assert_eq!(b.transport.trust.confirm(&mut b.nodes, bv.transaction, bv.code, true, now), Err(crate::node::types::NodeError::Blocked));
+        } else {
+            b.transport.trust.confirm(&mut b.nodes, bv.transaction, bv.code, true, now).unwrap();
+            advance(&mut a, &mut b, &mut now, 12);
+            assert_eq!(a.nodes.discovered_nodes()[0].unwrap().trust, TrustState::Trusted);
+            assert_eq!(b.nodes.discovered_nodes()[0].unwrap().trust, TrustState::Trusted);
+            assert_eq!(a.transport.trust.confirm(&mut a.nodes, av.transaction, av.code, true, av.expires), Err(crate::node::types::NodeError::PairingExpired));
+        }
+    }
+}
 #[path = "remote_iop_acceptance.rs"]
 mod remote_iop_acceptance;
 

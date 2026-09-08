@@ -516,7 +516,7 @@ impl WireTrust {
                 terminate(nodes, t, WireState::Expired, now);
                 continue;
             }
-            if let Err(error) = checked_peer(nodes, t.link.peer.unwrap(), now) {
+            if let Err(error) = checked_transaction_peer(nodes, t, now) {
                 self.last_error = Some(error);
                 terminate(nodes, t, WireState::Failed, now);
             } else if let Some(handle) = t.session {
@@ -617,16 +617,24 @@ impl WireTrust {
         {
             return Err(NodeError::InvalidAdvertisement);
         }
-        let peer = checked_peer(nodes, link.peer.ok_or(NodeError::UnknownNode)?, now)?;
+        let kind = bytes[8];
+        let id: [u8; 32] = bytes[80..112]
+            .try_into()
+            .map_err(|_| NodeError::InvalidAdvertisement)?;
+        let peer_id = link.peer.ok_or(NodeError::UnknownNode)?;
+        let verification = self.transactions.iter().flatten().find(|t|
+            t.id == id && t.link.connection == link.connection && t.link.peer == Some(peer_id));
+        let peer = if matches!(kind, CONFIRM | CANCEL) {
+            match verification {
+                Some(t) => { check_pending(nodes, t, now)?; checked_transaction_peer(nodes, t, now)? }
+                None => checked_peer(nodes, peer_id, now)?,
+            }
+        } else { checked_peer(nodes, peer_id, now)? };
         if bytes[16..48] != peer.id.0
             || bytes[48..80] != nodes.local_id().ok_or(NodeError::EntropyUnavailable)?.0
         {
             return Err(NodeError::IdentityMismatch);
         }
-        let kind = bytes[8];
-        let id: [u8; 32] = bytes[80..112]
-            .try_into()
-            .map_err(|_| NodeError::InvalidAdvertisement)?;
         if matches!(kind, DATA | CLOSE) {
             return self.encrypted(nodes, peer.id, id, kind, bytes, now);
         }
@@ -1082,6 +1090,17 @@ fn verification_code(digest: [u8; 32]) -> u32 {
 // DESC: Revalidates current peer identity, reachability, compatibility and block/revoke state.
 // ------------------=
 fn checked_peer(nodes: &NodeRuntime, id: NodeId, now: u64) -> Result<NodeDescriptor, NodeError> {
+    let peer = checked_identity(nodes, id)?;
+    if now.saturating_sub(peer.last_seen) > super::DISCOVERY_LEASE_TICKS {
+        return Err(NodeError::SessionExpired);
+    }
+    Ok(peer)
+}
+// ------------------------=
+// FUNC: checked_identity
+// DESC: Validates the current exact cryptographic peer and security state independently of discovery's presentation liveness lease.
+// ------------------=
+fn checked_identity(nodes: &NodeRuntime, id: NodeId) -> Result<NodeDescriptor, NodeError> {
     let peer = nodes
         .discovered
         .iter()
@@ -1092,13 +1111,24 @@ fn checked_peer(nodes: &NodeRuntime, id: NodeId, now: u64) -> Result<NodeDescrip
     if matches!(peer.trust, TrustState::Blocked | TrustState::Revoked) {
         return Err(NodeError::Blocked);
     }
-    if now.saturating_sub(peer.last_seen) > super::DISCOVERY_LEASE_TICKS {
-        return Err(NodeError::SessionExpired);
-    }
     if peer.protocol_min > 1 || peer.protocol_max < 1 {
         return Err(NodeError::UnsupportedVersion);
     }
     Ok(peer)
+}
+// ------------------------=
+// FUNC: checked_transaction_peer
+// DESC: Keeps already mutually authenticated confirmation under its own unchanged transaction lease; new handshakes and live sessions still require current discovery liveness.
+// ------------------=
+fn checked_transaction_peer(nodes: &NodeRuntime, t: &Transaction, now: u64) -> Result<NodeDescriptor, NodeError> {
+    if t.session.is_none() && matches!(t.stage, WireState::PendingVerification
+        | WireState::LocallyConfirmed | WireState::RemotelyConfirmed | WireState::Confirmed) {
+        if now >= t.expires { return Err(NodeError::PairingExpired); }
+        let peer = checked_identity(nodes, t.link.peer.ok_or(NodeError::UnknownNode)?)?;
+        if t.remote_offer[..32] != peer.public_key { return Err(NodeError::IdentityMismatch); }
+        return Ok(peer);
+    }
+    checked_peer(nodes, t.link.peer.ok_or(NodeError::UnknownNode)?, now)
 }
 // ------------------------=
 // FUNC: header
@@ -1255,7 +1285,7 @@ fn check_pending(nodes: &NodeRuntime, t: &Transaction, now: u64) -> Result<(), N
     if now >= t.expires {
         return Err(NodeError::PairingExpired);
     }
-    checked_peer(nodes, t.link.peer.unwrap(), now)?;
+    checked_transaction_peer(nodes, t, now)?;
     if matches!(
         t.stage,
         WireState::Cancelled | WireState::Expired | WireState::Failed | WireState::Closed
