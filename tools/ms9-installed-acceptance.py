@@ -648,9 +648,12 @@ def main():
     parser.add_argument("--height", type=int, default=2048)
     parser.add_argument("--confirmation-delay", type=int, default=5)
     parser.add_argument("--remote-installed", action="store_true")
+    parser.add_argument("--resume-remote", action="store_true",
+                        help="Continue remote acceptance on already independently installed, paired nodes")
     parser.add_argument("--focus-pairing", action="store_true", help="Run protocol acceptance only; explicitly excludes rapid-input acceptance")
     parser.add_argument("--installer-clicks", action="store_true")
     args = parser.parse_args()
+    assert not args.resume_remote or (args.mesh_installed and args.remote_installed)
     assert 640 <= args.width <= 4096 and 480 <= args.height <= 4096
     assert 0 <= args.confirmation_delay <= 10
     work = args.output.resolve()
@@ -686,6 +689,23 @@ def main():
                 authenticated = list(workers.map(lambda guest: guest.authenticate(), guests))
             for guest, current in zip(guests, authenticated):
                 assert struct.pack("<4Q", *current[16:20]).hex() == known[guest.number - 1]["node_id"]
+            if args.resume_remote:
+                for guest in guests:
+                    guest.wait(lambda state: state[25] == 1 and state[29] == 1,
+                               "persisted peer authority and link")
+                    guest.select_peer(args.nodes_label)
+                a, b = guests
+                a.key("left")
+                for _ in range(3):
+                    a.key("down")
+                a.key("ret")
+                for guest in guests:
+                    guest.wait(lambda state: state[26] == 1, "installed secure session")
+                installed_remote_acceptance(a, b, args.nodes_label)
+                (work / "remote-continuation-result.json").write_text(json.dumps({
+                    "installed_remote_allow_deny_revoke": True,
+                    "full_ms9_lifecycle": False}, indent=2))
+                return
             with ThreadPoolExecutor(max_workers=2) as workers:
                 list(workers.map(lambda guest: guest.configure_peer(args.network_label, not args.focus_pairing), guests))
             for guest in guests:
