@@ -54,6 +54,46 @@ Neither export accepts commands, grants capabilities, or changes authoritative
 state. Reading them requires the same host authority as reading all guest memory.
 Do not expose the VM management socket to untrusted users.
 
+## Resumed verification, connected-route correction
+
+Commit `5a0f176` fixes the native static-address path: configuring an IPv4 address
+now atomically creates its connected subnet route, including when no gateway is
+provided. Reconfiguration/removal replaces the derived route; capacity failure
+restores the previous addresses, routes and identifier counters. Persisted static
+configuration follows the same path on installed boot. The previous HOST fixture
+had manually added this route, hiding the Settings-path failure. Exercising the
+real configuration path reproduced `NoRoute` before the correction and passed
+afterward.
+
+`./build.sh` completed with this runtime correction, the launcher correction and
+Trusted UI dismissal changes included. Artifact SHA-256 values:
+
+- x86_64: `3ae64e25e7a83e3fab84aeba64cb7678133d531b01e9898f6e7e2f4096d93e7f`
+- aarch64: `ea6f2abff1c879b1e4323a280a69700babe4c9b46ea2bed5187ac98848c50552`
+
+Two new independent installations in `/tmp/infinity-ms9-installed-20260908-c`
+passed installation, detached-media account setup, wired selection, cold-boot
+authentication and distinct persistent identities. The requested smaller display
+was not honored by the guest; actual observed dimensions were 2048 by 2048.
+This is x86_64 QEMU evidence, not ARM64 or VirtualBox verification. The subsequent
+mesh lifecycle must be evaluated separately; boot success does not certify it.
+
+The installer performs synchronous storage writes after confirmation. The runner
+now waits for the actual bounded installation-completion predicate instead of
+requiring UI-clock advancement during those writes. No completion assertion was
+removed. Frame reports distinguish live installer from installed boot; unavailable
+timing samples never count as zero-latency or performance acceptance.
+
+After this build, `milestone-9-durable-mutation-test`,
+`milestone-9-correlation-test`, `milestone-9-remote-iop-test` and `native-nic-test`
+passed. The remote-IOP artifact still labels its boundary **PRODUCTION WIRE /
+ENGINEERING GUEST** and installed GUI acceptance false. The native-NIC runner
+observed guest exit statuses `[33, 33]` and `[35]` for its respective fixtures.
+The additional HOST `durable_v2_migration` test preserved wrapped audit history,
+identity, policies and checkpoint 41 across v2-to-v3 reconstruction while keeping
+absent pairing receipts, sessions and grants absent. It is not installed migration
+or installed cold-reconnect evidence.
+
 ## UI/service snapshot, schema 1
 
 `INFINITY_DIAGNOSTIC_SNAPSHOT` contains 512 little-endian u64 words. Word 0 is
