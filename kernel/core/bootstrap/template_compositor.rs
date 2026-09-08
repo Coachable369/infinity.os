@@ -21,7 +21,7 @@ impl DisplayDevice {
     // DESC: Paints every visible installer layer in the editor's deterministic stacking order.
     // ------------------=
     pub(super) fn installer_template_screen(&mut self, screen: u8) -> bool {
-        self.template_screen(INSTALLER_TEMPLATE_BYTES, screen, None, true, false, None)
+        self.template_screen(INSTALLER_TEMPLATE_BYTES, screen, None, true, false, None, None)
     }
 
     // ------------------------=
@@ -29,7 +29,15 @@ impl DisplayDevice {
     // DESC: Substitutes live data at its saved layer position instead of drawing a second fixed-position overlay.
     // ------------------=
     pub(super) fn installer_template_screen_with_details(&mut self, screen: u8, details: &[u8]) -> bool {
-        self.template_screen(INSTALLER_TEMPLATE_BYTES, screen, None, true, false, Some(details))
+        self.template_screen(INSTALLER_TEMPLATE_BYTES, screen, None, true, false, Some(details), None)
+    }
+
+    // ------------------------=
+    // FUNC: installer_template_progress_screen
+    // DESC: Composes saved Installing layers in order while substituting only the live progress value and status.
+    // ------------------=
+    pub(super) fn installer_template_progress_screen(&mut self, percent: usize, label: &[u8]) -> bool {
+        self.template_screen(INSTALLER_TEMPLATE_BYTES, 8, None, true, false, None, Some((percent, label)))
     }
 
     // ------------------------=
@@ -43,6 +51,7 @@ impl DisplayDevice {
             None,
             true,
             true,
+            None,
             None,
         )
     }
@@ -67,6 +76,7 @@ impl DisplayDevice {
             false,
             false,
             None,
+            None,
         )
     }
 
@@ -81,6 +91,7 @@ impl DisplayDevice {
             Some((focus, true, None)),
             false,
             false,
+            None,
             None,
         )
     }
@@ -97,6 +108,7 @@ impl DisplayDevice {
         full_scene: bool,
         skip_live_input: bool,
         live_details: Option<&[u8]>,
+        progress: Option<(usize, &[u8])>,
     ) -> bool {
         let Ok(template) = InstallerTemplate::parse(bytes) else {
             return false;
@@ -108,7 +120,7 @@ impl DisplayDevice {
             let Some(element) = template.layer_at(screen, index) else {
                 return false;
             };
-            if element.hidden {
+            if element.hidden || element.opacity == 0 {
                 continue;
             }
             if full_scene
@@ -121,6 +133,15 @@ impl DisplayDevice {
                 || element.role == InstallerTemplateRole::PrimaryButton as u8
                 || element.role == InstallerTemplateRole::Footer as u8;
             if full_scene || is_navigation {
+                if element.kind == 6 {
+                    let (percent, label) = progress.unwrap_or((0, element.text));
+                    self.template_progress_control(
+                        scale_template_rect(element.frame, self.width, self.height),
+                        element.fill, element.border, element.opacity, element.corner_radius,
+                        percent, label,
+                    );
+                    continue;
+                }
                 if element.role == InstallerTemplateRole::LiveDetails as u8 {
                     if let Some(text) = live_details {
                         self.template_element(InstallerTemplateElement { text, ..element }, None, navigation);
@@ -351,146 +372,54 @@ impl DisplayDevice {
         percent: usize,
         label: &[u8],
     ) {
-        let scale = self.ui_scale().max(1);
+        let previous_clip = self.render_clip;
+        self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
+        let alpha = |value: u8| (value as u16 * opacity as u16 / 100) as u8;
         let radius = (corner_radius as usize * self.height / 1000).max(1);
-        let authored_alpha = |value: u8| (value as u16 * opacity as u16 / 100) as u8;
-        self.fill_rounded_rect_alpha(
-            rect.left + 6 * scale,
-            rect.top + 7 * scale,
-            rect.width,
-            rect.height,
-            radius,
-            0,
-            3,
-            9,
-            authored_alpha(150),
-        );
-        self.fill_rounded_rect_alpha(
-            rect.left,
-            rect.top,
-            rect.width,
-            rect.height,
-            radius,
-            2,
-            13,
-            25,
-            authored_alpha(246),
-        );
-        self.fill_rounded_rect_alpha(
-            rect.left + 2 * scale,
-            rect.top + 2 * scale,
-            rect.width.saturating_sub(4 * scale),
-            rect.height / 2,
-            radius.saturating_sub(2),
-            18,
-            56,
-            88,
-            authored_alpha(105),
-        );
-        self.outline_rounded_rect_alpha(
-            rect.left,
-            rect.top,
-            rect.width,
-            rect.height,
-            radius,
-            border[0],
-            border[1],
-            border[2],
-            authored_alpha(border[3]),
-        );
-        self.fill_rect(
-            rect.left + 18 * scale,
-            rect.top + rect.height * 12 / 100,
-            rect.width.saturating_sub(36 * scale),
-            rect.height * 24 / 100,
-            7,
-            28,
-            47,
-        );
-        self.ui_text_centered_strong(
-            rect.left,
-            rect.width,
-            rect.top + rect.height * 18 / 100,
-            label,
-            226,
-            238,
-            248,
-            1,
-        );
-        let track_left = rect.left + rect.width * 7 / 200;
-        let track_top = rect.top + rect.height * 54 / 100;
-        let track_width = rect.width * 93 / 100;
-        let track_height = (rect.height * 13 / 100).max(8 * scale);
-        self.fill_rect(track_left, track_top, track_width, track_height, 42, 50, 61);
-        let fill_width = track_width * percent.min(100) / 100;
-        self.fill_rect(
-            track_left,
-            track_top,
-            fill_width,
-            track_height,
-            fill[0],
-            fill[1],
-            fill[2],
-        );
-        if fill_width > 0 && track_height > 4 {
-            self.fill_rect_alpha(
-                track_left,
-                track_top + track_height / 4,
-                fill_width,
-                track_height / 2,
-                255,
-                255,
-                255,
-                authored_alpha(64),
-            );
-        }
-        self.outline_rect(
-            track_left,
-            track_top,
-            track_width,
-            track_height,
-            border[0],
-            border[1],
-            border[2],
-        );
-        for marker in 0..=4usize {
-            let marker_x = track_left + track_width * marker / 4;
-            let active = percent >= marker * 25;
-            self.star_orb(
-                marker_x as i32,
-                (track_top + track_height / 2) as i32,
-                if active { 3 * scale as i32 } else { 2 * scale as i32 },
-                if active { 238 } else { 74 },
-                active,
-            );
-        }
+        let inset = (18 * self.height / 1000).max(1).min(rect.width / 4);
+        let pixels = (18 * self.height / 1000).max(1);
+        let gap = 14 * self.height / 1000;
+        let track_height = (16 * self.height / 1000).max(1);
+        let line_height = pixels * 28 / 24;
+        let group_height = line_height + gap + track_height;
+        let top = rect.top + rect.height.saturating_sub(group_height) / 2;
+        let track_top = top + line_height + gap;
+        let track_width = rect.width.saturating_sub(inset * 2);
+        self.fill_rounded_rect_alpha(rect.left, rect.top, rect.width, rect.height, radius,
+            18, 29, 42, alpha(240));
+        self.outline_rounded_rect_alpha(rect.left, rect.top, rect.width, rect.height, radius,
+            border[0], border[1], border[2], alpha(border[3]));
         let mut percent_text = [b'0'; 4];
         let value = percent.min(100);
         let digits = if value == 100 {
-            percent_text[0] = b'1';
-            percent_text[1] = b'0';
-            percent_text[2] = b'0';
+            percent_text[..3].copy_from_slice(b"100");
             3
         } else if value >= 10 {
-            percent_text[0] = b'0' + (value / 10) as u8;
-            percent_text[1] = b'0' + (value % 10) as u8;
+            percent_text[0] += (value / 10) as u8;
+            percent_text[1] += (value % 10) as u8;
             2
         } else {
-            percent_text[0] = b'0' + value as u8;
+            percent_text[0] += value as u8;
             1
         };
         percent_text[digits] = b'%';
         let percent_slice = &percent_text[..digits + 1];
-        let percent_width = self.ui_text_width(percent_slice, 1);
-        self.ui_text_strong(
-            track_left + track_width.saturating_sub(percent_width),
-            rect.top + 14 * scale,
-            percent_slice,
-            fill[0],
-            fill[1],
-            fill[2],
-            1,
-        );
+        let percent_width = self.template_text_width(percent_slice, pixels, true);
+        self.template_text(rect.left + rect.width.saturating_sub(inset + percent_width), top,
+            percent_slice, fill[0], fill[1], fill[2], alpha(fill[3]), pixels, true);
+        self.intersect_render_clip(rect.left + inset, top,
+            track_width.saturating_sub(percent_width + inset), line_height);
+        self.template_text(rect.left + inset, top, label, 241, 245, 250, alpha(255), pixels, true);
+        self.render_clip = previous_clip;
+        self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
+        let track_radius = (5 * self.height / 1000).max(1);
+        self.fill_rounded_rect_alpha(rect.left + inset, track_top, track_width, track_height, track_radius,
+            2, 7, 15, alpha(199));
+        self.fill_rounded_rect_alpha(rect.left + inset, track_top, track_width * value / 100, track_height, track_radius,
+            fill[0], fill[1], fill[2], alpha(fill[3]));
+        self.outline_rounded_rect_alpha(rect.left + inset, track_top, track_width, track_height, track_radius,
+            border[0], border[1], border[2], alpha(border[3]));
+        self.render_clip = previous_clip;
     }
 
     // ------------------------=
@@ -582,13 +511,13 @@ impl DisplayDevice {
             base[0].saturating_add(lift.0),
             base[1].saturating_add(lift.1),
             base[2].saturating_add(lift.2),
-            if focused {
+            (if focused {
                 148
             } else if hovered {
                 118
             } else {
                 82
-            },
+            } * opacity / 100) as u8,
         );
         let border = if focused {
             [156, 232, 255]

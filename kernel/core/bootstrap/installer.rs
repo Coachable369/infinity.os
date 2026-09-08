@@ -241,10 +241,17 @@ impl super::DisplayDevice {
     // FUNC: restore_installer_panel
     // DESC: Restores a clean installer scene before drawing the active wizard step.
     // ------------------=
-    pub(super) fn restore_installer_panel(&mut self, _screen: u8) {
+    pub(super) fn restore_installer_panel(&mut self, screen: u8) {
         // A step transition is infrequent; restore the complete scene so the
         // invariant frame and masthead never inherit pixels from another step.
         self.paint_installer_background();
+        if matches!(screen, 8 | 9)
+            && crate::ui::installer_template::InstallerTemplate::parse(
+                crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES,
+            ).is_ok()
+        {
+            return;
+        }
         self.paint_installer_masthead();
     }
 
@@ -957,7 +964,7 @@ impl super::DisplayDevice {
         pressed: bool,
         redraw_foundation: bool,
     ) {
-        if !matches!(screen, 7 | 8 | 9)
+        if screen != 7
             && self.installer_template_navigation(
                 screen,
                 focus,
@@ -1258,6 +1265,22 @@ impl super::DisplayDevice {
     // DESC: Draws one verified installation-progress frame over the activation artwork.
     // ------------------=
     pub(super) fn installer_progress_frame(&mut self, percent: usize, label: &[u8], phase: usize) {
+        if let Ok(template) = crate::ui::installer_template::InstallerTemplate::parse(
+            crate::ui::installer_layout::INSTALLER_TEMPLATE_BYTES,
+        ) {
+            if let Some(element) = template.element(8, crate::ui::installer_template::InstallerTemplateRole::ProgressBar) {
+                if !element.hidden {
+                    let rect = crate::ui::installer_layout::scale_template_rect(element.frame, self.width, self.height);
+                    let previous_clip = self.render_clip;
+                    self.intersect_render_clip(rect.left, rect.top, rect.width, rect.height);
+                    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+                    self.paint_installer_background();
+                    self.installer_template_progress_screen(percent, label);
+                    self.render_clip = previous_clip;
+                }
+            }
+            return;
+        }
         let scale = self.ui_scale();
         let element = crate::ui::installer_layout::installer_template_element(
             8,
@@ -1392,7 +1415,7 @@ impl super::DisplayDevice {
         // Date/time owns live form controls and a selectable map. The authored
         // template supplies shared geometry/copy, but it must not short-circuit
         // the functional renderer for this step.
-        if !matches!(screen, 5 | 7 | 8 | 9) {
+        if !matches!(screen, 5 | 7) {
             let (details, length) = crate::ui::installer_template::installer_live_details(
                 lines, lengths, line_count, prompt, command,
             );

@@ -489,18 +489,19 @@ struct CanvasElementView: View {
     }
 }
 
-private struct CanvasProgressBarPreview: View {
+struct CanvasProgressBarPreview: View {
     let element: StudioElement
     let canvasScale: CGSize
 
     var body: some View {
-        VStack(spacing: max(5, 14 * canvasScale.height)) {
+        VStack(spacing: 14 * canvasScale.height) {
             HStack {
                 Text(element.text)
-                    .font(.system(size: max(8, 18 * canvasScale.height), weight: .semibold, design: .rounded))
+                    .font(.system(size: max(1, 18 * canvasScale.height), weight: .semibold, design: .rounded))
+                    .lineLimit(1)
                 Spacer()
                 Text("42%")
-                    .font(.system(size: max(8, 18 * canvasScale.height), weight: .semibold, design: .rounded))
+                    .font(.system(size: max(1, 18 * canvasScale.height), weight: .semibold, design: .rounded))
                     .foregroundStyle(element.fill.color)
             }
             GeometryReader { geometry in
@@ -516,10 +517,11 @@ private struct CanvasProgressBarPreview: View {
                         .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
                 }
             }
-            .frame(height: max(8, 16 * canvasScale.height))
+            .frame(height: max(1, 16 * canvasScale.height))
         }
         .foregroundStyle(InfinityUIKit.Palette.nativeTextPrimary)
-        .padding(max(8, 18 * canvasScale.height))
+        .padding(18 * canvasScale.height)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             InfinityUIKit.Palette.nativePanelRaised,
             in: RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
@@ -528,6 +530,7 @@ private struct CanvasProgressBarPreview: View {
             RoundedRectangle(cornerRadius: CGFloat(element.cornerRadius) * canvasScale.height)
                 .stroke(element.border.color, lineWidth: max(1, canvasScale.height))
         }
+        .clipped()
     }
 }
 
