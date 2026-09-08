@@ -53,7 +53,7 @@ impl Transfer {
     // ------------------=
     pub fn begin(store: &mut impl ReplicaStore, descriptor: ReplicaDescriptor) -> Result<Self, ReplicaError> {
         if descriptor.job == 0 || descriptor.object == [0; 16] || descriptor.version == 0
-            || descriptor.resource.0 == [0; 16] || descriptor.generation == 0 || descriptor.bytes == 0 {
+            || descriptor.resource.0 == [0; 16] || descriptor.generation == 0 {
             return Err(ReplicaError::Invalid);
         }
         let current = Checkpoint { descriptor, copied: 0, state: ReplicaState::Planned };
@@ -68,7 +68,7 @@ impl Transfer {
     pub fn resume(current: Checkpoint) -> Result<Self, ReplicaError> {
         let descriptor = current.descriptor;
         if descriptor.job == 0 || descriptor.object == [0; 16] || descriptor.version == 0
-            || descriptor.resource.0 == [0; 16] || descriptor.generation == 0 || descriptor.bytes == 0
+            || descriptor.resource.0 == [0; 16] || descriptor.generation == 0
             || current.copied > descriptor.bytes
             || (matches!(current.state, ReplicaState::Verifying | ReplicaState::Available) && current.copied != descriptor.bytes)
             || (current.state == ReplicaState::Planned && current.copied != 0) {

@@ -49,7 +49,7 @@ impl<'a, D: BlockDevice> NativeReplica<'a, D> {
         if descriptor.resource != self.resource || descriptor.generation != self.generation {
             return Err(ReplicaError::Stale);
         }
-        if descriptor.bytes == 0 || descriptor.bytes > MAX_REPLICA_BYTES as u64 {
+        if descriptor.bytes > MAX_REPLICA_BYTES as u64 {
             return Err(ReplicaError::Invalid);
         }
         if self.current.is_some_and(|c| c.descriptor != *descriptor) { return Err(ReplicaError::Conflict); }
@@ -137,6 +137,8 @@ impl<D: BlockDevice> ReplicaStore for NativeReplica<'_, D> {
                 (ReplicaState::Planned | ReplicaState::Copying, ReplicaState::Copying) =>
                     self.pending_end == Some(next.copied) && next.copied > old.copied,
                 (ReplicaState::Copying, ReplicaState::Verifying) => next.copied == old.copied,
+                (ReplicaState::Planned, ReplicaState::Verifying) =>
+                    old.descriptor.bytes == 0 && next.copied == 0,
                 (ReplicaState::Verifying, ReplicaState::Failed) => next.copied == old.copied,
                 _ => false,
             },

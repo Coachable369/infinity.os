@@ -48,6 +48,79 @@ fn descriptor(bytes: &[u8]) -> ReplicaDescriptor {
 }
 
 // ------------------------=
+// FUNC: empty_replica_requires_verified_durable_publication
+// DESC: Proves empty content remains staged until its real empty digest is verified and survives remount without fabricated chunks.
+// ------------------=
+#[test]
+fn empty_replica_requires_verified_durable_publication() {
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let backing = store.create(b"empty-replica", ObjectType::Metadata, Space::System, &[]).unwrap();
+    let d = descriptor(&[]);
+    {
+        let mut native = NativeReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+        let mut transfer = Transfer::begin(&mut native, d).unwrap();
+        assert_eq!(native.read_verified(&mut []), Err(ReplicaError::Incomplete));
+        assert_eq!(transfer.receive(&mut native, 0, &[]), Err(ReplicaError::Invalid));
+        assert_eq!(transfer.verify_tick(&mut native), Ok(ReplicaState::Available));
+    }
+    drop(store);
+    let mut store = ObjectStore::mount(disk, 0).unwrap();
+    {
+        let mut native = NativeReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
+        assert_eq!(native.read_verified(&mut []), Ok(0));
+        assert_eq!(native.inspect().unwrap().descriptor, d);
+    }
+    let corrupt = store.create(b"bad-empty-digest", ObjectType::Metadata, Space::System, &[]).unwrap();
+    let mut native = NativeReplica::open(&mut store, corrupt, d.resource, d.generation).unwrap();
+    let mut transfer = Transfer::begin(&mut native, ReplicaDescriptor { hash: [0; 32], ..d }).unwrap();
+    assert_eq!(transfer.verify_tick(&mut native), Err(ReplicaError::Integrity));
+    assert_eq!(native.read_verified(&mut []), Err(ReplicaError::Incomplete));
+}
+
+// ------------------------=
+// FUNC: native_copy_shares_content_and_reclaims_only_last_reference
+// DESC: Proves physical allocation sharing, independent versions, checkpoint replacement, deletion and remount recovery through the native store.
+// ------------------=
+#[test]
+fn native_copy_shares_content_and_reclaims_only_last_reference() {
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let source = store.create(b"source", ObjectType::Metadata, Space::Personal, &[7; 8192]).unwrap();
+    let used = store.usage_blocks();
+    let space_used = store.usage_by_space(Space::Personal);
+    let copy = store.copy_attached(source, b"/home/copy").unwrap();
+    assert_ne!(copy, source);
+    assert_eq!(store.usage_blocks(), used);
+    assert_eq!(store.usage_by_space(Space::Personal), space_used);
+    assert_eq!(store.current_version(copy), Ok(1));
+    store.replace_state(source, &[8; 8192]).unwrap();
+    let mut content = [0; 8192];
+    assert_eq!(store.read(copy, None, &mut content), Ok(8192));
+    assert_eq!(content, [7; 8192]);
+    store.write(copy, &[9; 8192]).unwrap();
+    store.read(source, None, &mut content).unwrap();
+    assert_eq!(content, [8; 8192]);
+    drop(store);
+    let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+    store.read(copy, Some(1), &mut content).unwrap();
+    assert_eq!(content, [7; 8192]);
+    store.destroy_explicit(source, true).unwrap();
+    assert_eq!(store.collect(), Ok(2));
+    store.read(copy, None, &mut content).unwrap();
+    assert_eq!(content, [9; 8192]);
+    let shared = store.copy_attached(copy, b"/home/shared").unwrap();
+    store.destroy_explicit(copy, true).unwrap();
+    assert_eq!(store.collect(), Ok(2)); // Only the obsolete v1 extent is reclaimed.
+    drop(store);
+    let mut store = ObjectStore::mount(disk, 0).unwrap();
+    store.read(shared, None, &mut content).unwrap();
+    assert_eq!(content, [9; 8192]);
+    store.destroy_explicit(shared, true).unwrap();
+    assert_eq!(store.collect(), Ok(2));
+}
+
+// ------------------------=
 // FUNC: native_replica_remount_and_publication
 // DESC: Exercises real native storage commits, process-state loss, resumed transfer and integrity-checked publication.
 // ------------------=

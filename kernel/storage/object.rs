@@ -973,7 +973,7 @@ impl<D: BlockDevice> ObjectStore<D> {
 
     // ------------------------=
     // FUNC: copy_attached
-    // DESC: Copies content and metadata into a distinct ObjectId and atomically attaches its destination reference.
+    // DESC: Shares immutable content under a distinct ObjectId and atomically attaches independent copied metadata.
     // ------------------=
     pub fn copy_attached(
         &mut self,
@@ -1071,11 +1071,9 @@ impl<D: BlockDevice> ObjectStore<D> {
         if source_record.tombstone {
             return Err(ObjectError::NotFound);
         }
-        let mut content = [0u8; MAX_CONTENT];
-        let content_length = if source_record.current_version == 0 {
-            0
-        } else {
-            self.read(source, None, &mut content)?
+        let shared = if source_record.current_version == 0 { None } else {
+            Some(*self.state.versions.iter().find(|v| v.used && v.object == source
+                && v.number == source_record.current_version).ok_or(ObjectError::InvalidVersion)?)
         };
         let name = destination
             .rsplit(|byte| *byte == b'/')
@@ -1092,8 +1090,12 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.state.objects[target_index].content_type = source_record.content_type;
         self.state.objects[target_index].tags_len = source_record.tags_len;
         self.state.objects[target_index].tags = source_record.tags;
-        if source_record.current_version != 0 {
-            self.write_record(id, &content[..content_length])?;
+        if let Some(shared) = shared {
+            let slot = self.state.versions.iter().position(|v| !v.used)
+                .ok_or(ObjectError::InsufficientCapacity)?;
+            self.state.versions[slot] = VersionRecord { object: id, number: 1,
+                parent: 0, generation: self.state.generation + 1, ..shared };
+            self.state.objects[target_index].current_version = 1;
         }
         self.attach_record(destination, id)?;
         Ok(id)
@@ -1189,12 +1191,24 @@ impl<D: BlockDevice> ObjectStore<D> {
             for version in &before.versions {
                 if version.used && version.object == id {
                     for block in version.extent as usize..version.extent as usize + version.blocks as usize {
-                        set_bit(&mut self.state.allocation, block, false);
+                        self.release_unreferenced_block(block);
                     }
                 }
             }
         }
         self.finish(before, result)
+    }
+
+    // ------------------------=
+    // FUNC: release_unreferenced_block
+    // DESC: Reclaims immutable content only after all durable-version references have been removed from the candidate transaction.
+    // ------------------=
+    fn release_unreferenced_block(&mut self, block: usize) -> bool {
+        if self.state.versions.iter().any(|v| v.used && block >= v.extent as usize
+            && block < v.extent as usize + v.blocks as usize) { return false; }
+        let allocated = bit(&self.state.allocation, block);
+        set_bit(&mut self.state.allocation, block, false);
+        allocated
     }
 
     // ------------------------=
@@ -1679,11 +1693,10 @@ impl<D: BlockDevice> ObjectStore<D> {
                 for vi in 0..MAX_VERSIONS {
                     let v = self.state.versions[vi];
                     if v.used && v.object == o.id {
-                        for b in v.extent as usize..v.extent as usize + v.blocks as usize {
-                            set_bit(&mut self.state.allocation, b, false);
-                            reclaimed += 1;
-                        }
                         self.state.versions[vi].used = false;
+                        for b in v.extent as usize..v.extent as usize + v.blocks as usize {
+                            reclaimed += self.release_unreferenced_block(b) as u32;
+                        }
                     }
                 }
                 self.state.objects[oi].used = false;
@@ -1764,8 +1777,13 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.state
             .versions
             .iter()
-            .filter(|v| v.used)
-            .map(|v| {
+            .enumerate()
+            .filter(|(_, v)| v.used)
+            .map(|(index, v)| {
+                if self.state.versions[..index].iter().any(|prior| prior.used
+                    && prior.extent == v.extent && prior.blocks == v.blocks
+                    && self.object_index(prior.object).ok().is_some_and(|i|
+                        self.state.objects[i].space == space as u8)) { return 0; }
                 self.object_index(v.object)
                     .ok()
                     .filter(|i| self.state.objects[*i].space == space as u8)
