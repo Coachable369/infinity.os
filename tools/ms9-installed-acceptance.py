@@ -436,8 +436,10 @@ def main():
     parser.add_argument("--nodes-label", default="nodes")
     parser.add_argument("--width", type=int, default=2048)
     parser.add_argument("--height", type=int, default=2048)
+    parser.add_argument("--confirmation-delay", type=int, default=5)
     args = parser.parse_args()
     assert 640 <= args.width <= 4096 and 480 <= args.height <= 4096
+    assert 0 <= args.confirmation_delay <= 10
     work = args.output.resolve()
     if args.resume_installed or args.mesh_installed:
         assert json.loads((work / "install-result.json").read_text())["independent_installs"] == 2
@@ -491,7 +493,7 @@ def main():
             a.screenshot("pairing-verification")
             b.screenshot("pairing-verification")
             with ThreadPoolExecutor(max_workers=2) as workers:
-                list(workers.map(lambda item: item[0].confirm_peer(item[1], item[2], item[3]), [(a, av, 2, 0), (b, bv, 3, 5)]))
+                list(workers.map(lambda item: item[0].confirm_peer(item[1], item[2], item[3]), [(a, av, 2, 0), (b, bv, 3, args.confirmation_delay)]))
             for guest in guests:
                 guest.wait(lambda state: state[25] == 1, "dual-confirmed installed trust")
             a.key("left")
