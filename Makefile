@@ -308,6 +308,11 @@ object-test namespace-test crash-recovery-test:
 object-vm-test:
 	@tools/object-vm-test.sh
 
+.PHONY: fabric-test
+fabric-test:
+	@CARGO_TARGET_DIR=build/behavior-harness cargo test --quiet --release \
+		--manifest-path tools/behavior-harness/Cargo.toml --bin fabric-test
+
 milestone-3b-test: object-test install-test object-vm-test
 
 runtime-test iop-test event-test capability-test service-crash-test:

@@ -1,4 +1,7 @@
 #![allow(dead_code)]
+mod storage;
+#[path = "../kernel/storage/fabric.rs"] mod native_fabric;
+#[cfg(test)] mod fabric_persistence_tests;
 #[path = "../kernel/ui/mod.rs"] mod ui;
 #[path = "../kernel/runtime/mod.rs"] mod runtime;
 // ------------------------=

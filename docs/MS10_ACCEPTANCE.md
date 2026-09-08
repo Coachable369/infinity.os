@@ -5,7 +5,7 @@ Status: IN PROGRESS, not complete. Installer click/progress prerequisite passed;
 Authoritative request: user-supplied Resource Fabric & Infinity Pool Storage milestone.
 
 1. Authenticated, versioned resource advertisements with explicit owner, capacity, health and node/device failure domain.
-2. Stable ObjectId independent of namespace, authority and placement; reuse existing independent-copy/COW semantics.
+2. Stable ObjectId independent of namespace, authority and placement; preserve independent copy identity and implement shared immutable-content COW. Existing local copy creates a new identity but currently copies the content bytes.
 3. Explicit Temporary/Protected/Critical policy, independently placed verified replicas, capacity reservations and bounded transfer state.
 4. Coherent durable manifest/version commits; incomplete or corrupt replicas never become available.
 5. Integrity-checked reads survive a lost storage node; preserve known offline object identity and namespace.
@@ -16,3 +16,18 @@ Authoritative request: user-supplied Resource Fabric & Infinity Pool Storage mil
 10. Preserve MS9/security, desktop performance and installer regressions. Do not substitute host fixtures for installed acceptance.
 
 Dependency still open: the last installed MS9 run lost its secure session before remote inspection admission. Rapid installed input also accepted six of ten keys. Neither is marked resolved by this milestone or by the installer fixes.
+
+## Current implementation and evidence
+
+TESTED (host behavioral harness, not installed multi-node acceptance):
+
+- `kernel/runtime/fabric/resources.rs`: bounded authenticated resource admission, exact ownership/scope, revocation/expiry, ordered generations, capacity reservations and flood limits.
+- `kernel/runtime/fabric/placement.rs`: deterministic eligible storage selection on independent nodes; Temporary/Protected/Critical require 1/2/3 verified independent replicas respectively.
+- `kernel/runtime/fabric/replica.rs`: bounded contiguous transfer, duplicate/conflict handling, resumable checkpoints, SHA-256 read-back, publication failure retry and generation fencing.
+- `kernel/storage/fabric.rs`: internal native object-store adapter commits checkpoint and staged bytes in one COW transaction. Recovery uses persisted bytes, not a process cache. Available readers verify SHA-256. Truncated/invalid records and corruption are rejected.
+- `make fabric-test`: 39 tests passed (9 new fabric/persistence tests plus 30 imported runtime tests). Native persistence tests cut every sector-write boundary of a chunk commit and of Available publication, remount the actual object store, and recover coherently. This models synchronous sectors, not torn-sector or real device cache failure.
+- The fabric behavioral gate is included in `build.sh`.
+
+IMPLEMENTED BUT UNTESTED on installed hardware: the above algorithms and native persistence adapter. The adapter is internal, not yet exposed through an authenticated IOP service. Its initial envelope supports nonempty payloads up to 16,256 bytes; multi-extent/empty-object support remains required. It does not replace application ObjectId with its internal backing-object identity.
+
+NOT YET IMPLEMENTED: authoritative durable manifests/coordinated healing, transparent remote reads, native transfer operations and per-chunk authority enforcement, complete resource producers/discovery wiring, shared immutable-copy storage, common Console/GUI surfaces, dedicated System Generation service registration and three-installed-node failure/healing/reboot acceptance. No claim of protected distributed storage availability or MS10 completion is made.

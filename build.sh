@@ -34,6 +34,7 @@ make installer-template-test
 make milestone-7x-test
 make ai-test
 make object-test
+make fabric-test
 make network-test
 make network-wire-test
 make milestone-9-test

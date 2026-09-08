@@ -6,6 +6,7 @@ mod component_manifest;
 mod format;
 pub mod layout;
 pub mod object;
+pub(crate) mod fabric;
 pub mod organization;
 #[cfg(target_arch = "aarch64")]
 mod uefi;
