@@ -48,6 +48,27 @@ fn descriptor(bytes: &[u8]) -> ReplicaDescriptor {
 }
 
 // ------------------------=
+// FUNC: oversized_extent_cannot_allocate_beyond_native_capacity
+// DESC: Rejects a valid-sized transfer larger than the actual native pool without modifying allocation or corrupting the rebootable root.
+// ------------------=
+#[test]
+fn oversized_extent_cannot_allocate_beyond_native_capacity() {
+    use crate::storage::object::ObjectError;
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, STORE_RELATIVE_LBA + 80 + 100 * 8, [8; 16]).unwrap();
+    assert_eq!(store.total_blocks(), 100);
+    let used = store.usage_blocks();
+    let writes = disk.0.borrow().writes;
+    assert_eq!(store.create_staging_extent(1024 * 1024), Err(ObjectError::InsufficientCapacity));
+    assert_eq!(store.usage_blocks(), used);
+    assert_eq!(disk.0.borrow().writes, writes);
+    drop(store);
+    let restored = ObjectStore::mount(disk, 0).unwrap();
+    assert_eq!(restored.total_blocks(), 100);
+    assert_eq!(restored.usage_blocks(), used);
+}
+
+// ------------------------=
 // FUNC: streamed_large_replica_recovers_and_seals_without_content_sized_buffers
 // DESC: Transfers across the former 16-KiB boundary, loses all process state, resumes, verifies in 1-KiB steps and rejects corrupt chunk reads.
 // ------------------=

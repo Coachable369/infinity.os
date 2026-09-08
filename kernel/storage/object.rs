@@ -1954,7 +1954,8 @@ impl<D: BlockDevice> ObjectStore<D> {
     fn allocate(&mut self, _space: Space, count: u16) -> Result<u32, ObjectError> {
         let total = self.state.total_blocks as usize;
         let need = count as usize;
-        for start in 0..=total.saturating_sub(need) {
+        if need == 0 || need > total { return Err(ObjectError::InsufficientCapacity); }
+        for start in 0..=total - need {
             if (start..start + need).all(|i| !bit(&self.state.allocation, i)) {
                 for i in start..start + need {
                     set_bit(&mut self.state.allocation, i, true);
