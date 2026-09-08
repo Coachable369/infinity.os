@@ -4,6 +4,7 @@ pub mod console_language;
 pub mod event;
 pub mod execution;
 pub mod font;
+pub mod fabric;
 pub mod identity;
 pub mod iop;
 pub mod network;
