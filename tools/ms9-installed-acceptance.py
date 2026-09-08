@@ -370,12 +370,32 @@ class Guest:
         self.key("esc")
         self.wait(lambda state: state[4] == 5, "return to desktop")
         self.launch("command", 5)
+        self.fast_input_probe()
+        self.key("esc")
+        self.launch("command", 5)
         before = self.state()[20]
         self.text(f"node link-configure 1 local=10.42.0.{self.number} remote=10.42.0.{3-self.number} local-port=49152 remote-port=49152")
         self.key("ret")
         self.wait(lambda state: state[20] > before and state[29] == 1 and state[48] > 0, "durable native peer connection")
         self.key("esc")
         self.wait(lambda state: state[4] == 5, "command window closed")
+
+    # ------------------------=
+    # FUNC: fast_input_probe
+    # DESC: Sends a real rapid keyboard burst and checks exact editor length without executing a command or using rendered prose as evidence.
+    # ------------------=
+    def fast_input_probe(self):
+        before = self.wait(lambda state: state[71] == 1, "empty command editor")
+        started = time.monotonic_ns()
+        for code in "1234567890":
+            self.qmp("send-key", {"keys": [{"type": "qcode", "data": code}], "hold-time": 35})
+            time.sleep(.06)
+        after = self.wait(lambda state: state[71] >= 11, "rapid input accepted", timeout=15)
+        assert after[71] == 11 and after[4] == before[4]
+        (self.work / "rapid-input.json").write_text(json.dumps({
+            "keys": 10, "spacing_ms": 60, "accepted_length": after[71] - 1,
+            "elapsed_to_completion_snapshot_ns": time.monotonic_ns() - started,
+            "boundary": "installed QEMU keyboard/editor behavior"}, indent=2))
 
     # ------------------------=
     # FUNC: select_peer
