@@ -446,6 +446,10 @@ def main():
             bv = b.wait(lambda state: state[36] != 0, "peer authenticated pairing transcript")
             assert av[37] == bv[37] and av[40:48] == bv[40:48]
             assert av[32:36] == bv[16:20] and bv[32:36] == av[16:20]
+            # Snapshot publication precedes rendering; allow the preceding refresh
+            # to finish before capturing its visible result, without another UI action.
+            for guest, state in [(a, av), (b, bv)]:
+                guest.wait(lambda value: value[2] >= state[2] + 2, "pairing presentation refresh", timeout=15)
             a.screenshot("pairing-verification")
             b.screenshot("pairing-verification")
             with ThreadPoolExecutor(max_workers=2) as workers:
@@ -459,6 +463,7 @@ def main():
             for guest in guests:
                 guest.wait(lambda state: state[26] == 1, "installed secure session")
                 guest.screenshot("secure-session")
+                guest.frame_report("secure-session")
             report = {"installed_discovery": True, "installed_dual_confirmation": True, "installed_secure_session": True, "full_ms9_lifecycle": False}
             (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
             with ThreadPoolExecutor(max_workers=2) as workers:
