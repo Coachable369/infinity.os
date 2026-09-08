@@ -76,7 +76,10 @@ impl Resolver {
             .servers
             .get_mut(index)
             .ok_or(NetworkError::ResourceLimitExceeded)?;
-        *slot = address;
+        if *slot != address {
+            *slot = address;
+            self.entries.fill(None);
+        }
         Ok(())
     }
 

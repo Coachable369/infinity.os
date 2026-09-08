@@ -115,7 +115,11 @@ impl NetworkRuntime {
         device: FirmwareNetworkDevice,
     ) -> Result<InterfaceId, NetworkError> {
         let interface_id = 2;
-        if self.interfaces.interface(interface_id).is_some() {
+        if let Some(existing) = self.interfaces.interface(interface_id) {
+            let mut observed = existing.device;
+            observed.link_state = device.link_state;
+            observed.operational_state = if device.link_state == LinkState::Up { OperationalState::Ready } else { OperationalState::Offline };
+            self.interfaces.bind_native_device(interface_id, observed)?;
             return Ok(interface_id);
         }
         self.interfaces.add_interface(NetworkInterface {
@@ -364,11 +368,7 @@ impl NetworkRuntime {
             interfaces: self.interfaces.interface_count() as u8,
             addresses: self.interfaces.address_count() as u8,
             routes: self.interfaces.route_count() as u8,
-            resolver_enabled: self
-                .profiles
-                .active()
-                .map(|p| p.resolver_enabled)
-                .unwrap_or(false),
+            resolver_enabled: self.resolver.enabled(),
             policies: self.policy.count() as u8,
             active_connections: self.connections.count() as u8,
             discovered_services: self.discovery.count() as u8,

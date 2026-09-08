@@ -222,6 +222,21 @@ fn firmware_network_discovery_behavior() {
     let setup = network.setup_snapshot();
     assert!(setup.wired_available);
     assert_eq!(setup.wired_link, LinkState::Up);
+    network.register_firmware_device(FirmwareNetworkDevice {
+        firmware_handle: 0, device_id: 1, hardware_address: Some(mac),
+        link_state: LinkState::Down, maximum_frame_size: 1500,
+        can_receive: true, can_transmit: true,
+    }).unwrap();
+    assert_eq!(network.setup_snapshot().wired_link, LinkState::Down);
+    assert_eq!(network.status().connectivity, ConnectivityClass::Offline);
+    network.register_firmware_device(FirmwareNetworkDevice {
+        firmware_handle: 0, device_id: 1, hardware_address: Some(mac),
+        link_state: LinkState::Up, maximum_frame_size: 1500,
+        can_receive: true, can_transmit: true,
+    }).unwrap();
+    assert_eq!(network.status().connectivity, ConnectivityClass::LinkOnly);
+    network.resolver.set_enabled(false);
+    assert!(!network.status().resolver_enabled);
 
     let mut pci_only = NetworkRuntime::new();
     pci_only.initialize().unwrap();
@@ -327,6 +342,10 @@ fn policy_and_transport_behavior() {
 // ------------------=
 fn resolver_and_discovery_behavior() {
     let mut network = NetworkRuntime::new(); network.initialize().unwrap();
+    network.resolver.install_fixture(99, &[IpAddress::V4([10,0,0,99])], 100).unwrap();
+    network.resolver.set_server(0, Some(IpAddress::V4([1,1,1,1]))).unwrap();
+    assert_eq!(network.resolver.resolve(99, 1, 10), Err(NetworkError::ResolverUnavailable));
+    assert_eq!(network.resolver.server(0), Some(IpAddress::V4([1,1,1,1])));
     network.resolver.install_fixture(42, &[IpAddress::V4([10,0,0,4])], 10).unwrap();
     assert_eq!(network.resolver.resolve(42, 1, 9).unwrap().addresses[0], Some(IpAddress::V4([10,0,0,4])));
     assert_eq!(network.resolver.resolve(42, 10, 20), Err(NetworkError::ResolverUnavailable));

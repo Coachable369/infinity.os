@@ -3728,6 +3728,11 @@ impl ConsoleRuntime {
     // DESC: Executes the focused Network page control through typed runtime configuration operations.
     // ------------------=
     fn activate_network_control(&mut self, control: usize) {
+        if self.settings_editing {
+            if !self.commit_network_edit() { return; }
+            self.settings_editing = false;
+            self.reset_input();
+        }
         self.settings_window.control_focus = control.min(5);
         match (self.network_page(), control.min(5)) {
             (0, index @ 0..=3) => {
@@ -3778,6 +3783,14 @@ impl ConsoleRuntime {
             }
             (3, 3) => {
                 let _ = crate::runtime::configure_resolver_from_settings(true, None, None, 0);
+            }
+            (3, 5) => {
+                if let Some((enabled, primary, secondary)) = crate::runtime::with_runtime(|runtime| {
+                    let ipv4 = |address| match address { Some(crate::runtime::network::types::IpAddress::V4(value)) => Some(value), _ => None };
+                    (runtime.network.resolver.enabled(), ipv4(runtime.network.resolver.server(0)), ipv4(runtime.network.resolver.server(1)))
+                }) {
+                    let _ = crate::runtime::configure_resolver_from_settings(enabled, primary, secondary, 0);
+                }
             }
             (4, 5) => {
                 let _ = crate::runtime::remove_default_network_route_from_settings(0);

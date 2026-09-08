@@ -843,6 +843,7 @@ fn activate_console(display: DisplayDevice) {
             last_desktop_items: 0,
             last_desktop_item_positions: [[i32::MIN; 2]; 7],
             last_system_clock: crate::storage::DateTimeConfiguration::utc_default(),
+            last_network_settings: None,
             last_settings_window: crate::ui::system_layout::SettingsWindowState {
                 x: 160,
                 y: 210,

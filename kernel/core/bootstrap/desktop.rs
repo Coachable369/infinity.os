@@ -6016,6 +6016,14 @@ impl super::DisplayDevice {
         else {
             return;
         };
+        let connectivity: &[u8] = match interface {
+            Some(value) if !value.enabled => b"Adapter disabled",
+            Some(_) if status.active_profile == 3 => b"Offline profile",
+            Some(value) if value.device.link_state == crate::runtime::network::types::LinkState::Unknown => b"Link not verified",
+            Some(value) if value.device.link_state == crate::runtime::network::types::LinkState::Down => b"Link disconnected",
+            Some(_) if status.connectivity == crate::runtime::network::types::ConnectivityClass::LinkOnly => b"Link up, no address",
+            _ => connectivity,
+        };
         let (outline_r, outline_g, outline_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         let (selection_r, selection_g, selection_b) =
@@ -6521,7 +6529,7 @@ impl super::DisplayDevice {
                 if resolver_primary.is_some() {
                     b"Primary server configured"
                 } else {
-                    b"Primary server automatic"
+                    b"No primary server configured"
                 },
                 if resolver_secondary.is_some() {
                     b"Secondary server configured"
@@ -9821,6 +9829,10 @@ pub fn system_ui_present(
                 || console.last_settings_window.width != settings_window.width
                 || console.last_settings_window.height != settings_window.height
                 || console.last_settings_window.maximized != settings_window.maximized;
+            let network_settings = if screen == 4 && focus == 6 {
+                crate::runtime::with_runtime(|runtime| (runtime.network.status(), runtime.network.interfaces.interface(2).copied(), runtime.network.resolver.server(0), runtime.network.resolver.server(1)))
+            } else { None };
+            let network_settings_changed = network_settings != console.last_network_settings;
             let settings_content_changed = console.last_settings_window.expanded_row
                 != settings_window.expanded_row
                 || console.last_settings_window.scroll_offset != settings_window.scroll_offset
@@ -9910,6 +9922,9 @@ pub fn system_ui_present(
             {
                 super::retained_windows::invalidate();
             }
+            if network_settings_changed {
+                super::retained_windows::invalidate();
+            }
             let bounded_launcher_change = screen == 7
                 && console.last_system_screen == 7
                 && launcher_state_changed
@@ -9923,6 +9938,7 @@ pub fn system_ui_present(
                 && (!content_changed || matches!(screen, 8 | 9 | 10))
                 && console.last_system_screen == screen
                 && (navigator_surface_changed
+                    || network_settings_changed
                     || window_moved
                     || window_resized
                     || settings_geometry_changed
@@ -10511,6 +10527,7 @@ pub fn system_ui_present(
             console.last_desktop_item_positions = *desktop_item_positions;
             console.last_system_clock = clock;
             console.last_settings_window = settings_window;
+            console.last_network_settings = network_settings;
             console.last_app_window_x = app_window_x;
             console.last_app_window_y = app_window_y;
             console.last_app_window_width = app_window_width;
