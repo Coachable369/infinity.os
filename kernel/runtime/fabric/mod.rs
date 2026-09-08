@@ -3,5 +3,6 @@
 pub mod resources;
 pub mod placement;
 pub mod replica;
+pub mod manifest;
 #[cfg(test)]
 mod tests;

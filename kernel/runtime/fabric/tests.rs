@@ -4,6 +4,42 @@ use super::replica::*;
 use sha2::{Digest, Sha256};
 
 // ------------------------=
+// FUNC: manifest_counts_only_verified_independent_current_versions
+// DESC: Exercises current-version availability, stale isolation, same-node failure domains and canonical bounded decoding.
+// ------------------=
+#[test]
+fn manifest_counts_only_verified_independent_current_versions() {
+    use super::manifest::*;
+    let hash: [u8; 32] = Sha256::digest([7; 32]).into();
+    let mut manifest = Manifest { object: [1; 16], version: 1, length: 32, hash,
+        policy: StorageClass::Critical, generation: 1, authority: NodeId([2; 32]), authority_generation: 1,
+        chunks: [None; MAX_CHUNKS], placements: [None; MAX_PLACEMENTS], healing: None };
+    manifest.chunks[0] = Some(Chunk { content: [3; 16], bytes: 32, hash });
+    for index in 0..3 {
+        manifest.placements[index] = Some(Placement { node: NodeId([index as u8 + 4; 32]),
+            resource: ResourceId([index as u8 + 4; 16]), device: [index as u8 + 4; 16], generation: 1,
+            version: 1, hash, state: PlacementState::Verified });
+    }
+    assert_eq!(manifest.validate(), Ok(()));
+    assert_eq!(manifest.availability(), Availability::Healthy);
+    manifest.placements[2].as_mut().unwrap().state = PlacementState::Offline;
+    assert_eq!(manifest.availability(), Availability::Degraded);
+    manifest.placements[2].as_mut().unwrap().state = PlacementState::Verified;
+    manifest.placements[2].as_mut().unwrap().node = NodeId([4; 32]);
+    assert_eq!(manifest.availability(), Availability::Degraded);
+    manifest.placements[2].as_mut().unwrap().version = 2;
+    assert_eq!(manifest.validate(), Err(ManifestError::Stale));
+    manifest.placements[2].as_mut().unwrap().state = PlacementState::Stale;
+    assert_eq!(manifest.validate(), Ok(()));
+    let mut bytes = [0; MANIFEST_BYTES]; manifest.encode(&mut bytes).unwrap();
+    assert_eq!(Manifest::decode(&bytes), Ok(manifest));
+    for length in 0..MANIFEST_BYTES { assert!(Manifest::decode(&bytes[..length]).is_err()); }
+    bytes[73] = 1; assert_eq!(Manifest::decode(&bytes), Err(ManifestError::Invalid));
+    let mut next = manifest; next.generation += 1; next.chunks[0].as_mut().unwrap().content = [8; 16];
+    assert_eq!(manifest.successor(&next), Err(ManifestError::Conflict));
+}
+
+// ------------------------=
 // FUNC: resource
 // DESC: Creates explicitly labeled host-fixture storage observations, not runtime-discovered hardware.
 // ------------------=

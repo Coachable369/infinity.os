@@ -9,6 +9,43 @@ use sha2::{Digest, Sha256};
 const HEADER: usize = 128;
 pub(crate) const MAX_REPLICA_BYTES: usize = MAX_CONTENT - HEADER;
 
+// ------------------------=
+// FUNC: load_manifest
+// DESC: Reads an authoritative manifest from a native object, fencing its application identity independently from the backing record.
+// ------------------=
+pub(crate) fn load_manifest<D: BlockDevice>(store: &mut ObjectStore<D>, backing: ObjectId,
+    object: ObjectId) -> Result<crate::runtime::fabric::manifest::Manifest, crate::runtime::fabric::manifest::ManifestError> {
+    use crate::runtime::fabric::manifest::{Manifest, ManifestError, MANIFEST_BYTES};
+    let mut bytes = [0; MANIFEST_BYTES];
+    let length = store.read(backing, None, &mut bytes).map_err(|_| ManifestError::Storage)?;
+    let manifest = Manifest::decode(&bytes[..length])?;
+    if manifest.object != object.0 { return Err(ManifestError::Conflict); }
+    Ok(manifest)
+}
+
+// ------------------------=
+// FUNC: commit_manifest
+// DESC: Performs generation-fenced durable replacement under the native transaction root; an identical committed retry is idempotent.
+// ------------------=
+pub(crate) fn commit_manifest<D: BlockDevice>(store: &mut ObjectStore<D>, backing: ObjectId,
+    expected: u64, next: &crate::runtime::fabric::manifest::Manifest) -> Result<(), crate::runtime::fabric::manifest::ManifestError> {
+    use crate::runtime::fabric::manifest::{Manifest, ManifestError, MANIFEST_BYTES};
+    let mut bytes = [0; MANIFEST_BYTES];
+    let length = store.read(backing, None, &mut bytes).map_err(|_| ManifestError::Storage)?;
+    next.validate()?;
+    if length == 0 {
+        if expected != 0 || next.generation != 1 { return Err(ManifestError::Stale); }
+    } else {
+        let previous = Manifest::decode(&bytes[..length])?;
+        if previous == *next && expected.checked_add(1) == Some(next.generation) { return Ok(()); }
+        if previous.generation != expected { return Err(ManifestError::Stale); }
+        previous.successor(next)?;
+    }
+    next.encode(&mut bytes)?;
+    store.replace_state(backing, &bytes).map_err(|_| ManifestError::Storage)?;
+    Ok(())
+}
+
 pub(crate) struct NativeReplica<'a, D: BlockDevice> {
     store: &'a mut ObjectStore<D>,
     backing: ObjectId,

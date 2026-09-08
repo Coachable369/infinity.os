@@ -48,6 +48,46 @@ fn descriptor(bytes: &[u8]) -> ReplicaDescriptor {
 }
 
 // ------------------------=
+// FUNC: manifest_commit_is_generation_fenced_and_crash_atomic
+// DESC: Cuts every native manifest commit write, remounts, and proves readers only see a coherent old or new policy/version generation.
+// ------------------=
+#[test]
+fn manifest_commit_is_generation_fenced_and_crash_atomic() {
+    use crate::{native_fabric::{commit_manifest, load_manifest}, runtime::{fabric::{manifest::*, placement::*}, node::types::NodeId}};
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let app = store.create(b"application", ObjectType::Metadata, Space::Personal, &[]).unwrap();
+    let backing = store.create(b"manifest", ObjectType::Metadata, Space::System, &[]).unwrap();
+    assert_ne!(app, backing);
+    let first = Manifest { object: app.0, version: 1, length: 0, hash: Sha256::digest([]).into(),
+        policy: StorageClass::Critical, generation: 1, authority: NodeId([8; 32]), authority_generation: 1,
+        chunks: [None; MAX_CHUNKS], placements: [None; MAX_PLACEMENTS], healing: None };
+    commit_manifest(&mut store, backing, 0, &first).unwrap();
+    assert_eq!(load_manifest(&mut store, backing, backing), Err(ManifestError::Conflict));
+    let mut next = first; next.generation = 2; next.policy = StorageClass::Protected;
+    assert_eq!(commit_manifest(&mut store, backing, 0, &next), Err(ManifestError::Stale));
+    let baseline = disk.0.borrow().sectors.clone(); disk.0.borrow_mut().writes = 0;
+    commit_manifest(&mut store, backing, 1, &next).unwrap();
+    let count = disk.0.borrow().writes; assert!(count > 0);
+    commit_manifest(&mut store, backing, 1, &next).unwrap();
+    assert_eq!(disk.0.borrow().writes, count);
+    let mut changed = next; changed.hash = [9; 32];
+    assert!(commit_manifest(&mut store, backing, 2, &changed).is_err());
+    for cut in 0..=count {
+        let disk = Disk(Rc::new(RefCell::new(DiskState { sectors: baseline.clone(), writes_left: Some(cut), writes: 0 })));
+        let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+        let _ = commit_manifest(&mut store, backing, 1, &next);
+        drop(store); disk.0.borrow_mut().writes_left = None;
+        let mut store = ObjectStore::mount(disk, 0).unwrap();
+        let loaded = load_manifest(&mut store, backing, app).unwrap();
+        assert!(loaded == first || loaded == next);
+        assert_eq!(loaded.availability(), Availability::Offline);
+        commit_manifest(&mut store, backing, 1, &next).unwrap();
+        assert_eq!(load_manifest(&mut store, backing, app), Ok(next));
+    }
+}
+
+// ------------------------=
 // FUNC: empty_replica_requires_verified_durable_publication
 // DESC: Proves empty content remains staged until its real empty digest is verified and survives remount without fabricated chunks.
 // ------------------=
