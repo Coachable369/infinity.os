@@ -3,6 +3,7 @@
 Never parses guest terminal text. Only fresh, harness-owned disks are modified.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import pathlib
 import socket
@@ -38,7 +39,7 @@ class Guest:
     # FUNC: __init__
     # DESC: Creates one isolated machine with a unique blank disk and independently booted installed generation.
     # ------------------=
-    def __init__(self, work, number, firmware, reuse=False):
+    def __init__(self, work, number, firmware, reuse=False, width=2048, height=2048):
         self.work = work / f"node-{number}"
         if not reuse:
             self.work.mkdir()
@@ -54,6 +55,7 @@ class Guest:
         self.channel = None
         self.capture = 0
         self.mesh_port = None
+        self.width, self.height = width, height
 
     # ------------------------=
     # FUNC: boot
@@ -69,6 +71,7 @@ class Guest:
         qmp.unlink(missing_ok=True)
         self.log = (self.work / ("installer.log" if installer else "installed.log")).open("ab")
         command = ["qemu-system-x86_64", "-machine", "pc", "-cpu", "max", "-m", "4096M",
+                   "-vga", "none", "-device", f"VGA,xres={self.width},yres={self.height},xmax={self.width},ymax={self.height}",
                    "-drive", f"if=pflash,format=raw,readonly=on,file={self.firmware}",
                    "-drive", f"if=ide,index=0,format=raw,file={self.disk}",
                    "-netdev", (f"socket,id=net,{'listen' if self.number == 1 else 'connect'}=127.0.0.1:{self.mesh_port}" if self.mesh_port else "user,id=net"), "-device", f"e1000,netdev=net,mac=02:00:00:00:09:{self.number:02x}",
@@ -370,7 +373,10 @@ def main():
     parser.add_argument("--mesh-installed", action="store_true")
     parser.add_argument("--network-label", default="network")
     parser.add_argument("--nodes-label", default="nodes")
+    parser.add_argument("--width", type=int, default=2048)
+    parser.add_argument("--height", type=int, default=2048)
     args = parser.parse_args()
+    assert 640 <= args.width <= 4096 and 480 <= args.height <= 4096
     work = args.output.resolve()
     if args.resume_installed or args.mesh_installed:
         assert json.loads((work / "install-result.json").read_text())["independent_installs"] == 2
@@ -385,14 +391,15 @@ def main():
                 reserve.bind(("127.0.0.1", 0))
                 port = reserve.getsockname()[1]
             for number in [1, 2]:
-                guest = Guest(work, number, args.firmware, reuse=True)
+                guest = Guest(work, number, args.firmware, reuse=True, width=args.width, height=args.height)
                 guests.append(guest)
                 guest.mesh_port = port
                 guest.boot(False)
             for guest in guests:
                 current = guest.authenticate()
                 assert struct.pack("<4Q", *current[16:20]).hex() == known[guest.number - 1]["node_id"]
-                guest.configure_peer(args.network_label)
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                list(workers.map(lambda guest: guest.configure_peer(args.network_label), guests))
             for guest in guests:
                 guest.wait(lambda state: state[24] == 1 and state[22] == 0, "installed discovery")
                 guest.select_peer(args.nodes_label)
@@ -426,7 +433,7 @@ def main():
             (work / "mesh-result.json").write_text(json.dumps({"installed_discovery": True, "installed_dual_confirmation": True, "installed_secure_session": True, "full_ms9_lifecycle": False}, indent=2))
             return
         for number in [1, 2]:
-            guest = Guest(work, number, args.firmware, reuse=args.resume_installed)
+            guest = Guest(work, number, args.firmware, reuse=args.resume_installed, width=args.width, height=args.height)
             guests.append(guest)
             if args.resume_installed:
                 results.append(guest.onboard())
