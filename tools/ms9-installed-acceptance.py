@@ -519,6 +519,31 @@ def installed_remote_acceptance(a, b, nodes_label):
         guest.select_peer(nodes_label)
 
 # ------------------------=
+# FUNC: installed_domain_inspection
+# DESC: Collects the complete installed peer domain through authenticated native pages and compares it with the peer's authoritative Settings projection.
+# ------------------=
+def installed_domain_inspection(a, b, nodes_label):
+    aid = struct.pack("<4Q", *a.state()[16:20]).hex()
+    bid = struct.pack("<4Q", *b.state()[16:20]).hex()
+    for guest in (a, b):
+        guest.key("esc")
+        guest.launch("command", 5)
+    grant = b.peer_grant(aid, "domain-inspect")
+    result = a.remote_call(bid, grant, 1, domain=True)
+    assert result[91] == 104
+    detail = struct.pack("<16Q", *result[92:108])[:104]
+    current = b.wait(lambda state: not state[22] and state[27] == 1, "authoritative joined domain")
+    assert detail == struct.pack("<13Q", *current[384:397])
+    assert detail[80] == 1 and any(detail[:32]) and any(detail[32:64])
+    a.screenshot("remote-domain-inspection")
+    for guest in (a, b):
+        guest.key("esc")
+        guest.select_peer(nodes_label)
+        guest.key("right")
+        guest.key("right")
+        guest.key("down")
+
+# ------------------------=
 # FUNC: main
 # DESC: Runs two independent fresh installs; artifacts and evidence remain in a newly created output directory.
 # ------------------=
@@ -613,6 +638,10 @@ def main():
             assert joined[0][384:394] == joined[1][384:394]
             for guest in guests:
                 guest.screenshot("synchronized-join")
+            if args.remote_installed:
+                installed_domain_inspection(a, b, args.nodes_label)
+                report["installed_remote_domain_inspection"] = True
+                (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
             for _ in range(3):
                 a.key("down")
             a.key("ret")
