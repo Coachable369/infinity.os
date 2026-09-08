@@ -4,6 +4,7 @@ pub mod types;
 pub mod transport;
 pub mod wire_trust;
 pub mod control;
+mod persistence;
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -502,7 +503,7 @@ impl NodeRuntime {
         if self.identity_seed.iter().all(|value| *value == 0) { return Err(NodeError::EntropyUnavailable); }
         let mut out = [0u8; NODE_STATE_BYTES];
         out[..8].copy_from_slice(NODE_STATE_MAGIC);
-        out[8..10].copy_from_slice(&1u16.to_le_bytes());
+        out[8..10].copy_from_slice(&2u16.to_le_bytes());
         out[10..12].copy_from_slice(&(NODE_STATE_BYTES as u16).to_le_bytes());
         out[16..48].copy_from_slice(&self.identity_seed);
         out[48..80].copy_from_slice(&local_id.0);
@@ -534,6 +535,7 @@ impl NodeRuntime {
             out[at + 40..at + 48].copy_from_slice(&member.joined_at.to_le_bytes());
             out[at + 48..at + 56].copy_from_slice(&member.last_heartbeat.to_le_bytes());
         }
+        self.encode_audit(&mut out);
         let checksum = state_crc32(&out[..NODE_STATE_BYTES - 4]);
         out[NODE_STATE_BYTES - 4..].copy_from_slice(&checksum.to_le_bytes());
         Ok(out)
@@ -544,9 +546,32 @@ impl NodeRuntime {
     // DESC: Validates and restores the typed node trust object while keeping private identity material non-inspectable.
     // ------------------=
     pub fn restore_state(&mut self, input: &[u8]) -> Result<NodeId, NodeError> {
-        if input.len() != NODE_STATE_BYTES || &input[..8] != NODE_STATE_MAGIC || u16::from_le_bytes([input[8], input[9]]) != 1 || u16::from_le_bytes([input[10], input[11]]) as usize != NODE_STATE_BYTES { return Err(NodeError::UnsupportedState); }
-        let expected = u32::from_le_bytes(input[NODE_STATE_BYTES - 4..].try_into().map_err(|_| NodeError::StateCorrupt)?);
-        if state_crc32(&input[..NODE_STATE_BYTES - 4]) != expected { return Err(NodeError::StateCorrupt); }
+        let mut restored = Self::new();
+        match restored.decode_state(input) {
+            Ok(id) => {
+                self.clear_ephemeral();
+                self.identity_seed.zeroize();
+                *self = restored;
+                Ok(id)
+            }
+            Err(error) => {
+                restored.identity_seed.zeroize();
+                Err(error)
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: decode_state
+    // DESC: Decodes into an isolated candidate; callers install it only after every record validates.
+    // ------------------=
+    fn decode_state(&mut self, input: &[u8]) -> Result<NodeId, NodeError> {
+        if input.len() < 12 { return Err(NodeError::UnsupportedState); }
+        let version = u16::from_le_bytes([input[8], input[9]]);
+        let size = match version { 1 => LEGACY_NODE_STATE_BYTES, 2 => NODE_STATE_BYTES, _ => return Err(NodeError::UnsupportedState) };
+        if input.len() != size || &input[..8] != NODE_STATE_MAGIC || u16::from_le_bytes([input[10], input[11]]) as usize != size { return Err(NodeError::UnsupportedState); }
+        let expected = u32::from_le_bytes(input[size - 4..].try_into().map_err(|_| NodeError::StateCorrupt)?);
+        if state_crc32(&input[..size - 4]) != expected { return Err(NodeError::StateCorrupt); }
         self.identity_seed.copy_from_slice(&input[16..48]);
         let key_ref = self.crypto.initialize_seed(&self.identity_seed).map_err(map_crypto_error)?;
         let public = self.crypto.public_identity().map_err(map_crypto_error)?;
@@ -562,6 +587,7 @@ impl NodeRuntime {
             let mut node_id = [0u8; 32]; node_id.copy_from_slice(&input[at..at + 32]);
             let mut public_key = [0u8; 32]; public_key.copy_from_slice(&input[at + 32..at + 64]);
             if node_id_from_public(&public_key).0 != node_id { return Err(NodeError::IdentityMismatch); }
+            if self.discovered.iter().flatten().any(|node| node.id.0 == node_id) { return Err(NodeError::DuplicateIdentity); }
             let mut categories = [PolicyDecision::Deny; 12];
             for category in 0..12 { categories[category] = u8_to_decision(input[at + 88 + category])?; }
             self.discovered[index] = Some(NodeDescriptor { id: NodeId(node_id), public_key, trust: u8_to_trust(input[at + 64])?, reachability: u8_to_reachability(input[at + 65])?, protocol_min: u16::from_le_bytes([input[at + 66], input[at + 67]]), protocol_max: u16::from_le_bytes([input[at + 68], input[at + 69]]), service_bits: u64::from_le_bytes(input[at + 72..at + 80].try_into().map_err(|_| NodeError::StateCorrupt)?), last_seen: u64::from_le_bytes(input[at + 80..at + 88].try_into().map_err(|_| NodeError::StateCorrupt)?), policy: NodeTrustPolicy { categories, scope: u64::from_le_bytes(input[at + 104..at + 112].try_into().map_err(|_| NodeError::StateCorrupt)?), expires_at: u64::from_le_bytes(input[at + 112..at + 120].try_into().map_err(|_| NodeError::StateCorrupt)?), version: u32::from_le_bytes(input[at + 120..at + 124].try_into().map_err(|_| NodeError::StateCorrupt)?) } });
@@ -572,11 +598,13 @@ impl NodeRuntime {
         for index in 0..member_count {
             let at = MEMBER_RECORD_OFFSET + index * MEMBER_RECORD_BYTES;
             let mut node_id = [0u8; 32]; node_id.copy_from_slice(&input[at..at + 32]);
+            if input[at + 33] > 1 || self.members.iter().flatten().any(|member| member.node.0 == node_id) { return Err(NodeError::StateCorrupt); }
             self.members[index] = Some(MeshMember { node: NodeId(node_id), role: u8_to_role(input[at + 32])?, enabled: input[at + 33] != 0, joined_at: u64::from_le_bytes(input[at + 40..at + 48].try_into().map_err(|_| NodeError::StateCorrupt)?), last_heartbeat: u64::from_le_bytes(input[at + 48..at + 56].try_into().map_err(|_| NodeError::StateCorrupt)?) });
         }
         self.next_id = u64::from_le_bytes(input[88..96].try_into().map_err(|_| NodeError::StateCorrupt)?).max(1);
         self.audit_sequence = u64::from_le_bytes(input[96..104].try_into().map_err(|_| NodeError::StateCorrupt)?);
         self.control_version = u64::from_le_bytes(input[104..112].try_into().map_err(|_| NodeError::StateCorrupt)?);
+        if version == 2 { self.decode_audit(input)?; }
         Ok(id)
     }
 
