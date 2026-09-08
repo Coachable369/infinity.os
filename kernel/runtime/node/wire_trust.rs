@@ -68,6 +68,7 @@ pub struct ReceivedData {
     pub bytes: [u8; MAX_DATA],
 }
 
+#[derive(Clone)]
 struct Transaction {
     id: [u8; 32],
     link: LinkSnapshot,
@@ -88,7 +89,9 @@ struct Transaction {
     attempts: u8,
 }
 
+#[derive(Clone)]
 pub struct WireTrust {
+    pub persist_pairing: fn(&[u8; NODE_STATE_BYTES]) -> bool,
     seed: Option<[u8; 32]>,
     counter: u64,
     transactions: [Option<Transaction>; MAX_TRANSACTIONS],
@@ -101,11 +104,19 @@ pub struct WireTrust {
 
 impl WireTrust {
     // ------------------------=
+    // FUNC: transaction_for_pairing
+    // DESC: Resolves an exact local pairing handle to its authenticated wire transaction without exposing secret state.
+    // ------------------=
+    pub fn transaction_for_pairing(&self, handle: u64) -> Option<[u8; 32]> {
+        self.transactions.iter().flatten().find(|transaction| transaction.pairing == handle && handle != 0).map(|transaction| transaction.id)
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Creates bounded transactions without identity material or network authority.
     // ------------------=
     pub const fn new() -> Self {
         Self {
+            persist_pairing: reject_unconfigured_persistence,
             seed: None,
             counter: 0,
             transactions: [const { None }; MAX_TRANSACTIONS],
@@ -184,7 +195,7 @@ impl WireTrust {
             self.retire(t.id)?;
             index
         } else {
-            if reconnect {
+            if reconnect && nodes.paired_digest(peer.id).is_none() {
                 return Err(NodeError::NotTrusted);
             }
             self.transactions
@@ -196,12 +207,13 @@ impl WireTrust {
             self.transactions[index]
                 .as_ref()
                 .map(|t| t.paired)
+                .or_else(|| nodes.paired_digest(peer.id))
                 .unwrap_or([0; 32])
         } else {
             [0; 32]
         };
         let pairing = if reconnect {
-            self.transactions[index].as_ref().unwrap().pairing
+            self.transactions[index].as_ref().map(|transaction| transaction.pairing).unwrap_or(0)
         } else {
             nodes.begin_pairing(peer.id, now)?.id
         };
@@ -309,7 +321,7 @@ impl WireTrust {
             signed(nodes, CONFIRM, t.link.peer.unwrap(), id, &t.digest)?,
             now,
         );
-        commit_confirmation(nodes, t, now)
+        commit_confirmation(nodes, t, now, self.persist_pairing)
     }
 
     // ------------------------=
@@ -670,7 +682,7 @@ impl WireTrust {
                 }
                 index
             } else {
-                if kind == SESSION_INIT {
+                if kind == SESSION_INIT && (peer.trust != TrustState::Trusted || nodes.paired_digest(peer.id).map(|digest| body[123..155] != digest).unwrap_or(true)) {
                     return Err(NodeError::NotTrusted);
                 }
                 self.transactions
@@ -692,7 +704,7 @@ impl WireTrust {
             let pairing = if kind == INIT {
                 nodes.begin_pairing(peer.id, now)?.id
             } else {
-                self.transactions[index].as_ref().unwrap().pairing
+                self.transactions[index].as_ref().map(|transaction| transaction.pairing).unwrap_or(0)
             };
             let entropy = self.fresh()?;
             let (local_offer, secret) = offer(nodes, link, scope, paired, entropy)?;
@@ -894,7 +906,7 @@ impl WireTrust {
                     return Err(NodeError::VerificationMismatch);
                 }
                 t.remote_confirmed = true;
-                commit_confirmation(nodes, t, now)?;
+                commit_confirmation(nodes, t, now, self.persist_pairing)?;
             }
             CANCEL => {
                 if body.len() != 32 {
@@ -1240,15 +1252,17 @@ fn commit_confirmation(
     nodes: &mut NodeRuntime,
     t: &mut Transaction,
     now: u64,
+    persist: fn(&[u8; NODE_STATE_BYTES]) -> bool,
 ) -> Result<(), NodeError> {
     if t.local_confirmed && t.remote_confirmed {
         if t.stage != WireState::Confirmed {
-            nodes.confirm_pairing(
+            nodes.commit_wire_pairing(
                 t.pairing,
                 verification_code(t.digest),
-                true,
+                t.digest,
                 now,
                 correlation(t.id),
+                persist,
             )?;
         }
         t.paired = t.digest;
@@ -1262,6 +1276,12 @@ fn commit_confirmation(
     }
     Ok(())
 }
+
+// ------------------------=
+// FUNC: reject_unconfigured_persistence
+// DESC: Fails closed until the host service explicitly supplies its durable pairing writer.
+// ------------------=
+fn reject_unconfigured_persistence(_: &[u8; NODE_STATE_BYTES]) -> bool { false }
 // ------------------------=
 // FUNC: queue
 // DESC: Replaces one bounded retransmission slot with a new authenticated protocol step.

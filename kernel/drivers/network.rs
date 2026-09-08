@@ -38,8 +38,8 @@ pub fn poll() {
                 NEXT_POLL = now.saturating_add(1_000_000);
                 if let Some(nic) = (&mut *(&raw mut NIC)).as_mut() {
                     pump(nic, now / 1_000_000_000);
-                    crate::runtime::poll_node_transport(now / 1_000_000_000);
                 }
+                crate::runtime::poll_node_transport(now / 1_000_000_000);
             }
         }
         BUSY.store(false, Ordering::Release);

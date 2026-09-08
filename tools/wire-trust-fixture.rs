@@ -21,6 +21,12 @@ pub struct Fixture {
 }
 
 // ------------------------=
+// FUNC: engineering_pairing_writer
+// DESC: Explicit in-memory fixture boundary; this is never an installed durability claim or production fallback.
+// ------------------=
+fn engineering_pairing_writer(_: &[u8; crate::runtime::node::types::NODE_STATE_BYTES]) -> bool { true }
+
+// ------------------------=
 // FUNC: configured
 // DESC: Provides explicit test deployment policy, then provisions the real production connected endpoint and independent node identity.
 // ------------------=
@@ -113,6 +119,8 @@ pub fn configured(mac: [u8; 6], entropy: [u8; 32]) -> Fixture {
         .unwrap();
     let mut transport = NodeTransport::new();
     transport.initialize(&entropy, true).unwrap();
+    transport.trust.persist_pairing = engineering_pairing_writer;
+    transport.persist_discovery = engineering_pairing_writer;
     let connection = transport
         .provision(
             &mut network,

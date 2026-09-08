@@ -5,6 +5,9 @@ pub mod transport;
 pub mod wire_trust;
 pub mod control;
 mod persistence;
+pub mod inspection;
+pub mod membership;
+pub mod reconciliation;
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -63,6 +66,7 @@ impl DiscoveryAdvertisement {
     }
 }
 
+#[derive(Clone)]
 pub struct NodeRuntime {
     crypto: NodeCrypto,
     identity_seed: [u8; 32],
@@ -77,6 +81,8 @@ pub struct NodeRuntime {
     next_id: u64,
     audit_sequence: u64,
     control_version: u64,
+    paired_digests: [[u8; 32]; MAX_DISCOVERED_NODES],
+    domains: [Option<membership::Domain>; membership::MAX_DOMAINS],
     discovery_window: u64,
     discovery_count: u16,
 }
@@ -92,7 +98,7 @@ impl NodeRuntime {
             discovered: [None; MAX_DISCOVERED_NODES], pairings: [None; MAX_PAIRINGS],
             sessions: [None; MAX_SESSIONS], grants: [None; MAX_REMOTE_GRANTS],
             members: [None; MAX_MESH_MEMBERS], audit: [None; MAX_AUDIT_RECORDS],
-            next_id: 1, audit_sequence: 0, control_version: 0, discovery_window: 0, discovery_count: 0,
+            next_id: 1, audit_sequence: 0, control_version: 0, paired_digests: [[0; 32]; MAX_DISCOVERED_NODES], domains: [None; membership::MAX_DOMAINS], discovery_window: 0, discovery_count: 0,
         }
     }
 
@@ -503,7 +509,7 @@ impl NodeRuntime {
         if self.identity_seed.iter().all(|value| *value == 0) { return Err(NodeError::EntropyUnavailable); }
         let mut out = [0u8; NODE_STATE_BYTES];
         out[..8].copy_from_slice(NODE_STATE_MAGIC);
-        out[8..10].copy_from_slice(&2u16.to_le_bytes());
+        out[8..10].copy_from_slice(&3u16.to_le_bytes());
         out[10..12].copy_from_slice(&(NODE_STATE_BYTES as u16).to_le_bytes());
         out[16..48].copy_from_slice(&self.identity_seed);
         out[48..80].copy_from_slice(&local_id.0);
@@ -516,7 +522,8 @@ impl NodeRuntime {
             let at = NODE_RECORD_OFFSET + index * NODE_RECORD_BYTES;
             out[at..at + 32].copy_from_slice(&node.id.0);
             out[at + 32..at + 64].copy_from_slice(&node.public_key);
-            out[at + 64] = trust_to_u8(node.trust);
+            // Pending consent never survives restart as authority. Only confirmed receipts do.
+            out[at + 64] = trust_to_u8(if node.trust == TrustState::PairingPending { TrustState::Untrusted } else { node.trust });
             out[at + 65] = reachability_to_u8(node.reachability);
             out[at + 66..at + 68].copy_from_slice(&node.protocol_min.to_le_bytes());
             out[at + 68..at + 70].copy_from_slice(&node.protocol_max.to_le_bytes());
@@ -536,6 +543,8 @@ impl NodeRuntime {
             out[at + 48..at + 56].copy_from_slice(&member.last_heartbeat.to_le_bytes());
         }
         self.encode_audit(&mut out);
+        self.encode_pairing_receipts(&mut out);
+        self.encode_domains(&mut out);
         let checksum = state_crc32(&out[..NODE_STATE_BYTES - 4]);
         out[NODE_STATE_BYTES - 4..].copy_from_slice(&checksum.to_le_bytes());
         Ok(out)
@@ -568,7 +577,7 @@ impl NodeRuntime {
     fn decode_state(&mut self, input: &[u8]) -> Result<NodeId, NodeError> {
         if input.len() < 12 { return Err(NodeError::UnsupportedState); }
         let version = u16::from_le_bytes([input[8], input[9]]);
-        let size = match version { 1 => LEGACY_NODE_STATE_BYTES, 2 => NODE_STATE_BYTES, _ => return Err(NodeError::UnsupportedState) };
+        let size = match version { 1 => LEGACY_NODE_STATE_BYTES, 2 => V2_NODE_STATE_BYTES, 3 => NODE_STATE_BYTES, _ => return Err(NodeError::UnsupportedState) };
         if input.len() != size || &input[..8] != NODE_STATE_MAGIC || u16::from_le_bytes([input[10], input[11]]) as usize != size { return Err(NodeError::UnsupportedState); }
         let expected = u32::from_le_bytes(input[size - 4..].try_into().map_err(|_| NodeError::StateCorrupt)?);
         if state_crc32(&input[..size - 4]) != expected { return Err(NodeError::StateCorrupt); }
@@ -604,7 +613,9 @@ impl NodeRuntime {
         self.next_id = u64::from_le_bytes(input[88..96].try_into().map_err(|_| NodeError::StateCorrupt)?).max(1);
         self.audit_sequence = u64::from_le_bytes(input[96..104].try_into().map_err(|_| NodeError::StateCorrupt)?);
         self.control_version = u64::from_le_bytes(input[104..112].try_into().map_err(|_| NodeError::StateCorrupt)?);
-        if version == 2 { self.decode_audit(input)?; }
+        if version >= 2 { self.decode_audit(input)?; }
+        if version >= 3 { self.decode_pairing_receipts(input)?; }
+        if version >= 3 { self.decode_domains(input)?; }
         Ok(id)
     }
 

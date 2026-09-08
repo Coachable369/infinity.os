@@ -80,6 +80,8 @@ pub fn run(a: &mut Fixture, b: &mut Fixture, now: &mut u64) {
         policy.categories[1] = PolicyDecision::Allow;
         f.nodes.update_policy(peer, policy, *now, 0).unwrap();
     }
+    inspect_pages(a, b, now, OperationId::NodeInspect, crate::node::inspection::NODE_DETAIL_BYTES);
+    inspect_pages(a, b, now, OperationId::NodeSessionInspect, crate::node::inspection::SESSION_DETAIL_BYTES);
     let ar = b
         .nodes
         .grant_remote(
@@ -126,7 +128,11 @@ pub fn run(a: &mut Fixture, b: &mut Fixture, now: &mut u64) {
         )
         .unwrap();
     b.iop.remote.set_mutation_service_ready(false);
+    b.execute_remote = false;
     let id = request(a, bid, mutation, OperationId::NodePolicyUpdate, 0, *now);
+    advance(a, b, now, 5);
+    b.iop.execute_remote_node(&mut b.nodes, *now);
+    b.execute_remote = true;
     advance(a, b, now, 8);
     assert_eq!(result(a, id), Err(RemoteError::ServiceUnavailable));
     b.iop.remote.set_mutation_service_ready(true);
@@ -270,4 +276,36 @@ pub fn run(a: &mut Fixture, b: &mut Fixture, now: &mut u64) {
     b.execute_remote = true;
     advance(a, b, now, 8);
     assert_eq!(b.iop.remote.executed, before);
+}
+
+// ------------------------=
+// FUNC: inspect_pages
+// DESC: Reconstructs a full remote selected record over encrypted Ethernet frames while discovery and session counters continue advancing.
+// ------------------=
+fn inspect_pages(a: &mut Fixture, b: &mut Fixture, now: &mut u64, operation: OperationId, length: usize) {
+    let aid = a.nodes.local_id().unwrap(); let bid = b.nodes.local_id().unwrap();
+    let grant = b.nodes.grant_remote(aid, operation.machine_id(), 0, 1, *now + 300, *now, 0).unwrap();
+    let cap = a.capabilities.grant(CapabilityType::ServiceCall, operation.machine_id() as u64, 1, 0, a.owner, a.owner, Some(*now + 300), 0).unwrap();
+    let mut input = crate::node_request(aid, operation);
+    let mut bytes = [0; 128];
+    for offset in (0..length).step_by(crate::node::inspection::PAGE_BYTES) {
+        input.flags = offset as u32;
+        let id = a.iop.request_remote_node(&a.capabilities, &a.nodes, a.owner, cap, bid, grant, input, 0xabc, 0xdef, *now, *now + 30).unwrap();
+        advance(a, b, now, 8);
+        let response = result(a, id).unwrap();
+        assert_eq!(response.node_id, aid.0); assert_eq!(response.flags >> 16, length as u32); assert_eq!(response.flags & 0xffff, offset as u32);
+        if offset != 0 { assert_eq!(response.handle, input.handle); }
+        input.handle = response.handle;
+        let count = 24.min(length - offset);
+        bytes[offset..offset + count].copy_from_slice(&crate::node::inspection::page_data(response)[..count]);
+    }
+    assert_eq!(&bytes[..32], &aid.0);
+    if operation == OperationId::NodeInspect { assert_eq!(&bytes[32..64], &a.nodes.advertise(1, 1, *now).unwrap().public_key); }
+    else {
+        let session = b.nodes.sessions().iter().flatten().find(|s| s.peer == aid && s.state == crate::node::types::SessionState::Established).unwrap();
+        assert_eq!(&bytes[40..56], &session.protocol_reference); assert_eq!(bytes[56], 1);
+        assert!(u64::from_le_bytes(bytes[72..80].try_into().unwrap()) < session.receive_sequence);
+    }
+    a.capabilities.retire_leaf(cap, a.owner).unwrap();
+    b.nodes.revoke_remote(grant, *now, 0).unwrap();
 }

@@ -8,7 +8,8 @@ pub const MAX_REMOTE_GRANTS: usize = 32;
 pub const MAX_MESH_MEMBERS: usize = 16;
 pub const MAX_AUDIT_RECORDS: usize = 64;
 pub const LEGACY_NODE_STATE_BYTES: usize = 4096;
-pub const NODE_STATE_BYTES: usize = 8192;
+pub const V2_NODE_STATE_BYTES: usize = 8192;
+pub const NODE_STATE_BYTES: usize = 12288;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct NodeId(pub [u8; 32]);

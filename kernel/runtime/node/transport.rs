@@ -47,6 +47,8 @@ pub struct LinkSnapshot {
 }
 
 pub struct NodeTransport {
+    pub persist_discovery: fn(&[u8; super::types::NODE_STATE_BYTES]) -> bool,
+    last_offline_attempt: Option<u64>,
     pub trust: super::wire_trust::WireTrust,
     seed: Option<[u8; 32]>,
     counter: u64,
@@ -62,7 +64,7 @@ impl NodeTransport {
     // DESC: Creates no connections, authority, peer assumptions or traffic at boot.
     // ------------------=
     pub const fn new() -> Self {
-        Self { trust: super::wire_trust::WireTrust::new(), seed: None, counter: 0, links: [None; MAX_LINKS], cursor: 0, rejected_packets: 0, last_error: None }
+        Self { persist_discovery: reject_unconfigured_discovery, last_offline_attempt: None, trust: super::wire_trust::WireTrust::new(), seed: None, counter: 0, links: [None; MAX_LINKS], cursor: 0, rejected_packets: 0, last_error: None }
     }
 
     // ------------------------=
@@ -131,6 +133,14 @@ impl NodeTransport {
     }
 
     // ------------------------=
+    // FUNC: peer_link
+    // DESC: Selects only an already authenticated link to the exact peer; this never provisions network authority.
+    // ------------------=
+    pub fn peer_link(&self, peer: NodeId) -> Option<LinkSnapshot> {
+        self.links.iter().flatten().find(|link| link.peer == Some(peer)).map(|link| LinkSnapshot { connection: link.authority.connection, peer: link.peer, local: link.local, remote: link.remote })
+    }
+
+    // ------------------------=
     // FUNC: detach
     // DESC: Removes transport state without erasing persistent peer trust or creating grants.
     // ------------------=
@@ -150,9 +160,16 @@ impl NodeTransport {
     pub fn poll(&mut self, nodes: &mut NodeRuntime, network: &mut NetworkRuntime, capabilities: &CapabilityManager, now: u64) -> Option<DiscoveryChange> {
         let seed = self.seed?;
         let mut offline = None;
-        for peer in nodes.discovered.iter_mut().flatten() {
+        for peer in nodes.discovered.iter().flatten() {
             if peer.reachability == super::types::Reachability::Online && now.saturating_sub(peer.last_seen)>super::DISCOVERY_LEASE_TICKS {
-                peer.reachability=super::types::Reachability::Offline;offline=Some(DiscoveryChange::Offline(peer.id));break;
+                offline=Some(DiscoveryChange::Offline(peer.id));break;
+            }
+        }
+        if let Some(DiscoveryChange::Offline(peer)) = offline {
+            if self.last_offline_attempt == Some(now) { offline = None; }
+            else {
+                self.last_offline_attempt = Some(now);
+                if let Err(error) = nodes.commit_offline(peer, now, self.persist_discovery) { self.last_error = Some(error); offline = None; }
             }
         }
         self.trust.tick(nodes, now);
@@ -181,7 +198,7 @@ impl NodeTransport {
                 let result = if super::wire_trust::accepts(bytes) {
                     let snapshot = LinkSnapshot { connection: authority.connection, peer: link.peer, local: link.local, remote: link.remote };
                     self.trust.ingest(nodes, snapshot, bytes, now).map(|_| None)
-                } else { process_packet(link, nodes, bytes, now) };
+                } else { process_packet(link, nodes, bytes, now, self.persist_discovery) };
                 match result {
                     Ok(result) => change = result,
                     Err(error) => {
@@ -204,6 +221,13 @@ impl NodeTransport {
             link.next_challenge = now.saturating_add(10);
         }
         if now >= link.next_send {
+            if let Some(peer) = link.peer {
+                let recovery = (0..super::membership::MAX_DOMAINS).any(|index| nodes.domain_proposal(index, now).map(|(target, _)| target == peer).unwrap_or(false));
+                if recovery && self.trust.session(peer).is_none() && nodes.paired_digest(peer).is_some() {
+                    let snapshot = LinkSnapshot { connection: authority.connection, peer: link.peer, local: link.local, remote: link.remote };
+                    let _ = self.trust.begin(nodes, snapshot, 0, true, now);
+                }
+            }
             let challenge = challenge_packet(link.nonce);
             let protocol = self.trust.outgoing(authority.connection, now);
             let outgoing = protocol.as_ref().or(link.pending.as_ref()).or_else(|| if now < link.expires { Some(&challenge) } else { None });
@@ -233,7 +257,7 @@ fn challenge_packet(nonce: [u8; 32]) -> Packet {
 // FUNC: process_packet
 // DESC: Authenticates a challenge-bound announcement before committing liveness, consuming each nonce once.
 // ------------------=
-fn process_packet(link: &mut Link, nodes: &mut NodeRuntime, bytes: &[u8], now: u64) -> Result<Option<DiscoveryChange>, NodeError> {
+fn process_packet(link: &mut Link, nodes: &mut NodeRuntime, bytes: &[u8], now: u64, persist: fn(&[u8; super::types::NODE_STATE_BYTES]) -> bool) -> Result<Option<DiscoveryChange>, NodeError> {
     if bytes.len() == 40 && &bytes[..8] == CHALLENGE {
         if link.pending.is_some() { return Err(NodeError::ResourceLimit); }
         let local = nodes.local_id.ok_or(NodeError::EntropyUnavailable)?;
@@ -262,13 +286,13 @@ fn process_packet(link: &mut Link, nodes: &mut NodeRuntime, bytes: &[u8], now: u
     NodeCrypto::verify(&public, &bytes[..135], &signature).map_err(map_crypto_error)?;
     let id = NodeId(node);
     let prior = nodes.discovered.iter().flatten().find(|peer| peer.id == id).copied();
-    nodes.record_discovery(DiscoveryAdvertisement {
+    nodes.commit_discovery(DiscoveryAdvertisement {
         node: id, public_key: public,
         protocol_min: u16::from_le_bytes([bytes[104], bytes[105]]),
         protocol_max: u16::from_le_bytes([bytes[106], bytes[107]]),
         service_bits: u64::from_le_bytes(bytes[108..116].try_into().map_err(|_| NodeError::InvalidAdvertisement)?),
         sequence: 0, expires_at: now.saturating_add(super::DISCOVERY_LEASE_TICKS), signature: [0; 64],
-    }, now)?;
+    }, now, persist)?;
     link.peer = Some(id);
     link.expires = 0;
     link.nonce.zeroize();
@@ -278,6 +302,12 @@ fn process_packet(link: &mut Link, nodes: &mut NodeRuntime, bytes: &[u8], now: u
         _ => None,
     })
 }
+
+// ------------------------=
+// FUNC: reject_unconfigured_discovery
+// DESC: Prevents production discovery from silently committing volatile trust state when storage is unavailable.
+// ------------------=
+fn reject_unconfigured_discovery(_: &[u8; super::types::NODE_STATE_BYTES]) -> bool { false }
 
 // ------------------------=
 // FUNC: endpoint_bytes

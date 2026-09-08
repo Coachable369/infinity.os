@@ -63,7 +63,15 @@ fn dispatch_request(
         &request.encode(),
     )?;
     router.send(2, message, capabilities, now)?;
-    iop::dispatch_node_operation(router, capabilities, nodes, operation, 2, 1, service, now)?;
+    if iop::node_read_operation(operation) {
+        iop::dispatch_node_operation(router, capabilities, nodes, operation, 2, 1, service, now)?;
+    } else {
+        router.dispatch_node_transaction(capabilities, nodes, operation, 2, 1, service, now, |nodes, request, correlation, causation| {
+            if matches!(operation, iop::OperationId::NodeJoin | iop::OperationId::NodeLeave) {
+                nodes.commit_domain_intent(operation, request, now, correlation, causation, |_| true)
+            } else { nodes.commit_control(operation, request, now, correlation, causation, |_| true) }
+        })?;
+    }
     iop::NodeOperationV1::decode(router.receive(1, now)?.bytes())
 }
 
@@ -108,9 +116,11 @@ fn iop_node_management_operations() {
     router.register_endpoint(2, SecurityIdentity([0x52; 16])).unwrap();
 
     let listed = dispatch_request(&mut router, &mut capabilities, &mut local, OperationId::NodeList, node_request(remote_id, OperationId::NodeList), 100, 4).unwrap();
-    assert_eq!(listed.value, 1);
+    assert_eq!(listed.flags >> 16, 32);
+    assert_eq!(&node::inspection::page_data(listed)[..], &remote_id.0[..24]);
     let inspected = dispatch_request(&mut router, &mut capabilities, &mut local, OperationId::NodeInspect, node_request(remote_id, OperationId::NodeInspect), 101, 5).unwrap();
-    assert_eq!(inspected.value, 3);
+    assert_eq!(inspected.flags >> 16, node::inspection::NODE_DETAIL_BYTES as u32);
+    assert_eq!(&node::inspection::page_data(inspected)[..], &remote_id.0[..24]);
 
     let mut restricted = node_request(remote_id, OperationId::NodeTrustUpdate);
     restricted.value = 4;
@@ -128,8 +138,13 @@ fn iop_node_management_operations() {
     dispatch_request(&mut router, &mut capabilities, &mut local, OperationId::NodePolicyUpdate, policy, 104, 8).unwrap();
     assert_eq!(local.discovered_nodes()[0].unwrap().policy.categories[2], node::types::PolicyDecision::SessionOnly);
 
+    policy.flags = 1;
+    policy.value = 1;
+    policy.scope = 0;
+    dispatch_request(&mut router, &mut capabilities, &mut local, OperationId::NodePolicyUpdate, policy, 114, 8).unwrap();
     dispatch_request(&mut router, &mut capabilities, &mut local, OperationId::NodeJoin, node_request(remote_id, OperationId::NodeJoin), 105, 9).unwrap();
-    assert_eq!(local.mesh_members().iter().flatten().filter(|member| member.enabled).count(), 1);
+    assert_eq!(local.mesh_members().iter().flatten().filter(|member| member.enabled).count(), 0);
+    assert!(local.domain_proposal(0, 9).is_some());
     dispatch_request(&mut router, &mut capabilities, &mut local, OperationId::NodeLeave, node_request(remote_id, OperationId::NodeLeave), 106, 10).unwrap();
     assert_eq!(local.mesh_members().iter().flatten().filter(|member| member.enabled).count(), 0);
     let audits = dispatch_request(&mut router, &mut capabilities, &mut local, OperationId::NodeAuditList, node_request(remote_id, OperationId::NodeAuditList), 107, 11).unwrap();
@@ -165,45 +180,29 @@ fn iop_node_management_operations() {
 
 // ------------------------=
 // FUNC: iop_pairing_round_trip
-// DESC: Sends pairing operations through bounded IOP queues and proves human approval is enforced by the service adapter.
+// DESC: Proves the read dispatcher cannot bypass durable wire or membership transactions, even with a valid exact-operation capability.
 // ------------------=
 fn iop_pairing_round_trip() {
     use capability::{CapabilityManager, CapabilityType};
     use execution::SecurityIdentity;
-    use iop::{IopMessage, IopRouter, NodeOperationV1, OperationId, NODE_OPERATION_HUMAN_APPROVED};
-
-    let mut local = NodeRuntime::new();
-    let mut remote = NodeRuntime::new();
-    local.initialize(&[0x71; 32], true).unwrap();
-    let remote_id = remote.initialize(&[0x72; 32], true).unwrap();
-    local.discover(remote.advertise(1, 1, 10).unwrap(), 10).unwrap();
+    use iop::{IopMessage, IopRouter, OperationId};
+    let mut nodes = NodeRuntime::new();
+    nodes.initialize(&[0x71; 32], true).unwrap();
+    let before = nodes.encode_state().unwrap();
     let caller = SecurityIdentity([0x31; 16]);
     let service = SecurityIdentity([0x32; 16]);
-    let issuer = SecurityIdentity([0x33; 16]);
-    let mut capabilities = CapabilityManager::new();
-    let pair_capability = capabilities.grant(CapabilityType::ServiceCall, OperationId::NodePairBegin.machine_id() as u64, 1, 0, issuer, caller, Some(100), 0).unwrap();
-    let confirm_capability = capabilities.grant(CapabilityType::ServiceCall, OperationId::NodePairConfirm.machine_id() as u64, 1, 0, issuer, caller, Some(100), 0).unwrap();
+    let mut caps = CapabilityManager::new();
     let mut router = IopRouter::new();
     router.register_endpoint(1, caller).unwrap();
     router.register_endpoint(2, service).unwrap();
-
-    let begin = NodeOperationV1 { node_id: remote_id.0, handle: 0, scope: 0, lease_deadline: 0, operation: OperationId::NodePairBegin.machine_id(), rights: 0, value: 0, flags: 0, schema_version: 1 };
-    let message = IopMessage::request(OperationId::NodePairBegin, 1, caller, pair_capability, 90, 44, &begin.encode()).unwrap();
-    router.send(2, message, &capabilities, 11).unwrap();
-    iop::dispatch_node_operation(&mut router, &capabilities, &mut local, OperationId::NodePairBegin, 2, 1, service, 11).unwrap();
-    let begin_result = NodeOperationV1::decode(router.receive(1, 11).unwrap().bytes()).unwrap();
-
-    let denied = NodeOperationV1 { node_id: remote_id.0, handle: begin_result.handle, scope: 0, lease_deadline: 0, operation: OperationId::NodePairConfirm.machine_id(), rights: 0, value: begin_result.value, flags: 0, schema_version: 1 };
-    let denied_message = IopMessage::request(OperationId::NodePairConfirm, 2, caller, confirm_capability, 90, 45, &denied.encode()).unwrap();
-    router.send(2, denied_message, &capabilities, 12).unwrap();
-    assert_eq!(iop::dispatch_node_operation(&mut router, &capabilities, &mut local, OperationId::NodePairConfirm, 2, 1, service, 12), Err(iop::IopError::AccessDenied));
-    assert_eq!(local.discovered_nodes()[0].unwrap().trust, TrustState::PairingPending);
-
-    let approved = NodeOperationV1 { flags: NODE_OPERATION_HUMAN_APPROVED, ..denied };
-    let approved_message = IopMessage::request(OperationId::NodePairConfirm, 3, caller, confirm_capability, 90, 46, &approved.encode()).unwrap();
-    router.send(2, approved_message, &capabilities, 13).unwrap();
-    iop::dispatch_node_operation(&mut router, &capabilities, &mut local, OperationId::NodePairConfirm, 2, 1, service, 13).unwrap();
-    assert_eq!(local.discovered_nodes()[0].unwrap().trust, TrustState::Trusted);
+    for operation in [OperationId::NodePairBegin, OperationId::NodePairConfirm, OperationId::NodeJoin, OperationId::NodePolicyUpdate] {
+        let cap = caps.grant(CapabilityType::ServiceCall, operation.machine_id() as u64, 1, 0, service, caller, Some(100), 0).unwrap();
+        let request = node_request(node::types::NodeId([7; 32]), operation);
+        let message = IopMessage::request(operation, 1, caller, cap, 90, 44, &request.encode()).unwrap();
+        router.send(2, message, &caps, 11).unwrap();
+        assert_eq!(iop::dispatch_node_operation(&mut router, &caps, &mut nodes, operation, 2, 1, service, 11), Err(iop::IopError::AccessDenied));
+        assert_eq!(nodes.encode_state().unwrap(), before);
+    }
 }
 
 // ------------------------=

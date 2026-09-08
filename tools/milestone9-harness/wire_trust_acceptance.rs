@@ -40,7 +40,8 @@ fn advance(a: &mut Fixture, b: &mut Fixture, now: &mut u64, count: u64) {
                 .poll(&mut b.nodes, &mut b.network, &b.capabilities, *now);
             for f in [&mut *a, &mut *b] {
                 f.iop.poll_remote_node(&f.capabilities, &mut f.nodes, &mut f.transport.trust, *now);
-                if f.execute_remote { f.iop.execute_remote_node(&mut f.nodes, *now); }
+                if f.execute_remote { f.iop.execute_remote_node_durable(&mut f.nodes, *now, &mut |_| true); }
+                f.iop.poll_membership(&mut f.nodes, &mut f.transport.trust, *now, |_| true);
             }
             transfer(a, b, *now);
             transfer(b, a, *now);
@@ -208,6 +209,8 @@ pub fn run() {
             .protocol_reference,
         ar
     );
+    restart_pairing_receipts(&mut a, &mut b, &mut now, ar);
+    membership_wire(&mut a, &mut b, &mut now);
     a.network.connections.bind_native_address(None);
     for _ in 0..4 {
         a.transport
@@ -220,6 +223,69 @@ pub fn run() {
         .iter()
         .flatten()
         .all(|s| s.state == crate::node::types::SessionState::Closed));
+}
+
+// ------------------------=
+// FUNC: membership_wire
+// DESC: Exercises durable consent through local IOP and synchronized Join/Leave over authenticated Ethernet, with no direct cross-node mutation.
+// ------------------=
+fn membership_wire(a: &mut Fixture, b: &mut Fixture, now: &mut u64) {
+    use crate::iop::{OperationId, IopMessage};
+    use crate::capability::CapabilityType;
+    use crate::execution::SecurityIdentity;
+    let aid = a.nodes.local_id().unwrap(); let bid = b.nodes.local_id().unwrap();
+    for (f, peer) in [(&mut *a, bid), (&mut *b, aid)] {
+        let mut policy = crate::node_request(peer, OperationId::NodePolicyUpdate);
+        policy.flags = 1; policy.value = 1;
+        f.nodes.commit_control(OperationId::NodePolicyUpdate, policy, *now, 1, 1, |_| true).unwrap();
+        let service = SecurityIdentity([0x9d; 16]);
+        f.iop.ensure_owned_endpoint(0xda01, service).unwrap(); f.iop.ensure_owned_endpoint(0xda02, f.owner).unwrap();
+        let cap = f.capabilities.grant(CapabilityType::ServiceCall, OperationId::NodeJoin.machine_id() as u64, 1, 0, service, f.owner, Some(*now + 100), 0).unwrap();
+        let request = crate::node_request(peer, OperationId::NodeJoin);
+        let id = f.iop.next_node_request().unwrap();
+        f.iop.send(0xda01, IopMessage::request(OperationId::NodeJoin, id, f.owner, cap, *now + 30, id, &request.encode()).unwrap(), &f.capabilities, *now).unwrap();
+        f.iop.dispatch_node_transaction(&f.capabilities, &mut f.nodes, OperationId::NodeJoin, 0xda01, 0xda02, service, *now, |nodes, request, correlation, causation| nodes.commit_domain_intent(OperationId::NodeJoin, request, *now, correlation, causation, |_| true)).unwrap();
+        f.iop.receive(0xda02, *now).unwrap(); f.capabilities.retire_leaf(cap, service).unwrap();
+        assert!(f.nodes.mesh_members().iter().flatten().all(|member| !member.enabled));
+    }
+    advance(a, b, now, 24);
+    for f in [&mut *a, &mut *b] { assert_eq!(f.nodes.mesh_members().iter().flatten().filter(|member| member.enabled).count(), 1); assert!(f.nodes.domain_proposal(0, *now).is_none()); }
+    let before = a.nodes.encode_state().unwrap();
+    let mut restored = crate::node::NodeRuntime::new(); restored.restore_state(&before).unwrap();
+    assert_eq!(restored.mesh_members().iter().flatten().filter(|member| member.enabled).count(), 1);
+    a.nodes.commit_domain_intent(OperationId::NodeLeave, crate::node_request(bid, OperationId::NodeLeave), *now, 99, 100, |_| true).unwrap();
+    advance(a, b, now, 24);
+    for f in [&mut *a, &mut *b] { assert!(f.nodes.mesh_members().iter().flatten().all(|member| !member.enabled)); assert!(f.nodes.domain_proposal(0, *now).is_none()); }
+}
+
+// ------------------------=
+// FUNC: restart_pairing_receipts
+// DESC: Reconstructs both HOST service instances from persisted objects and boot-fresh entropy, then proves fresh wire-session establishment.
+// ------------------=
+fn restart_pairing_receipts(a: &mut Fixture, b: &mut Fixture, now: &mut u64, previous: [u8; 16]) {
+    let aid = a.nodes.local_id().unwrap();
+    let bid = b.nodes.local_id().unwrap();
+    let astate = a.nodes.encode_state().unwrap();
+    let bstate = b.nodes.encode_state().unwrap();
+    let receipt = a.nodes.paired_digest(bid).unwrap();
+    assert_eq!(b.nodes.paired_digest(aid), Some(receipt));
+    *a = fixture::configured([2, 0, 0, 0, 0, 1], [0xa1; 32]);
+    *b = fixture::configured([2, 0, 0, 0, 0, 2], [0xa2; 32]);
+    assert_eq!(a.nodes.restore_state(&astate).unwrap(), aid);
+    assert_eq!(b.nodes.restore_state(&bstate).unwrap(), bid);
+    assert!(a.nodes.sessions().iter().all(Option::is_none));
+    assert!(b.nodes.sessions().iter().all(Option::is_none));
+    advance(a, b, now, 8);
+    let link = a.transport.inspect(a.connection, a.owner).unwrap();
+    a.transport.trust.begin(&mut a.nodes, link, 0, true, *now).unwrap();
+    advance(a, b, now, 16);
+    let handle = a.transport.trust.session(bid).unwrap();
+    assert!(b.transport.trust.session(aid).is_some());
+    let current = a.nodes.sessions().iter().flatten().find(|session| session.id == handle).unwrap().protocol_reference;
+    assert_ne!(previous, current);
+    a.transport.trust.send_data(&mut a.nodes, bid, &[7, 8, 9], false, *now).unwrap();
+    advance(a, b, now, 4);
+    assert_eq!(&b.transport.trust.receive_data().unwrap().bytes[..3], &[7, 8, 9]);
 }
 
 // ------------------------=

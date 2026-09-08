@@ -5621,29 +5621,10 @@ impl super::DisplayDevice {
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
         let geometry = layout.node_settings_geometry(settings_window);
         let snapshot = crate::runtime::with_runtime(|runtime| {
-            let discovered = runtime.nodes.discovered_nodes().iter().flatten().count();
-            let trusted = runtime
-                .nodes
-                .discovered_nodes()
-                .iter()
-                .flatten()
-                .filter(|node| {
-                    matches!(
-                        node.trust,
-                        crate::runtime::node::types::TrustState::Trusted
-                            | crate::runtime::node::types::TrustState::Restricted
-                    )
-                })
-                .count();
-            let online = runtime
-                .nodes
-                .discovered_nodes()
-                .iter()
-                .flatten()
-                .filter(|node| {
-                    node.reachability == crate::runtime::node::types::Reachability::Online
-                })
-                .count();
+            let view = &runtime.node_projection;
+            let discovered = view.node_count;
+            let trusted = view.nodes[..view.node_count].iter().filter(|record| matches!(record[85], 3 | 4)).count();
+            let online = view.nodes[..view.node_count].iter().filter(|record| record[84] == 1).count();
             let pairings = runtime
                 .nodes
                 .pairings()
@@ -5678,7 +5659,7 @@ impl super::DisplayDevice {
                 .count();
             let audit = runtime.nodes.audit_records().iter().flatten().count();
             (
-                runtime.nodes.local_id().is_some(),
+                runtime.nodes.local_id().is_some() && !runtime.node_projection.stale,
                 discovered,
                 trusted,
                 online,
@@ -5795,7 +5776,7 @@ impl super::DisplayDevice {
             if identity_ready {
                 b"Cryptographic identity ready"
             } else {
-                b"Identity unavailable"
+                b"Identity state refreshing / unavailable"
             },
             239,
             246,

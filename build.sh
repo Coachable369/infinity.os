@@ -37,6 +37,7 @@ make object-test
 make network-test
 make network-wire-test
 make milestone-9-test
+make milestone-9-service-test
 make performance-test
 make resource-policy-test
 tools/ui-install-parity-test.sh \

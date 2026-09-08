@@ -85,6 +85,7 @@ struct ReplayStream {
 }
 
 pub struct RemoteState {
+    inspection: super::super::node::inspection::InspectionCache,
     mutation_service_ready: bool,
     next: u64,
     pending: [Option<Pending>; CAPACITY],
@@ -101,6 +102,7 @@ impl RemoteState {
     // ------------------=
     pub const fn new() -> Self {
         Self {
+            inspection: super::super::node::inspection::InspectionCache::new(),
             mutation_service_ready: false,
             next: 1,
             pending: [None; CAPACITY],
@@ -420,9 +422,16 @@ impl IopRouter {
                     committed = Some(notice);
                     return Ok(response);
                 }
-                if !self.remote.mutation_service_ready {
-                    return Err(RemoteError::ServiceUnavailable);
+                return Err(RemoteError::ServiceUnavailable);
+            }
+            if matches!(op, OperationId::NodeInspect | OperationId::NodeSessionInspect | OperationId::NodeDomainInspect) {
+                let mut payload = request.message.payload;
+                if op == OperationId::NodeSessionInspect {
+                    // The authenticated wire reference selects this session, never a sender-local handle.
+                    if payload.lease_deadline != 0 { return Err(RemoteError::CapabilityScopeDenied); }
+                    payload.lease_deadline = nodes.sessions().iter().flatten().find(|s| s.peer == request.peer && s.protocol_reference == request.reference).ok_or(RemoteError::SessionNotFound)?.id;
                 }
+                return self.remote.inspection.inspect(nodes, request.reference, op, payload, now).map_err(|_| RemoteError::InvalidState);
             }
             super::execute_node_operation(
                 nodes,
@@ -557,6 +566,8 @@ fn operation(value: u32) -> Result<OperationId, RemoteError> {
     use OperationId::*;
     [
         NodeInspect,
+        NodeSessionInspect,
+        NodeDomainInspect,
         NodeTrustRead,
         NodeTrustUpdate,
         NodeRevokeTrust,
@@ -607,7 +618,10 @@ fn validate_authority(nodes: &NodeRuntime, r: &Request, now: u64) -> Result<(), 
         TrustState::Blocked => return Err(RemoteError::NodeBlocked),
         _ => return Err(RemoteError::TrustRequired),
     }
-    if r.message.payload.node_id != r.peer.0 {
+    let selected = if r.message.payload.operation == OperationId::NodeDomainInspect.machine_id() {
+        nodes.local_id().map(|local| super::super::node::membership::domain_id(local, r.peer).0 == r.message.payload.node_id).unwrap_or(false)
+    } else { r.message.payload.node_id == r.peer.0 };
+    if !selected {
         return Err(RemoteError::CapabilityScopeDenied);
     }
     if !nodes
@@ -744,7 +758,7 @@ fn error_from_byte(value: u8) -> Result<RemoteError, RemoteError> {
 // DESC: Separates metadata reads from mutations that require a ready commit and publication lifecycle.
 // ------------------=
 fn is_read(operation: u32) -> bool {
-    matches!(operation, 0xd002 | 0xd006 | 0xd065 | 0xd067 | 0xd068)
+    matches!(operation, 0xd002 | 0xd006 | 0xd014 | 0xd064 | 0xd065 | 0xd067 | 0xd068)
 }
 
 #[cfg(test)]

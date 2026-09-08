@@ -262,6 +262,16 @@ struct ConsoleOutput {
 
 impl ConsoleOutput {
     // ------------------------=
+    // FUNC: write_hex
+    // DESC: Formats a bounded public identifier for human inspection without using prose as a machine interface.
+    // ------------------=
+    fn write_hex(&mut self, label: &[u8], bytes: &[u8]) {
+        let mut encoded = [0; 64];
+        let length = bytes.len().min(32);
+        for index in 0..length { encoded[index * 2] = b"0123456789abcdef"[(bytes[index] >> 4) as usize]; encoded[index * 2 + 1] = b"0123456789abcdef"[(bytes[index] & 15) as usize]; }
+        self.write_segments(&[label, &encoded[..length * 2]]);
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Creates and initializes a new instance.
     // ------------------=
@@ -3868,81 +3878,32 @@ impl ConsoleRuntime {
     // DESC: Confirms the selected pairing only from six digits manually entered through protected Trusted UI.
     // ------------------=
     fn confirm_selected_node_pairing(&mut self) -> bool {
-        if self.command_length != 6
-            || self.command[..self.command_length]
-                .iter()
-                .any(|byte| !byte.is_ascii_digit())
-        {
-            return false;
-        }
-        let mut code = 0u32;
-        for byte in &self.command[..self.command_length] {
-            code = code.saturating_mul(10).saturating_add((byte - b'0') as u32);
-        }
+        use crate::runtime::iop::{NodeOperationV1, OperationId, NODE_OPERATION_HUMAN_APPROVED};
+        if self.command_length != 6 || self.command[..6].iter().any(|byte| !byte.is_ascii_digit()) { return false; }
+        let Some(code) = parse_u32_decimal(&self.command[..6]) else { return false; };
+        let Some(now) = crate::ui::performance::monotonic_ns().map(|value| value / 1_000_000_000) else { return false; };
         let selected = self.selected_node_id;
-        let changed = crate::runtime::with_runtime(|runtime| {
-            let now = runtime
-                .nodes
-                .audit_records()
-                .iter()
-                .flatten()
-                .map(|record| record.timestamp)
-                .max()
-                .unwrap_or(0)
-                .saturating_add(1);
-            let Some(pairing) = runtime
-                .nodes
-                .pairings()
-                .iter()
-                .flatten()
-                .find(|pairing| {
-                    Some(pairing.peer) == selected
-                        && pairing.state
-                            == crate::runtime::node::types::PairingState::AwaitingConfirmation
-                })
-                .copied()
-            else {
-                return false;
-            };
-            let Ok(lease) = runtime.ui.trusted.acquire_secure_input(
-                true,
-                1,
-                crate::ui::trusted::TrustedSurface::NodePairing,
-                now.saturating_add(60),
-            ) else {
-                return false;
-            };
-            let confirmed = runtime
-                .nodes
-                .confirm_pairing(pairing.id, code, true, now, now)
-                .is_ok();
-            let _ = runtime.ui.trusted.release_secure_input(lease);
-            confirmed
-        })
-        .unwrap_or(false);
-        if changed {
-            let committed = crate::runtime::persist_node_state();
-            if committed {
-                if let Some(node_id) = selected {
-                    let _ = crate::runtime::publish_node_state_event(
-                        crate::runtime::EVENT_NODE_PAIRED,
-                        node_id,
-                        code as u64,
-                        code as u64,
-                    );
-                }
-            }
-        }
+        let prepared = crate::runtime::with_runtime(|runtime| {
+            let peer = selected?;
+            let verification = runtime.node_transport.trust.verification(runtime.nodes.local_id()?, peer)?;
+            let lease = runtime.ui.trusted.acquire_secure_input(true, 1, crate::ui::trusted::TrustedSurface::NodePairing, now.saturating_add(60)).ok()?;
+            Some((verification, lease))
+        }).flatten();
+        let Some((verification, lease)) = prepared else { return false; };
+        let operation = OperationId::NodePairConfirm;
+        let request = NodeOperationV1 { node_id: verification.peer.0, handle: verification.pairing, scope: verification.scope, lease_deadline: 0, operation: operation.machine_id(), rights: 0, value: code, flags: NODE_OPERATION_HUMAN_APPROVED, schema_version: 1 };
+        let changed = crate::runtime::node_client::submit(self.current_user, self.current_session, operation, request).is_ok();
+        let _ = crate::runtime::with_runtime(|runtime| runtime.ui.trusted.release_secure_input(lease));
         changed
     }
 
     // ------------------------=
     // FUNC: activate_node_control
-    // DESC: Executes one node-management control against the explicitly selected stable NodeId.
+    // DESC: Converts a selected GUI action to typed IOP; the router owns authority, durable commit and publication.
     // ------------------=
     fn activate_node_control(&mut self, control: usize) {
-        use crate::runtime::node::types::{MeshRole, NodeTrustPolicy, PolicyDecision, TrustState};
-
+        use crate::runtime::iop::{NodeOperationV1, OperationId};
+        use crate::runtime::node::types::{PolicyDecision, TrustState};
         let page = self.node_settings_page();
         let control = control.min(5);
         self.settings_window.control_focus = control;
@@ -3951,127 +3912,39 @@ impl ConsoleRuntime {
             return;
         }
         if page == 1 && control == 3 {
-            let has_pending = crate::runtime::with_runtime(|runtime| {
-                runtime.nodes.pairings().iter().flatten().any(|pairing| {
-                    Some(pairing.peer) == self.selected_node_id
-                        && pairing.state
-                            == crate::runtime::node::types::PairingState::AwaitingConfirmation
-                })
-            })
-            .unwrap_or(false);
-            if has_pending {
-                self.settings_editing = true;
-                self.onboarding_validation_error = false;
-                self.reset_input();
-            }
+            let pending = crate::runtime::with_runtime(|runtime| {
+                self.selected_node_id.and_then(|peer| runtime.nodes.local_id().and_then(|local| runtime.node_transport.trust.verification(local, peer))).is_some()
+            }).unwrap_or(false);
+            if pending { self.settings_editing = true; self.onboarding_validation_error = false; self.reset_input(); }
             return;
         }
         let selected = self.selected_node_id;
-        let changed = crate::runtime::with_runtime(|runtime| {
-            let now = runtime
-                .nodes
-                .audit_records()
-                .iter()
-                .flatten()
-                .map(|record| record.timestamp)
-                .max()
-                .unwrap_or(0)
-                .saturating_add(1);
-            let peer = selected.and_then(|id| {
-                runtime
-                    .nodes
-                    .discovered_nodes()
-                    .iter()
-                    .flatten()
-                    .find(|node| node.id == id)
-                    .copied()
-            });
-            match (page, control, peer) {
-                (0, 1, Some(node))
-                    if matches!(node.trust, TrustState::Trusted | TrustState::Restricted) =>
-                {
-                    runtime.nodes.revoke_trust(node.id, now, now).is_ok()
+        let prepared = crate::runtime::with_runtime(|runtime| {
+            let node = runtime.nodes.discovered_nodes().iter().flatten().find(|node| Some(node.id) == selected)?;
+            let mut request = NodeOperationV1 { node_id: node.id.0, handle: 0, scope: node.policy.scope, lease_deadline: node.policy.expires_at, operation: 0, rights: 0, value: 0, flags: 0, schema_version: 1 };
+            let operation = match (page, control) {
+                (0, 1) if matches!(node.trust, TrustState::Trusted | TrustState::Restricted) => OperationId::NodeRevokeTrust,
+                (0, 4) => OperationId::NodeBlock,
+                (1, 1) => OperationId::NodePairBegin,
+                (1, 4) => {
+                    request.handle = runtime.nodes.pairings().iter().flatten().find(|pairing| pairing.peer == node.id && pairing.state == crate::runtime::node::types::PairingState::AwaitingConfirmation)?.id;
+                    OperationId::NodePairCancel
                 }
-                (0, 4, Some(node)) => runtime
-                    .nodes
-                    .set_trust(node.id, TrustState::Blocked, now, now)
-                    .is_ok(),
-                (0, 5, _) => {
-                    runtime.nodes.sweep(now);
-                    false
+                (2, 1) => OperationId::NodeJoin,
+                (2, 4) => OperationId::NodeLeave,
+                (3, category @ 0..=4) => {
+                    request.flags = category as u32;
+                    request.value = match node.policy.categories[category] { PolicyDecision::Deny => 2, PolicyDecision::SessionOnly => 3, _ => 0 };
+                    OperationId::NodePolicyUpdate
                 }
-                (1, 1, Some(node))
-                    if matches!(node.trust, TrustState::Untrusted | TrustState::Discovered) =>
-                {
-                    runtime.nodes.begin_pairing(node.id, now).is_ok()
-                }
-                (1, 4, _) => runtime
-                    .nodes
-                    .pairings()
-                    .iter()
-                    .flatten()
-                    .find(|pairing| {
-                        Some(pairing.peer) == selected
-                            && pairing.state
-                                == crate::runtime::node::types::PairingState::AwaitingConfirmation
-                    })
-                    .copied()
-                    .map(|pairing| runtime.nodes.cancel_pairing(pairing.id).is_ok())
-                    .unwrap_or(false),
-                (2, 1, Some(node)) if node.trust == TrustState::Trusted => runtime
-                    .nodes
-                    .join_mesh(node.id, MeshRole::Member, now, now)
-                    .is_ok(),
-                (2, 4, Some(node)) => runtime.nodes.leave_mesh(node.id, now, now).is_ok(),
-                (3, category @ 0..=4, Some(node)) => {
-                    let mut policy = node.policy;
-                    policy.categories[category] = match policy.categories[category] {
-                        PolicyDecision::Deny => PolicyDecision::SessionOnly,
-                        PolicyDecision::SessionOnly => PolicyDecision::Leased,
-                        _ => PolicyDecision::Deny,
-                    };
-                    policy.version = policy.version.saturating_add(1);
-                    runtime
-                        .nodes
-                        .update_policy(node.id, policy, now, now)
-                        .is_ok()
-                }
-                (3, 5, Some(node)) => {
-                    let mut policy = NodeTrustPolicy::deny_all();
-                    policy.version = node.policy.version.saturating_add(1);
-                    runtime
-                        .nodes
-                        .update_policy(node.id, policy, now, now)
-                        .is_ok()
-                }
-                _ => false,
-            }
-        })
-        .unwrap_or(false);
-        if changed {
-            let committed = crate::runtime::persist_node_state();
-            if committed {
-                let event_type = match (page, control) {
-                    (0, 1) => crate::runtime::EVENT_NODE_TRUST_REVOKED,
-                    (0, 4) => crate::runtime::EVENT_NODE_BLOCKED,
-                    (1, 1) => crate::runtime::EVENT_NODE_PAIRING_REQUESTED,
-                    (1, 4) => crate::runtime::EVENT_NODE_PAIRING_REJECTED,
-                    (2, 1) => crate::runtime::EVENT_NODE_JOINED,
-                    (2, 4) => crate::runtime::EVENT_NODE_LEFT,
-                    (3, _) => crate::runtime::EVENT_NODE_TRUST_CHANGED,
-                    _ => 0,
-                };
-                if event_type != 0 {
-                    if let Some(node_id) = selected {
-                        let _ = crate::runtime::publish_node_state_event(
-                            event_type,
-                            node_id,
-                            page as u64 + 1,
-                            page as u64 + 1,
-                        );
-                    }
-                }
-            }
+                (3, 5) => { request.flags = 0xffff; request.scope = 0; request.lease_deadline = 0; OperationId::NodePolicyUpdate }
+                _ => return None,
+            };
+            request.operation = operation.machine_id();
+            Some((operation, request))
+        }).flatten();
+        if let Some((operation, request)) = prepared {
+            self.onboarding_validation_error = crate::runtime::node_client::submit(self.current_user, self.current_session, operation, request).is_err();
         }
     }
 
@@ -8761,65 +8634,73 @@ impl ConsoleRuntime {
         node: &crate::runtime::console_language::OperationNode<'_>,
     ) -> bool {
         use crate::runtime::iop::OperationId;
-        crate::runtime::with_runtime(|runtime| match node.schema.operation {
-            OperationId::NodeSessionList | OperationId::NodeSessionInspect => {
-                self.output.write_number(
-                    b"NodeSessionSet count: ",
-                    runtime.nodes.sessions().iter().flatten().count() as u64,
-                );
+        use crate::runtime::node::reconciliation::{collect, request};
+        let operation = node.schema.operation;
+        let user = self.current_user; let session = self.current_session;
+        let mut query = |input| crate::runtime::node_client::query(user, session, input);
+        let mut input = request([0; 32], operation);
+        if operation == OperationId::NodeSessionInspect {
+            let Some(handle) = node.target.and_then(|target| parse_u64_decimal(target.value)) else { self.output.write_line(b"A session handle is required."); return true; };
+            let mut sessions = [0; 640];
+            let Ok(length) = collect(request([0; 32], OperationId::NodeSessionList), &mut sessions, &mut query) else { self.output.write_line(b"Session inspection unavailable."); return true; };
+            let Some(record) = sessions[..length].chunks_exact(40).find(|record| u64::from_le_bytes(record[32..40].try_into().unwrap()) == handle) else { self.output.write_line(b"Session not found."); return true; };
+            input.node_id.copy_from_slice(&record[..32]); input.lease_deadline = handle;
+        } else if node.target.is_some() {
+            let Some(id) = node.target.and_then(|target| parse_node_id(target.value)) else { self.output.write_line(b"A complete 64-digit node or domain identity is required."); return true; };
+            input.node_id = id.0;
+        }
+        if matches!(operation, OperationId::NodeList | OperationId::NodeInspect | OperationId::NodeSessionList | OperationId::NodeSessionInspect | OperationId::NodeDomainList | OperationId::NodeDomainInspect) {
+            let mut bytes = [0; 640];
+            let Ok(length) = collect(input, &mut bytes, &mut query) else { self.output.write_line(b"Inspection denied, stale, or unavailable. Retry the query."); return true; };
+            match operation {
+                OperationId::NodeList | OperationId::NodeDomainList => {
+                    for id in bytes[..length].chunks_exact(32) { self.output.write_hex(b"Identity: ", id); }
+                    if length == 0 { self.output.write_line(b"No records."); }
+                }
+                OperationId::NodeSessionList => {
+                    for row in bytes[..length].chunks_exact(40) { self.output.write_hex(b"Peer: ", &row[..32]); self.output.write_number(b"Session: ", u64::from_le_bytes(row[32..40].try_into().unwrap())); }
+                    if length == 0 { self.output.write_line(b"No sessions."); }
+                }
+                OperationId::NodeInspect if length == 128 => {
+                    self.output.write_hex(b"Node: ", &bytes[..32]); self.output.write_hex(b"Public key: ", &bytes[32..64]);
+                    self.output.write_number(b"Protocol minimum: ", u16::from_le_bytes(bytes[64..66].try_into().unwrap()) as u64);
+                    self.output.write_number(b"Protocol maximum: ", u16::from_le_bytes(bytes[66..68].try_into().unwrap()) as u64);
+                    self.output.write_number(b"Advertised services: ", u64::from_le_bytes(bytes[68..76].try_into().unwrap()));
+                    self.output.write_number(b"Last observation: ", u64::from_le_bytes(bytes[76..84].try_into().unwrap()));
+                    self.output.write_number(b"Reachability: ", bytes[84] as u64); self.output.write_number(b"Trust state: ", bytes[85] as u64);
+                    self.output.write_hex(b"Policy categories: ", &bytes[86..98]);
+                    self.output.write_number(b"Policy scope: ", u64::from_le_bytes(bytes[98..106].try_into().unwrap()));
+                    self.output.write_number(b"Policy expiry: ", u64::from_le_bytes(bytes[106..114].try_into().unwrap()));
+                    self.output.write_number(b"Policy version: ", u32::from_le_bytes(bytes[114..118].try_into().unwrap()) as u64);
+                    self.output.write_number(b"Checkpoint: ", u64::from_le_bytes(bytes[118..126].try_into().unwrap()));
+                }
+                OperationId::NodeSessionInspect if length == 96 => {
+                    self.output.write_hex(b"Peer: ", &bytes[..32]); self.output.write_number(b"Session: ", u64::from_le_bytes(bytes[32..40].try_into().unwrap()));
+                    self.output.write_hex(b"Protocol reference: ", &bytes[40..56]); self.output.write_number(b"State: ", bytes[56] as u64);
+                    self.output.write_number(b"Transmit sequence: ", u64::from_le_bytes(bytes[64..72].try_into().unwrap()));
+                    self.output.write_number(b"Receive sequence: ", u64::from_le_bytes(bytes[72..80].try_into().unwrap()));
+                    self.output.write_number(b"Expiry: ", u64::from_le_bytes(bytes[80..88].try_into().unwrap()));
+                    self.output.write_number(b"Checkpoint: ", u64::from_le_bytes(bytes[88..96].try_into().unwrap()));
+                }
+                OperationId::NodeDomainInspect if length == 104 => {
+                    self.output.write_hex(b"Participant: ", &bytes[..32]); self.output.write_hex(b"Participant: ", &bytes[32..64]);
+                    self.output.write_number(b"Revision: ", u64::from_le_bytes(bytes[64..72].try_into().unwrap()));
+                    self.output.write_number(b"Pending revision: ", u64::from_le_bytes(bytes[72..80].try_into().unwrap()));
+                    self.output.write_number(b"Active: ", bytes[80] as u64); self.output.write_number(b"Locally approved: ", bytes[81] as u64);
+                    self.output.write_number(b"Desired membership: ", bytes[82] as u64);
+                    self.output.write_number(b"Correlation: ", u64::from_le_bytes(bytes[88..96].try_into().unwrap()));
+                    self.output.write_number(b"Checkpoint: ", u64::from_le_bytes(bytes[96..104].try_into().unwrap()));
+                }
+                _ => self.output.write_line(b"Invalid inspection record."),
             }
-            OperationId::NodeCapabilityList => {
-                self.output.write_number(
-                    b"RemoteCapabilitySet count: ",
-                    runtime.nodes.remote_grants().iter().flatten().count() as u64,
-                );
-            }
-            OperationId::NodeAuditList | OperationId::NodeAuditInspect => {
-                self.output.write_number(
-                    b"NodeAuditSet count: ",
-                    runtime.nodes.audit_records().iter().flatten().count() as u64,
-                );
-            }
-            OperationId::NodeDomainList
-            | OperationId::NodeDomainInspect
-            | OperationId::MeshStatus
-            | OperationId::MeshMemberList
-            | OperationId::MeshPolicyRead => {
-                self.output.write_number(
-                    b"MeshDomainSet member count: ",
-                    runtime
-                        .nodes
-                        .mesh_members()
-                        .iter()
-                        .flatten()
-                        .filter(|member| member.enabled)
-                        .count() as u64,
-                );
-            }
-            OperationId::NodeTrustRead | OperationId::NodePolicyRead => {
-                let trusted = runtime
-                    .nodes
-                    .discovered_nodes()
-                    .iter()
-                    .flatten()
-                    .filter(|peer| {
-                        matches!(
-                            peer.trust,
-                            crate::runtime::node::types::TrustState::Trusted
-                                | crate::runtime::node::types::TrustState::Restricted
-                        )
-                    })
-                    .count();
-                self.output
-                    .write_number(b"NodePolicy trusted peers: ", trusted as u64);
-            }
-            _ => {
-                self.output.write_number(
-                    b"NodeSet count: ",
-                    runtime.nodes.discovered_nodes().iter().flatten().count() as u64,
-                );
-            }
-        });
+        } else {
+            let Ok(response) = query(input) else { self.output.write_line(b"Query denied or unavailable."); return true; };
+            if operation == OperationId::NodePolicyRead {
+                for index in 0..12 { self.output.write_number(b"Category: ", index as u64); self.output.write_number(b"Decision: ", ((response.rights >> (index * 2)) & 3) as u64); }
+                self.output.write_number(b"Scope: ", response.scope); self.output.write_number(b"Expiry: ", response.lease_deadline);
+                self.output.write_number(b"Policy version: ", response.value as u64); self.output.write_number(b"Checkpoint: ", response.handle);
+            } else { self.output.write_number(b"Value: ", response.value as u64); self.output.write_number(b"State: ", response.flags as u64); }
+        }
         true
     }
 
@@ -8923,49 +8804,16 @@ impl ConsoleRuntime {
                 }
             };
         }
-        let now = crate::runtime::with_runtime(|runtime| {
-            runtime
-                .nodes
-                .audit_records()
-                .iter()
-                .flatten()
-                .map(|record| record.timestamp)
-                .max()
-                .unwrap_or(0)
-                .saturating_add(1)
-        })
-        .unwrap_or(1);
-        let result = crate::runtime::with_runtime(|runtime| {
-            crate::runtime::iop::execute_node_operation(
-                &mut runtime.nodes,
-                node.schema.operation,
-                request,
-                now,
-                now,
-            )
-        });
-        let Ok(response) = result.unwrap_or(Err(crate::runtime::iop::IopError::InvalidPayload))
-        else {
-            self.output.write_line(b"Node operation denied or invalid.");
+        let result = crate::runtime::node_client::submit(self.current_user, self.current_session, node.schema.operation, request);
+        let Ok(response) = result else {
+            self.output.write_line(b"Node operation denied, unavailable, or not committed.");
             return true;
         };
-        if !crate::runtime::persist_node_state() {
-            self.output
-                .write_line(b"Node state commit failed; no success was reported.");
-            return true;
-        }
-        let event_type = node_event_for_operation(node.schema.operation);
-        if event_type != 0 {
-            let event_node = crate::runtime::node::types::NodeId(response.node_id);
-            let _ = crate::runtime::publish_node_state_event(event_type, event_node, now, now);
-        }
         if node.schema.operation == OperationId::NodePairBegin {
             self.output
                 .write_number(b"Pairing transaction: pairing:", response.handle);
             self.output
-                .write_number(b"Verification code: ", response.value as u64);
-            self.output
-                .write_line(b"Confirm only after independently verifying the remote node.");
+                .write_line(b"Pairing requested. Compare the authenticated verification view on both nodes before confirming.");
         } else {
             self.output.write_line(b"Node operation committed.");
         }
@@ -10791,7 +10639,7 @@ fn parse_u32_decimal(value: &[u8]) -> Option<u32> {
 
 // ------------------------=
 // FUNC: parse_node_id
-// DESC: Decodes a complete 128-bit hexadecimal NodeId so mutable list position never becomes authority identity.
+// DESC: Decodes a complete 256-bit hexadecimal NodeId so mutable list position never becomes authority identity.
 // ------------------=
 fn parse_node_id(value: &[u8]) -> Option<crate::runtime::node::types::NodeId> {
     if value.len() != 64 {

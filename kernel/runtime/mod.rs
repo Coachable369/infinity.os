@@ -9,6 +9,7 @@ pub mod iop;
 pub mod network;
 pub mod crypto;
 pub mod node;
+pub mod node_client;
 pub mod object_navigation;
 pub mod resource_policy;
 pub mod scheduler;
@@ -103,6 +104,8 @@ pub const EVENT_NODE_RECOVERED: u32 = 0x9e00e;
 pub const EVENT_NODE_OFFLINE: u32 = 0x9e00f;
 pub const EVENT_NODE_COMPATIBILITY_CHANGED: u32 = 0x9e010;
 pub const EVENT_NODE_POLICY_CHANGED: u32 = 0x9e011;
+pub const EVENT_NODE_DOMAIN_CHANGED: u32 = 0x9e012;
+pub const EVENT_NODE_CHECKPOINT_CHANGED: u32 = 0x9e013;
 
 const NETWORK_EVENT_TYPES: [u32; 15] = [
     EVENT_NETWORK_INTERFACE_STATE_CHANGED,
@@ -122,13 +125,15 @@ const NETWORK_EVENT_TYPES: [u32; 15] = [
     EVENT_NETWORK_RECOVERED,
 ];
 
-const NODE_EVENT_TYPES: [u32; 17] = [
+const NODE_EVENT_TYPES: [u32; 19] = [
     EVENT_NODE_DISCOVERED, EVENT_NODE_PAIRING_REQUESTED, EVENT_NODE_PAIRED,
     EVENT_NODE_PAIRING_REJECTED, EVENT_NODE_TRUST_CHANGED, EVENT_NODE_TRUST_REVOKED,
     EVENT_NODE_BLOCKED, EVENT_NODE_UNBLOCKED, EVENT_NODE_SESSION_ESTABLISHED,
     EVENT_NODE_SESSION_CLOSED, EVENT_NODE_JOINED, EVENT_NODE_LEFT, EVENT_NODE_DEGRADED,
     EVENT_NODE_RECOVERED, EVENT_NODE_OFFLINE, EVENT_NODE_COMPATIBILITY_CHANGED,
     EVENT_NODE_POLICY_CHANGED,
+    EVENT_NODE_DOMAIN_CHANGED,
+    EVENT_NODE_CHECKPOINT_CHANGED,
 ];
 
 const UI_EVENT_TYPES: [u32; 12] = [
@@ -180,12 +185,21 @@ pub struct InfinityRuntime {
     ui_event_capabilities: [Option<u64>; UI_EVENT_TYPES.len()],
     network_event_capabilities: [Option<u64>; NETWORK_EVENT_TYPES.len()],
     node_event_capabilities: [Option<u64>; NODE_EVENT_TYPES.len()],
+    pub node_projection: node::reconciliation::Projection,
+    node_clock: Option<u64>,
+    node_projection_tick: Option<u64>,
+    node_checkpoint_notified: u64,
+    node_projection_subscription: Option<u64>,
+    node_projection_capability: Option<u64>,
     settings_network_profile_capability: Option<u64>,
     settings_network_address_capability: Option<u64>,
     settings_network_route_capability: Option<u64>,
     settings_network_policy_capability: Option<u64>,
     onboarding_network_profile_capability: Option<u64>,
 }
+
+#[cfg(test)]
+mod node_reconciliation_tests;
 impl InfinityRuntime {
     // ------------------------=
     // FUNC: restore_desktop_tasks
@@ -262,6 +276,12 @@ impl InfinityRuntime {
             ui_event_capabilities: [None; UI_EVENT_TYPES.len()],
             network_event_capabilities: [None; NETWORK_EVENT_TYPES.len()],
             node_event_capabilities: [None; NODE_EVENT_TYPES.len()],
+            node_projection: node::reconciliation::Projection::new(),
+            node_clock: None,
+            node_projection_tick: None,
+            node_checkpoint_notified: 0,
+            node_projection_subscription: None,
+            node_projection_capability: None,
             settings_network_profile_capability: None,
             settings_network_address_capability: None,
             settings_network_route_capability: None,
@@ -1890,6 +1910,8 @@ pub fn initialize(live_profile: bool) {
 // ------------------=
 pub fn initialize_node_identity(entropy: &[u8; 32], valid: bool) -> bool {
     let runtime = runtime_mut();
+    runtime.node_transport.trust.persist_pairing = persist_control_state;
+    runtime.node_transport.persist_discovery = persist_control_state;
     runtime.node_transport.initialize(entropy, valid).is_ok()
         && runtime.nodes.initialize(entropy, valid).is_ok()
 }
@@ -1899,12 +1921,15 @@ pub fn initialize_node_identity(entropy: &[u8; 32], valid: bool) -> bool {
 // DESC: Pumps one explicitly registered native node link and publishes discovery only after commit.
 // ------------------=
 pub fn poll_node_transport(now: u64) {
+    with_runtime(|runtime| runtime.node_clock = Some(runtime.node_clock.unwrap_or(now).max(now)));
     let change = with_runtime(|runtime| runtime.node_transport.poll(&mut runtime.nodes, &mut runtime.network, &runtime.capabilities, now)).flatten();
     let committed = with_runtime(|runtime| {
         runtime.iop.poll_remote_node(&runtime.capabilities, &mut runtime.nodes, &mut runtime.node_transport.trust, now);
         runtime.iop.execute_remote_node_durable(&mut runtime.nodes, now, &mut persist_control_state)
     }).flatten();
     if let Some(committed) = committed { let _ = publish_committed_node_control(committed, now); }
+    let membership = with_runtime(|runtime| runtime.iop.poll_membership(&mut runtime.nodes, &mut runtime.node_transport.trust, now, persist_control_state)).flatten();
+    if let Some(notice) = membership { let _ = publish_committed_node_control(notice, now); }
     let event = match change {
         Some(node::transport::DiscoveryChange::Discovered(peer)) => Some((EVENT_NODE_DISCOVERED, peer)),
         Some(node::transport::DiscoveryChange::Recovered(peer)) => Some((EVENT_NODE_RECOVERED, peer)),
@@ -1912,6 +1937,61 @@ pub fn poll_node_transport(now: u64) {
         None => None,
     };
     if let Some((kind, peer)) = event { let _ = publish_node_state_event(kind, peer, now, now); }
+    with_runtime(|runtime| {
+        let checkpoint = runtime.nodes.control_version();
+        if checkpoint != runtime.node_checkpoint_notified {
+            publish_node_checkpoint(runtime, checkpoint, 0, 0, now);
+        }
+        refresh_node_projection(runtime, now);
+    });
+}
+
+// ------------------------=
+// FUNC: publish_node_checkpoint
+// DESC: Publishes a coalescible postcommit hint independently of durable event-ring pressure; dropped final hints are recovered by periodic IOP reads.
+// ------------------=
+fn publish_node_checkpoint(runtime: &mut InfinityRuntime, checkpoint: u64, correlation: u64, causation: u64, now: u64) {
+    runtime.node_checkpoint_notified = checkpoint;
+    let Some(index) = NODE_EVENT_TYPES.iter().position(|kind| *kind == EVENT_NODE_CHECKPOINT_CHANGED) else { return; };
+    let Some(cap) = runtime.node_event_capabilities[index] else { return; };
+    let Some(source) = runtime.service_identity(SERVICE_NODE_TRUST) else { return; };
+    let _ = runtime.events.publish(EventClass::StateChange, RoutingDomain::Mesh, EVENT_NODE_CHECKPOINT_CHANGED, source, 0, correlation, causation, &checkpoint.to_le_bytes(), 180, now, &runtime.capabilities, cap);
+}
+
+// ------------------------=
+// FUNC: refresh_node_projection
+// DESC: Performs one bounded inspector refresh per second through authorized typed IOP, including recovery after lost events; never triggers a full redraw.
+// ------------------=
+fn refresh_node_projection(runtime: &mut InfinityRuntime, now: u64) {
+    use event::{EventFilter, OverflowPolicy};
+    use iop::OperationId;
+    if runtime.node_projection_tick == Some(now) { return; }
+    runtime.node_projection_tick = Some(now);
+    let Some(holder) = runtime.service_identity(SERVICE_SETTINGS) else { return; };
+    let Some(service) = runtime.service_identity(SERVICE_NODE_TRUST) else { return; };
+    if runtime.node_projection_capability.is_none() {
+        runtime.node_projection_capability = runtime.capabilities.grant(CapabilityType::EventSubscribe, EVENT_NODE_CHECKPOINT_CHANGED as u64, 1, 0, service, holder, None, 0).ok();
+    }
+    if runtime.node_projection_subscription.is_none() {
+        if let Some(cap) = runtime.node_projection_capability {
+            runtime.node_projection_subscription = runtime.events.subscribe(holder, cap, EventFilter { type_id: EVENT_NODE_CHECKPOINT_CHANGED, scope: None }, u64::MAX, OverflowPolicy::LatestOnly, 1, &runtime.capabilities, now).ok();
+        }
+    }
+    if let Some(lease) = runtime.node_projection_subscription {
+        if let Ok(event) = runtime.events.receive(lease, now) {
+            if event.source == service && event.payload_len == 8 {
+                runtime.node_projection.observe(u64::from_le_bytes(event.payload[..8].try_into().unwrap()));
+            }
+        }
+    }
+    match node_client::read(runtime, node::reconciliation::request([0; 32], OperationId::NodeDiscoverStatus), now) {
+        Ok(status) => runtime.node_projection.observe(status.scope),
+        Err(_) => { runtime.node_projection.stale = true; return; }
+    }
+    if runtime.node_projection.stale {
+        let mut candidate = runtime.node_projection.clone();
+        if candidate.reconcile(|request| node_client::read(runtime, request, now)).is_ok() { runtime.node_projection = candidate; }
+    }
 }
 
 // ------------------------=
@@ -1937,6 +2017,11 @@ fn publish_committed_node_control(notice: node::control::CommittedControl, now: 
         OperationId::NodeBlock => EVENT_NODE_BLOCKED,
         OperationId::NodeUnblock => EVENT_NODE_UNBLOCKED,
         OperationId::NodeSessionClose => EVENT_NODE_SESSION_CLOSED,
+        OperationId::NodeJoin if notice.value == 1 => EVENT_NODE_JOINED,
+        OperationId::NodeLeave if notice.value == 0 => EVENT_NODE_LEFT,
+        OperationId::NodeJoin | OperationId::NodeLeave => EVENT_NODE_DOMAIN_CHANGED,
+        OperationId::NodePairBegin | OperationId::NodePairConfirm => EVENT_NODE_PAIRING_REQUESTED,
+        OperationId::NodePairCancel => EVENT_NODE_PAIRING_REJECTED,
         OperationId::NodeTrustUpdate if notice.value == 5 => EVENT_NODE_TRUST_REVOKED,
         OperationId::NodeTrustUpdate if notice.value == 6 => EVENT_NODE_BLOCKED,
         OperationId::NodeTrustUpdate if notice.value == 1 => EVENT_NODE_UNBLOCKED,
@@ -1947,6 +2032,7 @@ fn publish_committed_node_control(notice: node::control::CommittedControl, now: 
     payload[32..40].copy_from_slice(&notice.version.to_le_bytes());
     payload[40..44].copy_from_slice(&notice.operation.machine_id().to_le_bytes());
     with_runtime(|runtime| {
+        publish_node_checkpoint(runtime, notice.version, notice.correlation, notice.causation, now);
         let Some(index) = NODE_EVENT_TYPES.iter().position(|t| *t == kind) else { return false; };
         let Some(capability) = runtime.node_event_capabilities[index] else { return false; };
         let Some(source) = runtime.service_identity(SERVICE_NODE_TRUST) else { return false; };
@@ -2091,21 +2177,6 @@ pub fn storage_initialized() {
             }
         }
     });
-}
-
-// ------------------------=
-// FUNC: persist_node_state
-// DESC: Commits cryptographic identity, trust policy, and mesh membership after authoritative node state changes.
-// ------------------=
-pub fn persist_node_state() -> bool {
-    #[cfg(target_os = "none")]
-    {
-        runtime_ref().nodes.encode_state().ok().and_then(|state| crate::storage::node_state_commit(&state).ok()).is_some()
-    }
-    #[cfg(not(target_os = "none"))]
-    {
-        true
-    }
 }
 
 // ------------------------=

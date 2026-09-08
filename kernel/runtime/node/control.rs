@@ -39,6 +39,47 @@ impl Drop for Staged {
 
 impl NodeRuntime {
     // ------------------------=
+    // FUNC: commit_wire_control
+    // DESC: Stages both node and wire state, persists before exposing queued protocol packets, and never falls back to local-only pairing.
+    // ------------------=
+    pub fn commit_wire_control(&mut self, wire: &mut wire_trust::WireTrust, link: Option<transport::LinkSnapshot>, operation: OperationId, request: NodeOperationV1, now: u64, correlation: u64, causation: u64, persist: impl FnOnce(&[u8; NODE_STATE_BYTES]) -> bool) -> Result<(NodeOperationV1, CommittedControl), CommitError> {
+        if request.operation != operation.machine_id() || request.schema_version != 1 { return Err(CommitError::InvalidOperation); }
+        let mut staged = self.clone();
+        let mut staged_wire = wire.clone();
+        // Nested confirmation is allowed only inside this isolated candidate;
+        // its real storage writer runs once below, before either candidate is installed.
+        staged_wire.persist_pairing = staged_confirmation;
+        let mut response = request;
+        let subject;
+        match operation {
+            OperationId::NodePairBegin => {
+                subject = NodeId(request.node_id);
+                let link = link.filter(|link| link.peer == Some(subject)).ok_or(CommitError::InvalidState)?;
+                staged_wire.begin(&mut staged, link, request.scope, false, now).map_err(|_| CommitError::InvalidState)?;
+                let pairing = staged.pairings.iter().flatten().find(|pairing| pairing.peer == subject && pairing.state == PairingState::AwaitingConfirmation).ok_or(CommitError::InvalidState)?;
+                response.handle = pairing.id;
+                response.value = 0; // Only the completed wire verification view may disclose a verification code.
+            }
+            OperationId::NodePairConfirm | OperationId::NodePairCancel => {
+                subject = staged.pairings.iter().flatten().find(|pairing| pairing.id == request.handle).ok_or(CommitError::InvalidState)?.peer;
+                let transaction = staged_wire.transaction_for_pairing(request.handle).ok_or(CommitError::InvalidState)?;
+                if operation == OperationId::NodePairConfirm {
+                    staged_wire.confirm(&mut staged, transaction, request.value, request.flags & super::super::iop::NODE_OPERATION_HUMAN_APPROVED != 0, now).map_err(|_| CommitError::InvalidState)?;
+                } else { staged_wire.cancel(&mut staged, transaction, now).map_err(|_| CommitError::InvalidState)?; }
+                response.node_id = subject.0;
+            }
+            _ => return Err(CommitError::InvalidOperation),
+        }
+        let version = self.control_version.checked_add(1).ok_or(CommitError::VersionExhausted)?;
+        staged.control_version = version;
+        let encoded = zeroize::Zeroizing::new(staged.encode_state().map_err(|_| CommitError::InvalidState)?);
+        if !persist(&encoded) { return Err(CommitError::PersistenceFailed); }
+        staged_wire.persist_pairing = wire.persist_pairing;
+        *self = staged;
+        *wire = staged_wire;
+        Ok((response, CommittedControl { version, subject, operation, value: request.value, correlation, causation }))
+    }
+    // ------------------------=
     // FUNC: control_version
     // DESC: Reads the restart-persistent checkpoint for committed control transactions only.
     // ------------------=
@@ -111,6 +152,8 @@ impl NodeRuntime {
             next_id: self.next_id,
             audit_sequence: self.audit_sequence,
             control_version: version,
+            paired_digests: self.paired_digests,
+            domains: self.domains,
             discovery_window: self.discovery_window,
             discovery_count: self.discovery_count,
         });
@@ -149,3 +192,9 @@ impl NodeRuntime {
         ))
     }
 }
+
+// ------------------------=
+// FUNC: staged_confirmation
+// DESC: Accepts an inner confirmation only inside an isolated transaction whose outer commit owns durable storage.
+// ------------------=
+fn staged_confirmation(_: &[u8; NODE_STATE_BYTES]) -> bool { true }

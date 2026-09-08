@@ -1,6 +1,6 @@
 use super::execution::SecurityIdentity;
 
-pub const MAX_CAPABILITIES: usize = 64;
+pub const MAX_CAPABILITIES: usize = 128;
 pub type CapabilityId = u64;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -237,6 +237,17 @@ impl CapabilityManager {
             .find(|c| c.id == id)
             .ok_or(CapabilityError::Unknown)?;
         entry.revoked = true;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: retire_leaf
+    // DESC: Reclaims a completed nondelegated one-shot capability without removing an ancestor needed for revocation checks.
+    // ------------------=
+    pub fn retire_leaf(&mut self, id: CapabilityId, issuer: SecurityIdentity) -> Result<(), CapabilityError> {
+        let index = self.entries.iter().position(|entry| entry.map(|entry| entry.id == id && entry.issuer == issuer && entry.delegation_rights == 0).unwrap_or(false)).ok_or(CapabilityError::Unknown)?;
+        if self.entries.iter().flatten().any(|entry| entry.parent == Some(id)) { return Err(CapabilityError::Full); }
+        self.entries[index] = None;
         Ok(())
     }
     // ------------------------=

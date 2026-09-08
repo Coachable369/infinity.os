@@ -42,6 +42,7 @@ pub fn run() {
     let bid = bn.initialize(&[0x32;32], true).unwrap();
     let mut at = NodeTransport::new(); let mut bt = NodeTransport::new();
     at.initialize(&[0x41;32], true).unwrap(); bt.initialize(&[0x42;32], true).unwrap();
+    at.persist_discovery = engineering_discovery_writer; bt.persist_discovery = engineering_discovery_writer;
     let mut wrong = authority(&a); wrong.send = a.receive;
     assert!(at.attach(wrong, &a.network, &a.capabilities, 0).is_err());
     at.attach(authority(&a), &a.network, &a.capabilities, 0).unwrap();
@@ -87,6 +88,12 @@ pub fn run() {
 }
 
 // ------------------------=
+// FUNC: engineering_discovery_writer
+// DESC: Explicit HOST fixture commit boundary; production transport requires the native durable writer.
+// ------------------=
+fn engineering_discovery_writer(_: &[u8; crate::node::types::NODE_STATE_BYTES]) -> bool { true }
+
+// ------------------------=
 // FUNC: reject_invalid_announcement
 // DESC: Verifies a live receiver nonce cannot make an invalid signature or malformed payload refresh peer state.
 // ------------------=
@@ -97,6 +104,7 @@ fn reject_invalid_announcement() {
     an.initialize(&[0x31;32], true).unwrap(); bn.initialize(&[0x32;32], true).unwrap();
     let mut at = NodeTransport::new(); let mut bt = NodeTransport::new();
     at.initialize(&[0x51;32], true).unwrap(); bt.initialize(&[0x52;32], true).unwrap();
+    at.persist_discovery = engineering_discovery_writer; bt.persist_discovery = engineering_discovery_writer;
     at.attach(authority(&a), &a.network, &a.capabilities, 0).unwrap();
     bt.attach(authority(&b), &b.network, &b.capabilities, 0).unwrap();
     let mut capture = None;

@@ -351,7 +351,7 @@ fn duplicate_mutation_executes_only_once() {
         Err(RemoteError::ReplayRejected)
     );
     let before = f.nodes.discovered_nodes()[0].unwrap().policy.version;
-    f.router.execute_remote_node(&mut f.nodes, 11);
+    f.router.execute_remote_node_durable(&mut f.nodes, 11, &mut |_| true);
     assert_eq!(
         f.nodes.discovered_nodes()[0].unwrap().policy.version,
         before + 1

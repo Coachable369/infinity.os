@@ -3,6 +3,7 @@ use super::*;
 
 const AUDIT_OFFSET: usize = MEMBER_RECORD_OFFSET + MAX_MESH_MEMBERS * MEMBER_RECORD_BYTES;
 const AUDIT_BYTES: usize = 72;
+const RECEIPTS_OFFSET: usize = AUDIT_OFFSET + MAX_AUDIT_RECORDS * AUDIT_BYTES;
 const _: () = assert!(AUDIT_OFFSET + MAX_AUDIT_RECORDS * AUDIT_BYTES <= NODE_STATE_BYTES - 4);
 
 impl Drop for NodeRuntime {
@@ -17,6 +18,91 @@ impl Drop for NodeRuntime {
 }
 
 impl NodeRuntime {
+    // ------------------------=
+    // FUNC: commit_discovery
+    // DESC: Durably stages new peers and recovered/changed descriptors; unchanged liveness counters remain transient telemetry.
+    // ------------------=
+    pub(super) fn commit_discovery(&mut self, advertisement: DiscoveryAdvertisement, now: u64, persist: fn(&[u8; NODE_STATE_BYTES]) -> bool) -> Result<(), NodeError> {
+        let changed = !self.discovered.iter().flatten().any(|node| node.id == advertisement.node && node.reachability == Reachability::Online && node.service_bits == advertisement.service_bits);
+        if !changed { return self.record_discovery(advertisement, now); }
+        let mut staged = self.clone();
+        staged.record_discovery(advertisement, now)?;
+        staged.control_version = staged.control_version.checked_add(1).ok_or(NodeError::ResourceLimit)?;
+        staged.record(0xda10, advertisement.node, now, now, 0);
+        let bytes = zeroize::Zeroizing::new(staged.encode_state()?);
+        if !persist(&bytes) { return Err(NodeError::StateCorrupt); }
+        *self = staged;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: commit_offline
+    // DESC: Persists one observed offline transition before changing the live projection or notifying subscribers.
+    // ------------------=
+    pub(super) fn commit_offline(&mut self, peer: NodeId, now: u64, persist: fn(&[u8; NODE_STATE_BYTES]) -> bool) -> Result<(), NodeError> {
+        let mut staged = self.clone();
+        let node = staged.discovered.iter_mut().flatten().find(|node| node.id == peer).ok_or(NodeError::UnknownNode)?;
+        node.reachability = Reachability::Offline;
+        staged.control_version = staged.control_version.checked_add(1).ok_or(NodeError::ResourceLimit)?;
+        staged.record(0xda11, peer, now, now, 0);
+        let bytes = zeroize::Zeroizing::new(staged.encode_state()?);
+        if !persist(&bytes) { return Err(NodeError::StateCorrupt); }
+        *self = staged;
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: paired_digest
+    // DESC: Returns a public two-party pairing receipt only for a currently trusted exact peer; it is never a traffic key.
+    // ------------------=
+    pub fn paired_digest(&self, peer: NodeId) -> Option<[u8; 32]> {
+        let index = self.discovered.iter().position(|node| node.map(|node| node.id == peer && node.trust == TrustState::Trusted).unwrap_or(false))?;
+        (self.paired_digests[index] != [0; 32]).then_some(self.paired_digests[index])
+    }
+
+    // ------------------------=
+    // FUNC: encode_pairing_receipts
+    // DESC: Stores confirmed public transcript digests in canonical peer-record order, excluding live offers and ephemeral secrets.
+    // ------------------=
+    pub(super) fn encode_pairing_receipts(&self, output: &mut [u8; NODE_STATE_BYTES]) {
+        for (index, node) in self.discovered.iter().flatten().enumerate() {
+            if let Some(digest) = self.paired_digest(node.id) {
+                let at = RECEIPTS_OFFSET + index * 32;
+                output[at..at + 32].copy_from_slice(&digest);
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: decode_pairing_receipts
+    // DESC: Restores only receipts bound to persisted trusted peer records, never sessions or approval in progress.
+    // ------------------=
+    pub(super) fn decode_pairing_receipts(&mut self, input: &[u8]) -> Result<(), NodeError> {
+        for index in 0..MAX_DISCOVERED_NODES {
+            let at = RECEIPTS_OFFSET + index * 32;
+            let mut digest = [0; 32];
+            digest.copy_from_slice(&input[at..at + 32]);
+            if digest != [0; 32] && !self.discovered[index].map(|node| node.trust == TrustState::Trusted).unwrap_or(false) { return Err(NodeError::StateCorrupt); }
+            self.paired_digests[index] = digest;
+        }
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: commit_wire_pairing
+    // DESC: Stages confirmed two-party trust and its public receipt, durably commits them together, then installs live state.
+    // ------------------=
+    pub(super) fn commit_wire_pairing(&mut self, pairing: u64, code: u32, digest: [u8; 32], now: u64, correlation: u64, persist: fn(&[u8; NODE_STATE_BYTES]) -> bool) -> Result<(), NodeError> {
+        let mut staged = self.clone();
+        staged.confirm_pairing(pairing, code, true, now, correlation)?;
+        let peer = staged.pairings.iter().flatten().find(|entry| entry.id == pairing).ok_or(NodeError::PairingNotFound)?.peer;
+        let index = staged.discovered.iter().position(|entry| entry.map(|node| node.id == peer).unwrap_or(false)).ok_or(NodeError::UnknownNode)?;
+        staged.paired_digests[index] = digest;
+        staged.control_version = staged.control_version.checked_add(1).ok_or(NodeError::ResourceLimit)?;
+        let bytes = zeroize::Zeroizing::new(staged.encode_state()?);
+        if !persist(&bytes) { return Err(NodeError::StateCorrupt); }
+        *self = staged;
+        Ok(())
+    }
     // ------------------------=
     // FUNC: encode_audit
     // DESC: Persists the bounded ring in physical slot order, retaining sequence and causal metadata.

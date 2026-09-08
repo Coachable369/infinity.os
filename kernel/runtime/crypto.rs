@@ -20,6 +20,7 @@ pub enum CryptoError {
     OutputTooSmall,
 }
 
+#[derive(Clone)]
 pub struct NodeCrypto {
     identity: Option<SigningKey>,
     key_ref: KeyRef,
