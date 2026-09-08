@@ -1,5 +1,27 @@
 # Pairing lifecycle investigation
 
+## Current continuation boundary
+
+Run i reached storage verification but exceeded the harness's 300-second install
+bound before the synchronous installer returned. Its last console snapshot still
+describes step 6; the captured display shows installation progress, not a panic.
+This is not pairing evidence. A subsequent run uses a 900-second host verification
+bound and captures CPU registers on failure. No guest protocol deadline changes.
+
+The Console remote operator path now assembles the complete 128-byte Node.Inspect
+and 104-byte Domain.Inspect records automatically. Pages retain the original
+operation capability, peer grant, correlation and 30-second request deadline.
+Object, operation, schema, total size, offset and pinned token are checked before
+copying. Results remain bound to the submitting authenticated session; closing
+that session retires authority and pending requests. Two HOST broker tests pass,
+including exact native-record reconstruction and malformed-page rejection.
+Installed remote acceptance remains pending.
+
+Earlier keyboard timings measured submission to the next periodic diagnostic
+snapshot, not input completion. They must not be interpreted as actual per-key
+UI latency. Snapshot publication now also runs after completed input/presentation
+so subsequent installed measurements can separate the observation delay.
+
 The owner is `WireTrust::transactions`, selected by stable peer NodeId and wire
 transaction ID. Settings reads `Verification`; it does not own its lifetime.
 

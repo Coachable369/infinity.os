@@ -8784,6 +8784,22 @@ impl ConsoleRuntime {
                             self.output.write_number(b"Value: ", value.value as u64);
                             self.output.write_number(b"State: ", value.flags as u64);
                             self.output.write_hex(b"Typed response: ", &value.encode());
+                            if let Some((detail, length)) = crate::runtime::with_runtime(|runtime|
+                                (runtime.node_operator.last_detail, runtime.node_operator.last_detail_length)) {
+                                if length == crate::runtime::node::inspection::NODE_DETAIL_BYTES {
+                                    self.output.write_hex(b"Inspected node: ", &detail[..32]);
+                                    self.output.write_number(b"Reachability: ", detail[84] as u64);
+                                    self.output.write_number(b"Trust: ", detail[85] as u64);
+                                    self.output.write_hex(b"Policy decisions: ", &detail[86..98]);
+                                    self.output.write_number(b"Checkpoint: ", u64::from_le_bytes(detail[118..126].try_into().unwrap()));
+                                } else if length == crate::runtime::node::inspection::DOMAIN_DETAIL_BYTES {
+                                    self.output.write_hex(b"Participant A: ", &detail[..32]);
+                                    self.output.write_hex(b"Participant B: ", &detail[32..64]);
+                                    self.output.write_number(b"Revision: ", u64::from_le_bytes(detail[64..72].try_into().unwrap()));
+                                    self.output.write_number(b"Active: ", detail[80] as u64);
+                                    self.output.write_number(b"Checkpoint: ", u64::from_le_bytes(detail[96..104].try_into().unwrap()));
+                                }
+                            }
                         }
                         Err(error) => self.output.write_number(b"Remote error code: ", error as u64),
                     }
@@ -11536,6 +11552,10 @@ pub fn input(key: ConsoleKey) {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
             runtime.input(key);
+            // Publish after input and its presentation, not only on the coarse
+            // firmware clock. Debugger latency then observes completed input
+            // rather than time spent waiting for the next clock snapshot.
+            diagnostics::publish(runtime);
         }
     }
 }

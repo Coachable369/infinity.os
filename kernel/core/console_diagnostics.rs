@@ -18,7 +18,7 @@ fn words(target: &mut [u64], bytes: &[u8]) {
 
 // ------------------------=
 // FUNC: publish
-// DESC: Publishes a bounded once-per-clock snapshot for a debugger already authorized to read kernel memory; no credentials or traffic keys are copied.
+// DESC: Publishes bounded clock/input-completion state for an authorized debugger; no credentials or traffic keys are copied.
 // ------------------=
 pub(super) fn publish(console: &ConsoleRuntime) {
     let mut data = [0u64; 512];
@@ -55,6 +55,8 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         data[69] = runtime.node_transport.serviced_links;
         data[70] = runtime.node_transport.received_packets;
         data[72] = runtime.node_operator.last_submitted;
+        data[91] = runtime.node_operator.last_detail_length as u64;
+        words(&mut data[92..108], &runtime.node_operator.last_detail);
         if let Some(completion) = runtime.node_operator.last_completion {
             data[73] = completion.request_id;
             data[74] = completion.correlation_id;

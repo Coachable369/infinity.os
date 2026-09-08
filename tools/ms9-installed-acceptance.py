@@ -154,6 +154,8 @@ class Guest:
             time.sleep(.25)
         self.screenshot("failure")
         self.frame_report("failure")
+        (self.work / "failure-registers.json").write_text(json.dumps(
+            self.qmp("human-monitor-command", {"command-line": "info registers"})))
         raise AssertionError({"stage": label, "state": last})
 
     # ------------------------=
@@ -250,7 +252,9 @@ class Guest:
                 state = self.wait(lambda value: value[6] != state[6], "focus advanced")
             assert state[6] == 1
             self.key("ret")
-            self.wait(lambda state: state[5] > step and state[5] != 9, f"advance {step}", 300)
+            # TCG verification reads the complete installed kernel. This is a
+            # host acceptance bound, not a guest protocol/authority deadline.
+            self.wait(lambda state: state[5] > step and state[5] != 9, f"advance {step}", 900 if step == 6 else 300)
         self.wait(lambda state: state[5] == 8, "installation completed", 300)
         self.screenshot("installed-complete")
         self.stop()
@@ -422,6 +426,98 @@ class Guest:
         self.key("ret")
         assert not self.state()[9] & 8
 
+    # ------------------------=
+    # FUNC: command
+    # DESC: Submits a normal operator command and verifies the native input buffer was consumed, never its rendered output.
+    # ------------------=
+    def command(self, value):
+        self.text(value)
+        self.key("ret")
+        return self.wait(lambda state: state[71] == 1, "operator command consumed")
+
+    # ------------------------=
+    # FUNC: peer_policy
+    # DESC: Changes an explicit peer policy through native Console and checks the shared authoritative projection.
+    # ------------------=
+    def peer_policy(self, peer, category, choice):
+        index = {"object": 0, "namespace": 1}[category]
+        expected = {"deny": 0, "allow": 1}[choice]
+        before = self.state()[20]
+        self.command(f"node policy-update node:{peer} name={category} value={choice}")
+        return self.wait(lambda state: state[20] > before and not state[22]
+                         and struct.pack("<16Q", *state[128:144])[86 + index] == expected,
+                         "committed peer policy projection")
+
+    # ------------------------=
+    # FUNC: peer_grant
+    # DESC: Issues one explicitly consented expiring peer operation and reads its actual native grant handle.
+    # ------------------=
+    def peer_grant(self, peer, operation):
+        before = self.state()[87]
+        self.command(f"node capability-grant node:{peer} name={operation} seconds=3600 confirm=true")
+        return self.wait(lambda state: state[87] > before and state[88] == 0
+                         and state[89] > state[10], "scoped peer grant committed")[87]
+
+    # ------------------------=
+    # FUNC: remote_call
+    # DESC: Exercises the installed asynchronous operator broker and asserts the actual correlated wire result code.
+    # ------------------=
+    def remote_call(self, peer, grant, expected, mutation=False, domain=False):
+        before = self.state()[72]
+        action = "remote-policy-update" if mutation else "remote-domain" if domain else "remote-read"
+        suffix = " name=object value=deny" if mutation else ""
+        self.command(f"node {action} node:{peer} grant={grant}{suffix}")
+        request = self.wait(lambda state: state[72] > before, "remote request admitted")[72]
+        # Collection may precede the asynchronous wire completion. Re-query
+        # the same owned result; never retry or resubmit the remote operation.
+        deadline = time.monotonic() + 120
+        result = self.state()
+        while result is None or result[73] != request:
+            assert time.monotonic() < deadline, {"uncollected_remote_request": request}
+            self.command(f"node remote-result {request}")
+            result = self.state()
+        assert result[76] == expected, {"remote_request": request, "actual": result[76], "expected": expected}
+        assert result[74] != 0 and result[75] != 0
+        return result
+
+# ------------------------=
+# FUNC: installed_remote_acceptance
+# DESC: Requires genuine installed operator grants, peer-authorized remote inspection/mutation, scope denial, policy denial and live revocation.
+# ------------------=
+def installed_remote_acceptance(a, b, nodes_label):
+    aid = struct.pack("<4Q", *a.state()[16:20]).hex()
+    bid = struct.pack("<4Q", *b.state()[16:20]).hex()
+    for guest in (a, b):
+        guest.key("esc")
+        guest.launch("command", 5)
+    inspection = b.peer_grant(aid, "inspect")
+    b.peer_policy(aid, "object", "allow")
+    result = a.remote_call(bid, inspection, 1)
+    response = struct.pack("<10Q", *result[77:87])
+    assert response[:32].hex() == aid
+    assert struct.unpack_from("<I", response, 56)[0] == 0xd002
+    assert result[91] == 128
+    detail = struct.pack("<16Q", *result[92:108])
+    authoritative = struct.pack("<16Q", *b.state()[128:144])
+    assert detail[:76] == authoritative[:76] and detail[84:118] == authoritative[84:118]
+    # Diagnostic status 1 is success; error discriminants are encoded plus one.
+    a.remote_call(bid, inspection, 13, mutation=True)  # CapabilityScopeDenied
+    mutation = b.peer_grant(aid, "policy-update")
+    b.peer_policy(aid, "namespace", "allow")
+    before = b.state()[20]
+    a.remote_call(bid, mutation, 1, mutation=True)
+    b.wait(lambda state: state[20] > before and not state[22]
+           and struct.pack("<16Q", *state[128:144])[86] == 0, "remote mutation reached peer state")
+    a.remote_call(bid, inspection, 14)  # PolicyDenied
+    b.peer_policy(aid, "object", "allow")
+    b.command(f"node capability-revoke {inspection}")
+    a.remote_call(bid, inspection, 12)  # CapabilityRevoked
+    b.peer_policy(aid, "namespace", "deny")
+    for guest in (a, b):
+        guest.screenshot("remote-operator-result")
+        guest.key("esc")
+        guest.select_peer(nodes_label)
+
 # ------------------------=
 # FUNC: main
 # DESC: Runs two independent fresh installs; artifacts and evidence remain in a newly created output directory.
@@ -437,6 +533,7 @@ def main():
     parser.add_argument("--width", type=int, default=2048)
     parser.add_argument("--height", type=int, default=2048)
     parser.add_argument("--confirmation-delay", type=int, default=5)
+    parser.add_argument("--remote-installed", action="store_true")
     args = parser.parse_args()
     assert 640 <= args.width <= 4096 and 480 <= args.height <= 4096
     assert 0 <= args.confirmation_delay <= 10
@@ -506,8 +603,12 @@ def main():
                 guest.frame_report("secure-session")
             report = {"installed_discovery": True, "installed_dual_confirmation": True, "installed_secure_session": True, "full_ms9_lifecycle": False}
             (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
+            if args.remote_installed:
+                installed_remote_acceptance(a, b, args.nodes_label)
+                report["installed_remote_allow_deny_revoke"] = True
+                (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
             with ThreadPoolExecutor(max_workers=2) as workers:
-                list(workers.map(lambda item: item[0].approve_membership(item[1]), [(a, 0), (b, 1)]))
+                list(workers.map(lambda item: item[0].approve_membership(item[1]), [(a, 0), (b, 0 if args.remote_installed else 1)]))
             joined = [guest.wait(lambda state: state[27] == 1 and state[28] == 0 and state[22] == 0, "installed synchronized join") for guest in guests]
             assert joined[0][384:394] == joined[1][384:394]
             for guest in guests:

@@ -11,12 +11,25 @@ struct Pending {
     request: u64,
     capability: u64,
     retain_until: u64,
+    wire_request: u64,
+    peer: node::types::NodeId,
+    grant: u64,
+    payload: NodeOperationV1,
+    deadline: u64,
+    correlation: u64,
+    result: Option<RemoteResult>,
+    detail: [u8; 128],
+    detail_length: usize,
+    offset: usize,
+    token: u64,
 }
 
 pub struct OperatorRequests {
     pending: [Option<Pending>; 8],
     pub last_submitted: u64,
     pub last_completion: Option<RemoteResult>,
+    pub last_detail: [u8; 128],
+    pub last_detail_length: usize,
 }
 impl OperatorRequests {
     // ------------------------=
@@ -24,7 +37,8 @@ impl OperatorRequests {
     // DESC: Allocates a fixed operator request table and empty read-only diagnostic observations.
     // ------------------=
     pub const fn new() -> Self {
-        Self { pending: [None; 8], last_submitted: 0, last_completion: None }
+        Self { pending: [None; 8], last_submitted: 0, last_completion: None,
+            last_detail: [0; 128], last_detail_length: 0 }
     }
 }
 
@@ -48,11 +62,76 @@ pub(super) fn prune(runtime: &mut InfinityRuntime, now: u64) {
     for index in 0..8 {
         let Some(pending) = runtime.node_operator.pending[index] else { continue; };
         if now >= pending.retain_until || !authorized(runtime, pending.user, pending.session) {
-            runtime.iop.remote.discard(caller, pending.request);
+            runtime.iop.remote.discard(caller, pending.wire_request);
             let _ = runtime.capabilities.retire_leaf(pending.capability, issuer);
             runtime.node_operator.pending[index] = None;
+        } else {
+            advance(runtime, index, now);
         }
     }
+}
+
+// ------------------------=
+// FUNC: advance
+// DESC: Collects real wire completions and assembles exact pinned inspection pages under the original capability, owner and deadline.
+// ------------------=
+fn advance(runtime: &mut InfinityRuntime, index: usize, now: u64) {
+    let Some(mut pending) = runtime.node_operator.pending[index] else { return; };
+    if pending.result.is_some() { return; }
+    let Some(caller) = runtime.service_identity(SERVICE_CONSOLE) else { return; };
+    let Some(mut result) = runtime.iop.remote.take_result(caller, pending.wire_request) else { return; };
+    let inspection = pending.payload.operation == OperationId::NodeInspect.machine_id()
+        || pending.payload.operation == OperationId::NodeDomainInspect.machine_id();
+    if inspection {
+        if let Ok(page) = result.result {
+            match append_page(&mut pending, page) {
+                Ok(false) => {
+                    let mut next = pending.payload;
+                    next.handle = pending.token;
+                    next.flags = pending.offset as u32;
+                    match runtime.iop.request_remote_node(&runtime.capabilities, &runtime.nodes,
+                        caller, pending.capability, pending.peer, pending.grant, next,
+                        pending.correlation, result.request_id, now, pending.deadline) {
+                        Ok(request) => {
+                            pending.wire_request = request;
+                            runtime.node_operator.pending[index] = Some(pending);
+                            return;
+                        }
+                        Err(error) => result.result = Err(error),
+                    }
+                }
+                Ok(true) => {}
+                Err(error) => result.result = Err(error),
+            }
+        }
+    }
+    result.request_id = pending.request;
+    result.correlation_id = pending.correlation;
+    pending.result = Some(result);
+    runtime.node_operator.pending[index] = Some(pending);
+}
+
+// ------------------------=
+// FUNC: append_page
+// DESC: Rejects mismatched object, operation, size, offset or snapshot identity before copying a bounded public inspection page.
+// ------------------=
+fn append_page(pending: &mut Pending, page: NodeOperationV1) -> Result<bool, RemoteError> {
+    use node::inspection::{page_data, PAGE_BYTES, NODE_DETAIL_BYTES, DOMAIN_DETAIL_BYTES};
+    let expected = if pending.payload.operation == OperationId::NodeInspect.machine_id() {
+        NODE_DETAIL_BYTES
+    } else { DOMAIN_DETAIL_BYTES };
+    if page.node_id != pending.payload.node_id || page.operation != pending.payload.operation
+        || page.schema_version != 1 || (page.flags >> 16) as usize != expected
+        || (page.flags & 0xffff) as usize != pending.offset || page.handle == 0
+        || (pending.offset != 0 && page.handle != pending.token)
+        || pending.offset >= expected || expected > pending.detail.len()
+    { return Err(RemoteError::MalformedRequest); }
+    pending.token = page.handle;
+    let count = PAGE_BYTES.min(expected - pending.offset);
+    pending.detail[pending.offset..pending.offset + count].copy_from_slice(&page_data(page)[..count]);
+    pending.offset += count;
+    if pending.offset == expected { pending.detail_length = expected; }
+    Ok(pending.offset == expected)
 }
 
 // ------------------------=
@@ -85,10 +164,13 @@ pub(super) fn submit_to(runtime: &mut InfinityRuntime, user: StableId, session: 
         let correlation = runtime.iop.next_node_request().map_err(|_| RemoteError::QueueFull);
         let result = correlation.and_then(|correlation| runtime.iop.request_remote_node(
             &runtime.capabilities, &runtime.nodes, caller, cap, peer, grant, payload,
-            correlation, correlation, now, deadline));
+            correlation, correlation, now, deadline).map(|request| (request, correlation)));
         match result {
-            Ok(request) => {
-                runtime.node_operator.pending[index] = Some(Pending { user, session, request, capability: cap, retain_until: deadline.saturating_add(300) });
+            Ok((request, correlation)) => {
+                runtime.node_operator.pending[index] = Some(Pending { user, session, request,
+                    capability: cap, retain_until: deadline.saturating_add(300), wire_request: request,
+                    peer, grant, payload, deadline, correlation, result: None, detail: [0; 128],
+                    detail_length: 0, offset: 0, token: 0 });
                 runtime.node_operator.last_submitted = request;
                 Ok(request)
             }
@@ -113,11 +195,16 @@ pub(super) fn take_result_from(runtime: &mut InfinityRuntime, user: StableId, se
         let index = runtime.node_operator.pending.iter().position(|entry| entry.map(|p|
             p.user == user && p.session == session && p.request == request).unwrap_or(false))
             .ok_or(RemoteError::NotFound)?;
-        let caller = runtime.service_identity(SERVICE_CONSOLE).ok_or(RemoteError::AccessDenied)?;
         let issuer = runtime.service_identity(SERVICE_NODE_TRUST).ok_or(RemoteError::AccessDenied)?;
-        let Some(result) = runtime.iop.remote.take_result(caller, request) else { return Ok(None); };
+        advance(runtime, index, runtime.node_clock.unwrap_or(0));
+        let Some(result) = runtime.node_operator.pending[index].and_then(|pending| pending.result) else { return Ok(None); };
+        runtime.node_operator.last_detail_length = 0;
         if let Some(pending) = runtime.node_operator.pending[index].take() {
             let _ = runtime.capabilities.retire_leaf(pending.capability, issuer);
+            if result.result.is_ok() {
+                runtime.node_operator.last_detail = pending.detail;
+                runtime.node_operator.last_detail_length = pending.detail_length;
+            }
         }
         runtime.node_operator.last_completion = Some(result);
         Ok(Some(result))
@@ -181,5 +268,52 @@ mod tests {
         submit_to(&mut runtime, user, b, peer, 1, payload).unwrap();
         prune(&mut runtime, 340);
         assert_eq!(runtime.capabilities.count(), baseline);
+    }
+
+    // ------------------------=
+    // FUNC: operator_inspection_pages_are_complete_and_pinned
+    // DESC: Assembles real authoritative inspection bytes and rejects page identity, schema, size, offset and token substitution.
+    // ------------------=
+    #[test]
+    fn operator_inspection_pages_are_complete_and_pinned() {
+        let (mut runtime, user, session, _, peer) = operator_fixture();
+        let payload = node::reconciliation::request(peer.0, OperationId::NodeInspect);
+        submit_to(&mut runtime, user, session, peer, 1, payload).unwrap();
+        let mut pending = runtime.node_operator.pending[0].unwrap();
+        pending.payload = payload;
+        let first = node::inspection::inspect(&runtime.nodes, OperationId::NodeInspect, payload).unwrap();
+        for kind in 0..5 {
+            let mut changed = first;
+            match kind {
+                0 => changed.node_id[0] ^= 1,
+                1 => changed.operation = OperationId::NodeDomainInspect.machine_id(),
+                2 => changed.schema_version = 2,
+                3 => changed.flags ^= 1 << 16,
+                _ => changed.flags |= 24,
+            }
+            let mut candidate = pending;
+            assert_eq!(append_page(&mut candidate, changed), Err(RemoteError::MalformedRequest));
+            assert_eq!(candidate.offset, 0);
+            assert_eq!(candidate.detail, [0; 128]);
+        }
+        assert_eq!(append_page(&mut pending, first), Ok(false));
+        let mut next = payload;
+        next.handle = first.handle;
+        next.flags = 24;
+        let mut wrong = node::inspection::inspect(&runtime.nodes, OperationId::NodeInspect, next).unwrap();
+        wrong.handle ^= 2;
+        assert_eq!(append_page(&mut pending, wrong), Err(RemoteError::MalformedRequest));
+        while pending.detail_length == 0 {
+            next.flags = pending.offset as u32;
+            let page = node::inspection::inspect(&runtime.nodes, OperationId::NodeInspect, next).unwrap();
+            append_page(&mut pending, page).unwrap();
+        }
+        let mut expected = [0; 128];
+        node::reconciliation::collect(payload, &mut expected, &mut |input|
+            node::inspection::inspect(&runtime.nodes, OperationId::NodeInspect, input)).unwrap();
+        assert_eq!(pending.detail_length, 128);
+        assert_eq!(pending.detail, expected);
+        assert_eq!(pending.deadline, 40);
+        assert_eq!(pending.detail[..32], peer.0);
     }
 }
