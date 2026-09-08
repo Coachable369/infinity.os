@@ -88,6 +88,47 @@ pub fn run() {
 }
 
 // ------------------------=
+// FUNC: pairing_keeps_discovery_live
+// DESC: Keeps real discovery and pairing carriage active while two operators confirm at different times within the pairing lease.
+// ------------------=
+#[test]
+fn pairing_keeps_discovery_live() {
+    let mut a = fixture::configured([2,0,0,0,0,1], [10,42,0,1], [10,42,0,2]);
+    let mut b = fixture::configured([2,0,0,0,0,2], [10,42,0,2], [10,42,0,1]);
+    let mut an = NodeRuntime::new(); let mut bn = NodeRuntime::new();
+    let aid = an.initialize(&[0x31;32], true).unwrap();
+    let bid = bn.initialize(&[0x32;32], true).unwrap();
+    let mut at = NodeTransport::new(); let mut bt = NodeTransport::new();
+    at.initialize(&[0x41;32], true).unwrap(); bt.initialize(&[0x42;32], true).unwrap();
+    at.persist_discovery = engineering_discovery_writer; bt.persist_discovery = engineering_discovery_writer;
+    at.attach(authority(&a), &a.network, &a.capabilities, 0).unwrap();
+    bt.attach(authority(&b), &b.network, &b.capabilities, 0).unwrap();
+    let mut capture = None;
+    for tick in 0..90 {
+        for _ in 0..4 {
+            at.poll(&mut an, &mut a.network, &a.capabilities, tick);
+            bt.poll(&mut bn, &mut b.network, &b.capabilities, tick);
+            deliver(&mut a, &mut b, tick, &mut capture);
+            deliver(&mut b, &mut a, tick, &mut capture);
+        }
+        if tick == 9 {
+            let link = at.inspect(a.connection, a.owner).unwrap();
+            at.trust.begin(&mut an, link, 0, false, tick).unwrap();
+        }
+        if tick == 45 || tick == 65 {
+            let av = at.trust.verification(aid, bid).expect("left pairing must survive operator review");
+            let bv = bt.trust.verification(bid, aid).expect("right pairing must survive operator review");
+            assert_eq!(av.code, bv.code);
+            assert_eq!(av.fingerprint, bv.fingerprint);
+            if tick == 45 { at.trust.confirm(&mut an, av.transaction, av.code, true, tick).unwrap(); }
+            else { bt.trust.confirm(&mut bn, bv.transaction, bv.code, true, tick).unwrap(); }
+        }
+    }
+    assert_eq!(an.discovered_nodes().iter().flatten().find(|peer| peer.id == bid).unwrap().trust, TrustState::Trusted);
+    assert_eq!(bn.discovered_nodes().iter().flatten().find(|peer| peer.id == aid).unwrap().trust, TrustState::Trusted);
+}
+
+// ------------------------=
 // FUNC: engineering_discovery_writer
 // DESC: Explicit HOST fixture commit boundary; production transport requires the native durable writer.
 // ------------------=

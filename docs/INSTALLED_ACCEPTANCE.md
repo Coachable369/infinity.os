@@ -174,6 +174,38 @@ gates passed. HOST retained drag measured 300 frames, average 30,000 ns, p95
 
 ## Frame measurements
 
+### 2026-09-08 installed pairing blocker — NOT COMPLETE
+
+The fresh two-guest run in `/tmp/infinity-ms9-installed-20260908-d` passed blank-disk
+installation, detached-media boot, onboarding, cold authentication, native endpoint
+connection, discovery and matching authenticated pairing views. The first operator
+confirmed successfully. The second accepted all six digits but lost the transcript
+before submission: clock 1020, input lease expiry 1047, accepted count 6, pairing
+handle 0, no input validation error. No installed secure session or later membership,
+remote IOP, revocation or cold-restoration acceptance passed in this run.
+
+The public projection's old `last_seen` value is not sufficient evidence of the
+authoritative liveness timestamp. Discovery starvation is a hypothesis, not a
+confirmed diagnosis. A targeted scheduling change failed HOST preflight and was
+removed; no unverified runtime correction was packaged. Both owned test guests
+are stopped. The two-correction-loop limit was reached.
+
+`discovery_acceptance::pairing_keeps_discovery_live` is a newly retained **FAILING**
+behavioral regression: production Ethernet/UDP/discovery/pairing paths with delayed
+operator confirmation. It currently loses the left verification view before the
+first confirmation. This is not yet proof of the same cause as the installed
+right-peer failure. Run it explicitly with:
+
+```
+CARGO_TARGET_DIR=build/milestone9-harness cargo test --manifest-path tools/milestone9-harness/Cargo.toml pairing_keeps_discovery_live
+```
+
+The previous green engineering gates predate this additional failing coverage.
+Logs: `/tmp/ms9-discovery-pairing-test.log`,
+`/tmp/ms9-discovery-pairing-fixed.log`, `/tmp/ms9-pairing-fresh-mesh.log`.
+The ISO hashes above remain unchanged. No hands-on VirtualBox or installed UI
+performance acceptance is claimed.
+
 `INFINITY_DIAGNOSTIC_FRAMES` contains 10802 little-endian u64 words. Word 0 is
 schema 1; word 1 is the latest completed sequence. The remaining 3600 ring slots
 contain `(sequence, measured frame_ns, observed timestamp_ns)`; `u64::MAX` means
