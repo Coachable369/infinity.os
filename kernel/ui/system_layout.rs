@@ -6,6 +6,21 @@
 //! desktop, menu, and Settings surfaces.
 
 use super::geometry::{Point, Rect};
+
+// ------------------------=
+// FUNC: scrollbar_thumb_contains
+// DESC: Gives thin visual thumbs the same horizontal grab area as their tracks without stealing page clicks.
+// ------------------=
+pub fn scrollbar_thumb_contains(thumb: Rect, point: Point, scale: usize) -> bool {
+    let padding = (5 * scale.max(1)) as i32;
+    Rect {
+        x: thumb.x.saturating_sub(padding),
+        y: thumb.y,
+        width: thumb.width.saturating_add((padding * 2) as u32),
+        height: thumb.height,
+    }
+    .contains(point)
+}
 use super::installer_template::InstallerTemplateRole;
 
 pub const SETTINGS_SECTION_ICON_SIZE: usize = 25;
@@ -1416,7 +1431,7 @@ impl SystemLayout {
             return AppLauncherTarget::Search;
         }
         let scroll = self.app_launcher_scroll_geometry(visible_apps);
-        if scroll.maximum_scroll != 0 && scroll.thumb.contains(point) {
+        if scroll.maximum_scroll != 0 && scrollbar_thumb_contains(scroll.thumb, point, self.scale) {
             return AppLauncherTarget::ScrollbarThumb;
         }
         if scroll.maximum_scroll != 0 && geometry.scrollbar_track.contains(point) {
@@ -1743,7 +1758,7 @@ impl SystemLayout {
             geometry.track.width as usize + 10 * self.scale,
             geometry.track.height as usize,
         );
-        if geometry.thumb.contains(point) {
+        if scrollbar_thumb_contains(geometry.thumb, point, self.scale) {
             Some(EditorScrollTarget::Thumb)
         } else if hit_track.contains(point) {
             Some(EditorScrollTarget::Page(point.y >= geometry.thumb.y))
@@ -2218,7 +2233,9 @@ impl SystemLayout {
             geometry.scrollbar_track.width as usize + 10 * self.scale,
             geometry.scrollbar_track.height as usize,
         );
-        if geometry.maximum_scroll > 0 && geometry.scrollbar_thumb.contains(point) {
+        if geometry.maximum_scroll > 0
+            && scrollbar_thumb_contains(geometry.scrollbar_thumb, point, self.scale)
+        {
             return Some(SettingsTarget::ScrollThumb);
         }
         if geometry.maximum_scroll > 0 && scroll_hit.contains(point) {

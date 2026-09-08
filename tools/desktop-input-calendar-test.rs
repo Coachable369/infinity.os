@@ -12,6 +12,43 @@ mod ui;
 // DESC: Exercises input timing, preference serialization, calendar boundaries and immediate launcher scrolling.
 // ------------------=
 fn main() {
+    use ui::geometry::{Point, Rect};
+    use ui::system_layout::{scrollbar_thumb_contains, EditorScrollGeometry, SystemLayout};
+    let thumb = Rect {
+        x: 990,
+        y: 100,
+        width: 7,
+        height: 80,
+    };
+    assert!(scrollbar_thumb_contains(thumb, Point { x: 987, y: 130 }, 1));
+    assert!(!scrollbar_thumb_contains(
+        thumb,
+        Point { x: 987, y: 200 },
+        1
+    ));
+    let geometry = EditorScrollGeometry {
+        track: Rect {
+            x: 990,
+            y: 100,
+            width: 7,
+            height: 400,
+        },
+        thumb,
+        maximum_scroll: 1000,
+    };
+    let layout = SystemLayout::new(1000, 1000);
+    assert_eq!(
+        layout.desktop_editor_scroll_offset_for_thumb(130, geometry, 30),
+        0
+    );
+    assert_eq!(
+        layout.desktop_editor_scroll_offset_for_thumb(290, geometry, 30),
+        500
+    );
+    assert_eq!(
+        layout.desktop_editor_scroll_offset_for_thumb(450, geometry, 30),
+        1000
+    );
     use input_preferences::{Preferences, Repeat};
     let mut p = Preferences::defaults();
     assert_eq!(Preferences::decode([0; 8]), p);

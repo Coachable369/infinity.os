@@ -6711,7 +6711,7 @@ impl ConsoleRuntime {
                 return;
             } else if self.editor_scroll_dragging {
                 let geometry = self.editor_scroll_geometry();
-                if left_button {
+                if left_button || released {
                     self.editor_scroll_row = layout.desktop_editor_scroll_offset_for_thumb(
                         self.pointer_y,
                         geometry,
@@ -7381,7 +7381,7 @@ impl ConsoleRuntime {
                 return;
             }
             if self.launcher_scroll_dragging {
-                if left_button {
+                if left_button || released {
                     let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
                     let track_top = geometry.scrollbar_track.y;
                     let travel = geometry
@@ -7449,6 +7449,8 @@ impl ConsoleRuntime {
                     self.launcher_scroll_dragging = true;
                 }
                 AppLauncherTarget::ScrollbarTrack if clicked => {
+                    self.launcher_scroll_grab_offset = scroll.thumb.height as i32 / 2;
+                    self.launcher_scroll_dragging = true;
                     let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
                     let travel = geometry
                         .scrollbar_track
@@ -7557,7 +7559,7 @@ impl ConsoleRuntime {
                     return;
                 }
             } else if self.settings_scroll_dragging {
-                if left_button {
+                if left_button || released {
                     let offset = layout.settings_scroll_offset_for_thumb_in_section(
                         self.pointer_y,
                         self.settings_window,
@@ -7566,7 +7568,6 @@ impl ConsoleRuntime {
                     );
                     self.settings_window.scroll_offset = offset;
                     self.settings_scroll_target = offset;
-                    self.settings_window.scroll_offset = offset;
                 }
                 if released {
                     self.settings_scroll_dragging = false;
