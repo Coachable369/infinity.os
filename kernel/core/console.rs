@@ -1058,6 +1058,7 @@ impl ConsoleRuntime {
     // DESC: Implements the redraw operation.
     // ------------------=
     fn redraw(&self) {
+        if !unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).request() } { return; }
         crate::runtime::with_runtime(|runtime| { runtime.node_selection = self.selected_node_id; runtime.node_policy_offset = self.node_policy_offset; });
         self.publish_text_input_presentation();
         if matches!(
@@ -11513,6 +11514,21 @@ fn object_error_text(error: crate::storage::object::ObjectError) -> &'static [u8
 }
 
 static mut RUNTIME: Option<ConsoleRuntime> = None;
+static mut INPUT_PRESENTATION: crate::ui::input_batch::PresentationBatch = crate::ui::input_batch::PresentationBatch::new();
+
+// ------------------------=
+// FUNC: input_batch
+// DESC: Drains bounded keyboard actions without rendering between scancodes, then presents the resulting state once.
+// ------------------=
+pub fn input_batch(action: impl FnOnce()) {
+    let owner = unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).enter() };
+    action();
+    if unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).leave(owner) } {
+        unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
+            runtime.redraw(); diagnostics::publish(runtime);
+        } }
+    }
+}
 
 // ------------------------=
 // FUNC: initialize

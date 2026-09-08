@@ -393,6 +393,7 @@ impl WireTrust {
             .flatten()
             .find(|t| t.link.peer == Some(peer) && t.stage == WireState::Established)
             .ok_or(NodeError::SessionNotFound)?;
+        checked_transaction_peer(nodes, t, now)?;
         if t.pending.is_some() {
             return Err(NodeError::ResourceLimit);
         }
@@ -624,7 +625,7 @@ impl WireTrust {
         let peer_id = link.peer.ok_or(NodeError::UnknownNode)?;
         let verification = self.transactions.iter().flatten().find(|t|
             t.id == id && t.link.connection == link.connection && t.link.peer == Some(peer_id));
-        let peer = if matches!(kind, CONFIRM | CANCEL) {
+        let peer = if matches!(kind, CONFIRM | CANCEL | DATA | CLOSE) {
             match verification {
                 Some(t) => { check_pending(nodes, t, now)?; checked_transaction_peer(nodes, t, now)? }
                 None => checked_peer(nodes, peer_id, now)?,
@@ -1118,9 +1119,21 @@ fn checked_identity(nodes: &NodeRuntime, id: NodeId) -> Result<NodeDescriptor, N
 }
 // ------------------------=
 // FUNC: checked_transaction_peer
-// DESC: Keeps already mutually authenticated confirmation under its own unchanged transaction lease; new handshakes and live sessions still require current discovery liveness.
+// DESC: Separates established session authority from discovery hints, retaining exact peer/key/trust and original session expiry checks.
 // ------------------=
 fn checked_transaction_peer(nodes: &NodeRuntime, t: &Transaction, now: u64) -> Result<NodeDescriptor, NodeError> {
+    if t.stage == WireState::Established {
+        let peer = checked_identity(nodes, t.link.peer.ok_or(NodeError::UnknownNode)?)?;
+        if peer.trust != TrustState::Trusted { return Err(NodeError::NotTrusted); }
+        if t.remote_offer[..32] != peer.public_key { return Err(NodeError::IdentityMismatch); }
+        let session = nodes.sessions.iter().flatten().find(|s| Some(s.id) == t.session)
+            .ok_or(NodeError::SessionNotFound)?;
+        if session.peer != peer.id { return Err(NodeError::IdentityMismatch); }
+        if session.state != SessionState::Established || now >= session.expires_at || now >= t.expires {
+            return Err(NodeError::SessionExpired);
+        }
+        return Ok(peer);
+    }
     if t.session.is_none() && matches!(t.stage, WireState::PendingVerification
         | WireState::LocallyConfirmed | WireState::RemotelyConfirmed | WireState::Confirmed) {
         if now >= t.expires { return Err(NodeError::PairingExpired); }

@@ -4,6 +4,45 @@ use crate::node::types::TrustState;
 use fixture::Fixture;
 
 // ------------------------=
+// FUNC: established_session_is_not_a_discovery_lease
+// DESC: Suppresses discovery after establishment, then verifies authenticated data, exact session expiry, and immediate trust revocation independently.
+// ------------------=
+#[test]
+fn established_session_is_not_a_discovery_lease() {
+    let mut a = fixture::configured([2, 0, 0, 0, 0, 1], [0x91; 32]);
+    let mut b = fixture::configured([2, 0, 0, 0, 0, 2], [0x92; 32]);
+    let mut now = 0;
+    advance(&mut a, &mut b, &mut now, 8);
+    let aid = a.nodes.local_id().unwrap(); let bid = b.nodes.local_id().unwrap();
+    let link = a.transport.inspect(a.connection, a.owner).unwrap();
+    let tx = a.transport.trust.begin(&mut a.nodes, link, 0, false, now).unwrap();
+    advance(&mut a, &mut b, &mut now, 16);
+    let code = a.transport.trust.verification(aid, bid).unwrap().code;
+    a.transport.trust.confirm(&mut a.nodes, tx, code, true, now).unwrap();
+    b.transport.trust.confirm(&mut b.nodes, tx, code, true, now).unwrap();
+    advance(&mut a, &mut b, &mut now, 6);
+    a.transport.trust.begin(&mut a.nodes, link, 0, true, now).unwrap();
+    advance(&mut a, &mut b, &mut now, 16);
+    let handle = a.transport.trust.session(bid).unwrap();
+    let expiry = a.nodes.sessions().iter().flatten().find(|s| s.id == handle).unwrap().expires_at;
+    now += crate::node::DISCOVERY_LEASE_TICKS + 1;
+    a.nodes.sweep(now); b.nodes.sweep(now);
+    a.transport.trust.tick(&mut a.nodes, now); b.transport.trust.tick(&mut b.nodes, now);
+    assert_eq!(a.transport.trust.session(bid), Some(handle));
+    let mut expired_nodes = a.nodes.clone(); let mut expired_wire = a.transport.trust.clone();
+    expired_wire.tick(&mut expired_nodes, expiry);
+    assert_eq!(expired_wire.session(bid), None);
+    let mut revoked_nodes = a.nodes.clone(); let mut revoked_wire = a.transport.trust.clone();
+    revoked_nodes.revoke_trust(bid, now, 1).unwrap();
+    assert!(revoked_wire.send_data(&mut revoked_nodes, bid, &[7], false, now).is_err());
+    a.transport.trust.send_data(&mut a.nodes, bid, &[1, 7, 9], false, now).unwrap();
+    let packet = a.transport.trust.outgoing(a.connection, now).unwrap();
+    let peer_link = b.transport.inspect(b.connection, b.owner).unwrap();
+    b.transport.trust.ingest(&mut b.nodes, peer_link, &packet.bytes[..packet.length as usize], now).unwrap();
+    assert_eq!(b.transport.trust.receive_data().unwrap().bytes[..3], [1, 7, 9]);
+}
+
+// ------------------------=
 // FUNC: verified_pairing_outlives_discovery_hint
 // DESC: Drops ordinary discovery traffic beyond its liveness lease while preserving an authenticated unexpired pairing, then requires signed dual consent and rejects actual expiry or revocation.
 // ------------------=

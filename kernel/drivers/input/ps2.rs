@@ -288,42 +288,35 @@ pub fn run() -> ! {
                 mouse_index = 0;
             }
         } else {
-            if value == 0xe0 {
-                extended = true;
-                continue;
-            }
-            let scan = value & 0x7f;
-            if scan == 0x2a || scan == 0x36 {
-                shift = value & 0x80 == 0;
-                continue;
-            }
-            let code = if extended {
-                match scan {
-                    0x4d => 0x4f,
-                    0x4b => 0x50,
-                    0x50 => 0x51,
-                    0x48 => 0x52,
-                    _ => 0,
+            crate::console::input_batch(|| {
+                dispatch_keyboard(value, &mut shift, &mut extended);
+                // Bounded drain preserves every make/break event. Do not consume
+                // mouse bytes here: pointer presses retain immediate presentation.
+                for _ in 1..64 {
+                    let next = unsafe { inb(STATUS_COMMAND) };
+                    if next & 1 == 0 || next & 0x20 != 0 { break; }
+                    dispatch_keyboard(unsafe { inb(DATA) }, &mut shift, &mut extended);
                 }
-            } else {
-                key_code(scan)
-            };
-            extended = false;
-            dispatch(InputEvent {
-                source: InputSource::Keyboard,
-                action: if value & 0x80 == 0 {
-                    InputAction::Pressed
-                } else {
-                    InputAction::Released
-                },
-                code,
-                modifiers: shift as u8,
-                delta_x: 0,
-                delta_y: 0,
             });
         }
         // Service queued controller bytes before spending time on the
         // high-resolution bootstrap effects pass.
         crate::bootstrap::animation_tick();
     }
+}
+
+// ------------------------=
+// FUNC: dispatch_keyboard
+// DESC: Decodes each ordered PS/2 make/break byte while retaining modifier and extended-prefix state across bounded drains.
+// ------------------=
+fn dispatch_keyboard(value: u8, shift: &mut bool, extended: &mut bool) {
+    if value == 0xe0 { *extended = true; return; }
+    let scan = value & 0x7f;
+    if scan == 0x2a || scan == 0x36 { *shift = value & 0x80 == 0; return; }
+    let code = if *extended { match scan { 0x4d => 0x4f, 0x4b => 0x50, 0x50 => 0x51, 0x48 => 0x52, _ => 0 } }
+        else { key_code(scan) };
+    *extended = false;
+    dispatch(InputEvent { source: InputSource::Keyboard,
+        action: if value & 0x80 == 0 { InputAction::Pressed } else { InputAction::Released },
+        code, modifiers: *shift as u8, delta_x: 0, delta_y: 0 });
 }
