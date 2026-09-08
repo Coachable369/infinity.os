@@ -49,6 +49,13 @@ fn authenticated_transcript_invalidates_node_presentation() {
     assert_eq!(a.code, b.code);
     assert_eq!(a.peer, b.local);
     assert!(ready.remaining > 0);
+    let mut approval = request(rid.0, OperationId::NodePairConfirm);
+    approval.handle = a.pairing;
+    approval.value = a.code;
+    approval.flags = iop::NODE_OPERATION_HUMAN_APPROVED;
+    left.nodes.commit_wire_control(&mut left.node_transport.trust, Some(ll), OperationId::NodePairConfirm, approval, 12, 13, 14, |_| true).unwrap();
+    assert_ne!(node_client::presentation(&left), ready);
+    assert_eq!(left.nodes.discovered_nodes()[0].unwrap().trust, node::types::TrustState::PairingPending);
     left.node_clock = Some(a.expires);
     left.node_transport.trust.tick(&mut left.nodes, a.expires);
     assert!(node_client::presentation(&left).verification.is_none());
