@@ -31,3 +31,14 @@ TESTED (host behavioral harness, not installed multi-node acceptance):
 IMPLEMENTED BUT UNTESTED on installed hardware: the above algorithms and native persistence adapter. The adapter is internal, not yet exposed through an authenticated IOP service. Its initial envelope supports nonempty payloads up to 16,256 bytes; multi-extent/empty-object support remains required. It does not replace application ObjectId with its internal backing-object identity.
 
 NOT YET IMPLEMENTED: authoritative durable manifests/coordinated healing, transparent remote reads, native transfer operations and per-chunk authority enforcement, complete resource producers/discovery wiring, shared immutable-copy storage, common Console/GUI surfaces, dedicated System Generation service registration and three-installed-node failure/healing/reboot acceptance. No claim of protected distributed storage availability or MS10 completion is made.
+
+## Latest build
+
+`./build.sh` exited 0 on source `8868564`; log `/tmp/ms10-foundation-build.log`. Both installer and installed kernels compiled, the new fabric gate and existing build gates passed, and fresh ISOs were assembled:
+
+- ARM64 SHA-256: `271ba6f3491557a781e0a5f0db17534d8a4b255d1ae7cde39018b21f8cbd06dc`
+- x86_64 SHA-256: `525f7dd82bd7c9722a82a5ede60e5b96b2d9440874da806133a2f19f10f020af`
+
+Installer interaction evidence remains the two pinned earlier images in INSTALLER_CLICK_PROGRESS_ACCEPTANCE.md; installer interaction source was unchanged by these fabric additions. These latest images have not passed MS10 installed acceptance. Internal fabric code compiling into the source tree is not equivalent to a registered, running System Generation fabric service.
+
+Commits are local on mainline; no Git remote is configured, so push/pull could not be performed.
