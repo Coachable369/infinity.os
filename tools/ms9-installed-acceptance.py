@@ -5,7 +5,9 @@ Never parses guest terminal text. Only fresh, harness-owned disks are modified.
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import json
+import hashlib
 import pathlib
+import shutil
 import socket
 import struct
 import subprocess
@@ -65,7 +67,7 @@ class Guest:
     def boot(self, installer):
         assert self.process is None
         self.installer = installer
-        elf = ROOT / "build/x86_64" / ("kernel.elf" if installer else "installed-kernel.elf")
+        elf = self.work.parent / "artifacts" / ("kernel.elf" if installer else "installed-kernel.elf")
         self.address, self.length = symbol(elf, "INFINITY_DIAGNOSTIC_SNAPSHOT")
         self.frames_address, self.frames_length = symbol(elf, "INFINITY_DIAGNOSTIC_FRAMES")
         qmp = self.work / "qmp.sock"
@@ -79,7 +81,7 @@ class Guest:
                    "-object", "rng-random,id=rng0,filename=/dev/urandom", "-device", "virtio-rng-pci,rng=rng0",
                    "-qmp", f"unix:{qmp},server=on,wait=off", "-display", "none", "-serial", "stdio", "-no-reboot"]
         if installer:
-            command += ["-cdrom", str(ROOT / "builds/InfinityOS-x86_64.iso"), "-boot", "order=d"]
+            command += ["-cdrom", str(self.work.parent / "artifacts/installer.iso"), "-boot", "order=d"]
         else:
             command += ["-boot", "order=c"]
         self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log)
@@ -426,6 +428,17 @@ def main():
         assert json.loads((work / "install-result.json").read_text())["independent_installs"] == 2
     else:
         work.mkdir(parents=True, exist_ok=False)
+        artifacts = work / "artifacts"
+        artifacts.mkdir()
+        hashes = {}
+        for source, name in [(ROOT / "builds/InfinityOS-x86_64.iso", "installer.iso"),
+                             (ROOT / "build/x86_64/kernel.elf", "kernel.elf"),
+                             (ROOT / "build/x86_64/installed-kernel.elf", "installed-kernel.elf")]:
+            target = artifacts / name
+            shutil.copyfile(source, target)
+            with target.open("rb") as stream:
+                hashes[name] = hashlib.file_digest(stream, "sha256").hexdigest()
+        (artifacts / "sha256.json").write_text(json.dumps(hashes, indent=2))
     guests = []
     results = []
     try:
