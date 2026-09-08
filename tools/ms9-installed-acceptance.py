@@ -650,6 +650,47 @@ def installed_domain_inspection(a, b, nodes_label):
         guest.key("down")
 
 # ------------------------=
+# FUNC: installed_membership_acceptance
+# DESC: Exercises consensual join, authenticated domain inspection, synchronized leave and ISO-detached cold recovery on the same installed identities.
+# ------------------=
+def installed_membership_acceptance(guests, nodes_label, remote, report, report_path, peer_page=0):
+    a, b = guests
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        list(workers.map(lambda item: item[0].approve_membership(item[1]),
+                         [(a, 0), (b, peer_page)]))
+    joined = [guest.wait(lambda state: state[27] == 1 and state[28] == 0 and state[22] == 0,
+                         "installed synchronized join") for guest in guests]
+    assert joined[0][384:394] == joined[1][384:394]
+    for guest in guests:
+        guest.screenshot("synchronized-join")
+    if remote:
+        installed_domain_inspection(a, b, nodes_label)
+        report["installed_remote_domain_inspection"] = True
+        report_path.write_text(json.dumps(report, indent=2))
+    for _ in range(3):
+        a.key("down")
+    a.key("ret")
+    left = [guest.wait(lambda state: state[27] == 0 and state[28] == 0
+                       and state[392] > joined[index][392], "installed synchronized leave")
+            for index, guest in enumerate(guests)]
+    assert left[0][384:394] == left[1][384:394]
+    report["installed_join_leave"] = True
+    report_path.write_text(json.dumps(report, indent=2))
+    for guest in guests:
+        guest.stop()
+    for guest in guests:
+        guest.boot(False)
+    for index, guest in enumerate(guests):
+        state = guest.authenticate()
+        assert state[16:20] == joined[index][16:20]
+        restored = guest.wait(lambda value: value[25] == 1 and value[29] == 1
+                              and value[48] > 0 and value[22] == 0,
+                              "installed trusted state restored")
+        assert restored[26] == 0 and restored[384:394] == left[index][384:394]
+    report["installed_trust_membership_cold_boot"] = True
+    report_path.write_text(json.dumps(report, indent=2))
+
+# ------------------------=
 # FUNC: main
 # DESC: Runs two independent fresh installs; artifacts and evidence remain in a newly created output directory.
 # ------------------=
@@ -667,10 +708,13 @@ def main():
     parser.add_argument("--remote-installed", action="store_true")
     parser.add_argument("--resume-remote", action="store_true",
                         help="Continue remote acceptance on already independently installed, paired nodes")
+    parser.add_argument("--resume-membership", action="store_true",
+                        help="Continue membership after a recorded passing installed remote-operation run")
     parser.add_argument("--focus-pairing", action="store_true", help="Run protocol acceptance only; explicitly excludes rapid-input acceptance")
     parser.add_argument("--installer-clicks", action="store_true")
     args = parser.parse_args()
     assert not args.resume_remote or (args.mesh_installed and args.remote_installed)
+    assert not args.resume_membership or (args.mesh_installed and args.remote_installed and not args.resume_remote)
     assert 640 <= args.width <= 4096 and 480 <= args.height <= 4096
     assert 0 <= args.confirmation_delay <= 10
     work = args.output.resolve()
@@ -706,7 +750,9 @@ def main():
                 authenticated = list(workers.map(lambda guest: guest.authenticate(), guests))
             for guest, current in zip(guests, authenticated):
                 assert struct.pack("<4Q", *current[16:20]).hex() == known[guest.number - 1]["node_id"]
-            if args.resume_remote:
+            if args.resume_remote or args.resume_membership:
+                if args.resume_membership:
+                    assert json.loads((work / "remote-continuation-result.json").read_text())["installed_remote_allow_deny_revoke"] is True
                 for guest in guests:
                     guest.wait(lambda state: state[25] == 1 and state[29] == 1,
                                "persisted peer authority and link")
@@ -717,6 +763,11 @@ def main():
                 a.key("ret")
                 for guest in guests:
                     guest.wait(lambda state: state[26] == 1, "installed secure session")
+                if args.resume_membership:
+                    installed_membership_acceptance(guests, args.nodes_label, True,
+                        {"full_ms9_lifecycle": False, "boundary": "installed QEMU membership continuation"},
+                        work / "membership-continuation-result.json")
+                    return
                 installed_remote_acceptance(a, b, args.nodes_label)
                 (work / "remote-continuation-result.json").write_text(json.dumps({
                     "installed_remote_allow_deny_revoke": True,
@@ -760,34 +811,8 @@ def main():
                 installed_remote_acceptance(a, b, args.nodes_label)
                 report["installed_remote_allow_deny_revoke"] = True
                 (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
-            with ThreadPoolExecutor(max_workers=2) as workers:
-                list(workers.map(lambda item: item[0].approve_membership(item[1]), [(a, 0), (b, 0 if args.remote_installed else 1)]))
-            joined = [guest.wait(lambda state: state[27] == 1 and state[28] == 0 and state[22] == 0, "installed synchronized join") for guest in guests]
-            assert joined[0][384:394] == joined[1][384:394]
-            for guest in guests:
-                guest.screenshot("synchronized-join")
-            if args.remote_installed:
-                installed_domain_inspection(a, b, args.nodes_label)
-                report["installed_remote_domain_inspection"] = True
-                (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
-            for _ in range(3):
-                a.key("down")
-            a.key("ret")
-            left = [guest.wait(lambda state: state[27] == 0 and state[28] == 0 and state[392] > joined[index][392], "installed synchronized leave") for index, guest in enumerate(guests)]
-            assert left[0][384:394] == left[1][384:394]
-            report["installed_join_leave"] = True
-            (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
-            for guest in guests:
-                guest.stop()
-            for guest in guests:
-                guest.boot(False)
-            for index, guest in enumerate(guests):
-                state = guest.authenticate()
-                assert state[16:20] == joined[index][16:20]
-                restored = guest.wait(lambda value: value[25] == 1 and value[29] == 1 and value[48] > 0 and value[22] == 0, "installed trusted state restored")
-                assert restored[26] == 0 and restored[384:394] == left[index][384:394]
-            report["installed_trust_membership_cold_boot"] = True
-            (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
+            installed_membership_acceptance(guests, args.nodes_label, args.remote_installed,
+                report, work / "mesh-result.json", 0 if args.remote_installed else 1)
             return
         for number in [1, 2]:
             guest = Guest(work, number, args.firmware, reuse=args.resume_installed, width=args.width, height=args.height)
