@@ -406,6 +406,11 @@ class Guest:
     # DESC: Uses the real searchable application launcher and verifies its resulting native surface.
     # ------------------=
     def launch(self, query, mode, section=None):
+        # Installed sessions restore their focused app. Return focus to the
+        # desktop through its normal Escape action before using its launcher.
+        state = self.state()
+        if state is not None and state[4] == 5:
+            self.key("esc")
         self.key("slash")
         self.wait(lambda state: state[4] == 6, "launcher opened")
         self.text(query)
