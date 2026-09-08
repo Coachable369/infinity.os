@@ -378,7 +378,7 @@ class Guest:
     # DESC: Uses the actual focused password field rather than assuming an extra Tab is necessary.
     # ------------------=
     def authenticate(self):
-        state = self.wait(lambda state: state[3] == 1 and state[4] == 9, "cold boot authentication")
+        state = self.wait(lambda state: state[3] == 1 and state[4] in (9, 10), "local authentication")
         for _ in range(11):
             if state[8] == 1:
                 break
@@ -511,6 +511,15 @@ class Guest:
     # DESC: Submits a normal operator command and verifies the native input buffer was consumed, never its rendered output.
     # ------------------=
     def command(self, value):
+        state = self.wait(lambda state: state[3] == 1, "installed command context")
+        if state[4] in (9, 10):
+            # The other peer can take longer than the normal inactivity policy
+            # to configure under TCG. Authenticate normally; never disable the
+            # lock, synthesize keepalive input, or type commands into credentials.
+            self.authenticate()
+            self.launch("command", 5)
+        self.wait(lambda state: state[4] == 5 and state[71] == 1,
+                  "empty authenticated command editor")
         self.text(value)
         self.key("ret")
         return self.wait(lambda state: state[71] == 1, "operator command consumed")
