@@ -21,6 +21,11 @@ fn verified_pairing_outlives_discovery_hint() {
         advance(&mut a, &mut b, &mut now, 16);
         let av = a.transport.trust.verification(aid, bid).unwrap();
         let bv = b.transport.trust.verification(bid, aid).unwrap();
+        let mut disconnected_nodes = a.nodes.clone();
+        let mut disconnected_wire = a.transport.trust.clone();
+        disconnected_wire.disconnect(&mut disconnected_nodes, a.connection, now);
+        assert!(disconnected_wire.verification(aid, bid).is_none());
+        assert_ne!(disconnected_nodes.discovered_nodes()[0].unwrap().trust, TrustState::Trusted);
         a.transport.trust.confirm(&mut a.nodes, av.transaction, av.code, true, now).unwrap();
         advance(&mut a, &mut b, &mut now, 6);
         for _ in 0..40 {
@@ -333,7 +338,7 @@ fn restart_pairing_receipts(a: &mut Fixture, b: &mut Fixture, now: &mut u64, pre
 
 // ------------------------=
 // FUNC: offline_negotiation
-// DESC: Verifies bounded peer loss during verification and final handshake clears pending authority and never establishes a session.
+// DESC: Verifies silence cannot grant authority: verified pairing waits only for its own deadline, while fresh session negotiation still closes on discovery loss.
 // ------------------=
 fn offline_negotiation(handshake: bool) {
     let mut a = fixture::configured([2, 0, 0, 0, 0, 1], [0x81; 32]);
@@ -372,6 +377,13 @@ fn offline_negotiation(handshake: bool) {
             a.transport
                 .poll(&mut a.nodes, &mut a.network, &a.capabilities, now + delta);
         }
+    }
+    if !handshake {
+        let waiting = a.transport.trust.verification(aid, bid).unwrap();
+        assert_eq!(waiting.transaction, tx);
+        assert_eq!(a.nodes.discovered_nodes()[0].unwrap().trust, TrustState::PairingPending);
+        assert!(a.transport.trust.session(bid).is_none());
+        a.transport.poll(&mut a.nodes, &mut a.network, &a.capabilities, waiting.expires);
     }
     assert!(a.transport.trust.verification(aid, bid).is_none());
     assert!(a.transport.trust.session(bid).is_none());
