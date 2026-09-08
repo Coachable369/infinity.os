@@ -6609,7 +6609,7 @@ impl ConsoleRuntime {
             let chat_state = crate::runtime::ai::with_ai_runtime(|runtime| {
                 (runtime.chat.enabled(), runtime.chat.minimized())
             });
-            if clicked && chat_state.0 {
+            if clicked && chat_state.0 && self.resize_pointer_shape().is_none() {
                 if let Some(target) =
                     layout.ai_chat_target(self.pointer_x, self.pointer_y, chat_state.1)
                 {
@@ -6724,7 +6724,7 @@ impl ConsoleRuntime {
                 self.present_continuous_motion(released);
                 return;
             } else if let Some(corner) = self.app_window_resizing {
-                if left_button {
+                if left_button || released {
                     let (minimum_width, minimum_height) =
                         if self.desktop_app == DesktopAppKind::TaskManager {
                             (620, 500)
@@ -7005,7 +7005,7 @@ impl ConsoleRuntime {
                 }
             }
             if let Some(corner) = self.home_window_resizing {
-                if left_button {
+                if left_button || released {
                     let resized = crate::ui::system_layout::resize_home_window(
                         self.home_window_x,
                         self.home_window_y,
@@ -7575,7 +7575,7 @@ impl ConsoleRuntime {
                 self.present_continuous_motion(released);
                 return;
             } else if let Some(corner) = self.settings_window_resizing {
-                if left_button {
+                if left_button || released {
                     let resized = crate::ui::system_layout::resize_native_window(
                         self.settings_window.x,
                         self.settings_window.y,

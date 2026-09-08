@@ -10,6 +10,31 @@ use ui::system_layout::{DesktopTarget, SystemLayout};
 // DESC: Verifies File Navigator toolbar, app-menu, modal, and bounded context-menu hit geometry.
 // ------------------=
 fn main() {
+    for scale in [1, 2] {
+        let window = ui::geometry::Rect {
+            x: 100,
+            y: 100,
+            width: 600,
+            height: 500,
+        };
+        for dx in 1..=15 * scale {
+            for dy in 1..=15 * scale {
+                assert_eq!(
+                    ui::system_layout::native_window_resize_target(
+                        window,
+                        ui::geometry::Point {
+                            x: window.right() - dx as i32,
+                            y: window.bottom() - dy as i32
+                        },
+                        scale
+                    ),
+                    Some(3)
+                );
+            }
+        }
+        let resized = ui::system_layout::resize_home_window(100, 100, 400, 400, 3, 650, 650);
+        assert!(resized.2 > 400 && resized.3 > 400);
+    }
     let layout = SystemLayout::new(1600, 1000);
     let (left, top, width, _) = layout.home_window_geometry_sized(80, 180, 780, 560, false);
     let toolbar_y = top + 34 + 18;
@@ -70,16 +95,7 @@ fn main() {
     let expanded_y = ((performance_menu.y + 6 + 2 * 30 + 12) * 1000 / 1000) as i32;
     assert_eq!(
         layout.file_navigator_overlay_target(
-            expanded_x,
-            expanded_y,
-            80,
-            180,
-            780,
-            560,
-            false,
-            2,
-            4,
-            0,
+            expanded_x, expanded_y, 80, 180, 780, 560, false, 2, 4, 0,
         ),
         Some(DesktopTarget::HomeMenuItem(2))
     );
