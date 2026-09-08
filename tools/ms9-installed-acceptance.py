@@ -60,6 +60,7 @@ class Guest:
         self.mesh_port = None
         self.width, self.height = width, height
         self.last_pairing = None
+        self.last_remote = None
         self.input_latency_ns = []
 
     # ------------------------=
@@ -136,6 +137,17 @@ class Guest:
             self.last_pairing = lifecycle
             with (self.work / "pairing-lifecycle.jsonl").open("a") as trace:
                 trace.write(json.dumps({"clock": values[10], "flags": values[9], "editor": values[54:56], "view": values[32:48], "lifecycle": values[56:68]}) + "\n")
+        remote = (values[4], values[26], *values[50:54], *values[72:77], *values[87:91])
+        if remote != self.last_remote:
+            self.last_remote = remote
+            with (self.work / "remote-lifecycle.jsonl").open("a") as trace:
+                trace.write(json.dumps({"clock": values[10], "mode": values[4],
+                    "local_node_suffix": f"{values[19]:016x}", "peer_suffix": f"{values[35]:016x}",
+                    "secure_sessions": values[26], "transport_errors": values[50:54],
+                    "submitted_request": values[72], "collected_request": values[73],
+                    "correlation": values[74], "causation": values[75], "completion": values[76],
+                    "grant": values[87], "revoked": values[88], "grant_deadline": values[89],
+                    "grant_operation": values[90]}) + "\n")
         return values
 
     # ------------------------=

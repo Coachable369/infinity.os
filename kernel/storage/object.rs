@@ -1072,6 +1072,9 @@ impl<D: BlockDevice> ObjectStore<D> {
             return Err(ObjectError::NotFound);
         }
         let shared = if source_record.current_version == 0 { None } else {
+            // Preserve the original copy contract: corrupt source content is
+            // rejected before a new namespace reference can be committed.
+            self.read(source, None, &mut [0; MAX_CONTENT])?;
             Some(*self.state.versions.iter().find(|v| v.used && v.object == source
                 && v.number == source_record.current_version).ok_or(ObjectError::InvalidVersion)?)
         };
@@ -2756,7 +2759,7 @@ fn validate_state(state: &State) -> Result<(), ObjectError> {
             return Err(ObjectError::CorruptMetadata);
         }
     }
-    for v in &state.versions {
+    for (index, v) in state.versions.iter().enumerate() {
         if !v.used {
             continue;
         }
@@ -2768,6 +2771,14 @@ fn validate_state(state: &State) -> Result<(), ObjectError> {
         }
         if !state.objects.iter().any(|o| o.used && o.id == v.object) {
             return Err(ObjectError::CorruptMetadata);
+        }
+        for other in state.versions[..index].iter().filter(|other| other.used) {
+            let overlaps = (v.extent as u64) < other.extent as u64 + other.blocks as u64
+                && (other.extent as u64) < v.extent as u64 + v.blocks as u64;
+            if overlaps && (v.extent != other.extent || v.blocks != other.blocks
+                || v.size != other.size || v.content_crc != other.content_crc) {
+                return Err(ObjectError::CorruptMetadata);
+            }
         }
         for b in v.extent as usize..v.extent as usize + v.blocks as usize {
             if !bit(&state.allocation, b) {
