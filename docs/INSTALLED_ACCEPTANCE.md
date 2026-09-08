@@ -34,6 +34,15 @@ count remained zero. Captured screenshots also show overlapping header text and
 clipped Network details. Pairing, membership, installed remote IOP and installed
 UI responsiveness must not be marked passed on this evidence.
 
+The final retry, paced against observed event-loop progress, successfully committed
+the endpoint intent: authoritative checkpoint 1, projection checkpoint 1, one
+configured link and one audit record. It then timed out with zero connections and
+zero discovered peers. The remaining failure is native endpoint binding, not a
+failed durable commit. Evidence: `/tmp/ms9-installed-mesh-paced.log` and the
+node-1 binary snapshot/screenshot in the directory above. Work stopped after the
+two correction loops required by repository instructions; both test guests exited.
+Slow-input pacing does not resolve or certify high-rate keyboard responsiveness.
+
 The ISO used for these runs precedes commits `fbc8900` (launcher/policy controls)
 and `dbd6e29` (trusted input dismissal). Those changes require a new ISO build and
 installed verification; the existing build must not be represented as containing
