@@ -34,25 +34,31 @@ rendered from typed runtime state.
 4. Access Policy — twelve independently scoped authority categories, deny first.
 5. Security Audit — bounded structured records with correlation and result state.
 
-Each page uses the same geometry: seven-line-height summary card, 68/32 content
-split, six large keyboard/mouse targets, and a right-side visual/status panel.
-Nothing is positioned outside the content viewport.
+Each page uses the same geometry: summary card, 68/32 content split, six large
+keyboard/mouse targets, and a right-side visual/status panel. Below 840 logical
+pixels of content width, the status panel stacks below the controls. Intrinsic
+content height drives the existing scrollbar; rendering remains viewport-clipped.
 
 ## Typography and spacing
 
 - Window title: strong 2x InfinityUI atlas.
 - Page tabs and card headings: strong 1x, uppercase, 14 px minimum visual height.
-- Body/value text: regular 1x with 24 px baseline spacing.
+- Body/value text: regular 1x with 32 px baseline spacing for the 28 px atlas cells.
 - Minimum interior gutter: 15 scaled pixels.
-- Minimum interactive height: 40 scaled pixels.
+- Node action cards: 80 scaled pixels, leaving gutters around both text lines.
+- Tabs wrap at a 184 logical-pixel minimum width; the page title and subtitle have
+  separate 56 px and 28 px text bands with an 8 px gap.
 
 ## Interaction states
 
 All controls expose idle, hover/focus, pressed, disabled, success, warning, and
 denied states using the shared semantic button recipe. Keyboard order is tabs,
 page controls, then trusted confirmation actions. Pair confirmation is permitted
-only while secure input is leased to the Trusted UI owner. Closing or expiry
-cancels the transaction without creating trust.
+only while secure input is leased to the Trusted UI owner. The authoritative
+wire transaction owns its lifetime; a refresh or input surface cannot grant
+trust or recreate it. Explicit cancellation and transaction expiry retire it.
+Failed durable completion retains valid consent for an authorized retry within
+the original transaction lease, never granting trust before persistence.
 
 ## Icon family
 
