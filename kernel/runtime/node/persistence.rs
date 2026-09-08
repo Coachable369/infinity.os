@@ -268,6 +268,40 @@ mod tests {
     }
 
     // ------------------------=
+    // FUNC: durable_v2_migration_preserves_audit_without_fabricating_receipts
+    // DESC: Reconstructs the previous audit-bearing format and verifies that absent secure receipts and live authority stay absent.
+    // ------------------=
+    #[test]
+    fn durable_v2_migration_preserves_audit_without_fabricating_receipts() {
+        let mut original = fixture();
+        original.control_version = 41;
+        let peer = original.discovered[0].unwrap().id;
+        for index in 0..100 {
+            original.record(AUDIT_POLICY_CHANGED, peer, index, index + 900, 0);
+        }
+        let encoded = original.encode_state().unwrap();
+        let mut previous = [0u8; V2_NODE_STATE_BYTES];
+        previous[..RECEIPTS_OFFSET].copy_from_slice(&encoded[..RECEIPTS_OFFSET]);
+        previous[8..10].copy_from_slice(&2u16.to_le_bytes());
+        previous[10..12].copy_from_slice(&(V2_NODE_STATE_BYTES as u16).to_le_bytes());
+        let crc = state_crc32(&previous[..V2_NODE_STATE_BYTES - 4]);
+        previous[V2_NODE_STATE_BYTES - 4..].copy_from_slice(&crc.to_le_bytes());
+        let mut restored = NodeRuntime::new();
+        assert_eq!(restored.restore_state(&previous).unwrap(), original.local_id.unwrap());
+        assert_eq!(restored.discovered, original.discovered);
+        assert_eq!(restored.audit, original.audit);
+        assert_eq!(restored.audit_sequence, original.audit_sequence);
+        assert_eq!(restored.control_version, 41);
+        assert_eq!(restored.paired_digest(peer), None);
+        assert_eq!(restored.sessions.iter().flatten().count(), 0);
+        assert_eq!(restored.grants.iter().flatten().count(), 0);
+        let upgraded = restored.encode_state().unwrap();
+        let mut restarted = NodeRuntime::new();
+        restarted.restore_state(&upgraded).unwrap();
+        assert_eq!(restarted.encode_state().unwrap(), upgraded);
+    }
+
+    // ------------------------=
     // FUNC: durable_restore_drops_ephemeral_authority
     // DESC: Restoring persisted trust never restores or retains live session keys, grants or pending pairing approval.
     // ------------------=
