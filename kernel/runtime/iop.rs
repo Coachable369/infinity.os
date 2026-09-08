@@ -434,6 +434,15 @@ pub fn execute_node_operation(
         OperationId::NodeUnblock => nodes.set_trust(peer, TrustState::Untrusted, now, correlation_id).map_err(map_node_error)?,
         OperationId::NodeSessionClose => nodes.close_session(request.handle, now, correlation_id).map_err(map_node_error)?,
         OperationId::NodeCapabilityList => response.value = nodes.remote_grants().iter().flatten().count() as u32,
+        OperationId::NodeCapabilityGrant => {
+            remote::operation(request.value).map_err(|_| IopError::InvalidPayload)?;
+            if request.flags != NODE_OPERATION_HUMAN_APPROVED || request.rights != 1
+                || request.lease_deadline <= now || request.lease_deadline - now > 3600 {
+                return Err(IopError::AccessDenied);
+            }
+            response.handle = nodes.grant_remote(peer, request.value, request.scope, request.rights,
+                request.lease_deadline, now, correlation_id).map_err(map_node_error)?;
+        }
         OperationId::NodeCapabilityRevoke => nodes.revoke_remote(request.handle, now, correlation_id).map_err(map_node_error)?,
         OperationId::MeshStatus | OperationId::MeshMemberList | OperationId::MeshPolicyRead => {
             response.value = nodes.mesh_members().iter().flatten().filter(|member| member.enabled).count() as u32;
@@ -458,7 +467,7 @@ pub fn execute_node_operation(
             nodes.update_policy(peer, policy, now, correlation_id).map_err(map_node_error)?;
         }
         OperationId::NodeAuditList | OperationId::NodeAuditInspect => response.value = nodes.audit_records().iter().flatten().count() as u32,
-        OperationId::NodeSessionOpen | OperationId::NodeCapabilityGrant => return Err(IopError::InvalidPayload),
+        OperationId::NodeSessionOpen => return Err(IopError::InvalidPayload),
         _ => return Err(IopError::InvalidPayload),
     }
     Ok(response)

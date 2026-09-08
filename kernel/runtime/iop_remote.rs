@@ -562,7 +562,7 @@ impl IopRouter {
 // FUNC: operation
 // DESC: Maps only supported remote service operations; pairing consent and unsynchronized membership cannot be remotely bypassed.
 // ------------------=
-fn operation(value: u32) -> Result<OperationId, RemoteError> {
+pub(super) fn operation(value: u32) -> Result<OperationId, RemoteError> {
     use OperationId::*;
     [
         NodeInspect,

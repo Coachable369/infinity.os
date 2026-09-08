@@ -22,6 +22,7 @@ mod pairing_acceptance;
 mod duplex_acceptance;
 mod discovery_acceptance;
 mod wire_trust_acceptance;
+mod operator_grant_acceptance;
 
 // ------------------------=
 // FUNC: dispatch_request

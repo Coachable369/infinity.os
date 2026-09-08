@@ -112,6 +112,8 @@ impl NodeRuntime {
                 | OperationId::NodeUnblock
                 | OperationId::NodePolicyUpdate
                 | OperationId::NodeSessionClose
+                | OperationId::NodeCapabilityGrant
+                | OperationId::NodeCapabilityRevoke
         ) {
             return Err(CommitError::InvalidOperation);
         }
@@ -122,6 +124,9 @@ impl NodeRuntime {
                 .find(|s| s.id == request.handle)
                 .map(|s| s.peer)
                 .ok_or(CommitError::InvalidState)?
+        } else if operation == OperationId::NodeCapabilityRevoke {
+            self.grants.iter().flatten().find(|grant| grant.id == request.handle)
+                .map(|grant| grant.peer).ok_or(CommitError::InvalidState)?
         } else {
             NodeId(request.node_id)
         };
