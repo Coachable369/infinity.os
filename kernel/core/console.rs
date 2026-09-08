@@ -593,7 +593,7 @@ impl ConsoleRuntime {
             home_window_y: 150,
             home_window_width: 780,
             home_window_height: 660,
-            home_window_visible: true,
+            home_window_visible: false,
             home_window_maximized: false,
             home_window_restore_x: 110,
             home_window_restore_y: 150,
@@ -2515,6 +2515,7 @@ impl ConsoleRuntime {
     // DESC: Restores the exact pre-lock window geometry, desktop positions, visibility, and focus.
     // ------------------=
     fn restore_desktop_layout(&mut self, layout: DesktopSessionLayout) {
+        let _ = crate::runtime::with_runtime(|runtime| runtime.restore_desktop_tasks(layout));
         crate::ui::input_preferences::apply(crate::ui::input_preferences::Preferences::decode(
             layout.input_preferences,
         ));
@@ -2536,6 +2537,11 @@ impl ConsoleRuntime {
         self.settings_window.expanded_row = layout.settings_expanded_row;
         self.settings_window.scroll_offset = layout.settings_scroll_offset;
         self.settings_scroll_target = layout.settings_scroll_offset;
+        self.settings_window.row_count = if matches!(layout.settings_section, 1 | 6 | 7 | 10) {
+            8
+        } else {
+            5
+        };
         self.editor_window = DesktopAppWindowState {
             x: layout.editor.x,
             y: layout.editor.y,
@@ -2561,6 +2567,7 @@ impl ConsoleRuntime {
             visible: layout.task_manager.visible,
         };
         self.desktop_item_positions = layout.desktop_item_positions;
+        self.checkpoint_active_file_navigator();
         match layout.focused_surface {
             DesktopResumeSurface::Workspace => self.desktop_app = DesktopAppKind::None,
             DesktopResumeSurface::Settings => {

@@ -188,6 +188,48 @@ pub struct InfinityRuntime {
 }
 impl InfinityRuntime {
     // ------------------------=
+    // FUNC: restore_desktop_tasks
+    // DESC: Recreates saved visible application tasks on login without launching an unsolicited Navigator or duplicating unlock state.
+    // ------------------=
+    pub fn restore_desktop_tasks(
+        &mut self,
+        layout: crate::ui::session_state::DesktopSessionLayout,
+    ) {
+        for (visible, image) in [
+            (layout.home.visible, task_manager::IMAGE_FILE_NAVIGATOR),
+            (layout.editor.visible, task_manager::IMAGE_TEXT_EDITOR),
+            (layout.command.visible, task_manager::IMAGE_COMMAND_WINDOW),
+            (
+                layout.task_manager.visible,
+                task_manager::IMAGE_TASK_MANAGER,
+            ),
+        ] {
+            if !visible {
+                continue;
+            }
+            let existing = (0..self.execution.count())
+                .filter_map(|index| self.execution.nth(index))
+                .find(|context| {
+                    context.image_identity == image
+                        && !matches!(
+                            context.state,
+                            execution::ContextState::Stopped | execution::ContextState::Failed
+                        )
+                })
+                .map(|context| context.handle);
+            let handle =
+                existing.or_else(|| self.task_manager.launch(&mut self.execution, image).ok());
+            if image == task_manager::IMAGE_FILE_NAVIGATOR
+                && self.file_navigators.active_index().is_none()
+            {
+                if let Some(handle) = handle {
+                    let _ = self.file_navigators.launch(b"/home/default", handle.0);
+                }
+            }
+        }
+    }
+
+    // ------------------------=
     // FUNC: new
     // DESC: Creates and initializes a new instance.
     // ------------------=
@@ -1827,12 +1869,6 @@ pub fn initialize(live_profile: bool) {
     runtime.live_profile = live_profile;
     runtime.shell_profiles = Some(object_navigation::ShellProfileService::new());
     runtime.file_navigator = object_navigation::FileNavigatorState::new(b"/home/default").ok();
-    if let Ok(handle) = runtime.task_manager.launch(
-        &mut runtime.execution,
-        task_manager::IMAGE_FILE_NAVIGATOR,
-    ) {
-        let _ = runtime.file_navigators.launch(b"/home/default", handle.0);
-    }
     let _ = runtime.define_bootstrap();
     // Bootstrap only the dependency roots. Storage/object/namespace readiness
     // is completed after the storage subsystem has initialized.
@@ -1995,16 +2031,23 @@ pub fn storage_initialized() {
         }
         #[cfg(target_os = "none")]
         {
-            let mut persisted = [0u8; node::types::NODE_STATE_BYTES];
-            let restored = crate::storage::node_state_load(&mut persisted)
-                .ok()
-                .filter(|length| *length == node::types::NODE_STATE_BYTES)
-                .and_then(|length| runtime.nodes.restore_state(&persisted[..length]).ok())
-                .is_some();
-            if !restored {
-                if let Ok(state) = runtime.nodes.encode_state() {
-                    let _ = crate::storage::node_state_commit(&state);
+            let mut persisted = zeroize::Zeroizing::new([0u8; node::types::NODE_STATE_BYTES]);
+            match crate::storage::node_state_load(&mut persisted[..]) {
+                Ok(length) if &persisted[..length] == b"INFNOD01\x01\0FIRST-BOOT-KEY-GENERATION" => {
+                    let committed = runtime.nodes.encode_state().map(|state| {
+                        let state = zeroize::Zeroizing::new(state);
+                        crate::storage::node_state_commit(&state[..]).is_ok()
+                    }).unwrap_or(false);
+                    if !committed { runtime.nodes = node::NodeRuntime::new(); }
                 }
+                Ok(length) => {
+                    if runtime.nodes.restore_state(&persisted[..length]).is_err() {
+                        // Fail closed: preserve the damaged object for recovery.
+                        // Never silently replace a persisted node identity.
+                        runtime.nodes = node::NodeRuntime::new();
+                    }
+                }
+                Err(_) => { runtime.nodes = node::NodeRuntime::new(); }
             }
         }
         if ai::initialize_global() {

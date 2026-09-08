@@ -76,6 +76,26 @@ fn checksum(bytes: &[u8]) -> u32 {
 // DESC: Verifies per-user desktop layouts survive identity-state reconstruction without crossing users.
 // ------------------=
 fn main() {
+    let mut desktop = Box::new(runtime::InfinityRuntime::new(false));
+    assert_eq!(desktop.file_navigators.active_index(), None);
+    let mut saved = layout();
+    saved.home.visible = false;
+    saved.editor.visible = false;
+    saved.command.visible = false;
+    saved.task_manager.visible = false;
+    desktop.restore_desktop_tasks(saved);
+    assert_eq!(desktop.execution.count(), 0);
+    saved.editor.visible = true;
+    saved.command.visible = true;
+    desktop.restore_desktop_tasks(saved);
+    assert_eq!(desktop.execution.count(), 2);
+    assert_eq!(desktop.file_navigators.active_index(), None);
+    desktop.restore_desktop_tasks(saved);
+    assert_eq!(desktop.execution.count(), 2);
+    saved.home.visible = true;
+    desktop.restore_desktop_tasks(saved);
+    assert!(desktop.file_navigators.active_index().is_some());
+    assert_eq!(desktop.execution.count(), 3);
     let mut identities = IdentitySystem::new();
     identities.begin_onboarding().unwrap();
     identities
