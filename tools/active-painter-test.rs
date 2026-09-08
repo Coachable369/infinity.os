@@ -167,6 +167,7 @@ fn main() {
     retained_window_benchmark();
     damage_test();
     retained_surface_test();
+    retained_partial_update_test();
     let mut full = vec![0x102030u32; 2560 * 1600];
     let mut partial = full.clone();
     for format in [0, 1] {
@@ -438,4 +439,50 @@ fn retained_surface_test() {
         painted += 1;
     });
     assert_eq!(painted, 2);
+}
+
+// ------------------------=
+// FUNC: retained_partial_update_test
+// DESC: Verifies clipped cache updates equal full repaint pixels, preserve unchanged content, and remain valid for subsequent translation.
+// ------------------=
+fn retained_partial_update_test() {
+    retained_windows::invalidate();
+    let mut pixels = vec![0x302010u32; 320 * 200];
+    let mut display = DisplayDevice { buffer: pixels.as_mut_ptr(), width: 320,
+        height: 200, stride: 320, format: 0, render_clip: None,
+        fast_motion_frame: false, submissions: 0, recording_surface: false };
+    let bounds = (40, 40, 140, 100);
+    display.retained_window(1, bounds, |target| {
+        target.fill_rect_alpha(40, 40, 140, 100, 80, 100, 120, 128);
+        target.fill_rect(50, 100, 100, 20, 1, 2, 3);
+    });
+    let prior = pixels.clone();
+    let changed = Region { left: 50, top: 100, right: 150, bottom: 120 };
+    retained_windows::invalidate_region(1, changed);
+    display.render_clip = Some(changed);
+    display.retained_window(1, bounds, |target| {
+        let clip = target.render_clip.unwrap();
+        assert_eq!((clip.left, clip.top, clip.right, clip.bottom), (50, 100, 150, 120));
+        target.fill_rect_alpha(40, 40, 140, 100, 80, 100, 120, 128);
+        target.fill_rect(50, 100, 100, 20, 4, 5, 6);
+    });
+    for y in 0..200 { for x in 0..320 {
+        assert_eq!(pixels[y * 320 + x], if (50..150).contains(&x) && (100..120).contains(&y) {
+            0x060504
+        } else { prior[y * 320 + x] });
+    } }
+    pixels.fill(0x302010);
+    display.render_clip = None;
+    display.retained_window(1, bounds, |_| panic!("updated cache must remain valid"));
+    let partial_result = pixels.clone();
+    pixels.fill(0x302010);
+    retained_windows::invalidate();
+    display.retained_window(1, bounds, |target| {
+        target.fill_rect_alpha(40, 40, 140, 100, 80, 100, 120, 128);
+        target.fill_rect(50, 100, 100, 20, 4, 5, 6);
+    });
+    assert_eq!(pixels, partial_result);
+    pixels.fill(0x302010);
+    display.retained_window(1, (60, 50, 140, 100), |_| panic!("translation must reuse patched cache"));
+    assert_eq!(pixels[110 * 320 + 70], 0x060504);
 }

@@ -825,6 +825,7 @@ fn activate_console(display: DisplayDevice) {
             last_background_opacity: u8::MAX,
             last_background_blur: u8::MAX,
             last_system_content: 0,
+            last_system_static_content: 0,
             last_launcher_state: 0,
             last_launcher_interaction_state: 0,
             last_launcher_transition: 0,

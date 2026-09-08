@@ -11,6 +11,7 @@ struct CachedWindow {
     width: usize,
     height: usize,
     inset: (usize, usize),
+    damage: Option<PresentRegion>,
     pixels: [u32; PIXELS],
 }
 static mut WINDOWS: [CachedWindow; SLOTS] = [CachedWindow {
@@ -18,6 +19,7 @@ static mut WINDOWS: [CachedWindow; SLOTS] = [CachedWindow {
     width: 0,
     height: 0,
     inset: (0, 0),
+    damage: None,
     pixels: [0; PIXELS],
 }; SLOTS];
 static mut SCRATCH: [u32; SCRATCH_PIXELS] = [0; SCRATCH_PIXELS];
@@ -31,7 +33,26 @@ pub(super) fn invalidate() {
         let windows = &mut *(&raw mut WINDOWS);
         for window in windows {
             window.valid = false;
+            window.damage = None;
         }
+    }
+}
+
+// ------------------------=
+// FUNC: invalidate_region
+// DESC: Invalidates a bounded region of one unchanged window surface without discarding unrelated cached windows.
+// ------------------=
+pub(super) fn invalidate_region(slot: usize, region: PresentRegion) {
+    if slot >= SLOTS || region.left >= region.right || region.top >= region.bottom { return; }
+    unsafe {
+        let cache = &mut (*(&raw mut WINDOWS))[slot];
+        if !cache.valid { return; }
+        cache.damage = Some(match cache.damage {
+            Some(previous) => PresentRegion { left: previous.left.min(region.left),
+                top: previous.top.min(region.top), right: previous.right.max(region.right),
+                bottom: previous.bottom.max(region.bottom) },
+            None => region,
+        });
     }
 }
 
@@ -85,37 +106,38 @@ impl DisplayDevice {
         };
         unsafe {
             let cache = &mut (*(&raw mut WINDOWS))[slot];
-            if !cache.valid
+            let rebuild = !cache.valid
                 || cache.width != width
                 || cache.height != height
-                || cache.inset != inset
-            {
+                || cache.inset != inset;
+            if rebuild || cache.damage.is_some() {
+                let changed = if rebuild { PresentRegion { left, top, right: left + width, bottom: top + height } }
+                    else { let damage = cache.damage.unwrap(); PresentRegion {
+                        left: damage.left.clamp(left, left + width), top: damage.top.clamp(top, top + height),
+                        right: damage.right.clamp(left, left + width), bottom: damage.bottom.clamp(top, top + height),
+                    } };
                 let scratch = (&raw mut SCRATCH).cast::<u32>();
-                for y in top..top + height {
-                    core::ptr::write_bytes(scratch.add(y * self.stride + left), 0, width);
+                for y in changed.top..changed.bottom {
+                    core::ptr::write_bytes(scratch.add(y * self.stride + changed.left), 0, changed.right.saturating_sub(changed.left));
                 }
                 let mut target = *self;
                 target.buffer = scratch;
                 target.recording_surface = true;
                 target.fast_motion_frame = true;
-                target.render_clip = Some(PresentRegion {
-                    left,
-                    top,
-                    right: left + width,
-                    bottom: top + height,
-                });
+                target.render_clip = Some(changed);
                 paint(&mut target);
-                for y in 0..height {
+                for y in changed.top..changed.bottom {
                     core::ptr::copy_nonoverlapping(
-                        scratch.add((top + y) * self.stride + left),
-                        cache.pixels.as_mut_ptr().add(y * width),
-                        width,
+                        scratch.add(y * self.stride + changed.left),
+                        cache.pixels.as_mut_ptr().add((y - top) * width + changed.left.saturating_sub(left)),
+                        changed.right.saturating_sub(changed.left),
                     );
                 }
                 cache.width = width;
                 cache.height = height;
                 cache.inset = inset;
                 cache.valid = true;
+                cache.damage = None;
             }
             let (opacity, blur) = self.active_background_effects();
             if slot != 5 && blur >= 2 && opacity < 100 && !self.fast_motion_frame {

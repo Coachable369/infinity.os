@@ -2,6 +2,22 @@
 
 ## Current continuation boundary
 
+Run j completed two blank-disk installations within the 900-second host bound,
+detached onboarding and authenticated cold reboots with distinct persistent IDs.
+Its deliberate ten-key/60-ms-spacing burst then exposed lost command input:
+node A accepted six keys. The captured execution address resolves to
+`DisplayDevice::fill_rounded_rect_alpha`; input synchronously reconstructs the
+entire cached command window before returning to controller polling.
+
+Command-input-only changes now retain window history/chrome and update only the
+prompt's bounded premultiplied cache region. Output, appearance, geometry and
+other content changes retain their existing reconstruction paths. The active
+painter test proves partial-cache/full-render pixel equivalence, unchanged
+surrounding pixels, and translation reuse after patching. This is HOST evidence;
+the unchanged installed rapid-input assertion must pass on newly built media.
+Register failure files now retain only instruction/stack addresses, never SIMD
+or general register contents. No protocol deadline or keyboard cadence changed.
+
 Run i reached storage verification but exceeded the harness's 300-second install
 bound before the synchronous installer returned. Its last console snapshot still
 describes step 6; the captured display shows installation progress, not a panic.

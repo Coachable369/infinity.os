@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 import json
 import hashlib
 import pathlib
+import re
 import shutil
 import socket
 import struct
@@ -154,8 +155,11 @@ class Guest:
             time.sleep(.25)
         self.screenshot("failure")
         self.frame_report("failure")
-        (self.work / "failure-registers.json").write_text(json.dumps(
-            self.qmp("human-monitor-command", {"command-line": "info registers"})))
+        registers = self.qmp("human-monitor-command", {"command-line": "info registers"})
+        # Only execution addresses; never persist vector/general register
+        # contents that may retain credentials or cryptographic intermediates.
+        (self.work / "failure-registers.json").write_text(json.dumps(dict(
+            re.findall(r"\b(RIP|RSP|RBP)=([0-9a-fA-F]+)", registers))))
         raise AssertionError({"stage": label, "state": last})
 
     # ------------------------=

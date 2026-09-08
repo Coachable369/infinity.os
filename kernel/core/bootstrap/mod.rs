@@ -377,6 +377,7 @@ struct ConsoleSurface {
     last_background_opacity: u8,
     last_background_blur: u8,
     last_system_content: u32,
+    last_system_static_content: u32,
     last_launcher_state: u64,
     last_launcher_interaction_state: u64,
     last_launcher_transition: u8,

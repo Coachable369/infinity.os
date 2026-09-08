@@ -9840,6 +9840,14 @@ pub fn system_ui_present(
                     0
                 };
             let pointer_changed = console.cursor_x != cursor_x || console.cursor_y != cursor_y;
+            let static_content = if screen == 8 {
+                system_content_hash(&[], masked, output_lines, output_lengths, output_count,
+                    editor_saved, editor_input, &[], editor_window, command_window,
+                    editor_scroll_row, editor_dialog, editor_dialog_input, editor_dialog_focus)
+                    ^ crate::runtime::ai::with_ai_runtime(|runtime| {
+                        let hash = runtime.chat.state_hash(); hash as u32 ^ (hash >> 32) as u32
+                    })
+            } else { 0 };
             let focus_changed = console.last_system_focus != focus;
             let clock_changed = console.last_system_clock != clock;
             let icon_theme = console.display.active_icon_theme();
@@ -9967,13 +9975,18 @@ pub fn system_ui_present(
                     window_maximized,
                 );
             let content_changed = console.last_system_content != content;
-            if structural_change_without_window
+            let command_input_only = screen == 8 && console.last_system_screen == 8
+                && content_changed && static_content == console.last_system_static_content
+                && !structural_change_without_window && !file_navigator_changed && !focus_changed
+                && !window_moved && !window_resized && !app_window_geometry_changed
+                && !settings_geometry_changed && menu_kind == 0 && console.last_system_menu == 0;
+            if !command_input_only && (structural_change_without_window
                 || content_changed
                 || file_navigator_changed
                 || focus_changed
                 || launcher_interaction_changed
                 || window_resized
-                || settings_content_changed
+                || settings_content_changed)
             {
                 super::retained_windows::invalidate();
             }
@@ -10187,7 +10200,21 @@ pub fn system_ui_present(
                 console.display.clear_render_clip();
             } else if bounded_scene_geometry_change {
                 let (previous_damage_window, current_damage_window, split_motion_damage) =
-                    if screen == 2 && (window_moved || window_resized) {
+                    if command_input_only {
+                        let content = layout.desktop_app_window_geometry(app_window_x, app_window_y,
+                            app_window_width, app_window_height, app_window_maximized).content;
+                        let scale = layout.scale() as u32;
+                        // Include the complete prompt, caret and text antialiasing
+                        // gutter; output/history and window chrome are unchanged.
+                        let rect = crate::ui::geometry::Rect { x: content.x,
+                            y: content.y + content.height.saturating_sub(54 * scale) as i32,
+                            width: content.width, height: (54 * scale).min(content.height) };
+                        super::retained_windows::invalidate_region(1, super::PresentRegion {
+                            left: rect.x.max(0) as usize, top: rect.y.max(0) as usize,
+                            right: rect.right().max(0) as usize, bottom: rect.bottom().max(0) as usize,
+                        });
+                        (rect, rect, false)
+                    } else if screen == 2 && (window_moved || window_resized) {
                         let current = console.display.desktop_window_rect(
                             window_x,
                             window_y,
@@ -10258,7 +10285,7 @@ pub fn system_ui_present(
                             previous.width == current.width && previous.height == current.height,
                         )
                     };
-                let padding = (16 * layout.scale()) as u32;
+                let padding = if command_input_only { 0 } else { (16 * layout.scale()) as u32 };
                 let mut damages = [
                     crate::ui::system_layout::window_transition_damage(
                         previous_damage_window,
@@ -10564,6 +10591,7 @@ pub fn system_ui_present(
             console.last_background_opacity = background_opacity;
             console.last_background_blur = background_blur;
             console.last_system_content = content;
+            console.last_system_static_content = static_content;
             console.last_launcher_state = launcher_state;
             console.last_launcher_interaction_state = launcher_interaction_state;
             console.last_launcher_transition = launcher_presentation.transition;
