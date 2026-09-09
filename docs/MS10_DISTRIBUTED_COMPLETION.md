@@ -24,6 +24,21 @@ Current request is the distributed Pool completion pass, not a new foundation.
 
 ### Current source evidence (not installed lifecycle acceptance)
 
+The subsequent cold publication check found a runtime authority-lifetime defect:
+all six exact peer sessions re-established, but each node observed only its local
+resource instead of four resources; publication returned `RemoteError::CapabilityRequired`
+(numeric 9). The issuer correctly discarded temporary grants at boot while Pool
+configuration retained their numeric handles. Warm publication had observed four
+real resources. No bulk object completed in these setup attempts.
+Receipt: `/tmp/ms10-stack-corrected-8b3c995/owner-offline-gate-result.json`.
+
+Correction in progress separates explicitly consented, until-revoked Pool
+approval from live temporary grants. Requester configuration and signed delegation
+must use the same explicit lifetime; finite uptime deadlines must not revive after
+reboot. Checkpoint `88a9091` updates the installed harness to validate exact typed
+approval completions rather than a maximum grant ID. Its 23 Python behavioral
+tests pass. New ISO build and cold installed authority proof remain required.
+
 Final-source checkpoint `338bb68`: `./build.sh` passed
 (`/tmp/ms10-final-338bb68-iso-build.log`). The x86_64 ISO SHA-256 is
 `56811099b48c4360a685693abda53573e636f16c8a2162583878b57c4946ada3`;
@@ -248,13 +263,12 @@ this preference; native callers submit/take the coordinator request.
 This proves remote resolution, not a simulated local fault or authority-node-loss
 survivability. Those are separate acceptance claims.
 
-Authority-node-offline normal reads are currently UNSUPPORTED, not merely untested.
-Recipients persist replica bindings/content, not the owner's Pool catalog,
-committed manifest and namespace. The coordinator loads locally owned manifests,
-and recipient read authority requires the authenticated owner peer. Completion
-therefore also requires explicitly delegated read authority and replicated
-committed metadata with a defined freshness guarantee. Selecting the highest
-observed replica version or silently assuming ownership is not a safe substitute.
+The earlier recipient-only implementation did not support authority-node-offline
+normal reads. Current source integrates replicated signed namespace metadata,
+fresh quorum reads, delegated authority and verified replica selection. This is
+IMPLEMENTED BUT UNTESTED on the installed owner-offline path; host coverage is not
+proof of surviving-node application reads. Selecting the highest observed replica
+version or silently assuming ownership remains forbidden.
 
 The read-only installed-disk verifier opens raw images without write permission
 and uses native catalog/extent decoding plus a complete content hash. Paused-VM
