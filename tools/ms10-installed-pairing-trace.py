@@ -50,6 +50,7 @@ def main():
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--cycles", type=int, choices=range(1, 6), default=1)
     parser.add_argument("--reset-trust", action="store_true")
+    parser.add_argument("--configure-network", action="store_true")
     args = parser.parse_args()
     work = args.output.resolve()
     receipt = json.loads((work / "result.json").read_text())
@@ -66,6 +67,11 @@ def main():
             guest.boot(False)
         with ThreadPoolExecutor(max_workers=4) as workers:
             list(workers.map(lambda guest: guest.authenticate(), guests))
+        if args.configure_network:
+            for guest in guests:
+                guest.fast_commands = True
+            with ThreadPoolExecutor(max_workers=4) as workers:
+                list(workers.map(lambda guest: DISTRIBUTION.MESH.configure(guest, 4), guests))
         for guest, installed in zip(guests, receipt["nodes"]):
             assert DISTRIBUTION.identity(guest) == installed["node_id"]
             state = guest.wait(lambda state: state[24] == 3 and state[29] == 3, "preserved endpoints discover three peers", timeout=90)
