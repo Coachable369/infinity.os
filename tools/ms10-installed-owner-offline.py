@@ -65,6 +65,22 @@ def validate_published(prior, identities):
 
 
 # ------------------------=
+# FUNC: validate_retry_measurement
+# DESC: Allows only a failed transfer measurement with an exact native fixture identity and independently verified input hash.
+# ------------------=
+def validate_retry_measurement(prior, identities, length, seed):
+    assert prior["identities"] == identities and len(set(identities)) == 4
+    assert prior["stage"] == "bounded-transfer-measurement" and prior.get("failure")
+    assert "measurement" not in prior
+    assert prior["length"] == length and prior["seed"] == seed
+    created = prior["created"]
+    assert created["length"] == length and created["seed"] == seed
+    assert created["sha256"] == hashlib.sha256(fixture.expected_content(length, seed)).hexdigest()
+    assert len(bytes.fromhex(created["object_id"])) == 16 and int(created["object_id"], 16) != 0
+    assert created["version"] > 0 and created["manifest_generation"] > 0
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Uses independently installed nodes and ordinary native operations; loses original A and never requests explicit repair.
 # ------------------=
@@ -78,6 +94,7 @@ def main():
     parser.add_argument("--reuse-configured", action="store_true")
     parser.add_argument("--resume-prepared", action="store_true")
     parser.add_argument("--resume-published", action="store_true")
+    parser.add_argument("--retry-measurement", action="store_true")
     parser.add_argument("--length", type=int, choices=(32768, 65536, 262144), default=32768)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--lifecycle", action="store_true")
@@ -90,12 +107,24 @@ def main():
     validate_mode(args.resume_measured, args.reuse_configured, args.measurement_only)
     assert not (args.resume_prepared and (args.resume_measured or args.reuse_configured))
     assert not (args.resume_published and (args.resume_prepared or args.resume_measured or args.reuse_configured))
+    assert not (args.retry_measurement and (args.resume_published or args.resume_prepared or args.resume_measured or args.reuse_configured))
     provenance = json.loads((work / "result.json").read_text())
     assert provenance["independent_installs"] == 4
     identities = [entry["node_id"] for entry in provenance["nodes"]]
     assert len(set(identities)) == 4
     prior = None
     prepared_grants = None
+    if args.retry_measurement:
+        prior = json.loads((work / "owner-offline-gate-result.json").read_text())
+        validate_retry_measurement(prior, identities, args.length, args.seed)
+        prepared_grants = validate_prepared_receipt(json.loads((work / "prepared-authority.json").read_text()), identities, artifact_hash(work))
+        encoded = json.dumps(prior, indent=2)
+        failure_id = hashlib.sha256(encoded.encode()).hexdigest()[:16]
+        archive = work / f"owner-offline-measurement-failure-{failure_id}.json"
+        if archive.exists():
+            assert archive.read_text() == encoded
+        else:
+            archive.write_text(encoded)
     if args.resume_published:
         prior = json.loads((work / "owner-offline-gate-result.json").read_text())
         validate_published(prior, identities)
@@ -122,6 +151,7 @@ def main():
               "reuse_configured": args.reuse_configured,
               "resume_prepared": args.resume_prepared,
               "resume_published": args.resume_published,
+              "retry_measurement": args.retry_measurement,
               "length": args.length, "seed": args.seed,
               "remaining_gates": ["stale-owner-return", "ordinary-update-copy-delete",
                                   "cold-reboot-shared-state", "garbage-collection",
@@ -183,7 +213,7 @@ def main():
         submission_started = time.monotonic()
         submission_traffic = hub.traffic_snapshot()
         created = prior["created"] if args.resume_measured else fixture.create(a, D.API.symbol, length=args.length, seed=args.seed)
-        if args.reuse_configured:
+        if args.reuse_configured or args.retry_measurement:
             assert created["object_id"] != prior["created"]["object_id"], {"fixture_reused_prior_object": created["object_id"]}
         report["created"] = created
         report["namespace_path"] = f"/Shared/MS10_{args.length}_{args.seed}_{created['object_id'][:8]}"

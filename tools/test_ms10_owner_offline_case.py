@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import pathlib
 import unittest
+import copy
 import ms10_installed_fixture as fixture
 
 SPEC = importlib.util.spec_from_file_location("owner_case", pathlib.Path(__file__).with_name("ms10-installed-owner-offline.py"))
@@ -11,6 +12,28 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CaseFence(unittest.TestCase):
+    # ------------------------=
+    # FUNC: test_failed_measurement_retry_is_exact_and_not_completed
+    # DESC: Accepts a failed exact byte-set case and rejects different identities, stage, digest, or completed timing evidence.
+    # ------------------=
+    def test_failed_measurement_retry_is_exact_and_not_completed(self):
+        prior = {"identities": [1, 2, 3, 4], "stage": "bounded-transfer-measurement",
+                 "failure": "recorded", "length": 32768, "seed": 17,
+                 "created": {"object_id": "12"*16, "length": 32768, "seed": 17,
+                             "sha256": hashlib.sha256(fixture.expected_content(32768, 17)).hexdigest(),
+                             "version": 1, "manifest_generation": 1}}
+        MODULE.validate_retry_measurement(prior, [1, 2, 3, 4], 32768, 17)
+        for kind in ("identity", "stage", "hash", "completed", "no_failure", "zero_object"):
+            invalid = copy.deepcopy(prior)
+            if kind == "identity": invalid["identities"][0] = 5
+            if kind == "stage": invalid["stage"] = "authority"
+            if kind == "hash": invalid["created"]["sha256"] = "00"*32
+            if kind == "completed": invalid["measurement"] = {"elapsed_seconds": 1}
+            if kind == "no_failure": invalid["failure"] = None
+            if kind == "zero_object": invalid["created"]["object_id"] = "00"*16
+            with self.subTest(kind=kind), self.assertRaises(AssertionError):
+                MODULE.validate_retry_measurement(invalid, [1, 2, 3, 4], 32768, 17)
+
     # ------------------------=
     # FUNC: test_published_resume_cannot_skip_object_evidence
     # DESC: Only the recorded publication failure before object creation can resume without reissuing grants.
