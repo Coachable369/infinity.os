@@ -242,8 +242,23 @@ def responsive_transfer(guest, object_id):
     assert fixture.read_state(guest, API.symbol)[250] == 0
     assert max(latencies) < 2_000_000_000
     guest.screenshot("drag-during-transfer")
+    navigation = []
+    for query, mode, section in (("network", 8, 6), ("command", 5, None),
+                                 ("storage", 8, 8)):
+        before = fixture.read_state(guest, API.symbol)
+        assert before[26] and struct.pack("<2Q", *before[240:242]).hex() == object_id
+        started = time.monotonic_ns()
+        guest.launch(query, mode, section)
+        if query == "command":
+            guest.fast_input_probe()
+        after = fixture.read_state(guest, API.symbol)
+        assert after[26] and struct.pack("<2Q", *after[240:242]).hex() == object_id
+        navigation.append({"native_surface": query, "elapsed_ns": time.monotonic_ns() - started,
+                           "transfer_active_before_and_after": True})
+        guest.screenshot(f"{query}-during-transfer")
     report = {"boundary": "installed real pointer input during native coordinator transfer",
               "input_to_observed_window_move_ns": latencies, "limit_ns": 2_000_000_000,
+              "loaded_navigation": navigation, "rapid_keys_accepted": 10,
               "functional_liveness_only": True, "ui_performance_acceptance": False,
               "renderer_fps_claim": False, "frame_measurement": guest.frame_report("drag-during-transfer")}
     (guest.work / "transfer-input-result.json").write_text(json.dumps(report, indent=2))
