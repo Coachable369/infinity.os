@@ -459,6 +459,35 @@ impl WireTrust {
     }
 
     // ------------------------=
+    // FUNC: established_data
+    // DESC: Classifies only a canonical live-session DATA header without cryptography; authentication and replay rejection still occur in ingest and every attempt is budgeted.
+    // ------------------=
+    pub(super) fn established_data(&self,nodes:&NodeRuntime,link:LinkSnapshot,bytes:&[u8],now:u64)->bool {
+        if bytes.len()<154||bytes.len()>154+MAX_DATA||&bytes[..8]!=MAGIC||bytes[8]!=DATA||bytes[9..16]!=[1,0,0,0,0,0,0]{return false}
+        let length=u16::from_le_bytes([bytes[136],bytes[137]])as usize;
+        if length>MAX_DATA||bytes.len()!=154+length{return false}
+        let Some(t)=self.transactions.iter().flatten().find(|t|t.link.connection==link.connection&&t.link.peer==link.peer&&t.id==bytes[80..112]&&t.stage==WireState::Established)else{return false};
+        let Ok(peer)=checked_transaction_peer(nodes,t,now)else{return false};
+        let Some(session)=nodes.sessions.iter().flatten().find(|s|Some(s.id)==t.session)else{return false};
+        bytes[16..48]==peer.id.0&&nodes.local_id().is_some_and(|id|bytes[48..80]==id.0)&&bytes[112..128]==session.protocol_reference
+    }
+    // ------------------------=
+    // FUNC: peek_outgoing
+    // DESC: Observes one due packet without consuming retry or backpressure state.
+    // ------------------=
+    pub(super) fn peek_outgoing(&self,connection:u32,now:u64)->Option<Packet>{
+        let t=self.transactions.iter().flatten().find(|t|t.link.connection==connection)?;
+        if now>=t.expires||now<t.next_send||t.attempts>=RETRIES{return None}t.pending
+    }
+    // ------------------------=
+    // FUNC: outgoing_data
+    // DESC: Classifies an already protected pending DATA packet only while its exact session and trust remain valid.
+    // ------------------=
+    pub(super) fn outgoing_data(&self,nodes:&NodeRuntime,connection:u32,now:u64)->bool {
+        self.transactions.iter().flatten().find(|t|t.link.connection==connection).is_some_and(|t|
+            t.stage==WireState::Established&&checked_transaction_peer(nodes,t,now).is_ok()&&t.pending.is_some_and(|p|p.bytes[8]==DATA))
+    }
+    // ------------------------=
     // FUNC: outgoing
     // DESC: Returns at most one due frame for a selected connected endpoint without a blocking retry loop.
     // ------------------=

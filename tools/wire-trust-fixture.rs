@@ -39,7 +39,7 @@ pub fn configured(mac: [u8; 6], entropy: [u8; 32]) -> Fixture {
 // DESC: Provisions independent real connected endpoints with the installed multi-peer port mapping for bounded host transport tests.
 // ------------------=
 pub fn configured_peers(mac: [u8; 6], entropy: [u8; 32], peers: &[u8]) -> Fixture {
-    assert!(!peers.is_empty() && peers.len() <= 3);
+    assert!(!peers.is_empty() && peers.len() <= 4);
     let own = [10, 42, 0, mac[5]];
     let mut network = NetworkRuntime::new();
     network.initialize().unwrap();

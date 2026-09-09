@@ -1,6 +1,23 @@
 # Pending authenticated DATA pacing proposal
 
-Status: archived proposal, NOT active runtime code and NOT packaged in current ISOs.
+Status: IMPLEMENTED in current source; final ISO/installed verification pending.
+
+The final closure pass restored the bounded DATA gate and deferred retry
+consumption until successful network admission. Behavioral host checks now pass
+for forged tags, unknown sessions, replay rejection, all four occupied links,
+20-second transmit backpressure for DATA, and bilateral CONFIRM delivery after
+20 seconds of full NIC queues. The installed historical-source pairing rerun
+reproduced accepted local approvals with zero emitted CONFIRM frames; queue
+pressure is a demonstrated mechanism, not yet the proven installed root cause.
+
+Current evidence: `/tmp/ms10-closure-ms9.log`,
+`/tmp/ms10-confirm-backpressure.log`, `/tmp/ms10-four-link.log`,
+`/tmp/ms10-closure-performance.log` (62 tests), and
+`/tmp/ms10-closure-input.log` (eight executable input/UI harnesses, exit 0).
+Actual installed transfer throughput and loaded desktop responsiveness remain
+mandatory acceptance, not inferred from simulated cadence.
+
+## Historical proposal below
 
 The companion `MS10_PENDING_AUTHENTICATED_PACING.patch` preserves the exact
 experimental transport changes. They were removed from runtime source at the
