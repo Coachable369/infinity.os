@@ -1,4 +1,11 @@
-# Infinity Object Store format v3
+# Infinity Object Store format v5
+
+Format 5 expands the bounded version index to 64 entries. Current kernels read
+formats 4 and 5; the first successful mutation of a format-4 store commits a
+format-5 bank and root. Payload locations do not change. The new sectors belong
+to the inactive bank until its root commits, so a failed write retains the prior
+generation. This is not a general migration path from formats 1–3. Older kernels
+are not supported for writing format-5 stores.
 
 Milestone 6.5 extends stable base types with Collection, Project, Model,
 IdentityData, and DeviceData and persistent relationship IDs with ContainedBy,
@@ -8,7 +15,7 @@ taxonomy System object.
 
 InfinityOS persists objects, not files. A namespace path is a relationship to a 128-bit `ObjectId`; paths, sectors, and extents never participate in identity. No POSIX file primitive, inode, descriptor, or symbolic link backs this format. All integer fields use explicit little-endian encoding, all offsets below are byte offsets, and no Rust memory layout is serialized.
 
-The store begins at container-relative LBA 49,152. The Milestone 3A boot image remains at relative LBA 2,048 as a documented, read-only compatibility boundary until firmware can consume System Space objects.
+The store begins at container-relative LBA 262,144. The boot image remains at relative LBA 2,048 as a documented compatibility boundary until firmware can consume System Space objects.
 
 ## Regions and commit roots
 
@@ -16,6 +23,8 @@ The store begins at container-relative LBA 49,152. The Milestone 3A boot image r
 |---:|---|---:|---|
 | 0, 1 | alternating generation roots | 512 bytes each | CRC-32/ISO-HDLC at 508 |
 | 8..39, 40..71 | alternating metadata banks | 32 sectors each | CRC-32 per sector |
+| 72..75 | bank A extended version index | 4 sectors | CRC-32 per sector |
+| 76..79 | bank B extended version index | 4 sectors | CRC-32 per sector |
 | 80 onward | immutable content extents | 4 KiB allocation blocks | CRC in VersionRecord |
 
 Every metadata sector has an 8-byte magic at 0, format `u32` at 8, reserved bytes that readers ignore, and CRC at 508 computed with the CRC field zero. Unsupported versions return `UnsupportedFormat`; invalid CRCs return `CorruptMetadata`.
@@ -32,8 +41,12 @@ Each bank contains:
 | 11..14 | `INFOVER2` | eight 60-byte VersionRecords per sector |
 | 15..22 | `INFONSP2` | four 120-byte NamespaceRecords per sector |
 | 23..24 | `INFOREL2` | eight 60-byte RelationshipRecords per sector |
-| 25..26 | `INFOOBJ2` | two v3 expansion sectors, four ObjectRecords each |
-| 27..31 | reserved | zero/ignored for future compatible metadata indexes |
+| 25..31 | `INFOOBJ2` | seven expansion sectors, four ObjectRecords each |
+
+The first 32 VersionRecords retain bank offsets 11..14. Records 32..63 use
+store-relative sectors 72..75 for bank A and 76..79 for bank B. Format-4 reads
+ignore these extension sectors. Root publication follows all bank writes and
+the device flush, including extension sectors.
 
 ## ObjectRecord (120 bytes)
 
@@ -70,12 +83,18 @@ Used is at 0; relationship type at 2; source ObjectId at 4; target ObjectId at 2
 
 The allocator exposes 4 KiB logical allocation blocks over eight 512-byte transfer sectors. Its 1,968-byte checksummed bitmap addresses 15,744 blocks (61.5 MiB), uses deterministic checked first-fit contiguous extents, and is reconstructed from disk on every mount. Allocation requests carry a Space; usage is calculated from each retained VersionRecord and its owning object's Space. Spaces share one pool and are not fixed partitions. Policy hooks are reserved in object flags and Space-aware allocation APIs.
 
-The object and namespace tables remain bounded bootstrap indexes (32 objects,
-32 versions, 32 namespace references, 16 relationships). Format v3 consumes
-two sectors that were reserved in each v2 bank, allowing native AI System
-objects without sacrificing the user-object acceptance budget. These are
-implementation limits, not public API semantics. The 16 KiB content ceiling,
-CRC-32 rather than a cryptographic content hash, and deterministic UUID-shaped
-generator are temporary structures to replace with persistent trees,
-multi-extent manifests, a platform entropy provider, and a modern content hash
-in later storage milestones.
+The object and namespace tables remain bounded bootstrap indexes (52 objects,
+64 versions, 32 namespace references, 16 relationships). These are implementation
+limits, not public API semantics. A captured installed system used 31 of the
+former 32 version slots, preventing a second Pool object's content and manifest
+from committing together. The format-5 regression reproduces that occupancy,
+reads a format-4 image, admits the new empty object, and cuts every sector-write
+boundary to verify coherent recovery. A separate explicitly invoked test can
+replay a captured installed disk with writes confined to a RAM overlay.
+
+Ordinary content remains limited to 16 KiB. Native streamed replica extents have
+a separate bounded path; general multi-extent application objects are not yet
+implemented. Native VersionRecords use CRC-32; Pool manifests add SHA-256
+integrity and do not replace the application's stable ObjectId with placement
+or manifest-backing identity. This version-index fix does not establish
+distributed replication, remote-read fallback, or healing acceptance.
