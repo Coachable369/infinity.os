@@ -24,6 +24,15 @@ Current request is the distributed Pool completion pass, not a new foundation.
 
 ### Current source evidence (not installed lifecycle acceptance)
 
+The first integrated clean install completed on two disks but failed on detached
+onboarding boot. The preserved CPU trace `/tmp/ms10-detached-fault.log` identifies
+a stack-probe page fault in `execute_pool_metadata`, followed by a triple fault.
+Checkpoint `8b3c995` separates lightweight dispatch (approximately 97 KiB compiled
+startup call frames) from active transactions and reserves a fixed 1 MiB kernel
+stack on both architectures. Active transaction frames exceeded the prior
+256 KiB allocation. Release fabric still passes 128 tests; corrected installed
+boot and active-operation proof are required, not inferred from compilation.
+
 Integrated source checkpoint `0aad862` includes current metadata reads, repair
 overlay recovery, shared Settings projection and namespace-independent deletion
 bookkeeping. `/tmp/ms10-integrated-fabric-after-outbox.log` passed 128 tests,
