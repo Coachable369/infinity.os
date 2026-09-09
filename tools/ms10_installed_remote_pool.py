@@ -80,6 +80,10 @@ def verify_advertisement(a, b, aid, bid):
     assert struct.pack("<2Q", *received[499:501]).hex() == device
     assert received[501] == capacity and received[502] <= capacity
     assert received[503] <= capacity - received[502]
+    a.fast_input_probe()
+    a.screenshot("resource-publisher-active-input")
+    a.frame_report("resource-publisher-active-input")
+    a.key("esc")
     renewed = b.wait(lambda s: s[505] > received[505], "new resource sequence renewed", timeout=90)
     assert renewed[506] > received[506]
     a.wait(lambda s: s[494] >= 2 and s[495] == 0, "authenticated publication completions")
@@ -89,4 +93,5 @@ def verify_advertisement(a, b, aid, bid):
     assert expired[109] == 1  # Known resource is retained, not deleted.
     assert struct.pack("<2Q", *expired[497:499]).hex() == resource
     return {"real_identity_capacity": True, "renewed_sequence": True,
-            "revocation_stops_renewal": True, "offline_identity_retained": True}
+            "revocation_stops_renewal": True, "offline_identity_retained": True,
+            "rapid_input_with_publisher_enabled": True}
