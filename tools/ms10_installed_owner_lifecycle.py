@@ -35,7 +35,7 @@ def wait_retired(guest, verifier, owner, object_id, content_ids, timeout=180):
     while time.monotonic() < deadline:
         observed = inspect_lifecycle(guest, verifier, owner, object_id, content_ids, "retirement-progress")
         if observed["tombstone"]["present"] and observed["tombstone"]["deleted"] and not observed["object_present"]:
-            if not observed["outbox"]["present"] or observed["outbox"]["pending"] == 0:
+            if not observed["outbox"]["present"] or observed["outbox"]["pending"] is None:
                 return observed
         time.sleep(1)
     raise AssertionError({"durable_retirement_deadline": object_id, "observed": observed})

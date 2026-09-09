@@ -61,15 +61,15 @@ class ColdOrder(unittest.TestCase):
     def test_retirement_requires_tombstone_absence_and_drained_outbox(self):
         states = [
             {"tombstone": {"present": True, "deleted": True}, "object_present": True,
-             "outbox": {"present": True, "pending": 1}},
+             "outbox": {"present": True, "pending": {"manifest_generation": 2, "acknowledged": 1, "placements": 3}}},
             {"tombstone": {"present": True, "deleted": True}, "object_present": False,
-             "outbox": {"present": True, "pending": 1}},
+             "outbox": {"present": True, "pending": {"manifest_generation": 2, "acknowledged": 1, "placements": 3}}},
             {"tombstone": {"present": True, "deleted": True}, "object_present": False,
-             "outbox": {"present": True, "pending": 0}}]
+             "outbox": {"present": True, "pending": None}}]
         with patch.object(lifecycle, "inspect_lifecycle", side_effect=states) as inspect, patch.object(lifecycle.time, "sleep"):
             result = lifecycle.wait_retired(None, None, None, None, [])
         self.assertEqual(inspect.call_count, 3)
-        self.assertEqual(result["outbox"]["pending"], 0)
+        self.assertIsNone(result["outbox"]["pending"])
 
     # ------------------------=
     # FUNC: test_all_critical_replicas_cold_before_owner_mutation
