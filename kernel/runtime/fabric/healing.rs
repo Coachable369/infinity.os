@@ -137,6 +137,7 @@ pub(crate) fn complete(manifest: &mut Manifest, directory: &mut Directory, actor
         && d.bytes == manifest.length && receipt.copied == manifest.length
         && manifest.placements.iter().flatten().any(|p| p.resource == d.resource
             && p.generation == d.generation && p.version == d.version && p.hash == d.hash
+            && p.admission_generation == token
             && p.state == PlacementState::Verified) { return Ok(()); }
     authorize(manifest, actor, expected)?;
     let claim = manifest.healing.ok_or(HealError::Stale)?;
@@ -148,7 +149,8 @@ pub(crate) fn complete(manifest: &mut Manifest, directory: &mut Directory, actor
     let resource = directory.entries().iter().flatten().find(|r| r.id == d.resource
         && r.generation == d.generation).copied().ok_or(HealError::Stale)?;
     let placement = Placement { node: resource.owner, resource: resource.id, device: resource.device,
-        generation: d.generation, version: d.version, hash: d.hash, state: PlacementState::Verified };
+        generation: d.generation, version: d.version, hash: d.hash, state: PlacementState::Verified,
+        admission_generation: claim.token };
     if !eligible(directory, placement, now) { return Err(HealError::Stale); }
     if manifest.placements.iter().flatten().any(|p| p.resource == placement.resource
         || (p.node == placement.node && p.state == PlacementState::Verified)) { return Err(HealError::Invalid); }
@@ -239,7 +241,7 @@ mod tests {
                 capabilities: 1, generation: 1, sequence: 1, expires: 100 };
             directory.apply(r, 1).unwrap();
             if n < 4 { m.placements[n as usize - 1] = Some(Placement { node: r.owner, resource: r.id,
-                device: r.device, generation: 1, version: 1, hash, state: PlacementState::Verified }); }
+                device: r.device, generation: 1, version: 1, hash, state: PlacementState::Verified, admission_generation: 1 }); }
         }
         (m, directory)
     }

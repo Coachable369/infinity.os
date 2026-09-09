@@ -16,6 +16,9 @@ pub enum PlacementState { Staging = 1, Verified = 2, Offline = 3, Stale = 4, Cor
 pub struct Placement {
     pub node: NodeId, pub resource: ResourceId, pub device: [u8; 16],
     pub generation: u64, pub version: u64, pub hash: [u8; 32], pub state: PlacementState,
+    /// Manifest generation that admitted this immutable physical binding.
+    /// Policy or other placement changes do not rewrite its transfer authority.
+    pub admission_generation: u64,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HealingClaim {
@@ -68,6 +71,7 @@ impl Manifest {
             let Some(record) = record else { continue; };
             if record.node.0 == [0; 32] || record.resource.0 == [0; 16] || record.device == [0; 16]
                 || record.generation == 0 || record.version == 0
+                || record.admission_generation == 0 || record.admission_generation > self.generation
                 || self.placements[..index].iter().flatten().any(|other|
                     other.resource == record.resource || (other.node == record.node && other.device == record.device)) {
                 return Err(ManifestError::Invalid);
@@ -126,7 +130,7 @@ impl Manifest {
     // ------------------=
     pub fn encode(&self, out: &mut [u8; MANIFEST_BYTES]) -> Result<(), ManifestError> {
         self.validate()?;
-        out.fill(0); out[..8].copy_from_slice(b"INFPMF01");
+        out.fill(0); out[..8].copy_from_slice(b"INFPMF02");
         out[8..24].copy_from_slice(&self.object);
         put(out, 24, self.version); put(out, 32, self.length); out[40..72].copy_from_slice(&self.hash);
         out[72] = self.policy.replicas() as u8;
@@ -152,6 +156,7 @@ impl Manifest {
                 out[at] = p.state as u8; out[at+8..at+40].copy_from_slice(&p.node.0);
                 out[at+40..at+56].copy_from_slice(&p.resource.0); out[at+56..at+72].copy_from_slice(&p.device);
                 put(out, at+72, p.generation); put(out, at+80, p.version); out[at+88..at+120].copy_from_slice(&p.hash);
+                put(out, at+120, p.admission_generation);
             }
         }
         Ok(())
@@ -162,7 +167,7 @@ impl Manifest {
     // DESC: Rejects malformed lengths, discriminants, reserved data and inconsistent manifests before constructing authoritative state.
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Result<Self, ManifestError> {
-        if bytes.len() != MANIFEST_BYTES || &bytes[..8] != b"INFPMF01" { return Err(ManifestError::Invalid); }
+        if bytes.len() != MANIFEST_BYTES || &bytes[..8] != b"INFPMF02" { return Err(ManifestError::Invalid); }
         let mut value = Self { object: bytes[8..24].try_into().unwrap(), version: get(bytes, 24),
             length: get(bytes, 32), hash: bytes[40..72].try_into().unwrap(),
             policy: match bytes[72] { 1 => StorageClass::Temporary, 2 => StorageClass::Protected,
@@ -186,7 +191,8 @@ impl Manifest {
             let state = match bytes[at] { 0 => continue, 1 => PlacementState::Staging, 2 => PlacementState::Verified,
                 3 => PlacementState::Offline, 4 => PlacementState::Stale, 5 => PlacementState::Corrupt, _ => return Err(ManifestError::Invalid) };
             *placement = Some(Placement { node: NodeId(bytes[at+8..at+40].try_into().unwrap()), resource: ResourceId(bytes[at+40..at+56].try_into().unwrap()),
-                device: bytes[at+56..at+72].try_into().unwrap(), generation: get(bytes, at+72), version: get(bytes, at+80), hash: bytes[at+88..at+120].try_into().unwrap(), state });
+                device: bytes[at+56..at+72].try_into().unwrap(), generation: get(bytes, at+72), version: get(bytes, at+80), hash: bytes[at+88..at+120].try_into().unwrap(), state,
+                admission_generation: get(bytes, at+120) });
         }
         let mut canonical = [0; MANIFEST_BYTES]; value.encode(&mut canonical)?;
         if canonical != bytes { return Err(ManifestError::Invalid); }

@@ -18,7 +18,7 @@ fn manifest_counts_only_verified_independent_current_versions() {
     for index in 0..3 {
         manifest.placements[index] = Some(Placement { node: NodeId([index as u8 + 4; 32]),
             resource: ResourceId([index as u8 + 4; 16]), device: [index as u8 + 4; 16], generation: 1,
-            version: 1, hash, state: PlacementState::Verified });
+            version: 1, hash, state: PlacementState::Verified, admission_generation: 1 });
     }
     assert_eq!(manifest.validate(), Ok(()));
     assert_eq!(manifest.availability(), Availability::Healthy);
@@ -37,6 +37,18 @@ fn manifest_counts_only_verified_independent_current_versions() {
     bytes[74] = 1; assert_eq!(Manifest::decode(&bytes), Err(ManifestError::Invalid));
     let mut next = manifest; next.generation += 1; next.chunks[0].as_mut().unwrap().content = [8; 16];
     assert_eq!(manifest.successor(&next), Err(ManifestError::Conflict));
+    let mut policy_change = manifest; policy_change.generation += 1;
+    policy_change.policy = StorageClass::Protected;
+    assert_eq!(manifest.successor(&policy_change), Ok(()));
+    policy_change.encode(&mut bytes).unwrap();
+    let restored = Manifest::decode(&bytes).unwrap();
+    assert_eq!(restored.placements[0].unwrap().admission_generation, 1);
+    assert_eq!(restored.generation, 2);
+    let mut missing_authority = restored;
+    missing_authority.placements[0].as_mut().unwrap().admission_generation = 0;
+    assert_eq!(missing_authority.validate(), Err(ManifestError::Invalid));
+    missing_authority.placements[0].as_mut().unwrap().admission_generation = 3;
+    assert_eq!(missing_authority.validate(), Err(ManifestError::Invalid));
 }
 
 // ------------------------=
