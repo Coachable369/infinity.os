@@ -2,6 +2,8 @@
 use super::*;
 use identity::StableId;
 use iop::storage_protocol::{Operation, StorageOperationV1};
+#[path = "storage_view_events.rs"]
+mod events;
 #[path = "storage_view_shared.rs"]
 mod shared;
 
@@ -84,8 +86,21 @@ pub struct View {
     pub revision: u64,
     policy: Option<(ObjectSummary, u8)>,
     shared: shared::State,
+    events: events::State,
 }
 impl View {
+    // ------------------------=
+    // FUNC: event_diagnostics
+    // DESC: Exposes bounded reconstruction counters without event payloads or mutation authority.
+    // ------------------=
+    pub fn event_diagnostics(&self) -> (bool, u64, u64, u64) {
+        (
+            self.events.stale,
+            self.events.gaps,
+            self.events.rebuilt,
+            self.events.received,
+        )
+    }
     // ------------------------=
     // FUNC: new
     // DESC: Allocates a fixed projection and no background work until an operator opens it.
@@ -100,6 +115,7 @@ impl View {
             revision: 0,
             policy: None,
             shared: shared::State::new(),
+            events: events::State::new(),
         }
     }
     // ------------------------=
@@ -111,6 +127,7 @@ impl View {
             && self.owner.is_some()
             && self.snapshot.ready
             && !self.snapshot.failed
+            && !self.events.stale
         {
             if let Some(object) = self.snapshot.objects[self.snapshot.selected.min(7)] {
                 self.policy = Some((object, policy));
@@ -258,6 +275,7 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
         }
         return;
     }
+    events::poll(r, now);
     if now < r.storage_view.next {
         return;
     }
@@ -299,6 +317,7 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
     }
     let phase = r.storage_view.phase;
     if phase == 0 {
+        events::begin(&mut r.storage_view);
         r.storage_view.staged = Snapshot::empty();
         r.storage_view.staged.selected = r.storage_view.snapshot.selected;
         r.storage_view.staged.selected_node = r.storage_view.snapshot.selected_node;
@@ -454,6 +473,9 @@ fn finish_local(r: &mut InfinityRuntime, now: u64) {
 // ------------------=
 fn publish(r: &mut InfinityRuntime, now: u64) {
     let v = &mut r.storage_view;
+    if !events::complete(v, now) {
+        return;
+    }
     v.staged.ready = true;
     v.staged.selected = v.staged.selected.min(v.staged.count.saturating_sub(1));
     v.staged.selected_node = v
@@ -633,6 +655,68 @@ mod tests {
             poll(&mut r, 18);
         }
         assert_eq!(r.storage_view.revision, recovered);
+        // Real sequenced IEF delivery: consume one event, overflow the bounded
+        // LatestOnly queue with two more, then rebuild from the typed backend.
+        let notice = iop::storage_protocol::StorageCommit {
+            event: iop::storage_protocol::EVENT_OBJECT_CHANGED,
+            object: [7; 16],
+            generation: 3,
+            copied: 0,
+            state: 1,
+            correlation: 44,
+            causation: 43,
+            transitions: iop::storage_protocol::transition::UPDATED,
+        };
+        assert!(publish_storage_commit_from(&mut r, notice, 19));
+        for _ in 0..4 {
+            events::poll(&mut r, 19);
+        }
+        assert!(r.storage_view.events.stale);
+        for _ in 0..12 {
+            poll(&mut r, 19);
+        }
+        assert!(!r.storage_view.events.stale);
+        let rebuilt = r.storage_view.events.rebuilt;
+        assert!(publish_storage_commit_from(
+            &mut r,
+            iop::storage_protocol::StorageCommit {
+                generation: 4,
+                ..notice
+            },
+            20
+        ));
+        assert!(publish_storage_commit_from(
+            &mut r,
+            iop::storage_protocol::StorageCommit {
+                generation: 5,
+                ..notice
+            },
+            20
+        ));
+        POLICY.store(3, Ordering::SeqCst);
+        GENERATION.store(5, Ordering::SeqCst);
+        for _ in 0..4 {
+            events::poll(&mut r, 20);
+        }
+        assert_eq!(r.storage_view.events.gaps, 1);
+        assert!(r.storage_view.events.stale);
+        assert_eq!(r.storage_view.snapshot.objects[0].unwrap().generation, 3);
+        r.storage_view.queue_policy(1);
+        assert!(r.storage_view.policy.is_none());
+        for _ in 0..12 {
+            let before = CALLS.load(Ordering::SeqCst);
+            poll(&mut r, 20);
+            assert!(CALLS.load(Ordering::SeqCst) - before <= 1);
+        }
+        assert!(!r.storage_view.events.stale);
+        assert_eq!(r.storage_view.events.rebuilt, rebuilt + 1);
+        assert_eq!(r.storage_view.snapshot.objects[0].unwrap().generation, 5);
+        assert_eq!(r.storage_view.snapshot.objects[0].unwrap().desired, 3);
+        let gap_revision = r.storage_view.revision;
+        for _ in 0..12 {
+            poll(&mut r, 21);
+        }
+        assert_eq!(r.storage_view.revision, gap_revision);
         let calls = CALLS.load(Ordering::SeqCst);
         r.identity.lock_session(session, user).unwrap();
         r.storage_view.queue_policy(1);
@@ -640,6 +724,6 @@ mod tests {
         assert_eq!(CALLS.load(Ordering::SeqCst), calls);
         assert!(r.storage_view.snapshot == Snapshot::empty());
         assert!(r.storage_view.policy.is_none());
-        assert_eq!(POLICY.load(Ordering::SeqCst), 2);
+        assert_eq!(POLICY.load(Ordering::SeqCst), 3);
     }
 }

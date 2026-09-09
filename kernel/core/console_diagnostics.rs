@@ -75,6 +75,8 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         pool[252]=runtime.storage_metadata.last_request;
         pool[253]=runtime.storage_metadata.completed_request;
         pool[254]=runtime.storage_metadata.last_error.map(|e|e as u64+1).unwrap_or(0);
+        let pool_events=runtime.storage_view.event_diagnostics();
+        data[507]=pool_events.0 as u64;data[508]=pool_events.1;data[509]=pool_events.2;data[510]=pool_events.3;
         words(&mut pool[240..242],&transfer.3);words(&mut pool[242..246],&transfer.4);
         for (index,object) in view.objects.iter().enumerate().filter_map(|(i,o)|o.map(|o|(i,o))) {
             let at=32+index*16;words(&mut pool[at..at+2],&object.id);
