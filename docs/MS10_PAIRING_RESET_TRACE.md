@@ -26,3 +26,17 @@ Evidence:
 - `focused-pairing-trace-original-pass.json` in that directory preserves the earlier successful ceremony; that success did not establish reliability.
 
 All four guests were stopped normally by the harness after capture. No disks were deleted, no TTL was extended, no trust was injected, and no automatic retry was used.
+
+## Pacing-generation repeated installed verification
+
+Status: **TESTED: three consecutive reset/pair/Settings-refresh cycles passed** on the independently installed pacing-generation snapshot `40ccb79`. This is not evidence for later metadata/repair code or full MS10 completion.
+
+The finite process exited 0. Four media-detached guests configured twelve directed discovery endpoints. A and B then completed three ordinary revoke → unblock → protected confirmation → reopened Settings cycles. All three authenticated transaction fingerprints were distinct, both peers reached Trusted each time, and the bounded observer saw 36 CONFIRM frames in each direction with zero metadata drops. No authority bypass, TTL extension, retransmission by the harness, or injected trust was used.
+
+Evidence:
+
+- `/tmp/ms10-pacing-repeated-pairing.log` — process 7766 exited 0.
+- `/tmp/ms10-final-pacing-installed/repeated-pairing-trace.json` — three structured successful cycles and safe wire metadata.
+- `/tmp/ms10-final-pacing-installed/result.json` — independent installed/cold-boot bootstrap provenance.
+
+All four guests were stopped normally after the test. The old failing receipt remains preserved separately. The observed missing-CONFIRM failure did not recur in these three tests; this is a bounded reliability result, not a universal claim that pairing cannot fail.
