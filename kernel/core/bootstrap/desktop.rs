@@ -5115,7 +5115,7 @@ impl super::DisplayDevice {
             249,
             2,
         );
-        self.ui_text(
+        if focus != 8 { self.ui_text(
             content_x,
             content_y + if focus == 7 { 64 } else { 36 } * scale,
             if focus == 10 {
@@ -5127,7 +5127,7 @@ impl super::DisplayDevice {
             160,
             176,
             1,
-        );
+        ); }
         let icon_theme = crate::ui::icon_theme::IconThemeId::from_u8(self.active_icon_theme())
             .unwrap_or(crate::ui::icon_theme::IconThemeId::CrystalBlueGlass);
         let (opacity, blur) = self.active_background_effects();
@@ -5306,9 +5306,9 @@ impl super::DisplayDevice {
                 (b"Nodes", if pool_node.is_some_and(|n|n.online){b"Online / observed"}else if pool_node.is_some(){b"Offline / retained"}else{b"No observed nodes"}),
                 (b"Selected Object", if pool_object.is_some() { &pool_identity[..12] } else { b"None" }),
                 (b"Replica Location",pool_replica_state),
-                (b"Temporary", if pool_object.is_some_and(|o|o.desired==1) { b"Selected" } else { b"1 verified node" }),
-                (b"Protected", if pool_object.is_some_and(|o|o.desired==2) { b"Selected" } else { b"2 verified nodes" }),
-                (b"Critical", if pool_object.is_some_and(|o|o.desired==3) { b"Selected" } else { b"3 verified nodes" }),
+                (b"Temporary", if pool_object.is_some_and(|o|o.desired==1) { b"Selected" } else { b"Target: 1 verified node" }),
+                (b"Protected", if pool_object.is_some_and(|o|o.desired==2) { b"Selected" } else { b"Target: 2 verified nodes" }),
+                (b"Critical", if pool_object.is_some_and(|o|o.desired==3) { b"Selected" } else { b"Target: 3 verified nodes" }),
             ],
             _ => [
                 (b"InfinityOS", b"Development"),

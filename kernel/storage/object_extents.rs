@@ -135,7 +135,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Atomically seals an integrity-verified extent and its owner checkpoint under one native root transaction; only the trusted verifier calls this boundary.
     // ------------------=
     pub(crate) fn seal_extent_checkpoint(&mut self, id: ObjectId, crc: u32,
-        checkpoint: ObjectId, bytes: &[u8]) -> Result<(), ObjectError> {
+        checkpoint: ObjectId, bytes: &[u8],audit:[u8;128]) -> Result<(), ObjectError> {
         if id == checkpoint { return Err(ObjectError::InvalidObject); }
         let before = self.begin()?;
         let result = (|| {
@@ -148,6 +148,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             self.state.objects[object].current_version = 1;
             self.state.objects[object].modified = self.state.generation + 1;
             self.replace_state_record(checkpoint, bytes)?;
+            self.append_pool_audit_record(audit)?;
             Ok(())
         })();
         self.finish(before, result)

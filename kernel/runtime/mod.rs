@@ -2010,6 +2010,7 @@ pub fn poll_node_transport(now: u64) {
                     event: EVENT_RESOURCE_CHANGED, object: request.payload.object,
                     generation: request.payload.manifest_generation, copied: request.payload.offset,
                     state: request.payload.data[44], correlation: request.correlation, causation: request.request_id,
+                    transitions: if request.payload.data[44]!=0 {iop::storage_protocol::transition::RESOURCE_AVAILABLE} else {iop::storage_protocol::transition::RESOURCE_OFFLINE},
                 })));
             }
             handler(request)
@@ -2035,6 +2036,7 @@ pub fn poll_node_transport(now: u64) {
             event: iop::storage_protocol::EVENT_RESOURCE_CHANGED, object: resource.id.0,
             generation: resource.sequence, copied: resource.available,
             state: 0, correlation: now, causation: now,
+            transitions: iop::storage_protocol::transition::RESOURCE_OFFLINE,
         };
         if publish_storage_commit(notice, now) {
             with_runtime(|runtime| runtime.fabric_resources.acknowledge_offline(resource));
@@ -2080,10 +2082,11 @@ fn publish_storage_commit_from(runtime: &mut InfinityRuntime, notice: iop::stora
                 notice.event as u64, 1, 0, issuer, source, None, 0).ok();
         }
         let Some(capability) = runtime.storage_event_cap[index] else { return false; };
-        let mut payload = [0; 40];
-        payload[..16].copy_from_slice(&notice.object);
-        payload[16..24].copy_from_slice(&notice.generation.to_le_bytes());
-        payload[24..32].copy_from_slice(&notice.copied.to_le_bytes()); payload[32] = notice.state;
+        if runtime.capabilities.validate(capability,source,CapabilityType::EventPublish,notice.event as u64,1,0,now).is_err() {
+            runtime.storage_event_cap[index]=None;
+            return false;
+        }
+        let payload = notice.payload();
         runtime.events.publish(EventClass::StateChange, RoutingDomain::Mesh, notice.event,
             source, 0, notice.correlation, notice.causation, &payload, 140, now,
             &runtime.capabilities, capability).is_ok()

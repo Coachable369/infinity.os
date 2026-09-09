@@ -134,10 +134,15 @@ def remote_read(guest, object_id, row, expected):
     guest.command(f"pool read obj:{object_id} generation={row[3]} version={row[2]} offset=0 length={len(expected)} source=remote")
     request = fixture.read_state(guest, API.symbol)[16]
     assert request != before and request & (1 << 63)
+    admitted = guest.state()
+    assert admitted[110] == 0, {"stale_read_observation_at_admission": request}
     deadline = time.monotonic() + 90
     while time.monotonic() < deadline:
         state = guest.command(f"pool result request={request}")
-        if state[110] == 1:
+        completion = fixture.read_state(guest, API.symbol)
+        if completion[30] == request:
+            assert completion[251] == 0, {"remote_read_failed": request, "error": completion[251]}
+            assert state[110] == 1, {"missing_consumed_read_payload": request}
             reply = struct.pack("<17Q", *state[111:128])
             assert struct.unpack_from("<HHI", reply) == (1, len(expected), 0x3002)
             assert reply[8:24].hex() == object_id and reply[72:72+len(expected)] == expected
@@ -230,6 +235,8 @@ def main():
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--firmware", default="/opt/homebrew/share/qemu/edk2-x86_64-code.fd")
     parser.add_argument("--verifier", type=pathlib.Path, required=True)
+    parser.add_argument("--stop-before-remote-read", action="store_true",
+                        help="Collect distribution evidence only, then exit incomplete before a known unavailable read-consumption diagnostic.")
     args = parser.parse_args()
     work = args.output.resolve()
     receipt = json.loads((work / "result.json").read_text())
@@ -274,6 +281,14 @@ def main():
         assert healthy[4] == 32768
         persisted = [persisted_hash(guest, args.verifier.resolve(), known[0], created) for guest in (a, b, c)]
         local_read(a, oid, healthy, fixture.expected_content(64, 17))
+        if args.stop_before_remote_read:
+            report.update({"status": "INCOMPLETE", "created": created,
+                           "critical_three_verified": True, "persisted_content": persisted,
+                           "transfer_input": input_report, "local_read": True,
+                           "stop_reason": "Installed generation lacks correlated remote-read consumption diagnostics",
+                           "remote_read": "NOT TESTED", "loss_heal_reboot": "NOT TESTED"})
+            (work / "distribution-preflight-result.json").write_text(json.dumps(report, indent=2))
+            raise SystemExit(2)
         remote_read(a, oid, healthy, fixture.expected_content(64, 17))
         b.stop()
         degraded = object_state(a, oid, lambda r: r[6] == 2 and r[7] >= 1, "replica-host-loss")

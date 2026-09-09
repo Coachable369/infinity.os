@@ -370,8 +370,8 @@ fn execute_replica_request(request: crate::runtime::iop::remote::AuthenticatedSt
         let response = unsafe { REPLICA_SERVICE.as_mut().ok_or(RemoteError::ServiceUnavailable)
             .and_then(|service| service.execute(store, request)) };
         Ok(response.map(|response| {
-            let observable_commit = store.generation() != before && !matches!(request.payload.operation,
-                crate::runtime::iop::storage_protocol::Operation::TransferChunk | crate::runtime::iop::storage_protocol::Operation::PoolUploadAppend);
+            let transitions=crate::runtime::iop::storage_protocol::mutation_transitions(request.payload.operation,&response);
+            let observable_commit = store.generation() != before && transitions!=0;
             let notice = observable_commit.then_some(StorageCommit {
                 event: match request.payload.operation {
                     crate::runtime::iop::storage_protocol::Operation::ObjectCreate | crate::runtime::iop::storage_protocol::Operation::ObjectUpdate
@@ -391,6 +391,7 @@ fn execute_replica_request(request: crate::runtime::iop::remote::AuthenticatedSt
                     | crate::runtime::iop::storage_protocol::Operation::ObjectCopy
                     | crate::runtime::iop::storage_protocol::Operation::ObjectUpdate) { response.data[49] } else { response.data[0] },
                 correlation: request.correlation, causation: request.request_id,
+                transitions,
             });
             (response, notice)
         }))

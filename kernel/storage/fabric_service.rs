@@ -358,6 +358,7 @@ impl ReplicaService {
                     self.verifiers[index] = Some(ExtentVerification::resume(store, binding.backing,
                         self.resource, self.generation).map_err(replica_error)?);
                 }
+                self.verifiers[index].as_mut().unwrap().set_audit_owner(binding.owner);
                 self.verifiers[index].as_mut().unwrap().tick(store).map_err(replica_error)?;
             },
             Operation::ReplicaInspect => { if p.length != 0 { return Err(RemoteError::MalformedRequest); } },

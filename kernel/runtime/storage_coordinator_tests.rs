@@ -95,7 +95,10 @@ fn explicit_remote_preference_keeps_ownership_and_fences() {
         submit_read_from(&mut r, StableId([0; 16]), session, request),
         Err(RemoteError::AccessDenied)
     );
+    r.storage_last_observation = Some(request);
     let id = submit_read_from(&mut r, user, session, request).unwrap();
+    assert!(r.storage_last_observation.is_none());
+    assert_eq!(r.storage_coordinator.completed_read, 0);
     assert_eq!(
         take_read_from(&mut r, user, other_session, id),
         Err(RemoteError::NotFound)
@@ -109,6 +112,29 @@ fn explicit_remote_preference_keeps_ownership_and_fences() {
         Err(RemoteError::NotFound)
     );
     assert!(r.storage_coordinator.public_read.is_none());
+    assert_eq!(r.storage_coordinator.completed_read, id);
+    assert_eq!(
+        r.storage_coordinator.read_error,
+        Some(RemoteError::NotFound)
+    );
+    assert!(r.storage_last_observation.is_none());
+    let success_id = submit_read_from(&mut r, user, session, request).unwrap();
+    let mut reply = request;
+    reply.length = 3;
+    reply.data[..3].copy_from_slice(&[7, 8, 9]);
+    r.storage_coordinator.public_read.as_mut().unwrap().result = Some(Ok(reply));
+    assert_eq!(
+        take_read_from(&mut r, user, other_session, success_id),
+        Err(RemoteError::NotFound)
+    );
+    assert_eq!(r.storage_coordinator.completed_read, 0);
+    assert_eq!(
+        take_read_from(&mut r, user, session, success_id),
+        Ok(Some(reply))
+    );
+    assert_eq!(r.storage_last_observation, Some(reply));
+    assert_eq!(r.storage_coordinator.completed_read, success_id);
+    assert_eq!(r.storage_coordinator.read_error, None);
     let mut bad = request;
     bad.object_version = 2;
     submit_read_from(&mut r, user, session, bad).unwrap();
@@ -171,6 +197,101 @@ fn explicit_remote_preference_keeps_ownership_and_fences() {
     );
 }
 static CALLS: AtomicUsize = AtomicUsize::new(0);
+// ------------------------=
+// FUNC: committed_transition_delivery_recovers_after_failure
+// DESC: Forces real event-authority rejection, retains committed generation and exact flags, then verifies bounded retry publishes the same structured transition.
+// ------------------=
+#[test]
+fn committed_transition_delivery_recovers_after_failure() {
+    use iop::storage_protocol::{transition::*, StorageCommit, EVENT_OBJECT_CHANGED};
+    let mut r = InfinityRuntime::new(false);
+    r.define_bootstrap().unwrap();
+    r.start_all(0);
+    let holder = r.service_identity(SERVICE_REPLICA_STORAGE).unwrap();
+    let cap = r
+        .capabilities
+        .grant(
+            CapabilityType::EventSubscribe,
+            EVENT_OBJECT_CHANGED as u64,
+            1,
+            0,
+            holder,
+            holder,
+            None,
+            0,
+        )
+        .unwrap();
+    let lease = r
+        .events
+        .subscribe(
+            holder,
+            cap,
+            event::EventFilter {
+                type_id: EVENT_OBJECT_CHANGED,
+                scope: None,
+            },
+            100,
+            event::OverflowPolicy::LatestOnly,
+            1,
+            &r.capabilities,
+            1,
+        )
+        .unwrap();
+    let notice = StorageCommit {
+        event: EVENT_OBJECT_CHANGED,
+        object: [7; 16],
+        generation: 4,
+        copied: 128,
+        state: 1,
+        correlation: 3,
+        causation: 2,
+        transitions: HEAL_COMPLETED | VERIFIED | AVAILABLE | HEALTHY | STALE_RECONCILED,
+    };
+    retain_notice(&mut r, notice);
+    r.storage_event_cap[2] = Some(u64::MAX);
+    flush_notice(&mut r, 1);
+    assert_eq!(r.storage_coordinator.notice, Some(notice));
+    assert!(r.events.receive(lease, 1).is_err());
+    flush_notice(&mut r, 2);
+    assert!(r.storage_coordinator.notice.is_none());
+    let delivered = r.events.receive(lease, 2).unwrap();
+    assert_eq!(delivered.payload_len, 40);
+    assert_eq!(&delivered.payload[..40], &notice.payload());
+    assert_eq!(delivered.correlation_id, 3);
+    assert_eq!(delivered.causation_id, 2);
+    retain_notice(&mut r,notice);
+    let another=StorageCommit{object:[8;16],generation:5,transitions:CREATED,..notice};
+    retain_notice(&mut r,another);
+    let pending=r.storage_coordinator.notice.unwrap();
+    assert_eq!(pending.object,[8;16]);
+    assert_eq!(pending.transitions,CREATED|RECONSTRUCT);
+    flush_notice(&mut r,3);
+    let recovered=r.events.receive(lease,3).unwrap();
+    assert_eq!(u32::from_le_bytes(recovered.payload[36..40].try_into().unwrap()),CREATED|RECONSTRUCT);
+    let NativeReply::Manifest(Some(before))=read_manifest_fixture(NativeRequest::Load{index:0,owner:NodeId([1;32]),scope:0}).unwrap()else{panic!("fixture")};
+    let mut stale=before;stale.generation+=1;stale.placements[0].as_mut().unwrap().state=PlacementState::Stale;
+    assert_ne!(manifest_transitions(&before,&stale)&STALE_DETECTED,0);
+    let mut reconciled=stale;reconciled.generation+=1;reconciled.placements[0].as_mut().unwrap().state=PlacementState::Verified;
+    assert_eq!(manifest_transitions(&stale,&reconciled)&(VERIFIED|AVAILABLE|STALE_RECONCILED),VERIFIED|AVAILABLE|STALE_RECONCILED);
+    assert_eq!(
+        iop::storage_protocol::mutation_transitions(
+            Operation::TransferChunk,
+            &StorageOperationV1 {
+                operation: Operation::TransferChunk,
+                object: [1; 16],
+                authority_generation: 1,
+                manifest_generation: 1,
+                object_version: 1,
+                offset: 64,
+                scope: 0,
+                value: 0,
+                length: 0,
+                data: [0; 64]
+            }
+        ),
+        0
+    );
+}
 // ------------------------=
 // FUNC: empty_native
 // DESC: Supplies explicit empty persistent state and counts bounded native invocations without fabricating network success.

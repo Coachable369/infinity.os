@@ -8,6 +8,7 @@ const RECORD_BYTES: usize = 160;
 pub(crate) struct ExtentVerification {
     backing: ObjectId, extent: ObjectId, transfer: Transfer,
     verified: u64, digest: Sha256, crc: u32,
+    audit_owner: [u8;32],
 }
 impl ExtentVerification {
     // ------------------------=
@@ -20,13 +21,18 @@ impl ExtentVerification {
         let current = native.inspect().ok_or(ReplicaError::Incomplete)?;
         if current.copied != current.descriptor.bytes { return Err(ReplicaError::Incomplete); }
         Ok(Self { backing, extent: native.extent, transfer: Transfer::resume(current)?,
-            verified: 0, digest: Sha256::new(), crc: 0xffff_ffff })
+            verified: 0, digest: Sha256::new(), crc: 0xffff_ffff, audit_owner:[0;32] })
     }
     // ------------------------=
     // FUNC: verified_bytes
     // DESC: Reports observed verification progress independently from durable copied bytes and availability.
     // ------------------=
     pub(crate) fn verified_bytes(&self) -> u64 { self.verified }
+    // ------------------------=
+    // FUNC: set_audit_owner
+    // DESC: Carries the already authenticated durable binding owner into the atomic publication audit without an additional lookup.
+    // ------------------=
+    pub(crate) fn set_audit_owner(&mut self,owner:[u8;32]) {self.audit_owner=owner;}
     // ------------------------=
     // FUNC: tick
     // DESC: Reopens the exact durable replica and verifies at most one KiB; no object-store borrow or whole-content buffer survives the tick.
@@ -37,6 +43,7 @@ impl ExtentVerification {
             expected.descriptor.resource, expected.descriptor.generation)?;
         if native.extent != self.extent || native.inspect() != Some(expected) { return Err(ReplicaError::Stale); }
         native.verified = self.verified; native.digest = self.digest.clone(); native.crc = self.crc;
+        native.audit_owner=self.audit_owner;
         let result = self.transfer.verify_tick(&mut native);
         if result.is_ok() {
             self.verified = native.verified; self.digest = native.digest.clone(); self.crc = native.crc;
@@ -54,6 +61,7 @@ pub(crate) struct NativeExtentReplica<'a, D: BlockDevice> {
     store: &'a mut ObjectStore<D>, backing: ObjectId, resource: ResourceId, generation: u64,
     extent: ObjectId, current: Option<Checkpoint>, pending_end: Option<u64>,
     verified: u64, digest: Sha256, crc: u32,
+    audit_owner: [u8;32],
 }
 impl<'a, D: BlockDevice> NativeExtentReplica<'a, D> {
     // ------------------------=
@@ -71,7 +79,7 @@ impl<'a, D: BlockDevice> NativeExtentReplica<'a, D> {
             (extent, Some(decode_header(&bytes[..128])?))
         };
         let value = Self { store, backing, resource, generation, extent, current, pending_end: None,
-            verified: 0, digest: Sha256::new(), crc: 0xffff_ffff };
+            verified: 0, digest: Sha256::new(), crc: 0xffff_ffff, audit_owner:[0;32] };
         if let Some(current) = value.current { value.validate(&current.descriptor)?; }
         Ok(value)
     }
@@ -208,7 +216,13 @@ impl<D: BlockDevice> ReplicaStore for NativeExtentReplica<'_, D> {
             || self.verified != next.descriptor.bytes { return Err(ReplicaError::Incomplete); }
         let hash: [u8; 32] = self.digest.clone().finalize().into();
         if hash != next.descriptor.hash { return Err(ReplicaError::Integrity); }
-        self.store.seal_extent_checkpoint(self.extent, !self.crc, self.backing, &Self::record(next, self.extent))
+        let mut audit=[0;128];audit[..16].copy_from_slice(&next.descriptor.object);
+        audit[32..40].copy_from_slice(&next.descriptor.version.to_le_bytes());
+        audit[40..48].copy_from_slice(&next.descriptor.generation.to_le_bytes());
+        audit[48..80].copy_from_slice(&self.audit_owner);
+        audit[80..96].copy_from_slice(&next.descriptor.resource.0);audit[98]=7;
+        audit[99]=ReplicaState::Available as u8;
+        self.store.seal_extent_checkpoint(self.extent, !self.crc, self.backing, &Self::record(next, self.extent),audit)
             .map_err(|_| ReplicaError::Storage)?;
         self.current = Some(*next); Ok(())
     }

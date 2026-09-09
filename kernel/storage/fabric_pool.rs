@@ -18,6 +18,19 @@ const LIMIT: usize = 8;
 const BYTES: usize = 32 + LIMIT * 128;
 const PATH: &[u8] = b"/system/storage/pool-manifests";
 
+// ------------------------=
+// FUNC: audit_record
+// DESC: Encodes one lifecycle transition without content or secrets; kind identifies create/copy/update/upload/delete or manifest change.
+// ------------------=
+fn audit_record(previous:Option<&Manifest>,next:&Manifest,kind:u8)->[u8;128] {
+    let mut b=[0;128];b[..16].copy_from_slice(&next.object);
+    for (at,value) in [(16,previous.map_or(0,|m|m.generation)),(24,next.generation),(32,next.version),(40,next.authority_generation),
+        (112,next.healing.map_or(0,|c|c.token))] {b[at..at+8].copy_from_slice(&value.to_le_bytes());}
+    b[48..80].copy_from_slice(&next.authority.0);
+    for i in 0..8 {b[80+i]=previous.and_then(|m|m.placements[i]).map_or(0,|p|p.state as u8);b[88+i]=next.placements[i].map_or(0,|p|p.state as u8);}
+    b[96]=next.policy.replicas() as u8;b[97]=u8::from(next.healing.is_some());b[98]=kind;b
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Entry {
     object: ObjectId, backing: ObjectId, owner: NodeId, scope: u64,
@@ -94,34 +107,8 @@ impl<D: BlockDevice> ObjectStore<D> {
         let catalog = Catalog::load(self)?;
         let e = catalog.entries.iter().flatten().find(|e| e.object == object).ok_or(ObjectError::NotFound)?;
         let mut bytes = [0; MANIFEST_BYTES]; next.encode(&mut bytes).map_err(|_| ObjectError::InvalidObject)?;
-        let (audit_id, audit) = self.pool_manifest_audit(&previous, next)?;
-        self.replace_state_pair(e.backing, &bytes, audit_id, &audit)?;
+        self.replace_state_audited(e.backing, &bytes, audit_record(Some(&previous),next,1))?;
         Ok(())
-    }
-    // ------------------------=
-    // FUNC: pool_manifest_audit
-    // DESC: Stages one bounded structured audit successor for atomic publication with the manifest; no content or secret material is logged.
-    // ------------------=
-    fn pool_manifest_audit(&mut self, previous:&Manifest, next:&Manifest)->Result<(ObjectId,[u8;2080]),ObjectError> {
-        const AUDIT_PATH:&[u8]=b"/system/storage/pool-audit";
-        let mut bytes=[0;2080];bytes[..8].copy_from_slice(b"INFPAD01");
-        let id=match self.resolve(AUDIT_PATH) {
-            Ok(id)=>{if self.read(id,None,&mut bytes)?!=2080 || &bytes[..8]!=b"INFPAD01" {return Err(ObjectError::CorruptContent);}id},
-            Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>self.create_attached(b"pool-audit",ObjectType::Metadata,Space::System,&bytes,AUDIT_PATH)?,
-            Err(e)=>return Err(e),
-        };
-        let sequence=u64::from_le_bytes(bytes[8..16].try_into().unwrap()).checked_add(1).ok_or(ObjectError::InvalidVersion)?;
-        bytes[8..16].copy_from_slice(&sequence.to_le_bytes());
-        let at=32+((sequence-1)%16) as usize*128;bytes[at..at+128].fill(0);
-        bytes[at..at+16].copy_from_slice(&next.object);
-        for (offset,value) in [(16,previous.generation),(24,next.generation),(32,next.version),(40,next.authority_generation),
-            (112,next.healing.map_or(0,|claim|claim.token)),(120,sequence)] {
-            bytes[at+offset..at+offset+8].copy_from_slice(&value.to_le_bytes());
-        }
-        bytes[at+48..at+80].copy_from_slice(&next.authority.0);
-        for i in 0..8 {bytes[at+80+i]=previous.placements[i].map_or(0,|p|p.state as u8);bytes[at+88+i]=next.placements[i].map_or(0,|p|p.state as u8);}
-        bytes[at+96]=next.policy.replicas() as u8;bytes[at+97]=u8::from(next.healing.is_some());
-        Ok((id,bytes))
     }
     // ------------------------=
     // FUNC: pool_copy
@@ -156,7 +143,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             catalog.entries[slot] = Some(Entry { object, backing, owner, scope, nonce,
                 creation_hash: retry_hash, creation_policy: copied.policy.replicas() as u8 });
             committed_manifest = Some(copied);
-            Ok((catalog.encode(), bytes))
+            Ok((catalog.encode(), bytes, audit_record(Some(&previous),&copied,3)))
         })?;
         committed_manifest.ok_or(ObjectError::TransactionFailed)
     }
@@ -238,7 +225,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             catalog.entries[slot] = Some(Entry { object, backing, owner, scope, nonce,
                 creation_hash: hash, creation_policy: policy.replicas() as u8 });
             committed_manifest = Some(manifest);
-            Ok((catalog.encode(), bytes))
+            Ok((catalog.encode(), bytes, audit_record(None,&manifest,2)))
         })?;
         committed_manifest.ok_or(ObjectError::TransactionFailed)
     }
@@ -259,7 +246,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         previous.successor(&next).map_err(|_| ObjectError::InvalidVersion)?;
         let mut bytes = [0; MANIFEST_BYTES];
         next.encode(&mut bytes).map_err(|_| ObjectError::InvalidObject)?;
-        self.replace_state(e.backing, &bytes)?;
+        self.replace_state_audited(e.backing, &bytes, audit_record(Some(&previous),&next,1))?;
         Ok(next)
     }
     // ------------------------=
@@ -293,7 +280,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             previous.successor(&next).map_err(|_| ObjectError::InvalidVersion)?;
             let mut bytes = [0; MANIFEST_BYTES]; next.encode(&mut bytes).map_err(|_| ObjectError::InvalidObject)?;
             committed_manifest = Some(next);
-            Ok(bytes)
+            Ok((bytes,audit_record(Some(&previous),&next,4)))
         })?;
         committed_manifest.ok_or(ObjectError::TransactionFailed)
     }

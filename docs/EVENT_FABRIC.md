@@ -55,3 +55,27 @@ activation is Record-class and is emitted after the native profile object
 commits. Capability-filtered delivery, Record ordering, correlation/causation,
 and delivery-time revocation are **TESTED**. Packet counters remain sampled
 diagnostics rather than durable event spam.
+
+## Pool committed transition hints
+
+Pool retains the four bounded resource/replica/object/policy event topics. Their
+40-byte payload carries ObjectId/resource ID (0..16), committed generation
+(16..24), bytes (24..32), state (32), reserved zeros (33..36), and little-endian
+transition flags (36..40). `storage_protocol::transition` defines independent
+bits for resource availability/offline, create/update/policy/delete/reclamation,
+transfer start/verified/available, degraded/healthy, healing start/resume/complete,
+and stale detection/reconciliation. Multiple bits describe the same commit.
+Transfer chunks and incomplete verification ticks produce no lifecycle event.
+
+Coordinator publication retains one latest hint; same-object transitions merge.
+Replacing a pending different-object hint sets `RECONSTRUCT`, explicitly requiring
+an authoritative Pool IOP refresh rather than claiming delivery of lost lifecycle
+events. Failed publication retains the hint and retries with bounded work; event
+delivery never changes replica validity. Settings also periodically rebuilds its
+bounded typed projection, including when no final event arrives. Healing-resume
+is announced after a durable claim renewal or acknowledged nonzero recipient
+checkpoint, not merely scheduling a retry.
+
+Host behavioral tests cover typed flags, rejection/retry, bounded overflow hints
+and projection recovery without events. Installed event-failure acceptance is
+still required. These StateChange hints are not substitutes for durable audit.

@@ -5,6 +5,71 @@ use crate::runtime::iop::{
     storage_protocol::{Operation, StorageOperationV1},
 };
 // ------------------------=
+// FUNC: audit
+// DESC: Reads structured ring sequence and most recent binary lifecycle record.
+// ------------------=
+pub(super) fn audit(store:&mut ObjectStore<Disk>)->(u64,[u8;128]) {
+    let id=store.resolve(b"/system/storage/pool-audit").unwrap();let mut bytes=[0;2080];
+    assert_eq!(store.read(id,None,&mut bytes),Ok(2080));
+    let sequence=u64::from_le_bytes(bytes[8..16].try_into().unwrap());
+    let at=32+((sequence-1)%16) as usize*128;(sequence,bytes[at..at+128].try_into().unwrap())
+}
+// ------------------------=
+// FUNC: lifecycle_audit_is_bounded_and_retries_do_not_duplicate
+// DESC: Exercises create/copy/update/upload/delete/recipient publication and verifies exact durable kinds and retry behavior without per-window audit spam.
+// ------------------=
+#[test]
+fn lifecycle_audit_is_bounded_and_retries_do_not_duplicate() {
+    let (disk,mut store)=fresh();
+    let m=store.pool_create(OWNER,0,1,StorageClass::Protected,b"first",OWNER,RESOURCE,[3;16],1).unwrap();
+    assert_eq!(audit(&mut store).0,1);assert_eq!(audit(&mut store).1[98],2);
+    store.pool_create(OWNER,0,1,StorageClass::Protected,b"first",OWNER,RESOURCE,[3;16],1).unwrap();
+    assert_eq!(audit(&mut store).0,1);
+    let copy=store.pool_copy(ObjectId(m.object),OWNER,0,1,2,OWNER,RESOURCE,[3;16],1).unwrap();
+    assert_eq!(audit(&mut store).1[98],3);
+    store.pool_copy(ObjectId(m.object),OWNER,0,1,2,OWNER,RESOURCE,[3;16],1).unwrap();assert_eq!(audit(&mut store).0,2);
+    let mut m=m;
+    for n in 0..18 {
+        m=store.pool_update(ObjectId(m.object),OWNER,0,m.generation,&[n],OWNER,RESOURCE,[3;16],1).unwrap();
+        assert_eq!(audit(&mut store).1[98],4);
+    }
+    assert_eq!(audit(&mut store).0,20);
+    let uploaded=upload(&mut store,&[8;17000],3,ObjectId([0;16]),0);
+    assert_eq!(audit(&mut store).0,21);assert_eq!(audit(&mut store).1[98],5);
+    store.pool_delete(ObjectId(copy.object),OWNER,0,copy.generation).unwrap();
+    assert_eq!(audit(&mut store).0,22);assert_eq!(audit(&mut store).1[98],6);
+    let mut service=ReplicaService::mount(&mut store,RESOURCE,1).unwrap();let mut request=replica(&mut store,&mut service,1);
+    let before=audit(&mut store);assert_eq!(before.0,23);assert_eq!(before.1[98],7);assert_eq!(&before.1[48..80],&OWNER.0);
+    request.payload.operation=Operation::TransferCommit;request.payload.length=0;request.payload.data=[0;64];request.payload.offset=0;
+    service.execute(&mut store,request).unwrap();assert_eq!(audit(&mut store),before);
+    drop(store);let mut store=ObjectStore::mount(disk,0).unwrap();assert_eq!(audit(&mut store),before);
+    verify(&mut store,&uploaded,&[8;17000]);
+}
+// ------------------------=
+// FUNC: create_and_update_audits_share_every_power_cut
+// DESC: Cuts every transaction sector and requires application publication and audit to recover together, including initial ring creation.
+// ------------------=
+#[test]
+fn create_and_update_audits_share_every_power_cut() {
+    let (disk,mut store)=fresh();let baseline=disk.0.borrow().clone();let before=baseline.writes;
+    let m=store.pool_create(OWNER,0,1,StorageClass::Protected,b"one",OWNER,RESOURCE,[3;16],1).unwrap();
+    let cost=disk.0.borrow().writes-before;
+    for cut in 0..cost {
+        let d=Disk(Rc::new(RefCell::new(baseline.clone())));let mut s=ObjectStore::mount(d.clone(),0).unwrap();d.0.borrow_mut().remaining=Some(cut);
+        assert!(s.pool_create(OWNER,0,1,StorageClass::Protected,b"one",OWNER,RESOURCE,[3;16],1).is_err());
+        d.0.borrow_mut().remaining=None;let mut s=ObjectStore::mount(d,0).unwrap();
+        assert_eq!(s.pool_inspect(OWNER,0,0).unwrap().0,0);assert!(s.resolve(b"/system/storage/pool-audit").is_err());
+    }
+    let baseline=disk.0.borrow().clone();let before=baseline.writes;
+    store.pool_update(ObjectId(m.object),OWNER,0,1,b"two",OWNER,RESOURCE,[3;16],1).unwrap();let cost=disk.0.borrow().writes-before;
+    for cut in 0..cost {
+        let d=Disk(Rc::new(RefCell::new(baseline.clone())));let mut s=ObjectStore::mount(d.clone(),0).unwrap();d.0.borrow_mut().remaining=Some(cut);
+        assert!(s.pool_update(ObjectId(m.object),OWNER,0,1,b"two",OWNER,RESOURCE,[3;16],1).is_err());
+        d.0.borrow_mut().remaining=None;let mut s=ObjectStore::mount(d,0).unwrap();
+        assert_eq!(s.pool_manifest(ObjectId(m.object),OWNER,0).unwrap().version,1);assert_eq!(audit(&mut s).0,1);
+    }
+}
+// ------------------------=
 // FUNC: persisted_verifier_checks_actual_bytes_without_mutation
 // DESC: Verifies native recipient storage after mount and rejects identity/hash/version mismatch and actual payload corruption without any writes.
 // ------------------=
@@ -325,9 +390,9 @@ fn manifest_and_audit_commit_share_power_loss_boundary() {
     let audit = store.resolve(b"/system/storage/pool-audit").unwrap();
     let mut bytes = [0; 2080];
     store.read(audit, None, &mut bytes).unwrap();
-    assert_eq!(u64::from_le_bytes(bytes[8..16].try_into().unwrap()), 2);
+    assert_eq!(u64::from_le_bytes(bytes[8..16].try_into().unwrap()), 3);
     assert_eq!(
-        u64::from_le_bytes(bytes[32 + 128 + 24..32 + 128 + 32].try_into().unwrap()),
+        u64::from_le_bytes(bytes[32 + 256 + 24..32 + 256 + 32].try_into().unwrap()),
         3
     );
     for cut in 0..cost {
@@ -347,8 +412,8 @@ fn manifest_and_audit_commit_share_power_loss_boundary() {
             2
         );
         recovered.read(audit, None, &mut bytes).unwrap();
-        assert_eq!(u64::from_le_bytes(bytes[8..16].try_into().unwrap()), 1);
-        assert_eq!(u64::from_le_bytes(bytes[56..64].try_into().unwrap()), 2);
+        assert_eq!(u64::from_le_bytes(bytes[8..16].try_into().unwrap()), 2);
+        assert_eq!(u64::from_le_bytes(bytes[184..192].try_into().unwrap()), 2);
     }
 }
 // ------------------------=

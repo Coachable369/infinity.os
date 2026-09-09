@@ -542,7 +542,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                 receipt.result_generation = m.generation;
                 receipt.complete = true;
                 committed = Some(m);
-                Ok((catalog.encode(), encoded, receipt.encode()))
+                Ok((catalog.encode(), encoded, receipt.encode(), audit_record(previous.as_ref(),&m,5)))
             },
         )?;
         *verifier = UploadVerifier::new();
@@ -679,6 +679,6 @@ impl<D: BlockDevice> ObjectStore<D> {
         retired[1] = backing;
         retired[2..].copy_from_slice(&candidates);
         let (outbox, pending) = self.pool_stage_deletion(&manifest, scope)?;
-        self.pool_retire_owned_with_state(&retired, catalog.id, &catalog.encode(), Some((outbox, &pending)))
+        self.pool_retire_owned_with_state(&retired, catalog.id, &catalog.encode(), Some((outbox, &pending)),Some(audit_record(Some(&manifest),&manifest,6)))
     }
 }

@@ -8,14 +8,83 @@ pub const EVENT_REPLICA_CHANGED: u32 = 0xe041;
 pub const EVENT_RESOURCE_CHANGED: u32 = 0xe040;
 pub const EVENT_OBJECT_CHANGED: u32 = 0xe042;
 pub const EVENT_POLICY_CHANGED: u32 = 0xe043;
+/// Version-one transition bits carried at payload bytes 36..40. Multiple bits
+/// describe one atomic commit; these hints never replace authoritative IOP state.
+pub mod transition {
+    pub const RESOURCE_AVAILABLE: u32 = 1 << 0;
+    pub const RESOURCE_OFFLINE: u32 = 1 << 1;
+    pub const CREATED: u32 = 1 << 2;
+    pub const UPDATED: u32 = 1 << 3;
+    pub const POLICY: u32 = 1 << 4;
+    pub const TRANSFER_STARTED: u32 = 1 << 5;
+    pub const VERIFIED: u32 = 1 << 6;
+    pub const AVAILABLE: u32 = 1 << 7;
+    pub const DEGRADED: u32 = 1 << 8;
+    pub const HEAL_STARTED: u32 = 1 << 9;
+    pub const HEAL_RESUMED: u32 = 1 << 10;
+    pub const HEAL_COMPLETED: u32 = 1 << 11;
+    pub const STALE_DETECTED: u32 = 1 << 12;
+    pub const STALE_RECONCILED: u32 = 1 << 13;
+    pub const HEALTHY: u32 = 1 << 14;
+    pub const DELETED: u32 = 1 << 15;
+    pub const RECLAIMED: u32 = 1 << 16;
+    /// Bounded delivery coalesced another object; subscriber must reload Pool state.
+    pub const RECONSTRUCT: u32 = 1 << 17;
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StorageCommit {
     pub event: u32,
-    pub object: [u8; 16], pub generation: u64, pub copied: u64,
-    pub state: u8, pub correlation: u64, pub causation: u64,
+    pub object: [u8; 16],
+    pub generation: u64,
+    pub copied: u64,
+    pub state: u8,
+    pub correlation: u64,
+    pub causation: u64,
+    pub transitions: u32,
 }
-pub type StorageHandler = fn(super::remote::AuthenticatedStorageRequest)
-    -> Result<(StorageOperationV1, Option<StorageCommit>), super::remote::RemoteError>;
+impl StorageCommit {
+    // ------------------------=
+    // FUNC: payload
+    // DESC: Encodes fixed typed postcommit identity, generation, progress, state and transition flags without heap allocation.
+    // ------------------=
+    pub fn payload(self) -> [u8; 40] {
+        let mut payload = [0; 40];
+        payload[..16].copy_from_slice(&self.object);
+        payload[16..24].copy_from_slice(&self.generation.to_le_bytes());
+        payload[24..32].copy_from_slice(&self.copied.to_le_bytes());
+        payload[32] = self.state;
+        payload[36..40].copy_from_slice(&self.transitions.to_le_bytes());
+        payload
+    }
+}
+// ------------------------=
+// FUNC: mutation_transitions
+// DESC: Classifies committed service boundaries; chunk progress and incomplete verifier ticks intentionally emit no transition.
+// ------------------=
+pub fn mutation_transitions(operation: Operation, response: &StorageOperationV1) -> u32 {
+    use transition::*;
+    match operation {
+        Operation::ObjectCreate | Operation::ObjectCopy => CREATED,
+        Operation::ObjectUpdate => UPDATED,
+        Operation::ObjectSetPolicy => POLICY,
+        Operation::ObjectDelete => DELETED,
+        Operation::ReplicaDelete => DELETED | RECLAIMED,
+        Operation::TransferBegin => TRANSFER_STARTED,
+        Operation::TransferCommit if response.data[0] == 4 => VERIFIED | AVAILABLE,
+        Operation::PoolUploadCommit if response.value == 1 => {
+            if response.object_version > 1 {
+                UPDATED
+            } else {
+                CREATED
+            }
+        }
+        _ => 0,
+    }
+}
+pub type StorageHandler =
+    fn(
+        super::remote::AuthenticatedStorageRequest,
+    ) -> Result<(StorageOperationV1, Option<StorageCommit>), super::remote::RemoteError>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
@@ -48,23 +117,55 @@ impl Operation {
     // ------------------=
     pub fn decode(value: u32) -> Result<Self, ProtocolError> {
         use Operation::*;
-        [ObjectCreate, ObjectRead, ObjectUpdate, ObjectCopy, ObjectInspect, ResourceAdvertise,
-            ResourceInspect, PoolInspect, ObjectSetPolicy, ReplicaInspect, TransferBegin,
-            TransferChunk, TransferCommit, PoolHeal, ObjectDelete, PoolUploadBegin,
-            PoolUploadAppend, PoolUploadCommit, PoolUploadAbort, ReplicaDelete].into_iter().find(|op| *op as u32 == value)
-            .ok_or(ProtocolError::Operation)
+        [
+            ObjectCreate,
+            ObjectRead,
+            ObjectUpdate,
+            ObjectCopy,
+            ObjectInspect,
+            ResourceAdvertise,
+            ResourceInspect,
+            PoolInspect,
+            ObjectSetPolicy,
+            ReplicaInspect,
+            TransferBegin,
+            TransferChunk,
+            TransferCommit,
+            PoolHeal,
+            ObjectDelete,
+            PoolUploadBegin,
+            PoolUploadAppend,
+            PoolUploadCommit,
+            PoolUploadAbort,
+            ReplicaDelete,
+        ]
+        .into_iter()
+        .find(|op| *op as u32 == value)
+        .ok_or(ProtocolError::Operation)
     }
     // ------------------------=
     // FUNC: read_only
     // DESC: Identifies inspection and read operations without granting authority or bypassing per-object policy.
     // ------------------=
     pub const fn read_only(self) -> bool {
-        matches!(self, Self::ObjectRead | Self::ObjectInspect | Self::ResourceInspect | Self::PoolInspect | Self::ReplicaInspect)
+        matches!(
+            self,
+            Self::ObjectRead
+                | Self::ObjectInspect
+                | Self::ResourceInspect
+                | Self::PoolInspect
+                | Self::ReplicaInspect
+        )
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ProtocolError { Length, Version, Operation, NonCanonical }
+pub enum ProtocolError {
+    Length,
+    Version,
+    Operation,
+    NonCanonical,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StorageOperationV1 {
     pub operation: Operation,
@@ -84,16 +185,29 @@ impl StorageOperationV1 {
     // DESC: Encodes canonical little-endian storage IOP data within one existing secure envelope; unused bytes cannot smuggle a second request.
     // ------------------=
     pub fn encode(self) -> Result<[u8; OPERATION_BYTES], ProtocolError> {
-        if self.length as usize > DATA_BYTES { return Err(ProtocolError::Length); }
-        if self.data[self.length as usize..].iter().any(|b| *b != 0) { return Err(ProtocolError::NonCanonical); }
+        if self.length as usize > DATA_BYTES {
+            return Err(ProtocolError::Length);
+        }
+        if self.data[self.length as usize..].iter().any(|b| *b != 0) {
+            return Err(ProtocolError::NonCanonical);
+        }
         let mut out = [0; OPERATION_BYTES];
         out[..2].copy_from_slice(&1u16.to_le_bytes());
         out[2..4].copy_from_slice(&self.length.to_le_bytes());
         out[4..8].copy_from_slice(&(self.operation as u32).to_le_bytes());
         out[8..24].copy_from_slice(&self.object);
-        for (index, value) in [self.authority_generation, self.manifest_generation,
-            self.object_version, self.offset, self.scope, self.value].iter().enumerate() {
-            out[24+index*8..32+index*8].copy_from_slice(&value.to_le_bytes());
+        for (index, value) in [
+            self.authority_generation,
+            self.manifest_generation,
+            self.object_version,
+            self.offset,
+            self.scope,
+            self.value,
+        ]
+        .iter()
+        .enumerate()
+        {
+            out[24 + index * 8..32 + index * 8].copy_from_slice(&value.to_le_bytes());
         }
         out[72..].copy_from_slice(&self.data);
         Ok(out)
@@ -104,13 +218,24 @@ impl StorageOperationV1 {
     // DESC: Rejects truncated, oversized, unsupported and noncanonical storage requests before any service queue or allocation is touched.
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        if bytes.len() != OPERATION_BYTES { return Err(ProtocolError::Length); }
-        if bytes[..2] != 1u16.to_le_bytes() { return Err(ProtocolError::Version); }
-        let value = Self { operation: Operation::decode(u32::from_le_bytes(bytes[4..8].try_into().unwrap()))?,
-            object: bytes[8..24].try_into().unwrap(), authority_generation: get(bytes, 24),
-            manifest_generation: get(bytes, 32), object_version: get(bytes, 40), offset: get(bytes, 48),
-            scope: get(bytes, 56), value: get(bytes, 64), length: u16::from_le_bytes(bytes[2..4].try_into().unwrap()),
-            data: bytes[72..].try_into().unwrap() };
+        if bytes.len() != OPERATION_BYTES {
+            return Err(ProtocolError::Length);
+        }
+        if bytes[..2] != 1u16.to_le_bytes() {
+            return Err(ProtocolError::Version);
+        }
+        let value = Self {
+            operation: Operation::decode(u32::from_le_bytes(bytes[4..8].try_into().unwrap()))?,
+            object: bytes[8..24].try_into().unwrap(),
+            authority_generation: get(bytes, 24),
+            manifest_generation: get(bytes, 32),
+            object_version: get(bytes, 40),
+            offset: get(bytes, 48),
+            scope: get(bytes, 56),
+            value: get(bytes, 64),
+            length: u16::from_le_bytes(bytes[2..4].try_into().unwrap()),
+            data: bytes[72..].try_into().unwrap(),
+        };
         value.encode()?;
         Ok(value)
     }
@@ -120,7 +245,9 @@ impl StorageOperationV1 {
 // FUNC: get
 // DESC: Reads a fixed field only after validating the complete wire extent.
 // ------------------=
-fn get(bytes: &[u8], at: usize) -> u64 { u64::from_le_bytes(bytes[at..at+8].try_into().unwrap()) }
+fn get(bytes: &[u8], at: usize) -> u64 {
+    u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap())
+}
 
 #[cfg(test)]
 mod tests {
@@ -131,19 +258,44 @@ mod tests {
     // ------------------=
     #[test]
     fn storage_wire_preserves_full_ids_and_exact_bounds() {
-        let mut request = StorageOperationV1 { operation: Operation::TransferChunk, object: [255; 16],
-            authority_generation: u64::MAX, manifest_generation: 17, object_version: 23,
-            offset: 65536, scope: 91, value: 13, length: 64, data: [37; DATA_BYTES] };
+        let mut request = StorageOperationV1 {
+            operation: Operation::TransferChunk,
+            object: [255; 16],
+            authority_generation: u64::MAX,
+            manifest_generation: 17,
+            object_version: 23,
+            offset: 65536,
+            scope: 91,
+            value: 13,
+            length: 64,
+            data: [37; DATA_BYTES],
+        };
         let bytes = request.encode().unwrap();
         assert_eq!(StorageOperationV1::decode(&bytes), Ok(request));
         assert!(48 + bytes.len() <= 192);
-        for n in 0..OPERATION_BYTES { assert_eq!(StorageOperationV1::decode(&bytes[..n]), Err(ProtocolError::Length)); }
-        let mut oversized = bytes.to_vec(); oversized.push(0);
-        assert_eq!(StorageOperationV1::decode(&oversized), Err(ProtocolError::Length));
-        request.length = 65; assert_eq!(request.encode(), Err(ProtocolError::Length));
-        request.length = 0; assert_eq!(request.encode(), Err(ProtocolError::NonCanonical));
-        request.data = [0; DATA_BYTES]; assert!(request.encode().is_ok());
-        let mut unknown = bytes; unknown[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
-        assert_eq!(StorageOperationV1::decode(&unknown), Err(ProtocolError::Operation));
+        for n in 0..OPERATION_BYTES {
+            assert_eq!(
+                StorageOperationV1::decode(&bytes[..n]),
+                Err(ProtocolError::Length)
+            );
+        }
+        let mut oversized = bytes.to_vec();
+        oversized.push(0);
+        assert_eq!(
+            StorageOperationV1::decode(&oversized),
+            Err(ProtocolError::Length)
+        );
+        request.length = 65;
+        assert_eq!(request.encode(), Err(ProtocolError::Length));
+        request.length = 0;
+        assert_eq!(request.encode(), Err(ProtocolError::NonCanonical));
+        request.data = [0; DATA_BYTES];
+        assert!(request.encode().is_ok());
+        let mut unknown = bytes;
+        unknown[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert_eq!(
+            StorageOperationV1::decode(&unknown),
+            Err(ProtocolError::Operation)
+        );
     }
 }

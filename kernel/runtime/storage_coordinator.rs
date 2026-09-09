@@ -231,6 +231,8 @@ pub struct Coordinator {
     next_read: u64,
     pub completed: u64,
     pub last_read: u64,
+    pub completed_read: u64,
+    pub read_error: Option<RemoteError>,
     publisher: Publisher,
     read_tried: u8,
     deletion: deletion::Worker,
@@ -242,12 +244,25 @@ impl Coordinator {
     // DESC: Exposes only the current bounded transfer phase and identities for read-only responsiveness diagnostics.
     // ------------------=
     pub fn active_transfer(&self) -> (u8, u64, u64, [u8; 16], [u8; 32], u64) {
-        self.job.map(|job| (
-            match job.phase { Phase::Begin => 1, Phase::Read => 2, Phase::WaitRead => 3,
-                Phase::Send => 4, Phase::Commit => 5, Phase::InspectReturned => 6 },
-            job.offset, job.manifest.length, job.manifest.object, job.destination.owner.0,
-            self.pending.map(|p| p.request).unwrap_or(0),
-        )).unwrap_or((0, 0, 0, [0; 16], [0; 32], 0))
+        self.job
+            .map(|job| {
+                (
+                    match job.phase {
+                        Phase::Begin => 1,
+                        Phase::Read => 2,
+                        Phase::WaitRead => 3,
+                        Phase::Send => 4,
+                        Phase::Commit => 5,
+                        Phase::InspectReturned => 6,
+                    },
+                    job.offset,
+                    job.manifest.length,
+                    job.manifest.object,
+                    job.destination.owner.0,
+                    self.pending.map(|p| p.request).unwrap_or(0),
+                )
+            })
+            .unwrap_or((0, 0, 0, [0; 16], [0; 32], 0))
     }
     // ------------------------=
     // FUNC: publication_completed
@@ -285,6 +300,8 @@ impl Coordinator {
             next_read: 1,
             completed: 0,
             last_read: 0,
+            completed_read: 0,
+            read_error: None,
             publisher: Publisher::new(),
             read_tried: 0,
             deletion: deletion::Worker::new(),
@@ -386,6 +403,9 @@ fn submit_read_from(
         .filter(|n| *n < (1u64 << 63))
         .ok_or(RemoteError::QueueFull)?;
     r.storage_coordinator.last_read = id;
+    r.storage_coordinator.completed_read = 0;
+    r.storage_coordinator.read_error = None;
+    r.storage_last_observation = None;
     r.storage_coordinator.public_read = Some(PublicRead {
         user,
         session,
@@ -432,6 +452,9 @@ fn take_read_from(
         return Ok(None);
     };
     r.storage_coordinator.public_read = None;
+    r.storage_coordinator.completed_read = id;
+    r.storage_coordinator.read_error = result.as_ref().err().copied();
+    r.storage_last_observation = result.as_ref().ok().copied();
     result.map(Some)
 }
 // ------------------------=
@@ -976,12 +999,56 @@ pub fn participate(
 }
 
 // ------------------------=
+// FUNC: manifest_transitions
+// DESC: Derives distinct semantic flags from one durable manifest successor without creating per-packet events or changing authoritative state.
+// ------------------=
+fn manifest_transitions(previous: &Manifest, next: &Manifest) -> u32 {
+    use iop::storage_protocol::transition::*;
+    let mut flags = 0;
+    match (previous.healing, next.healing) {
+        (None, Some(_)) => flags |= HEAL_STARTED | TRANSFER_STARTED,
+        (Some(_), None) => flags |= HEAL_COMPLETED,
+        (Some(_), Some(_)) => flags |= HEAL_RESUMED,
+        _ => {}
+    }
+    if previous.availability() != next.availability() {
+        flags |= match next.availability() {
+            fabric::placement::Availability::Healthy => HEALTHY,
+            _ => DEGRADED,
+        };
+    }
+    for (old, new) in previous.placements.iter().zip(next.placements.iter()) {
+        if let Some(new) = new {
+            if new.state == PlacementState::Stale
+                && old.is_none_or(|p| p.state != PlacementState::Stale)
+            {
+                flags |= STALE_DETECTED;
+            }
+            if new.state == PlacementState::Verified
+                && old.is_none_or(|p| {
+                    p.state != PlacementState::Verified
+                        || p.version != new.version
+                        || p.hash != new.hash
+                })
+            {
+                flags |= VERIFIED | AVAILABLE;
+                if old.is_some_and(|p| p.state == PlacementState::Stale || p.version < new.version)
+                {
+                    flags |= STALE_RECONCILED;
+                }
+            }
+        }
+    }
+    flags
+}
+// ------------------------=
 // FUNC: persist
 // DESC: Publishes a manifest successor only after its native generation compare-and-swap commits.
 // ------------------=
 fn persist(
     r: &mut InfinityRuntime,
     expected: u64,
+    previous: &Manifest,
     manifest: &Manifest,
     now: u64,
 ) -> Result<(), fabric::manifest::ManifestError> {
@@ -996,8 +1063,9 @@ fn persist(
         now,
     ) {
         Ok(NativeReply::Committed) => {
-            r.storage_coordinator.notice = Some(iop::storage_protocol::StorageCommit {
+            let notice = iop::storage_protocol::StorageCommit {
                 event: iop::storage_protocol::EVENT_OBJECT_CHANGED,
+                transitions: manifest_transitions(previous, manifest),
                 object: manifest.object,
                 generation: manifest.generation,
                 copied: manifest.length,
@@ -1015,7 +1083,8 @@ fn persist(
                     .map(|c| c.token)
                     .unwrap_or(manifest.generation),
                 causation: expected,
-            });
+            };
+            retain_notice(r, notice);
             Ok(())
         }
         Err(RemoteError::Conflict) => Err(fabric::manifest::ManifestError::Stale),
@@ -1203,7 +1272,7 @@ fn pump(r: &mut InfinityRuntime, now: u64) -> Result<(), RemoteError> {
                     state: PlacementState::Verified,
                     ..prior
                 },
-                |g, m| persist(r, g, m, now),
+                |g, m| persist(r, g, &job.manifest, m, now),
             )
             .map_err(|_| RemoteError::Conflict)?;
             r.storage_coordinator.job = None;
@@ -1221,6 +1290,21 @@ fn pump(r: &mut InfinityRuntime, now: u64) -> Result<(), RemoteError> {
             return Err(RemoteError::UnknownResponse);
         }
         job.offset = reply.offset;
+        if p.payload.operation == Operation::TransferBegin && reply.offset > 0 {
+            retain_notice(
+                r,
+                iop::storage_protocol::StorageCommit {
+                    event: iop::storage_protocol::EVENT_OBJECT_CHANGED,
+                    object: job.manifest.object,
+                    generation: job.manifest.generation,
+                    copied: reply.offset,
+                    state: 4,
+                    transitions: iop::storage_protocol::transition::HEAL_RESUMED,
+                    correlation: job.manifest.healing.unwrap().token,
+                    causation: p.request,
+                },
+            );
+        }
         if reply.data[0] == 4 {
             let m = job.manifest;
             let claim = m.healing.unwrap();
@@ -1247,7 +1331,7 @@ fn pump(r: &mut InfinityRuntime, now: u64) -> Result<(), RemoteError> {
                 now,
                 claim.token,
                 receipt,
-                |g, m| persist(r, g, m, now),
+                |g, next| persist(r, g, &m, next, now),
             )
             .map_err(|_| RemoteError::Conflict)?;
             r.fabric_resources = d;
@@ -1420,8 +1504,9 @@ fn pump(r: &mut InfinityRuntime, now: u64) -> Result<(), RemoteError> {
         }
     }
     let expected = m.generation;
+    let previous = m;
     if healing::observe_loss(&mut m, &d, owner, expected, now, |g, m| {
-        persist(r, g, m, now)
+        persist(r, g, &previous, m, now)
     })
     .map_err(|_| RemoteError::Conflict)?
     {
@@ -1483,7 +1568,7 @@ fn pump(r: &mut InfinityRuntime, now: u64) -> Result<(), RemoteError> {
             let mut next = m;
             next.generation += 1;
             next.healing.as_mut().unwrap().expires = now.saturating_add(3600);
-            persist(r, m.generation, &next, now).map_err(|_| RemoteError::Conflict)?;
+            persist(r, m.generation, &m, &next, now).map_err(|_| RemoteError::Conflict)?;
             m = next;
         }
         d.restore_one_reservation(
@@ -1495,6 +1580,7 @@ fn pump(r: &mut InfinityRuntime, now: u64) -> Result<(), RemoteError> {
         dest
     } else {
         let expected = m.generation;
+        let previous = m;
         match healing::begin(
             &mut m,
             &mut d,
@@ -1502,7 +1588,7 @@ fn pump(r: &mut InfinityRuntime, now: u64) -> Result<(), RemoteError> {
             expected,
             now,
             now.saturating_add(3600),
-            |g, m| persist(r, g, m, now),
+            |g, m| persist(r, g, &previous, m, now),
         ) {
             Ok(work) => work.destination,
             Err(
@@ -1523,6 +1609,31 @@ fn pump(r: &mut InfinityRuntime, now: u64) -> Result<(), RemoteError> {
         length: 0,
     });
     Ok(())
+}
+// ------------------------=
+// FUNC: retain_notice
+// DESC: Retains one bounded latest committed hint and merges same-object transition bits; periodic typed reads reconstruct any coalesced intermediate state.
+// ------------------=
+fn retain_notice(r: &mut InfinityRuntime, mut notice: iop::storage_protocol::StorageCommit) {
+    if let Some(previous) = r.storage_coordinator.notice {
+        if previous.object == notice.object {
+            notice.transitions |= previous.transitions;
+        } else {
+            notice.transitions |= iop::storage_protocol::transition::RECONSTRUCT;
+        }
+    }
+    r.storage_coordinator.notice = Some(notice);
+}
+// ------------------------=
+// FUNC: flush_notice
+// DESC: Attempts one postcommit publication, retaining failed delivery without rolling back or authorizing any storage state.
+// ------------------=
+fn flush_notice(r: &mut InfinityRuntime, now: u64) {
+    if let Some(notice) = r.storage_coordinator.notice {
+        if publish_storage_commit_from(r, notice, now) {
+            r.storage_coordinator.notice = None;
+        }
+    }
 }
 // ------------------------=
 // FUNC: poll
@@ -1549,11 +1660,7 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
             r.storage_coordinator.public_read = None;
         }
     }
-    if let Some(notice) = r.storage_coordinator.notice {
-        if publish_storage_commit_from(r, notice, now) {
-            r.storage_coordinator.notice = None;
-        }
-    }
+    flush_notice(r, now);
     if let Some(job) = r.storage_coordinator.reader.take() {
         let retry = (job.manifest, job.requested, job.length, job.placement.node);
         match read_pump(r, job, now) {
