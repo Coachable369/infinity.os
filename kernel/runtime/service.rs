@@ -4,7 +4,7 @@ use super::execution::{
 
 pub const MAX_SERVICES: usize = 35;
 pub const MAX_DEPENDENCIES: usize = 4;
-pub const MAX_OPERATIONS: usize = 12;
+pub const MAX_OPERATIONS: usize = 16;
 pub const SERVICE_RUNTIME: u32 = 1;
 pub const SERVICE_DEVICE: u32 = 2;
 pub const SERVICE_STORAGE: u32 = 3;
@@ -400,15 +400,19 @@ fn priority(criticality: Criticality) -> PriorityClass {
 // FUNC: manifest
 // DESC: Implements the manifest operation.
 // ------------------=
-pub const fn manifest(
+pub const fn manifest<const N: usize>(
     service_id: u32,
     dependencies: [u32; MAX_DEPENDENCIES],
     dependency_count: u8,
-    operations: [u32; MAX_OPERATIONS],
+    operations: [u32; N],
     operation_count: u8,
     restart_policy: RestartPolicy,
     criticality: Criticality,
 ) -> ServiceManifest {
+    assert!(N <= MAX_OPERATIONS && operation_count as usize <= N);
+    let mut registered = [0; MAX_OPERATIONS];
+    let mut index = 0;
+    while index < N { registered[index] = operations[index]; index += 1; }
     ServiceManifest {
         format_version: 1,
         service_id,
@@ -417,7 +421,7 @@ pub const fn manifest(
         version: 1,
         dependencies,
         dependency_count,
-        operations,
+        operations: registered,
         operation_count,
         required_capability_types: 0,
         resources: ResourceBudget {

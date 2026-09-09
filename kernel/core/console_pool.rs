@@ -14,7 +14,7 @@ impl ConsoleRuntime {
         };
         match crate::runtime::storage_client::execute(self.current_user, self.current_session, request) {
             Ok(response) => {
-                if matches!(response.operation, Operation::ObjectCreate | Operation::ObjectUpdate | Operation::ObjectSetPolicy | Operation::PoolInspect)
+                if matches!(response.operation, Operation::ObjectCopy | Operation::ObjectCreate | Operation::ObjectUpdate | Operation::ObjectSetPolicy | Operation::PoolInspect)
                     && response.length >= 50 {
                     self.output.write_hex(b"ObjectId: ", &response.data[..16]);
                     self.output.write_number(b"Desired independent replicas: ", response.data[48] as u64);
@@ -58,6 +58,7 @@ fn pool_request(node: &OperationNode<'_>) -> Option<StorageOperationV1> {
         p.value = match node_argument(node, b"policy")? { b"temporary" => 1, b"protected" => 2, b"critical" => 3, _ => return None };
     }
     if operation == Operation::ObjectCreate { p.offset = node_argument(node, b"nonce").and_then(parse_u64_decimal).filter(|n| *n != 0)?; }
+    if operation == Operation::ObjectCopy { p.value = node_argument(node, b"nonce").and_then(parse_u64_decimal).filter(|n| *n != 0)?; }
     if matches!(operation, Operation::ObjectCreate | Operation::ObjectUpdate) {
         let content = node_argument(node, b"content").unwrap_or(b"");
         if content.len() > 64 { return None; }

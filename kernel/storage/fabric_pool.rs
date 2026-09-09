@@ -72,6 +72,43 @@ impl Catalog {
 
 impl<D: BlockDevice> ObjectStore<D> {
     // ------------------------=
+    // FUNC: pool_copy
+    // DESC: Creates a new application identity and manifest sharing verified immutable local content; remote source placements are not falsely counted as replicas of the new object.
+    // ------------------=
+    pub(crate) fn pool_copy(&mut self, source: ObjectId, owner: NodeId, scope: u64,
+        expected: u64, nonce: u64, local: NodeId, resource: ResourceId,
+        device: [u8; 16], resource_generation: u64) -> Result<Manifest, ObjectError> {
+        let previous = self.pool_manifest(source, owner, scope)?;
+        if previous.generation != expected { return Err(ObjectError::InvalidVersion); }
+        if nonce == 0 || local.0 == [0; 32] || device == [0; 16] || resource.0 == [0; 16]
+            || resource_generation == 0 { return Err(ObjectError::InvalidObject); }
+        let mut digest = Sha256::new(); digest.update(b"InfinityOS/PoolCopy/v1");
+        digest.update(source.0); digest.update(previous.version.to_le_bytes()); digest.update(previous.hash);
+        let retry_hash: [u8; 32] = digest.finalize().into();
+        let mut catalog = Catalog::load(self)?;
+        if let Some(e) = catalog.entries.iter().flatten().find(|e| e.owner == owner && e.scope == scope && e.nonce == nonce) {
+            if e.creation_hash != retry_hash { return Err(ObjectError::InvalidVersion); }
+            return self.pool_manifest(e.object, owner, scope);
+        }
+        // Integrity-check the immutable source before admitting shared backing.
+        self.pool_read(&previous, 0, &mut [])?;
+        let slot = catalog.entries.iter().position(Option::is_none).ok_or(ObjectError::InsufficientCapacity)?;
+        let mut committed_manifest = None;
+        self.copy_owned_bundle(source, previous.version, catalog.id, |object, backing| {
+            let mut copied = previous;
+            copied.object = object.0; copied.version = 1; copied.generation = 1; copied.healing = None;
+            copied.placements = [None; MAX_PLACEMENTS];
+            copied.placements[0] = Some(Placement { node: local, resource, device, generation: resource_generation,
+                version: 1, hash: copied.hash, state: PlacementState::Verified, admission_generation: 1 });
+            let mut bytes = [0; MANIFEST_BYTES]; copied.encode(&mut bytes).map_err(|_| ObjectError::InvalidObject)?;
+            catalog.entries[slot] = Some(Entry { object, backing, owner, scope, nonce,
+                creation_hash: retry_hash, creation_policy: copied.policy.replicas() as u8 });
+            committed_manifest = Some(copied);
+            Ok((catalog.encode(), bytes))
+        })?;
+        committed_manifest.ok_or(ObjectError::TransactionFailed)
+    }
+    // ------------------------=
     // FUNC: pool_inspect
     // DESC: Enumerates one owner-scoped committed application manifest per call; other principals' identities and metadata are never returned.
     // ------------------=

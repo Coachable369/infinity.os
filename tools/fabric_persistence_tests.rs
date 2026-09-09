@@ -736,6 +736,46 @@ fn native_copy_shares_content_and_reclaims_only_last_reference() {
 }
 
 // ------------------------=
+// FUNC: native_pool_copy_shares_content_but_not_identity_or_remote_placements
+// DESC: Exercises Pool-level COW over actual immutable native extents, independent divergence, cold-mount ownership and honest protection without duplicate remote placement claims.
+// ------------------=
+#[test]
+fn native_pool_copy_shares_content_but_not_identity_or_remote_placements() {
+    use crate::runtime::{fabric::placement::{StorageClass, Availability}, node::types::NodeId};
+    use crate::storage::object::ObjectId;
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    store.initialize_pool_catalog().unwrap();
+    let owner = NodeId([19; 32]); let local = NodeId([18; 32]); let resource = ResourceId([4; 16]);
+    let original = store.pool_create(owner, 42, 1, StorageClass::Critical, &[31; 8192], local, resource, [6; 16], 5).unwrap();
+    let source = ObjectId(original.object);
+    let used = store.usage_by_space(Space::Personal);
+    let copied = store.pool_copy(source, owner, 42, 1, 2, local, resource, [6; 16], 5).unwrap();
+    let copy = ObjectId(copied.object);
+    assert_ne!(source, copy); assert_eq!(copied.chunks, original.chunks);
+    assert_eq!(store.usage_by_space(Space::Personal), used);
+    assert_eq!(copied.placements.iter().flatten().count(), 1);
+    assert_eq!(copied.availability(), Availability::Degraded);
+    let generation = store.generation();
+    assert_eq!(store.pool_copy(source, owner, 42, 1, 2, local, resource, [6; 16], 5), Ok(copied));
+    assert_eq!(store.generation(), generation);
+    let source_next = store.pool_update(source, owner, 42, 1, &[41; 8192], local, resource, [6; 16], 5).unwrap();
+    let mut bytes = [0; 64]; store.pool_read(&copied, 0, &mut bytes).unwrap(); assert_eq!(bytes, [31; 64]);
+    let copy_next = store.pool_update(copy, owner, 42, 1, &[51; 8192], local, resource, [6; 16], 5).unwrap();
+    store.pool_read(&source_next, 0, &mut bytes).unwrap(); assert_eq!(bytes, [41; 64]);
+    assert_ne!(source_next.chunks, copy_next.chunks);
+    drop(store);
+    let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+    assert_eq!(store.pool_manifest(copy, owner, 42), Ok(copy_next));
+    assert_eq!(store.pool_manifest(source, owner, 42), Ok(source_next));
+    store.pool_read(&copy_next, 0, &mut bytes).unwrap(); assert_eq!(bytes, [51; 64]);
+    store.destroy_explicit(source, true).unwrap();
+    store.collect().unwrap();
+    let mut old = [0; 8192]; assert_eq!(store.read(copy, Some(1), &mut old), Ok(8192)); assert_eq!(old, [31; 8192]);
+    store.pool_read(&copy_next, 0, &mut bytes).unwrap(); assert_eq!(bytes, [51; 64]);
+}
+
+// ------------------------=
 // FUNC: native_replica_remount_and_publication
 // DESC: Exercises real native storage commits, process-state loss, resumed transfer and integrity-checked publication.
 // ------------------=

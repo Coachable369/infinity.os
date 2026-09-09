@@ -4,6 +4,26 @@ use super::*;
 
 impl<D: BlockDevice> ObjectStore<D> {
     // ------------------------=
+    // FUNC: copy_owned_bundle
+    // DESC: Atomically creates an independent object sharing the source's current immutable extent and commits its distinct manifest and catalog binding without copying payload bytes.
+    // ------------------=
+    pub(crate) fn copy_owned_bundle<const N: usize, const M: usize>(&mut self, source: ObjectId,
+        expected_version: u64, catalog: ObjectId,
+        encode: impl FnOnce(ObjectId, ObjectId) -> Result<([u8; N], [u8; M]), ObjectError>) -> Result<ObjectId, ObjectError> {
+        if N > MAX_CONTENT || M > MAX_CONTENT { return Err(ObjectError::InsufficientCapacity); }
+        if self.metadata(source)?.current_version as u64 != expected_version { return Err(ObjectError::InvalidVersion); }
+        let before = self.begin()?;
+        let result = (|| {
+            let object = self.copy_record(source, b"Pool Copy")?;
+            let backing = self.create_record(b"object-manifest", ObjectType::Metadata, Space::System)?;
+            let (catalog_bytes, manifest) = encode(object, backing)?;
+            self.replace_state_record(backing, &manifest)?;
+            self.replace_state_record(catalog, &catalog_bytes)?;
+            Ok(object)
+        })();
+        self.finish(before, result)
+    }
+    // ------------------------=
     // FUNC: create_owned_bundle
     // DESC: Atomically creates application content, a distinct private metadata record and its catalog binding, with rollback on any encoding or sector failure.
     // ------------------=

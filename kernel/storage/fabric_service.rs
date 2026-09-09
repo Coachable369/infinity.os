@@ -145,7 +145,7 @@ impl ReplicaService {
         let p = request.payload;
         p.encode().map_err(|_| RemoteError::MalformedRequest)?;
         if p.operation == Operation::ResourceInspect { return self.resource_observation(store, p); }
-        if matches!(p.operation, Operation::PoolInspect | Operation::ObjectCreate | Operation::ObjectInspect | Operation::ObjectSetPolicy | Operation::ObjectUpdate)
+        if matches!(p.operation, Operation::PoolInspect | Operation::ObjectCreate | Operation::ObjectInspect | Operation::ObjectSetPolicy | Operation::ObjectUpdate | Operation::ObjectCopy)
             || (p.operation == Operation::ObjectRead && p.length == 0) {
             return self.pool_operation(store, request);
         }
@@ -285,13 +285,20 @@ impl ReplicaService {
                     &p.data[..p.length as usize], request.local, self.resource,
                     self.device.ok_or(RemoteError::ServiceUnavailable)?, self.generation).map_err(storage_error)?
             },
-            Operation::ObjectInspect | Operation::ObjectSetPolicy | Operation::ObjectUpdate | Operation::ObjectRead => {
+            Operation::ObjectInspect | Operation::ObjectSetPolicy | Operation::ObjectUpdate | Operation::ObjectRead | Operation::ObjectCopy => {
                 if p.operation != Operation::ObjectUpdate && p.length != 0 { return Err(RemoteError::MalformedRequest); }
                 let current = store.pool_manifest(ObjectId(p.object), request.peer, p.scope).map_err(storage_error)?;
                 if current.authority_generation != p.authority_generation
                     || (p.manifest_generation != 0 && current.generation != p.manifest_generation)
                     || (p.object_version != 0 && current.version != p.object_version) { return Err(RemoteError::Conflict); }
-                if matches!(p.operation, Operation::ObjectSetPolicy | Operation::ObjectUpdate) {
+                if p.operation == Operation::ObjectCopy {
+                    if p.offset != 0 || p.manifest_generation == 0 || p.object_version == 0 || p.value == 0 {
+                        return Err(RemoteError::MalformedRequest);
+                    }
+                    store.pool_copy(ObjectId(p.object), request.peer, p.scope, p.manifest_generation,
+                        p.value, request.local, self.resource, self.device.ok_or(RemoteError::ServiceUnavailable)?,
+                        self.generation).map_err(storage_error)?
+                } else if matches!(p.operation, Operation::ObjectSetPolicy | Operation::ObjectUpdate) {
                     if p.offset != 0 || p.manifest_generation == 0 || p.object_version == 0 {
                         return Err(RemoteError::MalformedRequest);
                     }

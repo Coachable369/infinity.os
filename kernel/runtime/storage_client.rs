@@ -67,6 +67,7 @@ fn perform(runtime: &mut InfinityRuntime, now: u64, request: StorageOperationV1)
     let operation = match request.operation {
         Operation::ResourceInspect => OperationId::ResourceInspect,
         Operation::ObjectCreate => OperationId::ObjectCreate,
+        Operation::ObjectCopy => OperationId::ObjectCopy,
         Operation::ObjectInspect => OperationId::ObjectInspect,
         Operation::ObjectRead => OperationId::ObjectRead,
         Operation::ObjectUpdate => OperationId::ObjectUpdate,

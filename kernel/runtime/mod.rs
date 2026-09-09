@@ -1333,8 +1333,9 @@ impl InfinityRuntime {
                 OperationId::ResourceInspect as u32, OperationId::ResourceAdvertise as u32,
                 OperationId::ObjectRead as u32, OperationId::ObjectCreate as u32,
                 OperationId::ObjectInspect as u32, OperationId::ObjectUpdate as u32,
-                OperationId::ObjectSetPolicy as u32, OperationId::PoolInspect as u32],
-            12, RestartPolicy::OnFailure, Criticality::Important,
+                OperationId::ObjectSetPolicy as u32, OperationId::PoolInspect as u32,
+                OperationId::ObjectCopy as u32],
+            13, RestartPolicy::OnFailure, Criticality::Important,
         ))?;
         if self.live_profile {
             self.services.define(manifest(

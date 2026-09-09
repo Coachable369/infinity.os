@@ -324,6 +324,11 @@ const POOL_WRITE_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"content", value_type: ArgumentType::Text, required: false },
 ];
+const POOL_COPY_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"nonce", value_type: ArgumentType::Text, required: true },
+];
 const NODE_LINK_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema { name: b"local", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"remote", value_type: ArgumentType::Text, required: true },
@@ -643,6 +648,8 @@ pub static DOMAINS: &[DomainSchema] = &[
 ];
 
 pub static OPERATIONS: &[OperationSchema] = &[
+    op(b"pool", b"copy", b"Create an independent object sharing immutable content", OperationId::ObjectCopy,
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_COPY_ARGS, 1, SideEffectClass::ReversibleChange, b"pool copy object:<id> generation=1 version=1 nonce=2"),
     op(b"pool", b"list", b"Inspect one owner-scoped committed Pool object", OperationId::PoolInspect,
         ValueType::Unit, ValueType::ObjectSet, None, POOL_INSPECT_ARGS, 1, SideEffectClass::Query, b"pool list offset=0"),
     op(b"pool", b"create", b"Create a native Pool object with an explicit protection contract", OperationId::ObjectCreate,

@@ -1072,6 +1072,17 @@ impl<D: BlockDevice> ObjectStore<D> {
         source: ObjectId,
         destination: &[u8],
     ) -> Result<ObjectId, ObjectError> {
+        let name = destination.rsplit(|byte| *byte == b'/').next().unwrap_or(&[]);
+        let id = self.copy_record(source, name)?;
+        self.attach_record(destination, id)?;
+        Ok(id)
+    }
+
+    // ------------------------=
+    // FUNC: copy_record
+    // DESC: Creates a distinct application record sharing verified immutable backing, independently from any namespace attachment.
+    // ------------------=
+    fn copy_record(&mut self, source: ObjectId, name: &[u8]) -> Result<ObjectId, ObjectError> {
         let source_index = self.object_index(source)?;
         let source_record = self.state.objects[source_index];
         if source_record.tombstone {
@@ -1084,10 +1095,6 @@ impl<D: BlockDevice> ObjectStore<D> {
             Some(*self.state.versions.iter().find(|v| v.used && v.object == source
                 && v.number == source_record.current_version).ok_or(ObjectError::InvalidVersion)?)
         };
-        let name = destination
-            .rsplit(|byte| *byte == b'/')
-            .next()
-            .unwrap_or(&[]);
         let id = self.create_record(
             name,
             type_from_u8(source_record.kind)?,
@@ -1106,7 +1113,6 @@ impl<D: BlockDevice> ObjectStore<D> {
                 parent: 0, generation: self.state.generation + 1, ..shared };
             self.state.objects[target_index].current_version = 1;
         }
-        self.attach_record(destination, id)?;
         Ok(id)
     }
 

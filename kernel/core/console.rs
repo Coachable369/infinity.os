@@ -8936,6 +8936,7 @@ impl ConsoleRuntime {
                 Some(b"transfer-commit") => OperationId::ReplicaTransferCommit.machine_id(),
                 Some(b"object-read") => OperationId::ObjectRead.machine_id(),
                 Some(b"object-create") => OperationId::ObjectCreate.machine_id(),
+                Some(b"object-copy") => OperationId::ObjectCopy.machine_id(),
                 Some(b"object-inspect") => OperationId::ObjectInspect.machine_id(),
                 Some(b"object-update") => OperationId::ObjectUpdate.machine_id(),
                 Some(b"object-policy") => OperationId::ObjectSetPolicy.machine_id(),
