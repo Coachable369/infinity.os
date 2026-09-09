@@ -6,6 +6,7 @@ import selectors
 import socket
 import struct
 import threading
+import time
 
 
 class EthernetHub:
@@ -16,8 +17,12 @@ class EthernetHub:
     # FUNC: __init__
     # DESC: Binds a private loopback fixture with a bounded number of participants.
     # ------------------=
-    def __init__(self, maximum=4):
+    def __init__(self, maximum=4, metadata_limit=0):
         assert 2 <= maximum <= 4
+        assert 0 <= metadata_limit <= 8192
+        self.metadata_limit = metadata_limit
+        self.metadata = []
+        self.metadata_dropped = 0
         self.maximum = maximum
         self.selector = selectors.DefaultSelector()
         self.listener = socket.socket()
@@ -49,6 +54,28 @@ class EthernetHub:
         connection.close()
 
     # ------------------------=
+    # FUNC: observe_metadata
+    # DESC: Retains only bounded public IPv4/UDP headers and protocol kind, never cryptographic or application payload bytes.
+    # ------------------=
+    def observe_metadata(self, frame, forwarded):
+        if not self.metadata_limit or len(frame) < 42 or frame[12:14] != b"\x08\x00":
+            return
+        header = (frame[14] & 15) * 4
+        udp = 14 + header
+        if header < 20 or len(frame) < udp + 8 or frame[23] != 17:
+            return
+        if len(self.metadata) >= self.metadata_limit:
+            self.metadata_dropped += 1
+            return
+        payload = udp + 8
+        kind = frame[payload + 8] if len(frame) > payload + 8 and frame[payload:payload+8] == b"IN9A0001" else None
+        self.metadata.append({"timestamp_ns": time.monotonic_ns(), "source_ip": list(frame[26:30]),
+                              "destination_ip": list(frame[30:34]),
+                              "source_port": struct.unpack_from("!H", frame, udp)[0],
+                              "destination_port": struct.unpack_from("!H", frame, udp+2)[0],
+                              "wire_kind": kind, "length": len(frame), "forwarded": forwarded})
+
+    # ------------------------=
     # FUNC: service
     # DESC: Reassembles bounded QEMU frames and forwards complete frames to other participants.
     # ------------------=
@@ -69,6 +96,7 @@ class EthernetHub:
                     break
                 frame = bytes(incoming[:length + 4])
                 del incoming[:length + 4]
+                forwarded = 0
                 for peer, (_, queue) in list(self.clients.items()):
                     if peer is connection:
                         continue
@@ -77,6 +105,8 @@ class EthernetHub:
                         continue
                     queue.extend(frame)
                     self.selector.modify(peer, selectors.EVENT_READ | selectors.EVENT_WRITE)
+                    forwarded += 1
+                self.observe_metadata(frame[4:], forwarded)
         if events & selectors.EVENT_WRITE and outgoing:
             sent = connection.send(outgoing)
             del outgoing[:sent]
