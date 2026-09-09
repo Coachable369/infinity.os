@@ -426,7 +426,7 @@ class Guest:
 
     # ------------------------=
     # FUNC: authenticate
-    # DESC: Uses the actual focused password field rather than assuming an extra Tab is necessary.
+    # DESC: Authenticates the actual password field, then returns a legitimately restored application to Desktop through normal input.
     # ------------------=
     def authenticate(self):
         state = self.wait(lambda state: state[3] == 1 and state[4] in (9, 10), "local authentication")
@@ -438,6 +438,10 @@ class Guest:
         assert state[8] == 1
         self.text("MeshProof901")
         self.key("ret")
+        state = self.wait(lambda state: state[4] not in (9, 10) and state[9] & 3 == 3,
+                          "authenticated installed session")
+        if state[4] != 5:
+            self.key("esc")
         return self.wait(lambda state: state[4] == 5 and state[9] & 3 == 3, "authenticated desktop")
 
     # ------------------------=
