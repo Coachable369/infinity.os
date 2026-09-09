@@ -43,9 +43,11 @@ def measure(guest, symbol, object_id, timeout=600, clock=time.monotonic, pause=t
                 packet_observations = None if final_traffic is None else {
                     "boundary": "host Ethernet fixture, not guest queue depth",
                     "delta": {key: final_traffic[key] - traffic_start[key] for key in
-                              ("frames", "bytes", "forwarded_copies", "native_data_frames")},
+                              ("frames", "bytes", "forwarded_copies", "native_data_frames",
+                               "observed_wire_retransmissions", "changed_data_sequence_reuse", "data_tracking_evictions")},
                     "fixture_lifetime_queue_high_water_bytes": final_traffic["queue_high_water_bytes"],
-                    "guest_transport_queue_depth": None, "retries": None}
+                    "wire_retransmission_boundary": "identical canonical encrypted DATA, 32 streams x 64 sequences; not authenticated by host",
+                    "guest_transport_queue_depth": None, "guest_iop_retries": None}
                 return {"status": "TESTED_PROTECTION_RECEIPTS", "elapsed_seconds": clock() - started,
                         "object": object_id, "bytes": row[4], "row": list(row),
                         "windows": windows, "samples": observations,

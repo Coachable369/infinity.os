@@ -7,6 +7,8 @@ import socket
 import struct
 import threading
 import time
+import hashlib
+from collections import OrderedDict
 
 
 class EthernetHub:
@@ -25,7 +27,10 @@ class EthernetHub:
         self.metadata_dropped = 0
         self.observation_lock = threading.Lock()
         self.counters = {"frames": 0, "bytes": 0, "forwarded_copies": 0,
-                         "native_data_frames": 0, "queue_high_water_bytes": 0}
+                         "native_data_frames": 0, "queue_high_water_bytes": 0,
+                         "observed_wire_retransmissions": 0, "changed_data_sequence_reuse": 0,
+                         "data_tracking_evictions": 0}
+        self.data_sequences = OrderedDict()
         self.maximum = maximum
         self.selector = selectors.DefaultSelector()
         self.listener = socket.socket()
@@ -78,6 +83,7 @@ class EthernetHub:
         if kind == 11:
             with self.observation_lock:
                 self.counters["native_data_frames"] += 1
+            self.observe_data_sequence(frame, udp)
         if not self.metadata_limit:
             return
         if len(self.metadata) >= self.metadata_limit:
@@ -88,6 +94,43 @@ class EthernetHub:
                               "source_port": struct.unpack_from("!H", frame, udp)[0],
                               "destination_port": struct.unpack_from("!H", frame, udp+2)[0],
                               "wire_kind": kind, "length": len(frame), "forwarded": forwarded})
+
+    # ------------------------=
+    # FUNC: observe_data_sequence
+    # DESC: Counts identical canonical encrypted DATA retransmissions within 32 streams by 64 sequences; retains public identity and ciphertext digests, never plaintext or keys.
+    # ------------------=
+    def observe_data_sequence(self, frame, udp):
+        if frame[14] >> 4 != 4 or struct.unpack_from("!H", frame, 20)[0] & 0x3fff:
+            return
+        ip_length = struct.unpack_from("!H", frame, 16)[0]
+        udp_length = struct.unpack_from("!H", frame, udp + 4)[0]
+        if udp_length < 8 or 14 + ip_length > len(frame) or udp + udp_length != 14 + ip_length:
+            return
+        data = frame[udp + 8:udp + udp_length]
+        if not 154 <= len(data) <= 346 or data[:9] != b"IN9A0001\x0b" or data[9:16] != b"\x01\0\0\0\0\0\0":
+            return
+        length = struct.unpack_from("<H", data, 136)[0]
+        if length > 192 or len(data) != 154 + length:
+            return
+        stream = bytes(data[16:128])
+        sequence = struct.unpack_from("<Q", data, 128)[0]
+        digest = hashlib.sha256(data).digest()
+        with self.observation_lock:
+            if stream not in self.data_sequences:
+                if len(self.data_sequences) == 32:
+                    self.data_sequences.popitem(last=False)
+                    self.counters["data_tracking_evictions"] += 1
+                self.data_sequences[stream] = OrderedDict()
+            window = self.data_sequences[stream]
+            self.data_sequences.move_to_end(stream)
+            if sequence in window:
+                field = "observed_wire_retransmissions" if window[sequence] == digest else "changed_data_sequence_reuse"
+                self.counters[field] += 1
+                return
+            if len(window) == 64:
+                window.popitem(last=False)
+                self.counters["data_tracking_evictions"] += 1
+            window[sequence] = digest
 
     # ------------------------=
     # FUNC: traffic_snapshot
