@@ -59,6 +59,9 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         data[72] = runtime.node_operator.last_submitted;
         data[91] = runtime.node_operator.last_detail_length as u64;
         words(&mut data[92..108], &runtime.node_operator.last_detail);
+        data[108] = runtime.services.inspect(crate::runtime::service::SERVICE_REPLICA_STORAGE)
+            .map(|service| service.state as u64 + 1).unwrap_or(0);
+        data[109] = runtime.fabric_resources.entries().iter().flatten().count() as u64;
         if let Some(completion) = runtime.node_operator.last_completion {
             data[73] = completion.request_id;
             data[74] = completion.correlation_id;
