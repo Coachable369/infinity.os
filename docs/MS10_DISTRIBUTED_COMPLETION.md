@@ -24,6 +24,31 @@ Current request is the distributed Pool completion pass, not a new foundation.
 
 ### Current source evidence (not installed lifecycle acceptance)
 
+Checkpoint `acb0b60` corrects authenticated simultaneous reconnect offers with a
+deterministic NodeId tie-break, preserving the original deadline and replay
+validation. The reproducer observed both peers stuck in `SessionResponse` before
+the correction. Focused delivery-order/forgery/replay tests pass; MS9 reports 42
+passed, fabric 132 passed with the one existing ignored test. These are host
+mechanism results, not installed reconnect or distributed lifecycle proof.
+
+`./build.sh` passed on this runtime (`/tmp/ms10-glare-acb0b60-build.log`).
+x86_64 ISO SHA-256:
+`f2d4896b5fedccda92320765a7d96097df9d586e3417eeb45b213115efc6b132`;
+ARM64: `2550b2fc5af21fb3e5dd347e57178a77e898c1ddba41f8b4b2b718868183e713`.
+Four independent fresh installations passed ISO-detached cold login, unique
+persistent identities and native storage inspection:
+`/tmp/ms10-glare-installed-acb0b60/result.json`.
+The subsequent installed 32 KiB run passed all six pairing ceremonies and is
+still establishing explicitly approved persistent Pool configuration. No bulk
+transfer or owner-loss result is claimed from that setup progress.
+
+Tool-only `65368ac` records exact installed-kernel/NodeId-bound prepared approvals
+before publication, allowing a failed later stage to resume without reissuing
+authority. The receipt explicitly does not claim verified configuration or
+transfer. Tool-only `3cbd93d` selects the exact Settings object through ordinary
+pointer controls before Console/detail-panel comparison; three behavioral tests
+pass, while installed selection remains untested.
+
 Checkpoint `7db25d8`: full `./build.sh` passed
 (`/tmp/ms10-durable-7db25d8-build.log`). x86_64 ISO SHA-256:
 `afa68e16cfac7acad131c72bbb97da038f1ac9c10b074e71ef829e168e6cfa76`;
