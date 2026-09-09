@@ -22,6 +22,8 @@ mod pairing_acceptance;
 mod duplex_acceptance;
 mod discovery_acceptance;
 mod wire_trust_acceptance;
+#[cfg(test)]
+mod transport_cadence_measurement;
 mod operator_grant_acceptance;
 
 // ------------------------=

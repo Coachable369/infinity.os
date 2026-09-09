@@ -1,0 +1,138 @@
+diff --git a/kernel/runtime/node/transport.rs b/kernel/runtime/node/transport.rs
+index 702e66c..055dd15 100644
+--- a/kernel/runtime/node/transport.rs
++++ b/kernel/runtime/node/transport.rs
+@@ -11,6 +11,7 @@ pub const MAX_LINKS: usize = 4;
+ const CHALLENGE: &[u8; 8] = b"INDCH001";
+ const RESPONSE: &[u8; 8] = b"INDRS001";
+ const RESPONSE_BYTES: usize = 199;
++pub const SESSION_DATA_PER_SECOND:u8=16;
+ 
+ #[derive(Clone, Copy)]
+ pub struct LinkAuthority {
+@@ -31,6 +32,10 @@ struct Link {
+     next_challenge: u64,
+     next_send: u64,
+     crypto_tick: Option<u64>,
++    budget_tick:u64,
++    rx_frames:u8,
++    rx_data:u8,
++    tx_data:u8,
+     pending: Option<Packet>,
+     pending_until: u64,
+ }
+@@ -94,7 +99,7 @@ impl NodeTransport {
+         }
+         if self.links.iter().flatten().any(|link| link.authority.connection == authority.connection) { return Err(NetworkError::AlreadyExists); }
+         let slot = self.links.iter().position(Option::is_none).ok_or(NetworkError::ResourceLimitExceeded)?;
+-        self.links[slot] = Some(Link { authority, local: connection.local, remote: connection.remote, peer: None, nonce: [0; 32], expires: 0, next_challenge: now, next_send: now, crypto_tick: None, pending: None, pending_until: 0 });
++        self.links[slot] = Some(Link { authority, local: connection.local, remote: connection.remote, peer: None, nonce: [0; 32], expires: 0, next_challenge: now, next_send: now, crypto_tick: None, budget_tick:now,rx_frames:0,rx_data:0,tx_data:0,pending: None, pending_until: 0 });
+         Ok(())
+     }
+ 
+@@ -169,7 +174,7 @@ impl NodeTransport {
+ 
+     // ------------------------=
+     // FUNC: poll
+-    // DESC: Services one link without waiting; performs at most one bounded received-frame transition per link per second.
++    // DESC: Services one round-robin link without waiting: one RX/TX per poll, sixteen live-session DATA attempts and one control crypto operation per link per second.
+     // ------------------=
+     pub fn poll(&mut self, nodes: &mut NodeRuntime, network: &mut NetworkRuntime, capabilities: &CapabilityManager, now: u64) -> Option<DiscoveryChange> {
+         self.poll_calls = self.poll_calls.saturating_add(1);
+@@ -203,6 +208,7 @@ impl NodeTransport {
+             .find(|index| self.links[*index].is_some())?;
+         self.cursor = (index + 1) % MAX_LINKS;
+         let link = self.links[index].as_mut()?;
++        if now>link.budget_tick {link.budget_tick=now;link.rx_frames=0;link.rx_data=0;link.tx_data=0;}
+         self.serviced_links = self.serviced_links.saturating_add(1);
+         if now >= link.pending_until { link.pending = None; }
+         let authority = link.authority;
+@@ -211,13 +217,16 @@ impl NodeTransport {
+             link.expires=0;link.pending=None;return None;
+         }
+         let mut change = None;
+-        if link.crypto_tick != Some(now) {
++        if link.rx_frames<SESSION_DATA_PER_SECOND+1 {
+             if let Ok(packet) = network.receive_datagram(authority.owner, authority.receive, authority.connection, now, capabilities) {
+                 self.received_packets = self.received_packets.saturating_add(1);
+-                link.crypto_tick = Some(now);
++                link.rx_frames+=1;
+                 let bytes = &packet.bytes[..packet.length as usize];
+-                let result = if super::wire_trust::accepts(bytes) {
+-                    let snapshot = LinkSnapshot { connection: authority.connection, peer: link.peer, local: link.local, remote: link.remote };
++                let snapshot = LinkSnapshot { connection: authority.connection, peer: link.peer, local: link.local, remote: link.remote };
++                let data=self.trust.established_data(nodes,snapshot,bytes,now);
++                let admitted=if data {if link.rx_data<SESSION_DATA_PER_SECOND{link.rx_data+=1;true}else{false}}
++                    else if link.crypto_tick.is_none_or(|tick|now>tick){link.crypto_tick=Some(now);true}else{false};
++                let result = if !admitted {Err(NodeError::ResourceLimit)} else if super::wire_trust::accepts(bytes) {
+                     self.trust.ingest(nodes, snapshot, bytes, now).map(|_| None)
+                 } else { process_packet(link, nodes, bytes, now, self.persist_discovery) };
+                 match result {
+@@ -241,7 +250,10 @@ impl NodeTransport {
+             link.expires = now.saturating_add(5);
+             link.next_challenge = now.saturating_add(10);
+         }
+-        if now >= link.next_send {
++        let protocol=self.trust.peek_outgoing(authority.connection,now);
++        let data=protocol.is_some()&&self.trust.outgoing_data(nodes,authority.connection,now);
++        if (data&&link.tx_data<SESSION_DATA_PER_SECOND)||(!data&&now>=link.next_send) {
++            if data {link.tx_data+=1;} else {link.next_send=now.saturating_add(1);}
+             if let Some(peer) = link.peer {
+                 let recovery = (0..super::membership::MAX_DOMAINS).any(|index| nodes.domain_proposal(index, now).map(|(target, _)| target == peer).unwrap_or(false));
+                 if recovery && self.trust.session(peer).is_none() && nodes.paired_digest(peer).is_some() {
+@@ -250,14 +262,12 @@ impl NodeTransport {
+                 }
+             }
+             let challenge = challenge_packet(link.nonce);
+-            let protocol = self.trust.outgoing(authority.connection, now);
+             let outgoing = protocol.as_ref().or(link.pending.as_ref()).or_else(|| if now < link.expires { Some(&challenge) } else { None });
+             if let Some(packet) = outgoing {
+                 if network.send_datagram(authority.owner, authority.send, authority.connection, &packet.bytes[..packet.length as usize], now, now.saturating_add(1), capabilities).is_ok() {
+-                    if protocol.is_some() { self.trust.sent(authority.connection); } else { link.pending = None; }
++                    if protocol.is_some() { let _=self.trust.outgoing(authority.connection,now); self.trust.sent(authority.connection); } else { link.pending = None; }
+                 }
+             }
+-            link.next_send = now.saturating_add(1);
+         }
+         change
+     }
+diff --git a/kernel/runtime/node/wire_trust.rs b/kernel/runtime/node/wire_trust.rs
+index cbef1a1..3771976 100644
+--- a/kernel/runtime/node/wire_trust.rs
++++ b/kernel/runtime/node/wire_trust.rs
+@@ -458,6 +458,35 @@ impl WireTrust {
+         value
+     }
+ 
++    // ------------------------=
++    // FUNC: established_data
++    // DESC: Classifies only a canonical live-session DATA header without cryptography; authentication and replay rejection still occur in ingest and every attempt is budgeted.
++    // ------------------=
++    pub(super) fn established_data(&self,nodes:&NodeRuntime,link:LinkSnapshot,bytes:&[u8],now:u64)->bool {
++        if bytes.len()<154||bytes.len()>154+MAX_DATA||&bytes[..8]!=MAGIC||bytes[8]!=DATA||bytes[9..16]!=[1,0,0,0,0,0,0]{return false}
++        let length=u16::from_le_bytes([bytes[136],bytes[137]])as usize;
++        if length>MAX_DATA||bytes.len()!=154+length{return false}
++        let Some(t)=self.transactions.iter().flatten().find(|t|t.link.connection==link.connection&&t.link.peer==link.peer&&t.id==bytes[80..112]&&t.stage==WireState::Established)else{return false};
++        let Ok(peer)=checked_transaction_peer(nodes,t,now)else{return false};
++        let Some(session)=nodes.sessions.iter().flatten().find(|s|Some(s.id)==t.session)else{return false};
++        bytes[16..48]==peer.id.0&&nodes.local_id().is_some_and(|id|bytes[48..80]==id.0)&&bytes[112..128]==session.protocol_reference
++    }
++    // ------------------------=
++    // FUNC: peek_outgoing
++    // DESC: Observes one due packet without consuming retry or backpressure state.
++    // ------------------=
++    pub(super) fn peek_outgoing(&self,connection:u32,now:u64)->Option<Packet>{
++        let t=self.transactions.iter().flatten().find(|t|t.link.connection==connection)?;
++        if now>=t.expires||now<t.next_send||t.attempts>=RETRIES{return None}t.pending
++    }
++    // ------------------------=
++    // FUNC: outgoing_data
++    // DESC: Classifies an already protected pending DATA packet only while its exact session and trust remain valid.
++    // ------------------=
++    pub(super) fn outgoing_data(&self,nodes:&NodeRuntime,connection:u32,now:u64)->bool {
++        self.transactions.iter().flatten().find(|t|t.link.connection==connection).is_some_and(|t|
++            t.stage==WireState::Established&&checked_transaction_peer(nodes,t,now).is_ok()&&t.pending.is_some_and(|p|p.bytes[8]==DATA))
++    }
+     // ------------------------=
+     // FUNC: outgoing
+     // DESC: Returns at most one due frame for a selected connected endpoint without a blocking retry loop.
