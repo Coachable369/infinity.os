@@ -226,7 +226,9 @@ class Guest:
         fast = self.fast_commands and initial is not None and initial[4] == 5 and initial[71] != 0
         if fast:
             assert len(value) <= 256 - initial[71]
-        for character in value:
+        batch = []
+        batch_codes = set()
+        for index, character in enumerate(value):
             if character == ":":
                 codes = ("shift", "semicolon")
             elif character.isupper():
@@ -234,8 +236,24 @@ class Guest:
             else:
                 codes = (aliases.get(character, character),)
             if fast:
-                self.qmp("send-key", {"keys": [{"type": "qcode", "data": code} for code in codes], "hold-time": 35})
-                time.sleep(.06)
+                for down, ordered in ((True, codes), (False, tuple(reversed(codes)))):
+                    batch.extend({"type": "key", "data": {"down": down,
+                                 "key": {"type": "qcode", "data": code}}} for code in ordered)
+                batch_codes.update(codes)
+                if (index + 1) % 4 != 0 and index + 1 != len(value):
+                    continue
+                try:
+                    self.qmp("input-send-event", {"events": batch})
+                    expected = initial[71] + index + 1
+                    accepted = self.wait(lambda state: state[71] >= expected,
+                                         "acknowledged command batch", timeout=30)
+                    assert accepted[71] == expected and accepted[4] == initial[4]
+                finally:
+                    self.qmp("input-send-event", {"events": [
+                        {"type": "key", "data": {"down": False, "key": {"type": "qcode", "data": code}}}
+                        for code in sorted(batch_codes)]})
+                batch.clear()
+                batch_codes.clear()
                 continue
             before = self.state()
             if before is None or before[71] == 0:

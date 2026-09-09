@@ -45,7 +45,7 @@ def select(guest, peer):
 
 # ------------------------=
 # FUNC: pair
-# DESC: Requires matching authenticated fingerprints and two actual protected operator confirmations before session establishment.
+# DESC: Requires matching authenticated fingerprints and two protected confirmations; sessions are opened only after grant preparation.
 # ------------------=
 def pair(a, b):
     aid, bid = identity(a), identity(b)
@@ -63,6 +63,14 @@ def pair(a, b):
         list(workers.map(lambda item: item[0].confirm_peer(item[1], item[2]), ((a, av, 2), (b, bv, 3))))
     a.wait(lambda s: s[25] == old_a + 1, "new trusted peer")
     b.wait(lambda s: s[25] == old_b + 1, "new trusted peer")
+
+
+# ------------------------=
+# FUNC: open_session
+# DESC: Establishes an ordinary permitted session immediately before wire operations without extending security leases.
+# ------------------=
+def open_session(a, b):
+    bid = identity(b)
     a.launch("command", 5)
     before_a, before_b = a.state()[26], b.state()[26]
     a.command(f"node session-open node:{bid}")
@@ -74,19 +82,33 @@ def pair(a, b):
 # FUNC: participate
 # DESC: Grants exact recipient operations and publication direction through native peer policy and bounded leased authority.
 # ------------------=
-def participate(a, b):
+def participate(a, b, grants, publication):
     aid, bid = identity(a), identity(b)
-    for guest, peer in ((a, bid), (b, aid)):
-        guest.launch("command", 5)
-        guest.peer_policy(peer, "object", "allow")
-        guest.peer_policy(peer, "namespace", "allow")
-    grants = [b.peer_grant(aid, operation) for operation in
-              ("transfer-begin", "transfer-chunk", "transfer-commit", "replica-inspect", "object-read")]
-    retirement = b.peer_grant(aid, "replica-delete")
-    publication = a.peer_grant(bid, "resource-advertise")
+    retirement = grants[5]
+    a.launch("command", 5)
     a.command(f"pool participate peer=node:{bid} begin={grants[0]} chunk={grants[1]} commit={grants[2]} inspect={grants[3]} read={grants[4]} lease=3600 confirm=true")
     a.command(f"pool retire-authority peer=node:{bid} grant={retirement} lease=3600 confirm=true")
     b.command(f"pool advertise peer=node:{aid} grant={publication}")
+
+
+# ------------------------=
+# FUNC: recipient_grants
+# DESC: Prepares one independent recipient's exact leased operation grants through its authenticated Console.
+# ------------------=
+def recipient_grants(b, aid):
+    b.launch("command", 5)
+    b.peer_policy(aid, "object", "allow")
+    b.peer_policy(aid, "namespace", "allow")
+    return [b.peer_grant(aid, operation) for operation in
+            ("transfer-begin", "transfer-chunk", "transfer-commit", "replica-inspect", "object-read", "replica-delete")]
+
+
+# ------------------------=
+# FUNC: publication_grants
+# DESC: Issues publication permissions sequentially on the one authority while recipients independently prepare their grants.
+# ------------------=
+def publication_grants(a, peers):
+    return [a.peer_grant(identity(peer), "resource-advertise") for peer in peers]
 
 
 # ------------------------=
@@ -269,7 +291,19 @@ def main():
         a, b, c, d = guests
         for peer in (b, c, d):
             pair(a, peer)
-            participate(a, peer)
+        a.launch("command", 5)
+        for peer in (b, c, d):
+            a.peer_policy(identity(peer), "object", "allow")
+            a.peer_policy(identity(peer), "namespace", "allow")
+        with ThreadPoolExecutor(max_workers=4) as workers:
+            recipients = [workers.submit(recipient_grants, peer, known[0]) for peer in (b, c, d)]
+            publications = workers.submit(publication_grants, a, (b, c, d))
+            grants = [future.result() for future in recipients]
+            publication = publications.result()
+        for index, peer in enumerate((b, c, d)):
+            participate(a, peer, grants[index], publication[index])
+        for peer in (b, c, d):
+            open_session(a, peer)
         a.wait(lambda s: s[496] == 3, "three actual advertised resources", timeout=90)
         d.stop()
         a.wait(lambda s: s[496] == 2 and s[109] == 3, "replacement host offline but known", timeout=90)
