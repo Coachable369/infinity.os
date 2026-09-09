@@ -40,12 +40,12 @@ class CommandContext(unittest.TestCase):
     # DESC: Exercises the actual launcher method after idle lock, proving queries reach the launcher rather than the credential field.
     # ------------------=
     def test_launcher_authenticates_after_other_peer_work(self):
-        for mode in (9, 10, 5):
+        for mode in (9, 10, 5, 8):
             guest = LauncherGuest(mode)
             result = installed.Guest.launch(guest, "nodes", 8, 7)
             self.assertEqual(result[4], 8)
             self.assertEqual(result[8], 7)
-            self.assertEqual(guest.authentications, int(mode != 5))
+            self.assertEqual(guest.authentications, int(mode in (9, 10)))
             self.assertEqual(guest.submissions, 1)
 
 
@@ -126,7 +126,8 @@ class LauncherGuest(ControlledGuest):
     # ------------------=
     def key(self, code):
         if code == "esc":
-            assert self.values[4] == 5
+            assert self.values[4] in (5, 8)
+            self.values[4] = 5
         elif code == "slash":
             if self.values[4] == 5:
                 self.values[4] = 6

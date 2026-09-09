@@ -462,8 +462,9 @@ class Guest:
         state = self.state()
         if state is not None and state[4] in (9, 10):
             state = self.authenticate()
-        if state is not None and state[4] == 5:
-            self.key("esc")
+        assert state is not None
+        self.key("esc")
+        self.wait(lambda state: state[4] == 5, "desktop before launcher")
         self.key("slash")
         self.wait(lambda state: state[4] == 6, "launcher opened")
         self.text(query)
