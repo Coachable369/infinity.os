@@ -10,6 +10,7 @@ import importlib.util
 import json
 import pathlib
 import shutil
+import struct
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("installed_acceptance", ROOT / "tools/ms9-installed-acceptance.py")
@@ -31,6 +32,28 @@ def provision(guest):
         result["replica_service_ready_after_cold_boot"] = True
         result["installer_detached"] = not guest.installer
         assert result["installer_detached"]
+        guest.command("storage status")
+        state = guest.wait(lambda state: state[110] == 1, "authoritative local storage IOP observation")
+        raw = struct.pack("<17Q", *state[111:128])
+        assert struct.unpack_from("<HHI", raw) == (1, 48, 0xe002)
+        resource, device = raw[72:88].hex(), raw[88:104].hex()
+        assert resource != "00" * 16 and device != "00" * 16
+        capacity, available = struct.unpack_from("<QQ", raw, 40)
+        reserved = struct.unpack_from("<Q", raw, 104)[0]
+        assert capacity > 0 and available <= capacity and reserved <= capacity - available
+        with guest.disk.open("rb") as image:
+            image.seek(512); header = image.read(512)
+            assert header[56:72].hex() == device
+            entries, count, size = struct.unpack_from("<QII", header, 72)
+            assert count <= 128 and size == 128
+            image.seek(entries * 512); partitions = image.read(count * size)
+            assert any(partitions[at+16:at+32].hex() == resource for at in range(0, len(partitions), size))
+        result["resource_id"] = resource
+        result["device_id"] = device
+        result["local_storage_iop"] = True
+        result["capacity_bytes"] = capacity
+        result["available_bytes"] = available
+        result["reserved_bytes"] = reserved
         guest.screenshot("recipient-service-desktop")
         guest.frame_report("recipient-service-desktop")
         return result
@@ -66,6 +89,8 @@ def main():
     with ThreadPoolExecutor(max_workers=2) as workers:
         results = list(workers.map(provision, guests))
     assert len({result["node_id"] for result in results}) == args.nodes
+    assert len({result["resource_id"] for result in results}) == args.nodes
+    assert len({result["device_id"] for result in results}) == args.nodes
     (work / "result.json").write_text(json.dumps({"boundary": "installed QEMU recipient-service bootstrap",
         "independent_installs": args.nodes, "nodes": results, "full_ms10_acceptance": False}, indent=2))
 

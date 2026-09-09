@@ -8568,9 +8568,20 @@ impl ConsoleRuntime {
                 if node.schema.action == b"usage" {
                     return self.execute_storage_command(b"storage usage");
                 }
-                self.output.write_line(b"Infinity Pool: online");
-                self.output
-                    .write_line(b"Organization: objects + relationships + namespace views");
+                match crate::runtime::storage_client::query(self.current_user, self.current_session) {
+                    Ok(resource) => {
+                        self.output.write_line(b"Mounted native storage resource");
+                        self.output.write_hex(b"Resource ID: ", &resource.data[..16]);
+                        self.output.write_hex(b"Device ID: ", &resource.data[16..32]);
+                        self.output.write_number(b"Capacity bytes: ", resource.object_version);
+                        self.output.write_number(b"Available bytes: ", resource.offset);
+                        self.output.write_number(b"Reserved bytes: ", u64::from_le_bytes(resource.data[32..40].try_into().unwrap()));
+                        self.output.write_number(b"Resource generation: ", resource.authority_generation);
+                        self.output.write_number(b"Observation sequence: ", resource.manifest_generation);
+                        self.output.write_line(b"Distributed protection is reported separately from local capacity.");
+                    }
+                    Err(_) => self.output.write_line(b"Authoritative storage inspection is unavailable or not authorized."),
+                }
             }
             OperationId::ObjectQuery => self.render_object_query(node),
             OperationId::NetworkStatus

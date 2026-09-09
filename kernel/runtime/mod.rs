@@ -5,6 +5,7 @@ pub mod event;
 pub mod execution;
 pub mod font;
 pub mod fabric;
+pub mod storage_client;
 pub mod identity;
 pub mod iop;
 pub mod network;
@@ -161,6 +162,7 @@ pub enum UiOperationError {
     Window(crate::ui::window::WindowError),
 }
 pub struct InfinityRuntime {
+    pub storage_last_observation: Option<iop::storage_protocol::StorageOperationV1>,
     storage_handler: Option<iop::storage_protocol::StorageHandler>,
     storage_event_cap: [Option<u64>; 2],
     pub fabric_resources: fabric::resources::Directory,
@@ -259,6 +261,7 @@ impl InfinityRuntime {
     // ------------------=
     pub const fn new(live_profile: bool) -> Self {
         Self {
+            storage_last_observation: None,
             storage_handler: None,
             storage_event_cap: [None; 2],
             fabric_resources: fabric::resources::Directory::new(),
