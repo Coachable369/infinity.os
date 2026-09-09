@@ -76,10 +76,20 @@ commits, fixing a failure-injection-discovered multi-record reuse bug.
   All four independent installs passed detached cold boot, persistent identity,
   authentication and native storage inspection (`/tmp/infinity-ms10-distributed-installed-5869efc/result.json`).
 - `52c15e8`: full `./build.sh` completed successfully for both architectures
-  (`/tmp/ms10-lifecycle-final-build.log`). Fresh four-node installed verification
-  is running separately under `/tmp/infinity-ms10-distributed-installed-52c15e8`.
+  (`/tmp/ms10-lifecycle-final-build.log`). Four independent fresh installs passed
+  detached cold boot, persistent unique identity, authentication and native storage
+  inspection (`/tmp/infinity-ms10-distributed-installed-52c15e8/result.json`).
   ARM64 ISO SHA-256: `c14d1ea149e4cca997daba414638164c6b278829c5c9877ee29daf2a5dad104f`.
   x86_64 ISO SHA-256: `e8bbed01cb6d7ce2b8ac5fcf7fe3657e9aac1f954c50a5ce720b0bbda73339b7`.
+- Installed screen review on `52c15e8` found a failing refresh boundary: typed Pool
+  projection was ready with one node, but Storage Settings remained in its loading
+  state after waiting and keyboard interaction. The subtitle overlap is fixed;
+  populated-state GUI parity is NOT TESTED/PASS and requires a targeted fix.
+- The initial host-timed long-command producer lost six of 89 characters before
+  mesh setup. Explicit make/break input with binary length acknowledgement passed
+  89/89 without retransmission; bounded four-key batches also passed. These prove
+  the acceptance producer, not installed UI responsiveness or the root cause of
+  the original loss. Security leases were not extended.
 
 ## Read and byte-proof boundaries
 
