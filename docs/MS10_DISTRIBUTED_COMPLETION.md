@@ -18,8 +18,9 @@ Current request is the distributed Pool completion pass, not a new foundation.
 - `fabric_pool_deletion`: logical deletion commits retirement obligations with
   local COW reclamation. Offline recipients remain pending; they are not erased
   from the obligation list simply because their link is unavailable.
-- `pool_commit_manifest`: manifest successor and bounded structured audit ring
-  commit under one native root. This is not a claim that all audit acceptance is complete.
+- Native lifecycle commits append a bounded structured audit record under the same
+  root: create, copy, update, upload publication, policy/CAS, delete, recipient
+  Available. Transfer windows do not emit an audit record per chunk.
 - `storage_view`: live owner-scoped Settings projection using the same typed
   service as Console; no renderer disk/network calls or GUI-only policy database.
 - `storage_fixture`: explicit operator-approved acceptance producer. It generates
@@ -51,8 +52,10 @@ commits, fixing a failure-injection-discovered multi-record reuse bug.
 
 - Prior source `c59d9a8`: local Pool operations and detached cold-reboot persistence
   passed on three independently installed QEMU nodes.
-- Source `18d9f76`: latest three-node fresh-install bootstrap passed. Its separate
-  installed secure/remote regression is still running; it does not test new source.
+- Source `18d9f76`: three-node fresh-install bootstrap passed. Separate installed
+  secure allow/deny/revocation and remote Pool creation passed. The next read was
+  denied after its one-hour secure session expired; the run failed honestly and
+  did not verify remaining remote-read/publication steps.
 - Current source: expanded behavioral suites cover large upload/resume, ownership,
   COW reclamation, power cuts, recipient retirement, audit atomicity and GUI/Console
   policy parity. Final totals and exact commit must be recorded after integration.
@@ -61,9 +64,22 @@ commits, fixing a failure-injection-discovered multi-record reuse bug.
 - Checkpoint `133a2a3`: `./build.sh` completed for both ISO architectures, including
   packaged parity and existing regression gates. Subsequent acceptance-only
   read preference/byte-verifier integration requires another source build.
-- Integrated host rerun: 95 fabric tests passed (one ignored), and 58 performance
+- Integrated lifecycle host rerun: 99 fabric tests passed (one ignored), and 59 performance
   tests passed. Pointer, redraw and File Navigator executable harnesses passed.
   Missed-event projection recovery and unchanged-refresh suppression passed.
+- Lifecycle checkpoint `52c15e8` adds explicit post-commit transition flags,
+  bounded overflow/reconstruction signaling, atomic lifecycle audit coverage and
+  exact async read-consumption identity. It requires final-source installed proof.
+- The `5869efc` four-node install is an intermediate regression baseline. Its
+  preflight stops before remote reads because that build lacks the corrected
+  consumed-read diagnostic. This boundary is not counted as full acceptance.
+  All four independent installs passed detached cold boot, persistent identity,
+  authentication and native storage inspection (`/tmp/infinity-ms10-distributed-installed-5869efc/result.json`).
+- `52c15e8`: full `./build.sh` completed successfully for both architectures
+  (`/tmp/ms10-lifecycle-final-build.log`). Fresh four-node installed verification
+  is running separately under `/tmp/infinity-ms10-distributed-installed-52c15e8`.
+  ARM64 ISO SHA-256: `c14d1ea149e4cca997daba414638164c6b278829c5c9877ee29daf2a5dad104f`.
+  x86_64 ISO SHA-256: `e8bbed01cb6d7ce2b8ac5fcf7fe3657e9aac1f954c50a5ce720b0bbda73339b7`.
 
 ## Read and byte-proof boundaries
 
