@@ -9,6 +9,7 @@ mod install_identity;
 pub mod layout;
 pub mod object;
 pub(crate) mod fabric;
+pub(crate) mod fabric_pool_metadata;
 pub mod organization;
 #[cfg(target_arch = "aarch64")]
 mod uefi;
