@@ -89,7 +89,8 @@ pub(crate) fn begin(manifest: &mut Manifest, directory: &mut Directory, actor: N
     // An expired claim still owns its reservation until explicitly cancelled or
     // recovered. A second coordinator must never silently spend it again.
     if manifest.healing.is_some() { return Err(HealError::Busy); }
-    if manifest.availability() == Availability::Healthy { return Err(HealError::NoWork); }
+    let reconcile_stale = manifest.availability() == Availability::Healthy;
+    if reconcile_stale && !manifest.placements.iter().flatten().any(|p|p.state==PlacementState::Stale && p.version<manifest.version && eligible(directory,*p,now)) { return Err(HealError::NoWork); }
     let source = manifest.placements.iter().flatten().copied().find(|p|
         p.state == PlacementState::Verified && p.version == manifest.version
         && p.hash == manifest.hash && eligible(directory, *p, now)).ok_or(HealError::NoSource)?;
@@ -98,17 +99,26 @@ pub(crate) fn begin(manifest: &mut Manifest, directory: &mut Directory, actor: N
     let mut count = 0;
     let mut seen = 0;
     for p in manifest.placements.iter().flatten() {
-        excluded[seen] = p.resource; seen += 1;
+        // An obsolete immutable binding may be replaced in this physical slot
+        // only after the recipient verifies the current version independently.
+        if p.version == manifest.version || p.state == PlacementState::Offline {
+            excluded[seen] = p.resource; seen += 1;
+        }
         if p.state == PlacementState::Verified && eligible(directory, *p, now) {
             occupied[count] = p.node; count += 1;
         }
     }
-    if manifest.placements.iter().all(Option::is_some) { return Err(HealError::NoCapacity); }
+    if manifest.placements.iter().all(|p|p.is_some_and(|p|p.version==manifest.version || p.state==PlacementState::Offline)) { return Err(HealError::NoCapacity); }
     // Native extents allocate 4-KiB blocks, including empty content, plus a
     // checkpoint block. Reserve actual allocation rather than logical bytes.
     let blocks = manifest.length.checked_add(4095).ok_or(HealError::Invalid)? / 4096;
     let reserved = blocks.max(1).checked_add(1).and_then(|n| n.checked_mul(4096)).ok_or(HealError::Invalid)?;
-    let destination = select(directory, &occupied[..count], &excluded[..seen], reserved, now).ok_or(HealError::NoCapacity)?;
+    let destination = if reconcile_stale {
+        directory.entries().iter().enumerate().filter_map(|(i,r)|r.filter(|r|
+            directory.usable(i,now)>=reserved && !occupied[..count].contains(&r.owner)
+            && manifest.placements.iter().flatten().any(|p|p.resource==r.id && p.state==PlacementState::Stale && p.version<manifest.version)))
+            .min_by_key(|r|r.id)
+    }else{select(directory, &occupied[..count], &excluded[..seen], reserved, now)}.ok_or(HealError::NoCapacity)?;
     let mut staged = directory.clone();
     staged.reserve(destination.id, destination.generation, reserved, now).map_err(|_| HealError::NoCapacity)?;
     let mut next = advance(manifest)?;
@@ -152,10 +162,12 @@ pub(crate) fn complete(manifest: &mut Manifest, directory: &mut Directory, actor
         generation: d.generation, version: d.version, hash: d.hash, state: PlacementState::Verified,
         admission_generation: claim.token };
     if !eligible(directory, placement, now) { return Err(HealError::Stale); }
-    if manifest.placements.iter().flatten().any(|p| p.resource == placement.resource
+    if manifest.placements.iter().flatten().any(|p| (p.resource == placement.resource && p.version >= placement.version)
         || (p.node == placement.node && p.state == PlacementState::Verified)) { return Err(HealError::Invalid); }
     let mut next = advance(manifest)?;
-    let slot = next.placements.iter_mut().find(|p| p.is_none()).ok_or(HealError::NoCapacity)?;
+    let index = next.placements.iter().position(|p|p.is_some_and(|p|p.resource==placement.resource && p.version<placement.version))
+        .or_else(||next.placements.iter().position(Option::is_none)).ok_or(HealError::NoCapacity)?;
+    let slot = &mut next.placements[index];
     *slot = Some(placement); next.healing = None;
     let mut staged = directory.clone();
     staged.release(d.resource, d.generation, claim.reserved).map_err(|_| HealError::Invalid)?;
@@ -333,5 +345,49 @@ mod tests {
         let gen = m.generation;
         assert_eq!(reconcile(&mut m, &d, actor, gen, 5, Placement { version: 2, state: PlacementState::Verified, ..old }, |_, _| Ok(())), Ok(PlacementState::Verified));
         assert_eq!(m.availability(), Availability::Healthy);
+    }
+
+    // ------------------------=
+    // FUNC: stale_destination_is_replaced_only_after_current_verified_receipt
+    // DESC: Reuses an obsolete physical placement without duplicate records or premature promotion; the new receipt is fenced to the durable claim and current version.
+    // ------------------=
+    #[test]
+    fn stale_destination_is_replaced_only_after_current_verified_receipt() {
+        let (mut m,mut d)=fixture();let actor=m.authority;
+        m.version=2;m.generation=2;
+        m.placements[0].as_mut().unwrap().version=2;m.placements[1].as_mut().unwrap().version=2;
+        m.placements[2].as_mut().unwrap().state=PlacementState::Stale;
+        let generation=m.generation;
+        let work=begin(&mut m,&mut d,actor,generation,3,90,|_,_|Ok(())).unwrap();
+        assert_eq!(work.destination.owner,NodeId([3;32]));
+        assert_eq!(m.placements[2].unwrap().version,1);
+        assert_eq!(m.availability(),Availability::Degraded);
+        let generation=m.generation;
+        let mut receipt=Checkpoint{descriptor:ReplicaDescriptor{job:work.claim.token,object:m.object,version:1,
+            resource:work.destination.id,generation:work.destination.generation,bytes:m.length,hash:m.hash},copied:m.length,state:ReplicaState::Available};
+        assert_eq!(complete(&mut m,&mut d,actor,generation,4,work.claim.token,receipt,|_,_|Ok(())),Err(HealError::Invalid));
+        receipt.descriptor.version=2;
+        complete(&mut m,&mut d,actor,generation,4,work.claim.token,receipt,|_,_|Ok(())).unwrap();
+        assert_eq!(m.placements.iter().flatten().count(),3);
+        assert_eq!(m.placements[2].unwrap().version,2);
+        assert_eq!(m.availability(),Availability::Healthy);
+    }
+
+    // ------------------------=
+    // FUNC: healthy_policy_still_reconciles_returning_stale_replica
+    // DESC: Three current copies do not suppress repair of a known returning obsolete fourth copy; the additional verified placement is committed only after the current receipt.
+    // ------------------=
+    #[test]
+    fn healthy_policy_still_reconciles_returning_stale_replica(){
+        let(mut m,mut d)=fixture();let actor=m.authority;m.version=2;m.generation=2;
+        for p in m.placements.iter_mut().flatten(){p.version=2;}
+        let r=d.entries()[3].unwrap();m.placements[3]=Some(Placement{node:r.owner,resource:r.id,device:r.device,generation:r.generation,
+            version:1,hash:m.hash,state:PlacementState::Stale,admission_generation:1});
+        assert_eq!(m.availability(),Availability::Healthy);let g=m.generation;
+        let work=begin(&mut m,&mut d,actor,g,3,90,|_,_|Ok(())).unwrap();assert_eq!(work.destination.owner,r.owner);
+        let g=m.generation;let receipt=Checkpoint{descriptor:ReplicaDescriptor{job:work.claim.token,object:m.object,version:2,
+            resource:r.id,generation:r.generation,bytes:m.length,hash:m.hash},copied:m.length,state:ReplicaState::Available};
+        complete(&mut m,&mut d,actor,g,4,work.claim.token,receipt,|_,_|Ok(())).unwrap();
+        assert_eq!(m.placements.iter().flatten().filter(|p|p.state==PlacementState::Verified&&p.version==2).count(),4);
     }
 }

@@ -5,6 +5,9 @@ use super::ConsoleRuntime;
 #[used]
 #[no_mangle]
 static mut INFINITY_DIAGNOSTIC_SNAPSHOT: [u64; 512] = [0; 512];
+#[used]
+#[no_mangle]
+static mut INFINITY_POOL_DIAGNOSTIC_SNAPSHOT: [u64; 256] = [0; 256];
 
 // ------------------------=
 // FUNC: words
@@ -22,6 +25,7 @@ fn words(target: &mut [u64], bytes: &[u8]) {
 // ------------------=
 pub(super) fn publish(console: &ConsoleRuntime) {
     let mut data = [0u64; 512];
+    let mut pool = [0u64;256]; pool[0]=0x494e46504f4f4c31;pool[1]=1;
     data[0] = 0x494e464449414731; data[1] = 1;
     data[3] = (!console.system.live_profile) as u64;
     data[4] = console.mode as u64; data[5] = console.installer_step as u64;
@@ -45,6 +49,23 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         data[55] = console.node_input_lease.map(|lease| lease.expires_at).unwrap_or(0);
     }
     crate::runtime::with_runtime(|runtime| {
+        let fixture=runtime.storage_fixture.observation;
+        pool[3]=fixture.phase as u64;pool[4]=fixture.offset as u64;pool[5]=fixture.length as u64;
+        words(&mut pool[6..8],&fixture.object);words(&mut pool[8..12],&fixture.hash);
+        pool[12]=fixture.version;pool[13]=fixture.generation;
+        pool[14]=runtime.storage_coordinator.completed;
+        pool[15]=runtime.storage_coordinator.last_error.map(|e|e as u64+1).unwrap_or(0);
+        pool[16]=runtime.storage_coordinator.last_read;
+        pool[17]=runtime.storage_view.revision;
+        let view=runtime.storage_view.snapshot;pool[18]=view.count as u64;pool[19]=view.selected as u64;
+        pool[20]=view.capacity;pool[21]=view.eligible;pool[22]=view.reserved;pool[23]=view.nodes as u64;
+        pool[24]=view.ready as u64;pool[25]=view.failed as u64;
+        for (index,object) in view.objects.iter().enumerate().filter_map(|(i,o)|o.map(|o|(i,o))) {
+            let at=32+index*16;words(&mut pool[at..at+2],&object.id);
+            pool[at+2]=object.version;pool[at+3]=object.generation;pool[at+4]=object.bytes;
+            pool[at+5]=object.desired as u64;pool[at+6]=object.verified as u64;pool[at+7]=object.offline as u64;
+            pool[at+8]=object.stale as u64;pool[at+9]=object.corrupt as u64;pool[at+10]=object.healing as u64;
+        }
         if let Some(local) = runtime.nodes.local_id() { words(&mut data[16..20], &local.0); }
         data[20] = runtime.nodes.control_version(); data[21] = runtime.node_projection.version;
         data[22] = runtime.node_projection.stale as u64; data[23] = runtime.node_projection.gaps;
@@ -63,8 +84,8 @@ pub(super) fn publish(console: &ConsoleRuntime) {
             .map(|service| service.state as u64 + 1).unwrap_or(0);
         data[109] = runtime.fabric_resources.entries().iter().flatten().count() as u64;
         data[489] = runtime.storage_operator.last_submitted;
-        data[494] = runtime.storage_advertiser.completed;
-        data[495] = runtime.storage_advertiser.last_error.map(|e| e as u64).unwrap_or(0);
+        data[494] = runtime.storage_advertiser.completed.saturating_add(runtime.storage_coordinator.publication_completed());
+        data[495] = runtime.storage_coordinator.publication_last_error().or(runtime.storage_advertiser.last_error).map(|e| e as u64).unwrap_or(0);
         data[496] = runtime.fabric_resources.entries().iter().flatten().filter(|r| r.online).count() as u64;
         if let Some(resource) = runtime.fabric_resources.entries().iter().flatten().next() {
             words(&mut data[497..499], &resource.id.0);
@@ -126,5 +147,10 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         for index in 0..512 { if index != 2 { core::ptr::write_volatile(pointer.add(index), data[index]); } }
         core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
         core::ptr::write_volatile(pointer.add(2), generation);
+        let pool_pointer=(&raw mut INFINITY_POOL_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
+        core::ptr::write_volatile(pool_pointer.add(2),generation|1);pool[2]=generation;pool[255]=generation;
+        for index in 0..256 {if index!=2 {core::ptr::write_volatile(pool_pointer.add(index),pool[index]);}}
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        core::ptr::write_volatile(pool_pointer.add(2),generation);
     }
 }

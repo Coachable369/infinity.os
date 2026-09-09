@@ -93,6 +93,26 @@ impl Directory {
     pub fn entries(&self) -> &[Option<Resource>; MAX_RESOURCES] { &self.entries }
 
     // ------------------------=
+    // FUNC: observe_local
+    // DESC: Admits only the exact local node's measured native storage observation; callers cannot use this path to invent peer advertisements.
+    // ------------------=
+    pub(crate) fn observe_local(&mut self, resource: Resource, local: NodeId, now: u64) -> Result<bool, ResourceError> {
+        if local.0 == [0;32] || resource.owner != local { return Err(ResourceError::AccessDenied); }
+        self.apply(resource, now)
+    }
+
+    // ------------------------=
+    // FUNC: restore_one_reservation
+    // DESC: Recovers the single active coordinator claim idempotently and rejects conflicting inventory accounting instead of silently replacing it.
+    // ------------------=
+    pub(crate) fn restore_one_reservation(&mut self, id: ResourceId, generation: u64, bytes: u64) -> Result<(), ResourceError> {
+        let i = self.entries.iter().position(|r|r.is_some_and(|r|r.id==id && r.generation==generation)).ok_or(ResourceError::Stale)?;
+        if bytes==0 || bytes>self.entries[i].unwrap().capacity { return Err(ResourceError::Capacity); }
+        if self.reserved[i]!=0 && self.reserved[i]!=bytes { return Err(ResourceError::Conflict); }
+        self.reserved[i]=bytes;Ok(())
+    }
+
+    // ------------------------=
     // FUNC: accept_storage_advertisement
     // DESC: Applies a bounded advertisement already authenticated by the shared IOP router; its owner can only be the authenticated sender.
     // ------------------=

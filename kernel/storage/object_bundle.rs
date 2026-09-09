@@ -4,6 +4,16 @@ use super::*;
 
 impl<D: BlockDevice> ObjectStore<D> {
     // ------------------------=
+    // FUNC: replace_state_pair
+    // DESC: Commits authoritative state and its durable audit successor under one root; neither record becomes visible alone after interruption.
+    // ------------------=
+    pub(crate) fn replace_state_pair(&mut self, first:ObjectId, first_bytes:&[u8], second:ObjectId, second_bytes:&[u8]) -> Result<(),ObjectError> {
+        if first==second || first_bytes.len()>MAX_CONTENT || second_bytes.len()>MAX_CONTENT {return Err(ObjectError::InvalidObject);}
+        let before=self.begin()?;
+        let result=(|| {self.replace_state_record(first,first_bytes)?;self.replace_state_record(second,second_bytes)?;Ok(())})();
+        self.finish(before,result)
+    }
+    // ------------------------=
     // FUNC: copy_owned_bundle
     // DESC: Atomically creates an independent object sharing the source's current immutable extent and commits its distinct manifest and catalog binding without copying payload bytes.
     // ------------------=

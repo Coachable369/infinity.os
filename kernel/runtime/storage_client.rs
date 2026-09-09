@@ -30,7 +30,7 @@ pub fn execute(user: StableId, session: StableId, request: StorageOperationV1) -
 // FUNC: authorize
 // DESC: Requires the complete current privileged operator session for native Pool configuration and metadata inspection.
 // ------------------=
-fn authorize(runtime: &InfinityRuntime, user: StableId, session: StableId) -> Result<(), IopError> {
+pub(super) fn authorize(runtime: &InfinityRuntime, user: StableId, session: StableId) -> Result<(), IopError> {
     let active = (0..MAX_SESSIONS).filter_map(|index| runtime.identity.session_nth(index)).any(|candidate|
         candidate.id == session && candidate.user == user && candidate.state == SessionState::Active
             && candidate.capabilities & SESSION_IDENTITY_MANAGE != 0);
@@ -63,7 +63,7 @@ pub(super) fn read(runtime: &mut InfinityRuntime, now: u64) -> Result<StorageOpe
 // FUNC: perform
 // DESC: Routes one exact operation through owned endpoints, live capability validation and a correlated reply; committed mutations publish through ordinary IEF authority.
 // ------------------=
-fn perform(runtime: &mut InfinityRuntime, now: u64, request: StorageOperationV1) -> Result<StorageOperationV1, IopError> {
+pub(super) fn perform(runtime: &mut InfinityRuntime, now: u64, request: StorageOperationV1) -> Result<StorageOperationV1, IopError> {
     let operation = match request.operation {
         Operation::ResourceInspect => OperationId::ResourceInspect,
         Operation::ObjectCreate => OperationId::ObjectCreate,
@@ -73,6 +73,11 @@ fn perform(runtime: &mut InfinityRuntime, now: u64, request: StorageOperationV1)
         Operation::ObjectUpdate => OperationId::ObjectUpdate,
         Operation::ObjectSetPolicy => OperationId::ObjectSetPolicy,
         Operation::PoolInspect => OperationId::PoolInspect,
+        Operation::ObjectDelete => OperationId::ObjectDelete,
+        Operation::PoolUploadBegin => OperationId::PoolUploadBegin,
+        Operation::PoolUploadAppend => OperationId::PoolUploadAppend,
+        Operation::PoolUploadCommit => OperationId::PoolUploadCommit,
+        Operation::PoolUploadAbort => OperationId::PoolUploadAbort,
         _ => return Err(IopError::InvalidPayload),
     };
     if runtime.services.inspect(SERVICE_REPLICA_STORAGE).is_none_or(|s| s.state != ServiceState::Ready) {

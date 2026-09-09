@@ -333,6 +333,7 @@ pub fn initialize_object_store() {
                 OBJECT_STORE = Some(store);
                 if REPLICA_SERVICE.is_some() {
                     crate::runtime::register_storage_backend(execute_replica_request);
+                    crate::runtime::storage_coordinator::register(execute_pool_coordinator);
                 }
             },
             Err(_) => {
@@ -340,6 +341,19 @@ pub fn initialize_object_store() {
             }
         }
     }
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
+// FUNC: execute_pool_coordinator
+// DESC: Keeps native disk borrowing bounded to one service-authorized coordinator transition without reentering the runtime lock.
+// ------------------=
+fn execute_pool_coordinator(request: crate::runtime::storage_coordinator::NativeRequest)
+    -> Result<crate::runtime::storage_coordinator::NativeReply, crate::runtime::iop::remote::RemoteError> {
+    use crate::runtime::iop::remote::RemoteError;
+    with_store(|store| Ok(unsafe { REPLICA_SERVICE.as_mut().ok_or(RemoteError::ServiceUnavailable)
+        .and_then(|service| service.coordinator_operation(store, request)) }))
+        .map_err(|_| RemoteError::ServiceUnavailable)?
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -356,15 +370,20 @@ fn execute_replica_request(request: crate::runtime::iop::remote::AuthenticatedSt
         let response = unsafe { REPLICA_SERVICE.as_mut().ok_or(RemoteError::ServiceUnavailable)
             .and_then(|service| service.execute(store, request)) };
         Ok(response.map(|response| {
-            let notice = (store.generation() != before).then_some(StorageCommit {
+            let observable_commit = store.generation() != before && !matches!(request.payload.operation,
+                crate::runtime::iop::storage_protocol::Operation::TransferChunk | crate::runtime::iop::storage_protocol::Operation::PoolUploadAppend);
+            let notice = observable_commit.then_some(StorageCommit {
                 event: match request.payload.operation {
                     crate::runtime::iop::storage_protocol::Operation::ObjectCreate | crate::runtime::iop::storage_protocol::Operation::ObjectUpdate
-                        | crate::runtime::iop::storage_protocol::Operation::ObjectCopy => crate::runtime::iop::storage_protocol::EVENT_OBJECT_CHANGED,
+                        | crate::runtime::iop::storage_protocol::Operation::ObjectCopy
+                        | crate::runtime::iop::storage_protocol::Operation::PoolUploadCommit
+                        | crate::runtime::iop::storage_protocol::Operation::ObjectDelete => crate::runtime::iop::storage_protocol::EVENT_OBJECT_CHANGED,
                     crate::runtime::iop::storage_protocol::Operation::ObjectSetPolicy => crate::runtime::iop::storage_protocol::EVENT_POLICY_CHANGED,
                     _ => crate::runtime::iop::storage_protocol::EVENT_REPLICA_CHANGED,
                 },
                 object: if matches!(request.payload.operation, crate::runtime::iop::storage_protocol::Operation::ObjectCreate
-                    | crate::runtime::iop::storage_protocol::Operation::ObjectCopy) {
+                    | crate::runtime::iop::storage_protocol::Operation::ObjectCopy)
+                    || (request.payload.operation == crate::runtime::iop::storage_protocol::Operation::PoolUploadCommit && response.value == 1) {
                     response.data[..16].try_into().unwrap()
                 } else { request.payload.object }, generation: store.generation(), copied: response.offset,
                 state: if matches!(request.payload.operation, crate::runtime::iop::storage_protocol::Operation::ObjectCreate

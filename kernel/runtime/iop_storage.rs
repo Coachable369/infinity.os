@@ -25,11 +25,17 @@ pub enum Operation {
     ObjectUpdate = super::OperationId::ObjectUpdate as u32,
     ObjectCopy = super::OperationId::ObjectCopy as u32,
     ObjectInspect = super::OperationId::ObjectInspect as u32,
+    ObjectDelete = super::OperationId::ObjectDelete as u32,
+    PoolUploadBegin = super::OperationId::PoolUploadBegin as u32,
+    PoolUploadAppend = super::OperationId::PoolUploadAppend as u32,
+    PoolUploadCommit = super::OperationId::PoolUploadCommit as u32,
+    PoolUploadAbort = super::OperationId::PoolUploadAbort as u32,
     ResourceAdvertise = super::OperationId::ResourceAdvertise as u32,
     ResourceInspect = super::OperationId::ResourceInspect as u32,
     PoolInspect = super::OperationId::PoolInspect as u32,
     ObjectSetPolicy = super::OperationId::ObjectSetPolicy as u32,
     ReplicaInspect = super::OperationId::ReplicaInspect as u32,
+    ReplicaDelete = super::OperationId::ReplicaDelete as u32,
     TransferBegin = super::OperationId::ReplicaTransferBegin as u32,
     TransferChunk = super::OperationId::ReplicaTransferChunk as u32,
     TransferCommit = super::OperationId::ReplicaTransferCommit as u32,
@@ -44,7 +50,8 @@ impl Operation {
         use Operation::*;
         [ObjectCreate, ObjectRead, ObjectUpdate, ObjectCopy, ObjectInspect, ResourceAdvertise,
             ResourceInspect, PoolInspect, ObjectSetPolicy, ReplicaInspect, TransferBegin,
-            TransferChunk, TransferCommit, PoolHeal].into_iter().find(|op| *op as u32 == value)
+            TransferChunk, TransferCommit, PoolHeal, ObjectDelete, PoolUploadBegin,
+            PoolUploadAppend, PoolUploadCommit, PoolUploadAbort, ReplicaDelete].into_iter().find(|op| *op as u32 == value)
             .ok_or(ProtocolError::Operation)
     }
     // ------------------------=

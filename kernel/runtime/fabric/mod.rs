@@ -6,5 +6,6 @@ pub mod placement;
 pub mod replica;
 pub mod manifest;
 pub mod healing;
+pub mod deletion;
 #[cfg(test)]
 mod tests;

@@ -4,7 +4,7 @@ use super::execution::{
 
 pub const MAX_SERVICES: usize = 35;
 pub const MAX_DEPENDENCIES: usize = 4;
-pub const MAX_OPERATIONS: usize = 16;
+pub const MAX_OPERATIONS: usize = 24;
 pub const SERVICE_RUNTIME: u32 = 1;
 pub const SERVICE_DEVICE: u32 = 2;
 pub const SERVICE_STORAGE: u32 = 3;

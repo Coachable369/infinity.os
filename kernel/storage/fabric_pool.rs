@@ -5,6 +5,14 @@ use crate::runtime::{fabric::{manifest::{Chunk, Manifest, Placement, PlacementSt
     MANIFEST_BYTES, MAX_CHUNKS, MAX_PLACEMENTS}, placement::StorageClass,
     resources::ResourceId}, node::types::NodeId};
 use sha2::{Digest, Sha256};
+#[path = "fabric_pool_upload.rs"]
+mod upload;
+#[path = "fabric_pool_deletion.rs"]
+mod deletion;
+pub(crate) use upload::UploadVerifier;
+#[cfg(test)]
+#[path = "../../tools/pool_large_tests.rs"]
+mod large_tests;
 
 const LIMIT: usize = 8;
 const BYTES: usize = 32 + LIMIT * 128;
@@ -71,6 +79,50 @@ impl Catalog {
 }
 
 impl<D: BlockDevice> ObjectStore<D> {
+    // ------------------------=
+    // FUNC: pool_commit_manifest
+    // DESC: Atomically compare-and-swaps an authenticated manifest successor while preserving content identity and immutable version integrity.
+    // ------------------=
+    pub(crate) fn pool_commit_manifest(&mut self, object: ObjectId, owner: NodeId, scope: u64,
+        expected: u64, next: &Manifest) -> Result<(), ObjectError> {
+        let previous = self.pool_manifest(object, owner, scope)?;
+        if previous.generation != expected || next.object != previous.object || next.version != previous.version
+            || next.hash != previous.hash || next.length != previous.length || next.chunks != previous.chunks {
+            return Err(ObjectError::InvalidVersion);
+        }
+        previous.successor(next).map_err(|_| ObjectError::InvalidVersion)?;
+        let catalog = Catalog::load(self)?;
+        let e = catalog.entries.iter().flatten().find(|e| e.object == object).ok_or(ObjectError::NotFound)?;
+        let mut bytes = [0; MANIFEST_BYTES]; next.encode(&mut bytes).map_err(|_| ObjectError::InvalidObject)?;
+        let (audit_id, audit) = self.pool_manifest_audit(&previous, next)?;
+        self.replace_state_pair(e.backing, &bytes, audit_id, &audit)?;
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: pool_manifest_audit
+    // DESC: Stages one bounded structured audit successor for atomic publication with the manifest; no content or secret material is logged.
+    // ------------------=
+    fn pool_manifest_audit(&mut self, previous:&Manifest, next:&Manifest)->Result<(ObjectId,[u8;2080]),ObjectError> {
+        const AUDIT_PATH:&[u8]=b"/system/storage/pool-audit";
+        let mut bytes=[0;2080];bytes[..8].copy_from_slice(b"INFPAD01");
+        let id=match self.resolve(AUDIT_PATH) {
+            Ok(id)=>{if self.read(id,None,&mut bytes)?!=2080 || &bytes[..8]!=b"INFPAD01" {return Err(ObjectError::CorruptContent);}id},
+            Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>self.create_attached(b"pool-audit",ObjectType::Metadata,Space::System,&bytes,AUDIT_PATH)?,
+            Err(e)=>return Err(e),
+        };
+        let sequence=u64::from_le_bytes(bytes[8..16].try_into().unwrap()).checked_add(1).ok_or(ObjectError::InvalidVersion)?;
+        bytes[8..16].copy_from_slice(&sequence.to_le_bytes());
+        let at=32+((sequence-1)%16) as usize*128;bytes[at..at+128].fill(0);
+        bytes[at..at+16].copy_from_slice(&next.object);
+        for (offset,value) in [(16,previous.generation),(24,next.generation),(32,next.version),(40,next.authority_generation),
+            (112,next.healing.map_or(0,|claim|claim.token)),(120,sequence)] {
+            bytes[at+offset..at+offset+8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[at+48..at+80].copy_from_slice(&next.authority.0);
+        for i in 0..8 {bytes[at+80+i]=previous.placements[i].map_or(0,|p|p.state as u8);bytes[at+88+i]=next.placements[i].map_or(0,|p|p.state as u8);}
+        bytes[at+96]=next.policy.replicas() as u8;bytes[at+97]=u8::from(next.healing.is_some());
+        Ok((id,bytes))
+    }
     // ------------------------=
     // FUNC: pool_copy
     // DESC: Creates a new application identity and manifest sharing verified immutable local content; remote source placements are not falsely counted as replicas of the new object.
@@ -256,6 +308,10 @@ impl<D: BlockDevice> ObjectStore<D> {
         let mut content = [0; MAX_CONTENT];
         let version = u32::try_from(manifest.version).map_err(|_| ObjectError::InvalidVersion)?;
         let size = self.read(ObjectId(manifest.object), Some(version), &mut content)?;
+        if self.pool_is_index(ObjectId(manifest.object), version) {
+            if size != upload::INDEX_BYTES || &content[..8] != b"INFPIDX1" { return Err(ObjectError::CorruptContent); }
+            return self.pool_read_index(manifest, &content[..size], offset, out);
+        }
         if size as u64 != manifest.length || <[u8; 32]>::from(Sha256::digest(&content[..size])) != manifest.hash {
             return Err(ObjectError::CorruptContent);
         }

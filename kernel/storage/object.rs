@@ -7,6 +7,8 @@ use super::{BlockDevice, DateTimeConfiguration};
 mod extents;
 #[path = "object_bundle.rs"]
 mod bundle;
+#[path = "object_pool_stream.rs"]
+mod pool_stream;
 
 #[path = "../runtime/ai/generation.rs"]
 mod ai_generation_asset;
@@ -443,6 +445,7 @@ pub struct ObjectStore<D: BlockDevice> {
     state: State,
     mounted_root: u8,
     in_transaction: bool,
+    protected_allocation: [u8; ALLOCATION_BYTES],
 }
 
 impl<D: BlockDevice> ObjectStore<D> {
@@ -475,6 +478,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             state: State::empty(available.min((ALLOCATION_BYTES * 8) as u64) as u32),
             mounted_root: 0,
             in_transaction: false,
+            protected_allocation: [0; ALLOCATION_BYTES],
         };
         store.state.next_identity =
             u64::from_le_bytes(seed[..8].try_into().unwrap_or([1; 8])).max(1);
@@ -508,6 +512,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                         state,
                         mounted_root: slot,
                         in_transaction: false,
+                        protected_allocation: [0; ALLOCATION_BYTES],
                     });
                 }
             }
@@ -1247,7 +1252,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             return Err(ObjectError::InsufficientCapacity);
         }
         let object = self.object_index(id)?;
-        if self.state.versions.iter().any(|v| v.used && v.object == id && v.storage_role != 0) {
+        if self.state.versions.iter().any(|v| v.used && v.object == id && matches!(v.storage_role, 1 | 2)) {
             return Err(ObjectError::Unauthorized);
         }
         if self.state.objects[object].tombstone {
@@ -1900,6 +1905,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             return Err(ObjectError::Busy);
         }
         self.in_transaction = true;
+        self.protected_allocation = self.state.allocation;
         Ok(self.state)
     }
     // ------------------------=
@@ -1966,7 +1972,8 @@ impl<D: BlockDevice> ObjectStore<D> {
         let need = count as usize;
         if need == 0 || need > total { return Err(ObjectError::InsufficientCapacity); }
         for start in 0..=total - need {
-            if (start..start + need).all(|i| !bit(&self.state.allocation, i)) {
+            if (start..start + need).all(|i| !bit(&self.state.allocation, i)
+                && (!self.in_transaction || !bit(&self.protected_allocation, i))) {
                 for i in start..start + need {
                     set_bit(&mut self.state.allocation, i, true);
                 }
@@ -2686,8 +2693,8 @@ fn decode_version(s: &[u8], o: usize) -> Result<VersionRecord, ObjectError> {
     id.copy_from_slice(&s[o + 4..o + 20]);
     let blocks = get16(s, o + 28);
     let role = s[o + 1];
-    let limit = if role == 0 { MAX_CONTENT } else { extents::MAX_STAGED_CONTENT };
-    if role > 2 || blocks as usize > (limit / 4096) || get32(s, o + 32) as usize > limit {
+    let limit = if matches!(role, 0 | 3) { MAX_CONTENT } else { extents::MAX_STAGED_CONTENT };
+    if role > 3 || blocks as usize > (limit / 4096) || get32(s, o + 32) as usize > limit {
         return Err(ObjectError::CorruptMetadata);
     }
     Ok(VersionRecord {

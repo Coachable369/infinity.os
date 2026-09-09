@@ -63,7 +63,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // FUNC: staging_extent_record
     // DESC: Allocates only transaction-local staging metadata and capacity; its caller owns commit or rollback.
     // ------------------=
-    fn staging_extent_record(&mut self, size: u32) -> Result<ObjectId, ObjectError> {
+    pub(super) fn staging_extent_record(&mut self, size: u32) -> Result<ObjectId, ObjectError> {
             let id = self.create_record(b"pool-staging", ObjectType::Metadata, Space::System)?;
             let slot = self.state.versions.iter().position(|v| !v.used).ok_or(ObjectError::InsufficientCapacity)?;
             let blocks = ((size as usize + 4095) / 4096).max(1) as u16;

@@ -261,10 +261,15 @@ pub enum OperationId {
     ResourceInspect = 0xe002,
     PoolInspect = 0xe010,
     ObjectSetPolicy = 0xe011,
+    PoolUploadBegin = 0xe012,
+    PoolUploadAppend = 0xe013,
+    PoolUploadCommit = 0xe014,
+    PoolUploadAbort = 0xe015,
     ReplicaInspect = 0xe020,
     ReplicaTransferBegin = 0xe021,
     ReplicaTransferChunk = 0xe022,
     ReplicaTransferCommit = 0xe023,
+    ReplicaDelete = 0xe024,
     PoolHeal = 0xe030,
 }
 impl OperationId {

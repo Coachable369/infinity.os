@@ -40,20 +40,21 @@ consistent native OS abstraction, not claiming those systems lack pooling.
 ### Explicit resource publication
 
 `pool advertise peer=node:<full-id> grant=<peer-issued-resource-advertise-grant>`
-starts a bounded, session-owned publisher over the existing secure IOP path.
+persists an explicitly approved, bounded publication lease over the existing secure IOP path.
 It samples native `ResourceInspect` through the shared capability broker, keeps
 the real device/resource identities and reboot-monotonic sequence, and publishes
 a 60-second lease. After an authenticated completion it waits 20 seconds before
 sampling again. Four subscriptions are supported, advancing at most one per
 runtime poll; there is no synchronous network wait or automatic trust grant.
 
-Logout, locked sessions, failed authority, transport failure or unavailable
-storage stop the subscription. A failed publication is not retried indefinitely.
-The receiving directory retains offline resource identity and rejects older
-observations. Subscriptions themselves are not persistent deployment policy and
-must be explicitly restarted after boot or failure. This publisher does not
-implement automatic replica placement or healing. Host behavioral checks are
-separate from installed wire acceptance.
+The service-owned coordinator reloads approved configuration after boot and may
+reconnect only to an already trusted peer. Expired or revoked grants fail closed;
+discovery never supplies authority. The receiving directory retains offline
+resource identity and rejects older observations. Placement/healing and recipient
+retirement are separate bounded workers with separately scoped operations.
+See [the current completion pass](MS10_DISTRIBUTED_COMPLETION.md) for implemented
+contracts and outstanding installed acceptance. Host behavioral checks are not
+proof of installed wire operation.
 
 `StorageManager` routes discovery, planning, provisioning, and verification to a
 `BlockDevice`. The first driver is 28-bit ATA PIO for a disposable QEMU disk.

@@ -8,6 +8,9 @@ pub mod fabric;
 pub mod storage_client;
 pub mod storage_operator;
 pub mod storage_advertiser;
+pub mod storage_coordinator;
+pub mod storage_view;
+pub mod storage_fixture;
 pub mod identity;
 pub mod iop;
 pub mod network;
@@ -202,6 +205,9 @@ pub struct InfinityRuntime {
     pub node_operator: node_operator::OperatorRequests,
     pub storage_operator: storage_operator::StorageRequests,
     pub storage_advertiser: storage_advertiser::Publisher,
+    pub storage_coordinator: storage_coordinator::Coordinator,
+    pub storage_view: storage_view::View,
+    pub storage_fixture: storage_fixture::Producer,
     node_clock: Option<u64>,
     node_projection_tick: Option<u64>,
     node_checkpoint_notified: u64,
@@ -302,6 +308,9 @@ impl InfinityRuntime {
             node_operator: node_operator::OperatorRequests::new(),
             storage_operator: storage_operator::StorageRequests::new(),
             storage_advertiser: storage_advertiser::Publisher::new(),
+            storage_coordinator: storage_coordinator::Coordinator::new(),
+            storage_view: storage_view::View::new(),
+            storage_fixture: storage_fixture::Producer::new(),
             node_links: node_links::NodeLinks::new(),
             node_clock: None,
             node_projection_tick: None,
@@ -1340,8 +1349,11 @@ impl InfinityRuntime {
                 OperationId::ObjectRead as u32, OperationId::ObjectCreate as u32,
                 OperationId::ObjectInspect as u32, OperationId::ObjectUpdate as u32,
                 OperationId::ObjectSetPolicy as u32, OperationId::PoolInspect as u32,
-                OperationId::ObjectCopy as u32],
-            13, RestartPolicy::OnFailure, Criticality::Important,
+                OperationId::ObjectCopy as u32, OperationId::ObjectDelete as u32,
+                OperationId::PoolUploadBegin as u32, OperationId::PoolUploadAppend as u32,
+                OperationId::PoolUploadCommit as u32, OperationId::PoolUploadAbort as u32,
+                OperationId::PoolHeal as u32, OperationId::ReplicaDelete as u32],
+            20, RestartPolicy::OnFailure, Criticality::Important,
         ))?;
         if self.live_profile {
             self.services.define(manifest(
@@ -1972,6 +1984,9 @@ pub fn poll_node_transport(now: u64) {
         node_operator::prune(runtime, now);
         storage_operator::prune(runtime, now);
         storage_advertiser::poll(runtime, now);
+        storage_coordinator::poll(runtime, now);
+        storage_view::poll(runtime, now);
+        storage_fixture::poll(runtime, now);
         runtime.iop.poll_remote_node(&runtime.capabilities, &mut runtime.nodes, &mut runtime.node_transport.trust, now);
         runtime.iop.execute_remote_node_durable(&mut runtime.nodes, now, &mut persist_control_state)
     }).flatten();

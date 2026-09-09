@@ -1,5 +1,10 @@
 # Milestone 10 execution checklist
 
+This page retains the original foundation-pass evidence below. For the current
+distributed completion pass and its still-open installed boundary, see
+[MS10_DISTRIBUTED_COMPLETION.md](MS10_DISTRIBUTED_COMPLETION.md). Historical
+"not implemented" entries and old test totals below do not describe current source.
+
 Status: IN PROGRESS, not complete. Installer click/progress prerequisite passed; see INSTALLER_CLICK_PROGRESS_ACCEPTANCE.md.
 
 Authoritative request: user-supplied Resource Fabric & Infinity Pool Storage milestone.

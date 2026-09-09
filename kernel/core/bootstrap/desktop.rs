@@ -5200,6 +5200,22 @@ impl super::DisplayDevice {
             return;
         }
         let preferences = crate::ui::input_preferences::current();
+        let pool = crate::runtime::storage_view::snapshot();
+        let pool_object = pool.objects[pool.selected.min(7)];
+        let pool_health: &[u8] = if pool.failed { b"Unavailable - retry" } else if !pool.ready { b"Loading" }
+            else if pool.count == 0 { b"No protected objects" }
+            else if pool.objects.iter().flatten().all(|o| o.verified >= o.desired) { b"Healthy" } else { b"Degraded" };
+        let mut pool_identity = [b' ';32];
+        if let Some(object) = pool_object { for (i,b) in object.id.iter().enumerate() {
+            pool_identity[i*2]=b"0123456789abcdef"[(b>>4) as usize];pool_identity[i*2+1]=b"0123456789abcdef"[(b&15) as usize];
+        }}
+        let pool_node=pool.node_rows[pool.selected_node.min(31)];
+        let pool_placement=pool.placements[pool.selected_placement.min(7)];
+        let mut pool_node_identity=[b' ';64];let mut pool_replica_identity=[b' ';32];
+        if let Some(node)=pool_node{for(i,b)in node.id.iter().enumerate(){pool_node_identity[i*2]=b"0123456789abcdef"[(b>>4)as usize];pool_node_identity[i*2+1]=b"0123456789abcdef"[(b&15)as usize];}}
+        if let Some(placement)=pool_placement{for(i,b)in placement.resource.iter().enumerate(){pool_replica_identity[i*2]=b"0123456789abcdef"[(b>>4)as usize];pool_replica_identity[i*2+1]=b"0123456789abcdef"[(b&15)as usize];}}
+        let pool_replica_state:&[u8]=match pool_placement.map(|p|p.state){
+            Some(2)=>b"Verified",Some(3)=>b"Offline",Some(4)=>b"Stale",Some(5)=>b"Corrupt",Some(_)=>b"Not verified",None=>b"No placement"};
         let rows: [(&[u8], &[u8]); 8] = match focus.min(10) {
             10 => core::array::from_fn(|index| {
                 (
@@ -5285,14 +5301,14 @@ impl super::DisplayDevice {
                 (b"Diagnostics", b"Observed counters"),
             ],
             8 => [
-                (b"Infinity Pool", b"Online"),
-                (b"System Space", b"Ready"),
-                (b"Personal Space", b"Owned"),
-                (b"Recovery Space", b"Ready"),
-                (b"External Drives", b"Discoverable"),
-                (b"", b""),
-                (b"", b""),
-                (b"", b""),
+                (b"Infinity Pool", pool_health),
+                (b"Capacity", if pool.ready {b"Measured bytes"}else{b"Awaiting observation"}),
+                (b"Nodes", if pool_node.is_some_and(|n|n.online){b"Online / observed"}else if pool_node.is_some(){b"Offline / retained"}else{b"No observed nodes"}),
+                (b"Selected Object", if pool_object.is_some() { &pool_identity[..12] } else { b"None" }),
+                (b"Replica Location",pool_replica_state),
+                (b"Temporary", if pool_object.is_some_and(|o|o.desired==1) { b"Selected" } else { b"1 verified node" }),
+                (b"Protected", if pool_object.is_some_and(|o|o.desired==2) { b"Selected" } else { b"2 verified nodes" }),
+                (b"Critical", if pool_object.is_some_and(|o|o.desired==3) { b"Selected" } else { b"3 verified nodes" }),
             ],
             _ => [
                 (b"InfinityOS", b"Development"),
@@ -5453,7 +5469,42 @@ impl super::DisplayDevice {
                     outline_g / 2,
                     outline_b / 2,
                 );
-                if focus == 1 && index == 1 {
+                if focus == 8 {
+                    let gutter = crate::ui::system_layout::UI_GUTTER * scale;
+                    let available=detail_width.saturating_sub(gutter*2);
+                    if index==1 {
+                        let labels:[&[u8];3]=[b"Raw",b"Eligible",b"Reserved"];
+                        for(column,value)in [pool.capacity,pool.eligible,pool.reserved].iter().enumerate(){
+                            let x=detail_left+gutter+column*available/3;
+                            self.ui_text_elided_strong(x,detail_top+8*scale,available/3,labels[column],160,191,211);
+                            let mut digits=[0;24];let n=navigator_decimal(&mut digits,*value as usize);
+                            self.ui_text_elided_strong(x,detail_top+29*scale,available/3,&digits[..n],230,242,250);
+                        }
+                    } else if index==2 {
+                        self.ui_text_elided_strong(detail_left+gutter,detail_top+8*scale,available,&pool_node_identity[..32],210,231,245);
+                        self.ui_text_elided_strong(detail_left+gutter,detail_top+29*scale,available,&pool_node_identity[32..],210,231,245);
+                    } else if index==3 {
+                        self.ui_text_elided_strong(detail_left+gutter,detail_top+8*scale,available,&pool_identity,210,231,245);
+                        let labels:[&[u8];3]=[b"Version",b"Desired",b"Verified"];
+                        let values=pool_object.map(|o|[o.version,o.desired as u64,o.verified as u64]).unwrap_or([0;3]);
+                        for column in 0..3 {let x=detail_left+gutter+column*available/3;
+                            self.ui_text_elided_strong(x,detail_top+32*scale,available/3*2/3,labels[column],160,191,211);
+                            let mut digits=[0;24];let n=navigator_decimal(&mut digits,values[column]as usize);
+                            self.ui_text_elided_strong(x+available/3*2/3,detail_top+32*scale,available/9,&digits[..n],230,242,250);
+                        }
+                    } else {
+                        let explanation:&[u8]=if index==0 {if pool.failed{b"Observation failed. Refresh to retry."}else if pool_object.is_some_and(|o|o.healing){b"Healing is active for the selected object."}
+                            else if pool_object.is_some_and(|o|o.verified<o.desired){b"Insufficient verified independent replicas."}else{b"Owner-scoped authoritative Pool state."}}
+                            else if index==4 {if pool_placement.is_some(){&pool_replica_identity}else{b"Select an observed object first."}}
+                            else if pool_object.is_none(){b"Select an object before changing policy."}
+                            else{b"Changes apply to the selected object only."};
+                        self.ui_text_elided_strong(detail_left+gutter,detail_top+4*scale,available,explanation,160,191,211);
+                    }
+                    let action: &[u8] = match index {0|1=>b"REFRESH",2=>b"NEXT NODE",3=>b"NEXT OBJECT",4=>b"NEXT REPLICA",5=>b"USE TEMPORARY",6=>b"USE PROTECTED",_=>b"USE CRITICAL"};
+                    self.polished_button(detail_left+gutter,detail_top+detail_height.saturating_sub((crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT+10)*scale),
+                        (170*scale).min(available),crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT*scale,action,
+                        index<=1 || (index==2 && pool_node.is_some()) || (index>=3 && pool_object.is_some()),false);
+                } else if focus == 1 && index == 1 {
                     let theme_count = crate::ui::icon_theme::ICON_THEME_COUNT as usize;
                     let card_width = detail_width / theme_count;
                     for theme in 0..theme_count {

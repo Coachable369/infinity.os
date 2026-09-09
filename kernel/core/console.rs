@@ -445,6 +445,7 @@ struct ConsoleRuntime {
     node_input_lease: Option<crate::ui::trusted::SecureInputLease>,
     node_policy_offset: usize,
     settings_window: SettingsWindowState,
+    pool_view_revision: u64,
     settings_window_dragging: bool,
     settings_window_resizing: Option<usize>,
     settings_window_drag_offset_x: i32,
@@ -582,6 +583,7 @@ impl ConsoleRuntime {
             selected_node_id: None,
             node_input_lease: None,
             node_policy_offset: 0,
+            pool_view_revision: 0,
             settings_window: SettingsWindowState {
                 x: 160,
                 y: 210,
@@ -2560,7 +2562,7 @@ impl ConsoleRuntime {
         self.settings_window.expanded_row = layout.settings_expanded_row;
         self.settings_window.scroll_offset = layout.settings_scroll_offset;
         self.settings_scroll_target = layout.settings_scroll_offset;
-        self.settings_window.row_count = if matches!(layout.settings_section, 1 | 6 | 7 | 10) {
+        self.settings_window.row_count = if matches!(layout.settings_section, 1 | 6 | 7 | 8 | 10) {
             8
         } else {
             5
@@ -3109,7 +3111,7 @@ impl ConsoleRuntime {
         self.store_active_app_window();
         self.mode = ConsoleMode::Settings;
         self.system_focus = section.min(10);
-        self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 10) {
+        self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 8 | 10) {
             8
         } else if self.system_focus == 3 {
             7
@@ -3998,6 +4000,12 @@ impl ConsoleRuntime {
     // ------------------=
     fn activate_settings_content_row(&mut self, row: usize) {
         match (self.system_focus, row) {
+            (8, 0) => crate::runtime::storage_view::open(self.current_user, self.current_session),
+            (8, 1) => crate::runtime::storage_view::open(self.current_user, self.current_session),
+            (8, 2) => crate::runtime::storage_view::select_node(),
+            (8, 3) => crate::runtime::storage_view::select_next(),
+            (8, 4) => crate::runtime::storage_view::select_placement(),
+            (8, 5..=7) => crate::runtime::storage_view::set_policy((row - 4) as u8),
             (0, 0) => {
                 self.settings_editing = true;
                 self.reset_input();
@@ -5125,7 +5133,7 @@ impl ConsoleRuntime {
             };
             self.system_focus = (self.system_focus + count - 1) % count;
             if self.mode == ConsoleMode::Settings {
-                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 10) {
+                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 8 | 10) {
                     8
                 } else if self.system_focus == 3 {
                     7
@@ -5149,7 +5157,7 @@ impl ConsoleRuntime {
             };
             self.system_focus = (self.system_focus + 1) % count;
             if self.mode == ConsoleMode::Settings {
-                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 10) {
+                self.settings_window.row_count = if matches!(self.system_focus, 1 | 6 | 7 | 8 | 10) {
                     8
                 } else if self.system_focus == 3 {
                     7
@@ -7691,7 +7699,7 @@ impl ConsoleRuntime {
                     SettingsTarget::Section(index) if clicked => {
                         self.cancel_node_pairing_input();
                         self.system_focus = index;
-                        self.settings_window.row_count = if matches!(index, 1 | 6 | 7 | 10) {
+                        self.settings_window.row_count = if matches!(index, 1 | 6 | 7 | 8 | 10) {
                             8
                         } else if index == 3 {
                             7
@@ -8933,6 +8941,7 @@ impl ConsoleRuntime {
                 Some(b"resource-inspect") => OperationId::ResourceInspect.machine_id(),
                 Some(b"resource-advertise") => OperationId::ResourceAdvertise.machine_id(),
                 Some(b"replica-inspect") => OperationId::ReplicaInspect.machine_id(),
+                Some(b"replica-delete") => OperationId::ReplicaDelete.machine_id(),
                 Some(b"transfer-begin") => OperationId::ReplicaTransferBegin.machine_id(),
                 Some(b"transfer-chunk") => OperationId::ReplicaTransferChunk.machine_id(),
                 Some(b"transfer-commit") => OperationId::ReplicaTransferCommit.machine_id(),
@@ -11674,6 +11683,12 @@ pub fn ui_animation_tick() -> bool {
         };
         let motion_frame = runtime.continuous_motion_frames.take_for_tick();
         let mut frame_changed = motion_frame;
+        let pool_revision = crate::runtime::storage_view::visibility(runtime.current_user, runtime.current_session,
+            runtime.mode == ConsoleMode::Settings && runtime.system_focus == 8);
+        if pool_revision != runtime.pool_view_revision {
+            runtime.pool_view_revision = pool_revision;
+            frame_changed |= runtime.mode == ConsoleMode::Settings && runtime.system_focus == 8;
+        }
         if runtime.mode == ConsoleMode::Settings {
             let layout = SystemLayout::new(
                 runtime.system.framebuffer_width,

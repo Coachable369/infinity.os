@@ -7,6 +7,8 @@ use super::extent::{ExtentVerification, NativeExtentReplica};
 use crate::runtime::iop::{remote::{AuthenticatedStorageRequest, RemoteError},
     storage_protocol::{Operation, StorageOperationV1}};
 use crate::storage::object::{ObjectError, ObjectType, Space};
+#[path = "fabric_pool_cache.rs"]
+mod source_cache;
 
 pub(crate) const MAX_BINDINGS: usize = 4;
 const CATALOG_BYTES: usize = 32 + MAX_BINDINGS * 208;
@@ -38,6 +40,7 @@ impl Catalog {
                 for (offset, value) in [(176, b.authority), (184, b.manifest), (192, b.scope)] {
                     bytes[at+offset..at+offset+8].copy_from_slice(&value.to_le_bytes());
                 }
+                bytes[at+200] = u8::from(b.backing.0 == [0;16]);
             }
         }
         bytes
@@ -67,9 +70,9 @@ impl Catalog {
             let b = Binding { backing: ObjectId(bytes[at+128..at+144].try_into().unwrap()),
                 owner: bytes[at+144..at+176].try_into().unwrap(),
                 authority: field(&bytes, at+176), manifest: field(&bytes, at+184), scope: field(&bytes, at+192), descriptor: cp.descriptor };
-            if cp.state != ReplicaState::Planned || cp.copied != 0 || b.backing.0 == [0; 16]
-                || b.owner == [0; 32] || b.authority == 0 || b.manifest == 0 || bytes[at+200..at+208] != [0; 8]
-                || catalog.entries.iter().flatten().any(|old| old.backing == b.backing
+            if cp.state != ReplicaState::Planned || cp.copied != 0 || bytes[at+200] != u8::from(b.backing.0 == [0;16])
+                || b.owner == [0; 32] || b.authority == 0 || b.manifest == 0 || bytes[at+201..at+208] != [0; 7]
+                || catalog.entries.iter().flatten().any(|old| (old.backing == b.backing && b.backing.0 != [0;16])
                     || (old.descriptor.object == b.descriptor.object
                         && (old.owner != b.owner || old.authority != b.authority || old.scope != b.scope
                             || old.descriptor.version == b.descriptor.version
@@ -84,8 +87,65 @@ impl Catalog {
 pub(crate) struct ReplicaService {
     resource: ResourceId, generation: u64, verifiers: [Option<ExtentVerification>; MAX_BINDINGS],
     device: Option<[u8; 16]>, sequence: u64,
+    upload_verifier: Option<super::pool::UploadVerifier>,
+    source_cache: source_cache::SourceCache,
 }
 impl ReplicaService {
+    // ------------------------=
+    // FUNC: coordinator_operation
+    // DESC: Executes one capability-admitted coordinator action against the same durable Pool store used by public IOP operations.
+    // ------------------=
+    pub(crate) fn coordinator_operation<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>,
+        request: crate::runtime::storage_coordinator::NativeRequest)
+        -> Result<crate::runtime::storage_coordinator::NativeReply, RemoteError> {
+        use crate::runtime::storage_coordinator::{NativeRequest as Request, NativeReply as Reply, CONFIG_BYTES};
+        const CONFIG_PATH: &[u8] = b"/system/storage/pool-participation";
+        match request {
+            Request::DeletionLoad { index, owner, scope } => Ok(Reply::Deletion(store.pool_deletion(index,owner,scope).map_err(storage_error)?)),
+            Request::DeletionAck { object, owner, scope, generation, placement } => {
+                store.pool_ack_deletion(object,owner,scope,generation,placement).map_err(storage_error)?;Ok(Reply::Committed)
+            },
+            Request::Load { index, owner, scope } => Ok(Reply::Manifest(store.pool_inspect(owner, scope, index).map_err(storage_error)?.1)),
+            Request::Commit { expected, scope, manifest } => {
+                store.pool_commit_manifest(ObjectId(manifest.object), manifest.authority, scope, expected, &manifest).map_err(storage_error)?;
+                Ok(Reply::Committed)
+            },
+            Request::Read { object, owner, scope, version, offset, length } => {
+                if length == 0 || length > 64 { return Err(RemoteError::MalformedRequest); }
+                let manifest = store.pool_manifest(ObjectId(object), owner, scope).map_err(storage_error)?;
+                if manifest.version != version { return Err(RemoteError::Conflict); }
+                let mut data = [0; 64]; self.source_cache.read(store, &manifest, offset, &mut data[..length as usize]).map_err(storage_error)?;
+                Ok(Reply::Bytes { data, length })
+            },
+            Request::LocalResource { owner } => {
+                let p = StorageOperationV1 { operation: Operation::ResourceInspect, object: [0;16], authority_generation: 0,
+                    manifest_generation: 0, object_version: 0, scope: 0, offset: 0, value: 0, length: 0, data: [0;64] };
+                let mut observation = self.resource_observation(store, p)?;
+                observation.operation = Operation::ResourceAdvertise;
+                observation.object.copy_from_slice(&observation.data[..16]); observation.value = 60;
+                Ok(Reply::Resource(crate::runtime::fabric::resource_protocol::decode(observation, owner, 0)
+                    .map_err(|_| RemoteError::InvalidState)?))
+            },
+            Request::ConfigLoad => {
+                let id = store.resolve(CONFIG_PATH).map_err(storage_error)?;
+                let mut bytes = [0; CONFIG_BYTES];
+                if store.read(id, None, &mut bytes).map_err(storage_error)? != CONFIG_BYTES { return Err(RemoteError::PersistenceFailed); }
+                crate::runtime::storage_coordinator::Configuration::decode(&bytes)?;
+                Ok(Reply::Config(bytes))
+            },
+            Request::ConfigSave(bytes) => {
+                crate::runtime::storage_coordinator::Configuration::decode(&bytes)?;
+                match store.resolve(CONFIG_PATH) {
+                    Ok(id) => { store.replace_state(id, &bytes).map_err(storage_error)?; },
+                    Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => {
+                        store.create_attached(b"pool-participation", ObjectType::Metadata, Space::System, &bytes, CONFIG_PATH).map_err(storage_error)?;
+                    },
+                    Err(e) => return Err(storage_error(e)),
+                }
+                Ok(Reply::Committed)
+            },
+        }
+    }
     // ------------------------=
     // FUNC: mount
     // DESC: Validates or initializes the native catalog before the runtime can announce this recipient service ready.
@@ -106,7 +166,8 @@ impl ReplicaService {
     // DESC: Binds the native recipient to an actually discovered container identity and incarnation; no remote request selects the physical device.
     // ------------------=
     pub(crate) const fn new(resource: ResourceId, generation: u64) -> Self {
-        Self { resource, generation, verifiers: [const { None }; MAX_BINDINGS], device: None, sequence: 0 }
+        Self { resource, generation, verifiers: [const { None }; MAX_BINDINGS], device: None, sequence: 0, upload_verifier: None,
+            source_cache: source_cache::SourceCache::new() }
     }
     // ------------------------=
     // FUNC: attach_device_identity
@@ -144,12 +205,18 @@ impl ReplicaService {
         -> Result<StorageOperationV1, RemoteError> {
         let p = request.payload;
         p.encode().map_err(|_| RemoteError::MalformedRequest)?;
+        if matches!(p.operation, Operation::ObjectUpdate | Operation::ObjectDelete | Operation::PoolUploadCommit) {
+            self.source_cache.invalidate();
+        }
         if p.operation == Operation::ResourceInspect { return self.resource_observation(store, p); }
+        if matches!(p.operation, Operation::PoolUploadBegin | Operation::PoolUploadAppend | Operation::PoolUploadCommit | Operation::PoolUploadAbort | Operation::ObjectDelete) {
+            return self.upload_operation(store, request);
+        }
         if matches!(p.operation, Operation::PoolInspect | Operation::ObjectCreate | Operation::ObjectInspect | Operation::ObjectSetPolicy | Operation::ObjectUpdate | Operation::ObjectCopy)
             || (p.operation == Operation::ObjectRead && p.length == 0) {
             return self.pool_operation(store, request);
         }
-        if !matches!(p.operation, Operation::TransferBegin | Operation::TransferChunk | Operation::TransferCommit | Operation::ReplicaInspect | Operation::ObjectRead) {
+        if !matches!(p.operation, Operation::TransferBegin | Operation::TransferChunk | Operation::TransferCommit | Operation::ReplicaInspect | Operation::ObjectRead | Operation::ReplicaDelete) {
             return Err(RemoteError::UnsupportedOperation);
         }
         if request.peer.0 == [0; 32] || p.object == [0; 16] || p.authority_generation == 0
@@ -173,7 +240,7 @@ impl ReplicaService {
                 return Err(RemoteError::AccessDenied);
             }
             if b.manifest != p.manifest_generation || b.descriptor.version != p.object_version
-                || (!matches!(p.operation, Operation::ObjectRead | Operation::ReplicaInspect) && b.descriptor.job != p.value)
+                || (!matches!(p.operation, Operation::ObjectRead | Operation::ReplicaInspect | Operation::ReplicaDelete) && b.descriptor.job != p.value)
                 || b.descriptor.resource != self.resource
                 || b.descriptor.generation != self.generation { return Err(RemoteError::Conflict); }
             index
@@ -184,7 +251,8 @@ impl ReplicaService {
             }
             if p.operation != Operation::TransferBegin { return Err(RemoteError::NotFound); }
             let descriptor = self.begin_descriptor(p)?;
-            let index = catalog.entries.iter().position(Option::is_none).ok_or(RemoteError::QueueFull)?;
+            let index = catalog.entries.iter().position(|entry| entry.is_none_or(|b| b.backing.0 == [0;16]
+                && b.descriptor.object == p.object && b.descriptor.version < p.object_version)).ok_or(RemoteError::QueueFull)?;
             let cp = Checkpoint { descriptor, copied: 0, state: ReplicaState::Planned };
             let mut binding = Binding { backing: ObjectId([0; 16]), owner: request.peer.0,
                 authority: p.authority_generation, manifest: p.manifest_generation, scope: p.scope, descriptor };
@@ -196,7 +264,33 @@ impl ReplicaService {
             index
         };
         let binding = catalog.entries[index].unwrap();
+        if p.operation == Operation::ReplicaDelete {
+            if p.length != 0 || p.value != binding.descriptor.job { return Err(RemoteError::MalformedRequest); }
+            if binding.backing.0 != [0;16] {
+                let mut retired = [ObjectId([0;16]); MAX_BINDINGS*2];
+                for (slot, entry) in catalog.entries.iter_mut().enumerate() {
+                    let Some(old)=entry.as_mut() else{continue;};
+                    if old.descriptor.object!=p.object || old.backing.0==[0;16] {continue;}
+                    if old.descriptor.version>p.object_version || old.manifest>p.manifest_generation {return Err(RemoteError::Conflict);}
+                    let mut bytes = [0;160];
+                    if store.read(old.backing,None,&mut bytes).map_err(storage_error)? != bytes.len()
+                        || &bytes[144..152] != b"EXTENT01" { return Err(RemoteError::PersistenceFailed); }
+                    retired[slot*2]=old.backing;retired[slot*2+1]=ObjectId(bytes[128..144].try_into().unwrap());
+                    old.backing=ObjectId([0;16]); self.verifiers[slot]=None;
+                }
+                store.pool_retire_owned(&retired,catalog.id,&catalog.encode()).map_err(storage_error)?;
+            }
+            let mut reply = p; reply.data = [0;64]; reply.value = 1; reply.length = 0; return Ok(reply);
+        }
+        if binding.backing.0 == [0;16] { return Err(RemoteError::NotFound); }
         if p.operation == Operation::ObjectRead {
+            if p.length == 33 && p.data[32] == 1 {
+                if !(1..=64).contains(&p.value) { return Err(RemoteError::MalformedRequest); }
+                let mut native = NativeExtentReplica::open(store, binding.backing, self.resource, self.generation).map_err(replica_error)?;
+                let mut response = p; response.data = [0;64]; response.length = p.value as u16;
+                native.read_committed_range(p.offset, &mut response.data[..p.value as usize], p.data[..32].try_into().unwrap()).map_err(replica_error)?;
+                return Ok(response);
+            }
             if p.length != 32 || !(1..=64).contains(&p.value)
                 || p.offset.checked_add(p.value).is_none_or(|end| end > binding.descriptor.bytes) {
                 return Err(RemoteError::MalformedRequest);
@@ -248,6 +342,54 @@ impl ReplicaService {
         Ok(response)
     }
     // ------------------------=
+    // FUNC: upload_operation
+    // DESC: Admits bounded upload windows and incremental verification through typed IOP with durable owner/scope fencing on every call.
+    // ------------------=
+    fn upload_operation<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, request: AuthenticatedStorageRequest)
+        -> Result<StorageOperationV1, RemoteError> {
+        use crate::runtime::fabric::placement::StorageClass;
+        let p = request.payload;
+        if request.peer.0 == [0;32] || request.local.0 == [0;32] || p.authority_generation != 1 { return Err(RemoteError::AccessDenied); }
+        let mut reply = p; reply.data = [0;64]; reply.length = 0;
+        match p.operation {
+            Operation::PoolUploadBegin => {
+                if p.length != 45 { return Err(RemoteError::MalformedRequest); }
+                let policy = match p.data[36] { 1 => StorageClass::Temporary, 2 => StorageClass::Protected,
+                    3 => StorageClass::Critical, _ => return Err(RemoteError::MalformedRequest) };
+                let (id, offset) = store.pool_upload_begin(request.peer, p.scope, field(&p.data,37), policy,
+                    u32::from_le_bytes(p.data[..4].try_into().unwrap()), p.data[4..36].try_into().unwrap(),
+                    ObjectId(p.object), p.manifest_generation).map_err(storage_error)?;
+                reply.data[..16].copy_from_slice(&id.0); reply.length = 16; reply.offset = offset as u64;
+            },
+            Operation::PoolUploadAppend => {
+                if !(5..=64).contains(&p.length) { return Err(RemoteError::MalformedRequest); }
+                reply.offset = store.pool_upload_append(ObjectId(p.object), request.peer, p.scope,
+                    u32::from_le_bytes(p.data[..4].try_into().unwrap()), &p.data[4..p.length as usize]).map_err(storage_error)? as u64;
+            },
+            Operation::PoolUploadCommit => {
+                if p.length != 0 { return Err(RemoteError::MalformedRequest); }
+                let verifier = self.upload_verifier.get_or_insert_with(super::pool::UploadVerifier::new);
+                if let Some(m) = store.pool_upload_commit_step(ObjectId(p.object), request.peer, p.scope, verifier,
+                    request.local, self.resource, self.device.ok_or(RemoteError::ServiceUnavailable)?, self.generation).map_err(storage_error)? {
+                    reply.manifest_generation = m.generation; reply.object_version = m.version;
+                    reply.value = 1; reply.offset = m.length; reply.data[..16].copy_from_slice(&m.object);
+                    reply.data[16..48].copy_from_slice(&m.hash); reply.length = 48;
+                } else { reply.value = 0; }
+            },
+            Operation::PoolUploadAbort => {
+                if p.length != 0 { return Err(RemoteError::MalformedRequest); }
+                store.pool_upload_abort(ObjectId(p.object), request.peer, p.scope).map_err(storage_error)?;
+                self.upload_verifier = None;
+            },
+            Operation::ObjectDelete => {
+                if p.length != 0 || p.manifest_generation == 0 { return Err(RemoteError::MalformedRequest); }
+                store.pool_delete(ObjectId(p.object), request.peer, p.scope, p.manifest_generation).map_err(storage_error)?;
+            },
+            _ => return Err(RemoteError::UnsupportedOperation),
+        }
+        Ok(reply)
+    }
+    // ------------------------=
     // FUNC: pool_operation
     // DESC: Executes authenticated application creation, canonical manifest inspection and generation-fenced policy mutation against the durable native Pool catalog.
     // ------------------=
@@ -257,7 +399,23 @@ impl ReplicaService {
         let p = request.payload;
         if request.local.0 == [0; 32] || request.peer.0 == [0; 32] { return Err(RemoteError::AccessDenied); }
         if p.operation == Operation::PoolInspect {
-            if p.length != 0 || p.object != [0; 16] || p.offset > 8 || p.value != 0 {
+            if p.value == 2 {
+                if p.length != 0 || p.offset >= 8 { return Err(RemoteError::MalformedRequest); }
+                let m = store.pool_manifest(ObjectId(p.object), request.peer, p.scope).map_err(storage_error)?;
+                if p.manifest_generation != m.generation { return Err(RemoteError::Conflict); }
+                let mut response = p; response.data = [0;64]; response.length = 0;
+                if let Some(placement) = m.placements[p.offset as usize] {
+                    response.data[..32].copy_from_slice(&placement.node.0);
+                    response.data[32..48].copy_from_slice(&placement.resource.0);
+                    response.data[48..64].copy_from_slice(&placement.device);
+                    response.length = 64; response.value = placement.state as u64;
+                    response.object_version = placement.version;
+                    response.authority_generation = placement.generation;
+                    response.offset = placement.admission_generation;
+                }
+                return Ok(response);
+            }
+            if p.length != 0 || p.object != [0; 16] || p.offset > 8 || p.value > 1 {
                 return Err(RemoteError::MalformedRequest);
             }
             if p.manifest_generation != 0 && p.manifest_generation != store.generation() { return Err(RemoteError::Conflict); }
@@ -272,6 +430,24 @@ impl ReplicaService {
                 response.data[56..64].copy_from_slice(&m.length.to_le_bytes());
                 response.length = 64; response.object_version = m.version;
                 response.authority_generation = m.authority_generation;
+                if p.value == 1 {
+                    use crate::runtime::fabric::manifest::PlacementState;
+                    response.manifest_generation = m.generation;
+                    response.data[49..56].fill(0);
+                    let mut verified_nodes = [[0;32];8]; let mut verified = 0usize;
+                    for placement in m.placements.iter().flatten() {
+                        let index = match placement.state {
+                            PlacementState::Verified if placement.version == m.version && placement.hash == m.hash => {
+                                if verified_nodes[..verified].contains(&placement.node.0) { continue; }
+                                verified_nodes[verified] = placement.node.0; verified += 1; 49
+                            },
+                            PlacementState::Offline => 50, PlacementState::Stale | PlacementState::Verified => 51,
+                            PlacementState::Corrupt => 52, PlacementState::Staging => 54,
+                        };
+                        response.data[index] += 1;
+                    }
+                    response.data[53] = u8::from(m.healing.is_some());
+                }
             }
             return Ok(response);
         }

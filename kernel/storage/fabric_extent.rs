@@ -81,6 +81,20 @@ impl<'a, D: BlockDevice> NativeExtentReplica<'a, D> {
     // ------------------=
     pub(crate) fn inspect(&self) -> Option<Checkpoint> { self.current }
     // ------------------------=
+    // FUNC: read_committed_range
+    // DESC: Serves a bounded range of the exact committed object; the remote reader must authenticate the complete manifest chunk before releasing bytes to its caller.
+    // ------------------=
+    pub(crate) fn read_committed_range(&mut self, offset: u64, out: &mut [u8], object_hash: [u8;32]) -> Result<(), ReplicaError> {
+        let current = self.current.ok_or(ReplicaError::Incomplete)?;
+        if current.state != ReplicaState::Available { return Err(ReplicaError::Incomplete); }
+        self.validate(&current.descriptor)?;
+        if current.descriptor.hash != object_hash { return Err(ReplicaError::Integrity); }
+        if out.is_empty() || out.len() > 64 || offset.checked_add(out.len() as u64).is_none_or(|n| n > current.descriptor.bytes) {
+            return Err(ReplicaError::Invalid);
+        }
+        self.store.read_extent_range(self.extent, offset, out).map_err(|_| ReplicaError::Storage)
+    }
+    // ------------------------=
     // FUNC: validate
     // DESC: Fences every range and commit by exact immutable descriptor and storage generation.
     // ------------------=

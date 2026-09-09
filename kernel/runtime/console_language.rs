@@ -169,7 +169,8 @@ impl OperationGraph<'_> {
         !self.plan_only && self.node_count == 1 && self.nodes[0].map(|node| {
             node.schema.domain == b"pool" && matches!(node.schema.operation,
                 OperationId::ObjectCreate | OperationId::ObjectUpdate |
-                OperationId::ObjectCopy | OperationId::ObjectSetPolicy | OperationId::ResourceAdvertise)
+                OperationId::ObjectCopy | OperationId::ObjectSetPolicy | OperationId::ResourceAdvertise | OperationId::PoolHeal |
+                OperationId::ObjectDelete | OperationId::PoolUploadBegin | OperationId::PoolUploadAppend | OperationId::PoolUploadCommit | OperationId::PoolUploadAbort)
         }).unwrap_or(false)
     }
 }
@@ -316,6 +317,44 @@ const NO_ARGS: &[ArgumentSchema] = &[];
 const POOL_PEER: ArgumentSchema = ArgumentSchema { name: b"peer", value_type: ArgumentType::NodeRef, required: false };
 const POOL_GRANT: ArgumentSchema = ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: false };
 const POOL_RESULT_ARGS: &[ArgumentSchema] = &[ArgumentSchema { name: b"request", value_type: ArgumentType::Text, required: true }];
+const POOL_FIXTURE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema {name:b"length",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema {name:b"seed",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema {name:b"policy",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema {name:b"confirm",value_type:ArgumentType::Text,required:true},
+];
+const POOL_RETIRE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema{name:b"peer",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema{name:b"grant",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema{name:b"lease",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema{name:b"confirm",value_type:ArgumentType::Text,required:true},
+];
+const POOL_UPLOAD_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name:b"length",value_type:ArgumentType::Text,required:true },
+    ArgumentSchema { name:b"hash",value_type:ArgumentType::Text,required:true },
+    ArgumentSchema { name:b"policy",value_type:ArgumentType::Text,required:true },
+    ArgumentSchema { name:b"nonce",value_type:ArgumentType::Text,required:true },
+    ArgumentSchema { name:b"generation",value_type:ArgumentType::Text,required:false },
+];
+const POOL_APPEND_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name:b"offset",value_type:ArgumentType::Text,required:true },
+    ArgumentSchema { name:b"hex",value_type:ArgumentType::Text,required:true },
+];
+const POOL_DELETE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name:b"generation",value_type:ArgumentType::Text,required:true },
+    ArgumentSchema { name:b"version",value_type:ArgumentType::Text,required:true },
+    ArgumentSchema { name:b"confirm",value_type:ArgumentType::Text,required:true },
+];
+const POOL_PARTICIPATE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"peer", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"begin", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"chunk", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"commit", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"inspect", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"read", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"lease", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"confirm", value_type: ArgumentType::Text, required: true },
+];
 const POOL_ADVERTISE_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema { name: b"peer", value_type: ArgumentType::NodeRef, required: true },
     ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: true },
@@ -675,7 +714,16 @@ pub static DOMAINS: &[DomainSchema] = &[
 ];
 
 pub static OPERATIONS: &[OperationSchema] = &[
-    op(b"pool", b"advertise", b"Publish measured storage under an explicit peer grant until logout or failure", OperationId::ResourceAdvertise,
+    op(b"pool",b"retire-authority",b"Approve exact recipient retirement authority for a bounded lease",OperationId::PoolHeal,ValueType::Unit,ValueType::Unit,None,POOL_RETIRE_ARGS,1,SideEffectClass::ReversibleChange,b"pool retire-authority peer=node:<id> grant=1 lease=3600 confirm=true"),
+    op(b"pool",b"fixture",b"Generate explicitly synthetic bounded QA content through ordinary upload operations",OperationId::PoolUploadBegin,ValueType::Unit,ValueType::Object,None,POOL_FIXTURE_ARGS,1,SideEffectClass::ReversibleChange,b"pool fixture length=32768 seed=17 policy=critical confirm=true"),
+    op(b"pool",b"upload",b"Begin a bounded durable object upload",OperationId::PoolUploadBegin,ValueType::Unit,ValueType::Object,None,POOL_UPLOAD_ARGS,1,SideEffectClass::ReversibleChange,b"pool upload length=0 hash=<sha256> policy=critical nonce=1"),
+    op(b"pool",b"append",b"Append at most sixty bytes to an owned durable upload",OperationId::PoolUploadAppend,ValueType::Unit,ValueType::Object,Some(ArgumentType::ObjectRef),POOL_APPEND_ARGS,1,SideEffectClass::ReversibleChange,b"pool append obj:<upload> offset=0 hex=0102"),
+    op(b"pool",b"finish",b"Advance bounded upload verification and commit only complete content",OperationId::PoolUploadCommit,ValueType::Unit,ValueType::Object,Some(ArgumentType::ObjectRef),&[],1,SideEffectClass::ReversibleChange,b"pool finish obj:<upload>"),
+    op(b"pool",b"abort",b"Abort an owned incomplete upload",OperationId::PoolUploadAbort,ValueType::Unit,ValueType::Unit,Some(ArgumentType::ObjectRef),&[],1,SideEffectClass::ReversibleChange,b"pool abort obj:<upload>"),
+    op(b"pool",b"delete",b"Delete an explicitly confirmed object while preserving other content references",OperationId::ObjectDelete,ValueType::Unit,ValueType::Unit,Some(ArgumentType::ObjectRef),POOL_DELETE_ARGS,1,SideEffectClass::ReversibleChange,b"pool delete obj:<id> generation=1 version=1 confirm=true"),
+    op(b"pool", b"participate", b"Approve bounded persistent automatic replication to an explicitly granted peer", OperationId::PoolHeal,
+        ValueType::Unit, ValueType::Unit, None, POOL_PARTICIPATE_ARGS, 1, SideEffectClass::ReversibleChange, b"pool participate peer=node:<id> begin=1 chunk=2 commit=3 inspect=4 read=5 lease=3600 confirm=true"),
+    op(b"pool", b"advertise", b"Persist bounded measured-storage publication under an explicit peer grant", OperationId::ResourceAdvertise,
         ValueType::Unit, ValueType::Unit, None, POOL_ADVERTISE_ARGS, 1, SideEffectClass::ReversibleChange, b"pool advertise peer=node:<id> grant=1"),
     op(b"pool", b"result", b"Collect an authenticated operator's asynchronous storage result", OperationId::PoolInspect,
         ValueType::Unit, ValueType::Object, None, POOL_RESULT_ARGS, 1, SideEffectClass::Query, b"pool result request=1"),
