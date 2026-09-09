@@ -30,14 +30,16 @@ pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 15;
 const OBJECT_TABLE_SECTORS: usize = 13;
 const OBJECTS_PER_SECTOR: usize = 4;
 const MAX_OBJECTS: usize = OBJECT_TABLE_SECTORS * OBJECTS_PER_SECTOR;
-const MAX_VERSIONS: usize = 32;
+// Each bank owns four additional sectors in the reserved 72..80 range.
+// Content still begins at sector 80; no existing payload is relocated.
+const MAX_VERSIONS: usize = 64;
 const MAX_ENTRIES: usize = 32;
 const MAX_RELATIONSHIPS: usize = 16;
 const MAX_PATH: usize = 95;
 const MAX_COMPONENT: usize = 63;
 pub const MAX_CONTENT: usize = 16 * 1024;
 const ALLOCATION_BYTES: usize = 1968;
-pub const FORMAT_VERSION: u32 = 4;
+pub const FORMAT_VERSION: u32 = 5;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug)]
 pub struct ObjectId(pub [u8; 16]);
@@ -2427,7 +2429,7 @@ fn read_root<D: BlockDevice>(
     {
         return Ok(None);
     }
-    if get32(&s, 8) != FORMAT_VERSION {
+    if !matches!(get32(&s, 8), 4 | FORMAT_VERSION) {
         return Err(ObjectError::UnsupportedFormat);
     }
     let bank = get64(&s, 24);
@@ -2435,6 +2437,15 @@ fn read_root<D: BlockDevice>(
         return Ok(None);
     }
     Ok(Some((get64(&s, 16), bank)))
+}
+
+// ------------------------=
+// FUNC: version_sector
+// DESC: Maps each bounded version sector to its bank-owned metadata area without overlapping either bank or content.
+// ------------------=
+fn version_sector(bank: u64, sector: usize) -> u64 {
+    if sector < 4 { bank + 11 + sector as u64 }
+    else { 72 + if bank == BANK_A { 0 } else { 4 } + (sector - 4) as u64 }
 }
 
 // ------------------------=
@@ -2488,7 +2499,7 @@ fn write_bank<D: BlockDevice>(
         };
         write(d, base + offset, &s)?;
     }
-    for sector in 0..4 {
+    for sector in 0..MAX_VERSIONS / 8 {
         let mut s = [0u8; 512];
         s[..8].copy_from_slice(b"INFOVER2");
         put32(&mut s, 8, FORMAT_VERSION);
@@ -2496,7 +2507,7 @@ fn write_bank<D: BlockDevice>(
             encode_version(&state.versions[sector * 8 + n], &mut s, 16 + n * 60);
         }
         finish_sector(&mut s);
-        write(d, base + 11 + sector as u64, &s)?;
+        write(d, c + STORE_RELATIVE_LBA + version_sector(bank, sector), &s)?;
     }
     for sector in 0..8 {
         let mut s = [0u8; 512];
@@ -2529,7 +2540,7 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
     let base = c + STORE_RELATIVE_LBA + bank;
     let h = read(d, base)?;
     if &h[..8] != b"INFOSTAT"
-        || get32(&h, 8) != FORMAT_VERSION
+        || !matches!(get32(&h, 8), 4 | FORMAT_VERSION)
         || get64(&h, 16) != g
         || !valid_sector(&h)
     {
@@ -2561,8 +2572,9 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
             state.objects[sector * OBJECTS_PER_SECTOR + n] = decode_object(&s, 16 + n * 120)?;
         }
     }
-    for sector in 0..4 {
-        let s = read(d, base + 11 + sector as u64)?;
+    let version_sectors = if get32(&h, 8) == 4 { 4 } else { MAX_VERSIONS / 8 };
+    for sector in 0..version_sectors {
+        let s = read(d, c + STORE_RELATIVE_LBA + version_sector(bank, sector))?;
         check(&s, b"INFOVER2")?;
         for n in 0..8 {
             state.versions[sector * 8 + n] = decode_version(&s, 16 + n * 60)?;
@@ -2902,7 +2914,7 @@ fn read<D: BlockDevice>(d: &mut D, l: u64) -> Result<[u8; 512], ObjectError> {
 // DESC: Implements the check operation.
 // ------------------=
 fn check(s: &[u8; 512], magic: &[u8; 8]) -> Result<(), ObjectError> {
-    if &s[..8] == magic && get32(s, 8) == FORMAT_VERSION && valid_sector(s) {
+    if &s[..8] == magic && matches!(get32(s, 8), 4 | FORMAT_VERSION) && valid_sector(s) {
         Ok(())
     } else {
         Err(ObjectError::CorruptMetadata)

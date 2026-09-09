@@ -36,6 +36,114 @@ fn pool_mutation_execution_gate_preserves_plan_and_domain_boundaries() {
 struct Disk(Rc<RefCell<DiskState>>);
 #[derive(Default)]
 struct DiskState { sectors: BTreeMap<u64, [u8; 512]>, writes_left: Option<usize>, writes: usize }
+
+// ------------------------=
+// FUNC: replay_captured_installed_pool_capacity_failure
+// DESC: Mounts an explicitly supplied stopped installed disk read-only, redirects every write to RAM, and replays the exact rejected creation against its real persisted objects.
+// ------------------=
+#[test]
+#[ignore = "requires an explicitly supplied stopped installed disk"]
+fn replay_captured_installed_pool_capacity_failure() {
+    use std::io::{Read, Seek, SeekFrom};
+    use crate::runtime::{fabric::placement::StorageClass, node::types::NodeId};
+    struct Overlay { file: std::fs::File, writes: BTreeMap<u64, [u8; 512]> }
+    impl BlockDevice for Overlay {
+        // ------------------------=
+        // FUNC: block_count
+        // DESC: Reports the captured physical disk size without altering the artifact.
+        // ------------------=
+        fn block_count(&self) -> u64 { self.file.metadata().unwrap().len() / 512 }
+        // ------------------------=
+        // FUNC: read_sector
+        // DESC: Reads the overlay first and otherwise the exact original installed sector.
+        // ------------------=
+        fn read_sector(&mut self, lba: u64, out: &mut [u8; 512]) -> bool {
+            if let Some(bytes) = self.writes.get(&lba) { *out = *bytes; return true; }
+            self.file.seek(SeekFrom::Start(lba * 512)).is_ok() && self.file.read_exact(out).is_ok()
+        }
+        // ------------------------=
+        // FUNC: write_sector
+        // DESC: Restricts all replay mutations to process memory; the source file is opened read-only.
+        // ------------------=
+        fn write_sector(&mut self, lba: u64, bytes: &[u8; 512]) -> bool { self.writes.insert(lba, *bytes); true }
+        // ------------------------=
+        // FUNC: flush
+        // DESC: Models stable overlay writes without flushing or changing the captured file.
+        // ------------------=
+        fn flush(&mut self) -> bool { true }
+    }
+    let mut overlay = Overlay { file: std::fs::File::open(std::env::var("MS10_REPLAY_DISK").unwrap()).unwrap(), writes: BTreeMap::new() };
+    let (container, _, resource) = crate::storage::object::find_container(&mut overlay).unwrap();
+    let mut root = [0; 512]; assert!(overlay.read_sector(1, &mut root));
+    let device = root[56..72].try_into().unwrap();
+    let mut store = ObjectStore::mount(overlay, container).unwrap();
+    // Decode the existing manifest's authority from the persisted catalog.
+    let catalog = store.resolve(b"/system/storage/pool-manifests").unwrap();
+    let mut bytes = [0; 1056]; assert_eq!(store.read(catalog, None, &mut bytes), Ok(1056));
+    let owner = NodeId(bytes[64..96].try_into().unwrap());
+    assert_eq!(store.pool_inspect(owner, 0, 0).unwrap().0, 1);
+    let empty = store.pool_create(owner, 0, 2, StorageClass::Temporary, &[], owner, ResourceId(resource), device, 1).unwrap();
+    assert_eq!(empty.length, 0);
+    assert_eq!(store.pool_inspect(owner, 0, 0).unwrap().0, 2);
+}
+
+// ------------------------=
+// FUNC: installed_density_empty_pool_creation_survives_version_table_expansion
+// DESC: Reproduces thirty-one occupied version slots, then verifies empty-object admission past the old limit and every sector-cut rollback boundary.
+// ------------------=
+#[test]
+fn installed_density_empty_pool_creation_survives_version_table_expansion() {
+    use crate::runtime::{fabric::placement::StorageClass, node::types::NodeId};
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    store.initialize_pool_catalog().unwrap();
+    for n in 0..14 {
+        store.create(b"Core state", ObjectType::Metadata, Space::System, &[n]).unwrap();
+    }
+    let owner = NodeId([3; 32]); let resource = ResourceId([4; 16]);
+    let first = store.pool_create(owner, 0, 1, StorageClass::Critical, b"retained", owner, resource, [5; 16], 1).unwrap();
+    drop(store);
+    // Format-4 banks have the same original-sector layout and only 32 slots.
+    // Recreate those exact binary headers and checksums, not a prose fixture.
+    {
+        let mut persisted = disk.0.borrow_mut();
+        for (_, bytes) in persisted.sectors.range_mut(STORE_RELATIVE_LBA..STORE_RELATIVE_LBA + 72) {
+            bytes[8..12].copy_from_slice(&4u32.to_le_bytes());
+            bytes[508..512].fill(0);
+            let crc = crate::storage::object::crc32(bytes);
+            bytes[508..512].copy_from_slice(&crc.to_le_bytes());
+        }
+        let roots = [0, 1].map(|i| {
+            let root = persisted.sectors.get(&(STORE_RELATIVE_LBA + i)).unwrap();
+            (u64::from_le_bytes(root[16..24].try_into().unwrap()), u64::from_le_bytes(root[24..32].try_into().unwrap()))
+        });
+        let bank = roots.into_iter().max().unwrap().1;
+        let occupied: usize = (0..4).map(|s| {
+            let bytes = persisted.sectors.get(&(STORE_RELATIVE_LBA + bank + 11 + s)).unwrap();
+            (0..8).filter(|n| bytes[16 + n * 60] != 0).count()
+        }).sum();
+        assert_eq!(occupied, 31);
+    }
+    let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+    let baseline = disk.0.borrow().sectors.clone();
+    let prior_writes = disk.0.borrow().writes;
+    let empty = store.pool_create(owner, 0, 2, StorageClass::Temporary, &[], owner, resource, [5; 16], 1).unwrap();
+    let writes = disk.0.borrow().writes - prior_writes;
+    assert_ne!(empty.object, first.object);
+    drop(store);
+    let mut mounted = ObjectStore::mount(disk.clone(), 0).unwrap();
+    assert_eq!(mounted.pool_manifest(crate::storage::object::ObjectId(empty.object), owner, 0), Ok(empty));
+    assert_eq!(mounted.pool_inspect(owner, 0, 0).unwrap().0, 2);
+    for cut in 0..writes {
+        let trial = Disk(Rc::new(RefCell::new(DiskState { sectors: baseline.clone(), writes_left: Some(cut), writes: 0 })));
+        let mut interrupted = ObjectStore::mount(trial.clone(), 0).unwrap();
+        assert!(interrupted.pool_create(owner, 0, 2, StorageClass::Temporary, &[], owner, resource, [5; 16], 1).is_err());
+        trial.0.borrow_mut().writes_left = None;
+        let mut recovered = ObjectStore::mount(trial, 0).unwrap();
+        assert_eq!(recovered.pool_inspect(owner, 0, 0).unwrap().0, 1);
+        assert_eq!(recovered.pool_manifest(crate::storage::object::ObjectId(first.object), owner, 0), Ok(first));
+    }
+}
 impl BlockDevice for Disk {
     // ------------------------=
     // FUNC: block_count
