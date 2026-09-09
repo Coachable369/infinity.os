@@ -23,6 +23,8 @@ use sha2::{Digest, Sha256};
 const CONFIG: &[u8] = b"/system/storage/pool-metadata-access";
 #[path = "fabric_pool_metadata_mutation.rs"]
 mod mutation;
+#[path="fabric_pool_metadata_copy.rs"]
+mod shared_copy;
 struct Upload {
     peer: [u8; 32],
     local: [u8; 32],
@@ -93,6 +95,9 @@ impl Service {
         request: NativeRequest,
     ) -> Result<NativeReply, RemoteError> {
         match request {
+            NativeRequest::Copy{anchor,request,overlay}=>shared_copy::copy(store,anchor,request,overlay),
+            NativeRequest::MutateOverlay{anchor,request,overlay}=>mutation::mutate_overlay(store,anchor,request,Some(overlay)),
+            NativeRequest::PlacementOverlay{anchor,expected,next,overlay}=>mutation::placement_overlay(store,anchor,expected,next,Some(overlay)),
             NativeRequest::Mutate { anchor, request } => mutation::mutate(store, anchor, request),
             NativeRequest::PlacementMutate { anchor, expected, next } => mutation::placement(store, anchor, expected, next),
             NativeRequest::FinalizeMutation {
@@ -347,6 +352,14 @@ impl Service {
             out.length = n as u16;
             return Ok(out);
         }
+        if p.value==7 {
+            let b=backing::read_bundle(store,p.object).map_err(error)?;
+            if !b.group.members.contains(&r.peer)||!b.group.members.contains(&r.local){return Err(RemoteError::AccessDenied)}
+            b.certificate.ok_or(RemoteError::Conflict)?.validate(&b.group).map_err(error)?;
+            if p.length!=32||p.offset!=0||p.manifest_generation!=b.value.record.generation||p.data[..32]!=b.value.record.digest(){return Err(RemoteError::Conflict)}
+            out.data[..32].copy_from_slice(&b.value.record.digest());out.length=32;out.offset=b.group.members.iter().position(|n|*n==r.local).ok_or(RemoteError::AccessDenied)? as u64;
+            return Ok(out);
+        }
         if p.value == 0 {
             if p.length != 32 || p.offset != BUNDLE_BYTES as u64 || p.manifest_generation == 0 {
                 return Err(RemoteError::MalformedRequest);
@@ -418,6 +431,7 @@ impl Service {
                 let n = 64.min(BUNDLE_BYTES - at);
                 out.data[..n].copy_from_slice(&bytes[at..at + n]);
                 out.length = n as u16;
+                self.snapshot=Some(Snapshot{peer:r.peer.0,session:r.session_reference,grant:r.grant,object:p.object,generation:b.value.record.generation,root:store.generation(),bytes});
             }
             return Ok(out);
         }

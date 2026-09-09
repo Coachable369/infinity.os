@@ -4,6 +4,17 @@ use super::*;
 use identity::{StableId, SessionState, MAX_SESSIONS, SESSION_IDENTITY_MANAGE};
 use iop::{IopError, IopMessage, OperationId, storage_protocol::{Operation, StorageOperationV1}};
 
+pub enum Submission { Complete(StorageOperationV1), Pending(u64) }
+// ------------------------=
+// FUNC: submit
+// DESC: Offers applications the ordinary object read contract while the service selects local or fresh replicated metadata resolution.
+// ------------------=
+pub fn submit(user:StableId,session:StableId,request:StorageOperationV1)->Result<Submission,iop::remote::RemoteError>{
+    if request.operation==Operation::ObjectRead&&(storage_metadata::bound(request.object)||storage_metadata::warming()){storage_metadata::read(user,session,request).map(Submission::Pending)}
+    else if matches!(request.operation,Operation::ObjectUpdate|Operation::ObjectSetPolicy|Operation::ObjectDelete|Operation::ObjectCopy)&&storage_metadata::bound(request.object){storage_metadata::mutate(user,session,request).map(Submission::Pending)}
+    else{execute(user,session,request).map(Submission::Complete).map_err(|_|iop::remote::RemoteError::RemoteFailure)}
+}
+
 // ------------------------=
 // FUNC: query
 // DESC: Authenticates the complete operator session before inspecting storage through the same broker for Console and Settings.
@@ -19,6 +30,8 @@ pub fn query(user: StableId, session: StableId) -> Result<StorageOperationV1, Io
 pub fn execute(user: StableId, session: StableId, request: StorageOperationV1) -> Result<StorageOperationV1, IopError> {
     with_runtime(|runtime| {
         authorize(runtime, user, session)?;
+        // Shared reads must use the asynchronous broker: a cached local copy is not a fresh quorum proof.
+        if matches!(request.operation,Operation::ObjectRead|Operation::ObjectUpdate|Operation::ObjectSetPolicy|Operation::ObjectDelete|Operation::ObjectCopy)&&storage_metadata::bound_from(runtime,request.object){return Err(IopError::InvalidPayload)}
         let now = runtime.node_clock.ok_or(IopError::DeadlineExceeded)?;
         let result = perform(runtime, now, request);
         runtime.storage_last_observation = result.as_ref().ok().copied();

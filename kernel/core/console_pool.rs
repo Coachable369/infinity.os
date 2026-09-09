@@ -8,6 +8,27 @@ impl ConsoleRuntime {
     // DESC: Converts validated Console arguments into the shared native storage request; output text is never parsed as state or fed to another service.
     // ------------------=
     pub(super) fn execute_pool_node(&mut self, node: &OperationNode<'_>) -> bool {
+        if node.schema.action==b"repair" {
+            if node_argument(node,b"confirm")!=Some(b"true".as_slice()){self.output.write_line(b"Explicit repair confirmation is required.");return true;}
+            let Some(request)=pool_request(node)else{return false};let Some(peer)=node_argument(node,b"peer").and_then(|p|parse_node_id(p.strip_prefix(b"node:").unwrap_or(p)))else{return false};
+            let Ok(input)=crate::runtime::node_client::begin_capability_input(self.current_user,self.current_session)else{return true;};
+            let result=crate::runtime::storage_metadata_repair::begin(self.current_user,self.current_session,request.object,peer);
+            crate::runtime::with_runtime(|r|{let _=r.ui.trusted.release_secure_input(input);});
+            match result{Ok(id)=>self.output.write_number(b"Authorized repair pending: ",id),Err(e)=>self.output.write_number(b"Repair denied: ",e as u64)}return true;
+        }
+        if node.schema.action==b"metadata-authority"||node.schema.action==b"share" {
+            if node_argument(node,b"confirm")!=Some(b"true".as_slice()){self.output.write_line(b"Explicit metadata delegation confirmation is required.");return true;}
+            let Ok(input)=crate::runtime::node_client::begin_capability_input(self.current_user,self.current_session)else{return true;};
+            let result=if node.schema.action==b"share" {
+                pool_request(node).and_then(|p|node_argument(node,b"path").map(|path|(p.object,path))).ok_or(crate::runtime::iop::remote::RemoteError::MalformedRequest).and_then(|(object,path)|crate::runtime::storage_metadata::share(self.current_user,self.current_session,object,path))
+            }else{
+                let peer=node_argument(node,b"peer").and_then(|p|parse_node_id(p.strip_prefix(b"node:").unwrap_or(p)));
+                let grant=node_argument(node,b"grant").and_then(parse_u64_decimal);let lease=node_argument(node,b"lease").and_then(parse_u64_decimal);
+                match(peer,grant,lease){(Some(peer),Some(grant),Some(lease))=>crate::runtime::storage_metadata::configure(self.current_user,self.current_session,peer,grant,lease).map(|_|0),_=>Err(crate::runtime::iop::remote::RemoteError::MalformedRequest)}
+            };
+            crate::runtime::with_runtime(|r|{let _=r.ui.trusted.release_secure_input(input);});
+            match result{Ok(id)=>self.output.write_number(b"Metadata operation admitted: ",id),Err(e)=>self.output.write_number(b"Metadata operation denied: ",e as u64)}return true;
+        }
         if node.schema.action==b"retire-authority"{
             if node_argument(node,b"confirm")!=Some(b"true".as_slice()){self.output.write_line(b"Explicit confirmation is required to permit recipient replica retirement.");return true;}
             let peer=node_argument(node,b"peer").and_then(|p|parse_node_id(p.strip_prefix(b"node:").unwrap_or(p)));
@@ -61,6 +82,8 @@ impl ConsoleRuntime {
             let Some(id) = node_argument(node, b"request").and_then(parse_u64_decimal) else {
                 self.output.write_line(b"An exact request identifier is required."); return true;
             };
+            if id>>62==3{match crate::runtime::storage_metadata::take(self.current_user,self.current_session,id){Ok(Some(p))=>self.render_pool_response(p),Ok(None)=>self.output.write_line(b"Metadata quorum operation pending."),Err(e)=>self.output.write_number(b"Metadata operation failed: ",e as u64)}return true;}
+            if id&(1u64<<61)!=0 {match crate::runtime::storage_metadata_repair::take(self.current_user,self.current_session,id){Ok(Some(generation))=>self.output.write_number(b"Repair generation published: ",generation),Ok(None)=>self.output.write_line(b"Repair pending."),Err(e)=>self.output.write_number(b"Repair failed: ",e as u64)}return true;}
             if id&(1u64<<63)!=0{
                 match crate::runtime::storage_coordinator::take_read(self.current_user,self.current_session,id){
                     Ok(Some(response))=>self.render_pool_response(response),Ok(None)=>self.output.write_line(b"Object read pending."),
@@ -80,6 +103,13 @@ impl ConsoleRuntime {
             self.output.write_line(b"Use a full ObjectId, bounded content, valid generation/version and an explicit policy.");
             return true;
         };
+        if request.operation==Operation::ObjectRead&&(crate::runtime::storage_metadata::bound(request.object)||crate::runtime::storage_metadata::warming()){
+            let mut request=request;request.value&=!crate::runtime::storage_coordinator::REMOTE_VERIFIED;
+            match crate::runtime::storage_metadata::read(self.current_user,self.current_session,request){Ok(id)=>self.output.write_number(b"Shared object quorum read pending: ",id),Err(e)=>self.output.write_number(b"Shared read denied: ",e as u64)}return true;
+        }
+        if matches!(request.operation,Operation::ObjectUpdate|Operation::ObjectSetPolicy|Operation::ObjectDelete|Operation::ObjectCopy)&&crate::runtime::storage_metadata::bound(request.object){
+            match crate::runtime::storage_metadata::mutate(self.current_user,self.current_session,request){Ok(id)=>self.output.write_number(b"Shared mutation quorum pending: ",id),Err(e)=>self.output.write_number(b"Shared mutation denied: ",e as u64)}return true;
+        }
         if request.operation == Operation::ObjectRead && request.value & crate::runtime::storage_coordinator::REMOTE_VERIFIED != 0 {
             if node_argument(node, b"peer").is_some() || node_argument(node, b"grant").is_some() {
                 self.output.write_line(b"Remote source selection is owned by the Pool coordinator; omit peer and grant.");
@@ -153,11 +183,13 @@ fn pool_request(node: &OperationNode<'_>) -> Option<StorageOperationV1> {
         manifest_generation: 0, object_version: 0, offset: 0, scope: 0, value: 0, length: 0, data: [0; 64] };
     if let Some(target) = node.target {
         let value = target.value.strip_prefix(b"object:").unwrap_or(target.value);
+        if value.starts_with(b"/") {p.object=crate::runtime::storage_metadata::lookup(value)?;}else{
         if value.len() != 32 { return None; }
         for (index, pair) in value.chunks_exact(2).enumerate() {
             p.object[index] = (hex_digit(pair[0])? << 4) | hex_digit(pair[1])?;
         }
         if p.object == [0; 16] { return None; }
+        }
     }
     for (name, out) in [(b"generation".as_slice(), &mut p.manifest_generation),
         (b"version".as_slice(), &mut p.object_version), (b"offset".as_slice(), &mut p.offset)] {

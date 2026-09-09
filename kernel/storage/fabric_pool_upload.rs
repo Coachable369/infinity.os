@@ -209,6 +209,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             return Err(ObjectError::InvalidObject);
         }
         if target.0 != [0; 16] {
+            self.require_pool_mutation_authority(target)?;
             let previous = self.pool_manifest(target, owner, scope)?;
             if previous.generation != expected || previous.healing.is_some() {
                 return Err(ObjectError::InvalidVersion);
@@ -384,6 +385,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                 Err(ObjectError::InvalidVersion)
             };
         }
+        if u.target.0 != [0; 16] { self.require_pool_mutation_authority(u.target)?; }
         if u.offset != u.length
             || local.0 == [0; 32]
             || resource.0 == [0; 16]
@@ -650,6 +652,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         expected: u64,
     ) -> Result<(), ObjectError> {
         let manifest = self.pool_manifest(object, owner, scope)?;
+        self.require_pool_mutation_authority(object)?;
         if manifest.generation != expected || manifest.healing.is_some() {
             return Err(ObjectError::InvalidVersion);
         }

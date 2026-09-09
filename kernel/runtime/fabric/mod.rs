@@ -8,5 +8,7 @@ pub mod manifest;
 pub mod healing;
 pub mod deletion;
 pub mod metadata;
+pub mod metadata_repair;
+pub mod metadata_bundle;
 #[cfg(test)]
 mod tests;

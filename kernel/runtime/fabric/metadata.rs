@@ -233,6 +233,7 @@ pub struct Replica {
 pub struct Publication {
     certificate: Certificate,
     published: u8,
+    group: [u8;32],
 }
 impl Publication {
     // ------------------------=
@@ -244,6 +245,7 @@ impl Publication {
         Ok(Self {
             certificate,
             published: 0,
+            group: g.digest(),
         })
     }
     // ------------------------=
@@ -251,6 +253,7 @@ impl Publication {
     // DESC: Counts only distinct signed durable publication receipts for the exact certified generation.
     // ------------------=
     pub fn acknowledge(&mut self, g: &Group, receipt: Receipt) -> Result<(), Error> {
+        if g.digest()!=self.group {return Err(Error::Denied)}
         receipt.validate(g, self.certificate.value.record.digest(), true)?;
         let bit = 1 << receipt.member;
         if self.published & bit != 0 {
@@ -533,6 +536,11 @@ impl ReadRound {
         grant.authorize(g, r, reader, principal, now)?;
         Ok(r)
     }
+    // ------------------------=
+    // FUNC: confirmed
+    // DESC: Returns only a freshly observed and durably written-back quorum certificate for transaction recovery; it conveys no content read authority.
+    // ------------------=
+    pub fn confirmed(&self,g:&Group)->Result<Certificate,Error>{g.validate()?;if self.group!=Some(g.digest()){return Err(Error::Denied)}if self.written.count_ones()<2{return Err(Error::Quorum)}self.selected()}
 }
 #[cfg(test)]
 #[path = "metadata_tests.rs"]

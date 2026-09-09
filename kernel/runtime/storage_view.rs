@@ -2,6 +2,8 @@
 use super::*;
 use identity::StableId;
 use iop::storage_protocol::{Operation, StorageOperationV1};
+#[path = "storage_view_shared.rs"]
+mod shared;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct ObjectSummary {
@@ -81,6 +83,7 @@ pub struct View {
     pub snapshot: Snapshot,
     pub revision: u64,
     policy: Option<(ObjectSummary, u8)>,
+    shared: shared::State,
 }
 impl View {
     // ------------------------=
@@ -96,6 +99,7 @@ impl View {
             snapshot: Snapshot::empty(),
             revision: 0,
             policy: None,
+            shared: shared::State::new(),
         }
     }
     // ------------------------=
@@ -121,6 +125,7 @@ impl View {
 // ------------------=
 pub fn open(user: StableId, session: StableId) {
     with_runtime(|r| {
+        shared::cancel(r);
         let v = &mut r.storage_view;
         if v.owner != Some((user, session)) {
             v.snapshot = Snapshot::empty();
@@ -137,6 +142,7 @@ pub fn open(user: StableId, session: StableId) {
 // ------------------=
 pub fn close() {
     with_runtime(|r| {
+        shared::cancel(r);
         r.storage_view.owner = None;
         r.storage_view.policy = None;
     });
@@ -148,6 +154,9 @@ pub fn close() {
 pub fn visibility(user: StableId, session: StableId, visible: bool) -> u64 {
     with_runtime(|r| {
         let authorized = storage_client::authorize(r, user, session).is_ok();
+        if !visible || !authorized || r.storage_view.owner != Some((user, session)) {
+            shared::cancel(r);
+        }
         let v = &mut r.storage_view;
         if visible && authorized && v.owner != Some((user, session)) {
             v.owner = Some((user, session));
@@ -181,6 +190,7 @@ pub fn snapshot() -> Snapshot {
 // ------------------=
 pub fn select_next() {
     with_runtime(|r| {
+        shared::cancel(r);
         let v = &mut r.storage_view;
         if v.snapshot.count > 0 {
             v.snapshot.selected = (v.snapshot.selected + 1) % v.snapshot.count;
@@ -238,6 +248,7 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
         return;
     };
     if storage_client::authorize(r, user, session).is_err() {
+        shared::cancel(r);
         let v = &mut r.storage_view;
         v.owner = None;
         v.policy = None;
@@ -248,6 +259,13 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
         return;
     }
     if now < r.storage_view.next {
+        return;
+    }
+    if shared::mutation_poll(r, user, session) {
+        return;
+    }
+    if r.storage_view.phase >= 17 {
+        shared::poll(r, user, session, now);
         return;
     }
     let mut p = StorageOperationV1 {
@@ -269,6 +287,9 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
         p.manifest_generation = object.generation;
         p.object_version = object.version;
         p.value = policy as u64;
+        if shared::policy(r, user, session, p) {
+            return;
+        }
         if storage_client::perform(r, now, p).is_err() {
             r.storage_view.snapshot.failed = true;
             r.storage_view.revision += 1;
@@ -289,7 +310,7 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
     } else {
         let Some(object) = r.storage_view.staged.objects[r.storage_view.staged.selected.min(7)]
         else {
-            publish(r, now);
+            finish_local(r, now);
             return;
         };
         p.object = object.id;
@@ -406,13 +427,25 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
         });
     }
     if phase == 16 || (phase > 0 && r.storage_view.staged.count == 0) {
-        publish(r, now);
+        finish_local(r, now);
     } else if phase <= 8 && phase > 0 && (phase == 8 || phase >= r.storage_view.staged.count) {
         let v = &mut r.storage_view;
         v.staged.selected = v.staged.selected.min(v.staged.count.saturating_sub(1));
         v.phase = 9;
     } else {
         r.storage_view.phase += 1;
+    }
+}
+// ------------------------=
+// FUNC: finish_local
+// DESC: Defers publication until authorized shared metadata has been coherently observed when its native service exists.
+// ------------------=
+fn finish_local(r: &mut InfinityRuntime, now: u64) {
+    if r.storage_metadata.handler.is_some() {
+        shared::begin(r);
+        r.storage_view.phase = 17;
+    } else {
+        publish(r, now);
     }
 }
 // ------------------------=
@@ -440,7 +473,11 @@ fn publish(r: &mut InfinityRuntime, now: u64) {
         v.revision += 1;
     }
     v.phase = 0;
-    v.next = now.saturating_add(2);
+    v.next = now.saturating_add(if r.storage_metadata.handler.is_some() {
+        30
+    } else {
+        2
+    });
 }
 #[cfg(test)]
 mod tests {

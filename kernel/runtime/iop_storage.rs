@@ -105,6 +105,7 @@ pub enum Operation {
     ObjectSetPolicy = super::OperationId::ObjectSetPolicy as u32,
     ReplicaInspect = super::OperationId::ReplicaInspect as u32,
     ReplicaDelete = super::OperationId::ReplicaDelete as u32,
+    PoolMetadata = super::OperationId::PoolMetadata as u32,
     TransferBegin = super::OperationId::ReplicaTransferBegin as u32,
     TransferChunk = super::OperationId::ReplicaTransferChunk as u32,
     TransferCommit = super::OperationId::ReplicaTransferCommit as u32,
@@ -138,6 +139,7 @@ impl Operation {
             PoolUploadCommit,
             PoolUploadAbort,
             ReplicaDelete,
+            PoolMetadata,
         ]
         .into_iter()
         .find(|op| *op as u32 == value)

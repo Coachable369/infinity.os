@@ -540,10 +540,21 @@ impl IopRouter {
         let mut committed = None;
         let result = validate_authority(nodes, &request, now).and_then(|_| {
             let payload = request.message.payload.storage()?;
-            let (response, notice) = execute(AuthenticatedStorageRequest { local: nodes.local_id().ok_or(RemoteError::InvalidState)?, peer: request.peer,
+            let (mut response, notice) = execute(AuthenticatedStorageRequest { local: nodes.local_id().ok_or(RemoteError::InvalidState)?, peer: request.peer,
                 session_reference: request.reference, grant: request.message.grant,
                 request_id: request.message.id, correlation: request.message.correlation,
                 causation: request.message.causation, payload })?;
+            if response.operation==super::storage_protocol::Operation::PoolMetadata && matches!(payload.value,2|3|7) {
+                if response.length!=32||response.offset>2{return Err(RemoteError::RemoteFailure)}
+                let mut transcript=[0;48];transcript[..8].copy_from_slice(b"INFPMACK");transcript[8]=response.offset as u8;transcript[9]=u8::from(matches!(payload.value,3|7));transcript[16..].copy_from_slice(&response.data[..32]);
+                response.data=nodes.sign_storage_metadata(nodes.local_id().ok_or(RemoteError::InvalidState)?,&transcript).map_err(|_|RemoteError::RemoteFailure)?;response.length=64;
+            }
+            if response.operation==super::storage_protocol::Operation::PoolMetadata && payload.value==25 {
+                if response.length!=64{return Err(RemoteError::RemoteFailure)}
+                let local=nodes.local_id().ok_or(RemoteError::InvalidState)?;
+                let mut transcript=[0;128];transcript[..8].copy_from_slice(b"INFPRAV1");transcript[8..40].copy_from_slice(&response.data[..32]);transcript[40..72].copy_from_slice(&local.0);transcript[72..104].copy_from_slice(&response.data[32..64]);
+                response.data=nodes.sign_storage_metadata(local,&transcript).map_err(|_|RemoteError::RemoteFailure)?;
+            }
             response.encode().map_err(|_| RemoteError::RemoteFailure)?;
             if !request.message.payload.same_target(Payload::Storage(response)) { return Err(RemoteError::RemoteFailure); }
             committed = Some(notice);

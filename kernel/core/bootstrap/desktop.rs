@@ -4247,10 +4247,12 @@ impl super::DisplayDevice {
         editor_dialog_focus: usize,
     ) {
         self.mark_dirty_rect(0, 0, self.width, self.height);
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if screen == 7 && super::launcher_backdrop::restore(self) {
             self.launcher_reveal(input, focus);
             return;
         }
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if screen != 7 {
             super::launcher_backdrop::invalidate();
         }
@@ -4293,6 +4295,7 @@ impl super::DisplayDevice {
         }
 
         if screen == 7 {
+            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             super::launcher_backdrop::capture(self);
             let launcher_clip = self.render_clip;
             let reveal = crate::ui::system_layout::SystemLayout::new(self.width, self.height)

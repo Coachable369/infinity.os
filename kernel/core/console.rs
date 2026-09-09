@@ -8952,6 +8952,7 @@ impl ConsoleRuntime {
                 Some(b"object-update") => OperationId::ObjectUpdate.machine_id(),
                 Some(b"object-policy") => OperationId::ObjectSetPolicy.machine_id(),
                 Some(b"pool-inspect") => OperationId::PoolInspect.machine_id(),
+                Some(b"pool-metadata") => OperationId::PoolMetadata.machine_id(),
                 _ => { self.output.write_line(b"Choose a registered node, resource, or replica operation."); return true; }
             };
             let Some(seconds) = node_argument(node, b"seconds").and_then(parse_u64_decimal).filter(|v| (1..=3600).contains(v)) else {

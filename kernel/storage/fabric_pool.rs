@@ -93,11 +93,27 @@ impl Catalog {
 
 impl<D: BlockDevice> ObjectStore<D> {
     // ------------------------=
+    // FUNC: pool_reconcile_certified_manifest
+    // DESC: Materializes an exact quorum-certified repair projection without changing immutable content; no generic generation-jump authority is exposed.
+    // ------------------=
+    pub(crate) fn pool_reconcile_certified_manifest(&mut self,object:ObjectId,owner:NodeId,scope:u64,proof:&crate::runtime::fabric::metadata_repair::RepairAuthorization)->Result<(),ObjectError>{
+        self.require_pool_mutation_authority(object)?;
+        proof.encode(0).map_err(|_|ObjectError::Unauthorized)?;
+        if proof.repair.certificate.is_none()||proof.anchor.group.owner!=owner||proof.anchor.manifest.object!=object.0{return Err(ObjectError::Unauthorized)}
+        let previous=self.pool_manifest(object,owner,scope)?;let next=proof.repair.manifest;
+        if previous==next{return Ok(())}
+        if previous!=proof.anchor.manifest||next.generation<=previous.generation{return Err(ObjectError::InvalidVersion)}
+        let catalog=Catalog::load(self)?;let e=catalog.entries.iter().flatten().find(|e|e.object==object).ok_or(ObjectError::NotFound)?;
+        let mut bytes=[0;MANIFEST_BYTES];next.encode(&mut bytes).map_err(|_|ObjectError::InvalidObject)?;
+        self.replace_state_audited(e.backing,&bytes,audit_record(Some(&previous),&next,1))?;Ok(())
+    }
+    // ------------------------=
     // FUNC: pool_commit_manifest
     // DESC: Atomically compare-and-swaps an authenticated manifest successor while preserving content identity and immutable version integrity.
     // ------------------=
     pub(crate) fn pool_commit_manifest(&mut self, object: ObjectId, owner: NodeId, scope: u64,
         expected: u64, next: &Manifest) -> Result<(), ObjectError> {
+        self.require_pool_mutation_authority(object)?;
         let previous = self.pool_manifest(object, owner, scope)?;
         if previous.generation != expected || next.object != previous.object || next.version != previous.version
             || next.hash != previous.hash || next.length != previous.length || next.chunks != previous.chunks {
@@ -117,6 +133,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     pub(crate) fn pool_copy(&mut self, source: ObjectId, owner: NodeId, scope: u64,
         expected: u64, nonce: u64, local: NodeId, resource: ResourceId,
         device: [u8; 16], resource_generation: u64) -> Result<Manifest, ObjectError> {
+        self.require_pool_mutation_authority(source)?;
         let previous = self.pool_manifest(source, owner, scope)?;
         if previous.generation != expected { return Err(ObjectError::InvalidVersion); }
         if nonce == 0 || local.0 == [0; 32] || device == [0; 16] || resource.0 == [0; 16]
@@ -235,6 +252,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub(crate) fn pool_set_policy(&mut self, object: ObjectId, owner: NodeId, scope: u64,
         expected: u64, policy: StorageClass) -> Result<Manifest, ObjectError> {
+        self.require_pool_mutation_authority(object)?;
         let previous = self.pool_manifest(object, owner, scope)?;
         if previous.generation != expected { return Err(ObjectError::InvalidVersion); }
         if previous.policy == policy { return Ok(previous); }
@@ -256,6 +274,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     pub(crate) fn pool_update(&mut self, object: ObjectId, owner: NodeId, scope: u64,
         expected: u64, content: &[u8], local: NodeId, resource: ResourceId,
         device: [u8; 16], resource_generation: u64) -> Result<Manifest, ObjectError> {
+        self.require_pool_mutation_authority(object)?;
         let previous = self.pool_manifest(object, owner, scope)?;
         if previous.generation != expected || previous.healing.is_some() { return Err(ObjectError::InvalidVersion); }
         if content.len() > MAX_CONTENT || local.0 == [0; 32] || device == [0; 16]

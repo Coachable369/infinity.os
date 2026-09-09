@@ -329,6 +329,14 @@ const POOL_RETIRE_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema{name:b"lease",value_type:ArgumentType::Text,required:true},
     ArgumentSchema{name:b"confirm",value_type:ArgumentType::Text,required:true},
 ];
+const POOL_SHARE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema{name:b"path",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema{name:b"confirm",value_type:ArgumentType::Text,required:true},
+];
+const POOL_REPAIR_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema{name:b"peer",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema{name:b"confirm",value_type:ArgumentType::Text,required:true},
+];
 const POOL_UPLOAD_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema { name:b"length",value_type:ArgumentType::Text,required:true },
     ArgumentSchema { name:b"hash",value_type:ArgumentType::Text,required:true },
@@ -715,6 +723,9 @@ pub static DOMAINS: &[DomainSchema] = &[
 ];
 
 pub static OPERATIONS: &[OperationSchema] = &[
+    op(b"pool",b"metadata-authority",b"Approve exact signed metadata operation authority",OperationId::PoolMetadata,ValueType::Unit,ValueType::Unit,None,POOL_RETIRE_ARGS,1,SideEffectClass::ReversibleChange,b"pool metadata-authority peer=node:<id> grant=1 lease=3600 confirm=true"),
+    op(b"pool",b"repair",b"Request repair under a preexisting owner-issued destination grant",OperationId::PoolMetadata,ValueType::Unit,ValueType::Object,Some(ArgumentType::ObjectRef),POOL_REPAIR_ARGS,1,SideEffectClass::ReversibleChange,b"pool repair obj:<id> peer=node:<id> confirm=true"),
+    op(b"pool",b"share",b"Publish an explicitly delegated quorum namespace binding",OperationId::PoolMetadata,ValueType::Unit,ValueType::Object,Some(ArgumentType::ObjectRef),POOL_SHARE_ARGS,1,SideEffectClass::ReversibleChange,b"pool share obj:<id> path=/Shared/Example confirm=true"),
     op(b"pool",b"retire-authority",b"Approve exact recipient retirement authority for a bounded lease",OperationId::PoolHeal,ValueType::Unit,ValueType::Unit,None,POOL_RETIRE_ARGS,1,SideEffectClass::ReversibleChange,b"pool retire-authority peer=node:<id> grant=1 lease=3600 confirm=true"),
     op(b"pool",b"fixture",b"Generate explicitly synthetic bounded QA content through ordinary upload operations",OperationId::PoolUploadBegin,ValueType::Unit,ValueType::Object,None,POOL_FIXTURE_ARGS,1,SideEffectClass::ReversibleChange,b"pool fixture length=32768 seed=17 policy=critical confirm=true"),
     op(b"pool",b"upload",b"Begin a bounded durable object upload",OperationId::PoolUploadBegin,ValueType::Unit,ValueType::Object,None,POOL_UPLOAD_ARGS,1,SideEffectClass::ReversibleChange,b"pool upload length=0 hash=<sha256> policy=critical nonce=1"),

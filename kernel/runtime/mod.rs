@@ -11,6 +11,9 @@ pub mod storage_advertiser;
 pub mod storage_coordinator;
 pub mod storage_view;
 pub mod storage_fixture;
+pub mod storage_metadata;
+pub mod storage_metadata_repair;
+pub mod storage_metadata_auto;
 pub mod identity;
 pub mod iop;
 pub mod network;
@@ -208,6 +211,9 @@ pub struct InfinityRuntime {
     pub storage_coordinator: storage_coordinator::Coordinator,
     pub storage_view: storage_view::View,
     pub storage_fixture: storage_fixture::Producer,
+    pub storage_metadata: storage_metadata::Service,
+    pub storage_metadata_repair: storage_metadata_repair::Service,
+    pub storage_metadata_auto: storage_metadata_auto::Service,
     node_clock: Option<u64>,
     node_projection_tick: Option<u64>,
     node_checkpoint_notified: u64,
@@ -311,6 +317,9 @@ impl InfinityRuntime {
             storage_coordinator: storage_coordinator::Coordinator::new(),
             storage_view: storage_view::View::new(),
             storage_fixture: storage_fixture::Producer::new(),
+            storage_metadata: storage_metadata::Service::new(),
+            storage_metadata_repair: storage_metadata_repair::Service::new(),
+            storage_metadata_auto: storage_metadata_auto::Service::new(),
             node_links: node_links::NodeLinks::new(),
             node_clock: None,
             node_projection_tick: None,
@@ -1352,8 +1361,8 @@ impl InfinityRuntime {
                 OperationId::ObjectCopy as u32, OperationId::ObjectDelete as u32,
                 OperationId::PoolUploadBegin as u32, OperationId::PoolUploadAppend as u32,
                 OperationId::PoolUploadCommit as u32, OperationId::PoolUploadAbort as u32,
-                OperationId::PoolHeal as u32, OperationId::ReplicaDelete as u32],
-            20, RestartPolicy::OnFailure, Criticality::Important,
+                OperationId::PoolHeal as u32, OperationId::ReplicaDelete as u32,OperationId::PoolMetadata as u32],
+            21, RestartPolicy::OnFailure, Criticality::Important,
         ))?;
         if self.live_profile {
             self.services.define(manifest(
@@ -1987,6 +1996,9 @@ pub fn poll_node_transport(now: u64) {
         storage_coordinator::poll(runtime, now);
         storage_view::poll(runtime, now);
         storage_fixture::poll(runtime, now);
+        storage_metadata::poll(runtime, now);
+        storage_metadata_repair::poll(runtime, now);
+        storage_metadata_auto::poll(runtime, now);
         runtime.iop.poll_remote_node(&runtime.capabilities, &mut runtime.nodes, &mut runtime.node_transport.trust, now);
         runtime.iop.execute_remote_node_durable(&mut runtime.nodes, now, &mut persist_control_state)
     }).flatten();
@@ -1994,9 +2006,14 @@ pub fn poll_node_transport(now: u64) {
     let storage_commit = with_runtime(|runtime| {
         runtime.fabric_resources.expire(now);
         let handler = runtime.storage_handler;
+        let metadata_handler = runtime.storage_metadata.handler;
         let directory = &mut runtime.fabric_resources;
         runtime.iop.execute_remote_storage(&mut runtime.nodes, now, |request| {
             use iop::storage_protocol::{Operation, StorageCommit, EVENT_RESOURCE_CHANGED};
+            if request.payload.operation==Operation::PoolMetadata {
+                let handler=metadata_handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?;
+                return match handler(storage_metadata::NativeRequest::Wire{request,now})?{storage_metadata::NativeReply::Wire(response)=>Ok((response,None)),_=>Err(iop::remote::RemoteError::InvalidState)};
+            }
             let handler = handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?;
             if request.payload.operation == Operation::ResourceAdvertise {
                 let changed = directory.accept_storage_advertisement(request, now).map_err(|error| {

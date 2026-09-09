@@ -112,6 +112,9 @@ fn partial_publication_requires_read_quorum_and_writeback() {
     let first = signed(&g, &ids, None, false);
     let cert = certificate(&ids, first);
     let mut publication = Publication::new(&g, cert).unwrap();
+    let mut other_epoch=g;other_epoch.epoch+=1;
+    assert_eq!(publication.acknowledge(&other_epoch,receipt(&ids,0,first.record,true)),Err(Error::Denied));
+    assert_eq!(publication.committed(),Err(Error::Quorum));
     publication
         .acknowledge(&g, receipt(&ids, 0, first.record, true))
         .unwrap();

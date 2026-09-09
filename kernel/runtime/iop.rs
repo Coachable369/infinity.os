@@ -271,6 +271,7 @@ pub enum OperationId {
     ReplicaTransferCommit = 0xe023,
     ReplicaDelete = 0xe024,
     PoolHeal = 0xe030,
+    PoolMetadata = 0xe050,
 }
 impl OperationId {
     // ------------------------=

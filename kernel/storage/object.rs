@@ -9,6 +9,8 @@ mod extents;
 mod bundle;
 #[path = "object_pool_stream.rs"]
 mod pool_stream;
+#[path = "object_metadata_mutation.rs"]
+mod metadata_mutation;
 
 #[path = "../runtime/ai/generation.rs"]
 mod ai_generation_asset;
@@ -446,6 +448,7 @@ pub struct ObjectStore<D: BlockDevice> {
     mounted_root: u8,
     in_transaction: bool,
     protected_allocation: [u8; ALLOCATION_BYTES],
+    metadata_mutation_permit: Option<ObjectId>,
 }
 
 impl<D: BlockDevice> ObjectStore<D> {
@@ -479,6 +482,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             mounted_root: 0,
             in_transaction: false,
             protected_allocation: [0; ALLOCATION_BYTES],
+            metadata_mutation_permit: None,
         };
         store.state.next_identity =
             u64::from_le_bytes(seed[..8].try_into().unwrap_or([1; 8])).max(1);
@@ -513,6 +517,7 @@ impl<D: BlockDevice> ObjectStore<D> {
                         mounted_root: slot,
                         in_transaction: false,
                         protected_allocation: [0; ALLOCATION_BYTES],
+                        metadata_mutation_permit: None,
                     });
                 }
             }

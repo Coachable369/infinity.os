@@ -1052,6 +1052,12 @@ fn persist(
     manifest: &Manifest,
     now: u64,
 ) -> Result<(), fabric::manifest::ManifestError> {
+    if super::storage_metadata::bound_from(r,manifest.object){
+        let _=super::storage_metadata::queue_placement(r,expected,*manifest,now);
+        // The source manifest is reloaded on the next bounded coordinator pass;
+        // no durable placement is claimed before the asynchronous W2 commit.
+        return Err(fabric::manifest::ManifestError::Storage);
+    }
     let scope = r.storage_coordinator.config.scope;
     match native(
         r,

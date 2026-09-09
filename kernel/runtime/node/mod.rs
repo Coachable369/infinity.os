@@ -105,6 +105,16 @@ impl NodeRuntime {
     }
 
     // ------------------------=
+    // FUNC: sign_storage_metadata
+    // DESC: Signs only canonical metadata statements for this local node after the calling storage service validates explicit ownership and authority; never exports the private key.
+    // ------------------=
+    pub(crate) fn sign_storage_metadata(&self,actor:NodeId,message:&[u8])->Result<[u8;64],NodeError>{
+        if self.local_id()!=Some(actor){return Err(NodeError::IdentityMismatch)}
+        let canonical=match message.len(){256=>message.starts_with(b"INFPMQ01")||message.starts_with(b"INFPRG01"),128=>message.starts_with(b"INFPRAV1"),48=>message.starts_with(b"INFPMACK"),160=>message.starts_with(b"INFPMR01"),_=>false};
+        if !canonical{return Err(NodeError::InvalidAdvertisement)}
+        self.crypto.sign(self.key_ref.ok_or(NodeError::EntropyUnavailable)?,message).map_err(map_crypto_error)
+    }
+    // ------------------------=
     // FUNC: initialize
     // DESC: Creates the persistent node identity from trusted firmware entropy.
     // ------------------=
@@ -130,6 +140,12 @@ impl NodeRuntime {
     // DESC: Returns the stable local node identity when cryptographic initialization succeeded.
     // ------------------=
     pub fn local_id(&self) -> Option<NodeId> { self.local_id }
+
+    // ------------------------=
+    // FUNC: local_public_key
+    // DESC: Returns only the public identity used to bind explicit metadata membership.
+    // ------------------=
+    pub(crate) fn local_public_key(&self) -> Option<[u8;32]> { self.crypto.public_identity().ok() }
 
     // ------------------------=
     // FUNC: advertise

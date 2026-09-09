@@ -10,7 +10,10 @@ Current request is the distributed Pool completion pass, not a new foundation.
 - [x] Correct Settings → Desktop → Launcher acceptance helper. Three installed
   navigation cycles passed on the preserved ISO-detached node-1; helper behavioral
   suite passed. Source commit `7c9f18b`.
-- [ ] Repeat installed protected pairing with explicit reset and Settings refresh.
+- [x] Repeat installed protected pairing with explicit reset and Settings refresh:
+  three distinct two-sided ceremonies passed on the interim `40ccb79` runtime.
+  Receipt: `/tmp/ms10-final-pacing-installed/repeated-pairing-trace.json`.
+  This does not certify later metadata integration.
 - [ ] Restore bounded authenticated DATA pacing; adversarial, fairness,
   backpressure, performance, build and installed timing proof.
 - [ ] Integrate durable current metadata, namespace and scoped delegated normal

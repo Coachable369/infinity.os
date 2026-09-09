@@ -5,6 +5,55 @@ use crate::runtime::{
 };
 use sha2::{Digest, Sha256};
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
+// ------------------------=
+// FUNC: committed_receipt_requires_exact_durable_head
+// DESC: Checks read-only publication receipts reject staged, stale and unauthorized heads and survive cold mount.
+// ------------------=
+#[test]
+fn committed_receipt_requires_exact_durable_head() {
+    use crate::fabric_pool_metadata_service::Service;
+    use crate::runtime::{iop::{remote::AuthenticatedStorageRequest, storage_protocol::{Operation, StorageOperationV1}}, storage_metadata::{NativeReply as R, NativeRequest as N}};
+    let (g, keys) = group();
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let b = actual_bundle(&mut store, &g, &keys);
+    stage_bundle(&mut store, b).unwrap();
+    let mut request = AuthenticatedStorageRequest {
+        local:g.members[1], peer:g.owner, session_reference:[1;16], grant:1,
+        request_id:1, correlation:1, causation:1,
+        payload:StorageOperationV1 { operation:Operation::PoolMetadata, object:b.manifest.object,
+            authority_generation:1, manifest_generation:b.value.record.generation, object_version:1,
+            offset:0, scope:0, value:7, length:32, data:[0;64] },
+    };
+    request.payload.data[..32].copy_from_slice(&b.value.record.digest());
+    let mut service = Service::new();
+    assert!(service.execute(&mut store, N::Wire { request, now:1 }).is_err());
+    publish_bundle(&mut store, b.manifest.object, certificate(b.value, &keys)).unwrap();
+    for cold in [false, true] {
+        if cold { store = ObjectStore::mount(disk.clone(), 0).unwrap(); service = Service::new(); }
+        let writes = disk.0.borrow().writes;
+        let generation = store.generation();
+        for _ in 0..2 {
+            match service.execute(&mut store, N::Wire { request, now:1 }).unwrap() {
+                R::Wire(reply) => { assert_eq!(reply.length,32); assert_eq!(reply.offset,1); assert_eq!(&reply.data[..32], &b.value.record.digest()); }
+                _ => panic!("unexpected typed reply"),
+            }
+        }
+        for case in 0..5 {
+            let mut invalid = request;
+            match case {
+                0 => invalid.payload.data[0] ^= 1,
+                1 => invalid.payload.manifest_generation += 1,
+                2 => invalid.peer = NodeId([99;32]),
+                3 => invalid.grant = 0,
+                _ => invalid.payload.length = 31,
+            }
+            assert!(service.execute(&mut store, N::Wire { request:invalid, now:1 }).is_err());
+        }
+        assert_eq!(disk.0.borrow().writes,writes);
+        assert_eq!(store.generation(),generation);
+    }
+}
 #[path="pool_metadata_mutation_tests.rs"]
 mod mutation_tests;
 #[derive(Clone, Default)]
