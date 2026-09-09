@@ -8,7 +8,7 @@ use iop::{IopError, storage_protocol::{Operation,StorageOperationV1}};
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Observation {
     pub phase:u8, pub offset:u32, pub length:u32, pub object:[u8;16], pub hash:[u8;32],
-    pub version:u64, pub generation:u64,
+    pub version:u64, pub generation:u64, pub error:Option<IopError>,
 }
 pub struct Producer {
     owner:Option<(StableId,StableId)>, seed:u64, policy:u8, nonce:u64,
@@ -20,7 +20,7 @@ impl Producer {
     // DESC: Starts idle with no generated objects or implicit test activity.
     // ------------------=
     pub const fn new()->Self {Self{owner:None,seed:0,policy:0,nonce:0,upload:[0;16],digest:None,
-        observation:Observation{phase:0,offset:0,length:0,object:[0;16],hash:[0;32],version:0,generation:0}}}
+        observation:Observation{phase:0,offset:0,length:0,object:[0;16],hash:[0;32],version:0,generation:0,error:None}}}
 }
 // ------------------------=
 // FUNC: byte_at
@@ -46,7 +46,7 @@ pub fn start(user:StableId,session:StableId,length:u32,seed:u64,policy:u8)->Resu
 // ------------------=
 pub(super) fn poll(r:&mut InfinityRuntime,now:u64) {
     let Some((user,session))=r.storage_fixture.owner else{return;};
-    if storage_client::authorize(r,user,session).is_err(){r.storage_fixture.observation.phase=255;r.storage_fixture.owner=None;return;}
+    if let Err(error)=storage_client::authorize(r,user,session){r.storage_fixture.observation.phase=255;r.storage_fixture.observation.error=Some(error);r.storage_fixture.owner=None;return;}
     let phase=r.storage_fixture.observation.phase;
     if phase==1 {
         let f=&mut r.storage_fixture;let mut bytes=[0;1024];let length=(f.observation.length-f.observation.offset).min(1024) as usize;
@@ -79,9 +79,9 @@ pub(super) fn poll(r:&mut InfinityRuntime,now:u64) {
             4 if reply.value==1 && reply.length==48 && reply.data[16..48]==f.observation.hash=>{
                 f.observation.object=reply.data[..16].try_into().unwrap();f.observation.version=reply.object_version;
                 f.observation.generation=reply.manifest_generation;f.observation.phase=5;f.owner=None;},
-            _=>{f.observation.phase=255;f.owner=None;},
+            _=>{f.observation.phase=255;f.observation.error=Some(IopError::InvalidPayload);f.owner=None;},
         },
-        Err(_)=>{f.observation.phase=255;f.owner=None;},
+        Err(error)=>{f.observation.phase=255;f.observation.error=Some(error);f.owner=None;},
     }
 }
 
@@ -107,5 +107,11 @@ mod tests {
         }
         assert_eq!(contracts[0],contracts[1]);
         assert_eq!(byte_at(17,0),67);assert_eq!(byte_at(17,256),68);
+        let mut denied=InfinityRuntime::new(false);
+        denied.storage_fixture.owner=Some((StableId([1;16]),StableId([2;16])));
+        poll(&mut denied,1);
+        assert_eq!(denied.storage_fixture.observation.error,Some(IopError::AccessDenied));
+        assert_eq!(denied.storage_fixture.observation.phase,255);
+        assert!(denied.storage_fixture.owner.is_none());
     }
 }

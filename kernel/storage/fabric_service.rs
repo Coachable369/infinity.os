@@ -10,7 +10,7 @@ use crate::storage::object::{ObjectError, ObjectType, Space};
 #[path = "fabric_pool_cache.rs"]
 mod source_cache;
 
-pub(crate) const MAX_BINDINGS: usize = 4;
+pub(crate) const MAX_BINDINGS: usize = 8;
 const CATALOG_BYTES: usize = 32 + MAX_BINDINGS * 208;
 const PATH: &[u8] = b"/system/storage/replicas";
 
@@ -55,7 +55,7 @@ impl Catalog {
     // DESC: Encodes bounded native ownership records with full application identities and independent physical checkpoint references.
     // ------------------=
     fn encode(&self) -> [u8; CATALOG_BYTES] {
-        let mut bytes = [0; CATALOG_BYTES]; bytes[..8].copy_from_slice(b"INFREP01");
+        let mut bytes = [0; CATALOG_BYTES]; bytes[..8].copy_from_slice(b"INFREP02");
         bytes[8..16].copy_from_slice(&self.epoch.to_le_bytes());
         for (index, binding) in self.entries.iter().enumerate() {
             if let Some(b) = binding {
@@ -89,10 +89,17 @@ impl Catalog {
             Err(error) => return Err(storage_error(error)),
         };
         let mut bytes = [0; CATALOG_BYTES];
-        if store.read(id, None, &mut bytes).map_err(storage_error)? != CATALOG_BYTES
-            || &bytes[..8] != b"INFREP01" || bytes[16..32] != [0; 16] { return Err(RemoteError::PersistenceFailed); }
+        let length = store.read(id, None, &mut bytes).map_err(storage_error)?;
+        // Legacy catalogs are decoded in memory only; the next successful
+        // transaction publishes the expanded canonical format atomically.
+        let slots = match (length, &bytes[..8]) {
+            (864, b"INFREP01") => 4,
+            (CATALOG_BYTES, b"INFREP02") => MAX_BINDINGS,
+            _ => return Err(RemoteError::PersistenceFailed),
+        };
+        if bytes[16..32] != [0; 16] { return Err(RemoteError::PersistenceFailed); }
         let mut catalog = Self { id, epoch: field(&bytes, 8), entries: [None; MAX_BINDINGS] };
-        for index in 0..MAX_BINDINGS {
+        for index in 0..slots {
             let at = 32 + index * 208;
             if bytes[at..at+208].iter().all(|b| *b == 0) { continue; }
             let cp = decode_header(&bytes[at..at+128]).map_err(replica_error)?;

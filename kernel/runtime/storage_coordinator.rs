@@ -238,6 +238,18 @@ pub struct Coordinator {
 }
 impl Coordinator {
     // ------------------------=
+    // FUNC: active_transfer
+    // DESC: Exposes only the current bounded transfer phase and identities for read-only responsiveness diagnostics.
+    // ------------------=
+    pub fn active_transfer(&self) -> (u8, u64, u64, [u8; 16], [u8; 32], u64) {
+        self.job.map(|job| (
+            match job.phase { Phase::Begin => 1, Phase::Read => 2, Phase::WaitRead => 3,
+                Phase::Send => 4, Phase::Commit => 5, Phase::InspectReturned => 6 },
+            job.offset, job.manifest.length, job.manifest.object, job.destination.owner.0,
+            self.pending.map(|p| p.request).unwrap_or(0),
+        )).unwrap_or((0, 0, 0, [0; 16], [0; 32], 0))
+    }
+    // ------------------------=
     // FUNC: publication_completed
     // DESC: Reports actual authenticated persistent-publisher acknowledgments, never scheduled attempts.
     // ------------------=

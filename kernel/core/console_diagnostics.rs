@@ -35,6 +35,13 @@ pub(super) fn publish(console: &ConsoleRuntime) {
     data[11] = console.system.framebuffer_width as u64; data[12] = console.system.framebuffer_height as u64;
     data[13] = console.pointer_x as u64; data[14] = console.pointer_y as u64;
     data[15] = console.pointer_buttons as u64;
+    if console.mode == super::ConsoleMode::Settings {
+        let rect=crate::ui::system_layout::SystemLayout::new(console.system.framebuffer_width as usize,console.system.framebuffer_height as usize)
+            .settings_window_geometry_for_section(console.settings_window,console.system_focus).window;
+        pool[246]=rect.x as u64;pool[247]=rect.y as u64;
+        pool[248]=rect.width as u64;pool[249]=rect.height as u64;
+        pool[250]=console.settings_window_dragging as u64;
+    }
     data[10] = crate::runtime::node_client::clock().unwrap_or(u64::MAX);
     // Non-secret editor acceptance only. Zero means unavailable; otherwise this
     // is length plus one, never buffer contents. Authentication is excluded.
@@ -60,6 +67,10 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         let view=runtime.storage_view.snapshot;pool[18]=view.count as u64;pool[19]=view.selected as u64;
         pool[20]=view.capacity;pool[21]=view.eligible;pool[22]=view.reserved;pool[23]=view.nodes as u64;
         pool[24]=view.ready as u64;pool[25]=view.failed as u64;
+        let transfer=runtime.storage_coordinator.active_transfer();
+        pool[26]=transfer.0 as u64;pool[27]=transfer.1;pool[28]=transfer.2;
+        pool[29]=transfer.5;pool[31]=fixture.error.map(|e|e as u64+1).unwrap_or(0);
+        words(&mut pool[240..242],&transfer.3);words(&mut pool[242..246],&transfer.4);
         for (index,object) in view.objects.iter().enumerate().filter_map(|(i,o)|o.map(|o|(i,o))) {
             let at=32+index*16;words(&mut pool[at..at+2],&object.id);
             pool[at+2]=object.version;pool[at+3]=object.generation;pool[at+4]=object.bytes;

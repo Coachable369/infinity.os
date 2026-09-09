@@ -5,6 +5,66 @@ use crate::runtime::iop::{
     storage_protocol::{Operation, StorageOperationV1},
 };
 // ------------------------=
+// FUNC: persisted_verifier_checks_actual_bytes_without_mutation
+// DESC: Verifies native recipient storage after mount and rejects identity/hash/version mismatch and actual payload corruption without any writes.
+// ------------------=
+#[test]
+fn persisted_verifier_checks_actual_bytes_without_mutation() {
+    use crate::native_fabric::service::verify_persisted_replica;
+    let (disk, mut store) = fresh();
+    let mut service = ReplicaService::mount(&mut store, RESOURCE, 1).unwrap();
+    replica(&mut store, &mut service, 3);
+    drop(store);
+    let mut store = ObjectStore::mount(disk.clone(),0).unwrap();
+    let hash = Sha256::digest([3;32]).into();
+    let writes = disk.0.borrow().writes;
+    assert_eq!(verify_persisted_replica(&mut store,OWNER.0,[90;16],3,hash),Ok(32));
+    assert!(verify_persisted_replica(&mut store,[8;32],[90;16],3,hash).is_err());
+    assert!(verify_persisted_replica(&mut store,OWNER.0,[90;16],2,hash).is_err());
+    assert!(verify_persisted_replica(&mut store,OWNER.0,[90;16],3,[0;32]).is_err());
+    assert_eq!(disk.0.borrow().writes,writes);
+    let mut state = disk.0.borrow_mut();
+    let sector = state.sectors.values_mut().find(|s| s[..32]==[3;32] && s[32..]==[0;480]).unwrap();
+    sector[4] ^= 1; drop(state);
+    assert!(verify_persisted_replica(&mut store,OWNER.0,[90;16],3,hash).is_err());
+    assert_eq!(disk.0.borrow().writes,writes);
+}
+// ------------------------=
+// FUNC: recipient_catalog_migrates_readonly_and_bounds_eight_versions
+// DESC: Mounts a legacy four-slot catalog without writes, migrates on mutation, retains eight immutable versions and rejects ninth admission without corrupting history.
+// ------------------=
+#[test]
+fn recipient_catalog_migrates_readonly_and_bounds_eight_versions() {
+    use crate::native_fabric::service::verify_persisted_replica;
+    let (disk,mut store)=fresh();
+    let mut service=ReplicaService::mount(&mut store,RESOURCE,1).unwrap();
+    for version in 1..=3 { replica(&mut store,&mut service,version); }
+    let catalog=store.resolve(b"/system/storage/replicas").unwrap();
+    let mut encoded=[0;1696];store.read(catalog,None,&mut encoded).unwrap();
+    encoded[..8].copy_from_slice(b"INFREP01");
+    store.replace_state(catalog,&encoded[..864]).unwrap();
+    drop(service);drop(store);
+    let mut store=ObjectStore::mount(disk.clone(),0).unwrap();
+    let writes=disk.0.borrow().writes;
+    for version in 1..=3 {
+        assert_eq!(verify_persisted_replica(&mut store,OWNER.0,[90;16],version,Sha256::digest([version as u8;32]).into()),Ok(32));
+    }
+    assert_eq!(disk.0.borrow().writes,writes);
+    let mut service=ReplicaService::mount(&mut store,RESOURCE,1).unwrap();
+    let mut last=None;
+    for version in 4..=8 { last=Some(replica(&mut store,&mut service,version)); }
+    assert_eq!(store.read(catalog,None,&mut encoded).unwrap(),1696);
+    let mut ninth=last.unwrap();ninth.payload.object_version=9;ninth.payload.manifest_generation=9;ninth.payload.value=109;
+    ninth.payload.data[24..56].copy_from_slice(&Sha256::digest([9;32]));
+    let generation=store.generation();
+    assert!(service.execute(&mut store,ninth).is_err());assert_eq!(store.generation(),generation);
+    drop(service);drop(store);
+    let mut store=ObjectStore::mount(disk,0).unwrap();
+    for version in 1..=8 {
+        assert_eq!(verify_persisted_replica(&mut store,OWNER.0,[90;16],version,Sha256::digest([version as u8;32]).into()),Ok(32));
+    }
+}
+// ------------------------=
 // FUNC: replica
 // DESC: Publishes a real native recipient extent through bounded typed transfer operations.
 // ------------------=
