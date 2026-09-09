@@ -8,6 +8,7 @@ mod storage;
 use std::{fs::File, io::{Read, Seek, SeekFrom}};
 use storage::{BlockDevice, object::{ObjectStore, crc32}};
 #[path="installed-pool-lifecycle.rs"] mod lifecycle;
+#[path="installed-pool-reclamation.rs"] mod reclamation;
 // ------------------------=
 // FUNC: output_text
 // DESC: Suppresses runtime human diagnostics from the structured verifier output.
@@ -91,6 +92,18 @@ fn hex<const N: usize>(s: &str) -> Result<[u8;N], &'static str> {
 // ------------------=
 fn run() -> Result<String,String> {
     let a: Vec<String> = std::env::args().collect();
+    if a.get(1).is_some_and(|s|s=="--recipient-reclamation") {
+        if a.len()<6 || a[2]!="--vm-paused" {return Err("usage: installed-pool-verify --recipient-reclamation --vm-paused RAW OWNER_HEX OBJECT_HEX [PHYSICAL_ID_HEX...]".into())}
+        let owner=hex(&a[4])?;let object=hex(&a[5])?;
+        let ids=a[6..].iter().map(|s|hex(s)).collect::<Result<Vec<[u8;16]>,_>>()?;
+        if ids.len()>64{return Err("identity_limit".into())}
+        let file=File::open(&a[3]).map_err(|_|"open_failed")?;
+        let length=file.metadata().map_err(|_|"metadata_failed")?.len();
+        if length%512!=0{return Err("not_raw_sectors".into())}
+        let mut disk=FileDisk{file,sectors:length/512};let start=container(&mut disk)?;
+        let mut store=ObjectStore::mount(disk,start).map_err(|_|"native_mount_failed")?;
+        return reclamation::inspect(&mut store,owner,object,&ids).map(|r|r.json());
+    }
     if a.get(1).is_some_and(|s|s=="--lifecycle") {
         if a.len()<6 || a[2]!="--vm-paused" {return Err("usage: installed-pool-verify --lifecycle --vm-paused RAW OWNER_HEX OBJECT_HEX [CONTENT_ID_HEX...]".into())}
         let owner=hex(&a[4])?;let object=hex(&a[5])?;
