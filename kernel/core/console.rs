@@ -8914,7 +8914,14 @@ impl ConsoleRuntime {
                 Some(b"inspect") => OperationId::NodeInspect.machine_id(),
                 Some(b"domain-inspect") => OperationId::NodeDomainInspect.machine_id(),
                 Some(b"policy-update") => OperationId::NodePolicyUpdate.machine_id(),
-                _ => { self.output.write_line(b"Choose inspect, domain-inspect, or policy-update."); return true; }
+                Some(b"resource-inspect") => OperationId::ResourceInspect.machine_id(),
+                Some(b"resource-advertise") => OperationId::ResourceAdvertise.machine_id(),
+                Some(b"replica-inspect") => OperationId::ReplicaInspect.machine_id(),
+                Some(b"transfer-begin") => OperationId::ReplicaTransferBegin.machine_id(),
+                Some(b"transfer-chunk") => OperationId::ReplicaTransferChunk.machine_id(),
+                Some(b"transfer-commit") => OperationId::ReplicaTransferCommit.machine_id(),
+                Some(b"object-read") => OperationId::ObjectRead.machine_id(),
+                _ => { self.output.write_line(b"Choose a registered node, resource, or replica operation."); return true; }
             };
             let Some(seconds) = node_argument(node, b"seconds").and_then(parse_u64_decimal).filter(|v| (1..=3600).contains(v)) else {
                 self.output.write_line(b"Choose a grant duration from 1 to 3600 seconds."); return true;

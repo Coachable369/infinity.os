@@ -14,6 +14,28 @@ struct Fixture {
     grant: u64,
 }
 
+// ------------------------=
+// FUNC: storage_grants_require_human_approval_and_one_registered_operation
+// DESC: Exercises the real node grant executor with storage operation IDs and proves explicit consent, exact operation, scope and expiry remain enforced.
+// ------------------=
+#[test]
+fn storage_grants_require_human_approval_and_one_registered_operation() {
+    use crate::runtime::iop::{execute_node_operation, IopError, NODE_OPERATION_HUMAN_APPROVED};
+    let mut f = Fixture::new();
+    let mut request = NodeOperationV1 { node_id: f.peer.0, handle: 0, scope: 42, lease_deadline: 100,
+        operation: OperationId::NodeCapabilityGrant.machine_id(), rights: 1,
+        value: OperationId::ReplicaTransferChunk.machine_id(), flags: 0, schema_version: 1 };
+    assert_eq!(execute_node_operation(&mut f.nodes, OperationId::NodeCapabilityGrant, request, 5, 7), Err(IopError::AccessDenied));
+    request.flags = NODE_OPERATION_HUMAN_APPROVED;
+    let granted = execute_node_operation(&mut f.nodes, OperationId::NodeCapabilityGrant, request, 5, 7).unwrap();
+    assert!(f.nodes.authorize_remote(granted.handle, f.peer, request.value, 42, 1, 6).is_ok());
+    assert!(f.nodes.authorize_remote(granted.handle, f.peer, OperationId::ReplicaTransferBegin.machine_id(), 42, 1, 6).is_err());
+    assert!(f.nodes.authorize_remote(granted.handle, f.peer, request.value, 43, 1, 6).is_err());
+    assert!(f.nodes.authorize_remote(granted.handle, f.peer, request.value, 42, 1, 100).is_err());
+    request.value = u32::MAX;
+    assert_eq!(execute_node_operation(&mut f.nodes, OperationId::NodeCapabilityGrant, request, 5, 7), Err(IopError::InvalidPayload));
+}
+
 impl Fixture {
     // ------------------------=
     // FUNC: new

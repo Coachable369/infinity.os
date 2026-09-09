@@ -140,11 +140,12 @@ impl ReplicaService {
         let p = request.payload;
         p.encode().map_err(|_| RemoteError::MalformedRequest)?;
         if p.operation == Operation::ResourceInspect { return self.resource_observation(store, p); }
-        if !matches!(p.operation, Operation::TransferBegin | Operation::TransferChunk | Operation::TransferCommit | Operation::ReplicaInspect) {
+        if !matches!(p.operation, Operation::TransferBegin | Operation::TransferChunk | Operation::TransferCommit | Operation::ReplicaInspect | Operation::ObjectRead) {
             return Err(RemoteError::UnsupportedOperation);
         }
         if request.peer.0 == [0; 32] || p.object == [0; 16] || p.authority_generation == 0
-            || p.manifest_generation == 0 || p.object_version == 0 || p.value == 0
+            || p.manifest_generation == 0 || p.object_version == 0
+            || (p.value == 0 && p.operation != Operation::ReplicaInspect)
             || self.resource.0 == [0; 16] || self.generation == 0 { return Err(RemoteError::MalformedRequest); }
         let mut catalog = Catalog::load(store)?;
         let existing = catalog.entries.iter().position(|b| b.is_some_and(|b| b.descriptor.object == p.object));
@@ -154,7 +155,8 @@ impl ReplicaService {
                 return Err(RemoteError::AccessDenied);
             }
             if b.manifest != p.manifest_generation || b.descriptor.version != p.object_version
-                || b.descriptor.job != p.value || b.descriptor.resource != self.resource
+                || (!matches!(p.operation, Operation::ObjectRead | Operation::ReplicaInspect) && b.descriptor.job != p.value)
+                || b.descriptor.resource != self.resource
                 || b.descriptor.generation != self.generation { return Err(RemoteError::Conflict); }
             index
         } else {
@@ -172,6 +174,22 @@ impl ReplicaService {
             index
         };
         let binding = catalog.entries[index].unwrap();
+        if p.operation == Operation::ObjectRead {
+            if p.length != 32 || !(1..=64).contains(&p.value)
+                || p.offset.checked_add(p.value).is_none_or(|end| end > binding.descriptor.bytes) {
+                return Err(RemoteError::MalformedRequest);
+            }
+            let base = p.offset / 1024 * 1024;
+            let size = (binding.descriptor.bytes - base).min(1024) as usize;
+            let within = (p.offset - base) as usize;
+            if within + p.value as usize > size { return Err(RemoteError::MalformedRequest); }
+            let mut native = NativeExtentReplica::open(store, binding.backing, self.resource, self.generation).map_err(replica_error)?;
+            let mut chunk = [0; 1024];
+            native.read_verified_chunk(base, &mut chunk[..size], p.data[..32].try_into().unwrap()).map_err(replica_error)?;
+            let mut response = p; response.data = [0; 64]; response.length = p.value as u16;
+            response.data[..p.value as usize].copy_from_slice(&chunk[within..within+p.value as usize]);
+            return Ok(response);
+        }
         match p.operation {
             Operation::TransferBegin => {
                 if self.begin_descriptor(p)? != binding.descriptor { return Err(RemoteError::Conflict); }
@@ -196,6 +214,7 @@ impl ReplicaService {
         let native = NativeExtentReplica::open(store, binding.backing, self.resource, self.generation).map_err(replica_error)?;
         let cp = native.inspect().ok_or(RemoteError::InvalidState)?;
         let mut response = p; response.data = [0; 64]; response.length = 49;
+        response.value = cp.descriptor.job;
         response.offset = cp.copied;
         response.data[0] = match cp.state { ReplicaState::Planned => 1, ReplicaState::Copying => 2,
             ReplicaState::Verifying => 3, ReplicaState::Available => 4, ReplicaState::Failed => 5 };

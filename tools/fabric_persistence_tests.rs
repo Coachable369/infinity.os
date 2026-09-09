@@ -125,6 +125,18 @@ fn native_recipient_fences_every_chunk_and_recovers_ownership() {
         let published = store.generation();
         assert_eq!(service.execute(&mut store, commit).unwrap().data[0], 4);
         assert_eq!(store.generation(), published);
+        for offset in (0..length).step_by(64) {
+            let mut read = request; read.payload.operation = Operation::ObjectRead;
+            read.payload.offset = offset as u64; read.payload.value = (length-offset).min(64) as u64;
+            let base = offset / 1024 * 1024; let end = (base+1024).min(length);
+            read.payload.data = [0; 64]; read.payload.length = 32;
+            read.payload.data[..32].copy_from_slice(&Sha256::digest(&payload[base..end]));
+            let response = service.execute(&mut store, read).unwrap();
+            assert_eq!(&response.data[..response.length as usize], &payload[offset..offset+response.length as usize]);
+            read.payload.data[0] ^= 1;
+            assert_eq!(service.execute(&mut store, read), Err(RemoteError::RemoteFailure));
+        }
+        assert_eq!(store.generation(), published);
     }
 }
 

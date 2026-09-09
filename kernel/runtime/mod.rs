@@ -1327,8 +1327,9 @@ impl InfinityRuntime {
             3,
             [OperationId::ReplicaInspect as u32, OperationId::ReplicaTransferBegin as u32,
                 OperationId::ReplicaTransferChunk as u32, OperationId::ReplicaTransferCommit as u32,
-                OperationId::ResourceInspect as u32, OperationId::ResourceAdvertise as u32, 0, 0, 0, 0, 0, 0],
-            6, RestartPolicy::OnFailure, Criticality::Important,
+                OperationId::ResourceInspect as u32, OperationId::ResourceAdvertise as u32,
+                OperationId::ObjectRead as u32, 0, 0, 0, 0, 0],
+            7, RestartPolicy::OnFailure, Criticality::Important,
         ))?;
         if self.live_profile {
             self.services.define(manifest(

@@ -446,7 +446,8 @@ pub fn execute_node_operation(
         OperationId::NodeSessionClose => nodes.close_session(request.handle, now, correlation_id).map_err(map_node_error)?,
         OperationId::NodeCapabilityList => response.value = nodes.remote_grants().iter().flatten().count() as u32,
         OperationId::NodeCapabilityGrant => {
-            remote::operation(request.value).map_err(|_| IopError::InvalidPayload)?;
+            if remote::operation(request.value).is_err()
+                && storage_protocol::Operation::decode(request.value).is_err() { return Err(IopError::InvalidPayload); }
             if request.flags != NODE_OPERATION_HUMAN_APPROVED || request.rights != 1
                 || request.lease_deadline <= now || request.lease_deadline - now > 3600 {
                 return Err(IopError::AccessDenied);
