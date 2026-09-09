@@ -1,0 +1,96 @@
+diff --git a/tools/ms10-installed-distribution.py b/tools/ms10-installed-distribution.py
+index a7e20fa..5ecd7af 100644
+--- a/tools/ms10-installed-distribution.py
++++ b/tools/ms10-installed-distribution.py
+@@ -29,6 +29,19 @@ def identity(guest):
+     return struct.pack("<4Q", *guest.state()[16:20]).hex()
+ 
+ 
++# ------------------------=
++# FUNC: trusted_peer
++# DESC: Inspects the exact peer's typed trust field in a current authoritative node projection before reusing prior durable pairing.
++# ------------------=
++def trusted_peer(guest, peer):
++    state = guest.wait(lambda value: value[22] == 0, "current trust projection")
++    for index in range(min(state[24], 16)):
++        row = struct.pack("<16Q", *state[128+index*16:144+index*16])
++        if row[:32].hex() == peer:
++            return row[85] == 3
++    raise AssertionError({"missing_inspected_peer": peer})
++
++
+ # ------------------------=
+ # FUNC: select
+ # DESC: Cycles the native peer selector to an exact discovered identity, never assumes list order.
+@@ -259,7 +272,13 @@ def main():
+     parser.add_argument("--verifier", type=pathlib.Path, required=True)
+     parser.add_argument("--stop-before-remote-read", action="store_true",
+                         help="Collect distribution evidence only, then exit incomplete before a known unavailable read-consumption diagnostic.")
++    parser.add_argument("--known-stale-storage-ui", action="store_true",
++                        help="Intermediate distribution-only scope; explicitly mark UI NOT TESTED because the installed Storage render is known stale.")
++    parser.add_argument("--resume-configured", action="store_true",
++                        help="Validate preserved endpoints and both sides of existing trust instead of repeating configuration or approved ceremonies.")
++    parser.add_argument("--object-bytes", type=int, choices=(1024, 32768), default=32768)
+     args = parser.parse_args()
++    assert not args.known_stale_storage_ui or args.stop_before_remote_read
+     work = args.output.resolve()
+     receipt = json.loads((work / "result.json").read_text())
+     assert receipt["independent_installs"] == 4
+@@ -282,14 +301,23 @@ def main():
+             guest.fast_input_probe()
+             guest.key("esc")
+             guest.fast_commands = True
+-        with ThreadPoolExecutor(max_workers=4) as workers:
+-            list(workers.map(lambda guest: MESH.configure(guest, 4), guests))
++        if not args.resume_configured:
++            with ThreadPoolExecutor(max_workers=4) as workers:
++                list(workers.map(lambda guest: MESH.configure(guest, 4), guests))
+         for guest in guests:
+             state = guest.wait(lambda s: s[24] == 3 and s[22] == 0, "three exact discovered peers", timeout=120)
+             peers = {struct.pack("<4Q", *state[128+i*16:132+i*16]).hex() for i in range(3)}
+             assert peers == set(known) - {known[guest.number-1]}
++            assert state[29] == 3 and state[50:54] == (0, 0, 0, 0)
+         a, b, c, d = guests
++        report["reused_trust"] = []
+         for peer in (b, c, d):
++            if args.resume_configured:
++                existing = (trusted_peer(a, identity(peer)), trusted_peer(peer, known[0]))
++                assert existing[0] == existing[1], {"asymmetric_preserved_trust": existing}
++                if existing[0]:
++                    report["reused_trust"].append(identity(peer))
++                    continue
+             pair(a, peer)
+         a.launch("command", 5)
+         for peer in (b, c, d):
+@@ -308,18 +336,27 @@ def main():
+         d.stop()
+         a.wait(lambda s: s[496] == 2 and s[109] == 3, "replacement host offline but known", timeout=90)
+         a.launch("command", 5)
+-        created = fixture.create(a, API.symbol)
++        transfer_start = time.monotonic_ns()
++        created = fixture.create(a, API.symbol, length=args.object_bytes)
+         oid = created["object_id"]
+-        input_report = responsive_transfer(a, oid)
++        input_report = ({"status": "NOT TESTED", "known_defect": "stale installed Storage render",
++                         "ui_performance_acceptance": False} if args.known_stale_storage_ui
++                        else responsive_transfer(a, oid))
+         healthy = object_state(a, oid, lambda r: r[5] == 3 and r[6] == 3, "critical-three-verified")
+-        assert healthy[4] == 32768
++        assert healthy[4] == args.object_bytes
++        report["distribution_observation"] = {"bytes": args.object_bytes,
++            "desired_copies": 3, "verified_copies": healthy[6],
++            "fixture_submission_to_three_verified_ns": time.monotonic_ns() - transfer_start,
++            "throughput_claim": False}
+         persisted = [persisted_hash(guest, args.verifier.resolve(), known[0], created) for guest in (a, b, c)]
+         local_read(a, oid, healthy, fixture.expected_content(64, 17))
+         if args.stop_before_remote_read:
+             report.update({"status": "INCOMPLETE", "created": created,
+                            "critical_three_verified": True, "persisted_content": persisted,
+                            "transfer_input": input_report, "local_read": True,
+-                           "stop_reason": "Installed generation lacks correlated remote-read consumption diagnostics",
++                           "stop_reason": ("Known stale Storage UI; distribution-only intermediate scope"
++                                           if args.known_stale_storage_ui else
++                                           "Installed generation lacks correlated remote-read consumption diagnostics"),
+                            "remote_read": "NOT TESTED", "loss_heal_reboot": "NOT TESTED"})
+             (work / "distribution-preflight-result.json").write_text(json.dumps(report, indent=2))
+             raise SystemExit(2)

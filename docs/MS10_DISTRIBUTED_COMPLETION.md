@@ -1,7 +1,46 @@
 # MS10 distributed completion pass
 
-Status: IN PROGRESS. Do not mark MS10 COMPLETE or unblock MS11 from host tests.
+Status: STOPPED — INCOMPLETE. The repository's two-correction-loop limit was
+reached. Do not mark MS10 COMPLETE or unblock MS11 from host tests.
 Current request is the distributed Pool completion pass, not a new foundation.
+
+## Latest handoff
+
+- Latest complete `./build.sh` passed: `/tmp/ms10-pool-refresh-build-2.log`.
+  Packaged runtime includes the targeted Settings cache fix and metadata
+  primitives/backing; it does not include the experimental faster data pacing.
+  ARM64 SHA-256: `31de98da76c7a47a68dd18a051a108d6744139122c4ffccb5fdafe8b2357728e`.
+  x86_64 SHA-256: `2b92a4795fea3fd78342fca10bcc102fa37f6feec55eec481095d27d7604f237`.
+- The already-running fresh-install UI recheck completed after stopping correction
+  loops: `/tmp/ms10-pool-ui-fresh-9246a0a` passed installation, ISO-detached boot,
+  onboarding, cold authentication and native storage inspection. Manual screenshot
+  review confirms the Settings panel now leaves Loading and presents the observed
+  one-node, empty-object state (`/tmp/ms10-pool-ui-fresh-presented.png`). This is
+  not populated-object policy parity, drag-under-transfer or performance proof.
+  All owned QA VMs are powered off; their disks and receipts remain preserved.
+- Four `52c15e8` installed disks remain preserved. All passed detached cold boot,
+  persistent unique identity, authentication and exact mutual peer discovery.
+  A/B and A/C protected trust is now persisted; D is not paired. The final stopped
+  measurement had no active secure sessions, grants or distributed Pool objects.
+- A focused cold-start A/B ceremony passed after an earlier warm ceremony failed.
+  The original intermittent failure is NOT FIXED. Discovery error counters also
+  appeared during the passing run, so they do not establish its root cause.
+- The last resumed run failed before pairing D because the launcher helper did not
+  return from Settings to Desktop before issuing the launcher shortcut. The native
+  route was inspected, but no further correction/retry was made after the limit.
+  Incomplete resume/measurement harness edits were removed from active source and
+  preserved as `MS10_PENDING_DISTRIBUTION_HARNESS.patch` for the next focused pass.
+- No installed 1 KiB or >16 KiB distributed transfer, three-copy hash verification,
+  remote read, loss/heal, stale return or distributed reclamation pass was reached.
+- The unchanged transport's actual-cadence host fixture delivered ten authenticated
+  64-byte payloads in ten simulated seconds. This is a protocol fixture measurement,
+  not installed throughput. A targeted faster-pacing experiment passed one cadence
+  test but lacks adversarial/fairness/backpressure and installed performance proof.
+  Its runtime edits were removed; the exact proposal is retained in
+  `MS10_PENDING_AUTHENTICATED_PACING.patch` and its companion document.
+- Owner-offline normal reads still require wire/namespace/application integration
+  of the signed metadata foundation. Physical replica ownership was not weakened
+  to make an acceptance test pass.
 
 ## Source integration
 
@@ -97,8 +136,8 @@ commits, fixing a failure-injection-discovered multi-record reuse bug.
   passed, so no scheduler or security-timeout change was justified from that
   hypothesis. Installed packet-metadata diagnosis is separate and still pending.
 - `9246a0a` fixes Pool-revision invalidation for retained Settings slot 4 only.
-  The pixel-cache behavioral test and kernel compile check pass; an updated ISO
-  screenshot recheck is required. No full-screen redraw was introduced.
+  The pixel-cache behavioral test, kernel compile check and fresh-installed
+  empty-Pool screenshot recheck pass. No full-screen redraw was introduced.
 - `a605b3c` adds isolated signed R2/W2 metadata primitives and native durable
   backing, not owner-offline application reads. Integrated suites passed:
   105 fabric tests (one ignored) and 62 performance-harness tests. These suites
