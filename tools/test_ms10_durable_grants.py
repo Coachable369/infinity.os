@@ -11,9 +11,9 @@ from ms10_installed_durable_grants import decode_approval, grant
 def completion():
     payload = bytes([17]) * 32 + struct.pack("<QQQIIIIH6x", (1 << 63) | 7, 0, 0,
                                           0xd022, 1, 0xe050, 3, 1)
-    state = [0] * 512
-    state[73:77] = [12, 4, 5, 1]
-    state[77:87] = struct.unpack("<10Q", payload)
+    state = [0] * 32
+    state[3:5] = [12, 1]
+    state[5:15] = struct.unpack("<10Q", payload)
     return state
 
 
@@ -25,8 +25,8 @@ class DurableGrants(unittest.TestCase):
     def test_exact_completion_and_rejections(self):
         state = completion()
         self.assertEqual(decode_approval(state, 11, "11" * 32, "pool-metadata"), (1 << 63) | 7)
-        cases = [(73, 11), (76, 2), (77, 0), (81, 7), (83, 100),
-                 (85, (3 << 32) | 0x3002), (86, 2)]
+        cases = [(3, 11), (4, 2), (5, 0), (9, 7), (11, 100),
+                 (13, (3 << 32) | 0x3002), (14, 2)]
         for index, value in cases:
             changed = state.copy()
             changed[index] = value
@@ -52,7 +52,7 @@ class DurableGrants(unittest.TestCase):
             # ------------------=
             def state(self):
                 result = completion()
-                result[73] = 11
+                result[3] = 11
                 return result
 
             # ------------------------=
@@ -69,11 +69,14 @@ class DurableGrants(unittest.TestCase):
             def wait(self, predicate, description, timeout):
                 assert not predicate(self.state())
                 result = completion()
-                result[76] = 2
+                result[4] = 2
                 assert predicate(result)
                 return result
 
         guest = Guest()
+        failed = completion()
+        failed[4] = 2
+        responses = iter([guest.state(), guest.state(), failed])
         with self.assertRaises(AssertionError):
-            grant(guest, "11" * 32, "pool-metadata")
+            grant(guest, "11" * 32, "pool-metadata", read=lambda: next(responses), pause=lambda _: None)
         self.assertEqual(guest.submissions, 1)

@@ -209,7 +209,8 @@ def persisted_hash(guest, verifier, owner, created):
 # DESC: Moves a real Settings window while the actual coordinator owns a transfer, retaining input-to-state timing instead of inventing frame measurements.
 # ------------------=
 def responsive_transfer(guest, object_id):
-    guest.launch("storage", 8, 8)
+    state = guest.state()
+    assert state[4] == 8 and state[8] == 8, {"loaded_probe_requires_open_storage": state[4:9]}
     deadline = time.monotonic() + 90
     while True:
         pool = fixture.read_state(guest, API.symbol)

@@ -3,6 +3,59 @@ use super::*;
 use identity::{StableId, SessionState, MAX_SESSIONS, SESSION_IDENTITY_MANAGE};
 use iop::{IopError, IopMessage, NodeOperationV1, OperationId};
 
+#[used]
+#[no_mangle]
+static mut INFINITY_NODE_LOCAL_DIAGNOSTIC_SNAPSHOT: [u64; 32] = [0; 32];
+
+// ------------------------=
+// FUNC: completion_words
+// DESC: Encodes the exact local owned request outcome without altering remote broker observations.
+// ------------------=
+fn completion_words(id: u64, result: Result<NodeOperationV1, IopError>) -> [u64; 32] {
+    let mut words=[0u64;32];words[0]=0x494e464c4f434c31;words[1]=1;words[3]=id;
+    match result {
+        Ok(response)=>{words[4]=1;for (index,chunk) in response.encode().chunks_exact(8).enumerate(){words[5+index]=u64::from_le_bytes(chunk.try_into().unwrap());}}
+        Err(error)=>words[4]=error as u64+2,
+    }
+    words
+}
+
+// ------------------------=
+// FUNC: publish_local_completion
+// DESC: Publishes only a locally admitted IOP result after completion, using a bounded debugger-only generation guard.
+// ------------------=
+fn publish_local_completion(id:u64,result:Result<NodeOperationV1,IopError>){
+    let mut words=completion_words(id,result);
+    unsafe {
+        let pointer=(&raw mut INFINITY_NODE_LOCAL_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
+        let generation=core::ptr::read_volatile(pointer.add(2)).wrapping_add(2)&!1;
+        core::ptr::write_volatile(pointer.add(2),generation|1);words[2]=generation;words[31]=generation;
+        for index in 0..32 {if index!=2 {core::ptr::write_volatile(pointer.add(index),words[index]);}}
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        core::ptr::write_volatile(pointer.add(2),generation);
+    }
+}
+
+#[cfg(test)]
+mod local_completion_tests {
+    use super::*;
+    // ------------------------=
+    // FUNC: local_response_and_failure_are_exact
+    // DESC: Preserves typed durable handles and clears response bytes on the next failed local request.
+    // ------------------=
+    #[test]
+    fn local_response_and_failure_are_exact(){
+        let mut response=crate::runtime::node::reconciliation::request([17;32],OperationId::NodeCapabilityGrant);
+        response.handle=(1u64<<63)|7;response.flags=3;
+        let success=completion_words(91,Ok(response));
+        assert_eq!(success[3],91);assert_eq!(success[4],1);
+        assert_eq!(success[9],response.handle);
+        let failed=completion_words(92,Err(IopError::AccessDenied));
+        assert_eq!(failed[3],92);assert_ne!(failed[4],1);
+        assert!(failed[5..15].iter().all(|word|*word==0));
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NodePresentation {
     pub selected: Option<node::types::NodeId>,
@@ -80,6 +133,7 @@ pub fn submit(user: StableId, session: StableId, operation: OperationId, request
             Ok((response, notice, now))
         })();
         let _ = runtime.capabilities.retire_leaf(capability, service);
+        publish_local_completion(id,result.as_ref().map(|value|value.0).map_err(|error|*error));
         result
     }).ok_or(IopError::UnknownEndpoint)??;
     let _ = publish_committed_node_control(result.1, result.2);
