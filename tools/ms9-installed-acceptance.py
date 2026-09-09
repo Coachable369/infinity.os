@@ -58,10 +58,12 @@ class Guest:
         self.channel = None
         self.capture = 0
         self.mesh_port = None
+        self.mesh_connect = False
         self.width, self.height = width, height
         self.last_pairing = None
         self.last_remote = None
         self.input_latency_ns = []
+        self.fast_commands = False
 
     # ------------------------=
     # FUNC: boot
@@ -80,7 +82,7 @@ class Guest:
                    "-vga", "none", "-device", f"VGA,xres={self.width},yres={self.height},xmax={self.width},ymax={self.height}",
                    "-drive", f"if=pflash,format=raw,readonly=on,file={self.firmware}",
                    "-drive", f"if=ide,index=0,format=raw,file={self.disk}",
-                   "-netdev", (f"socket,id=net,{'listen' if self.number == 1 else 'connect'}=127.0.0.1:{self.mesh_port}" if self.mesh_port else "user,id=net"), "-device", f"e1000,netdev=net,mac=02:00:00:00:09:{self.number:02x}",
+                   "-netdev", (f"socket,id=net,{'listen' if self.number == 1 and not self.mesh_connect else 'connect'}=127.0.0.1:{self.mesh_port}" if self.mesh_port else "user,id=net"), "-device", f"e1000,netdev=net,mac=02:00:00:00:09:{self.number:02x}",
                    "-object", "rng-random,id=rng0,filename=/dev/urandom", "-device", "virtio-rng-pci,rng=rng0",
                    "-qmp", f"unix:{qmp},server=on,wait=off", "-display", "none", "-serial", "stdio", "-no-reboot"]
         if installer:
@@ -220,6 +222,10 @@ class Guest:
     # ------------------=
     def text(self, value):
         aliases = {" ": "spc", "-": "minus", ".": "dot", "=": "equal", "/": "slash"}
+        initial = self.state()
+        fast = self.fast_commands and initial is not None and initial[4] == 5 and initial[71] != 0
+        if fast:
+            assert len(value) <= 256 - initial[71]
         for character in value:
             if character == ":":
                 codes = ("shift", "semicolon")
@@ -227,6 +233,10 @@ class Guest:
                 codes = ("shift", character.lower())
             else:
                 codes = (aliases.get(character, character),)
+            if fast:
+                self.qmp("send-key", {"keys": [{"type": "qcode", "data": code} for code in codes], "hold-time": 35})
+                time.sleep(.06)
+                continue
             before = self.state()
             if before is None or before[71] == 0:
                 self.key(*codes)
@@ -236,6 +246,10 @@ class Guest:
             accepted = self.wait(lambda state: state[71] > before[71], "accepted non-secret input", timeout=30)
             assert accepted[71] == before[71] + 1 and accepted[4] == before[4]
             self.input_latency_ns.append(time.monotonic_ns() - started)
+        if fast:
+            expected = initial[71] + len(value)
+            accepted = self.wait(lambda state: state[71] >= expected, "bounded rapid command accepted", timeout=30)
+            assert accepted[71] == expected and accepted[4] == initial[4]
 
     # ------------------------=
     # FUNC: screenshot
@@ -560,7 +574,9 @@ class Guest:
         before = self.state()[20]
         self.command(f"node policy-update node:{peer} name={category} value={choice}")
         return self.wait(lambda state: state[20] > before and not state[22]
-                         and struct.pack("<16Q", *state[128:144])[86 + index] == expected,
+                         and any(struct.pack("<4Q", *state[128 + row * 16:132 + row * 16]).hex() == peer
+                                 and struct.pack("<16Q", *state[128 + row * 16:144 + row * 16])[86 + index] == expected
+                                 for row in range(min(state[24], 16))),
                          "committed peer policy projection")
 
     # ------------------------=
@@ -593,6 +609,9 @@ class Guest:
             result = self.state()
         assert result[76] == expected, {"remote_request": request, "actual": result[76], "expected": expected}
         assert result[74] != 0 and result[75] != 0
+        print(json.dumps({"node": self.number, "remote_request": request,
+                          "completion_status": result[76], "correlation": result[74],
+                          "causation": result[75]}), flush=True)
         return result
 
 # ------------------------=

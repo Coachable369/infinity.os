@@ -20,6 +20,9 @@ def invoke(guest, peer, grant, command, operation, expected=1):
             break
     assert state[491] != 0 and state[492] != 0
     assert state[493] == expected, {"request": request, "expected": expected, "actual": state[493]}
+    print(json.dumps({"node": guest.number, "pool_request": request, "operation": operation,
+                      "completion_status": state[493], "correlation": state[491],
+                      "causation": state[492]}), flush=True)
     if expected != 1:
         return None
     assert state[110] == 1
