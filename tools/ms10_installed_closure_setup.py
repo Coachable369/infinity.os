@@ -85,7 +85,7 @@ def resume_publication(guests, distribution):
             future.result()
     observations = []
     for guest in guests:
-        state = guest.wait(lambda s: s[496] == 3, "three restored real resource publishers", timeout=90)
+        state = guest.wait(lambda s: s[496] == 4, "local plus three restored real resources", timeout=90)
         observations.append({"node": guest.number, "online_resources": state[496],
                              "observed_clock": state[10], "sessions": state[26]})
     return {"publication_only": True, "observations": observations,
@@ -115,7 +115,7 @@ def establish_authority(guests, distribution):
             future.result()
     observations = []
     for guest in guests:
-        state = guest.wait(lambda s: s[496] == 3, "all three actual resource publishers", timeout=90)
+        state = guest.wait(lambda s: s[496] == 4, "local plus three actual resource publishers", timeout=90)
         assert struct.pack("<4Q", *state[16:20]).hex() == identities[guest.number - 1]
         observations.append({"node": guest.number, "online_resources": state[496],
                              "observed_clock": state[10], "sessions": state[26]})

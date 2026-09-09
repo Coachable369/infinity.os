@@ -12,6 +12,19 @@ SPEC.loader.exec_module(MODULE)
 
 class CaseFence(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_published_resume_cannot_skip_object_evidence
+    # DESC: Only the recorded publication failure before object creation can resume without reissuing grants.
+    # ------------------=
+    def test_published_resume_cannot_skip_object_evidence(self):
+        prior = {"identities": [1, 2, 3, 4], "stage": "restore-explicit-publication-only",
+                 "failure": "recorded", "resume_prepared": True}
+        MODULE.validate_published(prior, [1, 2, 3, 4])
+        for field, value in (("created", {}), ("stage", "boot"), ("failure", None),
+                             ("identities", [4, 3, 2, 1]), ("resume_prepared", False)):
+            with self.assertRaises(AssertionError):
+                MODULE.validate_published(dict(prior, **{field: value}), [1, 2, 3, 4])
+
+    # ------------------------=
     # FUNC: test_reuse_and_resume_modes_are_distinct
     # DESC: Configured reuse permits a new measurement, exact-object resume cannot create a new measurement, and both modes cannot coexist.
     # ------------------=

@@ -54,6 +54,16 @@ def validate_prepared(prior, identities):
 
 
 # ------------------------=
+# FUNC: validate_published
+# DESC: Fences publication-only recovery to the exact failed prepared run before any object was created.
+# ------------------=
+def validate_published(prior, identities):
+    assert len(set(identities)) == 4 and prior["identities"] == identities
+    assert prior["stage"] == "restore-explicit-publication-only" and prior.get("failure")
+    assert prior.get("resume_prepared") and "created" not in prior
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Uses independently installed nodes and ordinary native operations; loses original A and never requests explicit repair.
 # ------------------=
@@ -66,6 +76,7 @@ def main():
     parser.add_argument("--resume-measured", action="store_true")
     parser.add_argument("--reuse-configured", action="store_true")
     parser.add_argument("--resume-prepared", action="store_true")
+    parser.add_argument("--resume-published", action="store_true")
     parser.add_argument("--length", type=int, choices=(32768, 65536, 262144), default=32768)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--lifecycle", action="store_true")
@@ -77,11 +88,16 @@ def main():
     assert not (args.lifecycle and args.measurement_only)
     validate_mode(args.resume_measured, args.reuse_configured, args.measurement_only)
     assert not (args.resume_prepared and (args.resume_measured or args.reuse_configured))
+    assert not (args.resume_published and (args.resume_prepared or args.resume_measured or args.reuse_configured))
     provenance = json.loads((work / "result.json").read_text())
     assert provenance["independent_installs"] == 4
     identities = [entry["node_id"] for entry in provenance["nodes"]]
     assert len(set(identities)) == 4
     prior = None
+    if args.resume_published:
+        prior = json.loads((work / "owner-offline-gate-result.json").read_text())
+        validate_published(prior, identities)
+        (work / "owner-offline-publication-count-failure.json").write_text(json.dumps(prior, indent=2))
     if args.resume_prepared:
         prior = json.loads((work / "owner-offline-gate-result.json").read_text())
         validate_prepared(prior, identities)
@@ -98,6 +114,7 @@ def main():
               "identities": identities, "resume_measured": args.resume_measured,
               "reuse_configured": args.reuse_configured,
               "resume_prepared": args.resume_prepared,
+              "resume_published": args.resume_published,
               "length": args.length, "seed": args.seed,
               "remaining_gates": ["stale-owner-return", "ordinary-update-copy-delete",
                                   "cold-reboot-shared-state", "garbage-collection",
@@ -145,12 +162,15 @@ def main():
                 report["stage"] = "restore-explicit-publication-only"
                 report["authority"] = resume_publication(guests, D)
             else:
+                observations = []
                 for guest in guests:
-                    guest.wait(lambda s: s[496] == 3, "persisted authorized publishers", timeout=90)
-                report["authority"] = prior["authority"]
+                    state = guest.wait(lambda s: s[496] == 4, "local plus three authorized resources", timeout=90)
+                    observations.append({"node": guest.number, "online_resources": state[496],
+                                         "observed_clock": state[10], "sessions": state[26]})
+                report["authority"] = observations if args.resume_published else prior["authority"]
         a, b, c, replacement = guests
         replacement.stop()
-        a.wait(lambda s: s[496] == 2, "replacement offline", timeout=90)
+        a.wait(lambda s: s[496] == 3, "replacement offline; local plus two peers", timeout=90)
         report["stage"] = "bounded-transfer-measurement"
         a.launch("command", 5)
         created = prior["created"] if args.resume_measured else fixture.create(a, D.API.symbol, length=args.length, seed=args.seed)
@@ -184,7 +204,7 @@ def main():
         report["namespace_readiness"] = ready["readiness_attempts"]
         a.stop()
         report["stage"] = "original-owner-offline-normal-read"
-        b.wait(lambda s: s[496] == 1, "original owner resource offline", timeout=90)
+        b.wait(lambda s: s[496] == 2, "owner offline; survivor local plus one peer", timeout=90)
         b.launch("command", 5)
         result = read_path(b, path, created["object_id"], expected,
                            lambda: fixture.read_state(b, D.API.symbol))
