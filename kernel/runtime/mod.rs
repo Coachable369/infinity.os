@@ -162,7 +162,8 @@ pub enum UiOperationError {
 }
 pub struct InfinityRuntime {
     storage_handler: Option<iop::storage_protocol::StorageHandler>,
-    storage_event_cap: Option<u64>,
+    storage_event_cap: [Option<u64>; 2],
+    pub fabric_resources: fabric::resources::Directory,
     pub execution: ExecutionManager,
     pub scheduler: Scheduler,
     pub capabilities: CapabilityManager,
@@ -259,7 +260,8 @@ impl InfinityRuntime {
     pub const fn new(live_profile: bool) -> Self {
         Self {
             storage_handler: None,
-            storage_event_cap: None,
+            storage_event_cap: [None; 2],
+            fabric_resources: fabric::resources::Directory::new(),
             execution: ExecutionManager::new(),
             scheduler: Scheduler::new(),
             capabilities: CapabilityManager::new(),
@@ -1325,8 +1327,8 @@ impl InfinityRuntime {
             3,
             [OperationId::ReplicaInspect as u32, OperationId::ReplicaTransferBegin as u32,
                 OperationId::ReplicaTransferChunk as u32, OperationId::ReplicaTransferCommit as u32,
-                0, 0, 0, 0, 0, 0, 0, 0],
-            4, RestartPolicy::OnFailure, Criticality::Important,
+                OperationId::ResourceInspect as u32, OperationId::ResourceAdvertise as u32, 0, 0, 0, 0, 0, 0],
+            6, RestartPolicy::OnFailure, Criticality::Important,
         ))?;
         if self.live_profile {
             self.services.define(manifest(
@@ -1960,8 +1962,25 @@ pub fn poll_node_transport(now: u64) {
     }).flatten();
     if let Some(committed) = committed { let _ = publish_committed_node_control(committed, now); }
     let storage_commit = with_runtime(|runtime| {
+        runtime.fabric_resources.expire(now);
         let handler = runtime.storage_handler;
+        let directory = &mut runtime.fabric_resources;
         runtime.iop.execute_remote_storage(&mut runtime.nodes, now, |request| {
+            use iop::storage_protocol::{Operation, StorageCommit, EVENT_RESOURCE_CHANGED};
+            if request.payload.operation == Operation::ResourceAdvertise {
+                let changed = directory.accept_storage_advertisement(request, now).map_err(|error| {
+                    use fabric::resources::ResourceError;
+                    match error { ResourceError::AccessDenied => iop::remote::RemoteError::AccessDenied,
+                        ResourceError::Stale | ResourceError::Conflict => iop::remote::RemoteError::Conflict,
+                        ResourceError::Full => iop::remote::RemoteError::QueueFull,
+                        _ => iop::remote::RemoteError::MalformedRequest }
+                })?;
+                return Ok((request.payload, changed.then_some(StorageCommit {
+                    event: EVENT_RESOURCE_CHANGED, object: request.payload.object,
+                    generation: request.payload.manifest_generation, copied: request.payload.offset,
+                    state: request.payload.data[44], correlation: request.correlation, causation: request.request_id,
+                })));
+            }
             handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?(request)
         })
     }).flatten().flatten();
@@ -1971,7 +1990,10 @@ pub fn poll_node_transport(now: u64) {
     let event = match change {
         Some(node::transport::DiscoveryChange::Discovered(peer)) => Some((EVENT_NODE_DISCOVERED, peer)),
         Some(node::transport::DiscoveryChange::Recovered(peer)) => Some((EVENT_NODE_RECOVERED, peer)),
-        Some(node::transport::DiscoveryChange::Offline(peer)) => Some((EVENT_NODE_OFFLINE, peer)),
+        Some(node::transport::DiscoveryChange::Offline(peer)) => {
+            with_runtime(|runtime| runtime.fabric_resources.mark_peer_offline(peer));
+            Some((EVENT_NODE_OFFLINE, peer))
+        },
         None => None,
     };
     if let Some((kind, peer)) = event { let _ = publish_node_state_event(kind, peer, now, now); }
@@ -1997,20 +2019,21 @@ pub fn register_storage_backend(handler: iop::storage_protocol::StorageHandler) 
 // DESC: Publishes bounded typed replica state only after the native transaction committed, retaining full ObjectId and causation.
 // ------------------=
 fn publish_storage_commit(notice: iop::storage_protocol::StorageCommit, now: u64) {
-    use iop::storage_protocol::EVENT_REPLICA_CHANGED;
+    use iop::storage_protocol::{EVENT_REPLICA_CHANGED, EVENT_RESOURCE_CHANGED};
     with_runtime(|runtime| {
+        let index = match notice.event { EVENT_REPLICA_CHANGED => 0, EVENT_RESOURCE_CHANGED => 1, _ => return };
         let Some(source) = runtime.service_identity(SERVICE_REPLICA_STORAGE) else { return; };
         let Some(issuer) = runtime.service_identity(SERVICE_RUNTIME) else { return; };
-        if runtime.storage_event_cap.is_none() {
-            runtime.storage_event_cap = runtime.capabilities.grant(CapabilityType::EventPublish,
-                EVENT_REPLICA_CHANGED as u64, 1, 0, issuer, source, None, 0).ok();
+        if runtime.storage_event_cap[index].is_none() {
+            runtime.storage_event_cap[index] = runtime.capabilities.grant(CapabilityType::EventPublish,
+                notice.event as u64, 1, 0, issuer, source, None, 0).ok();
         }
-        let Some(capability) = runtime.storage_event_cap else { return; };
+        let Some(capability) = runtime.storage_event_cap[index] else { return; };
         let mut payload = [0; 40];
         payload[..16].copy_from_slice(&notice.object);
         payload[16..24].copy_from_slice(&notice.generation.to_le_bytes());
         payload[24..32].copy_from_slice(&notice.copied.to_le_bytes()); payload[32] = notice.state;
-        let _ = runtime.events.publish(EventClass::StateChange, RoutingDomain::Mesh, EVENT_REPLICA_CHANGED,
+        let _ = runtime.events.publish(EventClass::StateChange, RoutingDomain::Mesh, notice.event,
             source, 0, notice.correlation, notice.causation, &payload, 140, now,
             &runtime.capabilities, capability);
     });

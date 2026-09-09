@@ -5,6 +5,14 @@ pub(super) const MAX_STAGED_CONTENT: usize = 1024 * 1024;
 
 impl<D: BlockDevice> ObjectStore<D> {
     // ------------------------=
+    // FUNC: staging_reserved_bytes
+    // DESC: Reports actual committed unpublished extent reservations; these blocks are already excluded from free allocation capacity.
+    // ------------------=
+    pub(crate) fn staging_reserved_bytes(&self) -> u64 {
+        self.state.versions.iter().filter(|v| v.used && v.storage_role == 1)
+            .map(|v| v.blocks as u64 * 4096).sum()
+    }
+    // ------------------------=
     // FUNC: create_replica_binding
     // DESC: Commits replica ownership, checkpoint and physical reservation together so interrupted admission cannot leak an orphan extent.
     // ------------------=

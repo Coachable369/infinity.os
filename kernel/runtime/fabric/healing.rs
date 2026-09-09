@@ -235,7 +235,7 @@ mod tests {
         let mut directory = Directory::new();
         for n in 1..=4 {
             let r = Resource { id: ResourceId([n; 16]), owner: NodeId([n; 32]), device: [n; 16], kind: ResourceKind::Storage,
-                capacity: 65536, available: 65536, health: Health::Healthy, online: true,
+                capacity: 65536, available: 65536, reserved: 0, health: Health::Healthy, online: true,
                 capabilities: 1, generation: 1, sequence: 1, expires: 100 };
             directory.apply(r, 1).unwrap();
             if n < 4 { m.placements[n as usize - 1] = Some(Placement { node: r.owner, resource: r.id,

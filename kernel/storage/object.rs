@@ -2995,6 +2995,9 @@ pub fn find_container<D: BlockDevice>(d: &mut D) -> Result<(u64, u64, [u8; 16]),
         return Err(ObjectError::SpaceUnavailable);
     }
     let entries = get64(&h, 72);
+    if entries.checked_add(32).is_none_or(|end| end > d.block_count()) {
+        return Err(ObjectError::CorruptMetadata);
+    }
     const KIND: [u8; 16] = [
         0x69, 0x66, 0x6e, 0x49, 0x69, 0x6e, 0x79, 0x74, 0x53, 0x54, 0x4f, 0x52, 0x41, 0x47, 0x45,
         0x31,
@@ -3011,9 +3014,28 @@ pub fn find_container<D: BlockDevice>(d: &mut D) -> Result<(u64, u64, [u8; 16]),
                 let last = get64(&s, o + 40);
                 let mut id = [0; 16];
                 id.copy_from_slice(&s[o + 16..o + 32]);
-                return Ok((first, last - first + 1, id));
+                let length = last.checked_sub(first).and_then(|n| n.checked_add(1))
+                    .ok_or(ObjectError::CorruptMetadata)?;
+                if first == 0 || last >= d.block_count() || id == [0; 16] { return Err(ObjectError::CorruptMetadata); }
+                return Ok((first, length, id));
             }
         }
     }
     Err(ObjectError::SpaceUnavailable)
+}
+
+// ------------------------=
+// FUNC: device_identity
+// DESC: Reads the actual persistent GPT disk identity only from a bounded, checksum-valid primary header; unavailable identity is never invented.
+// ------------------=
+pub fn device_identity<D: BlockDevice>(device: &mut D) -> Option<[u8; 16]> {
+    let mut header = [0; 512];
+    if !device.read_sector(1, &mut header) || &header[..8] != b"EFI PART" { return None; }
+    let size = get32(&header, 12) as usize;
+    if !(92..=512).contains(&size) || get64(&header, 24) != 1
+        || get64(&header, 32) >= device.block_count() { return None; }
+    let expected = get32(&header, 16); header[16..20].fill(0);
+    if crc32(&header[..size]) != expected { return None; }
+    let identity = header[56..72].try_into().ok()?;
+    if identity == [0; 16] { None } else { Some(identity) }
 }

@@ -302,6 +302,7 @@ pub fn initialize_object_store() {
         let Ok((container, _, container_id)) = object::find_container(&mut device) else {
             return;
         };
+        let disk_identity = object::device_identity(&mut device);
         match object::ObjectStore::mount(device, container) {
             Ok(mut store) => unsafe {
                 crate::output_text(b"[storage] container valid\n[storage] pool online\n");
@@ -313,6 +314,7 @@ pub fn initialize_object_store() {
                 );
                 REPLICA_SERVICE = fabric::service::ReplicaService::mount(&mut store,
                     crate::runtime::fabric::resources::ResourceId(container_id), 1).ok();
+                if let Some(service) = REPLICA_SERVICE.as_mut() { service.attach_device_identity(disk_identity); }
                 OBJECT_STORE = Some(store);
                 if REPLICA_SERVICE.is_some() {
                     crate::runtime::register_storage_backend(execute_replica_request);
@@ -340,6 +342,7 @@ fn execute_replica_request(request: crate::runtime::iop::remote::AuthenticatedSt
             .and_then(|service| service.execute(store, request)) };
         Ok(response.map(|response| {
             let notice = (store.generation() != before).then_some(StorageCommit {
+                event: crate::runtime::iop::storage_protocol::EVENT_REPLICA_CHANGED,
                 object: request.payload.object, generation: store.generation(), copied: response.offset,
                 state: response.data[0], correlation: request.correlation, causation: request.request_id,
             });

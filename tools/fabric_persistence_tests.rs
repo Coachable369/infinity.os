@@ -145,9 +145,10 @@ fn recipient_admission_has_no_orphan_reservation_at_any_sector_cut() {
     let writes = disk.0.borrow().writes; let new_usage = store.usage_blocks();
     assert!(new_usage > old_usage);
     for cut in 0..=writes {
-        let disk = Disk(Rc::new(RefCell::new(DiskState { sectors: baseline.clone(), writes_left: Some(cut), writes: 0 })));
+        let disk = Disk(Rc::new(RefCell::new(DiskState { sectors: baseline.clone(), writes_left: None, writes: 0 })));
         let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
         let mut service = ReplicaService::mount(&mut store, d.resource, d.generation).unwrap();
+        disk.0.borrow_mut().writes_left = Some(cut);
         let _ = service.execute(&mut store, request);
         drop(service); drop(store); disk.0.borrow_mut().writes_left = None;
         let mut store = ObjectStore::mount(disk, 0).unwrap();
@@ -156,6 +157,65 @@ fn recipient_admission_has_no_orphan_reservation_at_any_sector_cut() {
         assert_eq!(service.execute(&mut store, request).unwrap().data[0], 1);
         assert_eq!(store.usage_blocks(), new_usage);
     }
+}
+
+// ------------------------=
+// FUNC: discovered_resource_observes_capacity_reservations_and_reboot_ordering
+// DESC: Uses an explicit GPT fixture and actual native allocations to verify authoritative resource measurements, bounded advertisements, lease expiry and monotonic reboot recovery.
+// ------------------=
+#[test]
+fn discovered_resource_observes_capacity_reservations_and_reboot_ordering() {
+    use crate::{native_fabric::service::ReplicaService,
+        runtime::{fabric::resources::{Directory, ResourceError}, iop::storage_protocol::Operation},
+        storage::object::{crc32, device_identity}};
+    let mut disk = Disk::default();
+    let mut header = [0; 512]; header[..8].copy_from_slice(b"EFI PART");
+    header[12..16].copy_from_slice(&92u32.to_le_bytes()); header[24..32].copy_from_slice(&1u64.to_le_bytes());
+    header[32..40].copy_from_slice(&(disk.block_count()-1).to_le_bytes()); header[56..72].fill(21);
+    let checksum = crc32(&header[..92]); header[16..20].copy_from_slice(&checksum.to_le_bytes());
+    assert!(disk.write_sector(1, &header)); assert_eq!(device_identity(&mut disk), Some([21; 16]));
+    let mut damaged = header; damaged[12..16].copy_from_slice(&513u32.to_le_bytes());
+    assert!(disk.write_sector(1, &damaged)); assert_eq!(device_identity(&mut disk), None);
+    damaged = header; damaged[56] ^= 1;
+    assert!(disk.write_sector(1, &damaged)); assert_eq!(device_identity(&mut disk), None);
+    assert!(disk.write_sector(1, &header));
+    let identity = device_identity(&mut disk);
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let request = replica_request(&[41; 8193]); let d = descriptor(&[41; 8193]);
+    let mut service = ReplicaService::mount(&mut store, d.resource, d.generation).unwrap();
+    service.attach_device_identity(identity);
+    let mut query = request; query.payload.operation = Operation::ResourceInspect;
+    query.payload.object = [0; 16]; query.payload.length = 0; query.payload.data = [0; 64];
+    let first = service.execute(&mut store, query).unwrap();
+    assert_eq!(first.object_version, store.total_blocks() as u64 * 4096);
+    assert_eq!(first.offset, (store.total_blocks()-store.usage_blocks()) as u64 * 4096);
+    assert_eq!(&first.data[16..32], &[21; 16]);
+    assert_eq!(u64::from_le_bytes(first.data[32..40].try_into().unwrap()), 0);
+    service.execute(&mut store, request).unwrap();
+    let second = service.execute(&mut store, query).unwrap();
+    assert!(second.offset < first.offset); assert!(second.manifest_generation > first.manifest_generation);
+    assert_eq!(u64::from_le_bytes(second.data[32..40].try_into().unwrap()), 12288);
+    let mut advertisement = query; advertisement.payload = second;
+    advertisement.payload.operation = Operation::ResourceAdvertise;
+    advertisement.payload.object = second.data[..16].try_into().unwrap(); advertisement.payload.value = 60;
+    let mut directory = Directory::new();
+    assert_eq!(directory.accept_storage_advertisement(advertisement, 10), Ok(true));
+    assert_eq!(directory.accept_storage_advertisement(advertisement, 11), Ok(false));
+    assert_eq!(directory.entries()[0].unwrap().expires, 70);
+    assert_eq!(directory.entries()[0].unwrap().reserved, 12288);
+    assert!(directory.usable(0, 69) > 0); directory.expire(70);
+    assert_eq!(directory.usable(0, 70), 0); assert_eq!(directory.entries().iter().flatten().count(), 1);
+    assert_eq!(directory.accept_storage_advertisement(advertisement, 71), Err(ResourceError::Conflict));
+    drop(service); drop(store);
+    let mut store = ObjectStore::mount(disk, 0).unwrap();
+    let mut service = ReplicaService::mount(&mut store, d.resource, d.generation).unwrap();
+    service.attach_device_identity(identity);
+    let rebooted = service.execute(&mut store, query).unwrap();
+    assert!(rebooted.manifest_generation > second.manifest_generation);
+    advertisement.payload = rebooted; advertisement.payload.operation = Operation::ResourceAdvertise;
+    advertisement.payload.object = rebooted.data[..16].try_into().unwrap(); advertisement.payload.value = 60;
+    assert_eq!(directory.accept_storage_advertisement(advertisement, 72), Ok(true));
+    assert!(directory.usable(0, 72) > 0);
 }
 
 // ------------------------=

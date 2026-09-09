@@ -17,6 +17,7 @@ pub struct Resource {
     pub device: [u8; 16],
     pub capacity: u64,
     pub available: u64,
+    pub reserved: u64,
     pub health: Health,
     pub online: bool,
     pub capabilities: u32,
@@ -57,6 +58,7 @@ impl Directory {
     pub(super) fn apply(&mut self, resource: Resource, now: u64) -> Result<bool, ResourceError> {
         if resource.id.0 == [0; 16] || resource.owner.0 == [0; 32] || resource.device == [0; 16]
             || resource.capacity == 0 || resource.available > resource.capacity
+            || resource.reserved > resource.capacity.saturating_sub(resource.available)
             || resource.generation == 0 || resource.sequence == 0 || resource.expires <= now {
             return Err(ResourceError::Invalid);
         }
@@ -67,7 +69,10 @@ impl Directory {
             }
             if (resource.generation, resource.sequence) < (previous.generation, previous.sequence) { return Err(ResourceError::Stale); }
             if (resource.generation, resource.sequence) == (previous.generation, previous.sequence) {
-                return if previous == resource { Ok(false) } else { Err(ResourceError::Conflict) };
+                // An identical observation retried later is idempotent, but
+                // cannot renew its lease or resurrect an offline resource.
+                let mut repeated = resource; repeated.expires = previous.expires;
+                return if previous == repeated { Ok(false) } else { Err(ResourceError::Conflict) };
             }
             // Outstanding transfers must be reconciled before reusing a replaced device.
             if resource.generation != previous.generation && self.reserved[index] != 0 { return Err(ResourceError::Conflict); }
@@ -84,6 +89,30 @@ impl Directory {
     // DESC: Exposes immutable typed inventory; expired advertisements remain known but cannot be placement candidates.
     // ------------------=
     pub fn entries(&self) -> &[Option<Resource>; MAX_RESOURCES] { &self.entries }
+
+    // ------------------------=
+    // FUNC: accept_storage_advertisement
+    // DESC: Applies a bounded advertisement already authenticated by the shared IOP router; its owner can only be the authenticated sender.
+    // ------------------=
+    pub(crate) fn accept_storage_advertisement(&mut self,
+        request: crate::runtime::iop::remote::AuthenticatedStorageRequest, now: u64) -> Result<bool, ResourceError> {
+        let resource = super::resource_protocol::decode(request.payload, request.peer, now)?;
+        self.apply(resource, now)
+    }
+    // ------------------------=
+    // FUNC: mark_peer_offline
+    // DESC: Retains known resource and reservation identity when its owner disappears while excluding it from new placement immediately.
+    // ------------------=
+    pub(crate) fn mark_peer_offline(&mut self, peer: NodeId) {
+        for resource in self.entries.iter_mut().flatten().filter(|r| r.owner == peer) { resource.online = false; }
+    }
+    // ------------------------=
+    // FUNC: expire
+    // DESC: Marks expired observations offline without deleting placements or releasing outstanding durable reservations.
+    // ------------------=
+    pub(crate) fn expire(&mut self, now: u64) {
+        for resource in self.entries.iter_mut().flatten().filter(|r| r.expires <= now) { resource.online = false; }
+    }
 
     // ------------------------=
     // FUNC: restore_reservations

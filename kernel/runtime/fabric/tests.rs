@@ -45,7 +45,7 @@ fn manifest_counts_only_verified_independent_current_versions() {
 // ------------------=
 fn resource(id: u8, owner: NodeId) -> Resource {
     Resource { id: ResourceId([id; 16]), owner, kind: ResourceKind::Storage, device: [id; 16],
-        capacity: 4096, available: 2048, health: Health::Healthy, online: true,
+        capacity: 4096, available: 2048, reserved: 0, health: Health::Healthy, online: true,
         capabilities: 1, generation: 1, sequence: 1, expires: 100 }
 }
 

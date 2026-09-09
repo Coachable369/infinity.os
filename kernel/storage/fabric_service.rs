@@ -17,7 +17,7 @@ struct Binding {
     backing: ObjectId, owner: [u8; 32], authority: u64, manifest: u64, scope: u64,
     descriptor: ReplicaDescriptor,
 }
-struct Catalog { id: ObjectId, entries: [Option<Binding>; MAX_BINDINGS] }
+struct Catalog { id: ObjectId, epoch: u64, entries: [Option<Binding>; MAX_BINDINGS] }
 impl Catalog {
     // ------------------------=
     // FUNC: encode
@@ -25,6 +25,7 @@ impl Catalog {
     // ------------------=
     fn encode(&self) -> [u8; CATALOG_BYTES] {
         let mut bytes = [0; CATALOG_BYTES]; bytes[..8].copy_from_slice(b"INFREP01");
+        bytes[8..16].copy_from_slice(&self.epoch.to_le_bytes());
         for (index, binding) in self.entries.iter().enumerate() {
             if let Some(b) = binding {
                 let at = 32 + index * 208;
@@ -49,7 +50,7 @@ impl Catalog {
         let id = match store.resolve(PATH) {
             Ok(id) => id,
             Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => {
-                let empty = Self { id: ObjectId([0; 16]), entries: [None; MAX_BINDINGS] };
+                let empty = Self { id: ObjectId([0; 16]), epoch: 0, entries: [None; MAX_BINDINGS] };
                 store.create_attached(b"replica-authority", ObjectType::Metadata, Space::System,
                     &empty.encode(), PATH).map_err(storage_error)?
             },
@@ -57,8 +58,8 @@ impl Catalog {
         };
         let mut bytes = [0; CATALOG_BYTES];
         if store.read(id, None, &mut bytes).map_err(storage_error)? != CATALOG_BYTES
-            || &bytes[..8] != b"INFREP01" || bytes[8..32] != [0; 24] { return Err(RemoteError::PersistenceFailed); }
-        let mut catalog = Self { id, entries: [None; MAX_BINDINGS] };
+            || &bytes[..8] != b"INFREP01" || bytes[16..32] != [0; 16] { return Err(RemoteError::PersistenceFailed); }
+        let mut catalog = Self { id, epoch: field(&bytes, 8), entries: [None; MAX_BINDINGS] };
         for index in 0..MAX_BINDINGS {
             let at = 32 + index * 208;
             if bytes[at..at+208].iter().all(|b| *b == 0) { continue; }
@@ -78,6 +79,7 @@ impl Catalog {
 
 pub(crate) struct ReplicaService {
     resource: ResourceId, generation: u64, verifiers: [Option<ExtentVerification>; MAX_BINDINGS],
+    device: Option<[u8; 16]>, sequence: u64,
 }
 impl ReplicaService {
     // ------------------------=
@@ -87,15 +89,47 @@ impl ReplicaService {
     pub(crate) fn mount<D: BlockDevice>(store: &mut ObjectStore<D>, resource: ResourceId,
         generation: u64) -> Result<Self, RemoteError> {
         if resource.0 == [0; 16] || generation == 0 { return Err(RemoteError::InvalidState); }
-        Catalog::load(store)?;
-        Ok(Self::new(resource, generation))
+        let mut catalog = Catalog::load(store)?;
+        catalog.epoch = catalog.epoch.checked_add(1).filter(|n| *n <= u32::MAX as u64)
+            .ok_or(RemoteError::PersistenceFailed)?;
+        store.replace_state(catalog.id, &catalog.encode()).map_err(storage_error)?;
+        let mut service = Self::new(resource, generation); service.sequence = catalog.epoch << 32;
+        Ok(service)
     }
     // ------------------------=
     // FUNC: new
     // DESC: Binds the native recipient to an actually discovered container identity and incarnation; no remote request selects the physical device.
     // ------------------=
     pub(crate) const fn new(resource: ResourceId, generation: u64) -> Self {
-        Self { resource, generation, verifiers: [const { None }; MAX_BINDINGS] }
+        Self { resource, generation, verifiers: [const { None }; MAX_BINDINGS], device: None, sequence: 0 }
+    }
+    // ------------------------=
+    // FUNC: attach_device_identity
+    // DESC: Supplies a disk identity obtained by native hardware discovery; without it storage advertisements remain unsupported.
+    // ------------------=
+    pub(crate) fn attach_device_identity(&mut self, identity: Option<[u8; 16]>) {
+        self.device = identity.filter(|id| *id != [0; 16]);
+    }
+    // ------------------------=
+    // FUNC: resource_observation
+    // DESC: Measures mounted native capacity and committed reservations with a reboot-monotonic sequence; no host shell or invented device metrics are used.
+    // ------------------=
+    fn resource_observation<D: BlockDevice>(&mut self, store: &ObjectStore<D>, p: StorageOperationV1)
+        -> Result<StorageOperationV1, RemoteError> {
+        let device = self.device.ok_or(RemoteError::UnsupportedOperation)?;
+        if p.length != 0 || (p.object != [0; 16] && p.object != self.resource.0) { return Err(RemoteError::NotFound); }
+        if self.sequence == 0 || self.sequence as u32 == u32::MAX { return Err(RemoteError::ServiceUnavailable); }
+        self.sequence += 1;
+        let mut reply = p; reply.data = [0; 64]; reply.length = 48;
+        reply.authority_generation = self.generation; reply.manifest_generation = self.sequence;
+        reply.object_version = store.total_blocks() as u64 * 4096;
+        reply.offset = (store.total_blocks().saturating_sub(store.usage_blocks())) as u64 * 4096;
+        reply.value = 0;
+        reply.data[..16].copy_from_slice(&self.resource.0); reply.data[16..32].copy_from_slice(&device);
+        reply.data[32..40].copy_from_slice(&store.staging_reserved_bytes().to_le_bytes());
+        reply.data[40..44].copy_from_slice(&1u32.to_le_bytes()); reply.data[44] = 1; reply.data[45] = 1;
+        reply.data[46..48].copy_from_slice(&1u16.to_le_bytes());
+        Ok(reply)
     }
     // ------------------------=
     // FUNC: execute
@@ -105,6 +139,7 @@ impl ReplicaService {
         -> Result<StorageOperationV1, RemoteError> {
         let p = request.payload;
         p.encode().map_err(|_| RemoteError::MalformedRequest)?;
+        if p.operation == Operation::ResourceInspect { return self.resource_observation(store, p); }
         if !matches!(p.operation, Operation::TransferBegin | Operation::TransferChunk | Operation::TransferCommit | Operation::ReplicaInspect) {
             return Err(RemoteError::UnsupportedOperation);
         }
