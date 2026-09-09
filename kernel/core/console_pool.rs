@@ -28,7 +28,7 @@ impl ConsoleRuntime {
         };
         match (node_argument(node, b"peer"), node_argument(node, b"grant")) {
             (Some(peer), Some(grant)) => {
-                let (Some(peer), Some(grant)) = (parse_node_id(peer), parse_u64_decimal(grant)) else {
+                let (Some(peer), Some(grant)) = (parse_node_id(peer.strip_prefix(b"node:").unwrap_or(peer)), parse_u64_decimal(grant)) else {
                     self.output.write_line(b"Use a full peer NodeId and its issued grant handle."); return true;
                 };
                 match crate::runtime::storage_operator::submit(self.current_user, self.current_session, peer, grant, request) {
