@@ -62,6 +62,7 @@ def provision(guest, resume=False):
         result["reserved_bytes"] = reserved
         guest.screenshot("recipient-service-desktop")
         guest.frame_report("recipient-service-desktop")
+        (guest.work / "recipient-result.json").write_text(json.dumps(result, indent=2))
         return result
     except Exception:
         if guest.process is not None and guest.process.poll() is None:
@@ -102,11 +103,16 @@ def main():
     else:
         (artifacts / "sha256.json").write_text(json.dumps(hashes, indent=2))
     guests = [installed.Guest(work, n, args.firmware, reuse=args.resume) for n in range(1, args.nodes+1)]
+    results = []
     with ThreadPoolExecutor(max_workers=2) as workers:
-        results = list(workers.map(provision, guests, [args.resume] * args.nodes))
-    assert len({result["node_id"] for result in results}) == args.nodes
-    assert len({result["resource_id"] for result in results}) == args.nodes
-    assert len({result["device_id"] for result in results}) == args.nodes
+        # Do not launch another batch after a failed install or an identity
+        # collision. Preserve each completed node's receipt for focused reuse.
+        for start in range(0, len(guests), 2):
+            batch = guests[start:start+2]
+            results.extend(workers.map(provision, batch, [args.resume] * len(batch)))
+            assert len({result["node_id"] for result in results}) == len(results)
+            assert len({result["resource_id"] for result in results}) == len(results)
+            assert len({result["device_id"] for result in results}) == len(results)
     (work / "result.json").write_text(json.dumps({"boundary": "installed QEMU recipient-service bootstrap",
         "independent_installs": args.nodes, "nodes": results, "full_ms10_acceptance": False}, indent=2))
 
