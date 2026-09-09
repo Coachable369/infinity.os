@@ -7,6 +7,7 @@ mod storage;
 #[path = "../kernel/runtime/mod.rs"] mod runtime;
 use std::{fs::File, io::{Read, Seek, SeekFrom}};
 use storage::{BlockDevice, object::{ObjectStore, crc32}};
+#[path="installed-pool-lifecycle.rs"] mod lifecycle;
 // ------------------------=
 // FUNC: output_text
 // DESC: Suppresses runtime human diagnostics from the structured verifier output.
@@ -90,6 +91,17 @@ fn hex<const N: usize>(s: &str) -> Result<[u8;N], &'static str> {
 // ------------------=
 fn run() -> Result<String,String> {
     let a: Vec<String> = std::env::args().collect();
+    if a.get(1).is_some_and(|s|s=="--lifecycle") {
+        if a.len()<6 || a[2]!="--vm-paused" {return Err("usage: installed-pool-verify --lifecycle --vm-paused RAW OWNER_HEX OBJECT_HEX [CONTENT_ID_HEX...]".into())}
+        let owner=hex(&a[4])?;let object=hex(&a[5])?;
+        let content=a[6..].iter().map(|s|hex(s)).collect::<Result<Vec<[u8;16]>,_>>()?;
+        if content.len()>64{return Err("content_limit".into())}
+        let file=File::open(&a[3]).map_err(|_|"open_failed")?;let length=file.metadata().map_err(|_|"metadata_failed")?.len();
+        if length%512!=0{return Err("not_raw_sectors".into())}
+        let mut disk=FileDisk{file,sectors:length/512};let start=container(&mut disk)?;
+        let mut store=ObjectStore::mount(disk,start).map_err(|_|"native_mount_failed")?;
+        return lifecycle::inspect(&mut store,owner,object,&content).map(|r|r.json());
+    }
     if a.len()!=6 { return Err("usage: installed-pool-verify RAW OWNER_HEX OBJECT_HEX HASH_HEX VERSION".into()); }
     let owner=hex(&a[2])?; let object=hex(&a[3])?; let hash=hex(&a[4])?;
     let version=a[5].parse().map_err(|_|"invalid_version")?;
@@ -165,7 +177,7 @@ mod tests {
     #[test]
     fn authority_verification_checks_native_content() {
         use sha2::{Digest,Sha256};
-        struct Writable(Fixture);
+        struct Writable(Fixture,std::rc::Rc<std::cell::Cell<bool>>);
         impl BlockDevice for Writable {
             // ------------------------=
             // FUNC: block_count
@@ -181,14 +193,15 @@ mod tests {
             // FUNC: write_sector
             // DESC: Allows setup through the real native transaction writer only.
             // ------------------=
-            fn write_sector(&mut self,l:u64,s:&[u8;512])->bool { self.0.0.insert(l,*s);true }
+            fn write_sector(&mut self,l:u64,s:&[u8;512])->bool { assert!(self.1.get());self.0.0.insert(l,*s);true }
             // ------------------------=
             // FUNC: flush
             // DESC: Models successful fixture persistence.
             // ------------------=
             fn flush(&mut self)->bool { true }
         }
-        let disk=Writable(Fixture(Default::default()));
+        let writable=std::rc::Rc::new(std::cell::Cell::new(true));
+        let disk=Writable(Fixture(Default::default()),writable.clone());
         let mut store=ObjectStore::format(disk,0,1_000_000,[7;16]).unwrap();
         store.initialize_pool_catalog().unwrap();
         let owner=runtime::node::types::NodeId([1;32]);
@@ -201,6 +214,16 @@ mod tests {
         assert!(verify_store(&mut store,owner.0,m.object,m.version+1,hash).is_err());
         assert!(verify_store(&mut store,owner.0,m.object,m.version,[0;32]).is_err());
         assert_eq!(store.generation(),generation);
+        let ids:Vec<[u8;16]>=m.chunks.iter().flatten().map(|c|c.content).collect();
+        writable.set(false);
+        let before=lifecycle::inspect(&mut store,owner.0,m.object,&ids).unwrap();
+        assert!(before.object_present);assert_eq!(before.audit.len(),1);assert_eq!(before.audit[0].1,2);assert!(before.pending.is_none());
+        assert_eq!(store.generation(),generation);
+        writable.set(true);store.pool_delete(storage::object::ObjectId(m.object),owner,0,m.generation).unwrap();writable.set(false);
+        let after=lifecycle::inspect(&mut store,owner.0,m.object,&ids).unwrap();
+        assert!(!after.object_present);assert!(after.outbox_present);assert!(after.pending.is_none());assert_eq!(after.audit.last().unwrap().1,6);
+        writable.set(true);store.replace_named_state(b"/system/storage/pool-audit",&[0;2080]).unwrap();writable.set(false);
+        assert!(lifecycle::inspect(&mut store,owner.0,m.object,&ids).is_err());
     }
     // ------------------------=
     // FUNC: partition_discovery_checks_native_metadata_and_corruption
