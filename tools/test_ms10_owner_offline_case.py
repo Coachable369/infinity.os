@@ -14,6 +14,30 @@ SPEC.loader.exec_module(MODULE)
 
 class CaseFence(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_boot_resume_requires_successful_independent_baseline
+    # DESC: A failed pre-configuration boot can resume from a prior size, but object mutations and altered artifact/identity cannot.
+    # ------------------=
+    def test_boot_resume_requires_successful_independent_baseline(self):
+        failed = {"stage": "boot", "failure": "recorded", "identities": [1, 2, 3, 4],
+                  "artifact_sha256": "cd"*32, "length": 65536, "seed": 17}
+        baseline = {"stage": "measurement-complete-owner-loss-not-tested", "identities": [1, 2, 3, 4],
+                    "artifact_sha256": "cd"*32, "persisted": [{}, {}, {}], "length": 32768, "seed": 17,
+                    "created": {"length": 32768, "object_id": "ab"*16,
+                                "sha256": hashlib.sha256(fixture.expected_content(32768, 17)).hexdigest()},
+                    "measurement": {"object": "ab"*16, "bytes": 32768}}
+        MODULE.validate_boot_resume(failed, baseline, [1, 2, 3, 4], "cd"*32, 65536, 17)
+        for field, value in (("created", {}), ("authority", []), ("stage", "authority"), ("artifact_sha256", "00"*32)):
+            invalid = dict(failed)
+            invalid[field] = value
+            with self.assertRaises(AssertionError):
+                MODULE.validate_boot_resume(invalid, baseline, [1, 2, 3, 4], "cd"*32, 65536, 17)
+        with self.assertRaises(AssertionError):
+            MODULE.validate_boot_resume(failed, baseline, [1, 2, 3, 5], "cd"*32, 65536, 17)
+        baseline["failure"] = "not successful"
+        with self.assertRaises(AssertionError):
+            MODULE.validate_boot_resume(failed, baseline, [1, 2, 3, 4], "cd"*32, 65536, 17)
+
+    # ------------------------=
     # FUNC: test_only_full_size_runs_loaded_desktop_probe
     # DESC: Smaller transfer cases do not run unrelated desktop work; the required full-size callback remains mandatory.
     # ------------------=

@@ -146,6 +146,19 @@ def loaded_ui_probe(length, callback):
 
 
 # ------------------------=
+# FUNC: validate_boot_resume
+# DESC: Fences a pre-configuration boot failure to an independently successful measured baseline on the same artifact and nodes.
+# ------------------=
+def validate_boot_resume(failed, baseline, identities, digest, length, seed):
+    assert failed["stage"] == "boot" and failed.get("failure")
+    assert "created" not in failed and "authority" not in failed
+    assert failed["identities"] == identities and failed["artifact_sha256"] == digest
+    assert failed["length"] == length and failed["seed"] == seed
+    validate_case(baseline, identities, baseline["length"], baseline["seed"])
+    assert baseline["artifact_sha256"] == digest and not baseline.get("failure")
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Uses independently installed nodes and ordinary native operations; loses original A and never requests explicit repair.
 # ------------------=
@@ -161,6 +174,9 @@ def main():
     parser.add_argument("--resume-published", action="store_true")
     parser.add_argument("--retry-measurement", action="store_true")
     parser.add_argument("--resume-pairing", action="store_true")
+    parser.add_argument("--resume-boot", action="store_true")
+    parser.add_argument("--baseline-receipt", type=pathlib.Path)
+    parser.add_argument("--serial-boot", action="store_true")
     parser.add_argument("--length", type=int, choices=(32768, 65536, 262144), default=32768)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--lifecycle", action="store_true")
@@ -175,12 +191,31 @@ def main():
     assert not (args.resume_published and (args.resume_prepared or args.resume_measured or args.reuse_configured))
     assert not (args.retry_measurement and (args.resume_published or args.resume_prepared or args.resume_measured or args.reuse_configured))
     assert not (args.resume_pairing and (args.retry_measurement or args.resume_published or args.resume_prepared or args.resume_measured or args.reuse_configured))
+    assert not (args.resume_boot and (args.resume_pairing or args.retry_measurement or args.resume_published or args.resume_prepared or args.resume_measured or args.reuse_configured))
+    assert args.resume_boot == (args.baseline_receipt is not None)
     provenance = json.loads((work / "result.json").read_text())
     assert provenance["independent_installs"] == 4
     identities = [entry["node_id"] for entry in provenance["nodes"]]
     assert len(set(identities)) == 4
     prior = None
     prepared_grants = None
+    if args.resume_boot:
+        failed = json.loads((work / "owner-offline-gate-result.json").read_text())
+        assert args.baseline_receipt.resolve() != (work / "owner-offline-gate-result.json").resolve()
+        prior = json.loads(args.baseline_receipt.read_text())
+        validate_boot_resume(failed, prior, identities, artifact_hash(work), args.length, args.seed)
+        validate_prepared_receipt(json.loads((work / "prepared-authority.json").read_text()), identities, artifact_hash(work))
+        pinned = json.loads((work / "artifacts/sha256.json").read_text())
+        assert set(pinned) == {"installer.iso", "kernel.elf", "installed-kernel.elf"}
+        for filename, digest in pinned.items():
+            with (work / "artifacts" / filename).open("rb") as artifact:
+                assert hashlib.file_digest(artifact, "sha256").hexdigest() == digest
+        encoded = json.dumps(failed, indent=2)
+        archive = work / f"owner-offline-boot-failure-{hashlib.sha256(encoded.encode()).hexdigest()[:16]}.json"
+        if archive.exists():
+            assert archive.read_text() == encoded
+        else:
+            archive.write_text(encoded)
     if args.resume_pairing:
         prior = json.loads((work / "owner-offline-gate-result.json").read_text())
         pinned = json.loads((work / "artifacts/sha256.json").read_text())
@@ -236,6 +271,8 @@ def main():
               "resume_prepared": args.resume_prepared,
               "resume_published": args.resume_published,
               "retry_measurement": args.retry_measurement,
+              "resume_boot": args.resume_boot, "serial_boot": args.serial_boot,
+              "baseline_receipt": str(args.baseline_receipt.resolve()) if args.baseline_receipt else None,
               "length": args.length, "seed": args.seed,
               "remaining_gates": ["stale-owner-return", "ordinary-update-copy-delete",
                                   "cold-reboot-shared-state", "garbage-collection",
@@ -246,8 +283,11 @@ def main():
             guests.append(guest)
             guest.mesh_port, guest.mesh_connect = hub.port, True
             guest.boot(False)
-        with ThreadPoolExecutor(max_workers=4) as workers:
-            list(workers.map(lambda guest: guest.authenticate(), guests))
+            if args.serial_boot:
+                guest.authenticate()
+        if not args.serial_boot:
+            with ThreadPoolExecutor(max_workers=4) as workers:
+                list(workers.map(lambda guest: guest.authenticate(), guests))
         assert [D.identity(guest) for guest in guests] == identities
         for guest in guests:
             guest.launch("command", 5)
@@ -304,7 +344,7 @@ def main():
         submission_started = time.monotonic()
         submission_traffic = hub.traffic_snapshot()
         created = prior["created"] if args.resume_measured else fixture.create(a, D.API.symbol, length=args.length, seed=args.seed)
-        if args.reuse_configured or args.retry_measurement:
+        if args.reuse_configured or args.retry_measurement or args.resume_boot:
             assert created["object_id"] != prior["created"]["object_id"], {"fixture_reused_prior_object": created["object_id"]}
         report["created"] = created
         report["namespace_path"] = f"/Shared/MS10_{args.length}_{args.seed}_{created['object_id'][:8]}"
