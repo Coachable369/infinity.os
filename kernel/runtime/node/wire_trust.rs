@@ -696,6 +696,7 @@ impl WireTrust {
                 }
                 return Err(NodeError::ReplayDetected);
             }
+            let mut glare_deadline = None;
             let index = if let Some(index) = self.transactions.iter().position(|slot| {
                 slot.as_ref()
                     .map(|t| t.link.peer == Some(peer.id))
@@ -703,6 +704,10 @@ impl WireTrust {
             }) {
                 let t = self.transactions[index].as_ref().unwrap();
                 if kind == SESSION_INIT {
+                    // Signature, peer identity and offer binding were verified above.
+                    // A simultaneous opener is resolved by canonical NodeId, never
+                    // by arrival timing or untrusted transaction bytes.
+                    let glare = t.stage == WireState::SessionResponse;
                     if peer.trust != TrustState::Trusted
                         || !matches!(
                             t.stage,
@@ -711,10 +716,19 @@ impl WireTrust {
                                 | WireState::Failed
                                 | WireState::Established
                                 | WireState::Expired
+                                | WireState::SessionResponse
                         )
                         || body[123..155] != t.paired
                     {
                         return Err(NodeError::UnsupportedState);
+                    }
+                    if glare {
+                        if body[115..123] != t.local_offer[115..123] {return Err(NodeError::IdentityMismatch);}
+                        if nodes.local_id().ok_or(NodeError::UnknownNode)?.0 < peer.id.0 {
+                            self.retire(id)?;
+                            return Ok(());
+                        }
+                        glare_deadline=Some(t.expires);
                     }
                 } else if !matches!(peer.trust, TrustState::Untrusted | TrustState::Discovered)
                     || !matches!(
@@ -800,7 +814,7 @@ impl WireTrust {
                 pairing,
                 local_confirmed: kind != INIT,
                 remote_confirmed: kind != INIT,
-                expires: now.saturating_add(LEASE),
+                expires: glare_deadline.unwrap_or(now.saturating_add(LEASE)),
                 session: None,
                 pending: Some(packet),
                 next_send: now,

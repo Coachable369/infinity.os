@@ -2,6 +2,9 @@
 mod fixture;
 use crate::node::types::TrustState;
 use fixture::Fixture;
+#[cfg(test)]
+#[path="simultaneous_reconnect.rs"]
+mod simultaneous_reconnect;
 
 // ------------------------=
 // FUNC: advance_four
