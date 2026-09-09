@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import json
 import pathlib
+import struct
 from ms10_ethernet_hub import EthernetHub
 import ms10_installed_fixture as fixture
 from ms10_installed_closure_setup import establish_authority
@@ -25,16 +26,25 @@ def main():
     parser.add_argument("--firmware", default="/opt/homebrew/share/qemu/edk2-x86_64-code.fd")
     parser.add_argument("--verifier", type=pathlib.Path, required=True)
     parser.add_argument("--measurement-only", action="store_true")
+    parser.add_argument("--resume-measured", action="store_true")
     args = parser.parse_args()
     work = args.output.resolve()
     provenance = json.loads((work / "result.json").read_text())
     assert provenance["independent_installs"] == 4
     identities = [entry["node_id"] for entry in provenance["nodes"]]
     assert len(set(identities)) == 4
+    prior = None
+    if args.resume_measured:
+        assert not args.measurement_only
+        prior = json.loads((work / "owner-offline-gate-result.json").read_text())
+        assert prior["stage"] == "measurement-complete-owner-loss-not-tested"
+        assert prior["identities"] == identities and len(prior["persisted"]) == 3
+        (work / "owner-offline-measurement-receipt.json").write_text(json.dumps(prior, indent=2))
     hub = EthernetHub().start()
     guests = []
     report = {"status": "INCOMPLETE", "full_ms10_acceptance": False,
-              "boundary": "four installed media-detached QEMU nodes", "stage": "boot"}
+              "boundary": "four installed media-detached QEMU nodes", "stage": "boot",
+              "identities": identities, "resume_measured": args.resume_measured}
     try:
         for number in range(1, 5):
             guest = D.API.Guest(work, number, args.firmware, reuse=True)
@@ -49,24 +59,42 @@ def main():
             guest.fast_input_probe()
             guest.key("esc")
             guest.fast_commands = True
-        with ThreadPoolExecutor(max_workers=4) as workers:
-            list(workers.map(lambda guest: D.MESH.configure(guest, 4), guests))
+        if prior is None:
+            with ThreadPoolExecutor(max_workers=4) as workers:
+                list(workers.map(lambda guest: D.MESH.configure(guest, 4), guests))
         for guest in guests:
             guest.wait(lambda s: s[24] == 3 and s[22] == 0, "three discovered peers", timeout=120)
-        report["stage"] = "pair-all-six"
-        for left in range(4):
-            for right in range(left + 1, 4):
-                D.pair(guests[left], guests[right])
-        report["stage"] = "authority"
-        report["authority"] = establish_authority(guests, D)
+        if prior is None:
+            report["stage"] = "pair-all-six"
+            for left in range(4):
+                for right in range(left + 1, 4):
+                    D.pair(guests[left], guests[right])
+            report["stage"] = "authority"
+            report["authority"] = establish_authority(guests, D)
+        else:
+            report["stage"] = "validate-measured-trust"
+            for guest in guests:
+                state = guest.state()
+                assert state[25] == 3 and state[29] == 3
+                peers = {}
+                for index in range(3):
+                    row = struct.pack("<16Q", *state[128+index*16:144+index*16])
+                    peers[row[:32].hex()] = row[85]
+                assert peers == {peer: 3 for peer in identities if peer != D.identity(guest)}
+            for left in range(4):
+                for right in range(left + 1, 4):
+                    D.open_session(guests[left], guests[right])
+            for guest in guests:
+                guest.wait(lambda s: s[496] == 3, "persisted authorized publishers", timeout=90)
+            report["authority"] = prior["authority"]
         a, b, c, replacement = guests
         replacement.stop()
         a.wait(lambda s: s[496] == 2, "replacement offline", timeout=90)
         report["stage"] = "32KiB-measurement"
         a.launch("command", 5)
-        created = fixture.create(a, D.API.symbol, length=32768, seed=17)
+        created = prior["created"] if prior else fixture.create(a, D.API.symbol, length=32768, seed=17)
         report["created"] = created
-        report["measurement"] = measure(a, D.API.symbol, created["object_id"])
+        report["measurement"] = prior["measurement"] if prior else measure(a, D.API.symbol, created["object_id"])
         report["persisted"] = [D.persisted_hash(g, args.verifier.resolve(), identities[0], created)
                                for g in (a, b, c)]
         if args.measurement_only:
