@@ -20,14 +20,19 @@ reader node, authenticated local principal, policy generation and expiry.
 Possessing replica bytes or a metadata certificate grants no application access.
 Deleted objects and superseded grants fail closed.
 
-The primitives use fixed records and bounded state. Persistence callbacks must
-commit before the in-memory state advances or a receipt is issued. Their current
-host fixtures exercise success/failure; they are not native disk integration.
+The primitives use fixed records and bounded state. Native backing persists an
+8992-byte, eight-object catalog of signed staged/committed records and fixed group
+configuration through ObjectStore transactions. Persistence commits before state
+advances or a receipt is issued. Recovery validates canonical bytes and signatures;
+capacity exhaustion returns `ResourceLimit`. Six focused behavioral tests cover
+quorum rules, group binding, grants, canonical recovery and sector-cut durability.
+Referenced manifest/namespace/policy payloads and installed protocol use are not
+integrated by this backing module.
 
 ## Required before installed use
 
-- Native durable metadata staging, immutable referenced metadata, committed roots,
-  canonical recovery codecs and bounded reclamation.
+- Connect the native staging/certificate backing to immutable referenced metadata,
+  atomic application publication and bounded reclamation.
 - Explicit operator-approved group configuration and read delegations, persisted
   as native objects; no implicit grants during pairing or discovery.
 - Registered typed IOP operations over existing bounded secure transport, with

@@ -90,6 +90,19 @@ commits, fixing a failure-injection-discovered multi-record reuse bug.
   89/89 without retransmission; bounded four-key batches also passed. These prove
   the acceptance producer, not installed UI responsiveness or the root cause of
   the original loss. Security leases were not extended.
+- The final-source four-node distribution preflight passed mutual discovery but
+  failed its first A/B pairing: both local confirmations completed with more than
+  70 seconds remaining, but remote confirmation/trust did not commit. No Pool
+  object was created. A matching actual-cadence four-node host transport fixture
+  passed, so no scheduler or security-timeout change was justified from that
+  hypothesis. Installed packet-metadata diagnosis is separate and still pending.
+- `9246a0a` fixes Pool-revision invalidation for retained Settings slot 4 only.
+  The pixel-cache behavioral test and kernel compile check pass; an updated ISO
+  screenshot recheck is required. No full-screen redraw was introduced.
+- `a605b3c` adds isolated signed R2/W2 metadata primitives and native durable
+  backing, not owner-offline application reads. Integrated suites passed:
+  105 fabric tests (one ignored) and 62 performance-harness tests. These suites
+  share common runtime tests; their counts are not independent performance claims.
 
 ## Read and byte-proof boundaries
 
