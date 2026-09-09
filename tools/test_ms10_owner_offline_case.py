@@ -13,6 +13,26 @@ SPEC.loader.exec_module(MODULE)
 
 class CaseFence(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_pairing_resume_preserves_exact_trust_and_artifact
+    # DESC: Pairing-only failure cannot reuse authority/object stages or mismatched artifacts; asymmetric trust requires explicit repair.
+    # ------------------=
+    def test_pairing_resume_preserves_exact_trust_and_artifact(self):
+        prior = {"identities": [1, 2, 3, 4], "stage": "pair-all-six", "failure": "recorded", "artifact_sha256": "ab"*32}
+        MODULE.validate_resume_pairing(prior, [1, 2, 3, 4], "ab"*32)
+        for field, value in (("stage", "authority"), ("authority", []), ("created", {}), ("artifact_sha256", "cd"*32)):
+            invalid = dict(prior)
+            invalid[field] = value
+            with self.assertRaises(AssertionError): MODULE.validate_resume_pairing(invalid, [1, 2, 3, 4], "ab"*32)
+        legacy = dict(prior)
+        legacy.pop("artifact_sha256")
+        with self.assertRaises(AssertionError): MODULE.validate_resume_pairing(legacy, [1, 2, 3, 4], "ab"*32)
+        MODULE.validate_resume_pairing(legacy, [1, 2, 3, 4], "ab"*32, "ab"*32)
+        self.assertEqual(MODULE.pair_action(3, 3), "preserve")
+        self.assertEqual(MODULE.pair_action(1, 0), "pair")
+        for pair in ((3, 1), (1, 3), (5, 5), (2, 2)):
+            with self.assertRaises(AssertionError): MODULE.pair_action(*pair)
+
+    # ------------------------=
     # FUNC: test_failed_measurement_retry_is_exact_and_not_completed
     # DESC: Accepts a failed exact byte-set case and rejects different identities, stage, digest, or completed timing evidence.
     # ------------------=

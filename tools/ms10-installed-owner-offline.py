@@ -82,6 +82,45 @@ def validate_retry_measurement(prior, identities, length, seed):
 
 
 # ------------------------=
+# FUNC: validate_resume_pairing
+# DESC: Allows continuation only before authority or object creation on the same installed artifact and four identities.
+# ------------------=
+def validate_resume_pairing(prior, identities, digest, pinned_digest=None):
+    assert prior["identities"] == identities and len(set(identities)) == 4
+    assert prior["stage"] == "pair-all-six" and prior.get("failure")
+    assert "created" not in prior and "authority" not in prior
+    if "artifact_sha256" in prior:
+        assert prior["artifact_sha256"] == digest
+    else:
+        assert pinned_digest == digest, "Legacy pairing failure needs an independent bootstrap artifact pin"
+
+
+# ------------------------=
+# FUNC: pair_action
+# DESC: Preserves reciprocal Trusted relationships; asymmetric or restricted states require explicit operator repair, never silent revocation.
+# ------------------=
+def pair_action(left, right):
+    if left == right == 3:
+        return "preserve"
+    if left in (0, 1) and right in (0, 1):
+        return "pair"
+    raise AssertionError({"pair_requires_explicit_reset": [left, right]})
+
+
+# ------------------------=
+# FUNC: peer_state
+# DESC: Resolves one exact peer's typed trust byte from the current reconciled projection.
+# ------------------=
+def peer_state(state, peer):
+    assert not state[22]
+    for index in range(min(state[24], 16)):
+        row = struct.pack("<16Q", *state[128+index*16:144+index*16])
+        if row[:32].hex() == peer:
+            return row[85]
+    raise AssertionError({"peer_not_observed": peer})
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Uses independently installed nodes and ordinary native operations; loses original A and never requests explicit repair.
 # ------------------=
@@ -96,6 +135,7 @@ def main():
     parser.add_argument("--resume-prepared", action="store_true")
     parser.add_argument("--resume-published", action="store_true")
     parser.add_argument("--retry-measurement", action="store_true")
+    parser.add_argument("--resume-pairing", action="store_true")
     parser.add_argument("--length", type=int, choices=(32768, 65536, 262144), default=32768)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--lifecycle", action="store_true")
@@ -109,12 +149,28 @@ def main():
     assert not (args.resume_prepared and (args.resume_measured or args.reuse_configured))
     assert not (args.resume_published and (args.resume_prepared or args.resume_measured or args.reuse_configured))
     assert not (args.retry_measurement and (args.resume_published or args.resume_prepared or args.resume_measured or args.reuse_configured))
+    assert not (args.resume_pairing and (args.retry_measurement or args.resume_published or args.resume_prepared or args.resume_measured or args.reuse_configured))
     provenance = json.loads((work / "result.json").read_text())
     assert provenance["independent_installs"] == 4
     identities = [entry["node_id"] for entry in provenance["nodes"]]
     assert len(set(identities)) == 4
     prior = None
     prepared_grants = None
+    if args.resume_pairing:
+        prior = json.loads((work / "owner-offline-gate-result.json").read_text())
+        pinned = json.loads((work / "artifacts/sha256.json").read_text())
+        assert set(pinned) == {"installer.iso", "kernel.elf", "installed-kernel.elf"}
+        for filename, digest in pinned.items():
+            with (work / "artifacts" / filename).open("rb") as artifact:
+                assert hashlib.file_digest(artifact, "sha256").hexdigest() == digest
+        validate_resume_pairing(prior, identities, artifact_hash(work), pinned["installed-kernel.elf"])
+        assert not (work / "prepared-authority.json").exists(), "Authority receipt already exists; pairing-only resume is invalid"
+        encoded = json.dumps(prior, indent=2)
+        archive = work / f"owner-offline-pairing-failure-{hashlib.sha256(encoded.encode()).hexdigest()[:16]}.json"
+        if archive.exists():
+            assert archive.read_text() == encoded
+        else:
+            archive.write_text(encoded)
     if args.retry_measurement:
         prior = json.loads((work / "owner-offline-gate-result.json").read_text())
         validate_retry_measurement(prior, identities, args.length, args.seed)
@@ -144,9 +200,11 @@ def main():
         (work / f"owner-offline-measurement-{prior['length']}-{prior['seed']}.json").write_text(json.dumps(prior, indent=2))
     if prior is None:
         assert not (work / "prepared-authority.json").exists(), "Prepared authority exists; choose explicit resume rather than duplicate durable grants"
-    hub = EthernetHub().start()
+    hub = EthernetHub(metadata_limit=8192).start()
     guests = []
     report = {"status": "INCOMPLETE", "full_ms10_acceptance": False,
+              "artifact_sha256": artifact_hash(work), "resume_pairing": args.resume_pairing,
+              "pairing_resume_provenance": "failure identities plus independently pinned bootstrap artifacts" if args.resume_pairing else None,
               "boundary": "four installed media-detached QEMU nodes", "stage": "boot",
               "identities": identities, "resume_measured": args.resume_measured,
               "reuse_configured": args.reuse_configured,
@@ -176,11 +234,18 @@ def main():
                 list(workers.map(lambda guest: D.MESH.configure(guest, 4), guests))
         for guest in guests:
             guest.wait(lambda s: s[24] == 3 and s[22] == 0, "three discovered peers", timeout=120)
-        if prior is None:
+        if prior is None or args.resume_pairing:
             report["stage"] = "pair-all-six"
             for left in range(4):
                 for right in range(left + 1, 4):
+                    if args.resume_pairing:
+                        action = pair_action(peer_state(guests[left].state(), identities[right]),
+                                             peer_state(guests[right].state(), identities[left]))
+                        if action == "preserve":
+                            continue
                     D.pair(guests[left], guests[right])
+                    assert peer_state(guests[left].state(), identities[right]) == 3
+                    assert peer_state(guests[right].state(), identities[left]) == 3
             report["stage"] = "authority"
             report["authority"] = establish_authority(guests, D, checkpoint=lambda ids, grants: save_prepared(work, ids, grants))
         else:
@@ -300,6 +365,8 @@ def main():
             except Exception as error:
                 report.setdefault("stop_errors", []).append(repr(error))
         hub.close()
+        report["wire_metadata"] = hub.metadata
+        report["wire_metadata_dropped"] = hub.metadata_dropped
         (work / "owner-offline-gate-result.json").write_text(json.dumps(report, indent=2))
         (work / f"owner-offline-gate-{args.length}-{args.seed}.json").write_text(json.dumps(report, indent=2))
 
