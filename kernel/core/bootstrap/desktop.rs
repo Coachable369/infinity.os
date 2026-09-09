@@ -2908,9 +2908,10 @@ impl super::DisplayDevice {
                 25
             };
             let _ = self.themed_icon(left + 30 * scale, top + 24 * scale, icon_role, 32 * scale);
-            self.ui_text_strong(
+            self.ui_text_elided_strong(
                 left + 54 * scale,
                 top + 16 * scale,
+                108 * scale,
                 if screen == 9 {
                     b"Text Editor"
                 } else if screen == 10 {
@@ -2921,7 +2922,6 @@ impl super::DisplayDevice {
                 231,
                 243,
                 250,
-                1,
             );
             self.ui_text(
                 left + 174 * scale,

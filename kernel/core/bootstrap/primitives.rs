@@ -486,6 +486,30 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: ui_text_elided_strong
+    // DESC: Keeps the normal title font while eliding overlong ASCII window titles inside their reserved menu-free slot.
+    // ------------------=
+    pub(super) fn ui_text_elided_strong(&mut self, x: usize, y: usize, max_width: usize,
+        text: &[u8], red: u8, green: u8, blue: u8) {
+        if self.ui_text_width_weighted(text, 1, true) <= max_width {
+            self.ui_text_strong(x, y, text, red, green, blue, 1);
+            return;
+        }
+        let mut shortened = [0u8; 96];
+        let mut length = text.len().min(shortened.len() - 3);
+        shortened[..length].copy_from_slice(&text[..length]);
+        loop {
+            shortened[length..length + 3].copy_from_slice(b"...");
+            if self.ui_text_width_weighted(&shortened[..length + 3], 1, true) <= max_width {
+                self.ui_text_strong(x, y, &shortened[..length + 3], red, green, blue, 1);
+                return;
+            }
+            if length == 0 { return; }
+            length -= 1;
+        }
+    }
+
+    // ------------------------=
     // FUNC: ui_text_fit_strong
     // DESC: Draws a heading at its preferred hierarchy and safely falls back when the measured glyphs exceed the container.
     // ------------------=
