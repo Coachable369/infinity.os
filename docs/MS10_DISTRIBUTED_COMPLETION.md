@@ -24,6 +24,19 @@ Current request is the distributed Pool completion pass, not a new foundation.
 
 ### Current source evidence (not installed lifecycle acceptance)
 
+Integrated source checkpoint `0aad862` includes current metadata reads, repair
+overlay recovery, shared Settings projection and namespace-independent deletion
+bookkeeping. `/tmp/ms10-integrated-fabric-after-outbox.log` passed 128 tests,
+with one existing captured-disk replay test ignored. The new stale-owner test
+found and fixed late deletion-outbox allocation at the 32-entry namespace bound;
+update/copy/delete now pass with repaired metadata and cold retry on the host.
+
+Transport checkpoint `840b1eb` permits 64 authenticated DATA attempts per link
+per second while retaining one RX/TX per poll, fairness and separate control
+limits. Its host fixture delivered 640 ordered 64-byte payloads in ten virtual
+seconds (40,960 bytes); this is not installed storage throughput. MS9's 39-test
+gate passed. Final-source ISO build and installed lifecycle remain pending.
+
 The restored authenticated DATA budget is bounded separately from control
 traffic. MS9's 39-test gate passed after adding full-transmit-queue confirmation
 retry and four-link fairness coverage. The host cadence fixture delivered 160
