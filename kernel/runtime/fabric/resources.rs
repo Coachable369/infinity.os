@@ -29,13 +29,13 @@ pub struct Resource {
 pub enum ResourceError { AccessDenied, Invalid, Stale, Conflict, Full, NotFound, Capacity }
 
 #[derive(Clone)]
-pub struct Directory { entries: [Option<Resource>; MAX_RESOURCES], reserved: [u64; MAX_RESOURCES] }
+pub struct Directory { entries: [Option<Resource>; MAX_RESOURCES], reserved: [u64; MAX_RESOURCES], offline_notices: u32 }
 impl Directory {
     // ------------------------=
     // FUNC: new
     // DESC: Allocates a bounded inventory with no implicit resources or authority.
     // ------------------=
-    pub const fn new() -> Self { Self { entries: [None; MAX_RESOURCES], reserved: [0; MAX_RESOURCES] } }
+    pub const fn new() -> Self { Self { entries: [None; MAX_RESOURCES], reserved: [0; MAX_RESOURCES], offline_notices: 0 } }
 
     // ------------------------=
     // FUNC: advertise
@@ -81,6 +81,8 @@ impl Directory {
             self.entries.iter().position(Option::is_none).ok_or(ResourceError::Full)?
         };
         self.entries[slot] = Some(resource);
+        // A newer authenticated online observation supersedes a queued loss.
+        if resource.online { self.offline_notices &= !(1u32 << slot); }
         Ok(true)
     }
 
@@ -104,14 +106,41 @@ impl Directory {
     // DESC: Retains known resource and reservation identity when its owner disappears while excluding it from new placement immediately.
     // ------------------=
     pub(crate) fn mark_peer_offline(&mut self, peer: NodeId) {
-        for resource in self.entries.iter_mut().flatten().filter(|r| r.owner == peer) { resource.online = false; }
+        for (index, entry) in self.entries.iter_mut().enumerate() {
+            if let Some(resource) = entry.as_mut().filter(|r| r.owner == peer && r.online) {
+                resource.online = false; self.offline_notices |= 1u32 << index;
+            }
+        }
     }
     // ------------------------=
     // FUNC: expire
     // DESC: Marks expired observations offline without deleting placements or releasing outstanding durable reservations.
     // ------------------=
     pub(crate) fn expire(&mut self, now: u64) {
-        for resource in self.entries.iter_mut().flatten().filter(|r| r.expires <= now) { resource.online = false; }
+        for (index, entry) in self.entries.iter_mut().enumerate() {
+            if let Some(resource) = entry.as_mut().filter(|r| r.expires <= now && r.online) {
+                resource.online = false; self.offline_notices |= 1u32 << index;
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: offline_notice
+    // DESC: Peeks one coalesced committed loss without allocating or flooding IEF; failed delivery retains the observation for a later event-loop tick.
+    // ------------------=
+    pub(crate) fn offline_notice(&self) -> Option<Resource> {
+        if self.offline_notices == 0 { return None; }
+        self.entries[self.offline_notices.trailing_zeros() as usize]
+    }
+
+    // ------------------------=
+    // FUNC: acknowledge_offline
+    // DESC: Clears only the exact delivered observation; a changed generation or newer health state cannot be acknowledged by an old publisher.
+    // ------------------=
+    pub(crate) fn acknowledge_offline(&mut self, delivered: Resource) {
+        if let Some(index) = self.entries.iter().position(|entry| *entry == Some(delivered)) {
+            self.offline_notices &= !(1u32 << index);
+        }
     }
 
     // ------------------------=

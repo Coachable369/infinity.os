@@ -50,6 +50,45 @@ fn resource(id: u8, owner: NodeId) -> Resource {
 }
 
 // ------------------------=
+// FUNC: resource_loss_notifications_are_bounded_and_generation_fenced
+// DESC: Exercises expiry and disconnect transitions, delivery backpressure, duplicate loss suppression and recovery without losing resource identity or reservations.
+// ------------------=
+#[test]
+fn resource_loss_notifications_are_bounded_and_generation_fenced() {
+    let mut directory = Directory::new();
+    let peer = NodeId([7; 32]);
+    for id in 1..=32 { directory.apply(resource(id, peer), 1).unwrap(); }
+    directory.reserve(ResourceId([1; 16]), 1, 512, 2).unwrap();
+    directory.expire(100);
+    let first = directory.offline_notice().unwrap();
+    assert!(!first.online);
+    assert_eq!(directory.entries().iter().flatten().count(), 32);
+    assert_eq!(directory.usable(0, 100), 0);
+    for _ in 0..100 {
+        directory.expire(101);
+        directory.mark_peer_offline(peer);
+        assert_eq!(directory.offline_notice(), Some(first));
+    }
+    let mut delivered = 0;
+    while let Some(value) = directory.offline_notice() {
+        directory.acknowledge_offline(value); delivered += 1;
+        assert!(delivered <= 32);
+    }
+    assert_eq!(delivered, 32);
+    directory.expire(102); assert_eq!(directory.offline_notice(), None);
+    let mut recovered = resource(1, peer); recovered.sequence = 2; recovered.expires = 200;
+    directory.apply(recovered, 103).unwrap();
+    assert_eq!(directory.usable(0, 103), 1536);
+    directory.mark_peer_offline(peer);
+    directory.acknowledge_offline(first);
+    assert_eq!(directory.offline_notice().unwrap().sequence, 2);
+    recovered.sequence = 3;
+    directory.apply(recovered, 104).unwrap();
+    assert_eq!(directory.offline_notice(), None);
+    assert_eq!(directory.usable(0, 104), 1536);
+}
+
+// ------------------------=
 // FUNC: authority_is_not_discovery
 // DESC: Exercises real native session/grant validation, exact ownership, scope, revocation and lease failure.
 // ------------------=

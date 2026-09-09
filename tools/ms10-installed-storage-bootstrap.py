@@ -21,17 +21,23 @@ spec.loader.exec_module(installed)
 # FUNC: provision
 # DESC: Installs one blank owned disk, detaches media, configures through real UI and proves the mounted replica service survives cold authenticated boot.
 # ------------------=
-def provision(guest):
+def provision(guest, resume=False):
     try:
-        guest.install()
-        state = guest.wait(lambda state: state[108] == 3, "mounted native replica service")
-        assert state[3] == 1
-        guest.stop()
-        result = guest.onboard()
+        if resume:
+            guest.boot(False)
+            before = guest.authenticate()
+            result = guest.cold_boot_proof(before)
+        else:
+            guest.install()
+            state = guest.wait(lambda state: state[108] == 3, "mounted native replica service")
+            assert state[3] == 1
+            guest.stop()
+            result = guest.onboard()
         state = guest.wait(lambda state: state[108] == 3 and state[4] == 5, "cold installed recipient service")
         result["replica_service_ready_after_cold_boot"] = True
         result["installer_detached"] = not guest.installer
         assert result["installer_detached"]
+        guest.launch("command", 5)
         guest.command("storage status")
         state = guest.wait(lambda state: state[110] == 1, "authoritative local storage IOP observation")
         raw = struct.pack("<17Q", *state[111:128])
@@ -73,21 +79,31 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--nodes", type=int, choices=(3, 4), default=3)
+    parser.add_argument("--resume", action="store_true", help="Reverify existing independently installed disks using their pinned artifacts; never reinstall or substitute current builds")
     parser.add_argument("--firmware", default="/opt/homebrew/share/qemu/edk2-x86_64-code.fd")
     args = parser.parse_args()
-    work = args.output.resolve(); work.mkdir(parents=True, exist_ok=False)
-    artifacts = work / "artifacts"; artifacts.mkdir()
+    work = args.output.resolve()
+    if not args.resume:
+        work.mkdir(parents=True, exist_ok=False)
+    artifacts = work / "artifacts"
+    if not args.resume:
+        artifacts.mkdir()
     hashes = {}
     for source, name in [(ROOT / "builds/InfinityOS-x86_64.iso", "installer.iso"),
                          (ROOT / "build/x86_64/kernel.elf", "kernel.elf"),
                          (ROOT / "build/x86_64/installed-kernel.elf", "installed-kernel.elf")]:
-        target = artifacts / name; shutil.copyfile(source, target)
+        target = artifacts / name
+        if not args.resume:
+            shutil.copyfile(source, target)
         with target.open("rb") as stream:
             hashes[name] = hashlib.file_digest(stream, "sha256").hexdigest()
-    (artifacts / "sha256.json").write_text(json.dumps(hashes, indent=2))
-    guests = [installed.Guest(work, n, args.firmware) for n in range(1, args.nodes+1)]
+    if args.resume:
+        assert hashes == json.loads((artifacts / "sha256.json").read_text()), "Pinned acceptance artifacts changed"
+    else:
+        (artifacts / "sha256.json").write_text(json.dumps(hashes, indent=2))
+    guests = [installed.Guest(work, n, args.firmware, reuse=args.resume) for n in range(1, args.nodes+1)]
     with ThreadPoolExecutor(max_workers=2) as workers:
-        results = list(workers.map(provision, guests))
+        results = list(workers.map(provision, guests, [args.resume] * args.nodes))
     assert len({result["node_id"] for result in results}) == args.nodes
     assert len({result["resource_id"] for result in results}) == args.nodes
     assert len({result["device_id"] for result in results}) == args.nodes

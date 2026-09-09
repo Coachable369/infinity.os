@@ -1971,6 +1971,7 @@ pub fn poll_node_transport(now: u64) {
         let directory = &mut runtime.fabric_resources;
         runtime.iop.execute_remote_storage(&mut runtime.nodes, now, |request| {
             use iop::storage_protocol::{Operation, StorageCommit, EVENT_RESOURCE_CHANGED};
+            let handler = handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?;
             if request.payload.operation == Operation::ResourceAdvertise {
                 let changed = directory.accept_storage_advertisement(request, now).map_err(|error| {
                     use fabric::resources::ResourceError;
@@ -1985,10 +1986,10 @@ pub fn poll_node_transport(now: u64) {
                     state: request.payload.data[44], correlation: request.correlation, causation: request.request_id,
                 })));
             }
-            handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?(request)
+            handler(request)
         })
     }).flatten().flatten();
-    if let Some(notice) = storage_commit { publish_storage_commit(notice, now); }
+    if let Some(notice) = storage_commit { let _ = publish_storage_commit(notice, now); }
     let membership = with_runtime(|runtime| runtime.iop.poll_membership(&mut runtime.nodes, &mut runtime.node_transport.trust, now, persist_control_state)).flatten();
     if let Some(notice) = membership { let _ = publish_committed_node_control(notice, now); }
     let event = match change {
@@ -2001,6 +2002,18 @@ pub fn poll_node_transport(now: u64) {
         None => None,
     };
     if let Some((kind, peer)) = event { let _ = publish_node_state_event(kind, peer, now, now); }
+    // Publish at most one retained resource-loss observation per iteration.
+    // Inventory is already offline; IEF delivery never determines availability.
+    if let Some(resource) = with_runtime(|runtime| runtime.fabric_resources.offline_notice()).flatten() {
+        let notice = iop::storage_protocol::StorageCommit {
+            event: iop::storage_protocol::EVENT_RESOURCE_CHANGED, object: resource.id.0,
+            generation: resource.sequence, copied: resource.available,
+            state: 0, correlation: now, causation: now,
+        };
+        if publish_storage_commit(notice, now) {
+            with_runtime(|runtime| runtime.fabric_resources.acknowledge_offline(resource));
+        }
+    }
     with_runtime(|runtime| {
         let checkpoint = runtime.nodes.control_version();
         if checkpoint != runtime.node_checkpoint_notified {
@@ -2022,25 +2035,25 @@ pub fn register_storage_backend(handler: iop::storage_protocol::StorageHandler) 
 // FUNC: publish_storage_commit
 // DESC: Publishes bounded typed replica state only after the native transaction committed, retaining full ObjectId and causation.
 // ------------------=
-fn publish_storage_commit(notice: iop::storage_protocol::StorageCommit, now: u64) {
+fn publish_storage_commit(notice: iop::storage_protocol::StorageCommit, now: u64) -> bool {
     use iop::storage_protocol::{EVENT_REPLICA_CHANGED, EVENT_RESOURCE_CHANGED};
     with_runtime(|runtime| {
-        let index = match notice.event { EVENT_REPLICA_CHANGED => 0, EVENT_RESOURCE_CHANGED => 1, _ => return };
-        let Some(source) = runtime.service_identity(SERVICE_REPLICA_STORAGE) else { return; };
-        let Some(issuer) = runtime.service_identity(SERVICE_RUNTIME) else { return; };
+        let index = match notice.event { EVENT_REPLICA_CHANGED => 0, EVENT_RESOURCE_CHANGED => 1, _ => return false };
+        let Some(source) = runtime.service_identity(SERVICE_REPLICA_STORAGE) else { return false; };
+        let Some(issuer) = runtime.service_identity(SERVICE_RUNTIME) else { return false; };
         if runtime.storage_event_cap[index].is_none() {
             runtime.storage_event_cap[index] = runtime.capabilities.grant(CapabilityType::EventPublish,
                 notice.event as u64, 1, 0, issuer, source, None, 0).ok();
         }
-        let Some(capability) = runtime.storage_event_cap[index] else { return; };
+        let Some(capability) = runtime.storage_event_cap[index] else { return false; };
         let mut payload = [0; 40];
         payload[..16].copy_from_slice(&notice.object);
         payload[16..24].copy_from_slice(&notice.generation.to_le_bytes());
         payload[24..32].copy_from_slice(&notice.copied.to_le_bytes()); payload[32] = notice.state;
-        let _ = runtime.events.publish(EventClass::StateChange, RoutingDomain::Mesh, notice.event,
+        runtime.events.publish(EventClass::StateChange, RoutingDomain::Mesh, notice.event,
             source, 0, notice.correlation, notice.causation, &payload, 140, now,
-            &runtime.capabilities, capability);
-    });
+            &runtime.capabilities, capability).is_ok()
+    }).unwrap_or(false)
 }
 
 // ------------------------=
