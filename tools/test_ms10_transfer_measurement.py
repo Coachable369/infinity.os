@@ -49,6 +49,27 @@ class Fixture:
 
 class Measurement(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_completed_idle_object_cannot_pass_loaded_interaction
+    # DESC: A completed object without an observed active window must fail instead of accepting idle UI behavior.
+    # ------------------=
+    def test_completed_idle_object_cannot_pass_loaded_interaction(self):
+        fake = Fixture()
+        fake.now = 3
+        original = fake.state
+        # ------------------------=
+        # FUNC: idle
+        # DESC: Clears the active transfer while retaining a healthy receipt-backed object.
+        # ------------------=
+        def idle(*args):
+            state = original(*args)
+            state[26] = 0
+            return state
+        with patch("ms10_installed_transfer_measurement.fixture.read_state", idle):
+            with self.assertRaises(AssertionError):
+                measure(fake, None, struct.pack("<2Q", 17, 0).hex(),
+                        clock=lambda: fake.now, pause=fake.pause, during_transfer=lambda: {})
+
+    # ------------------------=
     # FUNC: test_exact_object_and_actual_offset_samples
     # DESC: An unrelated healthy row cannot satisfy protection; acknowledged byte increments produce measured windows.
     # ------------------=

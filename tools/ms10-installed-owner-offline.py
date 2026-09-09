@@ -119,7 +119,9 @@ def main():
         created = prior["created"] if prior else fixture.create(a, D.API.symbol, length=args.length, seed=args.seed)
         report["created"] = created
         report["namespace_path"] = f"/Shared/MS10_{args.length}_{args.seed}_{created['object_id'][:8]}"
-        report["measurement"] = prior["measurement"] if prior else measure(a, D.API.symbol, created["object_id"])
+        report["measurement"] = prior["measurement"] if prior else measure(
+            a, D.API.symbol, created["object_id"], traffic=hub.traffic_snapshot,
+            during_transfer=lambda: D.responsive_transfer(a, created["object_id"]))
         report["persisted"] = [D.persisted_hash(g, args.verifier.resolve(), identities[0], created)
                                for g in (a, b, c)]
         if args.measurement_only:

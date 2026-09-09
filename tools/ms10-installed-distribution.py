@@ -224,6 +224,7 @@ def responsive_transfer(guest, object_id):
     try:
         for _ in range(6):
             before = fixture.read_state(guest, API.symbol)
+            assert before[26] and struct.pack("<2Q", *before[240:242]).hex() == object_id, {"transfer_ended_before_drag": object_id}
             started = time.monotonic_ns()
             guest.qmp("input-send-event", {"events": [{"type": "rel", "data": {"axis": "x", "value": 4}}]})
             while True:
@@ -233,6 +234,7 @@ def responsive_transfer(guest, object_id):
                 assert time.monotonic_ns() - started < 2_000_000_000, {"drag_did_not_move_window": after[246:251]}
                 time.sleep(.02)
             assert after[250] == 1
+            assert after[26] and struct.pack("<2Q", *after[240:242]).hex() == object_id, {"transfer_ended_during_drag": object_id}
             latencies.append(time.monotonic_ns() - started)
     finally:
         guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": False}}]})

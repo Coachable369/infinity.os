@@ -23,6 +23,9 @@ class EthernetHub:
         self.metadata_limit = metadata_limit
         self.metadata = []
         self.metadata_dropped = 0
+        self.observation_lock = threading.Lock()
+        self.counters = {"frames": 0, "bytes": 0, "forwarded_copies": 0,
+                         "native_data_frames": 0, "queue_high_water_bytes": 0}
         self.maximum = maximum
         self.selector = selectors.DefaultSelector()
         self.listener = socket.socket()
@@ -58,22 +61,41 @@ class EthernetHub:
     # DESC: Retains only bounded public IPv4/UDP headers and protocol kind, never cryptographic or application payload bytes.
     # ------------------=
     def observe_metadata(self, frame, forwarded):
-        if not self.metadata_limit or len(frame) < 42 or frame[12:14] != b"\x08\x00":
+        with self.observation_lock:
+            self.counters["frames"] += 1
+            self.counters["bytes"] += len(frame)
+            self.counters["forwarded_copies"] += forwarded
+            queued = sum(len(outgoing) for _, outgoing in self.clients.values())
+            self.counters["queue_high_water_bytes"] = max(self.counters["queue_high_water_bytes"], queued)
+        if len(frame) < 42 or frame[12:14] != b"\x08\x00":
             return
         header = (frame[14] & 15) * 4
         udp = 14 + header
         if header < 20 or len(frame) < udp + 8 or frame[23] != 17:
             return
+        payload = udp + 8
+        kind = frame[payload + 8] if len(frame) > payload + 8 and frame[payload:payload+8] == b"IN9A0001" else None
+        if kind == 11:
+            with self.observation_lock:
+                self.counters["native_data_frames"] += 1
+        if not self.metadata_limit:
+            return
         if len(self.metadata) >= self.metadata_limit:
             self.metadata_dropped += 1
             return
-        payload = udp + 8
-        kind = frame[payload + 8] if len(frame) > payload + 8 and frame[payload:payload+8] == b"IN9A0001" else None
         self.metadata.append({"timestamp_ns": time.monotonic_ns(), "source_ip": list(frame[26:30]),
                               "destination_ip": list(frame[30:34]),
                               "source_port": struct.unpack_from("!H", frame, udp)[0],
                               "destination_port": struct.unpack_from("!H", frame, udp+2)[0],
                               "wire_kind": kind, "length": len(frame), "forwarded": forwarded})
+
+    # ------------------------=
+    # FUNC: traffic_snapshot
+    # DESC: Returns bounded fixture counters only; guest retries and transport queue depth are not inferred from encrypted frames.
+    # ------------------=
+    def traffic_snapshot(self):
+        with self.observation_lock:
+            return dict(self.counters)
 
     # ------------------------=
     # FUNC: service
