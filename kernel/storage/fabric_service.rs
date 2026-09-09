@@ -69,8 +69,12 @@ impl Catalog {
                 authority: field(&bytes, at+176), manifest: field(&bytes, at+184), scope: field(&bytes, at+192), descriptor: cp.descriptor };
             if cp.state != ReplicaState::Planned || cp.copied != 0 || b.backing.0 == [0; 16]
                 || b.owner == [0; 32] || b.authority == 0 || b.manifest == 0 || bytes[at+200..at+208] != [0; 8]
-                || catalog.entries.iter().flatten().any(|old| old.descriptor.object == b.descriptor.object
-                    || old.backing == b.backing) { return Err(RemoteError::PersistenceFailed); }
+                || catalog.entries.iter().flatten().any(|old| old.backing == b.backing
+                    || (old.descriptor.object == b.descriptor.object
+                        && (old.owner != b.owner || old.authority != b.authority || old.scope != b.scope
+                            || old.descriptor.version == b.descriptor.version
+                            || (old.descriptor.version < b.descriptor.version) != (old.manifest < b.manifest)
+                            || old.manifest == b.manifest))) { return Err(RemoteError::PersistenceFailed); }
             catalog.entries[index] = Some(b);
         }
         Ok(catalog)
@@ -148,7 +152,16 @@ impl ReplicaService {
             || (p.value == 0 && p.operation != Operation::ReplicaInspect)
             || self.resource.0 == [0; 16] || self.generation == 0 { return Err(RemoteError::MalformedRequest); }
         let mut catalog = Catalog::load(store)?;
-        let existing = catalog.entries.iter().position(|b| b.is_some_and(|b| b.descriptor.object == p.object));
+        let known = catalog.entries.iter().flatten().filter(|b| b.descriptor.object == p.object);
+        // Versions retain distinct immutable physical bindings. A new version
+        // cannot overwrite the old committed copy or seize its authority.
+        for b in known.clone() {
+            if b.owner != request.peer.0 || b.authority != p.authority_generation || b.scope != p.scope {
+                return Err(RemoteError::AccessDenied);
+            }
+        }
+        let existing = catalog.entries.iter().position(|b| b.is_some_and(|b|
+            b.descriptor.object == p.object && b.descriptor.version == p.object_version));
         let index = if let Some(index) = existing {
             let b = catalog.entries[index].unwrap();
             if b.owner != request.peer.0 || b.authority != p.authority_generation || b.scope != p.scope {
@@ -160,6 +173,10 @@ impl ReplicaService {
                 || b.descriptor.generation != self.generation { return Err(RemoteError::Conflict); }
             index
         } else {
+            if let Some(latest) = known.max_by_key(|b| b.descriptor.version) {
+                if p.operation != Operation::TransferBegin || p.object_version <= latest.descriptor.version
+                    || p.manifest_generation <= latest.manifest { return Err(RemoteError::Conflict); }
+            }
             if p.operation != Operation::TransferBegin { return Err(RemoteError::NotFound); }
             let descriptor = self.begin_descriptor(p)?;
             let index = catalog.entries.iter().position(Option::is_none).ok_or(RemoteError::QueueFull)?;

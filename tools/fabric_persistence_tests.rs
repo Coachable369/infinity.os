@@ -65,6 +65,56 @@ fn replica_request(payload: &[u8]) -> crate::runtime::iop::remote::Authenticated
 }
 
 // ------------------------=
+// FUNC: native_recipient_keeps_versions_immutable_across_restart
+// DESC: Commits two physical versions under one stable application identity, rejects stale and conflicting successor admissions, and reads each verified version after cold mount.
+// ------------------=
+#[test]
+fn native_recipient_keeps_versions_immutable_across_restart() {
+    use crate::{native_fabric::service::ReplicaService,
+        runtime::iop::{remote::RemoteError, storage_protocol::Operation}};
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let d = descriptor(&[31; 64]);
+    let mut service = ReplicaService::mount(&mut store, d.resource, d.generation).unwrap();
+    let mut requests = [replica_request(&[31; 64]), replica_request(&[47; 64])];
+    requests[1].payload.object_version += 1;
+    requests[1].payload.manifest_generation += 1;
+    requests[1].payload.value += 1;
+    for (index, request) in requests.iter().copied().enumerate() {
+        assert_eq!(service.execute(&mut store, request).unwrap().data[0], 1);
+        let mut chunk = request; chunk.payload.operation = Operation::TransferChunk;
+        chunk.payload.offset = 0; chunk.payload.length = 64;
+        chunk.payload.data = [if index == 0 { 31 } else { 47 }; 64];
+        assert_eq!(service.execute(&mut store, chunk).unwrap().offset, 64);
+        let mut commit = request; commit.payload.operation = Operation::TransferCommit;
+        commit.payload.length = 0; commit.payload.data = [0; 64];
+        assert_eq!(service.execute(&mut store, commit).unwrap().data[0], 4);
+    }
+    let committed = store.generation(); let usage = store.usage_blocks();
+    for attack in 0..4 {
+        let mut stale = requests[1];
+        match attack {
+            0 => stale.payload.object_version -= 2,
+            1 => { stale.payload.object_version += 1; },
+            2 => { stale.payload.object_version += 1; stale.payload.manifest_generation += 1; stale.peer.0[0] ^= 1; },
+            _ => stale.payload.data[24] ^= 1,
+        }
+        assert!(matches!(service.execute(&mut store, stale), Err(RemoteError::Conflict | RemoteError::AccessDenied)));
+        assert_eq!(store.generation(), committed); assert_eq!(store.usage_blocks(), usage);
+    }
+    drop(service); drop(store);
+    let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+    let mut service = ReplicaService::mount(&mut store, d.resource, d.generation).unwrap();
+    for (index, mut read) in requests.into_iter().enumerate() {
+        let expected = [if index == 0 { 31 } else { 47 }; 64];
+        read.payload.operation = Operation::ObjectRead; read.payload.offset = 0;
+        read.payload.value = 64; read.payload.length = 32; read.payload.data = [0; 64];
+        read.payload.data[..32].copy_from_slice(&Sha256::digest(expected));
+        assert_eq!(service.execute(&mut store, read).unwrap().data, expected);
+    }
+}
+
+// ------------------------=
 // FUNC: native_recipient_fences_every_chunk_and_recovers_ownership
 // DESC: Exercises real native transactions across service loss, owner/version/scope attacks, duplicate retries, empty content and bounded verification.
 // ------------------=
