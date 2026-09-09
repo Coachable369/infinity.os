@@ -218,10 +218,12 @@ mod tests {
         writable.set(false);
         let before=lifecycle::inspect(&mut store,owner.0,m.object,&ids).unwrap();
         assert!(before.object_present);assert_eq!(before.audit.len(),1);assert_eq!(before.audit[0].1,2);assert!(before.pending.is_none());
+        assert_eq!(before.local_manifest,Some((m.generation,m.version,m.hash)));
         assert_eq!(store.generation(),generation);
         writable.set(true);store.pool_delete(storage::object::ObjectId(m.object),owner,0,m.generation).unwrap();writable.set(false);
         let after=lifecycle::inspect(&mut store,owner.0,m.object,&ids).unwrap();
         assert!(!after.object_present);assert!(after.outbox_present);assert!(after.pending.is_none());assert_eq!(after.audit.last().unwrap().1,6);
+        assert!(after.local_manifest.is_none());
         writable.set(true);store.replace_named_state(b"/system/storage/pool-audit",&[0;2080]).unwrap();writable.set(false);
         assert!(lifecycle::inspect(&mut store,owner.0,m.object,&ids).is_err());
     }

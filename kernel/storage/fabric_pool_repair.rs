@@ -76,6 +76,7 @@ fn persist<D: BlockDevice>(
     publish: bool,
     now: u64,
 ) -> Result<(), RemoteError> {
+    if !a.anchor.persistent_authority()||a.repair.grant.expires!=u64::MAX{return Err(RemoteError::AccessDenied)}
     let bytes = a
         .encode(if publish { 0 } else { now })
         .map_err(|_| RemoteError::AccessDenied)?;
@@ -149,6 +150,7 @@ impl Service {
         length: u8,
     ) -> Result<R, RemoteError> {
         a.encode(now).map_err(|_| RemoteError::AccessDenied)?;
+        if !a.anchor.persistent_authority()||a.repair.grant.expires!=u64::MAX{return Err(RemoteError::AccessDenied)}
         a.repair
             .grant
             .validate(
@@ -371,6 +373,7 @@ impl Service {
         }
         let a = RepairAuthorization::decode(if p.value == 13 { 0 } else { now }, &u.bytes)
             .map_err(|_| RemoteError::AccessDenied)?;
+        if !a.anchor.persistent_authority()||a.repair.grant.expires!=u64::MAX{return Err(RemoteError::AccessDenied)}
         if p.object != a.anchor.manifest.object || r.peer != a.repair.grant.writer {
             return Err(RemoteError::AccessDenied);
         }

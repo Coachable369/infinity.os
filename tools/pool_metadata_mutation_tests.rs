@@ -35,6 +35,15 @@ fn returned_owner_mutations_require_certified_overlay_and_preserve_bytes(){
         repair.execute(&mut store,&mut replica,RepairRequest::Stage{authorization:stage,now:1}).unwrap();
         repair.execute(&mut store,&mut replica,RepairRequest::Publish{authorization:published,now:1}).unwrap();
         assert_eq!(store.pool_manifest(ObjectId(base.manifest.object),g.owner,0).unwrap().generation,1);
+        let mut read_service=Service::new();let mut forged=published.repair;forged.value.signature[0]^=1;
+        assert!(read_service.execute(&mut store,N::Read{object:base.manifest.object,record:base.value.record,principal:[7;16],reader:g.owner,now:1,offset:0,length:9,overlay:Some(forged)}).is_err());
+        assert_eq!(store.pool_manifest(ObjectId(base.manifest.object),g.owner,0).unwrap().generation,1);
+        for attempt in 0..2 {
+            let before=store.generation();
+            match read_service.execute(&mut store,N::Read{object:base.manifest.object,record:base.value.record,principal:[7;16],reader:g.owner,now:1,offset:0,length:9,overlay:Some(published.repair)}).unwrap(){R::Bytes{data,length}=>{assert_eq!(length,9);assert_eq!(&data[..9],b"immutable");},_=>panic!()}
+            assert_eq!(store.pool_manifest(ObjectId(base.manifest.object),g.owner,0).unwrap(),published.repair.manifest);
+            if attempt==1{assert_eq!(store.generation(),before);}
+        }
         let mut request=StorageOperationV1{operation,object:base.manifest.object,authority_generation:1,manifest_generation:2,object_version:1,offset:0,scope:0,value:0,length:0,data:[0;64]};
         if operation==Operation::ObjectUpdate{request.length=9;request.data[..9].copy_from_slice(b"recovered");}else if operation==Operation::ObjectCopy{request.value=321;}
         let mut service=Service::new();

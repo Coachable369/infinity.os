@@ -9,6 +9,26 @@ from ms10_installed_pool import call
 
 
 # ------------------------=
+# FUNC: return_coverage
+# DESC: Separates an offline owner's repaired-placement return from actual newer-content reconciliation using observed immutable versions.
+# ------------------=
+def return_coverage(owner_version_before, peer_version_before_return, owner_version_after,
+                    original_generation, observed_generation):
+    return {
+        "original_owner_return": owner_version_after == peer_version_before_return,
+        "newer_content_existed_before_owner_return": peer_version_before_return > owner_version_before,
+        "stale_content_version_reconciled": (
+            peer_version_before_return > owner_version_before
+            and owner_version_after == peer_version_before_return
+        ),
+        "newer_placement_generation_observed": observed_generation > original_generation,
+        "owner_version_before": owner_version_before,
+        "peer_version_before_return": peer_version_before_return,
+        "owner_version_after": owner_version_after,
+    }
+
+
+# ------------------------=
 # FUNC: inspect_lifecycle
 # DESC: Pauses an owned guest, verifies paused state, then invokes only the native read-only tombstone/outbox/audit decoder.
 # ------------------=
@@ -88,18 +108,26 @@ def run(guests, distribution, verifier, report):
     path = report["namespace_path"]
     report["stage"] = "cold-critical-before-mutation"
     cold_proof = cold_critical((b, c, replacement), distribution, verifier, report)
-    report["stage"] = "stale-owner-return-after-cold-critical-proof"
+    report["stage"] = "owner-return-after-cold-critical-proof"
     a.boot(False)
     a.authenticate()
     assert distribution.identity(a) == owner and not a.installer
     a.fast_commands = True
     for peer in (b, c, replacement):
         distribution.open_session(a, peer)
+    stale_local = inspect_lifecycle(a, verifier, owner, object_id, [], "owner-before-fresh-read")
+    assert stale_local["local_manifest"] is not None
     a.launch("command", 5)
     fresh = read_path(a, path, object_id, fixture.expected_content(64, report["seed"]),
                       lambda: fixture.read_state(a, distribution.API.symbol))
     assert fresh["version"] == report["created"]["version"]
     assert fresh["generation"] >= report["created"]["manifest_generation"]
+    reconciled_local = inspect_lifecycle(a, verifier, owner, object_id, [], "owner-after-fresh-read")
+    assert reconciled_local["local_manifest"]["generation"] > stale_local["local_manifest"]["generation"]
+    assert reconciled_local["local_manifest"]["version"] == stale_local["local_manifest"]["version"]
+    assert reconciled_local["local_manifest"]["hash"] == stale_local["local_manifest"]["hash"]
+    returned = return_coverage(report["created"]["version"], report["created"]["version"],
+                               fresh["version"], stale_local["local_manifest"]["generation"], reconciled_local["local_manifest"]["generation"])
     updated_bytes = b"MS10OwnerUpdated"
     updated = invoke(a, f"pool write obj:{object_id} generation={fresh['generation']} version={fresh['version']} content={updated_bytes.decode()}",
                      lambda: fixture.read_state(a, distribution.API.symbol))
@@ -130,7 +158,7 @@ def run(guests, distribution, verifier, report):
     independent = call(a, f"pool read obj:{copy_id} generation={changed['generation']} version={changed['version']} offset=0 length={len(independent_bytes)}", 0x3002)
     assert independent["data"] == independent_bytes
     copy_description.update({"sha256": hashlib.sha256(independent_bytes).hexdigest(), "version": changed["version"]})
-    distribution.persisted_hash(a, verifier, owner, copy_description)
+    independent_disk = distribution.persisted_hash(a, verifier, owner, copy_description)
     original = read_path(a, path, object_id, updated_bytes, lambda: fixture.read_state(a, distribution.API.symbol))
     content_ids = [chunk["content"] for chunk in original_disk["chunks"]]
     before_delete = inspect_lifecycle(a, verifier, owner, object_id, content_ids, "before-delete")
@@ -154,12 +182,27 @@ def run(guests, distribution, verifier, report):
     a.launch("command", 5)
     independent = call(a, f"pool read obj:{copy_id} generation={changed['generation']} version={changed['version']} offset=0 length={len(independent_bytes)}", 0x3002)
     assert independent["data"] == independent_bytes
-    return {"stale_original_owner_return": True, "fresh_shared_update": True,
+    final_content_ids = sorted(set(content_ids + [chunk["content"] for chunk in independent_disk["chunks"]]))
+    copy_deleted = call(a, f"pool delete obj:{copy_id} generation={changed['generation']} version={changed['version']} confirm=true", 0x3009)
+    assert copy_deleted["object"] == copy_id
+    final_reclamation = inspect_lifecycle(a, verifier, owner, copy_id, final_content_ids, "last-copy-reference-deleted")
+    assert not final_reclamation["object_present"]
+    assert all(not content["present"] for content in final_reclamation["content_objects"])
+    return {"stale_original_owner_return": returned["stale_content_version_reconciled"],
+            "owner_return_observations": returned, "fresh_shared_update": True,
+            "stale_placement_manifest_reconciled_by_read": True,
+            "owner_manifest_before_read": stale_local["local_manifest"],
+            "owner_manifest_after_read": reconciled_local["local_manifest"],
+            "owner_offline_content_mutation": "UNSUPPORTED: reader and placement-repair grants do not authorize content mutation",
             "critical_cold_reboot_before_mutation": cold_proof,
             "copy_id": copy_id, "immutable_chunk_sharing": True, "independent_copy_edit": True,
             "correlated_delete_completion": True, "copy_survives_original_delete": True,
             "cold_tombstone_proof": {"boot": tombstone_boot, "native": cold_deleted},
             "retirement_outbox_drained": True,
             "content_retention_observations": cold_deleted["content_objects"],
-            "garbage_collection": "PARTIAL: actual content presence observed; retained copy/version references not inferred",
+            "last_copy_reference_retired": True,
+            "local_final_reference_reclamation": final_reclamation,
+            "reclamation_nodes_inspected": [a.number],
+            "remote_content_absence_verified": False,
+            "garbage_collection": "TESTED: listed local immutable content identities absent after final copy deletion; remote retirement uses acknowledged outbox, not a secure-erasure claim",
             "full_ms10_acceptance": False}

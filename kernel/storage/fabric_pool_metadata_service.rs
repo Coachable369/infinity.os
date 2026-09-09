@@ -83,7 +83,7 @@ impl Service {
     // ------------------=
     fn reader_bundle<D:BlockDevice>(&mut self,store:&mut ObjectStore<D>,object:[u8;16],reader:crate::runtime::node::types::NodeId,principal:[u8;16],now:u64)->Result<Bundle,RemoteError>{
         let bundle=match self.validated{Some((root,b))if root==store.generation()&&b.manifest.object==object=>b,_=>{let b=backing::read_bundle(store,object).map_err(error)?;self.validated=Some((store.generation(),b));b}};
-        if bundle.certificate.is_none()||bundle.value.record.deleted||!bundle.grants.iter().flatten().any(|g|g.reader==reader&&g.principal==principal&&now<g.expires){return Err(RemoteError::AccessDenied)}Ok(bundle)
+        if !bundle.persistent_authority()||bundle.certificate.is_none()||bundle.value.record.deleted||!bundle.grants.iter().flatten().any(|g|g.reader==reader&&g.principal==principal&&now<g.expires){return Err(RemoteError::AccessDenied)}Ok(bundle)
     }
     // ------------------------=
     // FUNC: execute
@@ -167,6 +167,7 @@ impl Service {
                 backing::load_bundle(store, index).map_err(error)?,
             )),
             NativeRequest::Stage { bundle } => {
+                if !bundle.persistent_authority(){return Err(RemoteError::AccessDenied)}
                 backing::stage_bundle(store, bundle).map_err(error)?;
                 self.cache_key = None;
                 Ok(NativeReply::Done)
@@ -220,6 +221,7 @@ impl Service {
                     return Err(RemoteError::Conflict);
                 }
                 let effective = if let Some(o) = overlay {
+                    if o.grant.expires!=u64::MAX{return Err(RemoteError::AccessDenied)}
                     let anchor = bundle.certificate.ok_or(RemoteError::AccessDenied)?;
                     o.certificate
                         .ok_or(RemoteError::AccessDenied)?
@@ -233,6 +235,10 @@ impl Service {
                         )
                         .map_err(error)?;
                     o.validate_available(&bundle.manifest).map_err(error)?;
+                    if reader==bundle.group.owner {
+                        let proof=crate::runtime::fabric::metadata_repair::RepairAuthorization{anchor:bundle,repair:o};
+                        store.with_pool_mutation_authority(ObjectId(object),|store|store.pool_reconcile_certified_manifest(ObjectId(object),bundle.group.owner,0,&proof)).map_err(|_|RemoteError::Conflict)?;
+                    }
                     o.manifest
                 } else {
                     bundle.manifest
@@ -510,6 +516,7 @@ impl Service {
             return Err(RemoteError::MalformedRequest);
         }
         let b = Bundle::decode(&u.bytes).map_err(error)?;
+        if !b.persistent_authority(){return Err(RemoteError::AccessDenied)}
         if b.value.record.object != p.object
             || b.value.record.generation != u.generation
             || !b.group.members.contains(&r.local)

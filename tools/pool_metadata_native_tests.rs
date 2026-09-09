@@ -6,6 +6,18 @@ use crate::runtime::{
 use sha2::{Digest, Sha256};
 use std::{cell::RefCell, collections::BTreeMap, rc::Rc};
 // ------------------------=
+// FUNC: finite_persistent_read_authority_is_rejected_before_storage_commit
+// DESC: Rejects otherwise correctly signed finite uptime authority at persistent service admission while retaining primitive cryptographic validity.
+// ------------------=
+#[test]
+fn finite_persistent_read_authority_is_rejected_before_storage_commit(){
+    use crate::runtime::storage_metadata::NativeRequest;
+    let(g,keys)=group();let disk=Disk::default();let mut store=ObjectStore::format(disk.clone(),0,disk.block_count(),[7;16]).unwrap();let mut b=actual_bundle(&mut store,&g,&keys);
+    for grant in b.grants.iter_mut().flatten(){grant.expires=100;grant.signature=keys[0].0.sign(keys[0].1,&grant.transcript()).unwrap();}
+    b.validate().unwrap();assert!(!b.persistent_authority());let root=store.generation();let mut service=crate::fabric_pool_metadata_service::Service::new();
+    assert!(service.execute(&mut store,NativeRequest::Stage{bundle:b}).is_err());assert_eq!(store.generation(),root);
+}
+// ------------------------=
 // FUNC: committed_receipt_requires_exact_durable_head
 // DESC: Checks read-only publication receipts reject staged, stale and unauthorized heads and survive cold mount.
 // ------------------=
@@ -387,7 +399,7 @@ fn actual_bundle(
             principal: [7; 16],
             policy: record.policy,
             revocation: 1,
-            expires: 100,
+            expires: u64::MAX,
             signature: [0; 64],
         };
         grant.signature = keys[0].0.sign(keys[0].1, &grant.transcript()).unwrap();
@@ -418,7 +430,7 @@ fn actual_payload_atomic_recovery_and_delegation() {
     published.certificate = Some(certificate(bundle.value, &keys));
     let encoded = published.encode().unwrap();
     assert!(published.authorize(g.members[1], [7; 16], 99).is_ok());
-    assert!(published.authorize(g.members[1], [7; 16], 100).is_err());
+    assert!(published.authorize(g.members[1], [7; 16], u64::MAX).is_err());
     assert!(published.authorize(g.members[1], [8; 16], 1).is_err());
     let mut corrupt = encoded;
     corrupt[900] ^= 1;
@@ -658,7 +670,7 @@ fn metadata_native_windows_and_expiring_reader() {
                 record: b.value.record,
                 principal: [7; 16],
                 reader: g.owner,
-                now: 100,
+                now: u64::MAX,
                 offset: 0,
                 length: 9,
                 overlay: None
@@ -697,7 +709,7 @@ fn repair_authorization(
             NodeId([0; 32]),
             NodeId([0; 32]),
         ],
-        expires: 100,
+        expires: u64::MAX,
         signature: [0; 64],
     };
     grant.signature = keys[0].0.sign(keys[0].1, &grant.transcript()).unwrap();
@@ -914,7 +926,7 @@ fn delegated_repair_preserves_owner_and_verifies_bytes() {
     assert!(service
         .repair_transfer(&mut recipient, wrong, &a, 1)
         .is_err());
-    assert!(service.repair_transfer(&mut recipient, r, &a, 100).is_err());
+    assert!(service.repair_transfer(&mut recipient, r, &a, u64::MAX).is_err());
     assert_eq!(
         service
             .repair_transfer(&mut recipient, r, &a, 1)

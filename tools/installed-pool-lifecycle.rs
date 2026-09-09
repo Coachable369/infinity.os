@@ -2,7 +2,7 @@
 //! absent objects are not evidence of secure erasure or remote acknowledgement.
 use super::*;
 use storage::object::{ObjectId,ObjectError};
-pub struct Report { pub object_present:bool,pub tombstone:Option<(bool,u64,u64,[u8;32])>,pub outbox_present:bool,pub pending:Option<(u64,u8,usize)>,pub audit_sequence:u64,pub audit:Vec<(u64,u8,u64,u64,u64)>,pub content:Vec<([u8;16],bool)> }
+pub struct Report { pub object_present:bool,pub local_manifest:Option<(u64,u64,[u8;32])>,pub tombstone:Option<(bool,u64,u64,[u8;32])>,pub outbox_present:bool,pub pending:Option<(u64,u8,usize)>,pub audit_sequence:u64,pub audit:Vec<(u64,u8,u64,u64,u64)>,pub content:Vec<([u8;16],bool)> }
 // ------------------------=
 // FUNC: read_optional
 // DESC: Reads a native named object without initializing missing catalogs or accepting corrupt reads as absence.
@@ -20,7 +20,7 @@ fn identity(bytes:&[u8])->String{bytes.iter().map(|b|format!("{b:02x}")).collect
 // DESC: Inspects canonical committed tombstone, exact owner outbox, retained audit and requested physical identities with no mutation APIs.
 // ------------------=
 pub fn inspect<D:BlockDevice>(s:&mut ObjectStore<D>,owner:[u8;32],object:[u8;16],content:&[[u8;16]])->Result<Report,String>{
-    let mut report=Report{object_present:s.object_exists(ObjectId(object)),tombstone:None,outbox_present:false,pending:None,audit_sequence:0,audit:vec![],content:content.iter().map(|id|(*id,s.object_exists(ObjectId(*id)))).collect()};
+    let mut report=Report{object_present:s.object_exists(ObjectId(object)),local_manifest:None,tombstone:None,outbox_present:false,pending:None,audit_sequence:0,audit:vec![],content:content.iter().map(|id|(*id,s.object_exists(ObjectId(*id)))).collect()};
     let path=format!("/system/storage/pool-quorum-payload/{}",identity(&object));let mut raw=[0;16384];
     if let Some(n)=read_optional(s,path.as_bytes(),&mut raw)?{
         let header=match &raw[..8]{b"INFQPY02"=>64,b"INFQPY01"=>32,_=>return Err("payload_format".into())};
@@ -35,6 +35,7 @@ pub fn inspect<D:BlockDevice>(s:&mut ObjectStore<D>,owner:[u8;32],object:[u8;16]
     let mut catalog=[0;1056];let mut outbox=None;
     if let Some(n)=read_optional(s,b"/system/storage/pool-manifests",&mut catalog)?{
         if n!=1056||&catalog[..8]!=b"INFPOOL1"{return Err("catalog_invalid".into())}
+        match s.pool_manifest(ObjectId(object),runtime::node::types::NodeId(owner),0){Ok(m)=>report.local_manifest=Some((m.generation,m.version,m.hash)),Err(ObjectError::NotFound)=>{},Err(_)=>return Err("local_manifest_invalid".into())}
         let id=ObjectId(catalog[16..32].try_into().unwrap());if id.0!=[0;16]{outbox=Some(id)}
     }
     if outbox.is_none(){match s.resolve(b"/system/storage/pool-deletions"){Ok(id)=>outbox=Some(id),Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>{},Err(_)=>return Err("outbox_namespace".into())}}
@@ -60,6 +61,7 @@ impl Report{
         let pending=self.pending.map_or("null".into(),|(generation,ack,placements)|format!("{{\"manifest_generation\":{generation},\"acknowledged\":{ack},\"placements\":{placements}}}"));
         let audit=self.audit.iter().map(|(seq,kind,old,new,version)|format!("{{\"sequence\":{seq},\"kind\":{kind},\"previous_generation\":{old},\"generation\":{new},\"version\":{version}}}")).collect::<Vec<_>>().join(",");
         let content=self.content.iter().map(|(id,present)|format!("{{\"id\":\"{}\",\"present\":{present}}}",identity(id))).collect::<Vec<_>>().join(",");
-        format!("{{\"inspected\":true,\"read_only\":true,\"object_present\":{},\"tombstone\":{tombstone},\"outbox\":{{\"present\":{},\"pending\":{pending}}},\"audit\":{{\"sequence\":{},\"entries\":[{audit}]}},\"content_objects\":[{content}]}}",self.object_present,self.outbox_present,self.audit_sequence)
+        let local=self.local_manifest.map_or("null".into(),|(generation,version,hash)|format!("{{\"generation\":{generation},\"version\":{version},\"hash\":\"{}\"}}",identity(&hash)));
+        format!("{{\"inspected\":true,\"read_only\":true,\"object_present\":{},\"local_manifest\":{local},\"tombstone\":{tombstone},\"outbox\":{{\"present\":{},\"pending\":{pending}}},\"audit\":{{\"sequence\":{},\"entries\":[{audit}]}},\"content_objects\":[{content}]}}",self.object_present,self.outbox_present,self.audit_sequence)
     }
 }

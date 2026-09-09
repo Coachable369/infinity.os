@@ -267,6 +267,7 @@ impl ReplicaService {
     pub(crate) fn repair_transfer<D:BlockDevice>(&mut self,store:&mut ObjectStore<D>,request:AuthenticatedStorageRequest,
         auth:&crate::runtime::fabric::metadata_repair::RepairAuthorization,now:u64)->Result<StorageOperationV1,RemoteError>{
         auth.encode(now).map_err(|_|RemoteError::AccessDenied)?;
+        if !auth.anchor.persistent_authority()||auth.repair.grant.expires!=u64::MAX{return Err(RemoteError::AccessDenied)}
         let original=request.payload;let base=&auth.anchor.manifest;let grant=&auth.repair.grant;
         grant.validate(&auth.anchor.group,&auth.anchor.certificate.ok_or(RemoteError::AccessDenied)?,now).map_err(|_|RemoteError::AccessDenied)?;
         if request.peer!=grant.writer||!grant.destinations.contains(&request.local)||original.object!=base.object

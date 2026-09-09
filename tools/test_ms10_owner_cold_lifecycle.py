@@ -100,10 +100,12 @@ class ColdOrder(unittest.TestCase):
         report = {"identities": [1, 2, 3, 4], "created": {"object_id": "ab" * 16, "version": 1},
                   "length": 32768, "seed": 17, "namespace_path": "/Shared/Case"}
         mutate = Mock()
-        with patch.object(lifecycle, "read_path", read), patch.object(lifecycle, "read_path_ready", read), patch.object(lifecycle, "invoke", mutate):
+        native_state = {"local_manifest": {"generation": 1, "version": 1, "hash": "cd" * 32}}
+        with patch.object(lifecycle, "read_path", read), patch.object(lifecycle, "read_path_ready", read), patch.object(lifecycle, "invoke", mutate), patch.object(lifecycle, "inspect_lifecycle", return_value=native_state) as inspect:
             with self.assertRaises(StopIteration):
                 lifecycle.run(guests, distribution, None, report)
         mutate.assert_not_called()
+        inspect.assert_called_once_with(guests[0], None, 1, "ab" * 16, [], "owner-before-fresh-read")
         self.assertEqual(events, [("cold", 2), ("hash", 2), ("read", 2), ("read", 2),
                                   ("cold", 3), ("hash", 3), ("read", 3), ("read", 3),
                                   ("cold", 4), ("hash", 4), ("return", 1)])
