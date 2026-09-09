@@ -2,7 +2,7 @@
 use super::*;
 use storage::object::{ObjectId,ObjectError};
 use runtime::fabric::{replica::{Checkpoint,ReplicaDescriptor,ReplicaState,Transfer},resources::ResourceId};
-pub struct Entry {pub version:u64,pub manifest:u64,pub backing:[u8;16],pub extent:Option<[u8;16]>}
+pub struct Entry {pub version:u64,pub manifest:u64,pub backing:[u8;16],pub extent:Option<[u8;16]>,pub job:u64,pub bytes:u64,pub copied:Option<u64>,pub state:Option<u8>,pub prefix_hash:Option<[u8;32]>}
 pub struct Report {pub catalog_present:bool,pub entries:Vec<Entry>,pub physical:Vec<([u8;16],bool)>}
 // ------------------------=
 // FUNC: identity
@@ -32,15 +32,23 @@ pub fn inspect<D:BlockDevice>(s:&mut ObjectStore<D>,owner:[u8;32],object:[u8;16]
         if known.iter().any(|(old,b,o,a,m,sc)|(*b==backing&&backing!=[0;16])||(old.object==d.object&&(*o!=issuer||*a!=authority||*sc!=scope||old.version==d.version||*m==manifest||(old.version<d.version)!=(*m<manifest)))){return Err("binding_conflict".into())}
         known.push((d,backing,issuer,authority,manifest,scope));
         if issuer!=owner||d.object!=object{continue}
+        let mut copied=None;let mut state=None;let mut prefix_hash=None;
         let extent=if backing==[0;16]{None}else{
             let mut record=[0;160];if s.read(ObjectId(backing),None,&mut record).map_err(|_|"checkpoint_read")?!=160||&record[144..152]!=b"EXTENT01"||record[152..]!=[0;8]{return Err("checkpoint_format".into())}
             let e:[u8;16]=record[128..144].try_into().unwrap();
             if e==[0;16]||e==backing||!s.object_exists(ObjectId(e)){return Err("extent_missing".into())}
             // Reuse native recovery validation rather than trusting an independently decoded checkpoint.
-            let replica=native_fabric::extent::NativeExtentReplica::open(s,ObjectId(backing),d.resource,d.generation).map_err(|_|"checkpoint_invalid")?;
-            if replica.inspect().is_none_or(|cp|cp.descriptor!=d){return Err("checkpoint_identity".into())}Some(e)
+            let mut replica=native_fabric::extent::NativeExtentReplica::open(s,ObjectId(backing),d.resource,d.generation).map_err(|_|"checkpoint_invalid")?;
+            let cp=replica.inspect().ok_or("checkpoint_missing")?;
+            if cp.descriptor!=d{return Err("checkpoint_identity".into())}
+            copied=Some(cp.copied);state=Some(match cp.state{ReplicaState::Planned=>1,ReplicaState::Copying=>2,ReplicaState::Verifying=>3,ReplicaState::Available=>4,ReplicaState::Failed=>5});
+            use runtime::fabric::replica::ReplicaStore;
+            use sha2::{Digest,Sha256};
+            let mut digest=Sha256::new();let mut offset=0;let mut chunk=[0;64];
+            while offset<cp.copied{let count=(cp.copied-offset).min(64) as usize;replica.read_staging(&d,offset,&mut chunk[..count]).map_err(|_|"prefix_read")?;digest.update(&chunk[..count]);offset+=count as u64;}
+            prefix_hash=Some(digest.finalize().into());Some(e)
         };
-        report.entries.push(Entry{version:d.version,manifest,backing,extent});
+        report.entries.push(Entry{version:d.version,manifest,backing,extent,job:d.job,bytes:d.bytes,copied,state,prefix_hash});
     }Ok(report)
 }
 impl Report{
@@ -49,7 +57,7 @@ impl Report{
     // DESC: Reports explicit retirement markers and requested physical identity presence; never equates missing catalog with proof of deletion.
     // ------------------=
     pub fn json(&self)->String{
-        let entries=self.entries.iter().map(|e|format!("{{\"version\":{},\"manifest_generation\":{},\"retired\":{},\"backing\":\"{}\",\"extent\":{}}}",e.version,e.manifest,e.backing==[0;16],identity(&e.backing),e.extent.map_or("null".into(),|id|format!("\"{}\"",identity(&id))))).collect::<Vec<_>>().join(",");
+        let entries=self.entries.iter().map(|e|format!("{{\"version\":{},\"manifest_generation\":{},\"retired\":{},\"backing\":\"{}\",\"extent\":{},\"job\":{},\"bytes\":{},\"copied\":{},\"state\":{},\"received_prefix_sha256\":{}}}",e.version,e.manifest,e.backing==[0;16],identity(&e.backing),e.extent.map_or("null".into(),|id|format!("\"{}\"",identity(&id))),e.job,e.bytes,e.copied.map_or("null".into(),|v|v.to_string()),e.state.map_or("null".into(),|v|v.to_string()),e.prefix_hash.map_or("null".into(),|v|format!("\"{}\"",identity(&v))))).collect::<Vec<_>>().join(",");
         let physical=self.physical.iter().map(|(id,p)|format!("{{\"id\":\"{}\",\"present\":{p}}}",identity(id))).collect::<Vec<_>>().join(",");
         format!("{{\"inspected\":true,\"read_only\":true,\"catalog_present\":{},\"bindings\":[{entries}],\"physical_objects\":[{physical}]}}",self.catalog_present)
     }
@@ -107,11 +115,13 @@ mod tests{
             r.payload.operation=Operation::TransferBegin;r.payload.object_version=version;r.payload.manifest_generation=version+1;r.payload.offset=63;r.payload.length=56;r.payload.data.fill(0);
             r.payload.data[..16].copy_from_slice(&[4;16]);r.payload.data[16..24].copy_from_slice(&5u64.to_le_bytes());r.payload.data[24..56].copy_from_slice(&hash);
             svc.execute(&mut s,r).unwrap();r.payload.operation=Operation::TransferChunk;r.payload.offset=0;r.payload.length=63;r.payload.data[..63].copy_from_slice(&payload);svc.execute(&mut s,r).unwrap();
+            disk.writes.set(false);let partial=inspect(&mut s,[19;32],[2;16],&[]).unwrap();
+            let partial=partial.entries.iter().find(|e|e.version==version).unwrap();assert_eq!(partial.copied,Some(63));assert_eq!(partial.state,Some(2));assert_eq!(partial.prefix_hash,Some(hash));disk.writes.set(true);
             r.payload.operation=Operation::TransferCommit;r.payload.length=0;r.payload.data.fill(0);
             for _ in 0..3{svc.execute(&mut s,r).unwrap();}
             assert_eq!(native_fabric::service::verify_persisted_replica(&mut s,[19;32],[2;16],version,hash),Ok(63));
         }
-        disk.writes.set(false);let before=inspect(&mut s,[19;32],[2;16],&[]).unwrap();assert_eq!(before.entries.len(),2);
+        disk.writes.set(false);let before=inspect(&mut s,[19;32],[2;16],&[]).unwrap();assert_eq!(before.entries.len(),2);assert!(before.entries.iter().all(|e|e.state==Some(4)&&e.copied==Some(63)));
         let ids:Vec<[u8;16]>=before.entries.iter().flat_map(|e|[e.backing,e.extent.unwrap()]).collect();assert_eq!(ids.len(),4);
         assert!(inspect(&mut s,[19;32],[2;16],&ids).unwrap().physical.iter().all(|p|p.1));
         assert!(inspect(&mut s,[21;32],[2;16],&[]).unwrap().entries.is_empty());
