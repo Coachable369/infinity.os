@@ -21,6 +21,7 @@ use crate::storage::{
 use crate::{fabric_pool_metadata as backing, native_fabric as replicas};
 use sha2::{Digest, Sha256};
 const CONFIG: &[u8] = b"/system/storage/pool-metadata-access";
+const CONFIG_RESERVED: &[u8] = b"@pool-metadata-access";
 #[path = "fabric_pool_metadata_mutation.rs"]
 mod mutation;
 #[path="fabric_pool_metadata_copy.rs"]
@@ -109,10 +110,9 @@ impl Service {
     #[inline(never)]
     fn config_load<D:BlockDevice>(store:&mut ObjectStore<D>)->Result<NativeReply,RemoteError>{
         let mut bytes=[0;CONFIG_BYTES];
-        match store.resolve(CONFIG){
-            Ok(id)=>{if store.read(id,None,&mut bytes).map_err(|_|RemoteError::PersistenceFailed)?!=CONFIG_BYTES{return Err(RemoteError::PersistenceFailed)}},
-            Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>{},
-            Err(_)=>return Err(RemoteError::PersistenceFailed),
+        match store.reserved_system_metadata_id(CONFIG_RESERVED,CONFIG).map_err(|_|RemoteError::PersistenceFailed)?{
+            Some(id)=>{if store.read(id,None,&mut bytes).map_err(|_|RemoteError::PersistenceFailed)?!=CONFIG_BYTES{return Err(RemoteError::PersistenceFailed)}},
+            None=>{},
         }
         Ok(NativeReply::Config(bytes))
     }
@@ -122,7 +122,7 @@ impl Service {
     // ------------------=
     #[inline(never)]
     fn config_save<D:BlockDevice>(store:&mut ObjectStore<D>,bytes:&[u8;CONFIG_BYTES])->Result<NativeReply,RemoteError>{
-        store.replace_named_state(CONFIG,bytes).map_err(|_|RemoteError::PersistenceFailed)?;Ok(NativeReply::Done)
+        store.replace_reserved_state(CONFIG_RESERVED,CONFIG,bytes).map_err(|_|RemoteError::PersistenceFailed)?;Ok(NativeReply::Done)
     }
     // ------------------------=
     // FUNC: catalog_load
@@ -180,29 +180,8 @@ impl Service {
                 self.cache_key = None;
                 Ok(NativeReply::Done)
             }
-            NativeRequest::ConfigLoad => {
-                let mut b = [0; CONFIG_BYTES];
-                match store.resolve(CONFIG) {
-                    Ok(id) => {
-                        if store
-                            .read(id, None, &mut b)
-                            .map_err(|_| RemoteError::PersistenceFailed)?
-                            != CONFIG_BYTES
-                        {
-                            return Err(RemoteError::PersistenceFailed);
-                        }
-                    }
-                    Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => {}
-                    Err(_) => return Err(RemoteError::PersistenceFailed),
-                }
-                Ok(NativeReply::Config(b))
-            }
-            NativeRequest::ConfigSave(b) => {
-                store
-                    .replace_named_state(CONFIG, &b)
-                    .map_err(|_| RemoteError::PersistenceFailed)?;
-                Ok(NativeReply::Done)
-            }
+            NativeRequest::ConfigLoad => Self::config_load(store),
+            NativeRequest::ConfigSave(b) => Self::config_save(store,&b),
             NativeRequest::Wire { request, now } => {
                 self.wire(store, request, now).map(NativeReply::Wire)
             }

@@ -22,7 +22,9 @@ fn identity(bytes:&[u8])->String{bytes.iter().map(|b|format!("{b:02x}")).collect
 pub fn inspect<D:BlockDevice>(s:&mut ObjectStore<D>,owner:[u8;32],object:[u8;16],content:&[[u8;16]])->Result<Report,String>{
     let mut report=Report{object_present:s.object_exists(ObjectId(object)),local_manifest:None,tombstone:None,outbox_present:false,pending:None,audit_sequence:0,audit:vec![],content:content.iter().map(|id|(*id,s.object_exists(ObjectId(*id)))).collect()};
     let path=format!("/system/storage/pool-quorum-payload/{}",identity(&object));let mut raw=[0;16384];
-    if let Some(n)=read_optional(s,path.as_bytes(),&mut raw)?{
+    let name=format!("@pool-quorum/{}",identity(&object));
+    let payload=s.reserved_system_metadata_id(name.as_bytes(),path.as_bytes()).map_err(|_|"payload_identity")?;
+    if let Some(id)=payload{let n=s.read(id,None,&mut raw).map_err(|_|"payload_content")?;
         let header=match &raw[..8]{b"INFQPY02"=>64,b"INFQPY01"=>32,_=>return Err("payload_format".into())};
         let size=runtime::fabric::metadata_bundle::BUNDLE_BYTES;
         if n!=header+2*size||raw[9]>1{return Err("payload_bounds".into())}
@@ -45,7 +47,8 @@ pub fn inspect<D:BlockDevice>(s:&mut ObjectStore<D>,owner:[u8;32],object:[u8;16]
             if row[8..24]==object&&row[24..56]==owner{if report.pending.is_some(){return Err("outbox_duplicate".into())}let placements=(0..8).filter(|i|row[112+i*128..144+i*128]!=[0;32]).count();report.pending=Some((number(row,72),row[1],placements));}
         }
     }
-    let mut audit=[0;2080];if let Some(n)=read_optional(s,b"/system/storage/pool-audit",&mut audit)?{
+    let mut audit=[0;2080];if let Some(id)=s.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit").map_err(|_|"audit_identity")?{
+        let n=s.read(id,None,&mut audit).map_err(|_|"audit_read")?;
         if n!=audit.len()||&audit[..8]!=b"INFPAD01"{return Err("audit_invalid".into())}report.audit_sequence=number(&audit,8);
         for row in audit[32..].chunks_exact(128){let seq=number(row,120);if seq==0{continue}if seq>report.audit_sequence||report.audit_sequence-seq>=16{return Err("audit_sequence".into())}if row[..16]==object&&row[48..80]==owner{report.audit.push((seq,row[98],number(row,16),number(row,24),number(row,32)));}}
         report.audit.sort_by_key(|r|r.0);

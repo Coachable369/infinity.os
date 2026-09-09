@@ -6,6 +6,7 @@ pub(crate) const CAPACITY:usize=8;
 const ENTRY:usize=1120;
 const BYTES:usize=32+CAPACITY*ENTRY;
 const PATH:&[u8]=b"/system/storage/pool-quorum-replicas";
+const RESERVED:&[u8]=b"@pool-quorum-replicas";
 #[path="fabric_pool_metadata_payload.rs"]
 mod payload;
 pub(crate) use payload::{load_bundle,stage_bundle,publish_bundle,publish_received_bundle,read_bundle};
@@ -82,7 +83,7 @@ fn decode_replica(b:&[u8],g:&Group)->Result<Replica,Error> {
 // ------------------=
 fn read_catalog<D:BlockDevice>(store:&mut ObjectStore<D>)->Result<([u8;BYTES],Option<ObjectId>),Error> {
     let mut bytes=[0;BYTES];bytes[..8].copy_from_slice(b"INFQDB01");
-    let id=match store.resolve(PATH) {Ok(id)=>id,Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>return Ok((bytes,None)),Err(_)=>return Err(Error::Persistence)};
+    let id=match store.reserved_system_metadata_id(RESERVED,PATH).map_err(|_|Error::Persistence)? {Some(id)=>id,None=>return Ok((bytes,None))};
     if store.read(id,None,&mut bytes).map_err(|_|Error::Persistence)?!=BYTES || &bytes[..8]!=b"INFQDB01" || bytes[8..32]!=[0;24] {return Err(Error::Invalid);}
     let mut seen=[[0;16];CAPACITY];
     for i in 0..CAPACITY {
@@ -133,7 +134,7 @@ pub(crate) fn persist<D:BlockDevice>(store:&mut ObjectStore<D>,g:&Group,object:[
     let slot=slot.or_else(||(0..CAPACITY).find(|i|bytes[32+i*ENTRY..32+(i+1)*ENTRY].iter().all(|b|*b==0))).ok_or(Error::ResourceLimit)?;
     let at=32+slot*ENTRY;bytes[at..at+240].copy_from_slice(&group_bytes(g));bytes[at+240..at+ENTRY].copy_from_slice(&encoded);
     match id {Some(id)=>{store.replace_state(id,&bytes).map_err(|_|Error::Persistence)?;},None=>{
-        store.create_attached(b"pool-quorum-replicas",ObjectType::Metadata,Space::System,&bytes,PATH).map_err(|_|Error::Persistence)?;
+        store.replace_reserved_state(RESERVED,PATH,&bytes).map_err(|_|Error::Persistence)?;
     }}Ok(())
 }
 

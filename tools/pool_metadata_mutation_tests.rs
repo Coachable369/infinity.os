@@ -50,7 +50,11 @@ fn returned_owner_mutations_require_certified_overlay_and_preserve_bytes(){
         let bad=if operation==Operation::ObjectCopy{N::Copy{anchor:base,request,overlay:None}}else{N::Mutate{anchor:base,request}};
         assert!(service.execute(&mut store,bad).is_err());
         let run=||if operation==Operation::ObjectCopy{N::Copy{anchor:base,request,overlay:Some(published.repair)}}else{N::MutateOverlay{anchor:base,request,overlay:published.repair}};
-        if operation==Operation::ObjectDelete{assert_eq!((0..32).filter(|i|store.namespace_entry(*i).is_some()).count(),32);}
+        if operation==Operation::ObjectDelete{
+            let used=(0..32).filter(|i|store.namespace_entry(*i).is_some()).count();
+            for i in used..32{store.attach(format!("/namespace-pressure/{i}").as_bytes(),ObjectId(base.manifest.object)).unwrap();}
+            assert_eq!((0..32).filter(|i|store.namespace_entry(*i).is_some()).count(),32);
+        }
         let attempted=service.execute(&mut store,run());
         let result=match attempted.unwrap(){R::Mutation{manifest,..}=>manifest,_=>panic!()};
         drop(store);let mut store=ObjectStore::mount(disk.clone(),0).unwrap();let mut service=Service::new();

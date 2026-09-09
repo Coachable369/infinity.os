@@ -7,6 +7,8 @@ use super::{BlockDevice, DateTimeConfiguration};
 mod extents;
 #[path = "object_bundle.rs"]
 mod bundle;
+#[path = "object_reserved_pair.rs"]
+mod reserved_pair;
 #[path = "object_pool_stream.rs"]
 mod pool_stream;
 #[path = "object_metadata_mutation.rs"]
@@ -2091,6 +2093,10 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
         operation: ObjectOperation,
         object: Option<ObjectRef>,
     ) -> Result<(), ObjectError> {
+        if let Some(reference)=object {
+            let record=&self.store.state.objects[self.store.object_index(reference.id)?];
+            if record.space==Space::System as u8&&(record.kind==ObjectType::Metadata as u8||record.name_len>0&&record.name[0]==b'@'){return Err(ObjectError::Unauthorized)}
+        }
         if self.policy.authorize(operation, object) {
             Ok(())
         } else {
@@ -2102,6 +2108,7 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // DESC: Implements the create operation.
     // ------------------=
     pub fn create(&mut self, r: ObjectCreateRequest<'_>) -> Result<ObjectRef, ObjectError> {
+        if r.space==Space::System&&(r.kind==ObjectType::Metadata||r.name.first()==Some(&b'@')){return Err(ObjectError::Unauthorized)}
         self.allow(ObjectOperation::Create, None)?;
         self.store
             .create(r.name, r.kind, r.space, r.content)
@@ -2206,6 +2213,7 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // DESC: Implements the attach operation.
     // ------------------=
     pub fn attach(&mut self, r: NamespaceAttachRequest<'_>) -> Result<(), ObjectError> {
+        if r.path==b"/system/storage"||r.path.starts_with(b"/system/storage/"){return Err(ObjectError::Unauthorized)}
         self.allow(ObjectOperation::NamespaceAttach, Some(r.object))?;
         self.store.attach(r.path, r.object.id)
     }
@@ -2214,7 +2222,8 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // DESC: Implements the detach operation.
     // ------------------=
     pub fn detach(&mut self, r: NamespaceDetachRequest<'_>) -> Result<(), ObjectError> {
-        self.allow(ObjectOperation::NamespaceDetach, None)?;
+        if r.path==b"/system/storage"||r.path.starts_with(b"/system/storage/"){return Err(ObjectError::Unauthorized)}
+        self.allow(ObjectOperation::NamespaceDetach, Some(ObjectRef{id:self.store.resolve(r.path)?}))?;
         self.store.detach(r.path)
     }
     // ------------------------=
@@ -2222,7 +2231,8 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // DESC: Implements the move entry operation.
     // ------------------=
     pub fn move_entry(&mut self, r: NamespaceMoveRequest<'_>) -> Result<(), ObjectError> {
-        self.allow(ObjectOperation::NamespaceMove, None)?;
+        if [r.from,r.to].iter().any(|p|*p==b"/system/storage"||p.starts_with(b"/system/storage/")){return Err(ObjectError::Unauthorized)}
+        self.allow(ObjectOperation::NamespaceMove, Some(ObjectRef{id:self.store.resolve(r.from)?}))?;
         self.store.move_entry(r.from, r.to)
     }
     // ------------------------=
@@ -2231,6 +2241,7 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // ------------------=
     pub fn relationship_attach(&mut self, r: RelationshipAttachRequest) -> Result<(), ObjectError> {
         self.allow(ObjectOperation::RelationshipAttach, Some(r.source))?;
+        self.allow(ObjectOperation::RelationshipAttach, Some(r.target))?;
         self.store.relationship_attach(r)
     }
     // ------------------------=
@@ -2239,6 +2250,7 @@ impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
     // ------------------=
     pub fn relationship_detach(&mut self, r: RelationshipDetachRequest) -> Result<(), ObjectError> {
         self.allow(ObjectOperation::RelationshipDetach, Some(r.source))?;
+        self.allow(ObjectOperation::RelationshipDetach, Some(r.target))?;
         self.store.relationship_detach(r)
     }
     // ------------------------=

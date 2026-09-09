@@ -18,6 +18,16 @@ fn path(object: [u8; 16]) -> ([u8; 95], usize) {
     (b, prefix.len() + 32)
 }
 // ------------------------=
+// FUNC: reserved_name
+// DESC: Binds one bounded internal metadata identity to the complete logical ObjectId without consuming user path slots.
+// ------------------=
+fn reserved_name(object:[u8;16])->[u8;45]{let mut name=[0;45];name[..13].copy_from_slice(b"@pool-quorum/");for(i,b)in object.iter().enumerate(){name[13+i*2]=b"0123456789abcdef"[(b>>4)as usize];name[14+i*2]=b"0123456789abcdef"[(b&15)as usize];}name}
+// ------------------------=
+// FUNC: payload_id
+// DESC: Resolves reserved or legacy payload backing and rejects conflicting duplicates without creating storage during reads.
+// ------------------=
+fn payload_id<D:BlockDevice>(store:&ObjectStore<D>,object:[u8;16])->Result<Option<ObjectId>,Error>{let(p,n)=path(object);store.reserved_system_metadata_id(&reserved_name(object),&p[..n]).map_err(|_|Error::Persistence)}
+// ------------------------=
 // FUNC: read_payload
 // DESC: Loads both immutable payload slots and rejects malformed or partially recorded state.
 // ------------------=
@@ -25,14 +35,9 @@ fn read_payload<D: BlockDevice>(
     store: &mut ObjectStore<D>,
     object: [u8; 16],
 ) -> Result<[u8; PAYLOAD_BYTES], Error> {
-    let (p, n) = path(object);
     let mut b = [0; PAYLOAD_BYTES];
     b[..8].copy_from_slice(b"INFQPY02");
-    let id = match store.resolve(&p[..n]) {
-        Ok(id) => id,
-        Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => return Ok(b),
-        Err(_) => return Err(Error::Persistence),
-    };
+    let id = match payload_id(store,object)? {Some(id)=>id,None=>return Ok(b)};
     let size = store
         .read(id, None, &mut b)
         .map_err(|_| Error::Persistence)?;
@@ -267,7 +272,7 @@ fn commit_bundle<D: BlockDevice>(
     }
     let (p, n) = path(object);
     store
-        .replace_named_state_pair(PATH, &catalog, &p[..n], &payload)
+        .replace_reserved_state_pair(RESERVED,PATH, &catalog, &reserved_name(object),&p[..n], &payload)
         .map_err(|_| Error::Persistence)
 }
 
@@ -303,8 +308,7 @@ pub(crate) fn write_repair_payload<D: BlockDevice>(
     if b[9] != 1 {
         return Err(Error::Persistence);
     }
-    let (p, n) = path(object);
-    let id = store.resolve(&p[..n]).map_err(|_| Error::Persistence)?;
+    let id = payload_id(store,object)?.ok_or(Error::Persistence)?;
     store
         .replace_linked_state(id, &b, if stage { 16 } else { 32 }, bytes)
         .map_err(|_| Error::Persistence)
@@ -339,8 +343,7 @@ pub(crate) fn write_mutation_payload<D: BlockDevice>(
     if b[9] != 1 {
         return Err(Error::Persistence);
     }
-    let (p, n) = path(object);
-    let id = store.resolve(&p[..n]).map_err(|_| Error::Persistence)?;
+    let id = payload_id(store,object)?.ok_or(Error::Persistence)?;
     store
         .replace_linked_state(id, &b, 48, bytes)
         .map_err(|_| Error::Persistence)
@@ -353,13 +356,11 @@ pub(crate) fn is_shared_object<D: BlockDevice>(
     store: &mut ObjectStore<D>,
     object: [u8; 16],
 ) -> Result<bool, Error> {
-    let (p, n) = path(object);
-    match store.resolve(&p[..n]) {
-        Ok(_) => {
+    match payload_id(store,object)? {
+        Some(_) => {
             read_payload(store, object)?;
             Ok(true)
         }
-        Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => Ok(false),
-        Err(_) => Err(Error::Persistence),
+        None => Ok(false),
     }
 }

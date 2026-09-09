@@ -19,10 +19,12 @@ impl<D: BlockDevice> ObjectStore<D> {
             path[prefix.len() + 2 * i] = b"0123456789abcdef"[(byte >> 4) as usize];
             path[prefix.len() + 2 * i + 1] = b"0123456789abcdef"[(byte & 15) as usize];
         }
-        match self.resolve(&path[..prefix.len() + 32]) {
-            Ok(_) => Err(ObjectError::Unauthorized),
-            Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => Ok(()),
-            Err(e) => Err(e),
+        let mut reserved = [0; 45];
+        reserved[..13].copy_from_slice(b"@pool-quorum/");
+        reserved[13..].copy_from_slice(&path[prefix.len()..prefix.len() + 32]);
+        match self.reserved_system_metadata_id(&reserved, &path[..prefix.len() + 32])? {
+            Some(_) => Err(ObjectError::Unauthorized),
+            None => Ok(()),
         }
     }
     // ------------------------=

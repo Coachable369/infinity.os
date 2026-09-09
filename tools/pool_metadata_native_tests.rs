@@ -426,6 +426,15 @@ fn actual_payload_atomic_recovery_and_delegation() {
     let disk = Disk::default();
     let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
     let bundle = actual_bundle(&mut store, &g, &keys);
+    let mut count=(0..32).filter(|i|store.namespace_entry(*i).is_some()).count();
+    while count<32 {let path=format!("/namespace-pressure/{count}");store.attach(path.as_bytes(),ObjectId(bundle.manifest.object)).unwrap();count+=1;}
+    assert_eq!((0..32).filter(|i|store.namespace_entry(*i).is_some()).count(),32);
+    let config=[0x53;crate::runtime::storage_metadata::CONFIG_BYTES];
+    let mut config_service=crate::fabric_pool_metadata_service::Service::new();
+    config_service.execute(&mut store,crate::runtime::storage_metadata::NativeRequest::ConfigSave(config)).unwrap();
+    drop(store);let mut store=ObjectStore::mount(disk.clone(),0).unwrap();
+    match config_service.execute(&mut store,crate::runtime::storage_metadata::NativeRequest::ConfigLoad).unwrap(){crate::runtime::storage_metadata::NativeReply::Config(bytes)=>assert_eq!(bytes,config),_=>panic!()}
+    assert_eq!((0..32).filter(|i|store.namespace_entry(*i).is_some()).count(),32);
     let mut published = bundle;
     published.certificate = Some(certificate(bundle.value, &keys));
     let encoded = published.encode().unwrap();
@@ -449,6 +458,7 @@ fn actual_payload_atomic_recovery_and_delegation() {
             stage_bundle(&mut store, bundle).unwrap()
         }
         let cost = disk.0.borrow().writes - before;
+        assert_eq!((0..32).filter(|i|store.namespace_entry(*i).is_some()).count(),32);
         for cut in 0..=cost {
             let d = Disk(Rc::new(RefCell::new(baseline.clone())));
             let mut s = ObjectStore::mount(d.clone(), 0).unwrap();
@@ -999,7 +1009,9 @@ fn payload_header_migration_preserves_certified_bytes() {
         .map(|v| format!("{v:02x}"))
         .collect();
     let path = format!("/system/storage/pool-quorum-payload/{suffix}");
-    let id = store.resolve(path.as_bytes()).unwrap();
+    let reserved=format!("@pool-quorum/{suffix}");
+    let id = store.reserved_system_metadata_id(reserved.as_bytes(),path.as_bytes()).unwrap().unwrap();
+    store.attach(path.as_bytes(),id).unwrap();
     let mut current = [0; 15424];
     assert_eq!(store.read(id, None, &mut current).unwrap(), 15424);
     let mut legacy = vec![0; 15392];
