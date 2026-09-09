@@ -10,7 +10,7 @@ pub enum Submission { Complete(StorageOperationV1), Pending(u64) }
 // DESC: Offers applications the ordinary object read contract while the service selects local or fresh replicated metadata resolution.
 // ------------------=
 pub fn submit(user:StableId,session:StableId,request:StorageOperationV1)->Result<Submission,iop::remote::RemoteError>{
-    if request.operation==Operation::ObjectRead&&(storage_metadata::bound(request.object)||storage_metadata::warming()){storage_metadata::read(user,session,request).map(Submission::Pending)}
+    if matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect)&&(storage_metadata::bound(request.object)||storage_metadata::warming()){storage_metadata::read(user,session,request).map(Submission::Pending)}
     else if matches!(request.operation,Operation::ObjectUpdate|Operation::ObjectSetPolicy|Operation::ObjectDelete|Operation::ObjectCopy)&&storage_metadata::bound(request.object){storage_metadata::mutate(user,session,request).map(Submission::Pending)}
     else{execute(user,session,request).map(Submission::Complete).map_err(|_|iop::remote::RemoteError::RemoteFailure)}
 }
@@ -31,7 +31,7 @@ pub fn execute(user: StableId, session: StableId, request: StorageOperationV1) -
     with_runtime(|runtime| {
         authorize(runtime, user, session)?;
         // Shared reads must use the asynchronous broker: a cached local copy is not a fresh quorum proof.
-        if matches!(request.operation,Operation::ObjectRead|Operation::ObjectUpdate|Operation::ObjectSetPolicy|Operation::ObjectDelete|Operation::ObjectCopy)&&storage_metadata::bound_from(runtime,request.object){return Err(IopError::InvalidPayload)}
+        if matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect|Operation::ObjectUpdate|Operation::ObjectSetPolicy|Operation::ObjectDelete|Operation::ObjectCopy)&&storage_metadata::bound_from(runtime,request.object){return Err(IopError::InvalidPayload)}
         let now = runtime.node_clock.ok_or(IopError::DeadlineExceeded)?;
         let result = perform(runtime, now, request);
         runtime.storage_last_observation = result.as_ref().ok().copied();

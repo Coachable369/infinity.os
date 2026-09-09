@@ -103,7 +103,7 @@ impl ConsoleRuntime {
             self.output.write_line(b"Use a full ObjectId, bounded content, valid generation/version and an explicit policy.");
             return true;
         };
-        if request.operation==Operation::ObjectRead&&(crate::runtime::storage_metadata::bound(request.object)||crate::runtime::storage_metadata::warming()){
+        if matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect)&&(crate::runtime::storage_metadata::bound(request.object)||crate::runtime::storage_metadata::warming()){
             let mut request=request;request.value&=!crate::runtime::storage_coordinator::REMOTE_VERIFIED;
             match crate::runtime::storage_metadata::read(self.current_user,self.current_session,request){Ok(id)=>self.output.write_number(b"Shared object quorum read pending: ",id),Err(e)=>self.output.write_number(b"Shared read denied: ",e as u64)}return true;
         }

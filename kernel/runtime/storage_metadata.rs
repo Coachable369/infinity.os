@@ -806,7 +806,7 @@ pub fn read(
     request: StorageOperationV1,
 ) -> Result<u64, RemoteError> {
     with_runtime(|r| {
-        if request.operation != Operation::ObjectRead
+        if !matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect)
             || request.length != 0
             || !(1..=64).contains(&request.value)
         {
@@ -1261,6 +1261,17 @@ fn complete(j: &mut Job, data: [u8; 64], length: u8) {
     j.phase = Phase::Done;
 }
 // ------------------------=
+// FUNC: inspect_reply
+// DESC: Encodes a bounded ordinary inspection window only after the caller has completed fresh owner and repair metadata barriers.
+// ------------------=
+#[inline(never)]
+fn inspect_reply(mut p:StorageOperationV1,m:&fabric::manifest::Manifest)->Result<StorageOperationV1,RemoteError>{
+    if p.operation!=Operation::ObjectInspect||p.object!=m.object||p.length!=0||!(1..=64).contains(&p.value)||p.offset>=fabric::manifest::MANIFEST_BYTES as u64{return Err(RemoteError::MalformedRequest)}
+    if p.authority_generation!=m.authority_generation||(p.manifest_generation!=0&&p.manifest_generation!=m.generation)||(p.object_version!=0&&p.object_version!=m.version){return Err(RemoteError::Conflict)}
+    let mut encoded=[0;fabric::manifest::MANIFEST_BYTES];m.encode(&mut encoded).map_err(|_|RemoteError::PersistenceFailed)?;
+    let at=p.offset as usize;let count=(encoded.len()-at).min(p.value as usize);p.data=[0;64];p.data[..count].copy_from_slice(&encoded[at..at+count]);p.length=count as u16;p.value=encoded.len() as u64;p.manifest_generation=m.generation;p.object_version=m.version;Ok(p)
+}
+// ------------------------=
 // FUNC: remote_chunk
 // DESC: Selects the signed immutable chunk covering the next unread byte without trusting a remote offset or hash.
 // ------------------=
@@ -1691,6 +1702,12 @@ fn step(r: &mut InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteErro
         Phase::ReadLocal => {
             let b = j.bundle.unwrap();
             let p = j.read.unwrap();
+            if p.operation==Operation::ObjectInspect {
+                b.authorize(local,principal(),now).map_err(|_|RemoteError::AccessDenied)?;
+                let manifest=j.overlay.map_or(b.manifest,|o|o.manifest);
+                j.result=Some(inspect_reply(p,&manifest));
+                return Ok(());
+            }
             let record = b.value.record;
             let result = native(
                 r,
