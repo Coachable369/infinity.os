@@ -5,11 +5,61 @@ use crate::runtime::iop::{
     storage_protocol::{Operation, StorageOperationV1},
 };
 // ------------------------=
+// FUNC: full_namespace_upload_audit_legacy_and_reserved_authority
+// DESC: Publishes real 32-KiB content at a full namespace, preserves named legacy audit identity and denies caller-created reserved System metadata.
+// ------------------=
+#[test]
+fn full_namespace_upload_audit_legacy_and_reserved_authority(){
+    use crate::storage::object::{ObjectType,Space,ObjectService,ObjectCapabilityPolicy,ObjectOperation,ObjectRef,ObjectCreateRequest};
+    let (disk,mut s)=fresh();let bytes:Vec<u8>=(0..32768).map(|n|crate::runtime::storage_fixture::byte_at(17,n)).collect();
+    s.pool_upload_begin(OWNER,0,1,StorageClass::Critical,32768,Sha256::digest(&bytes).into(),ObjectId([0;16]),0).unwrap();
+    for i in 0..32 {let path=format!("/audit-capacity-{i}");if s.create_attached(b"filler",ObjectType::Metadata,Space::Personal,&[],path.as_bytes()).is_err(){break}}
+    assert_eq!((0..32).filter(|i|s.namespace_entry(*i).is_some()).count(),32);
+    let m=upload(&mut s,&bytes,1,ObjectId([0;16]),0);verify(&mut s,&m,&bytes);assert_eq!(audit(&mut s).0,1);
+    s.pool_create(OWNER,0,2,StorageClass::Protected,b"small",OWNER,RESOURCE,[3;16],1).unwrap();assert_eq!(audit(&mut s).0,2);
+    assert!(s.resolve(b"/system/storage/pool-audit").is_err());
+    let id=s.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit").unwrap().unwrap();
+    let mut reboot=ObjectStore::mount(disk,0).unwrap();assert_eq!(reboot.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit").unwrap(),Some(id));assert_eq!(audit(&mut reboot).0,2);
+    struct Allow;
+    impl ObjectCapabilityPolicy for Allow{
+        // ------------------------=
+        // FUNC: authorize
+        // DESC: Grants normal fixture operations so reserved authority denial is independently exercised.
+        // ------------------=
+        fn authorize(&self,_:ObjectOperation,_:Option<ObjectRef>)->bool{true}
+    }
+    let mut api=ObjectService::new(&mut reboot,&Allow);
+    assert_eq!(api.create(ObjectCreateRequest{name:b"@pool-audit",kind:ObjectType::Metadata,space:Space::System,content:&[]}),Err(ObjectError::Unauthorized));
+    assert_eq!(api.update(crate::storage::object::ObjectUpdateRequest{object:ObjectRef{id},content:b"forged"}),Err(ObjectError::Unauthorized));
+    assert_eq!(api.delete(crate::storage::object::ObjectDeleteRequest{object:ObjectRef{id}}),Err(ObjectError::Unauthorized));
+    let (_,mut legacy)=fresh();let mut ring=[0;2080];ring[..8].copy_from_slice(b"INFPAD01");
+    let old=legacy.create_attached(b"pool-audit",ObjectType::Metadata,Space::System,&ring,b"/system/storage/pool-audit").unwrap();
+    legacy.pool_create(OWNER,0,2,StorageClass::Protected,b"legacy",OWNER,RESOURCE,[3;16],1).unwrap();
+    assert_eq!(legacy.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit").unwrap(),Some(old));assert_eq!(audit(&mut legacy).0,1);
+    {
+        use crate::storage::object::{NamespaceAttachRequest,NamespaceMoveRequest,NamespaceDetachRequest,RelationshipAttachRequest,RelationshipDetachRequest,RelationshipType};
+        let mut api=ObjectService::new(&mut legacy,&Allow);
+        assert_eq!(api.create(ObjectCreateRequest{name:b"pool-audit",kind:ObjectType::Metadata,space:Space::System,content:&ring}),Err(ObjectError::Unauthorized));
+        let personal=api.create(ObjectCreateRequest{name:b"@pool-audit",kind:ObjectType::Metadata,space:Space::Personal,content:b"personal"}).unwrap();
+        api.update(crate::storage::object::ObjectUpdateRequest{object:personal,content:b"updated"}).unwrap();
+        api.attach(NamespaceAttachRequest{path:b"/system/storage-other",object:personal}).unwrap();
+        assert_eq!(api.attach(NamespaceAttachRequest{path:b"/system/storage/forged",object:personal}),Err(ObjectError::Unauthorized));
+        assert_eq!(api.move_entry(NamespaceMoveRequest{from:b"/system/storage-other",to:b"/system/storage/pool-audit"}),Err(ObjectError::Unauthorized));
+        assert_eq!(api.move_entry(NamespaceMoveRequest{from:b"/system/storage/pool-audit",to:b"/moved"}),Err(ObjectError::Unauthorized));
+        assert_eq!(api.detach(NamespaceDetachRequest{path:b"/system/storage/pool-audit"}),Err(ObjectError::Unauthorized));
+        assert_eq!(api.relationship_attach(RelationshipAttachRequest{source:personal,kind:RelationshipType::References,target:ObjectRef{id:old},flags:0}),Err(ObjectError::Unauthorized));
+        assert_eq!(api.relationship_detach(RelationshipDetachRequest{source:personal,kind:RelationshipType::References,target:ObjectRef{id:old}}),Err(ObjectError::Unauthorized));
+        api.move_entry(NamespaceMoveRequest{from:b"/system/storage-other",to:b"/normal"}).unwrap();api.detach(NamespaceDetachRequest{path:b"/normal"}).unwrap();api.delete(crate::storage::object::ObjectDeleteRequest{object:personal}).unwrap();
+    }
+    legacy.create(b"@pool-audit",ObjectType::Metadata,Space::Personal,&[]).unwrap();assert_eq!(audit(&mut legacy).0,1);
+    legacy.create(b"@pool-audit",ObjectType::Metadata,Space::System,&ring).unwrap();assert_eq!(legacy.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit"),Err(ObjectError::CorruptContent));
+}
+// ------------------------=
 // FUNC: audit
 // DESC: Reads structured ring sequence and most recent binary lifecycle record.
 // ------------------=
 pub(super) fn audit(store:&mut ObjectStore<Disk>)->(u64,[u8;128]) {
-    let id=store.resolve(b"/system/storage/pool-audit").unwrap();let mut bytes=[0;2080];
+    let id=store.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit").unwrap().unwrap();let mut bytes=[0;2080];
     assert_eq!(store.read(id,None,&mut bytes),Ok(2080));
     let sequence=u64::from_le_bytes(bytes[8..16].try_into().unwrap());
     let at=32+((sequence-1)%16) as usize*128;(sequence,bytes[at..at+128].try_into().unwrap())
@@ -58,7 +108,7 @@ fn create_and_update_audits_share_every_power_cut() {
         let d=Disk(Rc::new(RefCell::new(baseline.clone())));let mut s=ObjectStore::mount(d.clone(),0).unwrap();d.0.borrow_mut().remaining=Some(cut);
         assert!(s.pool_create(OWNER,0,1,StorageClass::Protected,b"one",OWNER,RESOURCE,[3;16],1).is_err());
         d.0.borrow_mut().remaining=None;let mut s=ObjectStore::mount(d,0).unwrap();
-        assert_eq!(s.pool_inspect(OWNER,0,0).unwrap().0,0);assert!(s.resolve(b"/system/storage/pool-audit").is_err());
+        assert_eq!(s.pool_inspect(OWNER,0,0).unwrap().0,0);assert_eq!(s.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit").unwrap(),None);
     }
     let baseline=disk.0.borrow().clone();let before=baseline.writes;
     store.pool_update(ObjectId(m.object),OWNER,0,1,b"two",OWNER,RESOURCE,[3;16],1).unwrap();let cost=disk.0.borrow().writes-before;
@@ -387,7 +437,7 @@ fn manifest_and_audit_commit_share_power_loss_boundary() {
         .pool_commit_manifest(ObjectId(initial.object), OWNER, 0, 2, &final_manifest)
         .unwrap();
     let cost = disk.0.borrow().writes - before;
-    let audit = store.resolve(b"/system/storage/pool-audit").unwrap();
+    let audit = store.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit").unwrap().unwrap();
     let mut bytes = [0; 2080];
     store.read(audit, None, &mut bytes).unwrap();
     assert_eq!(u64::from_le_bytes(bytes[8..16].try_into().unwrap()), 3);

@@ -750,6 +750,17 @@ fn streamed_reservation_and_seal_are_atomic() {
             drop(store); disk.0.borrow_mut().writes_left = None;
             let mut store = ObjectStore::mount(disk, 0).unwrap();
             let usage = store.usage_blocks();
+            if sealing {
+                let published = NativeExtentReplica::open(&mut store,backing,d.resource,d.generation).unwrap()
+                    .inspect().unwrap().state == ReplicaState::Available;
+                let audit=store.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit").and_then(|id|id.ok_or(crate::storage::object::ObjectError::NotFound));
+                assert_eq!(audit.is_ok(),published);
+                if let Ok(id)=audit {
+                    let mut bytes=[0;2080];assert_eq!(store.read(id,None,&mut bytes),Ok(2080));
+                    assert_eq!(u64::from_le_bytes(bytes[8..16].try_into().unwrap()),1);
+                    assert_eq!(bytes[32+98],7);
+                }
+            }
             let mut native = NativeExtentReplica::open(&mut store, backing, d.resource, d.generation).unwrap();
             if let Some(checkpoint) = native.inspect() {
                 let mut transfer = Transfer::resume(checkpoint).unwrap();

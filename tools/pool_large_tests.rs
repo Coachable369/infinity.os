@@ -359,6 +359,7 @@ fn large_pool_publication_power_cuts_preserve_unpublished_state() {
             .pool_manifest(ObjectId(manifest.object), OWNER, 0)
             .is_err());
         assert!(recovered.staging_reserved_bytes() >= 18000);
+        assert_eq!(recovered.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit").unwrap(),None);
     }
 }
 // ------------------------=

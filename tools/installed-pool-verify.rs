@@ -9,6 +9,7 @@ use std::{fs::File, io::{Read, Seek, SeekFrom}};
 use storage::{BlockDevice, object::{ObjectStore, crc32}};
 #[path="installed-pool-lifecycle.rs"] mod lifecycle;
 #[path="installed-pool-reclamation.rs"] mod reclamation;
+#[path="installed-pool-upload-replay.rs"] mod upload_replay;
 // ------------------------=
 // FUNC: output_text
 // DESC: Suppresses runtime human diagnostics from the structured verifier output.
@@ -92,6 +93,10 @@ fn hex<const N: usize>(s: &str) -> Result<[u8;N], &'static str> {
 // ------------------=
 fn run() -> Result<String,String> {
     let a: Vec<String> = std::env::args().collect();
+    if a.get(1).is_some_and(|s|s=="--replay-upload-in-memory") {
+        if a.len()!=4||a[2]!="--vm-paused"{return Err("usage: installed-pool-verify --replay-upload-in-memory --vm-paused RAW".into())}
+        return upload_replay::run(a[3].clone());
+    }
     if a.get(1).is_some_and(|s|s=="--recipient-reclamation") {
         if a.len()<6 || a[2]!="--vm-paused" {return Err("usage: installed-pool-verify --recipient-reclamation --vm-paused RAW OWNER_HEX OBJECT_HEX [PHYSICAL_ID_HEX...]".into())}
         let owner=hex(&a[4])?;let object=hex(&a[5])?;
@@ -237,7 +242,7 @@ mod tests {
         let after=lifecycle::inspect(&mut store,owner.0,m.object,&ids).unwrap();
         assert!(!after.object_present);assert!(after.outbox_present);assert!(after.pending.is_none());assert_eq!(after.audit.last().unwrap().1,6);
         assert!(after.local_manifest.is_none());
-        writable.set(true);store.replace_named_state(b"/system/storage/pool-audit",&[0;2080]).unwrap();writable.set(false);
+        writable.set(true);let audit=store.reserved_system_metadata_id(b"@pool-audit",b"/system/storage/pool-audit").unwrap().unwrap();store.replace_state(audit,&[0;2080]).unwrap();writable.set(false);
         assert!(lifecycle::inspect(&mut store,owner.0,m.object,&ids).is_err());
     }
     // ------------------------=

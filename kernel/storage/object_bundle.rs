@@ -4,6 +4,27 @@ use super::*;
 
 impl<D: BlockDevice> ObjectStore<D> {
     // ------------------------=
+    // FUNC: reserved_system_metadata_id
+    // DESC: Resolves one internal System metadata identity without namespace slots; the public object service forbids reserved System names and access.
+    // ------------------=
+    pub(crate) fn reserved_system_metadata_id(&self,name:&[u8],legacy_path:&[u8])->Result<Option<ObjectId>,ObjectError>{
+        if name.first()!=Some(&b'@')||name.len()>47||core::str::from_utf8(name).is_err(){return Err(ObjectError::InvalidObject)}
+        let legacy=match self.resolve(legacy_path){Ok(id)=>Some(id),Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>None,Err(e)=>return Err(e)};
+        if let Some(id)=legacy{let o=&self.state.objects[self.object_index(id)?];if o.tombstone||o.kind!=ObjectType::Metadata as u8||o.space!=Space::System as u8||o.owner.0!=[0;16]{return Err(ObjectError::CorruptContent)}}
+        let mut found=None;
+        for o in self.state.objects.iter().filter(|o|o.used&&!o.tombstone&&o.name_len as usize==name.len()&&o.name[..name.len()]==*name&&o.space==Space::System as u8){
+            if o.kind!=ObjectType::Metadata as u8||o.owner.0!=[0;16]||found.is_some()||legacy.is_some_and(|id|id!=o.id){return Err(ObjectError::CorruptContent)}found=Some(o.id);
+        }
+        Ok(found.or(legacy))
+    }
+    // ------------------------=
+    // FUNC: reserve_system_metadata_record
+    // DESC: Creates an unnamespaced reserved identity only within the caller's native transaction, preserving existing named identities when present.
+    // ------------------=
+    pub(super) fn reserve_system_metadata_record(&mut self,name:&[u8],legacy_path:&[u8])->Result<ObjectId,ObjectError>{
+        match self.reserved_system_metadata_id(name,legacy_path)?{Some(id)=>Ok(id),None=>self.create_record(name,ObjectType::Metadata,Space::System)}
+    }
+    // ------------------------=
     // FUNC: replace_linked_state
     // DESC: Atomically publishes one bounded unnamespaced metadata child through its parent reference without spending a user namespace slot.
     // ------------------=
@@ -44,12 +65,9 @@ impl<D: BlockDevice> ObjectStore<D> {
     pub(super) fn append_pool_audit_record(&mut self, mut record:[u8;128])->Result<(),ObjectError> {
         let path=b"/system/storage/pool-audit";
         let mut bytes=[0;2080];bytes[..8].copy_from_slice(b"INFPAD01");
-        let id=match self.resolve(path) {
-            Ok(id)=>{if self.read(id,None,&mut bytes)?!=2080 || &bytes[..8]!=b"INFPAD01" {return Err(ObjectError::CorruptContent);}id},
-            Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>{
-                let id=self.create_record(b"pool-audit",ObjectType::Metadata,Space::System)?;
-                self.attach_record(path,id)?;id
-            },Err(e)=>return Err(e),
+        let id=match self.reserved_system_metadata_id(b"@pool-audit",path)? {
+            Some(id)=>{if self.read(id,None,&mut bytes)?!=2080 || &bytes[..8]!=b"INFPAD01" {return Err(ObjectError::CorruptContent);}id},
+            None=>self.reserve_system_metadata_record(b"@pool-audit",path)?,
         };
         let sequence=u64::from_le_bytes(bytes[8..16].try_into().unwrap()).checked_add(1).ok_or(ObjectError::InvalidVersion)?;
         bytes[8..16].copy_from_slice(&sequence.to_le_bytes());record[120..128].copy_from_slice(&sequence.to_le_bytes());
