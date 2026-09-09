@@ -3,6 +3,8 @@ mod storage;
 #[path = "../kernel/drivers/input/buffer.rs"] mod input_buffer;
 #[path = "../kernel/storage/fabric.rs"] mod native_fabric;
 #[path = "../kernel/storage/fabric_pool_metadata.rs"] mod fabric_pool_metadata;
+#[path = "../kernel/storage/fabric_pool_metadata_service.rs"] mod fabric_pool_metadata_service;
+#[path = "../kernel/storage/fabric_pool_repair.rs"] mod fabric_pool_repair;
 #[cfg(test)] mod fabric_persistence_tests;
 #[path = "../kernel/storage/install_identity.rs"] mod install_identity;
 #[path = "../kernel/ui/mod.rs"] mod ui;

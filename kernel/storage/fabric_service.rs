@@ -15,6 +15,25 @@ const CATALOG_BYTES: usize = 32 + MAX_BINDINGS * 208;
 const PATH: &[u8] = b"/system/storage/replicas";
 
 // ------------------------=
+// FUNC: delegated_replica_chunk
+// DESC: Reads an owner-bound immutable replica only after the caller validates fresh quorum metadata and explicit reader delegation.
+// ------------------=
+pub(crate) fn delegated_replica_chunk<D:BlockDevice>(store:&mut ObjectStore<D>, manifest:&crate::runtime::fabric::manifest::Manifest,
+    local:crate::runtime::node::types::NodeId, offset:u64, out:&mut[u8], hash:[u8;32])->Result<(),RemoteError>{
+    use crate::runtime::fabric::manifest::PlacementState;
+    store.resolve(PATH).map_err(storage_error)?;
+    let catalog=Catalog::load(store)?;
+    let binding=catalog.entries.iter().flatten().find(|b|b.owner==manifest.authority.0 && b.authority==manifest.authority_generation
+        && b.descriptor.object==manifest.object && b.descriptor.version==manifest.version && b.descriptor.hash==manifest.hash
+        && b.backing.0!=[0;16] && manifest.placements.iter().flatten().any(|p|p.node==local && p.state==PlacementState::Verified
+            && p.resource==b.descriptor.resource && p.generation==b.descriptor.generation && p.admission_generation==b.manifest))
+        .ok_or(RemoteError::AccessDenied)?;
+    let mut replica=NativeExtentReplica::open(store,binding.backing,binding.descriptor.resource,binding.descriptor.generation).map_err(replica_error)?;
+    if replica.inspect().is_none_or(|c|c.descriptor!=binding.descriptor || c.state!=ReplicaState::Available){return Err(RemoteError::InvalidState);}
+    replica.read_verified_chunk(offset,out,hash).map_err(replica_error)
+}
+
+// ------------------------=
 // FUNC: verify_persisted_replica
 // DESC: Read-only forensic verification of the exact durable recipient binding and every committed byte; never creates a missing catalog.
 // ------------------=
@@ -239,6 +258,34 @@ impl ReplicaService {
     // ------------------=
     pub(crate) fn execute<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, request: AuthenticatedStorageRequest)
         -> Result<StorageOperationV1, RemoteError> {
+        self.execute_bound(store,request,request.peer.0)
+    }
+    // ------------------------=
+    // FUNC: repair_transfer
+    // DESC: Accepts explicit signed placement repair authority while retaining the original logical owner; it never creates an impersonated owner session.
+    // ------------------=
+    pub(crate) fn repair_transfer<D:BlockDevice>(&mut self,store:&mut ObjectStore<D>,request:AuthenticatedStorageRequest,
+        auth:&crate::runtime::fabric::metadata_repair::RepairAuthorization,now:u64)->Result<StorageOperationV1,RemoteError>{
+        auth.encode(now).map_err(|_|RemoteError::AccessDenied)?;
+        let original=request.payload;let base=&auth.anchor.manifest;let grant=&auth.repair.grant;
+        grant.validate(&auth.anchor.group,&auth.anchor.certificate.ok_or(RemoteError::AccessDenied)?,now).map_err(|_|RemoteError::AccessDenied)?;
+        if request.peer!=grant.writer||!grant.destinations.contains(&request.local)||original.object!=base.object
+            || original.object_version!=base.version||original.scope!=0{return Err(RemoteError::AccessDenied)}
+        let placement=auth.repair.manifest.placements.iter().flatten().find(|p|p.node==request.local&&p.resource==self.resource&&p.generation==self.generation
+            &&p.device==self.device.unwrap_or([0;16])).ok_or(RemoteError::AccessDenied)?;
+        let mut p=original;p.authority_generation=base.authority_generation;p.manifest_generation=placement.admission_generation;
+        p.value=u64::from_le_bytes(auth.repair.value.digest()[..8].try_into().unwrap()).max(1);
+        p.operation=match original.value{20=>Operation::TransferBegin,21=>Operation::TransferChunk,22=>Operation::TransferCommit,23=>Operation::ReplicaInspect,_=>return Err(RemoteError::UnsupportedOperation)};
+        if original.value==20{if original.length!=32||original.offset!=base.length||original.data[..32]!=base.hash{return Err(RemoteError::MalformedRequest)}p.length=56;p.data.fill(0);p.data[..16].copy_from_slice(&self.resource.0);p.data[16..24].copy_from_slice(&self.generation.to_le_bytes());p.data[24..56].copy_from_slice(&base.hash);}
+        let mut operation=request;operation.payload=p;let observed=self.execute_bound(store,operation,base.authority.0)?;
+        let mut out=original;out.data[..16].copy_from_slice(&self.resource.0);out.data[16..32].copy_from_slice(&self.device.ok_or(RemoteError::InvalidState)?);out.data[32..].copy_from_slice(&base.hash);
+        out.length=64;out.authority_generation=self.generation;out.manifest_generation=placement.admission_generation;out.offset=observed.offset;out.value=u64::from(observed.data[0]==4);Ok(out)
+    }
+    // ------------------------=
+    // FUNC: execute_bound
+    // DESC: Applies explicit logical-owner fencing; alternate owners are admitted only by the separately validated signed repair entry point.
+    // ------------------=
+    fn execute_bound<D: BlockDevice>(&mut self,store:&mut ObjectStore<D>,request:AuthenticatedStorageRequest,owner:[u8;32])->Result<StorageOperationV1,RemoteError>{
         let p = request.payload;
         p.encode().map_err(|_| RemoteError::MalformedRequest)?;
         if matches!(p.operation, Operation::ObjectUpdate | Operation::ObjectDelete | Operation::PoolUploadCommit) {
@@ -264,7 +311,7 @@ impl ReplicaService {
         // Versions retain distinct immutable physical bindings. A new version
         // cannot overwrite the old committed copy or seize its authority.
         for b in known.clone() {
-            if b.owner != request.peer.0 || b.authority != p.authority_generation || b.scope != p.scope {
+            if b.owner != owner || b.authority != p.authority_generation || b.scope != p.scope {
                 return Err(RemoteError::AccessDenied);
             }
         }
@@ -272,7 +319,7 @@ impl ReplicaService {
             b.descriptor.object == p.object && b.descriptor.version == p.object_version));
         let index = if let Some(index) = existing {
             let b = catalog.entries[index].unwrap();
-            if b.owner != request.peer.0 || b.authority != p.authority_generation || b.scope != p.scope {
+            if b.owner != owner || b.authority != p.authority_generation || b.scope != p.scope {
                 return Err(RemoteError::AccessDenied);
             }
             if b.manifest != p.manifest_generation || b.descriptor.version != p.object_version
@@ -290,7 +337,7 @@ impl ReplicaService {
             let index = catalog.entries.iter().position(|entry| entry.is_none_or(|b| b.backing.0 == [0;16]
                 && b.descriptor.object == p.object && b.descriptor.version < p.object_version)).ok_or(RemoteError::QueueFull)?;
             let cp = Checkpoint { descriptor, copied: 0, state: ReplicaState::Planned };
-            let mut binding = Binding { backing: ObjectId([0; 16]), owner: request.peer.0,
+            let mut binding = Binding { backing: ObjectId([0; 16]), owner,
                 authority: p.authority_generation, manifest: p.manifest_generation, scope: p.scope, descriptor };
             store.create_replica_binding(catalog.id, descriptor.bytes as u32, |backing, extent| {
                 binding.backing = backing; catalog.entries[index] = Some(binding);

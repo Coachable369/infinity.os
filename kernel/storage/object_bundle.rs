@@ -4,6 +4,40 @@ use super::*;
 
 impl<D: BlockDevice> ObjectStore<D> {
     // ------------------------=
+    // FUNC: replace_linked_state
+    // DESC: Atomically publishes one bounded unnamespaced metadata child through its parent reference without spending a user namespace slot.
+    // ------------------=
+    pub(crate) fn replace_linked_state(&mut self,parent:ObjectId,parent_bytes:&[u8],reference:usize,bytes:&[u8])->Result<(),ObjectError>{
+        if parent_bytes.len()>MAX_CONTENT||bytes.len()>MAX_CONTENT||reference.checked_add(16).is_none_or(|n|n>parent_bytes.len()){return Err(ObjectError::InvalidObject)}
+        let before=self.begin()?;let result=(||{let mut p=[0;MAX_CONTENT];p[..parent_bytes.len()].copy_from_slice(parent_bytes);let mut child=ObjectId(p[reference..reference+16].try_into().unwrap());
+            if child.0==[0;16]{child=self.create_record(b"pool-linked-state",ObjectType::Metadata,Space::System)?;p[reference..reference+16].copy_from_slice(&child.0);}
+            self.replace_state_record(child,bytes)?;self.replace_state_record(parent,&p[..parent_bytes.len()]).map(|_|())})();self.finish(before,result)
+    }
+    // ------------------------=
+    // FUNC: replace_named_state
+    // DESC: Atomically creates or replaces a bounded native settings object.
+    // ------------------=
+    pub(crate) fn replace_named_state(&mut self,path:&[u8],bytes:&[u8])->Result<(),ObjectError>{
+        if bytes.len()>MAX_CONTENT{return Err(ObjectError::InvalidObject)}let before=self.begin()?;
+        let result=(||{let id=match self.resolve(path){Ok(id)=>id,Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>{let id=self.create_record(b"pool-settings",ObjectType::Metadata,Space::System)?;self.attach_record(path,id)?;id},Err(e)=>return Err(e)};self.replace_state_record(id,bytes).map(|_|())})();self.finish(before,result)
+    }
+    // ------------------------=
+    // FUNC: replace_named_state_pair
+    // DESC: Creates or replaces two native named metadata records under one root, including first publication; callers supply already validated bounded payloads.
+    // ------------------=
+    pub(crate) fn replace_named_state_pair(&mut self,first_path:&[u8],first:&[u8],second_path:&[u8],second:&[u8])->Result<(),ObjectError> {
+        if first_path==second_path || first.len()>MAX_CONTENT || second.len()>MAX_CONTENT {return Err(ObjectError::InvalidObject);}
+        let before=self.begin()?;
+        let result=(||{
+            for (path,bytes) in [(first_path,first),(second_path,second)] {
+                let id=match self.resolve(path) {Ok(id)=>id,Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>{
+                    let id=self.create_record(b"pool-quorum-state",ObjectType::Metadata,Space::System)?;self.attach_record(path,id)?;id
+                },Err(e)=>return Err(e)};
+                self.replace_state_record(id,bytes)?;
+            }Ok(())
+        })();self.finish(before,result)
+    }
+    // ------------------------=
     // FUNC: append_pool_audit_record
     // DESC: Appends one nonsecret fixed record inside the caller's transaction, creating the bounded ring under the same root when absent.
     // ------------------=

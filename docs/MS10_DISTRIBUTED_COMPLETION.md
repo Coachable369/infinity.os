@@ -19,6 +19,33 @@ Current request is the distributed Pool completion pass, not a new foundation.
   replacement healing, COW/reclamation, event gap, GUI/Console and cold persistence.
 - [ ] Final-source clean installation and full security/input/performance gates.
 
+### Current source evidence (not installed lifecycle acceptance)
+
+The restored authenticated DATA budget is bounded separately from control
+traffic. MS9's 39-test gate passed after adding full-transmit-queue confirmation
+retry and four-link fairness coverage. The host cadence fixture delivered 160
+ordered authenticated payloads in ten simulated seconds; this is not an installed
+throughput measurement.
+
+Signed repair authority now binds a fixed metadata group, owner generation,
+writer, approved destinations and expiry. A replacement must sign its exact
+verified copy before either surviving metadata member can acknowledge staging.
+Fresh repair reads require distinct R2 observations and W2 write-back; absence
+must be observed, not inferred from timeout. Historical committed repairs remain
+readable after admission expiry without renewing mutation authority.
+
+The current combined fabric run (`/tmp/ms10-closure-fabric-full.log`) passed
+120 tests with the existing one ignored captured-disk replay test. The retained
+drag benchmark (`/tmp/ms10-closure-performance-current.log`) observed 300 host
+frames, average 30,391 ns, p95 32,625 ns, worst 51,000 ns. These results predate
+the final automatic-repair and recovery integration and must be rerun after it.
+
+Native linked-child metadata removes repair namespace exhaustion. Shared content
+mutation uses durable admission and result records rather than acknowledging a
+local change as distributed success. Sector-cut/retry tests are mechanism proof;
+the defining owner-offline, replacement, stale-return and reboot VM sequence is
+still required. No MS10 completion or MS11-unblocked claim is made.
+
 ## Previous handoff (historical, before current closure changes)
 
 - Latest complete `./build.sh` passed: `/tmp/ms10-pool-refresh-build-2.log`.

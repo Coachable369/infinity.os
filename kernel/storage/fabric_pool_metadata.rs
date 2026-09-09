@@ -6,6 +6,11 @@ pub(crate) const CAPACITY:usize=8;
 const ENTRY:usize=1120;
 const BYTES:usize=32+CAPACITY*ENTRY;
 const PATH:&[u8]=b"/system/storage/pool-quorum-replicas";
+#[path="fabric_pool_metadata_payload.rs"]
+mod payload;
+pub(crate) use payload::{load_bundle,stage_bundle,publish_bundle,publish_received_bundle,read_bundle};
+pub(crate) use payload::{read_repair_payload,write_repair_payload};
+pub(crate) use payload::{read_mutation_payload,write_mutation_payload,is_shared_object};
 
 // ------------------------=
 // FUNC: group_bytes

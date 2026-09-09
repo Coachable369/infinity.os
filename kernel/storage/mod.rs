@@ -10,6 +10,8 @@ pub mod layout;
 pub mod object;
 pub(crate) mod fabric;
 pub(crate) mod fabric_pool_metadata;
+pub(crate) mod fabric_pool_metadata_service;
+pub(crate) mod fabric_pool_repair;
 pub mod organization;
 #[cfg(target_arch = "aarch64")]
 mod uefi;
@@ -294,6 +296,10 @@ type NativeObjectStore = object::ObjectStore<uefi::UefiBlockDevice>;
 static mut OBJECT_STORE: Option<NativeObjectStore> = None;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 static mut REPLICA_SERVICE: Option<fabric::service::ReplicaService> = None;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+static mut METADATA_SERVICE: fabric_pool_metadata_service::Service = fabric_pool_metadata_service::Service::new();
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+static mut REPAIR_SERVICE: fabric_pool_repair::Service = fabric_pool_repair::Service::new();
 
 // ------------------------=
 // FUNC: initialize_object_store
@@ -335,6 +341,10 @@ pub fn initialize_object_store() {
                 if REPLICA_SERVICE.is_some() {
                     crate::runtime::register_storage_backend(execute_replica_request);
                     crate::runtime::storage_coordinator::register(execute_pool_coordinator);
+                    METADATA_SERVICE = fabric_pool_metadata_service::Service::new();
+                    crate::runtime::storage_metadata::register(execute_pool_metadata);
+                    REPAIR_SERVICE = fabric_pool_repair::Service::new();
+                    crate::runtime::storage_metadata_repair::register(execute_pool_repair);
                 }
             },
             Err(_) => {
@@ -355,6 +365,25 @@ fn execute_pool_coordinator(request: crate::runtime::storage_coordinator::Native
     with_store(|store| Ok(unsafe { REPLICA_SERVICE.as_mut().ok_or(RemoteError::ServiceUnavailable)
         .and_then(|service| service.coordinator_operation(store, request)) }))
         .map_err(|_| RemoteError::ServiceUnavailable)?
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
+// FUNC: execute_pool_metadata
+// DESC: Borrows native storage for one bounded authenticated metadata transition outside the runtime lock.
+// ------------------=
+fn execute_pool_metadata(request:crate::runtime::storage_metadata::NativeRequest)->Result<crate::runtime::storage_metadata::NativeReply,crate::runtime::iop::remote::RemoteError>{
+    with_store(|store|Ok(unsafe{METADATA_SERVICE.execute(store,request)})).map_err(|_|crate::runtime::iop::remote::RemoteError::ServiceUnavailable)?
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
+// FUNC: execute_pool_repair
+// DESC: Borrows native services for one explicit signed repair operation without acquiring a second runtime lock.
+// ------------------=
+fn execute_pool_repair(request:crate::runtime::storage_metadata_repair::NativeRequest)->Result<crate::runtime::storage_metadata_repair::NativeReply,crate::runtime::iop::remote::RemoteError>{
+    use crate::runtime::iop::remote::RemoteError;
+    with_store(|store|Ok(unsafe{REPLICA_SERVICE.as_mut().ok_or(RemoteError::ServiceUnavailable).and_then(|replica|REPAIR_SERVICE.execute(store,replica,request))})).map_err(|_|RemoteError::ServiceUnavailable)?
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
