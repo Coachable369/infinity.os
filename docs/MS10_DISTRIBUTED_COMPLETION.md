@@ -69,6 +69,20 @@ pressure. Exact causation of the original installed incident remains unproven.
 Tool `07713b1` permits a fenced pairing-only continuation against the existing
 artifact pins and identities without duplicating authority grants.
 
+The continuation completed the remaining C–D pair and all twelve directed
+authority/publication configurations. Tool `65e9183` corrected an immediate
+assertion against stale peer-list rows by waiting for the exact reconciled
+projection. The installed 32 KiB gate then PASSED on `bab4753`: three VERIFIED
+replicas, with independent read-only native full-content verification on A/B/C.
+Object `9ab37ac0298144dab9905dd3f6a190df`, version 1, final manifest generation 5;
+SHA-256 `1483008e81cbba217c9a479ac831319701ca55e76fd997c8884b27f45a221d6e`.
+Measured 41.31 s from measurement entry (including Settings activation) to three
+receipts, 82.74 s from fixture submission (including local creation and UI).
+The host Ethernet fixture observed 2,198 DATA frames during that interval;
+guest queue depth/retry count were not measured. Receipt:
+`/tmp/ms10-order-installed-bab4753/owner-offline-gate-32768-17.json`.
+This passes only the 32 KiB distribution gate, not owner-loss or full lifecycle.
+
 Checkpoint `3cd58d1` (including `8f441aa`) removes the confirmed namespace-capacity
 dependency from atomic Pool audit, quorum payload/catalog and metadata-access
 configuration. Reserved native System Metadata identities retain legacy reads;
