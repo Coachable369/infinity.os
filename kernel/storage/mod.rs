@@ -4,6 +4,8 @@ mod ata;
 mod component_manifest;
 #[cfg(feature = "installer")]
 mod format;
+#[cfg(feature = "installer")]
+mod install_identity;
 pub mod layout;
 pub mod object;
 pub(crate) mod fabric;
@@ -150,6 +152,8 @@ pub struct StorageProvisioningPlan {
     pub requires_efi_region: bool,
     pub alignment_blocks: u64,
     pub container_format_version: u32,
+    pub disk_uuid: [u8; 16],
+    pub esp_uuid: [u8; 16],
     pub container_uuid: [u8; 16],
     pub pool: PoolPlan,
     pub spaces: [SpacePlan; 4],

@@ -53,6 +53,12 @@ pub fn plan_entire_disk(
             super::layout::LayoutError::InsufficientCapacity => StorageError::InsufficientCapacity,
             super::layout::LayoutError::Arithmetic => StorageError::Arithmetic,
         })?;
+    let boot_identity = crate::runtime::with_runtime(|runtime| runtime.nodes.local_id())
+        .flatten().ok_or(StorageError::InvalidPlan)?;
+    let identities = super::install_identity::derive(boot_identity.0, device.identity)
+        .ok_or(StorageError::InvalidPlan)?;
+    let mut spaces = profile_spaces(profile);
+    for (space, id) in spaces.iter_mut().zip(identities.spaces) { space.uuid = id; }
     Ok(StorageProvisioningPlan {
         target: device,
         current_layout: if device.has_gpt {
@@ -68,13 +74,15 @@ pub fn plan_entire_disk(
         requires_efi_region: true,
         alignment_blocks: ALIGNMENT_BLOCKS,
         container_format_version: 1,
-        container_uuid: derived_uuid(device.blocks, 0x434f_4e54),
+        disk_uuid: identities.disk,
+        esp_uuid: identities.esp,
+        container_uuid: identities.container,
         pool: PoolPlan {
-            uuid: derived_uuid(device.blocks, 0x504f_4f4c),
+            uuid: identities.pool,
             member_count: 1,
             total_blocks: layout.container_last - layout.container_first + 1,
         },
-        spaces: profile_spaces(profile),
+        spaces,
         esp_first_lba: ESP_FIRST,
         esp_last_lba: layout.esp_last,
         container_first_lba: layout.container_first,
@@ -217,7 +225,7 @@ fn write_gpt<D: BlockDevice>(device: &mut D, plan: &StorageProvisioningPlan) -> 
     }
 
     let mut entries = [[0u8; 512]; 32];
-    let esp_id = derived_uuid(plan.target.blocks, 0x4553_5001);
+    let esp_id = plan.esp_uuid;
     let container_id = plan.container_uuid;
     write_partition(
         &mut entries,
@@ -248,7 +256,7 @@ fn write_gpt<D: BlockDevice>(device: &mut D, plan: &StorageProvisioningPlan) -> 
             return Err(());
         }
     }
-    let primary = gpt_header(1, last, 34, last - 33, 2, entries_crc, plan.target.blocks);
+    let primary = gpt_header(1, last, 34, last - 33, 2, entries_crc, plan.disk_uuid);
     let backup = gpt_header(
         last,
         1,
@@ -256,7 +264,7 @@ fn write_gpt<D: BlockDevice>(device: &mut D, plan: &StorageProvisioningPlan) -> 
         last - 33,
         backup_entries,
         entries_crc,
-        plan.target.blocks,
+        plan.disk_uuid,
     );
     if !device.write_sector(1, &primary) || !device.write_sector(last, &backup) {
         return Err(());
@@ -275,7 +283,7 @@ fn gpt_header(
     last_usable: u64,
     entries_lba: u64,
     entries_crc: u32,
-    seed: u64,
+    guid: [u8; 16],
 ) -> [u8; 512] {
     let mut out = [0u8; 512];
     out[..8].copy_from_slice(b"EFI PART");
@@ -285,7 +293,6 @@ fn gpt_header(
     put_u64(&mut out, 32, alternate);
     put_u64(&mut out, 40, first);
     put_u64(&mut out, 48, last_usable);
-    let guid = derived_uuid(seed, 0x4449_534b);
     out[56..72].copy_from_slice(&guid);
     put_u64(&mut out, 72, entries_lba);
     put_u32(&mut out, 80, 128);
@@ -428,14 +435,14 @@ fn write_space(out: &mut [u8; 512], offset: usize, space: &SpacePlan) {
 // DESC: Implements the space operation.
 // ------------------=
 fn space(
-    id: u8,
+    _id: u8,
     name: &'static [u8],
     kind: u32,
     content_lba: u64,
     content_bytes: u64,
 ) -> SpacePlan {
     SpacePlan {
-        uuid: derived_uuid(id as u64, 0x5350_4143),
+        uuid: [0; 16],
         name,
         kind,
         policy: 1,
@@ -892,21 +899,4 @@ fn get_u64(data: &[u8], at: usize) -> u64 {
         data[at + 6],
         data[at + 7],
     ])
-}
-// ------------------------=
-// FUNC: derived_uuid
-// DESC: Implements the derived uuid operation.
-// ------------------=
-fn derived_uuid(seed: u64, tag: u64) -> [u8; 16] {
-    let mut state = seed ^ tag ^ 0x9e37_79b9_7f4a_7c15;
-    let mut out = [0u8; 16];
-    for byte in &mut out {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        *byte = state as u8;
-    }
-    out[6] = (out[6] & 0x0f) | 0x40;
-    out[8] = (out[8] & 0x3f) | 0x80;
-    out
 }
