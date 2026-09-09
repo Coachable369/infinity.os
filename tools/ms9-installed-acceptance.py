@@ -550,6 +550,9 @@ class Guest:
         self.qmp("send-key", {"keys": [{"type": "qcode", "data": "ret"}], "hold-time": 150})
         result = self.wait(lambda value: not value[9] & 4 or value[9] & 8, "explicit operator confirmation", timeout=15)
         assert not result[9] & 12, {"confirmation_failure": result[:56]}
+        assert result[32:36] == state[32:36], "Confirmation changed selected peer"
+        assert result[64:68] == state[44:48] and any(result[64:68]), "Confirmation changed wire transaction"
+        assert result[57] & 1 and result[10] < result[58], "Local approval was not committed within the ceremony lease"
 
     # ------------------------=
     # FUNC: approve_membership
