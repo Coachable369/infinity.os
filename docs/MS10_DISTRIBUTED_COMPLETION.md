@@ -92,6 +92,14 @@ this preference; native callers submit/take the coordinator request.
 This proves remote resolution, not a simulated local fault or authority-node-loss
 survivability. Those are separate acceptance claims.
 
+Authority-node-offline normal reads are currently UNSUPPORTED, not merely untested.
+Recipients persist replica bindings/content, not the owner's Pool catalog,
+committed manifest and namespace. The coordinator loads locally owned manifests,
+and recipient read authority requires the authenticated owner peer. Completion
+therefore also requires explicitly delegated read authority and replicated
+committed metadata with a defined freshness guarantee. Selecting the highest
+observed replica version or silently assuming ownership is not a safe substitute.
+
 The read-only installed-disk verifier opens raw images without write permission
 and uses native catalog/extent decoding plus a complete content hash. Paused-VM
 inspection after a committed Available receipt is persisted-byte evidence, not
@@ -99,7 +107,8 @@ cold-reboot evidence. Cold boot remains a separate mandatory phase.
 
 ## Mandatory remaining verification
 
-1. Final-source ARM64/x86_64 builds and existing performance/security/installer gates.
+1. Preserve the passing final-source ARM64/x86_64 builds and existing
+   performance/security/installer gates through any subsequent runtime fixes.
 2. Three or more independent final-source installed nodes with media detached.
 3. Real >16 KiB Critical object distributed and independently hash-verified.
 4. Replica-host removal, read while degraded, replacement/heal, stale return.
@@ -107,6 +116,9 @@ cold-reboot evidence. Cold boot remains a separate mandatory phase.
 6. Cold reboot, persistent authority/configuration, resumed work and verified reads.
 7. Installed Pool screenshots, keyboard/pointer/drag during real fabric activity.
 8. Audit/event-gap reconstruction and complete failure matrix, with no text-oracle tests.
+9. Implement and verify ordinary same-ObjectId/namespace reads on surviving nodes
+   while the authoritative owner is offline, including metadata freshness and
+   explicit delegated read authority.
 
 No final completion claim has been made. No Git remote is configured; local
 mainline commits cannot be pushed or pulled until an actual remote is supplied.
