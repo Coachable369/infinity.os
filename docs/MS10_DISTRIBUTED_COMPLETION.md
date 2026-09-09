@@ -24,6 +24,26 @@ Current request is the distributed Pool completion pass, not a new foundation.
 
 ### Current source evidence (not installed lifecycle acceptance)
 
+Checkpoint `3cd58d1` (including `8f441aa`) removes the confirmed namespace-capacity
+dependency from atomic Pool audit, quorum payload/catalog and metadata-access
+configuration. Reserved native System Metadata identities retain legacy reads;
+ordinary ObjectService operations cannot forge or mutate those internal records.
+The full-namespace upload replay of the failed installed disk now completes with
+replay writes confined to RAM. Full-namespace configuration, metadata publication,
+power-cut recovery and legacy authority-boundary tests pass. Fabric: 133 passed,
+one pre-existing ignored. Performance regression target passed; retained-drag host
+fixture measured 300 frames, average 35,994 ns, p95 44,000 ns, worst 80,291 ns.
+These are host measurements, not loaded installed UI acceptance.
+
+`./build.sh` passed (`/tmp/ms10-namespace-3cd58d1-build.log`). x86_64 ISO SHA-256:
+`37d7e30a3224a3e48668c7ff732fd056237d7828d4e0adcc801f4d67c2f6a483`;
+ARM64: `7a0f5d28b069ba948c2aaa0a5d5f140cad0e06dcb7478f12b9c0bee5ee000850`.
+All four new independent installations passed ISO-detached cold login,
+persistent identity and native storage inspection:
+`/tmp/ms10-namespace-installed-3cd58d1/result.json`.
+The new 32 KiB distributed run is active; transfer and owner-loss acceptance
+remain unverified on this generation.
+
 Checkpoint `acb0b60` corrects authenticated simultaneous reconnect offers with a
 deterministic NodeId tie-break, preserving the original deadline and replay
 validation. The reproducer observed both peers stuck in `SessionResponse` before
