@@ -399,6 +399,7 @@ struct ConsoleSurface {
     last_system_clock: crate::storage::DateTimeConfiguration,
     last_settings_window: crate::ui::system_layout::SettingsWindowState,
     last_node_settings: Option<crate::runtime::node_client::NodePresentation>,
+    last_pool_settings_revision: Option<u64>,
     last_network_settings: Option<(crate::runtime::network::NetworkStatus, Option<crate::runtime::network::types::NetworkInterface>, Option<crate::runtime::network::types::IpAddress>, Option<crate::runtime::network::types::IpAddress>)>,
     last_app_window_x: i32,
     last_app_window_y: i32,

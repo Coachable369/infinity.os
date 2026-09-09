@@ -84,7 +84,7 @@ commits, fixing a failure-injection-discovered multi-record reuse bug.
 - Installed screen review on `52c15e8` found a failing refresh boundary: typed Pool
   projection was ready with one node, but Storage Settings remained in its loading
   state after waiting and keyboard interaction. The subtitle overlap is fixed;
-  populated-state GUI parity is NOT TESTED/PASS and requires a targeted fix.
+  the populated-state GUI refresh check FAILED and requires a targeted fix.
 - The initial host-timed long-command producer lost six of 89 characters before
   mesh setup. Explicit make/break input with binary length acknowledgement passed
   89/89 without retransmission; bounded four-key batches also passed. These prove

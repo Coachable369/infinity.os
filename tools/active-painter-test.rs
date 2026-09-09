@@ -168,6 +168,7 @@ fn main() {
     damage_test();
     retained_surface_test();
     retained_partial_update_test();
+    retained_projection_revision_test();
     let mut full = vec![0x102030u32; 2560 * 1600];
     let mut partial = full.clone();
     for format in [0, 1] {
@@ -439,6 +440,35 @@ fn retained_surface_test() {
         painted += 1;
     });
     assert_eq!(painted, 2);
+}
+
+// ------------------------=
+// FUNC: retained_projection_revision_test
+// DESC: Verifies an asynchronous projection invalidates only Settings pixels; unchanged revisions and unrelated window surfaces retain their cached paint.
+// ------------------=
+fn retained_projection_revision_test() {
+    retained_windows::invalidate();
+    let mut pixels=vec![0x302010u32;320*200];
+    let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width:320,height:200,stride:320,format:0,
+        render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let bounds=(40,40,100,80);let mut revision=None;
+    assert!(retained_windows::invalidate_revision(4,&mut revision,Some(1)));
+    display.retained_window(4,bounds,|target|target.fill_rect(40,40,100,80,1,2,3));
+    display.retained_window(0,(180,40,80,80),|target|target.fill_rect(180,40,80,80,7,8,9));
+    assert!(!retained_windows::invalidate_revision(4,&mut revision,Some(1)));
+    display.retained_window(4,bounds,|_|panic!("unchanged projection repainted"));
+    let before=pixels.clone();
+    assert!(retained_windows::invalidate_revision(4,&mut revision,Some(2)));
+    display.render_clip=Some(Region {left:40,top:40,right:140,bottom:120});
+    display.retained_window(4,bounds,|target|target.fill_rect(40,40,100,80,4,5,6));
+    for y in 0..200 {for x in 0..320 {
+        assert_eq!(pixels[y*320+x],if (40..140).contains(&x)&&(40..120).contains(&y) {0x060504}else{before[y*320+x]});
+    }}
+    display.render_clip=None;
+    display.retained_window(0,(180,40,80,80),|_|panic!("unrelated window invalidated"));
+    assert!(!retained_windows::invalidate_revision(4,&mut revision,None));
+    display.retained_window(4,bounds,|_|panic!("hidden projection invalidated"));
+    assert!(retained_windows::invalidate_revision(4,&mut revision,Some(2)));
 }
 
 // ------------------------=

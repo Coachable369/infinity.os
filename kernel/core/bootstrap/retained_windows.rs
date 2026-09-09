@@ -5,6 +5,18 @@ const PIXELS: usize = 2560 * 1600;
 const SCRATCH_PIXELS: usize = 3840 * 2160;
 const SLOTS: usize = 6;
 
+// ------------------------=
+// FUNC: invalidate_revision
+// DESC: Invalidates only the visible owner's cached window when its committed projection changes; unchanged or hidden observations do not repaint.
+// ------------------=
+pub(super) fn invalidate_revision(slot:usize,previous:&mut Option<u64>,current:Option<u64>)->bool {
+    if *previous==current {return false;}
+    *previous=current;
+    if current.is_none() || slot>=SLOTS {return false;}
+    unsafe {let cache=&mut (*(&raw mut WINDOWS))[slot];cache.valid=false;cache.damage=None;}
+    true
+}
+
 #[derive(Clone, Copy)]
 struct CachedWindow {
     valid: bool,

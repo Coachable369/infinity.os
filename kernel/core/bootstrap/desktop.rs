@@ -9947,6 +9947,11 @@ pub fn system_ui_present(
                 crate::runtime::with_runtime(|runtime| crate::runtime::node_client::presentation(runtime))
             } else { None };
             let node_settings_changed = node_settings != console.last_node_settings;
+            let pool_revision = if screen == 4 && focus == 8 {
+                crate::runtime::with_runtime(|runtime|runtime.storage_view.revision)
+            } else {None};
+            let pool_settings_changed = super::retained_windows::invalidate_revision(
+                4,&mut console.last_pool_settings_revision,pool_revision);
             let settings_content_changed = console.last_settings_window.expanded_row
                 != settings_window.expanded_row
                 || console.last_settings_window.scroll_offset != settings_window.scroll_offset
@@ -10059,6 +10064,7 @@ pub fn system_ui_present(
                 && (navigator_surface_changed
                     || network_settings_changed
                     || node_settings_changed
+                    || pool_settings_changed
                     || window_moved
                     || window_resized
                     || settings_geometry_changed
