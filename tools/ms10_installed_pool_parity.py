@@ -1,5 +1,6 @@
 """Typed Console manifest pages versus live Settings object projection."""
 import struct
+import time
 import ms10_installed_fixture as fixture
 from ms10_installed_pool import call
 from ms10_installed_metadata import invoke
@@ -62,7 +63,7 @@ def observed_projection(reply, canonical, content_hash):
 # ------------------=
 def verify(guest, distribution, object_id, label, timeout=90, shared=False):
     initial = distribution.object_state(guest, object_id, lambda row: True, f"{label}-settings-before", timeout)
-    before = fixture.read_state(guest, distribution.API.symbol)
+    before = select_object(guest, distribution, object_id)
     assert before[24] and before[19] < min(before[18], 8)
     assert struct.pack("<2Q", *before[32+before[19]*16:34+before[19]*16]).hex() == object_id, {"settings_object_not_selected": object_id}
     generation = initial[3]
@@ -87,7 +88,7 @@ def verify(guest, distribution, object_id, label, timeout=90, shared=False):
         console = observed_projection(health, canonical, b"".join(pages[:2])[40:72])
     current = distribution.object_state(guest, object_id, lambda row: True, f"{label}-settings-after", timeout)
     assert_row(console, current)
-    pool = fixture.read_state(guest, distribution.API.symbol)
+    pool = select_object(guest, distribution, object_id)
     selected = pool[32 + pool[19]*16:48 + pool[19]*16] if pool[19] < min(pool[18], 8) else None
     assert selected is not None and struct.pack("<2Q", *selected[:2]).hex() == object_id
     for index in range(8):
@@ -102,3 +103,71 @@ def verify(guest, distribution, object_id, label, timeout=90, shared=False):
             "canonical_signed_fields": canonical, "health_source": "typed observed summary" if shared else "canonical local manifest",
             "selected_object_matches": True, "placement_identities_individually_compared": True,
             "placement_states_individually_compared": not shared}
+
+
+# ------------------------=
+# FUNC: selection_points
+# DESC: Derives native row-three summary/action centers from freshly reset Settings geometry, refusing any required scrolling.
+# ------------------=
+def selection_points(main, pool):
+    scale = 2 if main[11] >= 2560 and main[12] >= 1440 else 1
+    x, y, width, height = pool[246:250]
+    assert main[4] == main[8] == 8
+    assert 0 <= x and 0 <= y and x + width <= main[11] and y + height <= main[12]
+    assert height >= 506 * scale and width > 200 * scale
+    left = x + width * 28 // 100 + 34 * scale
+    return [(left + 50 * scale, y + 349 * scale),
+            (left + 101 * scale, y + 458 * scale)]
+
+
+# ------------------------=
+# FUNC: click_point
+# DESC: Moves the real normalized guest pointer to a native pixel target with bounded feedback and releases every click.
+# ------------------=
+def click_point(guest, point):
+    state = guest.state()
+    target = (point[0] * 1000 // state[11], point[1] * 1000 // state[12])
+    for _ in range(80):
+        state = guest.state()
+        delta = [target[i] - state[13+i] for i in range(2)]
+        if max(map(abs, delta)) <= 2:
+            break
+        events = [{"type": "rel", "data": {"axis": axis, "value": max(-40, min(40, d // 3 if abs(d) >= 3 else d))}}
+                  for axis, d in zip(("x", "y"), delta) if abs(d) > 2]
+        guest.qmp("input-send-event", {"events": events})
+        guest.wait(lambda value: value[13:15] != state[13:15], "selection pointer movement", timeout=2)
+    else:
+        raise AssertionError("Selection pointer did not reach native control")
+    try:
+        guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": True}}]})
+        guest.wait(lambda value: value[15] & 1, "selection pointer pressed", timeout=2)
+    finally:
+        guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": False}}]})
+    guest.wait(lambda value: value[15] == 0, "selection pointer released", timeout=2)
+
+
+# ------------------------=
+# FUNC: select_object
+# DESC: Cycles only the native object selection control and verifies exact identity before inspecting selected placements.
+# ------------------=
+def select_object(guest, distribution, object_id, read=None, click=click_point):
+    read = read or (lambda: fixture.read_state(guest, distribution.API.symbol))
+    for _ in range(8):
+        pool = read()
+        assert pool[24] and 0 <= pool[19] < min(pool[18], 8)
+        if struct.pack("<2Q", *pool[32+pool[19]*16:34+pool[19]*16]).hex() == object_id:
+            return pool
+        guest.launch("storage", 8, 8)
+        summary, action = selection_points(guest.state(), read())
+        click(guest, summary)
+        click(guest, action)
+        expected = (pool[19] + 1) % pool[18]
+        deadline = time.monotonic() + 90
+        while True:
+            current = read()
+            assert current[18] == pool[18], "Object list changed during selection"
+            if current[19] == expected and current[24]:
+                break
+            assert time.monotonic() < deadline, {"native_selection_not_advanced": expected}
+            time.sleep(.1)
+    raise AssertionError({"object_not_selectable": object_id})
