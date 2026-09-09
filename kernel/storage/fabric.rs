@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 pub(crate) mod extent;
 #[path = "fabric_service.rs"]
 pub(crate) mod service;
+#[path = "fabric_pool.rs"]
+mod pool;
 
 const HEADER: usize = 128;
 pub(crate) const MAX_REPLICA_BYTES: usize = MAX_CONTENT - HEADER;

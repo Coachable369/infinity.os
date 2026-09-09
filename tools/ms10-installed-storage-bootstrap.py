@@ -11,6 +11,7 @@ import json
 import pathlib
 import shutil
 import struct
+import ms10_installed_pool
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("installed_acceptance", ROOT / "tools/ms9-installed-acceptance.py")
@@ -21,7 +22,7 @@ spec.loader.exec_module(installed)
 # FUNC: provision
 # DESC: Installs one blank owned disk, detaches media, configures through real UI and proves the mounted replica service survives cold authenticated boot.
 # ------------------=
-def provision(guest, resume=False):
+def provision(guest, resume=False, pool=False):
     try:
         if resume:
             guest.boot(False)
@@ -60,6 +61,8 @@ def provision(guest, resume=False):
         result["capacity_bytes"] = capacity
         result["available_bytes"] = available
         result["reserved_bytes"] = reserved
+        if pool:
+            result["pool"] = ms10_installed_pool.verify(guest)
         guest.screenshot("recipient-service-desktop")
         guest.frame_report("recipient-service-desktop")
         (guest.work / "recipient-result.json").write_text(json.dumps(result, indent=2))
@@ -81,6 +84,7 @@ def main():
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--nodes", type=int, choices=(3, 4), default=3)
     parser.add_argument("--resume", action="store_true", help="Reverify existing independently installed disks using their pinned artifacts; never reinstall or substitute current builds")
+    parser.add_argument("--pool", action="store_true", help="Exercise native local Pool creation, read, update, policy and detached cold-reboot persistence")
     parser.add_argument("--firmware", default="/opt/homebrew/share/qemu/edk2-x86_64-code.fd")
     args = parser.parse_args()
     work = args.output.resolve()
@@ -109,7 +113,7 @@ def main():
         # collision. Preserve each completed node's receipt for focused reuse.
         for start in range(0, len(guests), 2):
             batch = guests[start:start+2]
-            results.extend(workers.map(provision, batch, [args.resume] * len(batch)))
+            results.extend(workers.map(provision, batch, [args.resume] * len(batch), [args.pool] * len(batch)))
             assert len({result["node_id"] for result in results}) == len(results)
             assert len({result["resource_id"] for result in results}) == len(results)
             assert len({result["device_id"] for result in results}) == len(results)

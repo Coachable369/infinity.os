@@ -1,6 +1,6 @@
 //! Native application-object/manifest ownership catalog. All mutations use the
 //! same transaction root as content, never a second configuration database.
-use super::*;
+use crate::storage::{BlockDevice, object::{ObjectId, ObjectStore, ObjectError, ObjectType, Space, MAX_CONTENT}};
 use crate::runtime::{fabric::{manifest::{Chunk, Manifest, Placement, PlacementState,
     MANIFEST_BYTES, MAX_CHUNKS, MAX_PLACEMENTS}, placement::StorageClass,
     resources::ResourceId}, node::types::NodeId};
@@ -133,11 +133,8 @@ impl<D: BlockDevice> ObjectStore<D> {
             return self.pool_manifest(e.object, owner, scope);
         }
         let slot = catalog.entries.iter().position(Option::is_none).ok_or(ObjectError::InsufficientCapacity)?;
-        let before = self.begin()?;
-        let result = (|| {
-            let object = self.create_record(b"Pool Object", ObjectType::Metadata, Space::Personal)?;
-            self.write_record(object, content)?;
-            let backing = self.create_record(b"pool-manifest", ObjectType::Metadata, Space::System)?;
+        let mut committed_manifest = None;
+        self.create_owned_bundle(catalog.id, content, |object, backing| {
             let mut manifest = Manifest { object: object.0, version: 1, length: content.len() as u64, hash,
                 policy, minimum_available: 1, generation: 1, authority: owner, authority_generation: 1,
                 chunks: [None; MAX_CHUNKS], placements: [None; MAX_PLACEMENTS], healing: None };
@@ -149,13 +146,12 @@ impl<D: BlockDevice> ObjectStore<D> {
                 admission_generation: 1 });
             let mut bytes = [0; MANIFEST_BYTES];
             manifest.encode(&mut bytes).map_err(|_| ObjectError::InvalidObject)?;
-            self.replace_state_record(backing, &bytes)?;
             catalog.entries[slot] = Some(Entry { object, backing, owner, scope, nonce,
                 creation_hash: hash, creation_policy: policy.replicas() as u8 });
-            self.replace_state_record(catalog.id, &catalog.encode())?;
-            Ok(manifest)
-        })();
-        self.finish(before, result)
+            committed_manifest = Some(manifest);
+            Ok((catalog.encode(), bytes))
+        })?;
+        committed_manifest.ok_or(ObjectError::TransactionFailed)
     }
     // ------------------------=
     // FUNC: pool_set_policy
@@ -190,9 +186,8 @@ impl<D: BlockDevice> ObjectStore<D> {
             || resource.0 == [0; 16] || resource_generation == 0 { return Err(ObjectError::InvalidObject); }
         let catalog = Catalog::load(self)?;
         let e = catalog.entries.iter().flatten().find(|e| e.object == object).ok_or(ObjectError::NotFound)?;
-        let before = self.begin()?;
-        let result = (|| {
-            let version = self.write_record(object, content)?;
+        let mut committed_manifest = None;
+        self.update_owned_bundle(object, e.backing, content, |version| {
             if previous.version.checked_add(1) != Some(version as u64) { return Err(ObjectError::InvalidVersion); }
             let mut next = previous;
             next.version = version as u64;
@@ -208,10 +203,10 @@ impl<D: BlockDevice> ObjectStore<D> {
                 version: next.version, hash: next.hash, state: PlacementState::Verified, admission_generation: next.generation });
             previous.successor(&next).map_err(|_| ObjectError::InvalidVersion)?;
             let mut bytes = [0; MANIFEST_BYTES]; next.encode(&mut bytes).map_err(|_| ObjectError::InvalidObject)?;
-            self.replace_state_record(e.backing, &bytes)?;
-            Ok(next)
-        })();
-        self.finish(before, result)
+            committed_manifest = Some(next);
+            Ok(bytes)
+        })?;
+        committed_manifest.ok_or(ObjectError::TransactionFailed)
     }
     // ------------------------=
     // FUNC: pool_read
