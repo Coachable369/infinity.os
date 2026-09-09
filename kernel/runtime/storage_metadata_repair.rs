@@ -119,6 +119,7 @@ struct Job {
     head_digest: [u8; 32],
     result: Option<Result<u64, RemoteError>>,
     overlay_only: bool,
+    recovery_only: bool,
 }
 impl Job {
     // ------------------------=
@@ -159,6 +160,7 @@ impl Job {
             head_digest: [0; 32],
             result: None,
             overlay_only: false,
+            recovery_only: false,
         }
     }
 }
@@ -320,6 +322,106 @@ pub(super) fn overlay_cancel(r: &mut InfinityRuntime, user: StableId, session: S
         .as_ref()
         .is_some_and(|j| j.id == id && j.user == user && j.session == session && j.overlay_only)
     {
+        return;
+    }
+    if let Some(p) = r.storage_metadata_repair.pending.take() {
+        if let Some(caller) = r.service_identity(SERVICE_REPLICA_STORAGE) {
+            r.iop.remote.discard(caller, p.id);
+            let _ = r.capabilities.retire_leaf(p.cap, caller);
+        }
+    }
+    r.storage_metadata_repair.job = None;
+}
+// ------------------------=
+// FUNC: overlay_start_recovery
+// DESC: Starts an owner-only read barrier for the metadata service's validated durable recovery job, without manufacturing a human session or transfer authority.
+// ------------------=
+pub(super) fn overlay_start_recovery(
+    r: &mut InfinityRuntime,
+    anchor: Bundle,
+) -> Result<u64, RemoteError> {
+    let local = r.nodes.local_id().ok_or(RemoteError::ServiceUnavailable)?;
+    if anchor.group.owner != local {
+        return Err(RemoteError::AccessDenied);
+    }
+    anchor.validate().map_err(|_| RemoteError::AccessDenied)?;
+    if r.storage_metadata_repair.job.is_some() {
+        return Err(RemoteError::QueueFull);
+    }
+    let now = r.node_clock.ok_or(RemoteError::ServiceUnavailable)?;
+    let round = RepairReadRound::new(
+        &anchor.group,
+        &anchor.certificate.ok_or(RemoteError::InvalidState)?,
+    )
+    .map_err(|_| RemoteError::AccessDenied)?;
+    let id = (1u64 << 61) | r.storage_metadata_repair.next;
+    r.storage_metadata_repair.next = r
+        .storage_metadata_repair
+        .next
+        .checked_add(1)
+        .ok_or(RemoteError::QueueFull)?;
+    let mut job = Job::new(
+        id,
+        StableId([0; 16]),
+        StableId([0; 16]),
+        anchor.manifest.object,
+        NodeId([0; 32]),
+        now,
+    );
+    job.overlay_only = true;
+    job.recovery_only = true;
+    job.deadline = now.saturating_add(900);
+    job.anchor = Some(anchor);
+    job.round = Some(round);
+    job.phase = Phase::LocalHead;
+    r.storage_metadata_repair.job = Some(job);
+    Ok(id)
+}
+// ------------------------=
+// FUNC: overlay_take_recovery
+// DESC: Returns only the local owner's exact service recovery barrier; this path never consumes a human operation or starts a repair.
+// ------------------=
+pub(super) fn overlay_take_recovery(
+    r: &mut InfinityRuntime,
+    id: u64,
+) -> Result<Option<Option<RepairBundle>>, RemoteError> {
+    let local = r.nodes.local_id().ok_or(RemoteError::ServiceUnavailable)?;
+    let j = r
+        .storage_metadata_repair
+        .job
+        .as_ref()
+        .filter(|j| {
+            j.id == id
+                && j.overlay_only
+                && j.recovery_only
+                && j.anchor.is_some_and(|a| a.group.owner == local)
+        })
+        .ok_or(RemoteError::NotFound)?;
+    let Some(result) = j.result else {
+        return Ok(None);
+    };
+    let resolved = result.and_then(|_| {
+        j.round
+            .as_ref()
+            .ok_or(RemoteError::InvalidState)?
+            .resolved()
+            .map_err(|_| RemoteError::ServiceUnavailable)
+    });
+    r.storage_metadata_repair.job = None;
+    resolved.map(Some)
+}
+// ------------------------=
+// FUNC: overlay_cancel_recovery
+// DESC: Retires only an exact owner recovery request when its durable outer job stops; unrelated readers and human operations remain untouched.
+// ------------------=
+pub(super) fn overlay_cancel_recovery(r: &mut InfinityRuntime, id: u64) {
+    let local = r.nodes.local_id();
+    if !r.storage_metadata_repair.job.as_ref().is_some_and(|j| {
+        j.id == id
+            && j.overlay_only
+            && j.recovery_only
+            && j.anchor.is_some_and(|a| Some(a.group.owner) == local)
+    }) {
         return;
     }
     if let Some(p) = r.storage_metadata_repair.pending.take() {
@@ -1235,7 +1337,11 @@ pub fn poll(r: &mut InfinityRuntime, now: u64) {
         r.storage_metadata_repair.job = Some(j);
         return;
     }
-    let result = if !storage_operator::authorized(r, j.user, j.session) {
+    let recovery = j.overlay_only
+        && j.recovery_only
+        && j.anchor
+            .is_some_and(|a| Some(a.group.owner) == r.nodes.local_id());
+    let result = if !recovery && !storage_operator::authorized(r, j.user, j.session) {
         Err(RemoteError::AccessDenied)
     } else if now >= j.deadline {
         Err(RemoteError::DeadlineExceeded)
