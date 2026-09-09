@@ -120,6 +120,7 @@ struct Job {
     result: Option<Result<u64, RemoteError>>,
     overlay_only: bool,
     recovery_only: bool,
+    automatic: bool,
 }
 impl Job {
     // ------------------------=
@@ -161,6 +162,7 @@ impl Job {
             result: None,
             overlay_only: false,
             recovery_only: false,
+            automatic: false,
         }
     }
 }
@@ -194,6 +196,28 @@ impl Service {
 // ------------------=
 pub fn register(handler: NativeHandler) {
     with_runtime(|r| r.storage_metadata_repair.handler = Some(handler));
+}
+// ------------------------=
+// FUNC: observed_overlay
+// DESC: Supplies a capability-gated durable scheduling hint only; callers must still obtain independent fresh owner and repair quorums before repair or reads.
+// ------------------=
+pub(super) fn observed_overlay(
+    r: &mut InfinityRuntime,
+    bundle: Bundle,
+    now: u64,
+) -> Result<Option<RepairBundle>, RemoteError> {
+    match native(
+        r,
+        NativeRequest::Load {
+            object: bundle.manifest.object,
+            anchor: bundle.value.record.digest(),
+            now,
+        },
+        now,
+    )? {
+        NativeReply::Overlay(value) => Ok(value),
+        _ => Err(RemoteError::InvalidState),
+    }
 }
 // ------------------------=
 // FUNC: begin
@@ -433,6 +457,98 @@ pub(super) fn overlay_cancel_recovery(r: &mut InfinityRuntime, id: u64) {
     r.storage_metadata_repair.job = None;
 }
 // ------------------------=
+// FUNC: begin_automatic
+// DESC: Admits a service-owned repair only after its trigger obtained a fresh owner quorum and supplies an exact signed delegation; no human session is synthesized.
+// ------------------=
+pub(super) fn begin_automatic(
+    r: &mut InfinityRuntime,
+    anchor: Bundle,
+    destination: NodeId,
+) -> Result<u64, RemoteError> {
+    if r.storage_metadata_repair.job.is_some() {
+        return Err(RemoteError::QueueFull);
+    }
+    let now = r.node_clock.ok_or(RemoteError::ServiceUnavailable)?;
+    let local = r.nodes.local_id().ok_or(RemoteError::ServiceUnavailable)?;
+    if local == anchor.group.owner
+        || destination == local
+        || !r.nodes.discovered_nodes().iter().flatten().any(|n| {
+            n.id == anchor.group.owner && n.reachability == node::types::Reachability::Offline
+        })
+    {
+        return Err(RemoteError::AccessDenied);
+    }
+    let cert = anchor.certificate.ok_or(RemoteError::InvalidState)?;
+    anchor.validate().map_err(|_| RemoteError::AccessDenied)?;
+    let grant = anchor
+        .repair_grants
+        .iter()
+        .flatten()
+        .find(|g| g.writer == local && g.destinations.contains(&destination))
+        .ok_or(RemoteError::AccessDenied)?;
+    grant
+        .validate(&anchor.group, &cert, now)
+        .map_err(|_| RemoteError::AccessDenied)?;
+    storage_metadata::peer_grant(r, destination, now)?;
+    let round =
+        RepairReadRound::new(&anchor.group, &cert).map_err(|_| RemoteError::AccessDenied)?;
+    let id = (1u64 << 61) | r.storage_metadata_repair.next;
+    r.storage_metadata_repair.next = r
+        .storage_metadata_repair
+        .next
+        .checked_add(1)
+        .ok_or(RemoteError::QueueFull)?;
+    let mut job = Job::new(
+        id,
+        StableId([0; 16]),
+        StableId([0; 16]),
+        anchor.manifest.object,
+        destination,
+        now,
+    );
+    job.automatic = true;
+    job.anchor = Some(anchor);
+    job.round = Some(round);
+    job.phase = Phase::LocalHead;
+    r.storage_metadata_repair.job = Some(job);
+    Ok(id)
+}
+// ------------------------=
+// FUNC: take_automatic
+// DESC: Consumes only the exact service-owned repair outcome; normal callers cannot steal a background completion.
+// ------------------=
+pub(super) fn take_automatic(r: &mut InfinityRuntime, id: u64) -> Result<Option<u64>, RemoteError> {
+    let j = r
+        .storage_metadata_repair
+        .job
+        .as_ref()
+        .filter(|j| j.id == id && j.automatic && !j.overlay_only)
+        .ok_or(RemoteError::NotFound)?;
+    let Some(result) = j.result else {
+        return Ok(None);
+    };
+    r.storage_metadata_repair.job = None;
+    result.map(Some)
+}
+// ------------------------=
+// FUNC: automatic_authorized
+// DESC: Checks the immutable admission-verified writer/destination lease on each tick without repeating signature work; every wire operation separately enforces live capabilities.
+// ------------------=
+fn automatic_authorized(r: &InfinityRuntime, j: &Job, now: u64) -> bool {
+    if !j.automatic || j.overlay_only {
+        return false;
+    }
+    let Some(a) = j.anchor else { return false };
+    if a.certificate.is_none() {
+        return false;
+    }
+    a.repair_grants.iter().flatten().any(|g| {
+        Some(g.writer) == r.nodes.local_id()
+            && g.destinations.contains(&j.destination)
+            && now < g.expires
+    })
+}
+// ------------------------=
 // FUNC: take
 // DESC: Consumes only the initiating still-authorized session's verified repair publication result.
 // ------------------=
@@ -445,7 +561,13 @@ pub fn take(user: StableId, session: StableId, id: u64) -> Result<Option<u64>, R
             .storage_metadata_repair
             .job
             .as_ref()
-            .filter(|j| j.id == id && j.user == user && j.session == session && !j.overlay_only)
+            .filter(|j| {
+                j.id == id
+                    && j.user == user
+                    && j.session == session
+                    && !j.overlay_only
+                    && !j.automatic
+            })
             .ok_or(RemoteError::NotFound)?;
         let Some(result) = j.result else {
             return Ok(None);
@@ -1341,7 +1463,8 @@ pub fn poll(r: &mut InfinityRuntime, now: u64) {
         && j.recovery_only
         && j.anchor
             .is_some_and(|a| Some(a.group.owner) == r.nodes.local_id());
-    let result = if !recovery && !storage_operator::authorized(r, j.user, j.session) {
+    let automatic = automatic_authorized(r, &j, now);
+    let result = if !recovery && !automatic && !storage_operator::authorized(r, j.user, j.session) {
         Err(RemoteError::AccessDenied)
     } else if now >= j.deadline {
         Err(RemoteError::DeadlineExceeded)
