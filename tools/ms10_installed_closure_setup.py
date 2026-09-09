@@ -5,6 +5,7 @@ They do not establish completion, extend expired authority, or inject storage.
 """
 from concurrent.futures import ThreadPoolExecutor
 import struct
+from ms10_installed_durable_grants import grant
 
 
 # ------------------------=
@@ -19,10 +20,10 @@ def grant_node(guest, identities):
             continue
         guest.peer_policy(peer, "object", "allow")
         guest.peer_policy(peer, "namespace", "allow")
-        item = {"metadata": guest.peer_grant(peer, "pool-metadata"),
-                "publication": guest.peer_grant(peer, "resource-advertise")}
+        item = {"metadata": grant(guest, peer, "pool-metadata"),
+                "publication": grant(guest, peer, "resource-advertise")}
         if index == 0:
-            item["replica"] = [guest.peer_grant(peer, operation) for operation in
+            item["replica"] = [grant(guest, peer, operation) for operation in
                                ("transfer-begin", "transfer-chunk", "transfer-commit",
                                 "replica-inspect", "object-read", "replica-delete")]
         records[peer] = item
@@ -40,24 +41,24 @@ def configure_node(guest, identities, grants):
         if peer == local:
             continue
         issued = grants[index][local]
-        guest.command(f"pool metadata-authority peer=node:{peer} grant={issued['metadata']} lease=3600 confirm=true")
+        guest.command(f"pool metadata-authority peer=node:{peer} grant={issued['metadata']} durable=true confirm=true")
         if guest.number == 1:
             replica = issued["replica"]
-            guest.command(f"pool participate peer=node:{peer} begin={replica[0]} chunk={replica[1]} commit={replica[2]} inspect={replica[3]} read={replica[4]} lease=3600 confirm=true")
-            guest.command(f"pool retire-authority peer=node:{peer} grant={replica[5]} lease=3600 confirm=true")
+            guest.command(f"pool participate peer=node:{peer} begin={replica[0]} chunk={replica[1]} commit={replica[2]} inspect={replica[3]} read={replica[4]} durable=true confirm=true")
+            guest.command(f"pool retire-authority peer=node:{peer} grant={replica[5]} durable=true confirm=true")
 
 
 # ------------------------=
 # FUNC: publish_node
-# DESC: Starts leased publication only after authenticated sessions exist, avoiding deliberate failure of a subscription's first send.
+# DESC: Starts explicitly durable publication after authenticated sessions exist.
 # ------------------=
 def publish_node(guest, identities, grants):
     local = identities[guest.number - 1]
     guest.launch("command", 5)
     for index, peer in enumerate(identities):
         if peer != local:
-            grant = grants[index][local]["publication"]
-            guest.command(f"pool advertise peer=node:{peer} grant={grant}")
+            approval = grants[index][local]["publication"]
+            guest.command(f"pool advertise peer=node:{peer} grant={approval} durable=true confirm=true")
 
 
 # ------------------------=
@@ -67,7 +68,7 @@ def publish_node(guest, identities, grants):
 def publication_only(guest, identities):
     local = identities[guest.number - 1]
     guest.launch("command", 5)
-    return {peer: {"publication": guest.peer_grant(peer, "resource-advertise")}
+    return {peer: {"publication": grant(guest, peer, "resource-advertise")}
             for peer in identities if peer != local}
 
 

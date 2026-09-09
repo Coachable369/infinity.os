@@ -195,7 +195,7 @@ def main():
         report["stage"] = "share"
         path = report["namespace_path"]
         a.launch("command", 5)
-        result = invoke(a, f"pool share obj:{created['object_id']} path={path} confirm=true",
+        result = invoke(a, f"pool share obj:{created['object_id']} path={path} durable=true confirm=true",
                         lambda: fixture.read_state(a, D.API.symbol))
         report["share"] = {key: value for key, value in result.items() if key != "data"}
         expected = fixture.expected_content(64, args.seed)
