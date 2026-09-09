@@ -67,15 +67,27 @@ def pair(a, b):
 
 # ------------------------=
 # FUNC: open_session
-# DESC: Establishes an ordinary permitted session immediately before wire operations without extending security leases.
+# DESC: Verifies the exact two-sided peer transaction, accepting an already established automatic session without requiring a count increase.
 # ------------------=
 def open_session(a, b):
-    bid = identity(b)
-    a.launch("command", 5)
-    before_a, before_b = a.state()[26], b.state()[26]
-    a.command(f"node session-open node:{bid}")
-    a.wait(lambda s: s[26] == before_a + 1, "new secure session")
-    b.wait(lambda s: s[26] == before_b + 1, "peer secure session")
+    aid, bid = identity(a), identity(b)
+    av, bv = select(a, bid), select(b, aid)
+    if not session_ready(av, bid):
+        a.launch("command", 5)
+        a.command(f"node session-open node:{bid}")
+    av = a.wait(lambda s: session_ready(s, bid), "requested peer secure session")
+    bv = b.wait(lambda s: session_ready(s, aid), "reciprocal peer secure session")
+    assert av[64:68] == bv[64:68], {"session_transaction_mismatch": (aid, bid)}
+
+
+# ------------------------=
+# FUNC: session_ready
+# DESC: Requires a live established wire transaction for the selected exact peer, not an aggregate session count.
+# ------------------=
+def session_ready(state, peer):
+    return (struct.pack("<4Q", *state[32:36]).hex() == peer
+            and state[56] == 11 and state[58] > state[10]
+            and any(state[64:68]) and state[26] > 0)
 
 
 # ------------------------=
