@@ -4,6 +4,81 @@ use crate::node::types::TrustState;
 use fixture::Fixture;
 
 // ------------------------=
+// FUNC: advance_four
+// DESC: Exercises the real millisecond scheduler, bounded four-frame NIC pump and native datagram admission on four independent runtime instances.
+// ------------------=
+fn advance_four(peers: &mut [Fixture; 4], millisecond: &mut u64, seconds: u64, confirms: &mut [u64; 4]) {
+    for _ in 0..seconds * 1000 {
+        let now = *millisecond / 1000;
+        for sender in 0..4 {
+            for _ in 0..4 {
+                let Some(frame) = peers[sender].network.wire.peek_transmit().copied() else { break; };
+                peers[sender].network.wire.complete_transmit();
+                if frame.length > 50 && &frame.bytes[42..50] == b"IN9A0001" && frame.bytes[50] == 5 {
+                    confirms[sender] += 1;
+                }
+                for recipient in 0..4 {
+                    if recipient != sender {
+                        let _ = peers[recipient].network.wire.ingest(&frame.bytes[..frame.length], now);
+                    }
+                }
+            }
+        }
+        for peer in peers.iter_mut() {
+            for _ in 0..4 {
+                let Some(packet) = peer.network.wire.receive_datagram() else { break; };
+                peer.network.connections.deliver_datagram(packet, &mut peer.network.policy, &peer.capabilities, now).unwrap();
+            }
+            peer.transport.poll(&mut peer.nodes, &mut peer.network, &peer.capabilities, now);
+        }
+        *millisecond += 1;
+    }
+}
+
+// ------------------------=
+// FUNC: four_node_confirmations_with_real_poll_cadence
+// DESC: Verifies paired consent crosses three busy endpoints at the actual millisecond cadence without extending discovery or ceremony leases.
+// ------------------=
+#[test]
+fn four_node_confirmations_with_real_poll_cadence() {
+    let mut peers = core::array::from_fn(|index| {
+        let number = index as u8 + 1;
+        let others: Vec<u8> = (1..=4).filter(|peer| *peer != number).collect();
+        fixture::configured_peers([2, 0, 0, 0, 0, number], [number + 64; 32], &others)
+    });
+    let mut millis = 0;
+    let mut confirms = [0; 4];
+    advance_four(&mut peers, &mut millis, 30, &mut confirms);
+    for peer in &peers {
+        assert_eq!(peer.nodes.discovered_nodes().iter().flatten().count(), 3);
+    }
+    let aid = peers[0].nodes.local_id().unwrap();
+    let bid = peers[1].nodes.local_id().unwrap();
+    let link = peers[0].transport.inspect(peers[0].connection, peers[0].owner).unwrap();
+    let a = &mut peers[0];
+    a.transport.trust.begin(&mut a.nodes, link, 0, false, millis / 1000).unwrap();
+    advance_four(&mut peers, &mut millis, 16, &mut confirms);
+    let av = peers[0].transport.trust.verification(aid, bid).unwrap();
+    let bv = peers[1].transport.trust.verification(bid, aid).unwrap();
+    assert_eq!(av.fingerprint, bv.fingerprint);
+    assert_eq!(av.transaction, bv.transaction);
+    advance_four(&mut peers, &mut millis, 26, &mut confirms);
+    let a = &mut peers[0];
+    a.transport.trust.confirm(&mut a.nodes, av.transaction, av.code, true, millis / 1000).unwrap();
+    advance_four(&mut peers, &mut millis, 7, &mut confirms);
+    let b = &mut peers[1];
+    b.transport.trust.confirm(&mut b.nodes, bv.transaction, bv.code, true, millis / 1000).unwrap();
+    advance_four(&mut peers, &mut millis, 30, &mut confirms);
+    assert!(confirms[0] > 0 && confirms[1] > 0, "signed confirmation transmission counts: {:?}", confirms);
+    for (index, target) in [(0, bid), (1, aid)] {
+        let peer = &peers[index];
+        assert_eq!(peer.nodes.discovered_nodes().iter().flatten().find(|node| node.id == target).unwrap().trust,
+                   TrustState::Trusted, "wire confirmations={:?}, lifecycle={:?}, transport={:?}",
+                   confirms, peer.transport.trust.lifecycle(target), peer.transport.last_error);
+    }
+}
+
+// ------------------------=
 // FUNC: established_session_is_not_a_discovery_lease
 // DESC: Suppresses discovery after establishment, then verifies authenticated data, exact session expiry, and immediate trust revocation independently.
 // ------------------=

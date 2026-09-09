@@ -31,8 +31,16 @@ fn engineering_pairing_writer(_: &[u8; crate::runtime::node::types::NODE_STATE_B
 // DESC: Provides explicit test deployment policy, then provisions the real production connected endpoint and independent node identity.
 // ------------------=
 pub fn configured(mac: [u8; 6], entropy: [u8; 32]) -> Fixture {
+    configured_peers(mac, entropy, &[3 - mac[5]])
+}
+
+// ------------------------=
+// FUNC: configured_peers
+// DESC: Provisions independent real connected endpoints with the installed multi-peer port mapping for bounded host transport tests.
+// ------------------=
+pub fn configured_peers(mac: [u8; 6], entropy: [u8; 32], peers: &[u8]) -> Fixture {
+    assert!(!peers.is_empty() && peers.len() <= 3);
     let own = [10, 42, 0, mac[5]];
-    let peer = [10, 42, 0, 3 - mac[5]];
     let mut network = NetworkRuntime::new();
     network.initialize().unwrap();
     network
@@ -73,7 +81,9 @@ pub fn configured(mac: [u8; 6], entropy: [u8; 32]) -> Fixture {
     network.wire.configure(mac, own);
     network.connections.bind_native_address(Some(own));
     let owner = SecurityIdentity([0x51; 16]);
-    for direction in [Direction::Inbound, Direction::Outbound] {
+    for peer_number in peers {
+      let peer = [10, 42, 0, *peer_number];
+      for direction in [Direction::Inbound, Direction::Outbound] {
         network
             .policy
             .create(NetworkPolicyRule {
@@ -84,14 +94,14 @@ pub fn configured(mac: [u8; 6], entropy: [u8; 32]) -> Fixture {
                 local: EndpointSelector {
                     network: Some(IpAddress::V4(own)),
                     prefix_length: 32,
-                    port: Some(49152),
+                    port: Some(if peers.len() == 1 { 49152 } else { 49152 + *peer_number as u16 }),
                     protocol: Some(TransportProtocol::Datagram),
                     local_only: false,
                 },
                 remote: EndpointSelector {
                     network: Some(IpAddress::V4(peer)),
                     prefix_length: 32,
-                    port: Some(49152),
+                    port: Some(if peers.len() == 1 { 49152 } else { 49152 + mac[5] as u16 }),
                     protocol: Some(TransportProtocol::Datagram),
                     local_only: false,
                 },
@@ -103,6 +113,7 @@ pub fn configured(mac: [u8; 6], entropy: [u8; 32]) -> Fixture {
                 policy_source: 0x54455354,
             })
             .unwrap();
+      }
     }
     let mut capabilities = CapabilityManager::new();
     let connect = capabilities
@@ -121,7 +132,10 @@ pub fn configured(mac: [u8; 6], entropy: [u8; 32]) -> Fixture {
     transport.initialize(&entropy, true).unwrap();
     transport.trust.persist_pairing = engineering_pairing_writer;
     transport.persist_discovery = engineering_pairing_writer;
-    let connection = transport
+    let mut connection = 0;
+    for peer_number in peers {
+      let peer = [10, 42, 0, *peer_number];
+      let current = transport
         .provision(
             &mut network,
             &mut capabilities,
@@ -129,15 +143,17 @@ pub fn configured(mac: [u8; 6], entropy: [u8; 32]) -> Fixture {
             connect,
             Endpoint {
                 address: IpAddress::V4(own),
-                port: 49152,
+                port: if peers.len() == 1 { 49152 } else { 49152 + *peer_number as u16 },
             },
             Endpoint {
                 address: IpAddress::V4(peer),
-                port: 49152,
+                port: if peers.len() == 1 { 49152 } else { 49152 + mac[5] as u16 },
             },
             0,
         )
         .unwrap();
+      if connection == 0 { connection = current; }
+    }
     let mut nodes = NodeRuntime::new();
     nodes.initialize(&entropy, true).unwrap();
     // Engineering-only in-memory service lifecycle. Installed runtime leaves
