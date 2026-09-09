@@ -165,6 +165,11 @@ def main():
         report["owner_offline_last_extent_read"] = {key: value for key, value in tail.items() if key != "data"}
         report["owner_offline_last_extent_read"].update({"offset": tail_offset, "length": 64,
                                                       "sha256": hashlib.sha256(tail["data"]).hexdigest()})
+        degraded = D.object_state(b, created["object_id"],
+                                  lambda r: r[5] == 3 and r[6] == 2 and r[7] == 1,
+                                  "owner-offline-two-of-three-degraded", timeout=90)
+        assert degraded[2] == created["version"]
+        report["owner_offline_degraded_row"] = list(degraded)
         replacement.boot(False)
         replacement.authenticate()
         replacement.fast_commands = True
