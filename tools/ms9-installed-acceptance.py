@@ -721,14 +721,17 @@ def main():
                         help="Continue membership after a recorded passing installed remote-operation run")
     parser.add_argument("--focus-pairing", action="store_true", help="Run protocol acceptance only; explicitly excludes rapid-input acceptance")
     parser.add_argument("--installer-clicks", action="store_true")
+    parser.add_argument("--pool-installed", action="store_true", help="Reuse the first two independently installed MS10 recipients and verify authenticated remote Pool operations")
     args = parser.parse_args()
+    assert not args.pool_installed or (args.mesh_installed and args.remote_installed)
     assert not args.resume_remote or (args.mesh_installed and args.remote_installed)
     assert not args.resume_membership or (args.mesh_installed and args.remote_installed and not args.resume_remote)
     assert 640 <= args.width <= 4096 and 480 <= args.height <= 4096
     assert 0 <= args.confirmation_delay <= 10
     work = args.output.resolve()
     if args.resume_installed or args.mesh_installed:
-        assert json.loads((work / "install-result.json").read_text())["independent_installs"] == 2
+        receipt = json.loads((work / ("result.json" if args.pool_installed else "install-result.json")).read_text())
+        assert receipt["independent_installs"] >= 2
     else:
         work.mkdir(parents=True, exist_ok=False)
         artifacts = work / "artifacts"
@@ -746,7 +749,7 @@ def main():
     results = []
     try:
         if args.mesh_installed:
-            known = json.loads((work / "onboarding-result.json").read_text())
+            known = receipt["nodes"] if args.pool_installed else json.loads((work / "onboarding-result.json").read_text())
             with socket.socket() as reserve:
                 reserve.bind(("127.0.0.1", 0))
                 port = reserve.getsockname()[1]
@@ -820,6 +823,10 @@ def main():
                 installed_remote_acceptance(a, b, args.nodes_label)
                 report["installed_remote_allow_deny_revoke"] = True
                 (work / "mesh-result.json").write_text(json.dumps(report, indent=2))
+            if args.pool_installed:
+                import ms10_installed_remote_pool
+                ms10_installed_remote_pool.verify(a, b)
+                return
             installed_membership_acceptance(guests, args.nodes_label, args.remote_installed,
                 report, work / "mesh-result.json", 0 if args.remote_installed else 1)
             return
