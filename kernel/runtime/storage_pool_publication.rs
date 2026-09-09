@@ -39,8 +39,20 @@ pub fn advertise(
     peer: NodeId,
     grant: u64,
 ) -> Result<(), RemoteError> {
+    advertise_policy(user,session,peer,grant,false)
+}
+// ------------------------=
+// FUNC: advertise_durable
+// DESC: Applies explicitly confirmed until-revoked publication only under a durable peer-issued policy identity.
+// ------------------=
+pub fn advertise_durable(user:StableId,session:StableId,peer:NodeId,grant:u64)->Result<(),RemoteError>{advertise_policy(user,session,peer,grant,true)}
+// ------------------------=
+// FUNC: advertise_policy
+// DESC: Commits the selected local publication lifetime without broadening the remote policy scope.
+// ------------------=
+fn advertise_policy(user:StableId,session:StableId,peer:NodeId,grant:u64,durable:bool)->Result<(),RemoteError>{
     let config = with_runtime(|r| {
-        if !storage_operator::authorized(r, user, session) || grant == 0 {
+        if !storage_operator::authorized(r, user, session) || grant == 0 || (durable && grant&node::durable::TAG==0) {
             return Err(RemoteError::AccessDenied);
         }
         if !r.storage_coordinator.loaded {
@@ -64,7 +76,7 @@ pub fn advertise(
             delete_expires: 0,
         });
         p.advertise = grant;
-        p.advertise_expires = now.saturating_add(3600);
+        p.advertise_expires = if durable {u64::MAX}else{now.saturating_add(3600)};
         c.peers[slot] = Some(p);
         Ok(c)
     })
@@ -276,13 +288,18 @@ mod tests {
             peer: NodeId([3; 32]),
             grants: [0; 5],
             expires: 0,
-            advertise: 91,
-            advertise_expires: 100,
+            advertise: node::durable::TAG | 91,
+            advertise_expires: u64::MAX,
             delete: 0,
             delete_expires: 0,
         });
         Ok(NativeReply::Config(c.encode()?))
     }
+    // ------------------------=
+    // FUNC: finite_persisted
+    // DESC: Supplies a genuine prior-boot uptime lease which must not gain time after restart.
+    // ------------------=
+    fn finite_persisted(p:NativeRequest)->Result<NativeReply,RemoteError>{let NativeReply::Config(bytes)=persisted(p)? else{return Err(RemoteError::InvalidState)};let mut c=Configuration::decode(&bytes)?;c.peers[0].as_mut().unwrap().advertise_expires=100;Ok(NativeReply::Config(c.encode()?))}
     // ------------------------=
     // FUNC: restart_restores_only_approved_publication_and_requires_existing_trust
     // DESC: A fresh service loads persistent publication with no login but cannot reconnect an unpaired peer, issue transfer authority, or extend an expired lease.
@@ -303,7 +320,7 @@ mod tests {
                 Operation::ResourceAdvertise,
                 99
             ),
-            Ok(91)
+            Ok(node::durable::TAG | 91)
         );
         assert_eq!(
             grant(
@@ -316,6 +333,7 @@ mod tests {
         );
         assert_eq!(step(&mut r, 2), Err(RemoteError::TrustRequired));
         assert!(r.storage_coordinator.publisher.pending.is_none());
+        r.storage_coordinator.config.peers[0].as_mut().unwrap().advertise_expires=100;
         assert_eq!(
             grant(
                 &r.storage_coordinator.config,
@@ -328,5 +346,8 @@ mod tests {
         let bytes = r.storage_coordinator.config.encode().unwrap();
         let restored = Configuration::decode(&bytes).unwrap();
         assert_eq!(restored.peers, r.storage_coordinator.config.peers);
+        r.storage_coordinator.loaded=false;r.storage_coordinator.handler=Some(finite_persisted);
+        super::super::poll(&mut r,1);
+        assert!(r.storage_coordinator.config.peers.iter().all(Option::is_none));
     }
 }

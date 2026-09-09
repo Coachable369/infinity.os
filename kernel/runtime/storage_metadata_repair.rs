@@ -265,6 +265,7 @@ pub(super) fn overlay_start(
     session: StableId,
     anchor: Bundle,
 ) -> Result<u64, RemoteError> {
+    if !anchor.persistent_authority(){return Err(RemoteError::UnsupportedOperation)}
     if !storage_operator::authorized(r, user, session) {
         return Err(RemoteError::AccessDenied);
     }
@@ -364,6 +365,7 @@ pub(super) fn overlay_start_recovery(
     r: &mut InfinityRuntime,
     anchor: Bundle,
 ) -> Result<u64, RemoteError> {
+    if !anchor.persistent_authority(){return Err(RemoteError::UnsupportedOperation)}
     let local = r.nodes.local_id().ok_or(RemoteError::ServiceUnavailable)?;
     if anchor.group.owner != local {
         return Err(RemoteError::AccessDenied);
@@ -465,6 +467,7 @@ pub(super) fn begin_automatic(
     anchor: Bundle,
     destination: NodeId,
 ) -> Result<u64, RemoteError> {
+    if !anchor.persistent_authority(){return Err(RemoteError::UnsupportedOperation)}
     if r.storage_metadata_repair.job.is_some() {
         return Err(RemoteError::QueueFull);
     }

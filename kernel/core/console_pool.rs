@@ -8,6 +8,9 @@ impl ConsoleRuntime {
     // DESC: Converts validated Console arguments into the shared native storage request; output text is never parsed as state or fed to another service.
     // ------------------=
     pub(super) fn execute_pool_node(&mut self, node: &OperationNode<'_>) -> bool {
+        if node_argument(node,b"durable")==Some(b"true".as_slice()) {
+            self.output.write_line(b"DURABLE POOL APPROVAL: exact configured peers and operations, survives reboot until revoked.");
+        }
         if node.schema.action==b"repair" {
             if node_argument(node,b"confirm")!=Some(b"true".as_slice()){self.output.write_line(b"Explicit repair confirmation is required.");return true;}
             let Some(request)=pool_request(node)else{return false};let Some(peer)=node_argument(node,b"peer").and_then(|p|parse_node_id(p.strip_prefix(b"node:").unwrap_or(p)))else{return false};
@@ -20,10 +23,12 @@ impl ConsoleRuntime {
             if node_argument(node,b"confirm")!=Some(b"true".as_slice()){self.output.write_line(b"Explicit metadata delegation confirmation is required.");return true;}
             let Ok(input)=crate::runtime::node_client::begin_capability_input(self.current_user,self.current_session)else{return true;};
             let result=if node.schema.action==b"share" {
-                pool_request(node).and_then(|p|node_argument(node,b"path").map(|path|(p.object,path))).ok_or(crate::runtime::iop::remote::RemoteError::MalformedRequest).and_then(|(object,path)|crate::runtime::storage_metadata::share(self.current_user,self.current_session,object,path))
+                let durable=node_argument(node,b"durable")==Some(b"true".as_slice());
+                if durable {self.output.write_line(b"Until revoked: approved readers and repair writers retain this shared object delegation across reboot.");}
+                pool_request(node).and_then(|p|node_argument(node,b"path").map(|path|(p.object,path))).ok_or(crate::runtime::iop::remote::RemoteError::MalformedRequest).and_then(|(object,path)|if durable {crate::runtime::storage_metadata::share_durable(self.current_user,self.current_session,object,path)}else{crate::runtime::storage_metadata::share(self.current_user,self.current_session,object,path)})
             }else{
                 let peer=node_argument(node,b"peer").and_then(|p|parse_node_id(p.strip_prefix(b"node:").unwrap_or(p)));
-                let grant=node_argument(node,b"grant").and_then(parse_u64_decimal);let lease=node_argument(node,b"lease").and_then(parse_u64_decimal);
+                let grant=node_argument(node,b"grant").and_then(parse_u64_decimal);let lease=pool_approval_lease(node);
                 match(peer,grant,lease){(Some(peer),Some(grant),Some(lease))=>crate::runtime::storage_metadata::configure(self.current_user,self.current_session,peer,grant,lease).map(|_|0),_=>Err(crate::runtime::iop::remote::RemoteError::MalformedRequest)}
             };
             crate::runtime::with_runtime(|r|{let _=r.ui.trusted.release_secure_input(input);});
@@ -32,7 +37,7 @@ impl ConsoleRuntime {
         if node.schema.action==b"retire-authority"{
             if node_argument(node,b"confirm")!=Some(b"true".as_slice()){self.output.write_line(b"Explicit confirmation is required to permit recipient replica retirement.");return true;}
             let peer=node_argument(node,b"peer").and_then(|p|parse_node_id(p.strip_prefix(b"node:").unwrap_or(p)));
-            let grant=node_argument(node,b"grant").and_then(parse_u64_decimal);let lease=node_argument(node,b"lease").and_then(parse_u64_decimal);
+            let grant=node_argument(node,b"grant").and_then(parse_u64_decimal);let lease=pool_approval_lease(node);
             let (Some(peer),Some(grant),Some(lease))=(peer,grant,lease)else{return false;};
             let Ok(input)=crate::runtime::node_client::begin_capability_input(self.current_user,self.current_session)else{return true;};
             let result=crate::runtime::storage_coordinator::retire_authority(self.current_user,self.current_session,peer,grant,lease);
@@ -53,7 +58,7 @@ impl ConsoleRuntime {
                 self.output.write_line(b"No participation changed. This enables automatic replica transfers under the named peer grants for the stated lease. Use confirm=true to approve.");return true;
             }
             let peer=node_argument(node,b"peer").and_then(|p|parse_node_id(p.strip_prefix(b"node:").unwrap_or(p)));
-            let lease=node_argument(node,b"lease").and_then(parse_u64_decimal);
+            let lease=pool_approval_lease(node);
             let mut grants=[0;5];
             for (i,name) in [b"begin".as_slice(),b"chunk",b"commit",b"inspect",b"read"].iter().enumerate(){
                 let Some(value)=node_argument(node,name).and_then(parse_u64_decimal)else{return false;};grants[i]=value;
@@ -72,8 +77,11 @@ impl ConsoleRuntime {
             let peer = node_argument(node, b"peer").and_then(|p| parse_node_id(p.strip_prefix(b"node:").unwrap_or(p)));
             let grant = node_argument(node, b"grant").and_then(parse_u64_decimal);
             let (Some(peer), Some(grant)) = (peer, grant) else { return false; };
-            match crate::runtime::storage_coordinator::advertise(self.current_user, self.current_session, peer, grant) {
-                Ok(()) => self.output.write_line(b"Resource publication approval persisted for up to one hour. Every renewal requires the peer grant and trusted session."),
+            let durable=node_argument(node,b"durable")==Some(b"true".as_slice());
+            if durable && node_argument(node,b"confirm")!=Some(b"true".as_slice()){self.output.write_line(b"Publication until revoked survives reboot; confirm=true is required.");return true;}
+            let result=if durable {crate::runtime::storage_coordinator::advertise_durable(self.current_user,self.current_session,peer,grant)}else{crate::runtime::storage_coordinator::advertise(self.current_user,self.current_session,peer,grant)};
+            match result {
+                Ok(()) => if durable {self.output.write_line(b"Resource publication approved until revoked; every send requires the exact peer authority and fresh trusted session.");}else{self.output.write_line(b"Resource publication approval persisted for up to one hour. Every renewal requires the peer grant and trusted session.");},
                 Err(error) => self.output.write_number(b"Resource publication rejected: ", error as u64),
             }
             return true;
@@ -188,6 +196,15 @@ if matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect|Ope
     }
 }
 
+// ------------------------=
+// FUNC: pool_approval_lease
+// DESC: Requires explicit durable consent without a contradictory finite lease; the sentinel represents until revoked, never an uptime deadline.
+// ------------------=
+fn pool_approval_lease(node:&OperationNode<'_>)->Option<u64>{
+    if node_argument(node,b"durable")==Some(b"true".as_slice()){
+        if node_argument(node,b"lease").is_some()||node_argument(node,b"confirm")!=Some(b"true".as_slice()){None}else{Some(u64::MAX)}
+    }else{node_argument(node,b"lease").and_then(parse_u64_decimal)}
+}
 // ------------------------=
 // FUNC: pool_request
 // DESC: Validates all numeric and full-width identity arguments before issuing any capability-backed native request.

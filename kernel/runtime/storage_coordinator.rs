@@ -16,7 +16,7 @@ use node::types::NodeId;
 use sha2::{Digest, Sha256};
 #[path = "storage_pool_publication.rs"]
 mod publication;
-pub use publication::advertise;
+pub use publication::{advertise, advertise_durable};
 #[path = "storage_pool_deletion.rs"]
 mod deletion;
 pub use deletion::retire_authority;
@@ -969,7 +969,7 @@ pub fn participate(
     lease: u64,
 ) -> Result<(), RemoteError> {
     let config = with_runtime(|r| {
-        if !storage_operator::authorized(r, user, session) || !(1..=3600).contains(&lease) {
+        if !storage_operator::authorized(r, user, session) || (!(1..=3600).contains(&lease) && !(lease==u64::MAX && grants.iter().all(|g|g&node::durable::TAG!=0))) {
             return Err(RemoteError::AccessDenied);
         }
         let now = r.node_clock.ok_or(RemoteError::ServiceUnavailable)?;
@@ -1223,12 +1223,20 @@ fn packet(job: Job, scope: u64) -> StorageOperationV1 {
 // ------------------=
 fn pump(r: &mut InfinityRuntime, now: u64) -> Result<(), RemoteError> {
     if !r.storage_coordinator.loaded {
-        let config = match native(r, NativeRequest::ConfigLoad, now) {
+        let mut config = match native(r, NativeRequest::ConfigLoad, now) {
             Ok(NativeReply::Config(b)) => Configuration::decode(&b)?,
             Err(RemoteError::NotFound) => Configuration::empty(),
             Err(e) => return Err(e),
             _ => return Err(RemoteError::InvalidState),
         };
+        for slot in &mut config.peers {
+            if let Some(p)=slot {
+                if p.expires!=u64::MAX || p.grants.iter().any(|g|g&node::durable::TAG==0){p.grants=[0;5];p.expires=0;}
+                if p.advertise_expires!=u64::MAX || p.advertise&node::durable::TAG==0{p.advertise=0;p.advertise_expires=0;}
+                if p.delete_expires!=u64::MAX || p.delete&node::durable::TAG==0{p.delete=0;p.delete_expires=0;}
+                if p.grants==[0;5] && p.advertise==0 && p.delete==0{*slot=None;}
+            }
+        }
         r.storage_coordinator.config = config;
         r.storage_coordinator.loaded = true;
         return Ok(());

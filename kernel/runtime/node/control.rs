@@ -126,7 +126,7 @@ impl NodeRuntime {
                 .ok_or(CommitError::InvalidState)?
         } else if operation == OperationId::NodeCapabilityRevoke {
             self.grants.iter().flatten().find(|grant| grant.id == request.handle)
-                .map(|grant| grant.peer).ok_or(CommitError::InvalidState)?
+                .map(|grant| grant.peer).or_else(||self.durable_approval(request.handle).map(|a|a.peer)).ok_or(CommitError::InvalidState)?
         } else {
             NodeId(request.node_id)
         };
@@ -154,6 +154,7 @@ impl NodeRuntime {
             pairings: self.pairings,
             sessions: self.sessions,
             grants: self.grants,
+            durable: self.durable,
             members: self.members,
             audit: self.audit,
             next_id: self.next_id,
@@ -182,6 +183,7 @@ impl NodeRuntime {
         self.pairings = staged.0.pairings;
         self.sessions = staged.0.sessions;
         self.grants = staged.0.grants;
+        self.durable = staged.0.durable;
         self.members = staged.0.members;
         self.audit = staged.0.audit;
         self.next_id = staged.0.next_id;
@@ -206,3 +208,26 @@ impl NodeRuntime {
 // DESC: Accepts an inner confirmation only inside an isolated transaction whose outer commit owns durable storage.
 // ------------------=
 fn staged_confirmation(_: &[u8; NODE_STATE_BYTES]) -> bool { true }
+#[cfg(test)]
+mod durable_tests {
+    use super::*;
+    // ------------------------=
+    // FUNC: durable_control_commits_before_authority_and_revoke_survives_reboot
+    // DESC: Verifies failed durable approval/revoke persistence never changes live authority and a successful journal survives boot without live grants.
+    // ------------------=
+    #[test]
+    fn durable_control_commits_before_authority_and_revoke_survives_reboot(){
+        std::thread::Builder::new().stack_size(16*1024*1024).spawn(||{
+            let mut n=NodeRuntime::new();n.initialize(&[71;32],true).unwrap();let mut other=NodeRuntime::new();let peer=other.initialize(&[72;32],true).unwrap();n.discover(other.advertise(1,1,1).unwrap(),1).unwrap();let pair=n.begin_pairing(peer,2).unwrap();n.confirm_pairing(pair.id,pair.verification_code,true,3,77).unwrap();
+            let mut request=NodeOperationV1{node_id:peer.0,handle:0,scope:0,lease_deadline:0,operation:OperationId::NodeCapabilityGrant.machine_id(),rights:1,value:OperationId::PoolMetadata.machine_id(),flags:3,schema_version:1};
+            let old=n.encode_state().unwrap();assert!(n.commit_control(OperationId::NodeCapabilityGrant,request,4,1,1,|_|false).is_err());assert_eq!(n.encode_state().unwrap(),old);
+            let mut denied=request;denied.flags=2;assert!(n.commit_control(OperationId::NodeCapabilityGrant,denied,4,1,1,|_|panic!("unauthorized write")).is_err());
+            denied=request;denied.lease_deadline=100;assert!(n.commit_control(OperationId::NodeCapabilityGrant,denied,4,1,1,|_|panic!("ambiguous lifetime")).is_err());
+            let mut durable=[0;NODE_STATE_BYTES];let(response,_)=n.commit_control(OperationId::NodeCapabilityGrant,request,4,1,1,|b|{durable=*b;true}).unwrap();
+            assert!(n.authorize_remote(response.handle,peer,request.value,0,1,4).is_ok());let mut restored=NodeRuntime::new();restored.restore_state(&durable).unwrap();assert!(restored.remote_grants().iter().all(Option::is_none));assert!(restored.authorize_remote(response.handle,peer,request.value,0,1,0).is_ok());
+            request.operation=OperationId::NodeCapabilityRevoke.machine_id();request.handle=response.handle;
+            assert!(restored.commit_control(OperationId::NodeCapabilityRevoke,request,1,2,2,|_|false).is_err());assert!(restored.authorize_remote(response.handle,peer,OperationId::PoolMetadata.machine_id(),0,1,1).is_ok());
+            restored.commit_control(OperationId::NodeCapabilityRevoke,request,1,2,2,|b|{durable=*b;true}).unwrap();let mut reboot=NodeRuntime::new();reboot.restore_state(&durable).unwrap();assert_eq!(reboot.authorize_remote(response.handle,peer,OperationId::PoolMetadata.machine_id(),0,1,0),Err(NodeError::CapabilityRevoked));
+        }).unwrap().join().unwrap();
+    }
+}

@@ -8955,21 +8955,23 @@ impl ConsoleRuntime {
                 Some(b"pool-metadata") => OperationId::PoolMetadata.machine_id(),
                 _ => { self.output.write_line(b"Choose a registered node, resource, or replica operation."); return true; }
             };
-            let Some(seconds) = node_argument(node, b"seconds").and_then(parse_u64_decimal).filter(|v| (1..=3600).contains(v)) else {
+            let durable = node_argument(node,b"durable")==Some(b"true".as_slice());
+            if durable && (node_argument(node,b"seconds").is_some() || !crate::runtime::node::durable::allowed(request.value)) {self.output.write_line(b"Durable approval is Pool-only, until revoked; omit seconds.");return true;}
+            let seconds = if durable {0} else {let Some(seconds) = node_argument(node, b"seconds").and_then(parse_u64_decimal).filter(|v| (1..=3600).contains(v)) else {
                 self.output.write_line(b"Choose a grant duration from 1 to 3600 seconds."); return true;
-            };
+            };seconds};
             self.output.write_hex(b"Requesting peer: ", &request.node_id);
             self.output.write_number(b"Exact operation: ", request.value as u64);
-            self.output.write_number(b"Duration in seconds: ", seconds);
+            if durable {self.output.write_line(b"DURABLE AUTHORITY: survives reboot until explicitly revoked. No automatic expiration.");}else{self.output.write_number(b"Duration in seconds: ", seconds);}
             self.output.write_line(b"Scope: 0. One operation only; peer policy must separately allow it.");
-            self.output.write_line(b"Policy source: authenticated local operator. Grant ends at expiry or revocation.");
+            self.output.write_line(b"Policy source: authenticated local operator. Exact peer and operation only.");
             if node_argument(node, b"confirm") != Some(b"true".as_slice()) {
                 self.output.write_line(b"No authority changed. Repeat with confirm=true to approve this scope."); return true;
             }
             let Some(now) = crate::runtime::node_client::clock() else { return true; };
-            request.lease_deadline = now.saturating_add(seconds);
+            request.lease_deadline = if durable {0}else{now.saturating_add(seconds)};
             request.rights = 1;
-            request.flags = NODE_OPERATION_HUMAN_APPROVED;
+            request.flags = NODE_OPERATION_HUMAN_APPROVED | if durable {crate::runtime::iop::NODE_OPERATION_DURABLE}else{0};
         }
         if node.schema.operation == OperationId::NodeTrustUpdate {
             if node_argument(node, b"name") != Some(b"state".as_slice()) {

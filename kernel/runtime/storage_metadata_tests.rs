@@ -171,6 +171,17 @@ fn signed_bundle_uses_exact_operator_scope_and_canonical_payload() {
             assert_eq!(result.length, 64);
             assert_eq!(result.offset, 10);
             assert_eq!(result.data, [7; 64]);
+            assert!(!decoded.persistent_authority());
+            job.bundle=None;job.durable_share=true;
+            for peer in r.storage_metadata.peers.iter_mut().flatten(){peer.grant|=node::durable::TAG;peer.expires=u64::MAX;}
+            let durable=build_bundle(&r,&job,manifest,20).unwrap();
+            assert!(durable.persistent_authority());
+            assert!(durable.grants.iter().flatten().all(|g|g.expires==u64::MAX));
+            assert!(durable.repair_grants.iter().flatten().all(|g|g.expires==u64::MAX));
+            job.bundle=Some(decoded);
+            let unchanged=build_bundle(&r,&job,manifest,21).unwrap();
+            assert_eq!(unchanged.grants[0].unwrap().expires,decoded.grants[0].unwrap().expires);
+            assert!(!unchanged.persistent_authority());
         })
         .unwrap()
         .join()

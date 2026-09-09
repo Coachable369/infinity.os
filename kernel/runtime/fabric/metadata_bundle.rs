@@ -45,6 +45,11 @@ fn policy_bytes(group:&Group,m:&Manifest,revocation:u64)->[u8;64] {
 pub fn policy_digest(group:&Group,m:&Manifest,revocation:u64)->[u8;32] {Sha256::digest(policy_bytes(group,m,revocation)).into()}
 impl Bundle {
     // ------------------------=
+    // FUNC: persistent_authority
+    // DESC: Rejects uptime-based finite delegation for persisted native use until a restart-stable trusted clock exists; finite cryptographic primitives remain available separately.
+    // ------------------=
+    pub fn persistent_authority(&self)->bool{self.grants.iter().flatten().all(|g|g.expires==u64::MAX)&&self.repair_grants.iter().flatten().all(|g|g.expires==u64::MAX)}
+    // ------------------------=
     // FUNC: path
     // DESC: Returns bounded namespace bytes without allocation.
     // ------------------=

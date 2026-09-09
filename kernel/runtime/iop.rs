@@ -369,6 +369,7 @@ fn is_node_operation(operation: u32) -> bool {
 }
 
 pub const NODE_OPERATION_HUMAN_APPROVED: u32 = 1;
+pub const NODE_OPERATION_DURABLE: u32 = 2;
 
 // ------------------------=
 // FUNC: node_read_operation
@@ -450,16 +451,21 @@ pub fn execute_node_operation(
         OperationId::NodeBlock => nodes.set_trust(peer, TrustState::Blocked, now, correlation_id).map_err(map_node_error)?,
         OperationId::NodeUnblock => nodes.set_trust(peer, TrustState::Untrusted, now, correlation_id).map_err(map_node_error)?,
         OperationId::NodeSessionClose => nodes.close_session(request.handle, now, correlation_id).map_err(map_node_error)?,
-        OperationId::NodeCapabilityList => response.value = nodes.remote_grants().iter().flatten().count() as u32,
+        OperationId::NodeCapabilityList => response.value = (nodes.remote_grants().iter().flatten().count()+nodes.durable_approvals().iter().flatten().count()) as u32,
         OperationId::NodeCapabilityGrant => {
             if remote::operation(request.value).is_err()
                 && storage_protocol::Operation::decode(request.value).is_err() { return Err(IopError::InvalidPayload); }
+            if request.flags == NODE_OPERATION_HUMAN_APPROVED | NODE_OPERATION_DURABLE {
+                if request.rights!=1||request.lease_deadline!=0{return Err(IopError::AccessDenied)}
+                response.handle=nodes.grant_durable(peer,request.value,request.scope,request.rights,now,correlation_id).map_err(map_node_error)?;
+            } else {
             if request.flags != NODE_OPERATION_HUMAN_APPROVED || request.rights != 1
                 || request.lease_deadline <= now || request.lease_deadline - now > 3600 {
                 return Err(IopError::AccessDenied);
             }
             response.handle = nodes.grant_remote(peer, request.value, request.scope, request.rights,
                 request.lease_deadline, now, correlation_id).map_err(map_node_error)?;
+            }
         }
         OperationId::NodeCapabilityRevoke => nodes.revoke_remote(request.handle, now, correlation_id).map_err(map_node_error)?,
         OperationId::MeshStatus | OperationId::MeshMemberList | OperationId::MeshPolicyRead => {

@@ -738,6 +738,7 @@ fn validate_authority(nodes: &NodeRuntime, r: &Request, now: u64) -> Result<(), 
         .iter()
         .flatten()
         .any(|g| g.id == r.message.grant)
+        && nodes.durable_approval(r.message.grant).is_none()
     {
         return Err(RemoteError::CapabilityRequired);
     }

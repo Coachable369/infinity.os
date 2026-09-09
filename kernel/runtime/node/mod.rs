@@ -9,6 +9,7 @@ pub mod inspection;
 pub mod membership;
 pub mod reconciliation;
 pub mod link_config;
+pub mod durable;
 
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
@@ -77,6 +78,7 @@ pub struct NodeRuntime {
     pairings: [Option<Pairing>; MAX_PAIRINGS],
     sessions: [Option<SecureSession>; MAX_SESSIONS],
     grants: [Option<RemoteGrant>; MAX_REMOTE_GRANTS],
+    durable: [Option<durable::Approval>; durable::CAPACITY],
     members: [Option<MeshMember>; MAX_MESH_MEMBERS],
     audit: [Option<AuditRecord>; MAX_AUDIT_RECORDS],
     next_id: u64,
@@ -99,6 +101,7 @@ impl NodeRuntime {
             crypto: NodeCrypto::new(), identity_seed: [0; 32], local_id: None, key_ref: None,
             discovered: [None; MAX_DISCOVERED_NODES], pairings: [None; MAX_PAIRINGS],
             sessions: [None; MAX_SESSIONS], grants: [None; MAX_REMOTE_GRANTS],
+            durable: [None; durable::CAPACITY],
             members: [None; MAX_MESH_MEMBERS], audit: [None; MAX_AUDIT_RECORDS],
             next_id: 1, audit_sequence: 0, control_version: 0, paired_digests: [[0; 32]; MAX_DISCOVERED_NODES], domains: [None; membership::MAX_DOMAINS], configured_links: [None; link_config::MAX_CONFIGURED_LINKS], discovery_window: 0, discovery_count: 0,
         }
@@ -261,6 +264,7 @@ impl NodeRuntime {
         self.cancel_pending_pairings(peer);
         for session in self.sessions.iter_mut().flatten().filter(|session| session.peer == peer) { session.state = SessionState::Closed; session.tx_key.zeroize(); session.rx_key.zeroize(); }
         for grant in self.grants.iter_mut().flatten().filter(|grant| grant.peer == peer) { grant.revoked = true; }
+        for approval in self.durable.iter_mut().flatten().filter(|a|a.peer==peer){approval.revoked=true;}
         self.record(AUDIT_NODE_REVOKED, peer, now, correlation_id, 1);
         Ok(())
     }
@@ -284,6 +288,7 @@ impl NodeRuntime {
         if state != TrustState::Trusted {
             for session in self.sessions.iter_mut().flatten().filter(|session| session.peer == peer) { session.state = SessionState::Closed; session.tx_key.zeroize(); session.rx_key.zeroize(); }
             for grant in self.grants.iter_mut().flatten().filter(|grant| grant.peer == peer) { grant.revoked = true; }
+            for approval in self.durable.iter_mut().flatten().filter(|a|a.peer==peer){approval.revoked=true;}
         }
         self.record(event, peer, now, correlation_id, 1);
         Ok(())
@@ -404,6 +409,7 @@ impl NodeRuntime {
     // DESC: Validates peer, operation, scope, rights, revocation, and lease at each remote call.
     // ------------------=
     pub fn authorize_remote(&self, grant_id: u64, peer: NodeId, operation: u32, scope: u64, rights: u32, now: u64) -> Result<(), NodeError> {
+        if self.durable_approval(grant_id).is_some(){return self.authorize_durable(grant_id,peer,operation,scope,rights)}
         let grant = self.grants.iter().flatten().find(|grant| grant.id == grant_id).ok_or(NodeError::CapabilityDenied)?;
         if grant.revoked { return Err(NodeError::CapabilityRevoked); }
         if now >= grant.expires_at { return Err(NodeError::CapabilityExpired); }
@@ -417,6 +423,7 @@ impl NodeRuntime {
     // DESC: Revokes a remote capability immediately without restarting either node.
     // ------------------=
     pub fn revoke_remote(&mut self, grant_id: u64, now: u64, correlation_id: u64) -> Result<(), NodeError> {
+        if self.durable_approval(grant_id).is_some(){return self.revoke_durable(grant_id,now,correlation_id)}
         let grant = self.grants.iter_mut().flatten().find(|grant| grant.id == grant_id).ok_or(NodeError::CapabilityDenied)?;
         grant.revoked = true;
         let peer = grant.peer;
@@ -517,6 +524,11 @@ impl NodeRuntime {
     // DESC: Returns bounded remote authority metadata without exporting capability secrets.
     // ------------------=
     pub fn remote_grants(&self) -> &[Option<RemoteGrant>; MAX_REMOTE_GRANTS] { &self.grants }
+    // ------------------------=
+    // FUNC: durable_approvals
+    // DESC: Exposes bounded explicit persistent approval records separately from transient session grants.
+    // ------------------=
+    pub fn durable_approvals(&self)->&[Option<durable::Approval>;durable::CAPACITY]{&self.durable}
 
     // ------------------------=
     // FUNC: encode_state
@@ -527,7 +539,7 @@ impl NodeRuntime {
         if self.identity_seed.iter().all(|value| *value == 0) { return Err(NodeError::EntropyUnavailable); }
         let mut out = [0u8; NODE_STATE_BYTES];
         out[..8].copy_from_slice(NODE_STATE_MAGIC);
-        out[8..10].copy_from_slice(&3u16.to_le_bytes());
+        out[8..10].copy_from_slice(&4u16.to_le_bytes());
         out[10..12].copy_from_slice(&(NODE_STATE_BYTES as u16).to_le_bytes());
         out[16..48].copy_from_slice(&self.identity_seed);
         out[48..80].copy_from_slice(&local_id.0);
@@ -564,6 +576,7 @@ impl NodeRuntime {
         self.encode_pairing_receipts(&mut out);
         self.encode_domains(&mut out);
         self.encode_link_configuration(&mut out);
+        self.encode_durable(&mut out);
         let checksum = state_crc32(&out[..NODE_STATE_BYTES - 4]);
         out[NODE_STATE_BYTES - 4..].copy_from_slice(&checksum.to_le_bytes());
         Ok(out)
@@ -596,7 +609,7 @@ impl NodeRuntime {
     fn decode_state(&mut self, input: &[u8]) -> Result<NodeId, NodeError> {
         if input.len() < 12 { return Err(NodeError::UnsupportedState); }
         let version = u16::from_le_bytes([input[8], input[9]]);
-        let size = match version { 1 => LEGACY_NODE_STATE_BYTES, 2 => V2_NODE_STATE_BYTES, 3 => NODE_STATE_BYTES, _ => return Err(NodeError::UnsupportedState) };
+        let size = match version { 1 => LEGACY_NODE_STATE_BYTES, 2 => V2_NODE_STATE_BYTES, 3 | 4 => NODE_STATE_BYTES, _ => return Err(NodeError::UnsupportedState) };
         if input.len() != size || &input[..8] != NODE_STATE_MAGIC || u16::from_le_bytes([input[10], input[11]]) as usize != size { return Err(NodeError::UnsupportedState); }
         let expected = u32::from_le_bytes(input[size - 4..].try_into().map_err(|_| NodeError::StateCorrupt)?);
         if state_crc32(&input[..size - 4]) != expected { return Err(NodeError::StateCorrupt); }
@@ -635,6 +648,7 @@ impl NodeRuntime {
         if version >= 2 { self.decode_audit(input)?; }
         if version >= 3 { self.decode_pairing_receipts(input)?; }
         if version >= 3 { self.decode_domains(input)?; self.decode_link_configuration(input)?; }
+        if version >= 4 { self.decode_durable(input)?; }
         Ok(id)
     }
 

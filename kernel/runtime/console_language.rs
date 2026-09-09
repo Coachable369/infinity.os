@@ -326,10 +326,12 @@ const POOL_FIXTURE_ARGS: &[ArgumentSchema] = &[
 const POOL_RETIRE_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema{name:b"peer",value_type:ArgumentType::Text,required:true},
     ArgumentSchema{name:b"grant",value_type:ArgumentType::Text,required:true},
-    ArgumentSchema{name:b"lease",value_type:ArgumentType::Text,required:true},
+    ArgumentSchema{name:b"lease",value_type:ArgumentType::Text,required:false},
+    ArgumentSchema{name:b"durable",value_type:ArgumentType::Boolean,required:false},
     ArgumentSchema{name:b"confirm",value_type:ArgumentType::Text,required:true},
 ];
 const POOL_SHARE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema{name:b"durable",value_type:ArgumentType::Boolean,required:false},
     ArgumentSchema{name:b"path",value_type:ArgumentType::Text,required:true},
     ArgumentSchema{name:b"confirm",value_type:ArgumentType::Text,required:true},
 ];
@@ -360,10 +362,13 @@ const POOL_PARTICIPATE_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema { name: b"commit", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"inspect", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"read", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"lease", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"lease", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"durable", value_type: ArgumentType::Boolean, required: false },
     ArgumentSchema { name: b"confirm", value_type: ArgumentType::Text, required: true },
 ];
 const POOL_ADVERTISE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"durable", value_type: ArgumentType::Boolean, required: false },
+    ArgumentSchema { name: b"confirm", value_type: ArgumentType::Boolean, required: false },
     ArgumentSchema { name: b"peer", value_type: ArgumentType::NodeRef, required: true },
     ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: true },
 ];
@@ -412,7 +417,8 @@ const NODE_LINK_ARGS: &[ArgumentSchema] = &[
 ];
 const NODE_GRANT_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema { name: b"name", value_type: ArgumentType::Text, required: true },
-    ArgumentSchema { name: b"seconds", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"seconds", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"durable", value_type: ArgumentType::Boolean, required: false },
     ArgumentSchema { name: b"confirm", value_type: ArgumentType::Boolean, required: false },
 ];
 const NODE_REMOTE_ARGS: &[ArgumentSchema] = &[
