@@ -12,6 +12,7 @@ from ms10_installed_closure_setup import establish_authority
 from ms10_installed_metadata import invoke, read_path, read_path_ready
 from ms10_installed_transfer_measurement import measure
 import ms10_installed_owner_lifecycle as lifecycle
+import ms10_installed_pool_parity as parity
 
 SPEC = importlib.util.spec_from_file_location("distribution", pathlib.Path(__file__).with_name("ms10-installed-distribution.py"))
 D = importlib.util.module_from_spec(SPEC)
@@ -56,6 +57,7 @@ def main():
     parser.add_argument("--length", type=int, choices=(32768, 65536, 262144), default=32768)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--lifecycle", action="store_true")
+    parser.add_argument("--parity", action="store_true", help="Requires the final shared ObjectInspect runtime; do not use on older installed generations.")
     args = parser.parse_args()
     work = args.output.resolve()
     assert 0 <= args.seed <= 0xffffffff
@@ -138,6 +140,8 @@ def main():
             during_transfer=lambda: D.responsive_transfer(a, created["object_id"]))
         report["persisted"] = [D.persisted_hash(g, args.verifier.resolve(), identities[0], created)
                                for g in (a, b, c)]
+        if args.parity:
+            report["baseline_console_settings_parity"] = parity.verify(a, D, created["object_id"], "baseline-parity")
         if args.measurement_only:
             report["stage"] = "measurement-complete-owner-loss-not-tested"
             return
@@ -170,6 +174,8 @@ def main():
                                   "owner-offline-two-of-three-degraded", timeout=90)
         assert degraded[2] == created["version"]
         report["owner_offline_degraded_row"] = list(degraded)
+        if args.parity:
+            report["degraded_console_settings_parity"] = parity.verify(b, D, created["object_id"], "degraded-parity", shared=True)
         replacement.boot(False)
         replacement.authenticate()
         replacement.fast_commands = True
@@ -179,6 +185,8 @@ def main():
         row = D.object_state(b, created["object_id"], lambda r: r[5] == r[6] == 3,
                              "owner-offline-automatic-replacement", timeout=600)
         report["healed_row"] = list(row)
+        if args.parity:
+            report["healed_console_settings_parity"] = parity.verify(b, D, created["object_id"], "healed-parity", shared=True)
         report["replacement_persisted"] = D.persisted_hash(replacement, args.verifier.resolve(), identities[0], created)
         b.launch("command", 5)
         read_path(b, path, created["object_id"], expected, lambda: fixture.read_state(b, D.API.symbol))
