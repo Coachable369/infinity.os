@@ -5,15 +5,31 @@ import importlib.util
 import json
 import pathlib
 import struct
+import hashlib
 from ms10_ethernet_hub import EthernetHub
 import ms10_installed_fixture as fixture
 from ms10_installed_closure_setup import establish_authority
 from ms10_installed_metadata import invoke, read_path, read_path_ready
 from ms10_installed_transfer_measurement import measure
+import ms10_installed_owner_lifecycle as lifecycle
 
 SPEC = importlib.util.spec_from_file_location("distribution", pathlib.Path(__file__).with_name("ms10-installed-distribution.py"))
 D = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(D)
+
+
+# ------------------------=
+# FUNC: validate_case
+# DESC: Fences resume to the exact independently computed byte set and measured object, not merely a matching VM directory.
+# ------------------=
+def validate_case(prior, identities, length, seed):
+    assert prior["stage"] == "measurement-complete-owner-loss-not-tested"
+    assert prior["identities"] == identities and len(prior["persisted"]) == 3
+    assert prior["length"] == length and prior["seed"] == seed
+    assert prior["created"]["length"] == length
+    assert prior["created"]["sha256"] == hashlib.sha256(fixture.expected_content(length, seed)).hexdigest()
+    assert prior["measurement"]["object"] == prior["created"]["object_id"]
+    assert prior["measurement"]["bytes"] == length
 
 
 # ------------------------=
@@ -27,8 +43,13 @@ def main():
     parser.add_argument("--verifier", type=pathlib.Path, required=True)
     parser.add_argument("--measurement-only", action="store_true")
     parser.add_argument("--resume-measured", action="store_true")
+    parser.add_argument("--length", type=int, choices=(32768, 65536, 262144), default=32768)
+    parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument("--lifecycle", action="store_true")
     args = parser.parse_args()
     work = args.output.resolve()
+    assert 0 <= args.seed <= 0xffffffff
+    assert not (args.lifecycle and args.measurement_only)
     provenance = json.loads((work / "result.json").read_text())
     assert provenance["independent_installs"] == 4
     identities = [entry["node_id"] for entry in provenance["nodes"]]
@@ -37,14 +58,17 @@ def main():
     if args.resume_measured:
         assert not args.measurement_only
         prior = json.loads((work / "owner-offline-gate-result.json").read_text())
-        assert prior["stage"] == "measurement-complete-owner-loss-not-tested"
-        assert prior["identities"] == identities and len(prior["persisted"]) == 3
+        validate_case(prior, identities, args.length, args.seed)
         (work / "owner-offline-measurement-receipt.json").write_text(json.dumps(prior, indent=2))
     hub = EthernetHub().start()
     guests = []
     report = {"status": "INCOMPLETE", "full_ms10_acceptance": False,
               "boundary": "four installed media-detached QEMU nodes", "stage": "boot",
-              "identities": identities, "resume_measured": args.resume_measured}
+              "identities": identities, "resume_measured": args.resume_measured,
+              "length": args.length, "seed": args.seed,
+              "remaining_gates": ["stale-owner-return", "ordinary-update-copy-delete",
+                                  "cold-reboot-shared-state", "garbage-collection",
+                                  "all-three-sizes", "UI-and-event-verification"]}
     try:
         for number in range(1, 5):
             guest = D.API.Guest(work, number, args.firmware, reuse=True)
@@ -90,10 +114,11 @@ def main():
         a, b, c, replacement = guests
         replacement.stop()
         a.wait(lambda s: s[496] == 2, "replacement offline", timeout=90)
-        report["stage"] = "32KiB-measurement"
+        report["stage"] = "bounded-transfer-measurement"
         a.launch("command", 5)
-        created = prior["created"] if prior else fixture.create(a, D.API.symbol, length=32768, seed=17)
+        created = prior["created"] if prior else fixture.create(a, D.API.symbol, length=args.length, seed=args.seed)
         report["created"] = created
+        report["namespace_path"] = f"/Shared/MS10_{args.length}_{args.seed}_{created['object_id'][:8]}"
         report["measurement"] = prior["measurement"] if prior else measure(a, D.API.symbol, created["object_id"])
         report["persisted"] = [D.persisted_hash(g, args.verifier.resolve(), identities[0], created)
                                for g in (a, b, c)]
@@ -101,12 +126,12 @@ def main():
             report["stage"] = "measurement-complete-owner-loss-not-tested"
             return
         report["stage"] = "share"
-        path = "/Shared/MS10Acceptance"
+        path = report["namespace_path"]
         a.launch("command", 5)
         result = invoke(a, f"pool share obj:{created['object_id']} path={path} confirm=true",
                         lambda: fixture.read_state(a, D.API.symbol))
         report["share"] = {key: value for key, value in result.items() if key != "data"}
-        expected = fixture.expected_content(64, 17)
+        expected = fixture.expected_content(64, args.seed)
         b.launch("command", 5)
         ready = read_path_ready(b, path, created["object_id"], expected, lambda: fixture.read_state(b, D.API.symbol))
         report["namespace_readiness"] = ready["readiness_attempts"]
@@ -131,6 +156,12 @@ def main():
         read_path(b, path, created["object_id"], expected, lambda: fixture.read_state(b, D.API.symbol))
         report["stage"] = "owner-loss-gate-passed-other-closure-gates-pending"
         report["owner_loss_gate"] = "TESTED"
+        if args.lifecycle:
+            report["stage"] = "owner-return-mutation-continuation"
+            report["lifecycle"] = lifecycle.run(guests, D, args.verifier.resolve(), report)
+            report["remaining_gates"] = [gate for gate in report["remaining_gates"]
+                                         if gate not in ("stale-owner-return", "ordinary-update-copy-delete")]
+            report["stage"] = "owner-lifecycle-gate-passed-other-closure-gates-pending"
     except BaseException as error:
         report["failure"] = repr(error)
         raise
