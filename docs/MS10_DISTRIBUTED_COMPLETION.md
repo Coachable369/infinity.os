@@ -24,6 +24,31 @@ Current request is the distributed Pool completion pass, not a new foundation.
 
 ### Current source evidence (not installed lifecycle acceptance)
 
+Checkpoint `bab4753` fixes an independently reproduced request-ordering defect:
+reusing an outgoing queue slot sent request 3 before request 2, which the real
+authenticated receiver rejected as replay. Scheduling now preserves per-session
+request order with bounded peer fairness; authentication and deadlines are
+unchanged. Router tests: 14 passed; fabric: 135 passed, one existing ignored;
+MS9 regression: 44 passed. Installed causation is not yet established.
+
+On the previous `3cd58d1` installed generation, object creation and cold resource
+publication passed. A pixel/normalized-coordinate harness error was corrected in
+`6d04c3f`; the following run successfully dragged the window and accepted rapid
+typing but its transfer stopped with an individual request deadline expiration.
+Recipient C retained 13,248 of 32,768 bytes (207 windows), with the exact expected
+prefix hash; B had no binding. No three-copy success is claimed. A later diagnostic
+retry stopped during login, not transfer. Failed receipts are preserved under
+`/tmp/ms10-namespace-installed-3cd58d1`; `d449581` adds bounded failure diagnostics.
+
+`./build.sh` passed on `bab4753` (`/tmp/ms10-order-bab4753-build.log`).
+x86_64 ISO SHA-256:
+`500c5316f18fe58f6e3e977ff34f1c8f71e3328d14abf6d6679fd5b633a74674`;
+ARM64: `0412f0b6b3ff1507a1bc85842c05d80584a6cd1e86096f808cee40ad31552f67`.
+Four new independently installed nodes passed ISO-detached cold authentication,
+persistent identity and authoritative storage inspection:
+`/tmp/ms10-order-installed-bab4753/result.json`.
+The new distributed run is active; lifecycle completion remains unverified.
+
 Checkpoint `3cd58d1` (including `8f441aa`) removes the confirmed namespace-capacity
 dependency from atomic Pool audit, quorum payload/catalog and metadata-access
 configuration. Reserved native System Metadata identities retain legacy reads;
