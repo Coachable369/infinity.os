@@ -24,6 +24,15 @@ Current request is the distributed Pool completion pass, not a new foundation.
 
 ### Current source evidence (not installed lifecycle acceptance)
 
+Corrected `8b3c995` runtime: full `./build.sh` passed
+(`/tmp/ms10-stack-corrected-iso-build.log`). Four new independent disks passed
+ISO-detached cold boot, onboarding/authentication, unique persistent identities
+and native storage inspection. Receipt:
+`/tmp/ms10-stack-corrected-8b3c995/result.json`; pinned artifacts are beside it.
+The installed kernel SHA-256 is
+`fb9908815556845e0025cf41c1d025b1c07c5420e4d6a73f45933dedd2036849`.
+This closes the detached-startup regression, not the active distributed lifecycle.
+
 The first integrated clean install completed on two disks but failed on detached
 onboarding boot. The preserved CPU trace `/tmp/ms10-detached-fault.log` identifies
 a stack-probe page fault in `execute_pool_metadata`, followed by a triple fault.
