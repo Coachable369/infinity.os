@@ -33,6 +33,15 @@ def validate_case(prior, identities, length, seed):
 
 
 # ------------------------=
+# FUNC: validate_mode
+# DESC: Keeps exact-object resume separate from new-object configured reuse and rejects conflicting modes before touching guests.
+# ------------------=
+def validate_mode(resume, reuse, measurement_only):
+    assert not (resume and reuse)
+    assert not (resume and measurement_only)
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Uses independently installed nodes and ordinary native operations; loses original A and never requests explicit repair.
 # ------------------=
@@ -43,6 +52,7 @@ def main():
     parser.add_argument("--verifier", type=pathlib.Path, required=True)
     parser.add_argument("--measurement-only", action="store_true")
     parser.add_argument("--resume-measured", action="store_true")
+    parser.add_argument("--reuse-configured", action="store_true")
     parser.add_argument("--length", type=int, choices=(32768, 65536, 262144), default=32768)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--lifecycle", action="store_true")
@@ -50,21 +60,23 @@ def main():
     work = args.output.resolve()
     assert 0 <= args.seed <= 0xffffffff
     assert not (args.lifecycle and args.measurement_only)
+    validate_mode(args.resume_measured, args.reuse_configured, args.measurement_only)
     provenance = json.loads((work / "result.json").read_text())
     assert provenance["independent_installs"] == 4
     identities = [entry["node_id"] for entry in provenance["nodes"]]
     assert len(set(identities)) == 4
     prior = None
-    if args.resume_measured:
-        assert not args.measurement_only
+    if args.resume_measured or args.reuse_configured:
         prior = json.loads((work / "owner-offline-gate-result.json").read_text())
-        validate_case(prior, identities, args.length, args.seed)
-        (work / "owner-offline-measurement-receipt.json").write_text(json.dumps(prior, indent=2))
+        validate_case(prior, identities, args.length if args.resume_measured else prior["length"],
+                      args.seed if args.resume_measured else prior["seed"])
+        (work / f"owner-offline-measurement-{prior['length']}-{prior['seed']}.json").write_text(json.dumps(prior, indent=2))
     hub = EthernetHub().start()
     guests = []
     report = {"status": "INCOMPLETE", "full_ms10_acceptance": False,
               "boundary": "four installed media-detached QEMU nodes", "stage": "boot",
               "identities": identities, "resume_measured": args.resume_measured,
+              "reuse_configured": args.reuse_configured,
               "length": args.length, "seed": args.seed,
               "remaining_gates": ["stale-owner-return", "ordinary-update-copy-delete",
                                   "cold-reboot-shared-state", "garbage-collection",
@@ -116,10 +128,12 @@ def main():
         a.wait(lambda s: s[496] == 2, "replacement offline", timeout=90)
         report["stage"] = "bounded-transfer-measurement"
         a.launch("command", 5)
-        created = prior["created"] if prior else fixture.create(a, D.API.symbol, length=args.length, seed=args.seed)
+        created = prior["created"] if args.resume_measured else fixture.create(a, D.API.symbol, length=args.length, seed=args.seed)
+        if args.reuse_configured:
+            assert created["object_id"] != prior["created"]["object_id"], {"fixture_reused_prior_object": created["object_id"]}
         report["created"] = created
         report["namespace_path"] = f"/Shared/MS10_{args.length}_{args.seed}_{created['object_id'][:8]}"
-        report["measurement"] = prior["measurement"] if prior else measure(
+        report["measurement"] = prior["measurement"] if args.resume_measured else measure(
             a, D.API.symbol, created["object_id"], traffic=hub.traffic_snapshot,
             during_transfer=lambda: D.responsive_transfer(a, created["object_id"]))
         report["persisted"] = [D.persisted_hash(g, args.verifier.resolve(), identities[0], created)
@@ -144,6 +158,13 @@ def main():
         result = read_path(b, path, created["object_id"], expected,
                            lambda: fixture.read_state(b, D.API.symbol))
         report["owner_offline_read"] = {key: value for key, value in result.items() if key != "data"}
+        tail_offset = args.length - 64
+        tail_bytes = fixture.expected_content(args.length, args.seed)[tail_offset:]
+        tail = read_path(b, path, created["object_id"], tail_bytes,
+                         lambda: fixture.read_state(b, D.API.symbol), offset=tail_offset)
+        report["owner_offline_last_extent_read"] = {key: value for key, value in tail.items() if key != "data"}
+        report["owner_offline_last_extent_read"].update({"offset": tail_offset, "length": 64,
+                                                      "sha256": hashlib.sha256(tail["data"]).hexdigest()})
         replacement.boot(False)
         replacement.authenticate()
         replacement.fast_commands = True
@@ -175,6 +196,7 @@ def main():
                 report.setdefault("stop_errors", []).append(repr(error))
         hub.close()
         (work / "owner-offline-gate-result.json").write_text(json.dumps(report, indent=2))
+        (work / f"owner-offline-gate-{args.length}-{args.seed}.json").write_text(json.dumps(report, indent=2))
 
 
 if __name__ == "__main__":

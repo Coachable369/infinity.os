@@ -12,6 +12,18 @@ SPEC.loader.exec_module(MODULE)
 
 class CaseFence(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_reuse_and_resume_modes_are_distinct
+    # DESC: Configured reuse permits a new measurement, exact-object resume cannot create a new measurement, and both modes cannot coexist.
+    # ------------------=
+    def test_reuse_and_resume_modes_are_distinct(self):
+        for resume, reuse, measurement in ((False, True, True), (False, True, False),
+                                            (True, False, False), (False, False, True)):
+            MODULE.validate_mode(resume, reuse, measurement)
+        for resume, reuse, measurement in ((True, True, False), (True, True, True), (True, False, True)):
+            with self.assertRaises(AssertionError):
+                MODULE.validate_mode(resume, reuse, measurement)
+
+    # ------------------------=
     # FUNC: test_size_seed_hash_and_identity_are_exact
     # DESC: Each supported actual byte count passes only its own metadata; altered size, seed, hash or object rejects resume.
     # ------------------=
