@@ -16,7 +16,7 @@
 #define EFI_ALL_HANDLES 0
 #define PAGE_SIZE 4096u
 #define PAGE_MASK (PAGE_SIZE - 1u)
-#define KERNEL_STACK_PAGES 64u
+#define KERNEL_STACK_PAGES 256u
 #define PT_LOAD 1u
 #if defined(INFINITY_AARCH64)
 #define INFINITY_ELF_MACHINE 183u
@@ -1233,9 +1233,10 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     serial_write("[BOOT] kernel loaded\n");
 
     uint64_t stack_base = UINT32_MAX;
-    /* Native object verification materializes one bounded metadata generation
-       on the stack. Reserve 256 KiB so installer validation and service
-       bootstrap records cannot exhaust the former 64 KiB bring-up stack. */
+    /* Signed Pool transactions nest bounded metadata, mutation and verification
+       records. The optimized active call chain exceeds 568 KiB; reserve a fixed
+       1 MiB on both architectures. Lightweight startup dispatch stays separate
+       so idle polls do not reserve transaction-sized frames. */
     if (system->boot_services->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA, KERNEL_STACK_PAGES, &stack_base) != EFI_SUCCESS)
         fail(system, L"ERROR: stack allocation failed\r\n", "ERROR: stack allocation failed\n");
     uint64_t page_tables = prepare_identity_map(system);

@@ -581,6 +581,7 @@ pub fn take(user: StableId, session: StableId, id: u64) -> Result<Option<u64>, R
 // FUNC: native
 // DESC: Validates and retires an exact service capability around each single bounded native persistence operation.
 // ------------------=
+#[inline(never)]
 fn native(r: &mut InfinityRuntime, p: NativeRequest, now: u64) -> Result<NativeReply, RemoteError> {
     let caller = r
         .service_identity(SERVICE_REPLICA_STORAGE)
@@ -901,6 +902,7 @@ fn build(r: &InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteError> 
 // FUNC: step
 // DESC: Performs at most one native operation or one network enqueue; all waiting is deferred to a future runtime tick.
 // ------------------=
+#[inline(never)]
 fn step(r: &mut InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteError> {
     let local = r.nodes.local_id().ok_or(RemoteError::ServiceUnavailable)?;
     match j.phase {
@@ -1150,6 +1152,7 @@ fn step(r: &mut InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteErro
 // FUNC: reply
 // DESC: Validates exact correlated response semantics and advances only after durable transfer or signed quorum acknowledgements.
 // ------------------=
+#[inline(never)]
 fn reply(
     r: &InfinityRuntime,
     j: &mut Job,
@@ -1448,10 +1451,22 @@ fn skip_unavailable(j: &mut Job, e: RemoteError) -> bool {
 // FUNC: poll
 // DESC: Executes one bounded repair transition per runtime tick, preserving session revocation, fixed queues and explicit completion errors.
 // ------------------=
+#[inline(never)]
 pub fn poll(r: &mut InfinityRuntime, now: u64) {
     if r.storage_metadata_repair.handler.is_none() {
         return;
     }
+    if r.storage_metadata_repair.job.is_none() {
+        return;
+    }
+    poll_active(r, now);
+}
+// ------------------------=
+// FUNC: poll_active
+// DESC: Keeps the bounded repair job and transaction temporaries off idle and outer runtime polling stacks.
+// ------------------=
+#[inline(never)]
+fn poll_active(r: &mut InfinityRuntime, now: u64) {
     let Some(mut j) = r.storage_metadata_repair.job.take() else {
         return;
     };

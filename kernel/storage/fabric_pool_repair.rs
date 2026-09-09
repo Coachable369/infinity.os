@@ -200,7 +200,34 @@ impl Service {
     // FUNC: execute
     // DESC: Executes one native repair state transition with bounded persistence and explicit signed authorization.
     // ------------------=
+    #[inline(never)]
     pub(crate) fn execute<D: BlockDevice>(
+        &mut self,
+        store: &mut ObjectStore<D>,
+        replica: &mut replicas::service::ReplicaService,
+        r: N,
+    ) -> Result<R, RemoteError> {
+        match r {
+            N::Load {object,anchor,now}=>Self::load_operation(store,object,anchor,now),
+            other=>self.execute_heavy(store,replica,other),
+        }
+    }
+    // ------------------------=
+    // FUNC: load_operation
+    // DESC: Isolates one durable overlay observation from all transfer and publication stack frames.
+    // ------------------=
+    #[inline(never)]
+    fn load_operation<D:BlockDevice>(store:&mut ObjectStore<D>,object:[u8;16],anchor:[u8;32],now:u64)->Result<R,RemoteError>{
+        let a=load(store,object,false,now)?;
+        if a.as_ref().is_some_and(|a|a.anchor.value.record.digest()!=anchor){return Err(RemoteError::Conflict)}
+        Ok(R::Overlay(a.map(|a|a.repair)))
+    }
+    // ------------------------=
+    // FUNC: execute_heavy
+    // DESC: Keeps transfer and durable mutation locals off the metadata-load dispatch stack.
+    // ------------------=
+    #[inline(never)]
+    fn execute_heavy<D: BlockDevice>(
         &mut self,
         store: &mut ObjectStore<D>,
         replica: &mut replicas::service::ReplicaService,
@@ -243,6 +270,7 @@ impl Service {
     // FUNC: wire
     // DESC: Separates signed metadata upload, quorum voting and bounded replica transfer without impersonating the original owner.
     // ------------------=
+    #[inline(never)]
     fn wire<D: BlockDevice>(
         &mut self,
         store: &mut ObjectStore<D>,

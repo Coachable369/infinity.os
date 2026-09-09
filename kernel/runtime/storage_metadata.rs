@@ -453,6 +453,7 @@ pub fn principal() -> [u8; 16] {
 // FUNC: native
 // DESC: Requires an exact short-lived service-owned metadata capability for each native callback and retires it immediately.
 // ------------------=
+#[inline(never)]
 fn native(
     r: &mut InfinityRuntime,
     request: NativeRequest,
@@ -632,6 +633,7 @@ fn start_owned(
 // FUNC: recover_intent
 // DESC: Admits only a durable native local-owner mutation intent as a service recovery job; it never synthesizes a human session or new write authority.
 // ------------------=
+#[inline(never)]
 fn recover_intent(
     r: &mut InfinityRuntime,
     intent: MutationIntent,
@@ -1311,6 +1313,7 @@ fn remote_source(j: &mut Job, local: NodeId) -> Result<NodeId, RemoteError> {
 // FUNC: advance_reply
 // DESC: Applies one freshly correlated authenticated response; an observation from any earlier request cannot contribute to quorum.
 // ------------------=
+#[inline(never)]
 fn advance_reply(
     r: &mut InfinityRuntime,
     j: &mut Job,
@@ -1486,6 +1489,7 @@ fn advance_reply(
 // FUNC: step
 // DESC: Advances at most one native transaction or one wire window, with quorum failures remaining explicit.
 // ------------------=
+#[inline(never)]
 fn step(r: &mut InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteError> {
     let local = r.nodes.local_id().ok_or(RemoteError::ServiceUnavailable)?;
     match j.phase {
@@ -1874,58 +1878,84 @@ fn skip_failed_member(j: &mut Job, local: NodeId) -> bool {
 // FUNC: poll
 // DESC: Pumps one bounded owned metadata operation; asynchronous network work never runs in a UI callback.
 // ------------------=
+#[inline(never)]
 pub fn poll(r: &mut InfinityRuntime, now: u64) {
     if r.storage_metadata.handler.is_none() {
         return;
     }
     if !r.storage_metadata.loaded {
-        if let Ok(NativeReply::Config(b)) = native(r, NativeRequest::ConfigLoad, now) {
-            if &b[..8] == b"INFMDG01" {
-                for i in 0..3 {
-                    let at = 16 + i * 48;
-                    let mut node = [0; 32];
-                    node.copy_from_slice(&b[at..at + 32]);
-                    let grant = u64::from_le_bytes(b[at + 32..at + 40].try_into().unwrap());
-                    let expires = u64::from_le_bytes(b[at + 40..at + 48].try_into().unwrap());
-                    if node != [0; 32] && grant != 0 {
-                        r.storage_metadata.peers[i] = Some(Peer {
-                            node: NodeId(node),
-                            grant,
-                            expires,
-                        });
-                    }
-                }
-            }
-        }
-        r.storage_metadata.loaded = true;
+        poll_config(r, now);
         return;
     }
-    let Some(mut j) = r.storage_metadata.job.take() else {
-        if now >= r.storage_metadata.scan_tick {
-            let i = r.storage_metadata.scan;
-            r.storage_metadata.scan = (i + 1) % 9;
-            r.storage_metadata.scan_tick = now.saturating_add(1);
-            if i == 8 {
-                let index = r.storage_metadata.recovery_index;
-                r.storage_metadata.recovery_index = (index + 1) % 8;
-                if let Ok(NativeReply::Pending(Some(intent))) =
-                    native(r, NativeRequest::PendingMutation { index }, now)
-                {
-                    if let Err(e) = recover_intent(r, intent, now) {
-                        r.storage_metadata.last_error = Some(e);
-                    }
+    if r.storage_metadata.job.is_none() {
+        poll_catalog(r, now);
+        return;
+    }
+    poll_active(r, now);
+}
+// ------------------------=
+// FUNC: poll_config
+// DESC: Loads bounded startup configuration without reserving an active job or transaction frame.
+// ------------------=
+#[inline(never)]
+fn poll_config(r: &mut InfinityRuntime, now: u64) {
+    if let Ok(NativeReply::Config(b)) = native(r, NativeRequest::ConfigLoad, now) {
+        if &b[..8] == b"INFMDG01" {
+            for i in 0..3 {
+                let at = 16 + i * 48;
+                let mut node = [0; 32];
+                node.copy_from_slice(&b[at..at + 32]);
+                let grant = u64::from_le_bytes(b[at + 32..at + 40].try_into().unwrap());
+                let expires = u64::from_le_bytes(b[at + 40..at + 48].try_into().unwrap());
+                if node != [0; 32] && grant != 0 {
+                    r.storage_metadata.peers[i] = Some(Peer {
+                        node: NodeId(node),
+                        grant,
+                        expires,
+                    });
                 }
-                return;
-            }
-            if let Ok(NativeReply::Bundle(bundle)) =
-                native(r, NativeRequest::Load { index: i }, now)
-            {
-                r.storage_metadata.names[i] =
-                    bundle.map(|b| (b.value.record.object, b.path, b.path_len));
-                r.storage_metadata.scanned |= 1u8 << i;
-                r.storage_metadata.namespace_ready = r.storage_metadata.scanned == u8::MAX;
             }
         }
+    }
+    r.storage_metadata.loaded = true;
+}
+// ------------------------=
+// FUNC: poll_catalog
+// DESC: Scans at most one durable namespace or recovery slot without copying an active job onto the idle stack.
+// ------------------=
+#[inline(never)]
+fn poll_catalog(r: &mut InfinityRuntime, now: u64) {
+    if now >= r.storage_metadata.scan_tick {
+        let i = r.storage_metadata.scan;
+        r.storage_metadata.scan = (i + 1) % 9;
+        r.storage_metadata.scan_tick = now.saturating_add(1);
+        if i == 8 {
+            let index = r.storage_metadata.recovery_index;
+            r.storage_metadata.recovery_index = (index + 1) % 8;
+            if let Ok(NativeReply::Pending(Some(intent))) =
+                native(r, NativeRequest::PendingMutation { index }, now)
+            {
+                if let Err(e) = recover_intent(r, intent, now) {
+                    r.storage_metadata.last_error = Some(e);
+                }
+            }
+            return;
+        }
+        if let Ok(NativeReply::Bundle(bundle)) = native(r, NativeRequest::Load { index: i }, now) {
+            r.storage_metadata.names[i] =
+                bundle.map(|b| (b.value.record.object, b.path, b.path_len));
+            r.storage_metadata.scanned |= 1u8 << i;
+            r.storage_metadata.namespace_ready = r.storage_metadata.scanned == u8::MAX;
+        }
+    }
+}
+// ------------------------=
+// FUNC: poll_active
+// DESC: Reserves the bounded active-job frame only after a real request exists, separate from idle and bootstrap paths.
+// ------------------=
+#[inline(never)]
+fn poll_active(r: &mut InfinityRuntime, now: u64) {
+    let Some(mut j) = r.storage_metadata.job.take() else {
         return;
     };
     if matches!(j.phase, Phase::Done) {

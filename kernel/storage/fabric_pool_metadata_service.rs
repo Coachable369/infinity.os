@@ -89,7 +89,55 @@ impl Service {
     // FUNC: execute
     // DESC: Executes only typed service-authorized native metadata operations.
     // ------------------=
+    #[inline(never)]
     pub(crate) fn execute<D: BlockDevice>(
+        &mut self,
+        store: &mut ObjectStore<D>,
+        request: NativeRequest,
+    ) -> Result<NativeReply, RemoteError> {
+        match request {
+            NativeRequest::ConfigLoad => Self::config_load(store),
+            NativeRequest::ConfigSave(bytes) => Self::config_save(store,&bytes),
+            NativeRequest::Load { index } => Self::catalog_load(store,index),
+            other => self.execute_heavy(store,other),
+        }
+    }
+    // ------------------------=
+    // FUNC: config_load
+    // DESC: Isolates the small boot configuration read from transaction and content stack frames.
+    // ------------------=
+    #[inline(never)]
+    fn config_load<D:BlockDevice>(store:&mut ObjectStore<D>)->Result<NativeReply,RemoteError>{
+        let mut bytes=[0;CONFIG_BYTES];
+        match store.resolve(CONFIG){
+            Ok(id)=>{if store.read(id,None,&mut bytes).map_err(|_|RemoteError::PersistenceFailed)?!=CONFIG_BYTES{return Err(RemoteError::PersistenceFailed)}},
+            Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>{},
+            Err(_)=>return Err(RemoteError::PersistenceFailed),
+        }
+        Ok(NativeReply::Config(bytes))
+    }
+    // ------------------------=
+    // FUNC: config_save
+    // DESC: Keeps native configuration persistence outside the lightweight operation dispatcher.
+    // ------------------=
+    #[inline(never)]
+    fn config_save<D:BlockDevice>(store:&mut ObjectStore<D>,bytes:&[u8;CONFIG_BYTES])->Result<NativeReply,RemoteError>{
+        store.replace_named_state(CONFIG,bytes).map_err(|_|RemoteError::PersistenceFailed)?;Ok(NativeReply::Done)
+    }
+    // ------------------------=
+    // FUNC: catalog_load
+    // DESC: Loads one bounded bundle without reserving unrelated mutation or transfer local variables.
+    // ------------------=
+    #[inline(never)]
+    fn catalog_load<D:BlockDevice>(store:&mut ObjectStore<D>,index:usize)->Result<NativeReply,RemoteError>{
+        Ok(NativeReply::Bundle(backing::load_bundle(store,index).map_err(error)?))
+    }
+    // ------------------------=
+    // FUNC: execute_heavy
+    // DESC: Separates heavyweight transaction operations from the boot configuration and catalog dispatch paths.
+    // ------------------=
+    #[inline(never)]
+    fn execute_heavy<D: BlockDevice>(
         &mut self,
         store: &mut ObjectStore<D>,
         request: NativeRequest,

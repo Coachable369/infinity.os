@@ -177,6 +177,7 @@ fn load(r: &mut InfinityRuntime, index: usize, now: u64) -> Result<Option<Bundle
 // FUNC: poll
 // DESC: Advances at most one service-owned scheduling transition outside UI execution; all actual repair still requires fresh quorums and leased authority.
 // ------------------=
+#[inline(never)]
 pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
     if !r.storage_metadata_auto.due(now) {
         return;

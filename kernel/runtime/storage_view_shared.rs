@@ -251,6 +251,7 @@ fn merge(
 // FUNC: poll
 // DESC: Performs one bounded native observation or asynchronous job transition and publishes only after the complete authorized scan.
 // ------------------=
+#[inline(never)]
 pub(super) fn poll(r: &mut InfinityRuntime, u: StableId, s: StableId, now: u64) {
     let pending = core::mem::replace(&mut r.storage_view.shared.pending, Pending::None);
     match pending {
