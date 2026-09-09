@@ -59,7 +59,10 @@ def verify(guest, distribution, object_id, label, timeout=90, shared=False):
         if shared:
             assert reply["operation"] == 0x300a
         assert reply["object"] == object_id and reply["generation"] == generation
-        assert len(reply["data"]) == 64
+        assert len(reply["data"]) == 64 and reply["value"] == 5376
+        observed = guest.state()
+        assert observed[110] == 1
+        assert struct.unpack_from("<Q", struct.pack("<17Q", *observed[111:128]), 48)[0] == offset
         pages.append(reply["data"])
     placements = b"".join(pages[2:])
     console = decode_manifest_projection(b"".join(pages[:2]), placements)

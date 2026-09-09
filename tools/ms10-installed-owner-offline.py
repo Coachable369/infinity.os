@@ -13,6 +13,7 @@ from ms10_installed_metadata import invoke, read_path, read_path_ready
 from ms10_installed_transfer_measurement import measure
 import ms10_installed_owner_lifecycle as lifecycle
 import ms10_installed_pool_parity as parity
+import ms10_installed_pool_event_gap as event_gap
 
 SPEC = importlib.util.spec_from_file_location("distribution", pathlib.Path(__file__).with_name("ms10-installed-distribution.py"))
 D = importlib.util.module_from_spec(SPEC)
@@ -58,6 +59,7 @@ def main():
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--lifecycle", action="store_true")
     parser.add_argument("--parity", action="store_true", help="Requires the final shared ObjectInspect runtime; do not use on older installed generations.")
+    parser.add_argument("--event-gap", action="store_true", help="Requires final IEF observer diagnostics; performs real policy commits, never injected events.")
     args = parser.parse_args()
     work = args.output.resolve()
     assert 0 <= args.seed <= 0xffffffff
@@ -142,6 +144,10 @@ def main():
                                for g in (a, b, c)]
         if args.parity:
             report["baseline_console_settings_parity"] = parity.verify(a, D, created["object_id"], "baseline-parity")
+        if args.event_gap:
+            report["event_gap"] = event_gap.verify(a, D, args.verifier.resolve(), created, identities[0])
+            report["post_event_gap_persisted"] = [D.persisted_hash(g, args.verifier.resolve(), identities[0], created)
+                                                  for g in (a, b, c)]
         if args.measurement_only:
             report["stage"] = "measurement-complete-owner-loss-not-tested"
             return
