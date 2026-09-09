@@ -53,9 +53,7 @@ pub fn plan_entire_disk(
             super::layout::LayoutError::InsufficientCapacity => StorageError::InsufficientCapacity,
             super::layout::LayoutError::Arithmetic => StorageError::Arithmetic,
         })?;
-    let boot_identity = crate::runtime::with_runtime(|runtime| runtime.nodes.local_id())
-        .flatten().ok_or(StorageError::InvalidPlan)?;
-    let identities = super::install_identity::derive(boot_identity.0, device.identity)
+    let identities = super::install_identity::for_target(device.identity)
         .ok_or(StorageError::InvalidPlan)?;
     let mut spaces = profile_spaces(profile);
     for (space, id) in spaces.iter_mut().zip(identities.spaces) { space.uuid = id; }

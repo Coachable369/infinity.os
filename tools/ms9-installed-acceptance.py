@@ -273,7 +273,14 @@ class Guest:
                 self.key("ret")
             # TCG verification reads the complete installed kernel. This is a
             # host acceptance bound, not a guest protocol/authority deadline.
-            self.wait(lambda state: state[5] > step and state[5] != 9, f"advance {step}", 900 if step == 6 else 300)
+            # ------------------------=
+            # FUNC: advanced
+            # DESC: Rejects terminal installer failure immediately rather than repeatedly polling an impossible success transition.
+            # ------------------=
+            def advanced(state):
+                assert state[5] != 9, {"installer_failed_at_step": step, "state": state}
+                return state[5] > step
+            self.wait(advanced, f"advance {step}", 900 if step == 6 else 300)
         self.wait(lambda state: state[5] == 8, "installation completed", 300)
         self.screenshot("installed-complete")
         self.stop()

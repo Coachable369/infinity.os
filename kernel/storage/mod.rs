@@ -13,6 +13,17 @@ pub mod organization;
 #[cfg(target_arch = "aarch64")]
 mod uefi;
 
+// ------------------------=
+// FUNC: initialize_installation_identity
+// DESC: Retains installation-only uniqueness during early boot independently of persistent networking identity; installed-only kernels retain no extra seed.
+// ------------------=
+pub fn initialize_installation_identity(entropy: &[u8; 32], valid: bool) {
+    #[cfg(feature = "installer")]
+    install_identity::initialize(entropy, valid);
+    #[cfg(not(feature = "installer"))]
+    let _ = (entropy, valid);
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct StorageDevice {
     pub identity: &'static [u8],
