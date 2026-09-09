@@ -8,7 +8,7 @@ import struct
 import hashlib
 from ms10_ethernet_hub import EthernetHub
 import ms10_installed_fixture as fixture
-from ms10_installed_closure_setup import establish_authority
+from ms10_installed_closure_setup import establish_authority, resume_publication
 from ms10_installed_metadata import invoke, read_path, read_path_ready
 from ms10_installed_transfer_measurement import measure
 import ms10_installed_owner_lifecycle as lifecycle
@@ -44,6 +44,16 @@ def validate_mode(resume, reuse, measurement_only):
 
 
 # ------------------------=
+# FUNC: validate_prepared
+# DESC: Accepts only an explicitly preserved pre-transfer authority-stage failure on the exact four independently installed identities.
+# ------------------=
+def validate_prepared(prior, identities):
+    assert len(set(identities)) == 4 and prior["identities"] == identities
+    assert prior["stage"] == "authority" and prior.get("failure")
+    assert "created" not in prior
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Uses independently installed nodes and ordinary native operations; loses original A and never requests explicit repair.
 # ------------------=
@@ -55,6 +65,7 @@ def main():
     parser.add_argument("--measurement-only", action="store_true")
     parser.add_argument("--resume-measured", action="store_true")
     parser.add_argument("--reuse-configured", action="store_true")
+    parser.add_argument("--resume-prepared", action="store_true")
     parser.add_argument("--length", type=int, choices=(32768, 65536, 262144), default=32768)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--lifecycle", action="store_true")
@@ -65,11 +76,16 @@ def main():
     assert 0 <= args.seed <= 0xffffffff
     assert not (args.lifecycle and args.measurement_only)
     validate_mode(args.resume_measured, args.reuse_configured, args.measurement_only)
+    assert not (args.resume_prepared and (args.resume_measured or args.reuse_configured))
     provenance = json.loads((work / "result.json").read_text())
     assert provenance["independent_installs"] == 4
     identities = [entry["node_id"] for entry in provenance["nodes"]]
     assert len(set(identities)) == 4
     prior = None
+    if args.resume_prepared:
+        prior = json.loads((work / "owner-offline-gate-result.json").read_text())
+        validate_prepared(prior, identities)
+        (work / "owner-offline-prepared-failure.json").write_text(json.dumps(prior, indent=2))
     if args.resume_measured or args.reuse_configured:
         prior = json.loads((work / "owner-offline-gate-result.json").read_text())
         validate_case(prior, identities, args.length if args.resume_measured else prior["length"],
@@ -81,6 +97,7 @@ def main():
               "boundary": "four installed media-detached QEMU nodes", "stage": "boot",
               "identities": identities, "resume_measured": args.resume_measured,
               "reuse_configured": args.reuse_configured,
+              "resume_prepared": args.resume_prepared,
               "length": args.length, "seed": args.seed,
               "remaining_gates": ["stale-owner-return", "ordinary-update-copy-delete",
                                   "cold-reboot-shared-state", "garbage-collection",
@@ -124,9 +141,13 @@ def main():
             for left in range(4):
                 for right in range(left + 1, 4):
                     D.open_session(guests[left], guests[right])
-            for guest in guests:
-                guest.wait(lambda s: s[496] == 3, "persisted authorized publishers", timeout=90)
-            report["authority"] = prior["authority"]
+            if args.resume_prepared:
+                report["stage"] = "restore-explicit-publication-only"
+                report["authority"] = resume_publication(guests, D)
+            else:
+                for guest in guests:
+                    guest.wait(lambda s: s[496] == 3, "persisted authorized publishers", timeout=90)
+                report["authority"] = prior["authority"]
         a, b, c, replacement = guests
         replacement.stop()
         a.wait(lambda s: s[496] == 2, "replacement offline", timeout=90)

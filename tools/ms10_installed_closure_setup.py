@@ -61,6 +61,38 @@ def publish_node(guest, identities, grants):
 
 
 # ------------------------=
+# FUNC: publication_only
+# DESC: Issues only explicit resource-publication grants after a verified prepared-state interruption; never modifies metadata or replica authority.
+# ------------------=
+def publication_only(guest, identities):
+    local = identities[guest.number - 1]
+    guest.launch("command", 5)
+    return {peer: {"publication": guest.peer_grant(peer, "resource-advertise")}
+            for peer in identities if peer != local}
+
+
+# ------------------------=
+# FUNC: resume_publication
+# DESC: Restores twelve explicitly granted publication directions without replaying trust, metadata configuration, or replica grants.
+# ------------------=
+def resume_publication(guests, distribution):
+    identities = [distribution.identity(guest) for guest in guests]
+    with ThreadPoolExecutor(max_workers=4) as workers:
+        grants = list(workers.map(lambda guest: publication_only(guest, identities), guests))
+    with ThreadPoolExecutor(max_workers=4) as workers:
+        futures = [workers.submit(publish_node, guest, identities, grants) for guest in guests]
+        for future in futures:
+            future.result()
+    observations = []
+    for guest in guests:
+        state = guest.wait(lambda s: s[496] == 3, "three restored real resource publishers", timeout=90)
+        observations.append({"node": guest.number, "online_resources": state[496],
+                             "observed_clock": state[10], "sessions": state[26]})
+    return {"publication_only": True, "observations": observations,
+            "metadata_replica_configuration": "UNVERIFIED until actual transfer"}
+
+
+# ------------------------=
 # FUNC: establish_authority
 # DESC: Builds all twelve directed metadata/publication relationships in parallel per node, then opens real sessions last.
 # ------------------=
