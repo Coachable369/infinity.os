@@ -5,6 +5,7 @@ pub mod resource_protocol;
 pub mod placement;
 pub mod replica;
 pub mod manifest;
+pub mod observed;
 pub mod healing;
 pub mod deletion;
 pub mod metadata;

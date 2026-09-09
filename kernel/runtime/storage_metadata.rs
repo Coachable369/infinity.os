@@ -806,9 +806,10 @@ pub fn read(
     request: StorageOperationV1,
 ) -> Result<u64, RemoteError> {
     with_runtime(|r| {
-        if !matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect)
+        if !matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect|Operation::PoolInspect)
             || request.length != 0
             || !(1..=64).contains(&request.value)
+            || (request.operation==Operation::PoolInspect && (request.value!=1 || request.offset!=0))
         {
             return Err(RemoteError::MalformedRequest);
         }
@@ -1702,10 +1703,14 @@ fn step(r: &mut InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteErro
         Phase::ReadLocal => {
             let b = j.bundle.unwrap();
             let p = j.read.unwrap();
-            if p.operation==Operation::ObjectInspect {
+            if matches!(p.operation,Operation::ObjectInspect|Operation::PoolInspect) {
                 b.authorize(local,principal(),now).map_err(|_|RemoteError::AccessDenied)?;
                 let manifest=j.overlay.map_or(b.manifest,|o|o.manifest);
-                j.result=Some(inspect_reply(p,&manifest));
+                j.result=Some(if p.operation==Operation::ObjectInspect {inspect_reply(p,&manifest)} else {
+                    if p.authority_generation!=manifest.authority_generation || (p.manifest_generation!=0 && p.manifest_generation!=manifest.generation) || (p.object_version!=0 && p.object_version!=manifest.version) {Err(RemoteError::Conflict)} else {
+                        let mut response=p;response.data=fabric::observed::summary(&manifest,r.fabric_resources.entries(),now);response.length=64;response.value=1;response.manifest_generation=manifest.generation;response.object_version=manifest.version;Ok(response)
+                    }
+                });
                 return Ok(());
             }
             let record = b.value.record;

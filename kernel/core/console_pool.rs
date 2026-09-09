@@ -103,7 +103,7 @@ impl ConsoleRuntime {
             self.output.write_line(b"Use a full ObjectId, bounded content, valid generation/version and an explicit policy.");
             return true;
         };
-        if matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect)&&(crate::runtime::storage_metadata::bound(request.object)||crate::runtime::storage_metadata::warming()){
+if matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect|Operation::PoolInspect)&&(crate::runtime::storage_metadata::bound(request.object)||crate::runtime::storage_metadata::warming()){
             let mut request=request;request.value&=!crate::runtime::storage_coordinator::REMOTE_VERIFIED;
             match crate::runtime::storage_metadata::read(self.current_user,self.current_session,request){Ok(id)=>self.output.write_number(b"Shared object quorum read pending: ",id),Err(e)=>self.output.write_number(b"Shared read denied: ",e as u64)}return true;
         }
@@ -169,7 +169,16 @@ impl ConsoleRuntime {
                 }
                 self.output.write_number(b"Version: ", response.object_version);
                 self.output.write_number(b"Generation: ", response.manifest_generation);
-                if response.operation == Operation::PoolInspect { self.output.write_number(b"Owned objects: ", response.value); }
+                if response.operation == Operation::PoolInspect {
+                    if response.object != [0;16] && response.length == 64 {
+                        self.output.write_number(b"Desired replicas: ", response.data[48] as u64);
+                        self.output.write_number(b"Observed verified: ", response.data[49] as u64);
+                        self.output.write_number(b"Observed offline: ", response.data[50] as u64);
+                        self.output.write_number(b"Stale replicas: ", response.data[51] as u64);
+                        self.output.write_number(b"Corrupt replicas: ", response.data[52] as u64);
+                        self.output.write_number(b"Under-protected: ", response.data[53] as u64);
+                    } else { self.output.write_number(b"Owned objects: ", response.value); }
+                }
     }
 }
 
@@ -206,6 +215,7 @@ fn pool_request(node: &OperationNode<'_>) -> Option<StorageOperationV1> {
         p.data[..content.len()].copy_from_slice(content); p.length = content.len() as u16;
     }
     if operation == Operation::ObjectInspect { p.value = 64; }
+    if operation == Operation::PoolInspect && p.object != [0;16] { p.value = 1; }
     if operation == Operation::ObjectRead {
         p.value = node_argument(node, b"length").and_then(parse_u64_decimal).filter(|n| (1..=64).contains(n))?;
         match node_argument(node, b"source") {

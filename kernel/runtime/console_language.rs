@@ -747,6 +747,8 @@ pub static OPERATIONS: &[OperationSchema] = &[
         ValueType::Unit, ValueType::Object, None, POOL_CREATE_ARGS, 1, SideEffectClass::ReversibleChange, b"pool create nonce=1 policy=critical content=Example"),
     op(b"pool", b"inspect", b"Read a bounded canonical manifest page", OperationId::ObjectInspect,
         ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_INSPECT_ARGS, 1, SideEffectClass::Query, b"pool inspect obj:<id> offset=0"),
+    op(b"pool", b"health", b"Inspect fresh shared metadata with observed resource health", OperationId::PoolInspect,
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_INSPECT_ARGS, 1, SideEffectClass::Query, b"pool health obj:<id>"),
     op(b"pool", b"policy", b"Commit a generation-fenced protection policy", OperationId::ObjectSetPolicy,
         ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_POLICY_ARGS, 1, SideEffectClass::ReversibleChange, b"pool policy obj:<id> generation=1 version=1 policy=critical"),
     op(b"pool", b"read", b"Read a verified immutable Pool range", OperationId::ObjectRead,
