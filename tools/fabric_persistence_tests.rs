@@ -247,6 +247,47 @@ fn native_recipient_keeps_versions_immutable_across_restart() {
 }
 
 // ------------------------=
+// FUNC: native_pool_update_keeps_manifest_and_content_on_one_transaction_root
+// DESC: Cuts every sector write of an actual content successor and requires the cold-mounted reader to return exactly the old or new verified version, never mixed manifest/content state.
+// ------------------=
+#[test]
+fn native_pool_update_keeps_manifest_and_content_on_one_transaction_root() {
+    use crate::{native_fabric::service::ReplicaService,
+        runtime::iop::storage_protocol::Operation, storage::object::ObjectId};
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let mut service = ReplicaService::mount(&mut store, ResourceId([4; 16]), 5).unwrap();
+    service.attach_device_identity(Some([6; 16]));
+    let create = pool_request(&[31; 63]);
+    let created = service.execute(&mut store, create).unwrap();
+    let object = ObjectId(created.data[..16].try_into().unwrap());
+    let mut update = create; update.payload.operation = Operation::ObjectUpdate;
+    update.payload.object = object.0; update.payload.object_version = 1; update.payload.manifest_generation = 1;
+    update.payload.offset = 0; update.payload.value = 0; update.payload.length = 64; update.payload.data = [49; 64];
+    let baseline = disk.0.borrow().sectors.clone();
+    disk.0.borrow_mut().writes = 0;
+    service.execute(&mut store, update).unwrap();
+    let writes = disk.0.borrow().writes;
+    for cut in 0..=writes {
+        let disk = Disk(Rc::new(RefCell::new(DiskState { sectors: baseline.clone(), writes_left: None, writes: 0 })));
+        let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+        let mut service = ReplicaService::new(ResourceId([4; 16]), 5);
+        service.attach_device_identity(Some([6; 16]));
+        disk.0.borrow_mut().writes_left = Some(cut);
+        let _ = service.execute(&mut store, update);
+        drop(service); drop(store); disk.0.borrow_mut().writes_left = None;
+        let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+        let manifest = store.pool_manifest(object, create.peer, create.payload.scope).unwrap();
+        assert!(manifest.version == 1 || manifest.version == 2);
+        assert_eq!(manifest.generation, manifest.version);
+        let mut bytes = [0; 64];
+        let length = manifest.length as usize;
+        store.pool_read(&manifest, 0, &mut bytes[..length]).unwrap();
+        assert_eq!(&bytes[..length], if manifest.version == 1 { &[31; 63][..] } else { &[49; 64][..] });
+    }
+}
+
+// ------------------------=
 // FUNC: native_recipient_fences_every_chunk_and_recovers_ownership
 // DESC: Exercises real native transactions across service loss, owner/version/scope attacks, duplicate retries, empty content and bounded verification.
 // ------------------=
