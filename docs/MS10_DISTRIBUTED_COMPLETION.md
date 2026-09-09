@@ -24,6 +24,24 @@ Current request is the distributed Pool completion pass, not a new foundation.
 
 ### Current source evidence (not installed lifecycle acceptance)
 
+Final-source checkpoint `338bb68`: `./build.sh` passed
+(`/tmp/ms10-final-338bb68-iso-build.log`). The x86_64 ISO SHA-256 is
+`56811099b48c4360a685693abda53573e636f16c8a2162583878b57c4946ada3`;
+ARM64 is `166aea25601d21587c3f5ea44f519baa39ff5fc4ba1d10a16f754809a7d86137`.
+This includes real Pool IEF gap reconstruction, fresh shared ObjectInspect,
+observed health shared with Settings, and corrected Console health rendering.
+Fabric remains 128 passed / one existing ignored; 18 acceptance-helper behavioral
+tests pass. These new runtime paths still require installed verification.
+
+The `8b3c995` four-node run passed all six protected pairings and committed the
+directed metadata/replica configuration, then exposed a harness session-count
+bug: automatic connections already provided three sessions, but the helper
+waited for a fourth. All recorded transport error fields were zero. `994f0e9`
+instead requires the exact peer's live established wire transaction on both
+sides. A prepared-state resume preserves the failure evidence, skips pairing
+and replica grants, and explicitly configures publication. No bulk transfer
+or owner-offline success is inferred from this setup progress.
+
 Corrected `8b3c995` runtime: full `./build.sh` passed
 (`/tmp/ms10-stack-corrected-iso-build.log`). Four new independent disks passed
 ISO-detached cold boot, onboarding/authentication, unique persistent identities
