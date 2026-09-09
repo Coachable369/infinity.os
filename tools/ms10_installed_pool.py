@@ -49,8 +49,18 @@ def verify(guest):
         assert empty["data"][16:48] == hashlib.sha256(b"").digest()
         assert empty["data"][48:50] == bytes((1, 1)) and empty["value"] == 0
         assert empty["data"][:16].hex() != object_id
+        copied = call(guest, f"pool copy obj:{object_id} generation=3 version=2 nonce=3", 0x3008)
+        copy_id = copied["data"][:16].hex()
+        assert copy_id not in (object_id, empty["data"][:16].hex(), "00" * 16)
+        assert copied["data"][16:48] == hashlib.sha256(b"Changed").digest()
+        assert (copied["version"], copied["generation"]) == (1, 1)
+        copy_update = call(guest, f"pool write obj:{copy_id} generation=1 version=1 content=Independent", 0x3003)
+        assert (copy_update["version"], copy_update["generation"]) == (2, 2)
+        original = call(guest, f"pool read obj:{object_id} generation=3 version=2 offset=0 length=7", 0x3002)
+        assert original["data"] == b"Changed"
         result = {"boundary": "installed QEMU local native Pool IOP", "object_id": object_id,
                   "empty_object_id": empty["data"][:16].hex(), "create_read_update_policy": True,
+                  "copy_object_id": copy_id, "independent_copy_modification": True,
                   "critical_and_protected_report_degraded": True, "distributed_acceptance": False}
         # Preserve the committed identities before reboot so an interrupted
         # harness can resume verification without creating or rewriting data.
@@ -60,8 +70,10 @@ def verify(guest):
     guest.launch("command", 5)
     read = call(guest, f"pool read obj:{object_id} generation=3 version=2 offset=0 length=7", 0x3002)
     assert read["data"] == b"Changed" and read["object"] == object_id
+    copy_read = call(guest, f"pool read obj:{result['copy_object_id']} generation=2 version=2 offset=0 length=11", 0x3002)
+    assert copy_read["data"] == b"Independent"
     listed = call(guest, "pool list offset=0", 0xe010)
-    assert listed["value"] == 2
+    assert listed["value"] == 3
     result["cold_boot_manifest_content_policy_persistence"] = True
     result["installer_detached"] = not guest.installer
     assert result["installer_detached"]
