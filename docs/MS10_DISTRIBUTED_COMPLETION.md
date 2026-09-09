@@ -24,6 +24,28 @@ Current request is the distributed Pool completion pass, not a new foundation.
 
 ### Current source evidence (not installed lifecycle acceptance)
 
+Checkpoint `7db25d8`: full `./build.sh` passed
+(`/tmp/ms10-durable-7db25d8-build.log`). x86_64 ISO SHA-256:
+`afa68e16cfac7acad131c72bbb97da038f1ac9c10b074e71ef829e168e6cfa76`;
+ARM64: `6861f6a1dd8072bfd2d02d1380c61268c5a8529e118022ce0600047915aa135f`.
+Four fresh independent installations passed detached cold login, persistent
+unique identities and native local storage inspection:
+`/tmp/ms10-durable-installed-7db25d8/result.json`.
+
+All six new pairings and explicit durable approval responses passed before the
+publication phase hit an authentication-helper defect: successful unlock restored
+Settings (mode 8, authenticated flags 3), but the helper waited for Desktop only.
+Tool-only checkpoint `dfb6755` explicitly returns the restored app to Desktop;
+all 28 MS10 Python tests pass. No kernel change was needed for that failure.
+
+The prepared cold resume then exposed a real simultaneous reconnect collision.
+A and B both remained in `SessionResponse` with different transaction IDs and
+`UnsupportedState` (26), while two other sessions were established. Incoming
+`SESSION_INIT` rejected the existing initiating state. Both endpoint traces are
+in `node-1/pairing-lifecycle.jsonl` and `node-2/pairing-lifecycle.jsonl` under the
+same receipt directory. Runtime correction and final-source repetition remain
+required; no object transfer completed during these setup runs.
+
 The subsequent cold publication check found a runtime authority-lifetime defect:
 all six exact peer sessions re-established, but each node observed only its local
 resource instead of four resources; publication returned `RemoteError::CapabilityRequired`
