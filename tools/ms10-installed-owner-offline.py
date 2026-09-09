@@ -15,6 +15,7 @@ from ms10_installed_transfer_measurement import measure
 import ms10_installed_owner_lifecycle as lifecycle
 import ms10_installed_pool_parity as parity
 import ms10_installed_pool_event_gap as event_gap
+from ms10_installed_failure_evidence import capture_final
 
 SPEC = importlib.util.spec_from_file_location("distribution", pathlib.Path(__file__).with_name("ms10-installed-distribution.py"))
 D = importlib.util.module_from_spec(SPEC)
@@ -289,6 +290,10 @@ def main():
         report["failure"] = repr(error)
         raise
     finally:
+        try:
+            report["final_observations"] = capture_final(guests, hub, D.API.symbol)
+        except Exception as error:
+            report["final_observation_error"] = repr(error)
         for guest in guests:
             try:
                 guest.stop()

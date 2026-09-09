@@ -15,6 +15,7 @@ from ms10_ethernet_hub import EthernetHub
 import ms10_installed_fixture as fixture
 from ms10_installed_pool import call
 from ms10_installed_pointer import title_target
+from ms10_installed_failure_evidence import trace_action
 
 SPEC = importlib.util.spec_from_file_location("mesh_discovery", pathlib.Path(__file__).with_name("ms10-installed-mesh-discovery.py"))
 MESH = importlib.util.module_from_spec(SPEC)
@@ -220,6 +221,7 @@ def responsive_transfer(guest, object_id):
         assert time.monotonic() < deadline, {"no_active_transfer_for_input_probe": pool[:32]}
         time.sleep(.1)
     initial_rect = pool[246:250]
+    trace_action(guest, API.symbol, "before-pointer-position")
     target = title_target(initial_rect, state[11], state[12])
     for _ in range(60):
         state = guest.state()
@@ -233,10 +235,12 @@ def responsive_transfer(guest, object_id):
     else:
         raise AssertionError("pointer did not reach native window title bar")
     assert fixture.read_state(guest, API.symbol)[26] != 0
+    trace_action(guest, API.symbol, "after-pointer-position")
     latencies = []
     guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": True}}]})
     try:
-        for _ in range(6):
+        for step in range(6):
+            trace_action(guest, API.symbol, f"before-drag-{step}")
             before = fixture.read_state(guest, API.symbol)
             assert before[26] and struct.pack("<2Q", *before[240:242]).hex() == object_id, {"transfer_ended_before_drag": object_id}
             started = time.monotonic_ns()
@@ -247,11 +251,14 @@ def responsive_transfer(guest, object_id):
                     break
                 assert time.monotonic_ns() - started < 2_000_000_000, {"drag_did_not_move_window": after[246:251]}
                 time.sleep(.02)
+            observed_latency = time.monotonic_ns() - started
+            trace_action(guest, API.symbol, f"after-drag-{step}")
             assert after[250] == 1
             assert after[26] and struct.pack("<2Q", *after[240:242]).hex() == object_id, {"transfer_ended_during_drag": object_id}
-            latencies.append(time.monotonic_ns() - started)
+            latencies.append(observed_latency)
     finally:
         guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": False}}]})
+        trace_action(guest, API.symbol, "after-pointer-release")
     guest.wait(lambda s: s[15] == 0, "pointer button released", timeout=2)
     assert fixture.read_state(guest, API.symbol)[250] == 0
     assert max(latencies) < 2_000_000_000
@@ -259,12 +266,16 @@ def responsive_transfer(guest, object_id):
     navigation = []
     for query, mode, section in (("network", 8, 6), ("command", 5, None),
                                  ("storage", 8, 8)):
+        trace_action(guest, API.symbol, f"before-launch-{query}")
         before = fixture.read_state(guest, API.symbol)
         assert before[26] and struct.pack("<2Q", *before[240:242]).hex() == object_id
         started = time.monotonic_ns()
         guest.launch(query, mode, section)
+        trace_action(guest, API.symbol, f"after-launch-{query}")
         if query == "command":
+            trace_action(guest, API.symbol, "before-fast-input")
             guest.fast_input_probe()
+            trace_action(guest, API.symbol, "after-fast-input")
         after = fixture.read_state(guest, API.symbol)
         assert after[26] and struct.pack("<2Q", *after[240:242]).hex() == object_id
         navigation.append({"native_surface": query, "elapsed_ns": time.monotonic_ns() - started,
