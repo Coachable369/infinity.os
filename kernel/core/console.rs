@@ -24,7 +24,8 @@ use crate::ui::text_editor::TextDocument;
 
 const OUTPUT_ROWS: usize = 6;
 const LINE_CAPACITY: usize = 96;
-const COMMAND_CAPACITY: usize = 160;
+// Full ObjectId plus full peer NodeId and generation fences must fit without truncation.
+const COMMAND_CAPACITY: usize = 256;
 
 #[path = "console_diagnostics.rs"]
 mod diagnostics;
@@ -8514,7 +8515,8 @@ impl ConsoleRuntime {
                         .map(|node| is_node_console_mutation(node.schema.operation))
                         .unwrap_or(false);
                 if graph.plan_only
-                    || (graph.maximum_effect != SideEffectClass::Query && !executable_node_mutation)
+                    || (graph.maximum_effect != SideEffectClass::Query
+                        && !executable_node_mutation && !graph.executable_pool_mutation())
                 {
                     self.output
                         .write_number(b"Operation plan stages: ", graph.node_count as u64);

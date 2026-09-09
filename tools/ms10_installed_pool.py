@@ -34,14 +34,14 @@ def verify(guest):
         assert created["data"][16:48] == hashlib.sha256(payload.encode()).digest()
         assert created["data"][48:50] == bytes((3, 2))
         assert (created["version"], created["generation"]) == (1, 1)
-        inspected = call(guest, f"pool inspect object:{object_id} offset=0 generation=1", 0x300a)
+        inspected = call(guest, f"pool inspect obj:{object_id} offset=0 generation=1", 0x300a)
         assert inspected["data"][8:24].hex() == object_id
         assert struct.unpack_from("<QQ", inspected["data"], 24) == (1, len(payload))
-        read = call(guest, f"pool read object:{object_id} generation=1 version=1 offset=0 length={len(payload)}", 0x3002)
+        read = call(guest, f"pool read obj:{object_id} generation=1 version=1 offset=0 length={len(payload)}", 0x3002)
         assert read["data"] == payload.encode()
-        policy = call(guest, f"pool policy object:{object_id} generation=1 version=1 policy=protected", 0xe011)
+        policy = call(guest, f"pool policy obj:{object_id} generation=1 version=1 policy=protected", 0xe011)
         assert policy["data"][48:50] == bytes((2, 2)) and policy["generation"] == 2
-        updated = call(guest, f"pool write object:{object_id} generation=2 version=1 content=Changed", 0x3003)
+        updated = call(guest, f"pool write obj:{object_id} generation=2 version=1 content=Changed", 0x3003)
         assert (updated["version"], updated["generation"]) == (2, 3)
         assert updated["data"][:16].hex() == object_id
         assert updated["data"][16:48] == hashlib.sha256(b"Changed").digest()
@@ -58,7 +58,7 @@ def verify(guest):
     identity = guest.state()
     guest.cold_boot_proof(identity)
     guest.launch("command", 5)
-    read = call(guest, f"pool read object:{object_id} generation=3 version=2 offset=0 length=7", 0x3002)
+    read = call(guest, f"pool read obj:{object_id} generation=3 version=2 offset=0 length=7", 0x3002)
     assert read["data"] == b"Changed" and read["object"] == object_id
     listed = call(guest, "pool list offset=0", 0xe010)
     assert listed["value"] == 2

@@ -215,6 +215,48 @@ mod tests {
     use super::*;
 
     // ------------------------=
+    // FUNC: unavailable_storage_fixture
+    // DESC: Marks the host service endpoint present without fabricating storage or wire results; this test exercises ownership and timeout only.
+    // ------------------=
+    fn unavailable_storage_fixture(_: iop::remote::AuthenticatedStorageRequest)
+        -> Result<(iop::storage_protocol::StorageOperationV1, Option<iop::storage_protocol::StorageCommit>), RemoteError> {
+        Err(RemoteError::ServiceUnavailable)
+    }
+
+    // ------------------------=
+    // FUNC: storage_operator_owns_bounded_requests_and_retires_authority
+    // DESC: Exercises the shared remote storage router with session-private collection, bounded admission, lock revocation and real deadline completions.
+    // ------------------=
+    #[test]
+    fn storage_operator_owns_bounded_requests_and_retires_authority() {
+        use super::super::storage_operator::{submit_to, take_from, prune};
+        use iop::storage_protocol::{Operation, StorageOperationV1};
+        let (mut runtime, user, a, b, peer) = operator_fixture();
+        runtime.storage_handler = Some(unavailable_storage_fixture); runtime.start_all(10);
+        let payload = StorageOperationV1 { operation: Operation::ResourceInspect, object: [0; 16],
+            authority_generation: 0, manifest_generation: 0, object_version: 0,
+            offset: 0, scope: 0, value: 0, length: 0, data: [0; 64] };
+        let baseline = runtime.capabilities.count();
+        assert_eq!(submit_to(&mut runtime, user, a, peer, 0, payload), Err(RemoteError::AccessDenied));
+        let first = submit_to(&mut runtime, user, a, peer, 1, payload).unwrap();
+        assert_eq!(take_from(&mut runtime, user, b, first), Err(RemoteError::NotFound));
+        assert_eq!(take_from(&mut runtime, user, a, first), Ok(None));
+        for _ in 1..8 { submit_to(&mut runtime, user, a, peer, 1, payload).unwrap(); }
+        assert_eq!(submit_to(&mut runtime, user, a, peer, 1, payload), Err(RemoteError::QueueFull));
+        assert_eq!(runtime.capabilities.count(), baseline + 8);
+        runtime.identity.lock_session(a, user).unwrap(); prune(&mut runtime, 11);
+        assert_eq!(runtime.capabilities.count(), baseline);
+        assert_eq!(take_from(&mut runtime, user, a, first), Err(RemoteError::AccessDenied));
+        let second = submit_to(&mut runtime, user, b, peer, 1, payload).unwrap();
+        runtime.iop.poll_remote_node(&runtime.capabilities, &mut runtime.nodes, &mut runtime.node_transport.trust, 41);
+        runtime.node_clock = Some(41);
+        let result = take_from(&mut runtime, user, b, second).unwrap().unwrap();
+        assert_eq!(result.request_id, second); assert_eq!(result.result, Err(RemoteError::DeadlineExceeded));
+        assert_eq!(runtime.capabilities.count(), baseline);
+        assert_eq!(take_from(&mut runtime, user, b, second), Err(RemoteError::NotFound));
+    }
+
+    // ------------------------=
     // FUNC: operator_fixture
     // DESC: Creates bootstrapped HOST services with independently authenticated sessions and an explicitly identified local session fixture, not installed acceptance.
     // ------------------=

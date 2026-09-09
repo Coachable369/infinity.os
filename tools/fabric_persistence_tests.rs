@@ -3,6 +3,35 @@ use crate::{native_fabric::NativeReplica, runtime::fabric::{replica::*, resource
 use sha2::{Digest, Sha256};
 use std::{cell::RefCell, rc::Rc, collections::BTreeMap};
 
+// ------------------------=
+// FUNC: pool_mutation_execution_gate_preserves_plan_and_domain_boundaries
+// DESC: Exercises production dispatch admission using parsed operations, including explicit no-execute plans and foreign object commands.
+// ------------------=
+#[test]
+fn pool_mutation_execution_gate_preserves_plan_and_domain_boundaries() {
+    use crate::runtime::console_language::{parse, ParseOutcome};
+    for command in [b"pool create nonce=1 policy=critical content=Example".as_slice(),
+        b"pool write obj:01010101010101010101010101010101 generation=1 version=1 content=Changed",
+        b"pool copy obj:01010101010101010101010101010101 generation=1 version=1 nonce=2",
+        b"pool policy obj:01010101010101010101010101010101 generation=1 version=1 policy=protected"] {
+        let ParseOutcome::Graph(mut graph) = parse(command).unwrap() else { panic!("expected typed graph") };
+        assert!(graph.executable_pool_mutation());
+        graph.plan_only = true;
+        assert!(!graph.executable_pool_mutation());
+        graph.plan_only = false;
+        graph.node_count = 2;
+        assert!(!graph.executable_pool_mutation());
+    }
+    for command in [b"plan pool create nonce=1 policy=critical content=Example".as_slice(),
+        b"pool list", b"object inspect obj:01010101010101010101010101010101"] {
+        match parse(command).unwrap() {
+            ParseOutcome::Graph(graph) => assert!(!graph.executable_pool_mutation()),
+            ParseOutcome::OperationDiscovery(_) => {},
+            _ => panic!("unexpected parser state"),
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 struct Disk(Rc<RefCell<DiskState>>);
 #[derive(Default)]

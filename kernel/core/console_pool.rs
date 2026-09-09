@@ -8,12 +8,50 @@ impl ConsoleRuntime {
     // DESC: Converts validated Console arguments into the shared native storage request; output text is never parsed as state or fed to another service.
     // ------------------=
     pub(super) fn execute_pool_node(&mut self, node: &OperationNode<'_>) -> bool {
+        if node.schema.action == b"result" {
+            let Some(id) = node_argument(node, b"request").and_then(parse_u64_decimal) else {
+                self.output.write_line(b"An exact request identifier is required."); return true;
+            };
+            match crate::runtime::storage_operator::take_result(self.current_user, self.current_session, id) {
+                Ok(Some(result)) => match result.result {
+                    Ok(response) => self.render_pool_response(response),
+                    Err(error) => self.output.write_number(b"Remote storage error: ", error as u64),
+                },
+                Ok(None) => self.output.write_line(b"Storage request pending. The desktop remains available."),
+                Err(error) => self.output.write_number(b"Result access error: ", error as u64),
+            }
+            return true;
+        }
         let Some(request) = pool_request(node) else {
             self.output.write_line(b"Use a full ObjectId, bounded content, valid generation/version and an explicit policy.");
             return true;
         };
+        match (node_argument(node, b"peer"), node_argument(node, b"grant")) {
+            (Some(peer), Some(grant)) => {
+                let (Some(peer), Some(grant)) = (parse_node_id(peer), parse_u64_decimal(grant)) else {
+                    self.output.write_line(b"Use a full peer NodeId and its issued grant handle."); return true;
+                };
+                match crate::runtime::storage_operator::submit(self.current_user, self.current_session, peer, grant, request) {
+                    Ok(id) => self.output.write_number(b"Queued storage request: ", id),
+                    Err(error) => self.output.write_number(b"Storage admission error: ", error as u64),
+                }
+                return true;
+            },
+            (None, None) => {},
+            _ => { self.output.write_line(b"Remote storage requires both peer and grant."); return true; },
+        }
         match crate::runtime::storage_client::execute(self.current_user, self.current_session, request) {
-            Ok(response) => {
+            Ok(response) => self.render_pool_response(response),
+            Err(_) => self.output.write_line(b"Pool operation rejected or unavailable. Refresh the version and generation before retrying."),
+        }
+        true
+    }
+
+    // ------------------------=
+    // FUNC: render_pool_response
+    // DESC: Renders the same typed native completion for local and authenticated remote Pool operations without a second storage database.
+    // ------------------=
+    fn render_pool_response(&mut self, response: StorageOperationV1) {
                 if matches!(response.operation, Operation::ObjectCopy | Operation::ObjectCreate | Operation::ObjectUpdate | Operation::ObjectSetPolicy | Operation::PoolInspect)
                     && response.length >= 50 {
                     self.output.write_hex(b"ObjectId: ", &response.data[..16]);
@@ -27,10 +65,6 @@ impl ConsoleRuntime {
                 self.output.write_number(b"Version: ", response.object_version);
                 self.output.write_number(b"Generation: ", response.manifest_generation);
                 if response.operation == Operation::PoolInspect { self.output.write_number(b"Owned objects: ", response.value); }
-            },
-            Err(_) => self.output.write_line(b"Pool operation rejected or unavailable. Refresh the version and generation before retrying."),
-        }
-        true
     }
 }
 

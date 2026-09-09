@@ -160,6 +160,20 @@ pub struct OperationGraph<'a> {
     pub maximum_effect: SideEffectClass,
 }
 
+impl OperationGraph<'_> {
+    // ------------------------=
+    // FUNC: executable_pool_mutation
+    // DESC: Admits only implemented single-stage Pool mutations; execution still requires the authenticated IOP broker.
+    // ------------------=
+    pub fn executable_pool_mutation(&self) -> bool {
+        !self.plan_only && self.node_count == 1 && self.nodes[0].map(|node| {
+            node.schema.domain == b"pool" && matches!(node.schema.operation,
+                OperationId::ObjectCreate | OperationId::ObjectUpdate |
+                OperationId::ObjectCopy | OperationId::ObjectSetPolicy)
+        }).unwrap_or(false)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct TypedVariable {
     pub name: [u8; 24],
@@ -299,32 +313,41 @@ pub enum ConsoleLanguageError {
 }
 
 const NO_ARGS: &[ArgumentSchema] = &[];
+const POOL_PEER: ArgumentSchema = ArgumentSchema { name: b"peer", value_type: ArgumentType::NodeRef, required: false };
+const POOL_GRANT: ArgumentSchema = ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: false };
+const POOL_RESULT_ARGS: &[ArgumentSchema] = &[ArgumentSchema { name: b"request", value_type: ArgumentType::Text, required: true }];
 const POOL_CREATE_ARGS: &[ArgumentSchema] = &[
+    POOL_PEER, POOL_GRANT,
     ArgumentSchema { name: b"nonce", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"policy", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"content", value_type: ArgumentType::Text, required: false },
 ];
 const POOL_INSPECT_ARGS: &[ArgumentSchema] = &[
+    POOL_PEER, POOL_GRANT,
     ArgumentSchema { name: b"offset", value_type: ArgumentType::Text, required: false },
     ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: false },
 ];
 const POOL_POLICY_ARGS: &[ArgumentSchema] = &[
+    POOL_PEER, POOL_GRANT,
     ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"policy", value_type: ArgumentType::Text, required: true },
 ];
 const POOL_READ_ARGS: &[ArgumentSchema] = &[
+    POOL_PEER, POOL_GRANT,
     ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"offset", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"length", value_type: ArgumentType::Text, required: true },
 ];
 const POOL_WRITE_ARGS: &[ArgumentSchema] = &[
+    POOL_PEER, POOL_GRANT,
     ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"content", value_type: ArgumentType::Text, required: false },
 ];
 const POOL_COPY_ARGS: &[ArgumentSchema] = &[
+    POOL_PEER, POOL_GRANT,
     ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"nonce", value_type: ArgumentType::Text, required: true },
@@ -648,20 +671,22 @@ pub static DOMAINS: &[DomainSchema] = &[
 ];
 
 pub static OPERATIONS: &[OperationSchema] = &[
+    op(b"pool", b"result", b"Collect an authenticated operator's asynchronous storage result", OperationId::PoolInspect,
+        ValueType::Unit, ValueType::Object, None, POOL_RESULT_ARGS, 1, SideEffectClass::Query, b"pool result request=1"),
     op(b"pool", b"copy", b"Create an independent object sharing immutable content", OperationId::ObjectCopy,
-        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_COPY_ARGS, 1, SideEffectClass::ReversibleChange, b"pool copy object:<id> generation=1 version=1 nonce=2"),
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_COPY_ARGS, 1, SideEffectClass::ReversibleChange, b"pool copy obj:<id> generation=1 version=1 nonce=2"),
     op(b"pool", b"list", b"Inspect one owner-scoped committed Pool object", OperationId::PoolInspect,
         ValueType::Unit, ValueType::ObjectSet, None, POOL_INSPECT_ARGS, 1, SideEffectClass::Query, b"pool list offset=0"),
     op(b"pool", b"create", b"Create a native Pool object with an explicit protection contract", OperationId::ObjectCreate,
         ValueType::Unit, ValueType::Object, None, POOL_CREATE_ARGS, 1, SideEffectClass::ReversibleChange, b"pool create nonce=1 policy=critical content=Example"),
     op(b"pool", b"inspect", b"Read a bounded canonical manifest page", OperationId::ObjectInspect,
-        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_INSPECT_ARGS, 1, SideEffectClass::Query, b"pool inspect object:<id> offset=0"),
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_INSPECT_ARGS, 1, SideEffectClass::Query, b"pool inspect obj:<id> offset=0"),
     op(b"pool", b"policy", b"Commit a generation-fenced protection policy", OperationId::ObjectSetPolicy,
-        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_POLICY_ARGS, 1, SideEffectClass::ReversibleChange, b"pool policy object:<id> generation=1 version=1 policy=critical"),
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_POLICY_ARGS, 1, SideEffectClass::ReversibleChange, b"pool policy obj:<id> generation=1 version=1 policy=critical"),
     op(b"pool", b"read", b"Read a verified immutable Pool range", OperationId::ObjectRead,
-        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_READ_ARGS, 1, SideEffectClass::Query, b"pool read object:<id> generation=1 version=1 offset=0 length=8"),
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_READ_ARGS, 1, SideEffectClass::Query, b"pool read obj:<id> generation=1 version=1 offset=0 length=8"),
     op(b"pool", b"write", b"Atomically replace bounded content and its manifest", OperationId::ObjectUpdate,
-        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_WRITE_ARGS, 1, SideEffectClass::ReversibleChange, b"pool write object:<id> generation=1 version=1 content=Updated"),
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_WRITE_ARGS, 1, SideEffectClass::ReversibleChange, b"pool write obj:<id> generation=1 version=1 content=Updated"),
     op(
         b"system",
         b"status",

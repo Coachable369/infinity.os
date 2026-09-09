@@ -62,6 +62,11 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         data[108] = runtime.services.inspect(crate::runtime::service::SERVICE_REPLICA_STORAGE)
             .map(|service| service.state as u64 + 1).unwrap_or(0);
         data[109] = runtime.fabric_resources.entries().iter().flatten().count() as u64;
+        data[489] = runtime.storage_operator.last_submitted;
+        if let Some(result) = runtime.storage_operator.last_completion {
+            data[490] = result.request_id; data[491] = result.correlation_id; data[492] = result.causation_id;
+            data[493] = result.result.err().map(|e| e as u64 + 2).unwrap_or(1);
+        }
         if let Some(observation) = runtime.storage_last_observation {
             if let Ok(bytes) = observation.encode() { data[110] = 1; words(&mut data[111..128], &bytes); }
         }
