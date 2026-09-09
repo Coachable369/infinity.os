@@ -15,6 +15,58 @@ struct Fixture {
 }
 
 // ------------------------=
+// FUNC: reused_slot_preserves_authenticated_request_order
+// DESC: Reuses a completed low slot through real request APIs and admits production-selected requests through the existing authenticated router replay gate.
+// ------------------=
+#[test]
+fn reused_slot_preserves_authenticated_request_order(){
+    let mut f=Fixture::new();
+    let first=f.request(5,30).unwrap();let older=f.request(5,30).unwrap();
+    let response=f.reply(first);f.admit(response,6).unwrap();
+    f.router.remote.take_result(f.caller,first).unwrap();
+    let newer=f.request(6,30).unwrap();assert!(first<older&&older<newer);
+    for p in f.router.remote.pending.iter_mut().flatten(){p.sent=false;}
+    let mut ids=[0;2];
+    for id in &mut ids {
+        let index=f.router.remote.next_unsent().unwrap();
+        let request=f.router.remote.pending[index].as_ref().unwrap().request;
+        *id=request.message.id;
+        f.admit(data(f.peer,request.reference,request.message),7).unwrap();
+        f.router.remote.pending[index].as_mut().unwrap().sent=true;
+    }
+    assert_eq!(ids,[older,newer]);
+    let old=f.router.remote.pending.iter().flatten().find(|p|p.request.message.id==older).unwrap().request;
+    assert_eq!(f.admit(data(f.peer,old.reference,old.message),8),Err(RemoteError::ReplayRejected));
+}
+
+// ------------------------=
+// FUNC: unsent_stream_heads_are_fair_under_backpressure
+// DESC: Exercises fixed scheduler state with two peer streams, proving a blocked head is retried without selecting its newer request or starving another peer.
+// ------------------=
+#[test]
+fn unsent_stream_heads_are_fair_under_backpressure(){
+    let mut f=Fixture::new();
+    for _ in 0..4{f.request(5,30).unwrap();}
+    for (i,p) in f.router.remote.pending.iter_mut().enumerate().take(4){
+        let p=p.as_mut().unwrap();p.sent=false;
+        // Scheduler-only second stream: no fabricated peer enters transport or admission.
+        if i>=2{p.request.peer=NodeId([0x91;32]);}
+    }
+    assert_eq!(f.router.remote.next_unsent(),Some(0));
+    assert_eq!(f.router.remote.next_unsent(),Some(2));
+    assert_eq!(f.router.remote.next_unsent(),Some(0));
+    f.router.remote.pending[2].as_mut().unwrap().sent=true;
+    assert_eq!(f.router.remote.next_unsent(),Some(3));
+    f.router.remote.pending[3].as_mut().unwrap().sent=true;
+    assert_eq!(f.router.remote.next_unsent(),Some(0));
+    // Terminal/cancelled older work does not indefinitely fence this stream.
+    f.router.remote.pending[0]=None;
+    assert_eq!(f.router.remote.next_unsent(),Some(1));
+    f.router.remote.pending[1].as_mut().unwrap().sent=true;
+    assert_eq!(f.router.remote.next_unsent(),None);
+}
+
+// ------------------------=
 // FUNC: storage_grants_require_human_approval_and_one_registered_operation
 // DESC: Exercises the real node grant executor with storage operation IDs and proves explicit consent, exact operation, scope and expiry remain enforced.
 // ------------------=

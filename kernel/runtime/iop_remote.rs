@@ -106,6 +106,7 @@ pub struct RemoteState {
     mutation_service_ready: bool,
     next: u64,
     pending: [Option<Pending>; CAPACITY],
+    send_cursor: usize,
     incoming: [Option<Request>; CAPACITY],
     responses: [Option<Request>; CAPACITY],
     streams: [Option<ReplayStream>; 4],
@@ -113,6 +114,21 @@ pub struct RemoteState {
     pub executed: u64,
 }
 impl RemoteState {
+    // ------------------------=
+    // FUNC: next_unsent
+    // DESC: Selects the oldest unsent request per authenticated peer stream, round-robin across eligible heads so backpressure cannot monopolize other peers.
+    // ------------------=
+    fn next_unsent(&mut self)->Option<usize>{
+        for offset in 0..CAPACITY{
+            let index=(self.send_cursor+offset)%CAPACITY;
+            let Some(p)=self.pending[index].as_ref().filter(|p|!p.sent&&p.result.is_none())else{continue};
+            if self.pending.iter().flatten().any(|older|!older.sent&&older.result.is_none()
+                &&older.request.peer==p.request.peer&&older.request.reference==p.request.reference
+                &&older.request.message.id<p.request.message.id){continue}
+            self.send_cursor=(index+1)%CAPACITY;return Some(index);
+        }
+        None
+    }
     // ------------------------=
     // FUNC: new
     // DESC: Allocates fixed remote correlation, admission, response and replay tables without ambient authority.
@@ -123,6 +139,7 @@ impl RemoteState {
             mutation_service_ready: false,
             next: 1,
             pending: [None; CAPACITY],
+            send_cursor: 0,
             incoming: [None; CAPACITY],
             responses: [None; CAPACITY],
             streams: [None; 4],
@@ -644,13 +661,8 @@ impl IopRouter {
                 });
             }
         }
-        if let Some(p) = self
-            .remote
-            .pending
-            .iter_mut()
-            .flatten()
-            .find(|p| !p.sent && p.result.is_none())
-        {
+        if let Some(index) = self.remote.next_unsent() {
+            let p=self.remote.pending[index].as_mut().unwrap();
             let mut message = p.request.message;
             message.lease = (p.request.expires - now) as u32;
             if let Ok((bytes, length)) = encode(message) {
