@@ -5,6 +5,9 @@ use fixture::Fixture;
 #[cfg(test)]
 #[path="simultaneous_reconnect.rs"]
 mod simultaneous_reconnect;
+#[cfg(test)]
+#[path="confirmation_budget.rs"]
+mod confirmation_budget;
 
 // ------------------------=
 // FUNC: advance_four
