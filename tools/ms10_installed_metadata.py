@@ -7,11 +7,13 @@ import time
 # FUNC: invoke
 # DESC: Submits once, then collects only that admitted request; stale observations cannot satisfy completion.
 # ------------------=
-def invoke(guest, command, projection, timeout=180, clock=time.monotonic):
+def invoke(guest, command, projection, timeout=180, clock=time.monotonic, allow_unadmitted=False):
     before = projection()[252]
     guest.command(command)
     admitted = projection()
     request = admitted[252]
+    if request == before and allow_unadmitted:
+        return None
     assert request != before and request >> 62 == 3, {"not_admitted": request, "previous": before}
     deadline = clock() + timeout
     collections = 0
@@ -42,3 +44,24 @@ def read_path(guest, path, object_id, expected, projection, offset=0, timeout=18
     assert result["operation"] == 0x3002 and result["object"] == object_id
     assert result["data"] == expected
     return result
+
+
+# ------------------------=
+# FUNC: read_path_ready
+# DESC: Polls only an eventual read-only namespace binding, records every non-admission, and accepts solely correlated completed bytes.
+# ------------------=
+def read_path_ready(guest, path, object_id, expected, projection, timeout=180, clock=time.monotonic):
+    started = clock()
+    attempts = []
+    while clock() - started < timeout:
+        remaining = timeout - (clock() - started)
+        result = invoke(guest, f"pool read {path} offset=0 length={len(expected)}", projection,
+                        remaining, clock, allow_unadmitted=True)
+        attempts.append({"elapsed_seconds": clock() - started, "admitted": result is not None})
+        if result is None:
+            continue
+        assert result["operation"] == 0x3002 and result["object"] == object_id
+        assert result["data"] == expected
+        result["readiness_attempts"] = attempts
+        return result
+    raise AssertionError({"namespace_readiness_deadline": path, "attempts": attempts})

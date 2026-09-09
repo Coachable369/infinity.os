@@ -1,0 +1,90 @@
+"""Explicit four-node authority graph for owner-offline installed acceptance.
+
+These helpers grant only native operations through ordinary operator controls.
+They do not establish completion, extend expired authority, or inject storage.
+"""
+from concurrent.futures import ThreadPoolExecutor
+import struct
+
+
+# ------------------------=
+# FUNC: grant_node
+# DESC: Issues one node's directed metadata and resource-publication authority, plus A's exact replica operations on recipients.
+# ------------------=
+def grant_node(guest, identities):
+    guest.launch("command", 5)
+    records = {}
+    for index, peer in enumerate(identities):
+        if index + 1 == guest.number:
+            continue
+        guest.peer_policy(peer, "object", "allow")
+        guest.peer_policy(peer, "namespace", "allow")
+        item = {"metadata": guest.peer_grant(peer, "pool-metadata"),
+                "publication": guest.peer_grant(peer, "resource-advertise")}
+        if index == 0:
+            item["replica"] = [guest.peer_grant(peer, operation) for operation in
+                               ("transfer-begin", "transfer-chunk", "transfer-commit",
+                                "replica-inspect", "object-read", "replica-delete")]
+        records[peer] = item
+    return records
+
+
+# ------------------------=
+# FUNC: configure_node
+# DESC: Configures caller-side grants from each receiving peer, maintaining the direction of capability issuance.
+# ------------------=
+def configure_node(guest, identities, grants):
+    local = identities[guest.number - 1]
+    guest.launch("command", 5)
+    for index, peer in enumerate(identities):
+        if peer == local:
+            continue
+        issued = grants[index][local]
+        guest.command(f"pool metadata-authority peer=node:{peer} grant={issued['metadata']} lease=3600 confirm=true")
+        if guest.number == 1:
+            replica = issued["replica"]
+            guest.command(f"pool participate peer=node:{peer} begin={replica[0]} chunk={replica[1]} commit={replica[2]} inspect={replica[3]} read={replica[4]} lease=3600 confirm=true")
+            guest.command(f"pool retire-authority peer=node:{peer} grant={replica[5]} lease=3600 confirm=true")
+
+
+# ------------------------=
+# FUNC: publish_node
+# DESC: Starts leased publication only after authenticated sessions exist, avoiding deliberate failure of a subscription's first send.
+# ------------------=
+def publish_node(guest, identities, grants):
+    local = identities[guest.number - 1]
+    guest.launch("command", 5)
+    for index, peer in enumerate(identities):
+        if peer != local:
+            grant = grants[index][local]["publication"]
+            guest.command(f"pool advertise peer=node:{peer} grant={grant}")
+
+
+# ------------------------=
+# FUNC: establish_authority
+# DESC: Builds all twelve directed metadata/publication relationships in parallel per node, then opens real sessions last.
+# ------------------=
+def establish_authority(guests, distribution):
+    identities = [distribution.identity(guest) for guest in guests]
+    assert len(guests) == len(set(identities)) == 4
+    with ThreadPoolExecutor(max_workers=4) as workers:
+        futures = [workers.submit(grant_node, guest, identities) for guest in guests]
+        grants = [future.result() for future in futures]
+    with ThreadPoolExecutor(max_workers=4) as workers:
+        futures = [workers.submit(configure_node, guest, identities, grants) for guest in guests]
+        for future in futures:
+            future.result()
+    for left in range(4):
+        for right in range(left + 1, 4):
+            distribution.open_session(guests[left], guests[right])
+    with ThreadPoolExecutor(max_workers=4) as workers:
+        futures = [workers.submit(publish_node, guest, identities, grants) for guest in guests]
+        for future in futures:
+            future.result()
+    observations = []
+    for guest in guests:
+        state = guest.wait(lambda s: s[496] == 3, "all three actual resource publishers", timeout=90)
+        assert struct.pack("<4Q", *state[16:20]).hex() == identities[guest.number - 1]
+        observations.append({"node": guest.number, "online_resources": state[496],
+                             "observed_clock": state[10], "sessions": state[26]})
+    return observations

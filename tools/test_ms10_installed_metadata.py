@@ -1,7 +1,7 @@
 """Behavioral acceptance-harness correlation tests; no rendered text oracle."""
 import struct
 import unittest
-from ms10_installed_metadata import invoke
+from ms10_installed_metadata import invoke, read_path_ready
 
 
 class Guest:
@@ -37,6 +37,16 @@ class Guest:
 
 class MetadataCorrelation(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_namespace_readiness_records_non_admission
+    # DESC: Eventual read-only lookup records its initial miss and requires a later exact correlated payload.
+    # ------------------=
+    def test_namespace_readiness_records_non_admission(self):
+        guest = DelayedGuest()
+        result = read_path_ready(guest, "/Shared/Example", "00" * 16, b"abc", lambda: guest.pool[:])
+        self.assertEqual([attempt["admitted"] for attempt in result["readiness_attempts"]], [False, True])
+        self.assertEqual(result["collections"], 2)
+
+    # ------------------------=
     # FUNC: test_stale_success_requires_exact_consumed_request
     # DESC: A previous successful payload cannot complete the new request; submission occurs only once.
     # ------------------=
@@ -66,6 +76,20 @@ class MetadataCorrelation(unittest.TestCase):
         with self.assertRaises(AssertionError):
             invoke(guest, "operation", lambda: guest.pool[:])
         self.assertEqual(len(guest.commands), 1)
+
+
+class DelayedGuest(Guest):
+    # ------------------------=
+    # FUNC: command
+    # DESC: Leaves the first lookup unadmitted, then admits once and publishes only on the second collection.
+    # ------------------=
+    def command(self, command):
+        self.commands.append(command)
+        if len(self.commands) == 2:
+            self.pool[252] += 1
+        if len(self.commands) == 4:
+            self.pool[253] = self.pool[252]
+        return self.state
 
 
 if __name__ == "__main__":
