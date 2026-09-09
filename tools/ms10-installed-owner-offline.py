@@ -7,6 +7,7 @@ import pathlib
 import struct
 import hashlib
 import time
+import time
 from ms10_ethernet_hub import EthernetHub
 import ms10_installed_fixture as fixture
 from ms10_installed_closure_setup import establish_authority, resume_publication, save_prepared, validate_prepared_receipt, artifact_hash
@@ -159,6 +160,27 @@ def validate_boot_resume(failed, baseline, identities, digest, length, seed):
 
 
 # ------------------------=
+# FUNC: validate_boot_budget
+# DESC: Makes the measured extended firmware-readiness budget explicit and restricts it to serial startup.
+# ------------------=
+def validate_boot_budget(serial, budget):
+    assert budget in (120, 300) and (budget == 120 or serial)
+
+
+# ------------------------=
+# FUNC: await_boot_readiness
+# DESC: Observes coherent installed login readiness before authentication without altering authentication or networking deadlines.
+# ------------------=
+def await_boot_readiness(guest, budget, started, clock=time.monotonic):
+    state = guest.wait(lambda value: value[3] == 1 and value[4] in (9, 10),
+                       "installed login ready before authentication", timeout=budget)
+    elapsed = clock() - started
+    return {"node": guest.number, "budget_seconds": budget, "observed_seconds": elapsed,
+            "within_original_120s": elapsed <= 120, "installed": state[3], "mode": state[4],
+            "boundary": "explicit boot readiness only; authentication retains its original timeout"}
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Uses independently installed nodes and ordinary native operations; loses original A and never requests explicit repair.
 # ------------------=
@@ -177,6 +199,7 @@ def main():
     parser.add_argument("--resume-boot", action="store_true")
     parser.add_argument("--baseline-receipt", type=pathlib.Path)
     parser.add_argument("--serial-boot", action="store_true")
+    parser.add_argument("--boot-readiness-timeout", type=int, choices=(120, 300), default=120)
     parser.add_argument("--length", type=int, choices=(32768, 65536, 262144), default=32768)
     parser.add_argument("--seed", type=int, default=17)
     parser.add_argument("--lifecycle", action="store_true")
@@ -193,6 +216,7 @@ def main():
     assert not (args.resume_pairing and (args.retry_measurement or args.resume_published or args.resume_prepared or args.resume_measured or args.reuse_configured))
     assert not (args.resume_boot and (args.resume_pairing or args.retry_measurement or args.resume_published or args.resume_prepared or args.resume_measured or args.reuse_configured))
     assert args.resume_boot == (args.baseline_receipt is not None)
+    validate_boot_budget(args.serial_boot, args.boot_readiness_timeout)
     provenance = json.loads((work / "result.json").read_text())
     assert provenance["independent_installs"] == 4
     identities = [entry["node_id"] for entry in provenance["nodes"]]
@@ -272,6 +296,7 @@ def main():
               "resume_published": args.resume_published,
               "retry_measurement": args.retry_measurement,
               "resume_boot": args.resume_boot, "serial_boot": args.serial_boot,
+              "boot_readiness_timeout": args.boot_readiness_timeout, "boot_readiness": [],
               "baseline_receipt": str(args.baseline_receipt.resolve()) if args.baseline_receipt else None,
               "length": args.length, "seed": args.seed,
               "remaining_gates": ["stale-owner-return", "ordinary-update-copy-delete",
@@ -282,8 +307,10 @@ def main():
             guest = D.API.Guest(work, number, args.firmware, reuse=True)
             guests.append(guest)
             guest.mesh_port, guest.mesh_connect = hub.port, True
+            boot_started = time.monotonic()
             guest.boot(False)
             if args.serial_boot:
+                report["boot_readiness"].append(await_boot_readiness(guest, args.boot_readiness_timeout, boot_started))
                 guest.authenticate()
         if not args.serial_boot:
             with ThreadPoolExecutor(max_workers=4) as workers:

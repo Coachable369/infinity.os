@@ -14,6 +14,32 @@ SPEC.loader.exec_module(MODULE)
 
 class CaseFence(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_explicit_serial_boot_budget_observation
+    # DESC: Extended readiness is opt-in serial-only and preserves evidence that measured login exceeded the original deadline.
+    # ------------------=
+    def test_explicit_serial_boot_budget_observation(self):
+        MODULE.validate_boot_budget(True, 300)
+        MODULE.validate_boot_budget(False, 120)
+        with self.assertRaises(AssertionError): MODULE.validate_boot_budget(False, 300)
+        with self.assertRaises(AssertionError): MODULE.validate_boot_budget(True, 600)
+        class Guest:
+            number = 1
+            # ------------------------=
+            # FUNC: wait
+            # DESC: Checks the exact requested readiness budget and rejects uninitialized firmware state.
+            # ------------------=
+            def wait(self, predicate, label, timeout):
+                assert timeout == 300
+                value = [0]*512
+                assert not predicate(value)
+                value[3:5] = [1, 9]
+                assert predicate(value)
+                return value
+        observation = MODULE.await_boot_readiness(Guest(), 300, 10, clock=lambda: 222)
+        self.assertEqual(observation["observed_seconds"], 212)
+        self.assertFalse(observation["within_original_120s"])
+
+    # ------------------------=
     # FUNC: test_boot_resume_requires_successful_independent_baseline
     # DESC: A failed pre-configuration boot can resume from a prior size, but object mutations and altered artifact/identity cannot.
     # ------------------=
