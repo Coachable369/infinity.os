@@ -11,7 +11,7 @@ pub const MAX_LINKS: usize = 4;
 const CHALLENGE: &[u8; 8] = b"INDCH001";
 const RESPONSE: &[u8; 8] = b"INDRS001";
 const RESPONSE_BYTES: usize = 199;
-pub const SESSION_DATA_PER_SECOND:u8=16;
+pub const SESSION_DATA_PER_SECOND:u8=64;
 
 #[derive(Clone, Copy)]
 pub struct LinkAuthority {
@@ -174,7 +174,7 @@ impl NodeTransport {
 
     // ------------------------=
     // FUNC: poll
-    // DESC: Services one round-robin link without waiting: one RX/TX per poll, sixteen live-session DATA attempts and one control crypto operation per link per second.
+    // DESC: Services one round-robin link without waiting: one RX/TX per poll, sixty-four live-session DATA attempts and one control crypto operation per link per second.
     // ------------------=
     pub fn poll(&mut self, nodes: &mut NodeRuntime, network: &mut NetworkRuntime, capabilities: &CapabilityManager, now: u64) -> Option<DiscoveryChange> {
         self.poll_calls = self.poll_calls.saturating_add(1);

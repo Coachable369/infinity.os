@@ -2,6 +2,7 @@
 #[path = "../wire-trust-fixture.rs"]
 mod fixture;
 use fixture::Fixture;
+use crate::runtime::node::transport::SESSION_DATA_PER_SECOND;
 // ------------------------=
 // FUNC: step
 // DESC: Executes one millisecond opportunity with four-frame NIC bounds and one production poll per node.
@@ -20,8 +21,10 @@ fn step(a: &mut Fixture, b: &mut Fixture, ms: &mut u64) {
                 .deliver_datagram(p, &mut peer.network.policy, &peer.capabilities, now)
                 .unwrap();
         }
+        let received_before=peer.transport.received_packets;
         peer.transport
             .poll(&mut peer.nodes, &mut peer.network, &peer.capabilities, now);
+        assert!(peer.transport.received_packets-received_before<=1);
     }
     *ms += 1;
 }
@@ -106,6 +109,7 @@ fn measure_case() {
     let start = ms;
     let mut admitted = 0u64;
     let mut received = 0u64;
+    let mut per_second=[0u64;10];
     while ms < start + 10_000 {
         let mut payload = [0; 64];
         payload[..8].copy_from_slice(&admitted.to_le_bytes());
@@ -120,10 +124,13 @@ fn measure_case() {
         if let Some(data) = b.transport.trust.receive_data() {
             assert_eq!(&data.bytes[..8], &received.to_le_bytes());
             received += 1;
+            let second=((ms-1-start)/1000) as usize;
+            per_second[second]+=1;
         }
     }
-    assert!(received > 10);
-    assert!(received <= 160);
+    assert!(received > 160);
+    assert!(received <= 10*SESSION_DATA_PER_SECOND as u64);
+    assert!(per_second.iter().all(|n|*n<=SESSION_DATA_PER_SECOND as u64));
     println!("MEASURE production transport: polls=10000 virtual_ms=10000 admitted={admitted} delivered={received} payload_bytes={}",received*64);
 }
 // ------------------------=
@@ -176,7 +183,7 @@ fn adversarial_case() {
     a.transport.trust.sent(a.connection);
     let mut forged = valid;
     forged.bytes[valid.length as usize - 1] ^= 1;
-    for _ in 0..16 {
+    for _ in 0..SESSION_DATA_PER_SECOND {
         let before = b.transport.rejected_packets;
         inject(&mut b, forged, now);
         assert_eq!(b.transport.rejected_packets, before + 1);
@@ -468,7 +475,7 @@ fn fairness_case() {
         }
     }
     for n in &received[1..] {
-        assert!(*n > 10 && *n <= 160, "{received:?}");
+        assert!(*n > 160 && *n <= 10*SESSION_DATA_PER_SECOND as u64, "{received:?}");
     }
     assert!(received[1..].iter().max().unwrap() - received[1..].iter().min().unwrap() <= 1);
 }
