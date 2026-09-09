@@ -154,6 +154,32 @@ manifest and a checksum-invalid kernel are rejected before kernel handoff.
 
 ## Tested VM configuration and support
 
+### VirtualBox ARM64 installation entropy
+
+Installation identities require a boot-owned random seed. The UEFI loader first
+uses `EFI_RNG_PROTOCOL`, then TPM 2.0 `GetRandom` through `EFI_TCG2_PROTOCOL`.
+TPM responses are bounded and validated, including partial replies. No clock,
+MAC address, UUID, or other predictable value is substituted for randomness.
+Both the ISO loader and the installed EFI loader include this path.
+
+`re-provision.sh` enables TPM 2.0 by default. For an existing VirtualBox ARM VM,
+power it off and enable TPM 2.0 before booting the current installer. Without
+either random source, planning stops before disk writes and reports
+`InstallationEntropyUnavailable` rather than the generic `InvalidPlan` error.
+
+`make installer-entropy-test` verifies the TPM wire exchange, partial replies,
+malformed/error rejection, bounded requests, failure-output clearing, and the
+actual reprovisioner's TPM configuration using an isolated host fixture.
+
+Verified 2026-09-09 on a separate VirtualBox ARM64 VM (4 GiB RAM, 2 CPUs,
+16 GiB blank VDI, VirtioSCSI, TPM 2.0): date/time to plan transition, explicit
+erase approval, completed installation, power off, ISO detachment, and cold
+boot to the installed first-boot configuration wizard. The ARM64 ISO SHA-256
+was `44be44ed121d5b6325a9cf80a19d68ef4089ef4555164a2b970d21bbd037d617`.
+TPM behavioral tests also passed with AddressSanitizer/UndefinedBehaviorSanitizer;
+ARM64 build and installed kernel/EFI loader artifact parity passed. This is
+installer/installed-boot evidence, not a claim of broader milestone acceptance.
+
 | Item | Tested value |
 |---|---|
 | Architecture | x86_64 |

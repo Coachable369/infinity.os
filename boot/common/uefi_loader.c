@@ -4,6 +4,7 @@
 #include "video_modes.h"
 
 #define EFIAPI __attribute__((ms_abi))
+#include "tpm_random.h"
 #define EFI_SUCCESS 0
 #define EFI_BUFFER_TOO_SMALL UINT64_C(0x8000000000000005)
 #define EFI_LOADER_DATA 2
@@ -396,7 +397,7 @@ static const uint8_t infinity_partition_type[16] =
 
 // ------------------------=
 // FUNC: gather_firmware_entropy
-// DESC: Obtains one boot-scoped seed from the UEFI RNG protocol without inventing fallback randomness.
+// DESC: Obtains one boot-scoped seed from UEFI RNG or TPM2 GetRandom without inventing fallback randomness.
 // ------------------=
 static void gather_firmware_entropy(EFI_SYSTEM_TABLE *system, InfinityBootInfo *info) {
     EFI_RNG_PROTOCOL *rng = NULL;
@@ -405,7 +406,15 @@ static void gather_firmware_entropy(EFI_SYSTEM_TABLE *system, InfinityBootInfo *
             (void **)&rng) == EFI_SUCCESS && rng && rng->get_rng &&
         rng->get_rng(rng, NULL, sizeof(info->firmware_entropy), info->firmware_entropy) == EFI_SUCCESS) {
         info->firmware_entropy_valid = 1;
+        return;
     }
+    // VirtualBox ARM has no EFI_RNG_PROTOCOL, but exposes TCG2 when the VM's
+    // TPM 2.0 is enabled. Use its real random source, not time/MAC/UUID hashes.
+    EFI_GUID tcg2_guid = {0x607f766c, 0x7455, 0x42be,
+        {0x93, 0x0b, 0xe4, 0xd7, 0x6d, 0xb2, 0x72, 0x0f}};
+    InfinityTcg2 *tpm = NULL;
+    if (system->boot_services->locate_protocol(&tcg2_guid, NULL, (void **)&tpm) == EFI_SUCCESS &&
+        infinity_tpm_random(tpm, info->firmware_entropy)) info->firmware_entropy_valid = 1;
 }
 
 // ------------------------=

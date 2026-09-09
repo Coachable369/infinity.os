@@ -200,6 +200,7 @@ pub enum StorageError {
     VerifySystemManifest,
     VerifySystemComponents,
     ActivateGeneration,
+    InstallationEntropyUnavailable,
 }
 
 pub struct StorageManager;

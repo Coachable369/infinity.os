@@ -24,6 +24,7 @@ else
 fi
 make x86_64
 make aarch64
+make installer-entropy-test
 make active-painter-test
 make video-driver-test
 python3 tools/installed-kernel-parity-test.py

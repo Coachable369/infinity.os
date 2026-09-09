@@ -12041,6 +12041,7 @@ fn storage_error_text(error: StorageError) -> &'static [u8] {
     match error {
         StorageError::NoDevice => b"no supported storage device",
         StorageError::InvalidPlan => b"provisioning plan validation failed",
+        StorageError::InstallationEntropyUnavailable => b"firmware randomness unavailable; enable TPM 2.0 and restart",
         StorageError::InsufficientCapacity => b"insufficient capacity",
         StorageError::Arithmetic => b"storage plan arithmetic overflow",
         StorageError::WriteGpt => b"unable to write GPT header or entries",

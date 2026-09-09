@@ -65,6 +65,11 @@ case "$command_name" in
     modifyvm)
         while test "$#" -gt 0; do
             case "$1" in
+                --tpm-type)
+                    shift
+                    test "$1" = 2.0 || exit 3
+                    printf '200\n' > "$TEST_STATE_PATH/tpm-version"
+                    ;;
                 --memory)
                     shift
                     printf '%s\n' "$1" > "$TEST_STATE_PATH/memory"

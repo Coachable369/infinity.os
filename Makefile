@@ -218,7 +218,7 @@ $(BUILD)/x86_64/kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/x86_64/inst
 $(BUILD)/x86_64/kernel.elf: $(BUILD)/x86_64/kernel.o linker/x86_64.ld
 	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libkernel.a
 
-$(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h
+$(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h
 	@mkdir -p $(@D)
 	$(CLANG) --target=x86_64-pc-windows-msvc -ffreestanding -fshort-wchar -fno-stack-protector \
 		-mno-red-zone -O2 -Wall -Wextra -Werror -c $< -o $@
@@ -307,6 +307,13 @@ object-test namespace-test crash-recovery-test:
 
 object-vm-test:
 	@tools/object-vm-test.sh
+
+.PHONY: installer-entropy-test
+installer-entropy-test:
+	@mkdir -p build/behavior-tests
+	cc -std=c11 -Wall -Wextra -Werror tools/tpm-random-test.c -o build/behavior-tests/tpm-random-test
+	build/behavior-tests/tpm-random-test
+	python3 tools/re-provision-tpm-test.py
 
 .PHONY: fabric-test
 fabric-test:
@@ -484,7 +491,7 @@ $(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld
 $(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld
 	$(LD_LLD) -nostdlib -static -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a
 
-$(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h
+$(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h
 	@mkdir -p $(@D)
 	$(CLANG) --target=aarch64-pc-windows-msvc -DINFINITY_AARCH64 -ffreestanding -fshort-wchar \
 		-fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -c $< -o $@

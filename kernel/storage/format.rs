@@ -54,7 +54,7 @@ pub fn plan_entire_disk(
             super::layout::LayoutError::Arithmetic => StorageError::Arithmetic,
         })?;
     let identities = super::install_identity::for_target(device.identity)
-        .ok_or(StorageError::InvalidPlan)?;
+        .ok_or(StorageError::InstallationEntropyUnavailable)?;
     let mut spaces = profile_spaces(profile);
     for (space, id) in spaces.iter_mut().zip(identities.spaces) { space.uuid = id; }
     Ok(StorageProvisioningPlan {

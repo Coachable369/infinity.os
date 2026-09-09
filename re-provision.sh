@@ -114,6 +114,7 @@ create_arm64_vm() {
         --cpus "$cpu_count" \
         --cpu-profile host \
         --firmware efi \
+        --tpm-type 2.0 \
         --chipset armv8virtual \
         --vram 128 \
         --graphicscontroller vmsvga \
