@@ -6,6 +6,7 @@ import time
 import ms10_installed_fixture as fixture
 from ms10_installed_metadata import invoke, read_path, read_path_ready
 from ms10_installed_pool import call
+import ms10_installed_reclamation as reclamation
 
 
 # ------------------------=
@@ -163,6 +164,7 @@ def run(guests, distribution, verifier, report):
     content_ids = [chunk["content"] for chunk in original_disk["chunks"]]
     before_delete = inspect_lifecycle(a, verifier, owner, object_id, content_ids, "before-delete")
     assert before_delete["object_present"]
+    remote_original = reclamation.capture((b, c, replacement), verifier, owner, object_id, required=True)
     deleted = invoke(a, f"pool delete obj:{object_id} generation={original['generation']} version={original['version']} confirm=true",
                      lambda: fixture.read_state(a, distribution.API.symbol))
     assert deleted["operation"] == 0x3009 and deleted["object"] == object_id
@@ -183,11 +185,19 @@ def run(guests, distribution, verifier, report):
     independent = call(a, f"pool read obj:{copy_id} generation={changed['generation']} version={changed['version']} offset=0 length={len(independent_bytes)}", 0x3002)
     assert independent["data"] == independent_bytes
     final_content_ids = sorted(set(content_ids + [chunk["content"] for chunk in independent_disk["chunks"]]))
+    remote_copy = reclamation.capture((b, c, replacement), verifier, owner, copy_id, required=False)
     copy_deleted = call(a, f"pool delete obj:{copy_id} generation={changed['generation']} version={changed['version']} confirm=true", 0x3009)
     assert copy_deleted["object"] == copy_id
     final_reclamation = inspect_lifecycle(a, verifier, owner, copy_id, final_content_ids, "last-copy-reference-deleted")
     assert not final_reclamation["object_present"]
     assert all(not content["present"] for content in final_reclamation["content_objects"])
+    deadline = time.monotonic() + 180
+    while final_reclamation["outbox"]["present"] and final_reclamation["outbox"]["pending"] is not None:
+        assert time.monotonic() < deadline, {"copy_retirement_deadline": final_reclamation}
+        time.sleep(1)
+        final_reclamation = inspect_lifecycle(a, verifier, owner, copy_id, final_content_ids, "copy-retirement-progress")
+    remote_reclamation = reclamation.finish((b, c, replacement), distribution, verifier, owner,
+                                            (remote_original, remote_copy))
     return {"stale_original_owner_return": returned["stale_content_version_reconciled"],
             "owner_return_observations": returned, "fresh_shared_update": True,
             "stale_placement_manifest_reconciled_by_read": True,
@@ -202,7 +212,8 @@ def run(guests, distribution, verifier, report):
             "content_retention_observations": cold_deleted["content_objects"],
             "last_copy_reference_retired": True,
             "local_final_reference_reclamation": final_reclamation,
-            "reclamation_nodes_inspected": [a.number],
-            "remote_content_absence_verified": False,
-            "garbage_collection": "TESTED: listed local immutable content identities absent after final copy deletion; remote retirement uses acknowledged outbox, not a secure-erasure claim",
+            "reclamation_nodes_inspected": [a.number, b.number, c.number, replacement.number],
+            "remote_content_absence_verified": True,
+            "recipient_reclamation": remote_reclamation,
+            "garbage_collection": "TESTED: captured local and recipient physical identities absent after final reference retirement, with recipient cold-reboot proof; not secure erasure",
             "full_ms10_acceptance": False}
