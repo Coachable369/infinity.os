@@ -47,7 +47,16 @@ ARM64: `0412f0b6b3ff1507a1bc85842c05d80584a6cd1e86096f808cee40ad31552f67`.
 Four new independently installed nodes passed ISO-detached cold authentication,
 persistent identity and authoritative storage inspection:
 `/tmp/ms10-order-installed-bab4753/result.json`.
-The new distributed run is active; lifecycle completion remains unverified.
+The distributed run stopped at the fifth protected pair (B–D), before authority
+configuration or object creation. B committed local approval at guest clock 895
+(deadline 971); D recorded both approvals at 901 (deadline 973). B never recorded
+D's approval, then expired. Both endpoints reported the same transaction. This
+is an actual asymmetric protocol outcome, not late UI confirmation. Four earlier
+pairs passed. The receipt retains bounded final endpoint and hub observations:
+`/tmp/ms10-order-installed-bab4753/owner-offline-gate-result.json`.
+Packet-level reproduction is pending; accumulated control-budget errors alone
+do not establish which confirmation was rejected. Lifecycle completion remains
+unverified.
 
 Checkpoint `3cd58d1` (including `8f441aa`) removes the confirmed namespace-capacity
 dependency from atomic Pool audit, quorum payload/catalog and metadata-access
