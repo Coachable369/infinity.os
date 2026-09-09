@@ -6,6 +6,7 @@ import json
 import pathlib
 import struct
 import hashlib
+import time
 from ms10_ethernet_hub import EthernetHub
 import ms10_installed_fixture as fixture
 from ms10_installed_closure_setup import establish_authority, resume_publication
@@ -173,6 +174,8 @@ def main():
         a.wait(lambda s: s[496] == 3, "replacement offline; local plus two peers", timeout=90)
         report["stage"] = "bounded-transfer-measurement"
         a.launch("command", 5)
+        submission_started = time.monotonic()
+        submission_traffic = hub.traffic_snapshot()
         created = prior["created"] if args.resume_measured else fixture.create(a, D.API.symbol, length=args.length, seed=args.seed)
         if args.reuse_configured:
             assert created["object_id"] != prior["created"]["object_id"], {"fixture_reused_prior_object": created["object_id"]}
@@ -180,6 +183,7 @@ def main():
         report["namespace_path"] = f"/Shared/MS10_{args.length}_{args.seed}_{created['object_id'][:8]}"
         report["measurement"] = prior["measurement"] if args.resume_measured else measure(
             a, D.API.symbol, created["object_id"], traffic=hub.traffic_snapshot,
+            submission_started=submission_started, submission_traffic=submission_traffic,
             during_transfer=lambda: D.responsive_transfer(a, created["object_id"]))
         report["persisted"] = [D.persisted_hash(g, args.verifier.resolve(), identities[0], created)
                                for g in (a, b, c)]

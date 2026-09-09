@@ -9,13 +9,13 @@ import ms10_installed_fixture as fixture
 # DESC: Samples actual coordinator offsets and receipt-backed protection; captures bounded failure evidence rather than widening a stalled deadline.
 # ------------------=
 def measure(guest, symbol, object_id, timeout=600, clock=time.monotonic, pause=time.sleep,
-            traffic=None, during_transfer=None):
-    guest.launch("storage", 8, 8)
+            traffic=None, during_transfer=None, submission_started=None, submission_traffic=None):
     started = clock()
+    traffic_start = submission_traffic if submission_traffic is not None else (traffic() if traffic else None)
+    guest.launch("storage", 8, 8)
     observations = []
     last_window = None
     windows = []
-    traffic_start = traffic() if traffic else None
     interaction = None
     while clock() - started < timeout:
         now = clock()
@@ -48,7 +48,11 @@ def measure(guest, symbol, object_id, timeout=600, clock=time.monotonic, pause=t
                     "fixture_lifetime_queue_high_water_bytes": final_traffic["queue_high_water_bytes"],
                     "wire_retransmission_boundary": "identical canonical encrypted DATA, 32 streams x 64 sequences; not authenticated by host",
                     "guest_transport_queue_depth": None, "guest_iop_retries": None}
-                return {"status": "TESTED_PROTECTION_RECEIPTS", "elapsed_seconds": clock() - started,
+                completed = clock()
+                return {"status": "TESTED_PROTECTION_RECEIPTS", "elapsed_seconds": completed - started,
+                        "elapsed_boundary": "measurement entry through three protection receipts; includes Settings activation",
+                        "submission_to_protection_seconds": None if submission_started is None else completed - submission_started,
+                        "submission_boundary": "before fixture submission through three receipts; includes local upload and UI overhead",
                         "object": object_id, "bytes": row[4], "row": list(row),
                         "windows": windows, "samples": observations,
                         "packet_observations": packet_observations, "loaded_interaction": interaction,

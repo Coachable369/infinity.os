@@ -49,6 +49,18 @@ class Fixture:
 
 class Measurement(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_submission_boundary_includes_prior_upload_and_window_activation
+    # DESC: Separates the full submission-to-receipt interval from the narrower polling interval without inventing pure wire throughput.
+    # ------------------=
+    def test_submission_boundary_includes_prior_upload_and_window_activation(self):
+        fake = Fixture()
+        with patch("ms10_installed_transfer_measurement.fixture.read_state", fake.state):
+            result = measure(fake, None, struct.pack("<2Q", 17, 0).hex(),
+                             clock=lambda: fake.now, pause=fake.pause, submission_started=-7)
+        self.assertEqual(result["submission_to_protection_seconds"], 10)
+        self.assertEqual(result["elapsed_seconds"], 3)
+
+    # ------------------------=
     # FUNC: test_completed_idle_object_cannot_pass_loaded_interaction
     # DESC: A completed object without an observed active window must fail instead of accepting idle UI behavior.
     # ------------------=
