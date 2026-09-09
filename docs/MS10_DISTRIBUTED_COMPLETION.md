@@ -58,6 +58,28 @@ commits, fixing a failure-injection-discovered multi-record reuse bug.
   policy parity. Final totals and exact commit must be recorded after integration.
 - Full x86_64 installer kernel checks passed during integration. These are not
   final ISO builds or installed distributed acceptance.
+- Checkpoint `133a2a3`: `./build.sh` completed for both ISO architectures, including
+  packaged parity and existing regression gates. Subsequent acceptance-only
+  read preference/byte-verifier integration requires another source build.
+- Integrated host rerun: 95 fabric tests passed (one ignored), and 58 performance
+  tests passed. Pointer, redraw and File Navigator executable harnesses passed.
+  Missed-event projection recovery and unchanged-refresh suppression passed.
+
+## Read and byte-proof boundaries
+
+`pool read obj:<id> generation=<g> version=<v> offset=<n> length=64 source=remote`
+uses the asynchronous typed coordinator with `RemoteVerified` preference (bit 63
+of ObjectRead.value; remaining bits are bounded length). The caller supplies no
+peer. Live scope, session, grants, version and full-chunk integrity remain checked.
+The default remains local preferred. The synchronous backend does not implement
+this preference; native callers submit/take the coordinator request.
+This proves remote resolution, not a simulated local fault or authority-node-loss
+survivability. Those are separate acceptance claims.
+
+The read-only installed-disk verifier opens raw images without write permission
+and uses native catalog/extent decoding plus a complete content hash. Paused-VM
+inspection after a committed Available receipt is persisted-byte evidence, not
+cold-reboot evidence. Cold boot remains a separate mandatory phase.
 
 ## Mandatory remaining verification
 

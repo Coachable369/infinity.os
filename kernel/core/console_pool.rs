@@ -80,6 +80,17 @@ impl ConsoleRuntime {
             self.output.write_line(b"Use a full ObjectId, bounded content, valid generation/version and an explicit policy.");
             return true;
         };
+        if request.operation == Operation::ObjectRead && request.value & crate::runtime::storage_coordinator::REMOTE_VERIFIED != 0 {
+            if node_argument(node, b"peer").is_some() || node_argument(node, b"grant").is_some() {
+                self.output.write_line(b"Remote source selection is owned by the Pool coordinator; omit peer and grant.");
+                return true;
+            }
+            match crate::runtime::storage_coordinator::submit_read(self.current_user, self.current_session, request) {
+                Ok(id) => self.output.write_number(b"Object read pending: ", id),
+                Err(error) => self.output.write_number(b"Object read admission failed: ", error as u64),
+            }
+            return true;
+        }
         match (node_argument(node, b"peer"), node_argument(node, b"grant")) {
             (Some(peer), Some(grant)) => {
                 let (Some(peer), Some(grant)) = (parse_node_id(peer.strip_prefix(b"node:").unwrap_or(peer)), parse_u64_decimal(grant)) else {
@@ -163,7 +174,14 @@ fn pool_request(node: &OperationNode<'_>) -> Option<StorageOperationV1> {
         p.data[..content.len()].copy_from_slice(content); p.length = content.len() as u16;
     }
     if operation == Operation::ObjectInspect { p.value = 64; }
-    if operation == Operation::ObjectRead { p.value = node_argument(node, b"length").and_then(parse_u64_decimal).filter(|n| *n <= 64)?; }
+    if operation == Operation::ObjectRead {
+        p.value = node_argument(node, b"length").and_then(parse_u64_decimal).filter(|n| (1..=64).contains(n))?;
+        match node_argument(node, b"source") {
+            None | Some(b"local") => {},
+            Some(b"remote") => p.value |= crate::runtime::storage_coordinator::REMOTE_VERIFIED,
+            _ => return None,
+        }
+    }
     if operation==Operation::ObjectDelete && node_argument(node,b"confirm")!=Some(b"true".as_slice()){return None;}
     if operation==Operation::PoolUploadBegin{
         let length=u32::try_from(node_argument(node,b"length").and_then(parse_u64_decimal)?).ok()?;

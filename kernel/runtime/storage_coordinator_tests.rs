@@ -1,5 +1,175 @@
 use super::*;
 use core::sync::atomic::{AtomicUsize, Ordering};
+// ------------------------=
+// FUNC: read_manifest_fixture
+// DESC: Supplies one owned immutable manifest; any local byte read panics so remote preference cannot silently use local data.
+// ------------------=
+fn read_manifest_fixture(request: NativeRequest) -> Result<NativeReply, RemoteError> {
+    let NativeRequest::Load { owner, .. } = request else {
+        panic!("unexpected local read");
+    };
+    let hash = Sha256::digest([7u8; 128]).into();
+    let mut m = Manifest {
+        object: [1; 16],
+        version: 1,
+        length: 128,
+        hash,
+        policy: fabric::placement::StorageClass::Protected,
+        minimum_available: 1,
+        generation: 1,
+        authority: owner,
+        authority_generation: 1,
+        chunks: [None; fabric::manifest::MAX_CHUNKS],
+        placements: [None; fabric::manifest::MAX_PLACEMENTS],
+        healing: None,
+    };
+    m.chunks[0] = Some(fabric::manifest::Chunk {
+        content: [1; 16],
+        bytes: 128,
+        hash,
+    });
+    m.placements[0] = Some(fabric::manifest::Placement {
+        node: NodeId([2; 32]),
+        resource: fabric::resources::ResourceId([2; 16]),
+        device: [2; 16],
+        generation: 1,
+        version: 1,
+        hash,
+        state: PlacementState::Verified,
+        admission_generation: 1,
+    });
+    Ok(NativeReply::Manifest(Some(m)))
+}
+// ------------------------=
+// FUNC: explicit_remote_preference_keeps_ownership_and_fences
+// DESC: Verifies typed preference bounds, live caller ownership, version fences, no-source failure, explicit grants and local-read avoidance; wire integrity is covered by the incremental verifier test.
+// ------------------=
+#[test]
+fn explicit_remote_preference_keeps_ownership_and_fences() {
+    assert_eq!(read_preference(64), Ok((64, ReadSource::LocalPreferred)));
+    assert_eq!(
+        read_preference(REMOTE_VERIFIED | 64),
+        Ok((64, ReadSource::RemoteVerified))
+    );
+    for value in [0, 65, REMOTE_VERIFIED, REMOTE_VERIFIED | 65, 1 << 62] {
+        assert!(read_preference(value).is_err());
+    }
+    let mut r = InfinityRuntime::new(false);
+    r.define_bootstrap().unwrap();
+    r.start_all(0);
+    r.nodes.initialize(&[81; 32], true).unwrap();
+    r.node_clock = Some(10);
+    r.identity
+        .create_machine(b"read-fixture", 64, 1, 0)
+        .unwrap();
+    let user = r
+        .identity
+        .create_user(b"operator", b"Operator", 0)
+        .unwrap()
+        .id;
+    r.identity.create_password(user, b"Fixture901", 0).unwrap();
+    let session = r
+        .identity
+        .create_session(user, b"Fixture901", 1)
+        .unwrap()
+        .id;
+    let other_session = r
+        .identity
+        .create_session(user, b"Fixture901", 2)
+        .unwrap()
+        .id;
+    r.storage_coordinator.handler = Some(read_manifest_fixture);
+    let request = StorageOperationV1 {
+        operation: Operation::ObjectRead,
+        object: [1; 16],
+        authority_generation: 1,
+        manifest_generation: 1,
+        object_version: 1,
+        offset: 0,
+        scope: 0,
+        value: REMOTE_VERIFIED | 64,
+        length: 0,
+        data: [0; 64],
+    };
+    assert_eq!(
+        submit_read_from(&mut r, StableId([0; 16]), session, request),
+        Err(RemoteError::AccessDenied)
+    );
+    let id = submit_read_from(&mut r, user, session, request).unwrap();
+    assert_eq!(
+        take_read_from(&mut r, user, other_session, id),
+        Err(RemoteError::NotFound)
+    );
+    let p = r.storage_coordinator.public_read.take().unwrap();
+    let p = public_read_pump(&mut r, p, 10);
+    assert_eq!(p.result, Some(Err(RemoteError::NotFound)));
+    r.storage_coordinator.public_read = Some(p);
+    assert_eq!(
+        take_read_from(&mut r, user, session, id),
+        Err(RemoteError::NotFound)
+    );
+    assert!(r.storage_coordinator.public_read.is_none());
+    let mut bad = request;
+    bad.object_version = 2;
+    submit_read_from(&mut r, user, session, bad).unwrap();
+    let p = r.storage_coordinator.public_read.take().unwrap();
+    assert_eq!(
+        public_read_pump(&mut r, p, 10).result,
+        Some(Err(RemoteError::Conflict))
+    );
+    let peer = NodeId([2; 32]);
+    r.storage_coordinator.config.peers[0] = Some(Participation {
+        peer,
+        grants: [1, 2, 3, 4, 5],
+        expires: 100,
+        advertise: 0,
+        advertise_expires: 0,
+        delete: 0,
+        delete_expires: 0,
+    });
+    r.fabric_resources
+        .observe_local(
+            fabric::resources::Resource {
+                id: fabric::resources::ResourceId([2; 16]),
+                owner: peer,
+                kind: fabric::resources::ResourceKind::Storage,
+                device: [2; 16],
+                capacity: 65536,
+                available: 65536,
+                reserved: 0,
+                health: fabric::resources::Health::Healthy,
+                online: true,
+                capabilities: 1,
+                generation: 1,
+                sequence: 1,
+                expires: 200,
+            },
+            peer,
+            1,
+        )
+        .unwrap();
+    submit_read_from(&mut r, user, session, request).unwrap();
+    let p = r.storage_coordinator.public_read.take().unwrap();
+    let p = public_read_pump(&mut r, p, 10);
+    assert!(matches!(p.phase, PublicReadPhase::Remote));
+    assert!(p.result.is_none());
+    assert_eq!(
+        r.storage_coordinator
+            .reader
+            .as_ref()
+            .unwrap()
+            .placement
+            .node,
+        peer
+    );
+    r.storage_coordinator.reader = None;
+    submit_read_from(&mut r, user, session, request).unwrap();
+    let p = r.storage_coordinator.public_read.take().unwrap();
+    assert_eq!(
+        public_read_pump(&mut r, p, 100).result,
+        Some(Err(RemoteError::NotFound))
+    );
+}
 static CALLS: AtomicUsize = AtomicUsize::new(0);
 // ------------------------=
 // FUNC: empty_native
@@ -66,12 +236,26 @@ fn canonical_participation_keeps_exact_scopes_and_expires() {
         grant(&decoded, NodeId([2; 32]), Operation::ObjectCreate, 1),
         Err(RemoteError::AccessDenied)
     );
-    assert_eq!(grant(&decoded,NodeId([2;32]),Operation::ReplicaDelete,1),Err(RemoteError::AccessDenied));
-    let mut retirement=decoded;retirement.peers[0].as_mut().unwrap().delete=71;retirement.peers[0].as_mut().unwrap().delete_expires=80;
-    let retirement=Configuration::decode(&retirement.encode().unwrap()).unwrap();
-    assert_eq!(grant(&retirement,NodeId([2;32]),Operation::ReplicaDelete,79),Ok(71));
-    assert_eq!(grant(&retirement,NodeId([2;32]),Operation::ReplicaDelete,80),Err(RemoteError::AccessDenied));
-    assert_eq!(grant(&retirement,NodeId([2;32]),Operation::TransferCommit,69),Ok(13));
+    assert_eq!(
+        grant(&decoded, NodeId([2; 32]), Operation::ReplicaDelete, 1),
+        Err(RemoteError::AccessDenied)
+    );
+    let mut retirement = decoded;
+    retirement.peers[0].as_mut().unwrap().delete = 71;
+    retirement.peers[0].as_mut().unwrap().delete_expires = 80;
+    let retirement = Configuration::decode(&retirement.encode().unwrap()).unwrap();
+    assert_eq!(
+        grant(&retirement, NodeId([2; 32]), Operation::ReplicaDelete, 79),
+        Ok(71)
+    );
+    assert_eq!(
+        grant(&retirement, NodeId([2; 32]), Operation::ReplicaDelete, 80),
+        Err(RemoteError::AccessDenied)
+    );
+    assert_eq!(
+        grant(&retirement, NodeId([2; 32]), Operation::TransferCommit, 69),
+        Ok(13)
+    );
     c.peers[1] = c.peers[0];
     assert!(c.encode().is_err());
     let mut corrupt = encoded;

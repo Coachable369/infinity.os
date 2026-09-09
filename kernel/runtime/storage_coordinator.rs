@@ -286,12 +286,40 @@ enum PublicReadPhase {
     Local(Manifest),
     Remote,
 }
+/// ObjectRead value flag: request verified remote resolution without selecting a peer.
+/// This is not a simulated local failure or proof of authority-node-loss survival.
+pub const REMOTE_VERIFIED: u64 = 1 << 63;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReadSource {
+    LocalPreferred,
+    RemoteVerified,
+}
+// ------------------------=
+// FUNC: read_preference
+// DESC: Decodes the bounded native ObjectRead length and explicit source preference.
+// ------------------=
+pub fn read_preference(value: u64) -> Result<(u8, ReadSource), RemoteError> {
+    let length = value & !REMOTE_VERIFIED;
+    if !(1..=64).contains(&length) {
+        return Err(RemoteError::MalformedRequest);
+    }
+    Ok((
+        length as u8,
+        if value & REMOTE_VERIFIED != 0 {
+            ReadSource::RemoteVerified
+        } else {
+            ReadSource::LocalPreferred
+        },
+    ))
+}
 #[derive(Clone, Copy)]
 struct PublicRead {
     user: StableId,
     session: StableId,
     id: u64,
     request: StorageOperationV1,
+    length: u8,
+    source: ReadSource,
     phase: PublicReadPhase,
     result: Option<Result<StorageOperationV1, RemoteError>>,
     expires: u64,
@@ -305,48 +333,59 @@ pub fn submit_read(
     session: StableId,
     request: StorageOperationV1,
 ) -> Result<u64, RemoteError> {
-    with_runtime(|r| {
-        if !storage_operator::authorized(r, user, session) {
-            return Err(RemoteError::AccessDenied);
-        }
-        request
-            .encode()
-            .map_err(|_| RemoteError::MalformedRequest)?;
-        if request.operation != Operation::ObjectRead
-            || request.length != 0
-            || request.value == 0
-            || request.value > 64
-            || request.scope != r.storage_coordinator.config.scope
-        {
-            return Err(RemoteError::MalformedRequest);
-        }
-        if r.storage_coordinator.public_read.is_some()
-            || r.storage_coordinator.reader.is_some()
-            || r.storage_coordinator.read_result.is_some()
-        {
-            return Err(RemoteError::QueueFull);
-        }
-        let now = r.node_clock.ok_or(RemoteError::ServiceUnavailable)?;
-        let id = (1u64 << 63) | r.storage_coordinator.next_read;
-        r.storage_coordinator.next_read = r
-            .storage_coordinator
-            .next_read
-            .checked_add(1)
-            .filter(|n| *n < (1u64 << 63))
-            .ok_or(RemoteError::QueueFull)?;
-        r.storage_coordinator.last_read = id;
-        r.storage_coordinator.public_read = Some(PublicRead {
-            user,
-            session,
-            id,
-            request,
-            phase: PublicReadPhase::Find(0),
-            result: None,
-            expires: now.saturating_add(300),
-        });
-        Ok(id)
-    })
-    .ok_or(RemoteError::ServiceUnavailable)?
+    with_runtime(|r| submit_read_from(r, user, session, request))
+        .ok_or(RemoteError::ServiceUnavailable)?
+}
+// ------------------------=
+// FUNC: submit_read_from
+// DESC: Admits a bounded source preference only after live session authorization.
+// ------------------=
+fn submit_read_from(
+    r: &mut InfinityRuntime,
+    user: StableId,
+    session: StableId,
+    request: StorageOperationV1,
+) -> Result<u64, RemoteError> {
+    if !storage_operator::authorized(r, user, session) {
+        return Err(RemoteError::AccessDenied);
+    }
+    request
+        .encode()
+        .map_err(|_| RemoteError::MalformedRequest)?;
+    let (length, source) = read_preference(request.value)?;
+    if request.operation != Operation::ObjectRead
+        || request.length != 0
+        || request.scope != r.storage_coordinator.config.scope
+    {
+        return Err(RemoteError::MalformedRequest);
+    }
+    if r.storage_coordinator.public_read.is_some()
+        || r.storage_coordinator.reader.is_some()
+        || r.storage_coordinator.read_result.is_some()
+    {
+        return Err(RemoteError::QueueFull);
+    }
+    let now = r.node_clock.ok_or(RemoteError::ServiceUnavailable)?;
+    let id = (1u64 << 63) | r.storage_coordinator.next_read;
+    r.storage_coordinator.next_read = r
+        .storage_coordinator
+        .next_read
+        .checked_add(1)
+        .filter(|n| *n < (1u64 << 63))
+        .ok_or(RemoteError::QueueFull)?;
+    r.storage_coordinator.last_read = id;
+    r.storage_coordinator.public_read = Some(PublicRead {
+        user,
+        session,
+        id,
+        request,
+        length,
+        source,
+        phase: PublicReadPhase::Find(0),
+        result: None,
+        expires: now.saturating_add(300),
+    });
+    Ok(id)
 }
 // ------------------------=
 // FUNC: take_read
@@ -357,22 +396,31 @@ pub fn take_read(
     session: StableId,
     id: u64,
 ) -> Result<Option<StorageOperationV1>, RemoteError> {
-    with_runtime(|r| {
-        if !storage_operator::authorized(r, user, session) {
-            return Err(RemoteError::AccessDenied);
-        }
-        let p = r
-            .storage_coordinator
-            .public_read
-            .filter(|p| p.id == id && p.user == user && p.session == session)
-            .ok_or(RemoteError::NotFound)?;
-        let Some(result) = p.result else {
-            return Ok(None);
-        };
-        r.storage_coordinator.public_read = None;
-        result.map(Some)
-    })
-    .ok_or(RemoteError::ServiceUnavailable)?
+    with_runtime(|r| take_read_from(r, user, session, id)).ok_or(RemoteError::ServiceUnavailable)?
+}
+// ------------------------=
+// FUNC: take_read_from
+// DESC: Consumes only the exact originating user, session and request completion.
+// ------------------=
+fn take_read_from(
+    r: &mut InfinityRuntime,
+    user: StableId,
+    session: StableId,
+    id: u64,
+) -> Result<Option<StorageOperationV1>, RemoteError> {
+    if !storage_operator::authorized(r, user, session) {
+        return Err(RemoteError::AccessDenied);
+    }
+    let p = r
+        .storage_coordinator
+        .public_read
+        .filter(|p| p.id == id && p.user == user && p.session == session)
+        .ok_or(RemoteError::NotFound)?;
+    let Some(result) = p.result else {
+        return Ok(None);
+    };
+    r.storage_coordinator.public_read = None;
+    result.map(Some)
 }
 // ------------------------=
 // FUNC: public_read_pump
@@ -398,17 +446,27 @@ fn public_read_pump(r: &mut InfinityRuntime, mut p: PublicRead, now: u64) -> Pub
                     NativeReply::Manifest(Some(m)) if m.object == p.request.object => {
                         if m.version != p.request.object_version
                             || m.generation != p.request.manifest_generation
+                            || m.authority_generation != p.request.authority_generation
+                            || m.authority != owner
                         {
                             return Err(RemoteError::Conflict);
                         }
                         if p.request
                             .offset
-                            .checked_add(p.request.value)
+                            .checked_add(p.length as u64)
                             .is_none_or(|end| end > m.length)
                         {
                             return Err(RemoteError::MalformedRequest);
                         }
-                        p.phase = PublicReadPhase::Local(m);
+                        if p.source == ReadSource::RemoteVerified {
+                            // An explicit remote request must revalidate a live grant and
+                            // actually fetch bytes, not reuse an earlier cached result.
+                            r.storage_coordinator.cache.valid = false;
+                            begin_remote_read(r, m, p.request.offset, p.length, now)?;
+                            p.phase = PublicReadPhase::Remote;
+                        } else {
+                            p.phase = PublicReadPhase::Local(m);
+                        }
                     }
                     _ if index < 7 => p.phase = PublicReadPhase::Find(index + 1),
                     _ => return Err(RemoteError::NotFound),
@@ -423,11 +481,11 @@ fn public_read_pump(r: &mut InfinityRuntime, mut p: PublicRead, now: u64) -> Pub
                         scope: p.request.scope,
                         version: m.version,
                         offset: p.request.offset,
-                        length: p.request.value as u8,
+                        length: p.length,
                     },
                     now,
                 ) {
-                    Ok(NativeReply::Bytes { data, length }) if length as u64 == p.request.value => {
+                    Ok(NativeReply::Bytes { data, length }) if length == p.length => {
                         let mut reply = p.request;
                         reply.data = data;
                         reply.length = length as u16;
@@ -438,7 +496,7 @@ fn public_read_pump(r: &mut InfinityRuntime, mut p: PublicRead, now: u64) -> Pub
                         | RemoteError::InvalidState
                         | RemoteError::ServiceUnavailable,
                     ) => {
-                        begin_remote_read(r, m, p.request.offset, p.request.value as u8, now)?;
+                        begin_remote_read(r, m, p.request.offset, p.length, now)?;
                         p.phase = PublicReadPhase::Remote;
                     }
                     Err(e) => return Err(e),

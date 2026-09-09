@@ -378,6 +378,7 @@ const POOL_POLICY_ARGS: &[ArgumentSchema] = &[
 ];
 const POOL_READ_ARGS: &[ArgumentSchema] = &[
     POOL_PEER, POOL_GRANT,
+    ArgumentSchema { name: b"source", value_type: ArgumentType::Text, required: false },
     ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"offset", value_type: ArgumentType::Text, required: true },

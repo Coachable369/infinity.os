@@ -14,6 +14,35 @@ pub(crate) const MAX_BINDINGS: usize = 4;
 const CATALOG_BYTES: usize = 32 + MAX_BINDINGS * 208;
 const PATH: &[u8] = b"/system/storage/replicas";
 
+// ------------------------=
+// FUNC: verify_persisted_replica
+// DESC: Read-only forensic verification of the exact durable recipient binding and every committed byte; never creates a missing catalog.
+// ------------------=
+pub(crate) fn verify_persisted_replica<D: BlockDevice>(store: &mut ObjectStore<D>, owner: [u8;32],
+    object: [u8;16], version: u64, hash: [u8;32]) -> Result<u64, RemoteError> {
+    store.resolve(PATH).map_err(storage_error)?;
+    let catalog = Catalog::load(store)?;
+    let binding = catalog.entries.iter().flatten().find(|b| b.owner == owner
+        && b.descriptor.object == object && b.descriptor.version == version
+        && b.backing.0 != [0;16]).ok_or(RemoteError::NotFound)?;
+    if binding.descriptor.hash != hash { return Err(RemoteError::RemoteFailure); }
+    let mut replica = NativeExtentReplica::open(store, binding.backing,
+        binding.descriptor.resource, binding.descriptor.generation).map_err(replica_error)?;
+    let checkpoint = replica.inspect().ok_or(RemoteError::InvalidState)?;
+    if checkpoint.state != ReplicaState::Available || checkpoint.descriptor != binding.descriptor
+        || checkpoint.copied != binding.descriptor.bytes { return Err(RemoteError::InvalidState); }
+    let mut digest = Sha256::new();
+    let mut offset = 0;
+    let mut bytes = [0;64];
+    while offset < binding.descriptor.bytes {
+        let n = (binding.descriptor.bytes-offset).min(64) as usize;
+        replica.read_committed_range(offset, &mut bytes[..n], hash).map_err(replica_error)?;
+        digest.update(&bytes[..n]); offset += n as u64;
+    }
+    if <[u8;32]>::from(digest.finalize()) != hash { return Err(RemoteError::RemoteFailure); }
+    Ok(offset)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Binding {
     backing: ObjectId, owner: [u8; 32], authority: u64, manifest: u64, scope: u64,

@@ -66,6 +66,14 @@ pub(super) fn publish(console: &ConsoleRuntime) {
             pool[at+5]=object.desired as u64;pool[at+6]=object.verified as u64;pool[at+7]=object.offline as u64;
             pool[at+8]=object.stale as u64;pool[at+9]=object.corrupt as u64;pool[at+10]=object.healing as u64;
         }
+        // Selected-object placement projection: read-only identities, no payloads.
+        for (index, placement) in view.placements.iter().enumerate().filter_map(|(i,p)|p.map(|p|(i,p))) {
+            let at=160+index*10;
+            words(&mut pool[at..at+4],&placement.node);
+            words(&mut pool[at+4..at+6],&placement.resource);
+            words(&mut pool[at+6..at+8],&placement.device);
+            pool[at+8]=placement.version;pool[at+9]=placement.state as u64;
+        }
         if let Some(local) = runtime.nodes.local_id() { words(&mut data[16..20], &local.0); }
         data[20] = runtime.nodes.control_version(); data[21] = runtime.node_projection.version;
         data[22] = runtime.node_projection.stale as u64; data[23] = runtime.node_projection.gaps;

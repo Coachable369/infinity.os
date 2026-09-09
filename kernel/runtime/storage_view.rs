@@ -580,6 +580,22 @@ mod tests {
         let console = storage_client::perform(&mut r, 13, query).unwrap();
         assert_eq!(console.data[48], gui.desired);
         assert_eq!(console.manifest_generation, gui.generation);
+        // The service advances with no delivered event: periodic typed reads
+        // reconstruct the projection without a restart or repeated redraw.
+        POLICY.store(2, Ordering::SeqCst);
+        GENERATION.store(3, Ordering::SeqCst);
+        for _ in 0..12 {
+            let before = CALLS.load(Ordering::SeqCst);
+            poll(&mut r, 16);
+            assert!(CALLS.load(Ordering::SeqCst) - before <= 1);
+        }
+        assert_eq!(r.storage_view.snapshot.objects[0].unwrap().desired, 2);
+        assert_eq!(r.storage_view.snapshot.objects[0].unwrap().generation, 3);
+        let recovered = r.storage_view.revision;
+        for _ in 0..12 {
+            poll(&mut r, 18);
+        }
+        assert_eq!(r.storage_view.revision, recovered);
         let calls = CALLS.load(Ordering::SeqCst);
         r.identity.lock_session(session, user).unwrap();
         r.storage_view.queue_policy(1);
@@ -587,6 +603,6 @@ mod tests {
         assert_eq!(CALLS.load(Ordering::SeqCst), calls);
         assert!(r.storage_view.snapshot == Snapshot::empty());
         assert!(r.storage_view.policy.is_none());
-        assert_eq!(POLICY.load(Ordering::SeqCst), 3);
+        assert_eq!(POLICY.load(Ordering::SeqCst), 2);
     }
 }
