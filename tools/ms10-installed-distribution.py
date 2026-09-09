@@ -14,6 +14,7 @@ import time
 from ms10_ethernet_hub import EthernetHub
 import ms10_installed_fixture as fixture
 from ms10_installed_pool import call
+from ms10_installed_pointer import title_target
 
 SPEC = importlib.util.spec_from_file_location("mesh_discovery", pathlib.Path(__file__).with_name("ms10-installed-mesh-discovery.py"))
 MESH = importlib.util.module_from_spec(SPEC)
@@ -219,7 +220,7 @@ def responsive_transfer(guest, object_id):
         assert time.monotonic() < deadline, {"no_active_transfer_for_input_probe": pool[:32]}
         time.sleep(.1)
     initial_rect = pool[246:250]
-    target = (initial_rect[0] + initial_rect[2] // 2, initial_rect[1] + 20)
+    target = title_target(initial_rect, state[11], state[12])
     for _ in range(60):
         state = guest.state()
         dx, dy = target[0] - state[13], target[1] - state[14]
