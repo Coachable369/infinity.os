@@ -7,6 +7,7 @@ pub mod font;
 pub mod fabric;
 pub mod storage_client;
 pub mod storage_operator;
+pub mod storage_advertiser;
 pub mod identity;
 pub mod iop;
 pub mod network;
@@ -200,6 +201,7 @@ pub struct InfinityRuntime {
     pub node_policy_offset: usize,
     pub node_operator: node_operator::OperatorRequests,
     pub storage_operator: storage_operator::StorageRequests,
+    pub storage_advertiser: storage_advertiser::Publisher,
     node_clock: Option<u64>,
     node_projection_tick: Option<u64>,
     node_checkpoint_notified: u64,
@@ -299,6 +301,7 @@ impl InfinityRuntime {
             node_policy_offset: 0,
             node_operator: node_operator::OperatorRequests::new(),
             storage_operator: storage_operator::StorageRequests::new(),
+            storage_advertiser: storage_advertiser::Publisher::new(),
             node_links: node_links::NodeLinks::new(),
             node_clock: None,
             node_projection_tick: None,
@@ -1968,6 +1971,7 @@ pub fn poll_node_transport(now: u64) {
     let committed = with_runtime(|runtime| {
         node_operator::prune(runtime, now);
         storage_operator::prune(runtime, now);
+        storage_advertiser::poll(runtime, now);
         runtime.iop.poll_remote_node(&runtime.capabilities, &mut runtime.nodes, &mut runtime.node_transport.trust, now);
         runtime.iop.execute_remote_node_durable(&mut runtime.nodes, now, &mut persist_control_state)
     }).flatten();

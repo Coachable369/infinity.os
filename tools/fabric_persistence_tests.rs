@@ -13,7 +13,8 @@ fn pool_mutation_execution_gate_preserves_plan_and_domain_boundaries() {
     for command in [b"pool create nonce=1 policy=critical content=Example".as_slice(),
         b"pool write obj:01010101010101010101010101010101 generation=1 version=1 content=Changed",
         b"pool copy obj:01010101010101010101010101010101 generation=1 version=1 nonce=2",
-        b"pool policy obj:01010101010101010101010101010101 generation=1 version=1 policy=protected"] {
+        b"pool policy obj:01010101010101010101010101010101 generation=1 version=1 policy=protected",
+        b"pool advertise peer=node:0101010101010101010101010101010101010101010101010101010101010101 grant=1"] {
         let ParseOutcome::Graph(mut graph) = parse(command).unwrap() else { panic!("expected typed graph") };
         assert!(graph.executable_pool_mutation());
         graph.plan_only = true;

@@ -8,6 +8,16 @@ impl ConsoleRuntime {
     // DESC: Converts validated Console arguments into the shared native storage request; output text is never parsed as state or fed to another service.
     // ------------------=
     pub(super) fn execute_pool_node(&mut self, node: &OperationNode<'_>) -> bool {
+        if node.schema.operation == crate::runtime::iop::OperationId::ResourceAdvertise {
+            let peer = node_argument(node, b"peer").and_then(|p| parse_node_id(p.strip_prefix(b"node:").unwrap_or(p)));
+            let grant = node_argument(node, b"grant").and_then(parse_u64_decimal);
+            let (Some(peer), Some(grant)) = (peer, grant) else { return false; };
+            match crate::runtime::storage_advertiser::start(self.current_user, self.current_session, peer, grant) {
+                Ok(()) => self.output.write_line(b"Resource publication scheduled. Logout or failed authority stops renewal."),
+                Err(error) => self.output.write_number(b"Resource publication rejected: ", error as u64),
+            }
+            return true;
+        }
         if node.schema.action == b"result" {
             let Some(id) = node_argument(node, b"request").and_then(parse_u64_decimal) else {
                 self.output.write_line(b"An exact request identifier is required."); return true;

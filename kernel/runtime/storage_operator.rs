@@ -27,7 +27,7 @@ impl StorageRequests {
 // FUNC: authorized
 // DESC: Revalidates the full current privileged operator session instead of retaining authority after lock or logout.
 // ------------------=
-fn authorized(runtime: &InfinityRuntime, user: StableId, session: StableId) -> bool {
+pub(super) fn authorized(runtime: &InfinityRuntime, user: StableId, session: StableId) -> bool {
     (0..MAX_SESSIONS).filter_map(|i| runtime.identity.session_nth(i)).any(|s|
         s.id == session && s.user == user && s.state == SessionState::Active
             && s.capabilities & SESSION_IDENTITY_MANAGE != 0)

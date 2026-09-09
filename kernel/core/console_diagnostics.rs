@@ -63,6 +63,16 @@ pub(super) fn publish(console: &ConsoleRuntime) {
             .map(|service| service.state as u64 + 1).unwrap_or(0);
         data[109] = runtime.fabric_resources.entries().iter().flatten().count() as u64;
         data[489] = runtime.storage_operator.last_submitted;
+        data[494] = runtime.storage_advertiser.completed;
+        data[495] = runtime.storage_advertiser.last_error.map(|e| e as u64).unwrap_or(0);
+        data[496] = runtime.fabric_resources.entries().iter().flatten().filter(|r| r.online).count() as u64;
+        if let Some(resource) = runtime.fabric_resources.entries().iter().flatten().next() {
+            words(&mut data[497..499], &resource.id.0);
+            words(&mut data[499..501], &resource.device);
+            data[501] = resource.capacity; data[502] = resource.available;
+            data[503] = resource.reserved; data[504] = resource.generation;
+            data[505] = resource.sequence; data[506] = resource.expires;
+        }
         if let Some(result) = runtime.storage_operator.last_completion {
             data[490] = result.request_id; data[491] = result.correlation_id; data[492] = result.causation_id;
             data[493] = result.result.err().map(|e| e as u64 + 2).unwrap_or(1);

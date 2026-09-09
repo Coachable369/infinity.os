@@ -169,7 +169,7 @@ impl OperationGraph<'_> {
         !self.plan_only && self.node_count == 1 && self.nodes[0].map(|node| {
             node.schema.domain == b"pool" && matches!(node.schema.operation,
                 OperationId::ObjectCreate | OperationId::ObjectUpdate |
-                OperationId::ObjectCopy | OperationId::ObjectSetPolicy)
+                OperationId::ObjectCopy | OperationId::ObjectSetPolicy | OperationId::ResourceAdvertise)
         }).unwrap_or(false)
     }
 }
@@ -316,6 +316,10 @@ const NO_ARGS: &[ArgumentSchema] = &[];
 const POOL_PEER: ArgumentSchema = ArgumentSchema { name: b"peer", value_type: ArgumentType::NodeRef, required: false };
 const POOL_GRANT: ArgumentSchema = ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: false };
 const POOL_RESULT_ARGS: &[ArgumentSchema] = &[ArgumentSchema { name: b"request", value_type: ArgumentType::Text, required: true }];
+const POOL_ADVERTISE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"peer", value_type: ArgumentType::NodeRef, required: true },
+    ArgumentSchema { name: b"grant", value_type: ArgumentType::Text, required: true },
+];
 const POOL_CREATE_ARGS: &[ArgumentSchema] = &[
     POOL_PEER, POOL_GRANT,
     ArgumentSchema { name: b"nonce", value_type: ArgumentType::Text, required: true },
@@ -671,6 +675,8 @@ pub static DOMAINS: &[DomainSchema] = &[
 ];
 
 pub static OPERATIONS: &[OperationSchema] = &[
+    op(b"pool", b"advertise", b"Publish measured storage under an explicit peer grant until logout or failure", OperationId::ResourceAdvertise,
+        ValueType::Unit, ValueType::Unit, None, POOL_ADVERTISE_ARGS, 1, SideEffectClass::ReversibleChange, b"pool advertise peer=node:<id> grant=1"),
     op(b"pool", b"result", b"Collect an authenticated operator's asynchronous storage result", OperationId::PoolInspect,
         ValueType::Unit, ValueType::Object, None, POOL_RESULT_ARGS, 1, SideEffectClass::Query, b"pool result request=1"),
     op(b"pool", b"copy", b"Create an independent object sharing immutable content", OperationId::ObjectCopy,

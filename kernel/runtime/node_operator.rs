@@ -281,6 +281,28 @@ mod tests {
     }
 
     // ------------------------=
+    // FUNC: advertisement_subscriptions_stop_on_missing_backend_and_session_loss
+    // DESC: Exercises real subscription ownership and bounded poll transitions without injecting network success or fabricated device inventory.
+    // ------------------=
+    #[test]
+    fn advertisement_subscriptions_stop_on_missing_backend_and_session_loss() {
+        use super::super::storage_advertiser::{start_from, poll};
+        let (mut runtime, user, session, _, peer) = operator_fixture();
+        assert_eq!(start_from(&mut runtime, user, session, peer, 0), Err(RemoteError::AccessDenied));
+        start_from(&mut runtime, user, session, peer, 1).unwrap();
+        assert_eq!(start_from(&mut runtime, user, session, peer, 1), Err(RemoteError::Conflict));
+        poll(&mut runtime, 10);
+        assert_eq!(runtime.storage_advertiser.last_error, Some(RemoteError::ServiceUnavailable));
+        assert_eq!(runtime.storage_operator.last_submitted, 0);
+        start_from(&mut runtime, user, session, peer, 1).unwrap();
+        runtime.identity.lock_session(session, user).unwrap();
+        for _ in 0..4 { poll(&mut runtime, 11); }
+        assert_eq!(runtime.storage_advertiser.last_error, Some(RemoteError::AccessDenied));
+        assert_eq!(runtime.storage_advertiser.completed, 0);
+        assert_eq!(start_from(&mut runtime, user, session, peer, 1), Err(RemoteError::AccessDenied));
+    }
+
+    // ------------------------=
     // FUNC: operator_ownership_limits_and_revocation
     // DESC: Checks bounded operator requests, session-private results, local authority reclamation on lock, and actual router timeout results.
     // ------------------=
