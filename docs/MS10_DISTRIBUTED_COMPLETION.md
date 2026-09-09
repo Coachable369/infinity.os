@@ -38,9 +38,17 @@ ARM64: `2550b2fc5af21fb3e5dd347e57178a77e898c1ddba41f8b4b2b718868183e713`.
 Four independent fresh installations passed ISO-detached cold login, unique
 persistent identities and native storage inspection:
 `/tmp/ms10-glare-installed-acb0b60/result.json`.
-The subsequent installed 32 KiB run passed all six pairing ceremonies and is
-still establishing explicitly approved persistent Pool configuration. No bulk
-transfer or owner-loss result is claimed from that setup progress.
+The subsequent installed 32 KiB run passed all six pairing ceremonies, six
+reciprocal session checks and publication: each node observed four authorized
+resources. It then failed before replication at upload commit, offset 32,768,
+with caller `InvalidPayload`. A native replay of the exact failed disk, opened
+read-only with replay writes redirected to memory, reproduced `QueueFull` after
+the 32 incremental verification steps. Its native namespace was full (32/32),
+and the lazily allocated Pool audit ring was absent. The caller's error mapping
+had hidden that native failure. No bulk transfer or owner-loss result passed.
+Receipt: `/tmp/ms10-glare-installed-acb0b60/owner-offline-gate-result.json`.
+Correction is in progress for internal audit and shared-metadata persistence
+without consuming user namespace entries or weakening atomic audit behavior.
 
 Tool-only `65368ac` records exact installed-kernel/NodeId-bound prepared approvals
 before publication, allowing a failed later stage to resume without reissuing
