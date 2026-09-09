@@ -5,6 +5,8 @@ They do not establish completion, extend expired authority, or inject storage.
 """
 from concurrent.futures import ThreadPoolExecutor
 import struct
+import hashlib
+import json
 from ms10_installed_durable_grants import grant
 
 
@@ -76,10 +78,10 @@ def publication_only(guest, identities):
 # FUNC: resume_publication
 # DESC: Restores twelve explicitly granted publication directions without replaying trust, metadata configuration, or replica grants.
 # ------------------=
-def resume_publication(guests, distribution):
+def resume_publication(guests, distribution, grants=None):
     identities = [distribution.identity(guest) for guest in guests]
-    with ThreadPoolExecutor(max_workers=4) as workers:
-        grants = list(workers.map(lambda guest: publication_only(guest, identities), guests))
+    if grants is None:
+        raise AssertionError("Prepared authority receipt missing; refuse duplicate durable approval issuance")
     with ThreadPoolExecutor(max_workers=4) as workers:
         futures = [workers.submit(publish_node, guest, identities, grants) for guest in guests]
         for future in futures:
@@ -97,7 +99,7 @@ def resume_publication(guests, distribution):
 # FUNC: establish_authority
 # DESC: Builds all twelve directed metadata/publication relationships in parallel per node, then opens real sessions last.
 # ------------------=
-def establish_authority(guests, distribution):
+def establish_authority(guests, distribution, checkpoint=None):
     identities = [distribution.identity(guest) for guest in guests]
     assert len(guests) == len(set(identities)) == 4
     with ThreadPoolExecutor(max_workers=4) as workers:
@@ -107,6 +109,8 @@ def establish_authority(guests, distribution):
         futures = [workers.submit(configure_node, guest, identities, grants) for guest in guests]
         for future in futures:
             future.result()
+    if checkpoint is not None:
+        checkpoint(identities, grants)
     for left in range(4):
         for right in range(left + 1, 4):
             distribution.open_session(guests[left], guests[right])
@@ -121,3 +125,48 @@ def establish_authority(guests, distribution):
         observations.append({"node": guest.number, "online_resources": state[496],
                              "observed_clock": state[10], "sessions": state[26]})
     return observations
+
+
+# ------------------------=
+# FUNC: artifact_hash
+# DESC: Fences reusable approval evidence to the exact installed-generation executable artifact.
+# ------------------=
+def artifact_hash(work):
+    with (work / "artifacts/installed-kernel.elf").open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+# ------------------------=
+# FUNC: save_prepared
+# DESC: Atomically saves issued typed approval handles after requester commands, without claiming transfer or configuration verification.
+# ------------------=
+def save_prepared(work, identities, grants):
+    receipt = {"schema": 1, "identities": identities, "artifact_sha256": artifact_hash(work),
+               "stage": "configuration-submitted-before-sessions", "grants": grants,
+               "configuration_verified": False, "transfer_verified": False}
+    target = work / "prepared-authority.json"
+    assert not target.exists(), "Prepared authority receipt already exists; resume it explicitly"
+    temporary = target.with_suffix(".pending")
+    temporary.write_text(json.dumps(receipt, indent=2))
+    temporary.replace(target)
+
+
+# ------------------------=
+# FUNC: validate_prepared_receipt
+# DESC: Rejects wrong artifacts, missing directed approvals and non-durable handles before any VM is controlled.
+# ------------------=
+def validate_prepared_receipt(receipt, identities, digest):
+    assert receipt["schema"] == 1 and receipt["stage"] == "configuration-submitted-before-sessions"
+    assert receipt["identities"] == identities and len(set(identities)) == 4
+    assert receipt["artifact_sha256"] == digest
+    grants = receipt["grants"]
+    assert len(grants) == 4
+    for index, row in enumerate(grants):
+        assert set(row) == set(identities) - {identities[index]}
+        for peer, item in row.items():
+            handles = [item["metadata"], item["publication"]]
+            if peer == identities[0]:
+                assert len(item["replica"]) == 6
+                handles += item["replica"]
+            assert all(isinstance(value, int) and 1 << 63 <= value < 1 << 64 for value in handles)
+    return grants

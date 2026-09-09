@@ -9,7 +9,7 @@ import hashlib
 import time
 from ms10_ethernet_hub import EthernetHub
 import ms10_installed_fixture as fixture
-from ms10_installed_closure_setup import establish_authority, resume_publication
+from ms10_installed_closure_setup import establish_authority, resume_publication, save_prepared, validate_prepared_receipt, artifact_hash
 from ms10_installed_metadata import invoke, read_path, read_path_ready
 from ms10_installed_transfer_measurement import measure
 import ms10_installed_owner_lifecycle as lifecycle
@@ -95,6 +95,7 @@ def main():
     identities = [entry["node_id"] for entry in provenance["nodes"]]
     assert len(set(identities)) == 4
     prior = None
+    prepared_grants = None
     if args.resume_published:
         prior = json.loads((work / "owner-offline-gate-result.json").read_text())
         validate_published(prior, identities)
@@ -102,12 +103,17 @@ def main():
     if args.resume_prepared:
         prior = json.loads((work / "owner-offline-gate-result.json").read_text())
         validate_prepared(prior, identities)
+        receipt_path = work / "prepared-authority.json"
+        assert receipt_path.exists(), "Prepared authority receipt missing; cannot safely reuse durable handles"
+        prepared_grants = validate_prepared_receipt(json.loads(receipt_path.read_text()), identities, artifact_hash(work))
         (work / "owner-offline-prepared-failure.json").write_text(json.dumps(prior, indent=2))
     if args.resume_measured or args.reuse_configured:
         prior = json.loads((work / "owner-offline-gate-result.json").read_text())
         validate_case(prior, identities, args.length if args.resume_measured else prior["length"],
                       args.seed if args.resume_measured else prior["seed"])
         (work / f"owner-offline-measurement-{prior['length']}-{prior['seed']}.json").write_text(json.dumps(prior, indent=2))
+    if prior is None:
+        assert not (work / "prepared-authority.json").exists(), "Prepared authority exists; choose explicit resume rather than duplicate durable grants"
     hub = EthernetHub().start()
     guests = []
     report = {"status": "INCOMPLETE", "full_ms10_acceptance": False,
@@ -145,7 +151,7 @@ def main():
                 for right in range(left + 1, 4):
                     D.pair(guests[left], guests[right])
             report["stage"] = "authority"
-            report["authority"] = establish_authority(guests, D)
+            report["authority"] = establish_authority(guests, D, checkpoint=lambda ids, grants: save_prepared(work, ids, grants))
         else:
             report["stage"] = "validate-measured-trust"
             for guest in guests:
@@ -161,7 +167,7 @@ def main():
                     D.open_session(guests[left], guests[right])
             if args.resume_prepared:
                 report["stage"] = "restore-explicit-publication-only"
-                report["authority"] = resume_publication(guests, D)
+                report["authority"] = resume_publication(guests, D, prepared_grants)
             else:
                 observations = []
                 for guest in guests:
