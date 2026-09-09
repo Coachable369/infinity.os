@@ -157,7 +157,7 @@ if matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect|Ope
                     self.output.write_number(b"Committed: ",response.value);
                     self.output.write_number(b"Completed bytes: ",response.offset);
                 }
-                if matches!(response.operation, Operation::ObjectCopy | Operation::ObjectCreate | Operation::ObjectUpdate | Operation::ObjectSetPolicy | Operation::PoolInspect)
+                if matches!(response.operation, Operation::ObjectCopy | Operation::ObjectCreate | Operation::ObjectUpdate | Operation::ObjectSetPolicy)
                     && response.length >= 50 {
                     self.output.write_hex(b"ObjectId: ", &response.data[..16]);
                     self.output.write_number(b"Desired independent replicas: ", response.data[48] as u64);
@@ -171,6 +171,12 @@ if matches!(request.operation,Operation::ObjectRead|Operation::ObjectInspect|Ope
                 self.output.write_number(b"Generation: ", response.manifest_generation);
                 if response.operation == Operation::PoolInspect {
                     if response.object != [0;16] && response.length == 64 {
+                        self.output.write_hex(b"ObjectId: ", &response.object);
+                        self.output.write_line(if response.data[49] >= response.data[48] {
+                            b"Protection: HEALTHY"
+                        } else if response.data[49] == 0 {
+                            b"Protection: OFFLINE"
+                        } else { b"Protection: DEGRADED" });
                         self.output.write_number(b"Desired replicas: ", response.data[48] as u64);
                         self.output.write_number(b"Observed verified: ", response.data[49] as u64);
                         self.output.write_number(b"Observed offline: ", response.data[50] as u64);
