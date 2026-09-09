@@ -42,6 +42,21 @@ def assert_row(console, row):
 
 
 # ------------------------=
+# FUNC: observed_projection
+# DESC: Decodes the explicit observed-health response while retaining canonical identity/version/generation authority.
+# ------------------=
+def observed_projection(reply, canonical, content_hash):
+    data = reply["data"]
+    assert reply["operation"] == 0xe010 and len(data) == 64
+    assert reply["object"] == data[:16].hex() == canonical["object"]
+    assert reply["version"] == canonical["version"] and reply["generation"] == canonical["generation"]
+    assert data[16:48] == content_hash and data[48] == canonical["desired"]
+    return {"object": canonical["object"], "version": canonical["version"],
+            "generation": canonical["generation"], "desired": data[48],
+            "verified": data[49], "offline": data[50]}
+
+
+# ------------------------=
 # FUNC: verify
 # DESC: Inspects one generation-fenced object via ordinary Console pages, then requires a ready matching Settings row; a changing generation fails explicitly.
 # ------------------=
@@ -66,6 +81,10 @@ def verify(guest, distribution, object_id, label, timeout=90, shared=False):
         pages.append(reply["data"])
     placements = b"".join(pages[2:])
     console = decode_manifest_projection(b"".join(pages[:2]), placements)
+    canonical = dict(console)
+    if shared:
+        health = invoke(guest, f"pool health obj:{object_id}", lambda: fixture.read_state(guest, distribution.API.symbol))
+        console = observed_projection(health, canonical, b"".join(pages[:2])[40:72])
     current = distribution.object_state(guest, object_id, lambda row: True, f"{label}-settings-after", timeout)
     assert_row(console, current)
     pool = fixture.read_state(guest, distribution.API.symbol)
@@ -76,6 +95,10 @@ def verify(guest, distribution, object_id, label, timeout=90, shared=False):
         row = pool[160+index*10:170+index*10]
         expected = (encoded[8:40], encoded[40:56], encoded[56:72], struct.unpack_from("<Q", encoded, 80)[0], encoded[0])
         actual = (struct.pack("<4Q", *row[:4]), struct.pack("<2Q", *row[4:6]), struct.pack("<2Q", *row[6:8]), row[8], row[9])
-        assert actual == expected, {"placement_parity_mismatch": index}
+        assert actual[:4] == expected[:4], {"placement_identity_parity_mismatch": index}
+        if not shared:
+            assert actual[4] == expected[4], {"placement_state_parity_mismatch": index}
     return {"status": "TESTED", "fields": console,
-            "selected_object_matches": True, "placements_individually_compared": True}
+            "canonical_signed_fields": canonical, "health_source": "typed observed summary" if shared else "canonical local manifest",
+            "selected_object_matches": True, "placement_identities_individually_compared": True,
+            "placement_states_individually_compared": not shared}

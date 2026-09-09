@@ -1,10 +1,26 @@
 """Behavioral binary-page parsing and Console/Settings parity assertions."""
 import struct
 import unittest
-from ms10_installed_pool_parity import decode_manifest_projection, assert_row
+from ms10_installed_pool_parity import decode_manifest_projection, assert_row, observed_projection
 
 
 class Parity(unittest.TestCase):
+    # ------------------------=
+    # FUNC: test_observed_loss_is_separate_from_signed_state
+    # DESC: A typed health summary may report two online copies without rewriting the signed three-copy record; mismatched identities are rejected.
+    # ------------------=
+    def test_observed_loss_is_separate_from_signed_state(self):
+        canonical = {"object": "11" * 16, "version": 1, "generation": 5,
+                     "desired": 3, "verified": 3, "offline": 0}
+        data = bytes.fromhex(canonical["object"]) + bytes([4]) * 32 + bytes([3, 2, 1]) + bytes(13)
+        reply = {"operation": 0xe010, "object": canonical["object"], "version": 1, "generation": 5, "data": data}
+        result = observed_projection(reply, canonical, bytes([4]) * 32)
+        self.assertEqual((result["verified"], result["offline"]), (2, 1))
+        self.assertEqual((canonical["verified"], canonical["offline"]), (3, 0))
+        reply["generation"] = 6
+        with self.assertRaises(AssertionError):
+            observed_projection(reply, canonical, bytes([4]) * 32)
+
     # ------------------------=
     # FUNC: test_exact_identity_generation_and_protection
     # DESC: Decodes independent verified/offline placements and rejects any differing Settings field.
