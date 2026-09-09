@@ -1,10 +1,25 @@
 # MS10 distributed completion pass
 
-Status: STOPPED — INCOMPLETE. The repository's two-correction-loop limit was
-reached. Do not mark MS10 COMPLETE or unblock MS11 from host tests.
+Status: ACTIVE — INCOMPLETE. The final closure request explicitly supersedes the
+previous two-correction-loop stop for this pass. Do not mark MS10 COMPLETE or
+unblock MS11 from host tests.
 Current request is the distributed Pool completion pass, not a new foundation.
 
-## Latest handoff
+## Current closure checklist
+
+- [x] Correct Settings → Desktop → Launcher acceptance helper. Three installed
+  navigation cycles passed on the preserved ISO-detached node-1; helper behavioral
+  suite passed. Source commit `7c9f18b`.
+- [ ] Repeat installed protected pairing with explicit reset and Settings refresh.
+- [ ] Restore bounded authenticated DATA pacing; adversarial, fairness,
+  backpressure, performance, build and installed timing proof.
+- [ ] Integrate durable current metadata, namespace and scoped delegated normal
+  reads while the original owner is offline; fence stale owner return.
+- [ ] Installed 64–256 KiB three-copy hashes, owner loss/read/degradation,
+  replacement healing, COW/reclamation, event gap, GUI/Console and cold persistence.
+- [ ] Final-source clean installation and full security/input/performance gates.
+
+## Previous handoff (historical, before current closure changes)
 
 - Latest complete `./build.sh` passed: `/tmp/ms10-pool-refresh-build-2.log`.
   Packaged runtime includes the targeted Settings cache fix and metadata
