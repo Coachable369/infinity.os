@@ -299,6 +299,31 @@ pub enum ConsoleLanguageError {
 }
 
 const NO_ARGS: &[ArgumentSchema] = &[];
+const POOL_CREATE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"nonce", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"policy", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"content", value_type: ArgumentType::Text, required: false },
+];
+const POOL_INSPECT_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"offset", value_type: ArgumentType::Text, required: false },
+    ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: false },
+];
+const POOL_POLICY_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"policy", value_type: ArgumentType::Text, required: true },
+];
+const POOL_READ_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"offset", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"length", value_type: ArgumentType::Text, required: true },
+];
+const POOL_WRITE_ARGS: &[ArgumentSchema] = &[
+    ArgumentSchema { name: b"generation", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"version", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"content", value_type: ArgumentType::Text, required: false },
+];
 const NODE_LINK_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema { name: b"local", value_type: ArgumentType::Text, required: true },
     ArgumentSchema { name: b"remote", value_type: ArgumentType::Text, required: true },
@@ -482,6 +507,7 @@ const NETWORK_CONFIG_ARGS: &[ArgumentSchema] = &[
 ];
 
 pub static DOMAINS: &[DomainSchema] = &[
+    DomainSchema { name: b"pool", description: b"Authoritative native Pool objects and protection policy" },
     DomainSchema {
         name: b"system",
         description: b"System health, identity, and generations",
@@ -617,6 +643,18 @@ pub static DOMAINS: &[DomainSchema] = &[
 ];
 
 pub static OPERATIONS: &[OperationSchema] = &[
+    op(b"pool", b"list", b"Inspect one owner-scoped committed Pool object", OperationId::PoolInspect,
+        ValueType::Unit, ValueType::ObjectSet, None, POOL_INSPECT_ARGS, 1, SideEffectClass::Query, b"pool list offset=0"),
+    op(b"pool", b"create", b"Create a native Pool object with an explicit protection contract", OperationId::ObjectCreate,
+        ValueType::Unit, ValueType::Object, None, POOL_CREATE_ARGS, 1, SideEffectClass::ReversibleChange, b"pool create nonce=1 policy=critical content=Example"),
+    op(b"pool", b"inspect", b"Read a bounded canonical manifest page", OperationId::ObjectInspect,
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_INSPECT_ARGS, 1, SideEffectClass::Query, b"pool inspect object:<id> offset=0"),
+    op(b"pool", b"policy", b"Commit a generation-fenced protection policy", OperationId::ObjectSetPolicy,
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_POLICY_ARGS, 1, SideEffectClass::ReversibleChange, b"pool policy object:<id> generation=1 version=1 policy=critical"),
+    op(b"pool", b"read", b"Read a verified immutable Pool range", OperationId::ObjectRead,
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_READ_ARGS, 1, SideEffectClass::Query, b"pool read object:<id> generation=1 version=1 offset=0 length=8"),
+    op(b"pool", b"write", b"Atomically replace bounded content and its manifest", OperationId::ObjectUpdate,
+        ValueType::Unit, ValueType::Object, Some(ArgumentType::ObjectRef), POOL_WRITE_ARGS, 1, SideEffectClass::ReversibleChange, b"pool write object:<id> generation=1 version=1 content=Updated"),
     op(
         b"system",
         b"status",

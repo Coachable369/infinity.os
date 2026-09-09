@@ -58,6 +58,7 @@ pub struct RemoteResult<T = NodeOperationV1> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AuthenticatedStorageRequest {
+    pub local: NodeId,
     pub peer: NodeId,
     pub session_reference: [u8; 16],
     pub grant: u64,
@@ -539,7 +540,7 @@ impl IopRouter {
         let mut committed = None;
         let result = validate_authority(nodes, &request, now).and_then(|_| {
             let payload = request.message.payload.storage()?;
-            let (response, notice) = execute(AuthenticatedStorageRequest { peer: request.peer,
+            let (response, notice) = execute(AuthenticatedStorageRequest { local: nodes.local_id().ok_or(RemoteError::InvalidState)?, peer: request.peer,
                 session_reference: request.reference, grant: request.message.grant,
                 request_id: request.message.id, correlation: request.message.correlation,
                 causation: request.message.causation, payload })?;

@@ -6,6 +6,8 @@ pub const DATA_BYTES: usize = 64;
 /// Postcommit replica state; the renderer is not the authoritative subscriber.
 pub const EVENT_REPLICA_CHANGED: u32 = 0xe041;
 pub const EVENT_RESOURCE_CHANGED: u32 = 0xe040;
+pub const EVENT_OBJECT_CHANGED: u32 = 0xe042;
+pub const EVENT_POLICY_CHANGED: u32 = 0xe043;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StorageCommit {
     pub event: u32,

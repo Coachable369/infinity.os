@@ -86,7 +86,7 @@ const SYSTEM_COMPONENT_REGISTRY: [ComponentRegistration; COMPONENT_COUNT as usiz
         architecture_specific: false,
         reference_kind: 1,
     },
-    // Native recipient-side replica authority and streamed persistence, linked
+    // Native Pool object/manifest authority and streamed replica persistence, linked
     // into the same verified kernel on both live and installed boot paths.
     ComponentRegistration {
         id: 12,

@@ -28,6 +28,8 @@ const COMMAND_CAPACITY: usize = 160;
 
 #[path = "console_diagnostics.rs"]
 mod diagnostics;
+#[path = "console_pool.rs"]
+mod pool_commands;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EditorDialog {
@@ -8558,6 +8560,7 @@ impl ConsoleRuntime {
         node: &crate::runtime::console_language::OperationNode<'_>,
     ) -> bool {
         use crate::runtime::iop::OperationId;
+        if node.schema.domain == b"pool" { return self.execute_pool_node(node); }
         match node.schema.operation {
             OperationId::SystemStatus => self.system_status(),
             OperationId::SystemInfo => self.system_info(),
@@ -8932,6 +8935,11 @@ impl ConsoleRuntime {
                 Some(b"transfer-chunk") => OperationId::ReplicaTransferChunk.machine_id(),
                 Some(b"transfer-commit") => OperationId::ReplicaTransferCommit.machine_id(),
                 Some(b"object-read") => OperationId::ObjectRead.machine_id(),
+                Some(b"object-create") => OperationId::ObjectCreate.machine_id(),
+                Some(b"object-inspect") => OperationId::ObjectInspect.machine_id(),
+                Some(b"object-update") => OperationId::ObjectUpdate.machine_id(),
+                Some(b"object-policy") => OperationId::ObjectSetPolicy.machine_id(),
+                Some(b"pool-inspect") => OperationId::PoolInspect.machine_id(),
                 _ => { self.output.write_line(b"Choose a registered node, resource, or replica operation."); return true; }
             };
             let Some(seconds) = node_argument(node, b"seconds").and_then(parse_u64_decimal).filter(|v| (1..=3600).contains(v)) else {

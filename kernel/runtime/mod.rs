@@ -164,7 +164,7 @@ pub enum UiOperationError {
 pub struct InfinityRuntime {
     pub storage_last_observation: Option<iop::storage_protocol::StorageOperationV1>,
     storage_handler: Option<iop::storage_protocol::StorageHandler>,
-    storage_event_cap: [Option<u64>; 2],
+    storage_event_cap: [Option<u64>; 4],
     pub fabric_resources: fabric::resources::Directory,
     pub execution: ExecutionManager,
     pub scheduler: Scheduler,
@@ -263,7 +263,7 @@ impl InfinityRuntime {
         Self {
             storage_last_observation: None,
             storage_handler: None,
-            storage_event_cap: [None; 2],
+            storage_event_cap: [None; 4],
             fabric_resources: fabric::resources::Directory::new(),
             execution: ExecutionManager::new(),
             scheduler: Scheduler::new(),
@@ -1331,8 +1331,10 @@ impl InfinityRuntime {
             [OperationId::ReplicaInspect as u32, OperationId::ReplicaTransferBegin as u32,
                 OperationId::ReplicaTransferChunk as u32, OperationId::ReplicaTransferCommit as u32,
                 OperationId::ResourceInspect as u32, OperationId::ResourceAdvertise as u32,
-                OperationId::ObjectRead as u32, 0, 0, 0, 0, 0],
-            7, RestartPolicy::OnFailure, Criticality::Important,
+                OperationId::ObjectRead as u32, OperationId::ObjectCreate as u32,
+                OperationId::ObjectInspect as u32, OperationId::ObjectUpdate as u32,
+                OperationId::ObjectSetPolicy as u32, OperationId::PoolInspect as u32],
+            12, RestartPolicy::OnFailure, Criticality::Important,
         ))?;
         if self.live_profile {
             self.services.define(manifest(
@@ -2036,9 +2038,17 @@ pub fn register_storage_backend(handler: iop::storage_protocol::StorageHandler) 
 // DESC: Publishes bounded typed replica state only after the native transaction committed, retaining full ObjectId and causation.
 // ------------------=
 fn publish_storage_commit(notice: iop::storage_protocol::StorageCommit, now: u64) -> bool {
-    use iop::storage_protocol::{EVENT_REPLICA_CHANGED, EVENT_RESOURCE_CHANGED};
-    with_runtime(|runtime| {
-        let index = match notice.event { EVENT_REPLICA_CHANGED => 0, EVENT_RESOURCE_CHANGED => 1, _ => return false };
+    with_runtime(|runtime| publish_storage_commit_from(runtime, notice, now)).unwrap_or(false)
+}
+
+// ------------------------=
+// FUNC: publish_storage_commit_from
+// DESC: Publishes a committed typed storage mutation while the caller already owns the runtime; avoids recursive runtime borrowing in local IOP.
+// ------------------=
+fn publish_storage_commit_from(runtime: &mut InfinityRuntime, notice: iop::storage_protocol::StorageCommit, now: u64) -> bool {
+    use iop::storage_protocol::{EVENT_REPLICA_CHANGED, EVENT_RESOURCE_CHANGED, EVENT_OBJECT_CHANGED, EVENT_POLICY_CHANGED};
+        let index = match notice.event { EVENT_REPLICA_CHANGED => 0, EVENT_RESOURCE_CHANGED => 1,
+            EVENT_OBJECT_CHANGED => 2, EVENT_POLICY_CHANGED => 3, _ => return false };
         let Some(source) = runtime.service_identity(SERVICE_REPLICA_STORAGE) else { return false; };
         let Some(issuer) = runtime.service_identity(SERVICE_RUNTIME) else { return false; };
         if runtime.storage_event_cap[index].is_none() {
@@ -2053,7 +2063,6 @@ fn publish_storage_commit(notice: iop::storage_protocol::StorageCommit, now: u64
         runtime.events.publish(EventClass::StateChange, RoutingDomain::Mesh, notice.event,
             source, 0, notice.correlation, notice.causation, &payload, 140, now,
             &runtime.capabilities, capability).is_ok()
-    }).unwrap_or(false)
 }
 
 // ------------------------=

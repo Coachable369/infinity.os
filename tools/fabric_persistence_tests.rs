@@ -57,11 +57,143 @@ fn replica_request(payload: &[u8]) -> crate::runtime::iop::remote::Authenticated
     let d = descriptor(payload);
     let mut data = [0; 64]; data[..16].copy_from_slice(&d.resource.0);
     data[16..24].copy_from_slice(&d.generation.to_le_bytes()); data[24..56].copy_from_slice(&d.hash);
-    AuthenticatedStorageRequest { peer: NodeId([19; 32]), session_reference: [20; 16], grant: 1,
+    AuthenticatedStorageRequest { local: NodeId([18; 32]), peer: NodeId([19; 32]), session_reference: [20; 16], grant: 1,
         request_id: 7, correlation: 8, causation: 9,
         payload: StorageOperationV1 { operation: Operation::TransferBegin, object: d.object,
             authority_generation: 1, manifest_generation: 2, object_version: d.version,
             offset: d.bytes, scope: 42, value: d.job, length: 56, data } }
+}
+
+// ------------------------=
+// FUNC: pool_request
+// DESC: Builds a bounded native create fixture whose nonce is persisted independently from application identity and namespace.
+// ------------------=
+fn pool_request(content: &[u8]) -> crate::runtime::iop::remote::AuthenticatedStorageRequest {
+    use crate::runtime::iop::storage_protocol::Operation;
+    let mut request = replica_request(&[]);
+    request.payload.operation = Operation::ObjectCreate;
+    request.payload.object = [0; 16]; request.payload.object_version = 0;
+    request.payload.manifest_generation = 0; request.payload.offset = 77;
+    request.payload.value = 3; request.payload.data = [0; 64]; request.payload.length = content.len() as u16;
+    request.payload.data[..content.len()].copy_from_slice(content);
+    request
+}
+
+// ------------------------=
+// FUNC: native_pool_creation_policy_and_manifest_are_authoritative_after_reboot
+// DESC: Exercises native service creation, exact retry identity, paginated canonical manifests, policy fencing, namespace independence and durable empty/nonempty content.
+// ------------------=
+#[test]
+fn native_pool_creation_policy_and_manifest_are_authoritative_after_reboot() {
+    use crate::{native_fabric::service::ReplicaService,
+        runtime::{fabric::manifest::{Manifest, MANIFEST_BYTES}, iop::{remote::RemoteError, storage_protocol::Operation}},
+        storage::object::ObjectId};
+    for content in [&[][..], &[29; 63][..]] {
+        let disk = Disk::default();
+        let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+        let mut service = ReplicaService::mount(&mut store, ResourceId([4; 16]), 5).unwrap();
+        service.attach_device_identity(Some([6; 16]));
+        let request = pool_request(content);
+        let created = service.execute(&mut store, request).unwrap();
+        let id = ObjectId(created.data[..16].try_into().unwrap());
+        assert_ne!(id.0, [0; 16]); assert_eq!(created.data[48..50], [3, 2]);
+        let generation = store.generation(); let usage = store.usage_blocks();
+        assert_eq!(service.execute(&mut store, request), Ok(created));
+        assert_eq!(store.generation(), generation); assert_eq!(store.usage_blocks(), usage);
+        let mut changed_retry = request; changed_retry.payload.value = 1;
+        assert_eq!(service.execute(&mut store, changed_retry), Err(RemoteError::Conflict));
+        store.attach(b"/personal/first", id).unwrap();
+        let mut inspect = request; inspect.payload.operation = Operation::ObjectInspect;
+        inspect.payload.object = id.0; inspect.payload.object_version = 1; inspect.payload.manifest_generation = 1;
+        inspect.payload.data = [0; 64]; inspect.payload.length = 0; inspect.payload.value = 64;
+        let mut bytes = [0; MANIFEST_BYTES];
+        for offset in (0..MANIFEST_BYTES).step_by(64) {
+            inspect.payload.offset = offset as u64;
+            let reply = service.execute(&mut store, inspect).unwrap();
+            assert_eq!(reply.manifest_generation, 1); assert_eq!(reply.value, MANIFEST_BYTES as u64);
+            bytes[offset..offset+reply.length as usize].copy_from_slice(&reply.data[..reply.length as usize]);
+        }
+        let manifest = Manifest::decode(&bytes).unwrap();
+        assert_eq!(manifest.object, id.0); assert_eq!(manifest.length, content.len() as u64);
+        assert_eq!(manifest.hash, <[u8; 32]>::from(Sha256::digest(content)));
+        assert_eq!(manifest.placements[0].unwrap().node, request.local);
+        assert_eq!(manifest.authority, request.peer);
+        if !content.is_empty() { assert_ne!(manifest.chunks[0].unwrap().content, id.0); }
+        let mut policy = inspect; policy.payload.operation = Operation::ObjectSetPolicy;
+        policy.payload.offset = 0; policy.payload.value = 2;
+        let updated = service.execute(&mut store, policy).unwrap();
+        assert_eq!(updated.manifest_generation, 2); assert_eq!(updated.data[48..50], [2, 2]);
+        let committed = store.generation();
+        assert_eq!(service.execute(&mut store, policy), Err(RemoteError::Conflict));
+        policy.payload.manifest_generation = 2; policy.payload.value = 1;
+        let mut foreign = policy; foreign.peer.0[31] ^= 1;
+        assert_eq!(service.execute(&mut store, foreign), Err(RemoteError::AccessDenied));
+        assert_eq!(store.generation(), committed);
+        assert_eq!(service.execute(&mut store, policy).unwrap().data[48..50], [1, 1]);
+        drop(service); drop(store);
+        let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+        let restored = store.pool_manifest(id, request.peer, request.payload.scope).unwrap();
+        assert_eq!(restored.generation, 3); assert_eq!(restored.object, id.0);
+        assert_eq!(restored.placements[0].unwrap().admission_generation, 1);
+        assert_eq!(store.resolve(b"/personal/first"), Ok(id));
+        let mut out = [0; 64]; let len = store.read(id, None, &mut out).unwrap();
+        assert_eq!(&out[..len], content);
+        let mut service = ReplicaService::mount(&mut store, ResourceId([4; 16]), 5).unwrap();
+        service.attach_device_identity(Some([6; 16]));
+        let mut read = policy; read.payload.operation = Operation::ObjectRead;
+        read.payload.manifest_generation = 3; read.payload.value = content.len() as u64;
+        assert_eq!(&service.execute(&mut store, read).unwrap().data[..content.len()], content);
+        let mut update = read; update.payload.operation = Operation::ObjectUpdate;
+        update.payload.value = 0; update.payload.length = 64; update.payload.data = [73; 64];
+        let result = service.execute(&mut store, update).unwrap();
+        assert_eq!(result.object_version, 2); assert_eq!(result.manifest_generation, 4);
+        assert_eq!(store.resolve(b"/personal/first"), Ok(id));
+        assert_eq!(service.execute(&mut store, read), Err(RemoteError::Conflict));
+        read.payload.manifest_generation = 4; read.payload.object_version = 2; read.payload.value = 64;
+        assert_eq!(service.execute(&mut store, read).unwrap().data, [73; 64]);
+        let len = store.read(id, Some(1), &mut out).unwrap(); assert_eq!(&out[..len], content);
+        let mut listing = request; listing.payload.operation = Operation::PoolInspect;
+        listing.payload.object = [0; 16]; listing.payload.offset = 0; listing.payload.value = 0;
+        listing.payload.length = 0; listing.payload.data = [0; 64];
+        let listed = service.execute(&mut store, listing).unwrap();
+        assert_eq!(listed.value, 1); assert_eq!(listed.data[..16], id.0);
+        listing.peer.0[31] ^= 1;
+        let hidden = service.execute(&mut store, listing).unwrap();
+        assert_eq!(hidden.value, 0); assert_eq!(hidden.length, 0); assert_eq!(hidden.data, [0; 64]);
+    }
+}
+
+// ------------------------=
+// FUNC: native_pool_creation_is_atomic_at_every_sector_cut
+// DESC: Interrupts each write of content plus manifest plus ownership admission and requires recovery to contain either the complete object or no admitted object.
+// ------------------=
+#[test]
+fn native_pool_creation_is_atomic_at_every_sector_cut() {
+    use crate::native_fabric::service::ReplicaService;
+    let disk = Disk::default();
+    let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
+    let mut service = ReplicaService::mount(&mut store, ResourceId([4; 16]), 5).unwrap();
+    service.attach_device_identity(Some([6; 16]));
+    let request = pool_request(&[31; 63]);
+    let baseline = disk.0.borrow().sectors.clone(); let old_usage = store.usage_blocks();
+    disk.0.borrow_mut().writes = 0;
+    let created = service.execute(&mut store, request).unwrap();
+    let writes = disk.0.borrow().writes; let new_usage = store.usage_blocks();
+    for cut in 0..=writes {
+        let disk = Disk(Rc::new(RefCell::new(DiskState { sectors: baseline.clone(), writes_left: None, writes: 0 })));
+        let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+        let mut service = ReplicaService::new(ResourceId([4; 16]), 5);
+        service.attach_device_identity(Some([6; 16]));
+        disk.0.borrow_mut().writes_left = Some(cut);
+        let _ = service.execute(&mut store, request);
+        drop(service); drop(store); disk.0.borrow_mut().writes_left = None;
+        let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+        assert!(store.usage_blocks() == old_usage || store.usage_blocks() == new_usage);
+        let mut service = ReplicaService::new(ResourceId([4; 16]), 5);
+        service.attach_device_identity(Some([6; 16]));
+        assert_eq!(service.execute(&mut store, request), Ok(created));
+        assert_eq!(store.usage_blocks(), new_usage);
+    }
 }
 
 // ------------------------=

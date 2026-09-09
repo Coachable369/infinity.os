@@ -357,9 +357,18 @@ fn execute_replica_request(request: crate::runtime::iop::remote::AuthenticatedSt
             .and_then(|service| service.execute(store, request)) };
         Ok(response.map(|response| {
             let notice = (store.generation() != before).then_some(StorageCommit {
-                event: crate::runtime::iop::storage_protocol::EVENT_REPLICA_CHANGED,
-                object: request.payload.object, generation: store.generation(), copied: response.offset,
-                state: response.data[0], correlation: request.correlation, causation: request.request_id,
+                event: match request.payload.operation {
+                    crate::runtime::iop::storage_protocol::Operation::ObjectCreate | crate::runtime::iop::storage_protocol::Operation::ObjectUpdate => crate::runtime::iop::storage_protocol::EVENT_OBJECT_CHANGED,
+                    crate::runtime::iop::storage_protocol::Operation::ObjectSetPolicy => crate::runtime::iop::storage_protocol::EVENT_POLICY_CHANGED,
+                    _ => crate::runtime::iop::storage_protocol::EVENT_REPLICA_CHANGED,
+                },
+                object: if request.payload.operation == crate::runtime::iop::storage_protocol::Operation::ObjectCreate {
+                    response.data[..16].try_into().unwrap()
+                } else { request.payload.object }, generation: store.generation(), copied: response.offset,
+                state: if matches!(request.payload.operation, crate::runtime::iop::storage_protocol::Operation::ObjectCreate
+                    | crate::runtime::iop::storage_protocol::Operation::ObjectSetPolicy
+                    | crate::runtime::iop::storage_protocol::Operation::ObjectUpdate) { response.data[49] } else { response.data[0] },
+                correlation: request.correlation, causation: request.request_id,
             });
             (response, notice)
         }))

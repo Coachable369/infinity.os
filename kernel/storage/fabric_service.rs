@@ -93,6 +93,7 @@ impl ReplicaService {
     pub(crate) fn mount<D: BlockDevice>(store: &mut ObjectStore<D>, resource: ResourceId,
         generation: u64) -> Result<Self, RemoteError> {
         if resource.0 == [0; 16] || generation == 0 { return Err(RemoteError::InvalidState); }
+        store.initialize_pool_catalog().map_err(storage_error)?;
         let mut catalog = Catalog::load(store)?;
         catalog.epoch = catalog.epoch.checked_add(1).filter(|n| *n <= u32::MAX as u64)
             .ok_or(RemoteError::PersistenceFailed)?;
@@ -144,6 +145,10 @@ impl ReplicaService {
         let p = request.payload;
         p.encode().map_err(|_| RemoteError::MalformedRequest)?;
         if p.operation == Operation::ResourceInspect { return self.resource_observation(store, p); }
+        if matches!(p.operation, Operation::PoolInspect | Operation::ObjectCreate | Operation::ObjectInspect | Operation::ObjectSetPolicy | Operation::ObjectUpdate)
+            || (p.operation == Operation::ObjectRead && p.length == 0) {
+            return self.pool_operation(store, request);
+        }
         if !matches!(p.operation, Operation::TransferBegin | Operation::TransferChunk | Operation::TransferCommit | Operation::ReplicaInspect | Operation::ObjectRead) {
             return Err(RemoteError::UnsupportedOperation);
         }
@@ -243,6 +248,92 @@ impl ReplicaService {
         Ok(response)
     }
     // ------------------------=
+    // FUNC: pool_operation
+    // DESC: Executes authenticated application creation, canonical manifest inspection and generation-fenced policy mutation against the durable native Pool catalog.
+    // ------------------=
+    fn pool_operation<D: BlockDevice>(&self, store: &mut ObjectStore<D>, request: AuthenticatedStorageRequest)
+        -> Result<StorageOperationV1, RemoteError> {
+        use crate::runtime::fabric::{manifest::MANIFEST_BYTES, placement::{StorageClass, Availability}};
+        let p = request.payload;
+        if request.local.0 == [0; 32] || request.peer.0 == [0; 32] { return Err(RemoteError::AccessDenied); }
+        if p.operation == Operation::PoolInspect {
+            if p.length != 0 || p.object != [0; 16] || p.offset > 8 || p.value != 0 {
+                return Err(RemoteError::MalformedRequest);
+            }
+            if p.manifest_generation != 0 && p.manifest_generation != store.generation() { return Err(RemoteError::Conflict); }
+            let (count, manifest) = store.pool_inspect(request.peer, p.scope, p.offset as usize).map_err(storage_error)?;
+            let mut response = p; response.data = [0; 64]; response.length = 0;
+            response.value = count as u64; response.manifest_generation = store.generation();
+            if let Some(m) = manifest {
+                response.data[..16].copy_from_slice(&m.object); response.data[16..48].copy_from_slice(&m.hash);
+                response.data[48] = m.policy.replicas() as u8;
+                response.data[49] = match m.availability() { Availability::Healthy => 1, Availability::Degraded => 2, Availability::Offline => 3 };
+                response.data[50] = m.minimum_available;
+                response.data[56..64].copy_from_slice(&m.length.to_le_bytes());
+                response.length = 64; response.object_version = m.version;
+                response.authority_generation = m.authority_generation;
+            }
+            return Ok(response);
+        }
+        let policy = match p.value { 1 => Some(StorageClass::Temporary), 2 => Some(StorageClass::Protected),
+            3 => Some(StorageClass::Critical), _ => None };
+        let manifest = match p.operation {
+            Operation::ObjectCreate => {
+                if p.object != [0; 16] || p.object_version != 0 || p.manifest_generation != 0
+                    || p.authority_generation != 1 || p.offset == 0 { return Err(RemoteError::MalformedRequest); }
+                store.pool_create(request.peer, p.scope, p.offset, policy.ok_or(RemoteError::MalformedRequest)?,
+                    &p.data[..p.length as usize], request.local, self.resource,
+                    self.device.ok_or(RemoteError::ServiceUnavailable)?, self.generation).map_err(storage_error)?
+            },
+            Operation::ObjectInspect | Operation::ObjectSetPolicy | Operation::ObjectUpdate | Operation::ObjectRead => {
+                if p.operation != Operation::ObjectUpdate && p.length != 0 { return Err(RemoteError::MalformedRequest); }
+                let current = store.pool_manifest(ObjectId(p.object), request.peer, p.scope).map_err(storage_error)?;
+                if current.authority_generation != p.authority_generation
+                    || (p.manifest_generation != 0 && current.generation != p.manifest_generation)
+                    || (p.object_version != 0 && current.version != p.object_version) { return Err(RemoteError::Conflict); }
+                if matches!(p.operation, Operation::ObjectSetPolicy | Operation::ObjectUpdate) {
+                    if p.offset != 0 || p.manifest_generation == 0 || p.object_version == 0 {
+                        return Err(RemoteError::MalformedRequest);
+                    }
+                    if p.operation == Operation::ObjectSetPolicy {
+                        store.pool_set_policy(ObjectId(p.object), request.peer, p.scope, p.manifest_generation,
+                            policy.ok_or(RemoteError::MalformedRequest)?).map_err(storage_error)?
+                    } else {
+                        if p.value != 0 { return Err(RemoteError::MalformedRequest); }
+                        store.pool_update(ObjectId(p.object), request.peer, p.scope, p.manifest_generation,
+                            &p.data[..p.length as usize], request.local, self.resource,
+                            self.device.ok_or(RemoteError::ServiceUnavailable)?, self.generation).map_err(storage_error)?
+                    }
+                } else { current }
+            },
+            _ => return Err(RemoteError::UnsupportedOperation),
+        };
+        let mut response = p; response.data = [0; 64];
+        response.manifest_generation = manifest.generation;
+        response.authority_generation = manifest.authority_generation;
+        response.object_version = manifest.version;
+        if p.operation == Operation::ObjectRead {
+            if p.value > 64 || p.object_version == 0 || p.manifest_generation == 0 { return Err(RemoteError::MalformedRequest); }
+            store.pool_read(&manifest, p.offset, &mut response.data[..p.value as usize]).map_err(storage_error)?;
+            response.length = p.value as u16;
+        } else if p.operation == Operation::ObjectInspect {
+            if p.value == 0 || p.value > 64 || p.offset >= MANIFEST_BYTES as u64 {
+                return Err(RemoteError::MalformedRequest);
+            }
+            let mut bytes = [0; MANIFEST_BYTES]; manifest.encode(&mut bytes).map_err(|_| RemoteError::PersistenceFailed)?;
+            let length = (MANIFEST_BYTES - p.offset as usize).min(p.value as usize);
+            response.data[..length].copy_from_slice(&bytes[p.offset as usize..p.offset as usize+length]);
+            response.length = length as u16; response.value = MANIFEST_BYTES as u64;
+        } else {
+            response.data[..16].copy_from_slice(&manifest.object);
+            response.data[16..48].copy_from_slice(&manifest.hash);
+            response.data[48] = manifest.policy.replicas() as u8;
+            response.data[49] = match manifest.availability() { Availability::Healthy => 1, Availability::Degraded => 2, Availability::Offline => 3 };
+            response.length = 50; response.value = manifest.length;
+        }
+        Ok(response)
+    }
+    // ------------------------=
     // FUNC: begin_descriptor
     // DESC: Validates exact resource, incarnation, expected hash and length before any recipient capacity can be reserved.
     // ------------------=
@@ -267,6 +358,9 @@ fn field(bytes: &[u8], at: usize) -> u64 { u64::from_le_bytes(bytes[at..at+8].tr
 fn storage_error(error: ObjectError) -> RemoteError {
     match error { ObjectError::InsufficientCapacity => RemoteError::QueueFull,
         ObjectError::NotFound | ObjectError::NamespaceNotFound => RemoteError::NotFound,
+        ObjectError::Unauthorized => RemoteError::AccessDenied,
+        ObjectError::InvalidVersion => RemoteError::Conflict,
+        ObjectError::InvalidObject => RemoteError::MalformedRequest,
         _ => RemoteError::PersistenceFailed }
 }
 // ------------------------=

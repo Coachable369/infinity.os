@@ -13,14 +13,36 @@ pub fn query(user: StableId, session: StableId) -> Result<StorageOperationV1, Io
 }
 
 // ------------------------=
+// FUNC: execute
+// DESC: Allows an authenticated operator to use the shared bounded storage IOP broker; neither Console nor GUI may call the native backend directly.
+// ------------------=
+pub fn execute(user: StableId, session: StableId, request: StorageOperationV1) -> Result<StorageOperationV1, IopError> {
+    with_runtime(|runtime| {
+        authorize(runtime, user, session)?;
+        let now = runtime.node_clock.ok_or(IopError::DeadlineExceeded)?;
+        let result = perform(runtime, now, request);
+        runtime.storage_last_observation = result.as_ref().ok().copied();
+        result
+    }).ok_or(IopError::UnknownEndpoint)?
+}
+
+// ------------------------=
+// FUNC: authorize
+// DESC: Requires the complete current privileged operator session for native Pool configuration and metadata inspection.
+// ------------------=
+fn authorize(runtime: &InfinityRuntime, user: StableId, session: StableId) -> Result<(), IopError> {
+    let active = (0..MAX_SESSIONS).filter_map(|index| runtime.identity.session_nth(index)).any(|candidate|
+        candidate.id == session && candidate.user == user && candidate.state == SessionState::Active
+            && candidate.capabilities & SESSION_IDENTITY_MANAGE != 0);
+    if active { Ok(()) } else { Err(IopError::AccessDenied) }
+}
+
+// ------------------------=
 // FUNC: query_from
 // DESC: Runs the identical authenticated broker against an exclusively borrowed runtime for installed operation and behavioral verification.
 // ------------------=
 fn query_from(runtime: &mut InfinityRuntime, user: StableId, session: StableId) -> Result<StorageOperationV1, IopError> {
-        let active = (0..MAX_SESSIONS).filter_map(|index| runtime.identity.session_nth(index)).any(|candidate|
-            candidate.id == session && candidate.user == user && candidate.state == SessionState::Active
-                && candidate.capabilities & SESSION_IDENTITY_MANAGE != 0);
-        if !active { return Err(IopError::AccessDenied); }
+        authorize(runtime, user, session)?;
         let now = runtime.node_clock.ok_or(IopError::DeadlineExceeded)?;
         let result = read(runtime, now);
         runtime.storage_last_observation = result.as_ref().ok().copied();
@@ -32,6 +54,26 @@ fn query_from(runtime: &mut InfinityRuntime, user: StableId, session: StableId) 
 // DESC: Performs canonical capability-validated request, dequeue, execution and correlated reply without a GUI-only database or shell parsing.
 // ------------------=
 pub(super) fn read(runtime: &mut InfinityRuntime, now: u64) -> Result<StorageOperationV1, IopError> {
+    perform(runtime, now, StorageOperationV1 { operation: Operation::ResourceInspect, object: [0; 16],
+        authority_generation: 0, manifest_generation: 0, object_version: 0,
+        offset: 0, scope: 0, value: 0, length: 0, data: [0; 64] })
+}
+
+// ------------------------=
+// FUNC: perform
+// DESC: Routes one exact operation through owned endpoints, live capability validation and a correlated reply; committed mutations publish through ordinary IEF authority.
+// ------------------=
+fn perform(runtime: &mut InfinityRuntime, now: u64, request: StorageOperationV1) -> Result<StorageOperationV1, IopError> {
+    let operation = match request.operation {
+        Operation::ResourceInspect => OperationId::ResourceInspect,
+        Operation::ObjectCreate => OperationId::ObjectCreate,
+        Operation::ObjectInspect => OperationId::ObjectInspect,
+        Operation::ObjectRead => OperationId::ObjectRead,
+        Operation::ObjectUpdate => OperationId::ObjectUpdate,
+        Operation::ObjectSetPolicy => OperationId::ObjectSetPolicy,
+        Operation::PoolInspect => OperationId::PoolInspect,
+        _ => return Err(IopError::InvalidPayload),
+    };
     if runtime.services.inspect(SERVICE_REPLICA_STORAGE).is_none_or(|s| s.state != ServiceState::Ready) {
         return Err(IopError::UnknownEndpoint);
     }
@@ -43,29 +85,27 @@ pub(super) fn read(runtime: &mut InfinityRuntime, now: u64) -> Result<StorageOpe
     runtime.iop.ensure_owned_endpoint(0xe102, caller)?;
     let id = runtime.iop.next_node_request()?;
     let deadline = now.checked_add(30).ok_or(IopError::DeadlineExceeded)?;
-    let capability = runtime.capabilities.grant(CapabilityType::ServiceCall, OperationId::ResourceInspect as u64,
+    let capability = runtime.capabilities.grant(CapabilityType::ServiceCall, operation as u64,
         1, 0, service, caller, Some(deadline), 0)?;
     let result = (|| {
-        let request = StorageOperationV1 { operation: Operation::ResourceInspect, object: [0; 16],
-            authority_generation: 0, manifest_generation: 0, object_version: 0,
-            offset: 0, scope: 0, value: 0, length: 0, data: [0; 64] };
         let payload = request.encode().map_err(|_| IopError::InvalidPayload)?;
-        let message = IopMessage::request(OperationId::ResourceInspect, id, caller, capability, deadline, id, &payload)?;
+        let message = IopMessage::request(operation, id, caller, capability, deadline, id, &payload)?;
         runtime.iop.send(0xe101, message, &runtime.capabilities, now)?;
         let incoming = runtime.iop.receive(0xe101, now)?;
-        if incoming.header.request_id != id || incoming.header.operation_type_id != OperationId::ResourceInspect as u32
+        if incoming.header.request_id != id || incoming.header.operation_type_id != operation as u32
             || incoming.header.caller_identity != caller || runtime.iop.is_cancelled(id) { return Err(IopError::InvalidHeader); }
         runtime.capabilities.validate(incoming.header.capability_ref, caller, CapabilityType::ServiceCall,
-            OperationId::ResourceInspect as u64, 1, 0, now)?;
+            operation as u64, 1, 0, now)?;
         let decoded = StorageOperationV1::decode(incoming.bytes()).map_err(|_| IopError::InvalidPayload)?;
         if decoded != request { return Err(IopError::InvalidPayload); }
         let (response, notice) = handler(iop::remote::AuthenticatedStorageRequest {
-            peer: local, session_reference: [0; 16], grant: capability, request_id: id,
+            local, peer: local, session_reference: [0; 16], grant: capability, request_id: id,
             correlation: id, causation: id, payload: decoded,
         }).map_err(|_| IopError::InvalidPayload)?;
-        if notice.is_some() || response.operation != request.operation || response.object != request.object {
+        if response.operation != request.operation || response.object != request.object {
             return Err(IopError::InvalidPayload);
         }
+        if let Some(notice) = notice { let _ = publish_storage_commit_from(runtime, notice, now); }
         let encoded = response.encode().map_err(|_| IopError::InvalidPayload)?;
         runtime.iop.respond(0xe102, &incoming, service, &encoded, now)?;
         let reply = runtime.iop.receive(0xe102, now)?;

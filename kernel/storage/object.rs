@@ -5,6 +5,8 @@ use super::organization;
 use super::{BlockDevice, DateTimeConfiguration};
 #[path = "object_extents.rs"]
 mod extents;
+#[path = "object_pool.rs"]
+pub(crate) mod pool;
 
 #[path = "../runtime/ai/generation.rs"]
 mod ai_generation_asset;
