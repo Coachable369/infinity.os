@@ -118,6 +118,49 @@ struct Job {
     head_sequence: u64,
     head_digest: [u8; 32],
     result: Option<Result<u64, RemoteError>>,
+    overlay_only: bool,
+}
+impl Job {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates one bounded operation with no quorum observations, payload or implicit physical destination authority.
+    // ------------------=
+    fn new(
+        id: u64,
+        user: StableId,
+        session: StableId,
+        object: [u8; 16],
+        destination: NodeId,
+        now: u64,
+    ) -> Self {
+        Self {
+            id,
+            user,
+            session,
+            object,
+            destination,
+            fresh: 0,
+            anchor: None,
+            authorization: None,
+            round: None,
+            phase: Phase::Owner,
+            upload: Upload::Destination,
+            member: 0,
+            at: 0,
+            offset: 0,
+            bytes: [0; REPAIR_AUTHORIZATION_BYTES],
+            data: [0; 64],
+            length: 0,
+            receipt: None,
+            publication: None,
+            deadline: now.saturating_add(3600),
+            digest: Sha256::new(),
+            head_sequence: 0,
+            head_digest: [0; 32],
+            result: None,
+            overlay_only: false,
+        }
+    }
 }
 pub struct Service {
     pub handler: Option<NativeHandler>,
@@ -179,35 +222,113 @@ pub fn begin(
             .next
             .checked_add(1)
             .ok_or(RemoteError::QueueFull)?;
-        r.storage_metadata_repair.job = Some(Job {
-            id,
-            user,
-            session,
-            object,
-            destination,
-            fresh,
-            anchor: None,
-            authorization: None,
-            round: None,
-            phase: Phase::Owner,
-            upload: Upload::Destination,
-            member: 0,
-            at: 0,
-            offset: 0,
-            bytes: [0; REPAIR_AUTHORIZATION_BYTES],
-            data: [0; 64],
-            length: 0,
-            receipt: None,
-            publication: None,
-            deadline: now.saturating_add(3600),
-            digest: Sha256::new(),
-            head_sequence: 0,
-            head_digest: [0; 32],
-            result: None,
-        });
+        let mut job = Job::new(id, user, session, object, destination, now);
+        job.fresh = fresh;
+        r.storage_metadata_repair.job = Some(job);
         Ok(id)
     })
     .ok_or(RemoteError::ServiceUnavailable)?
+}
+// ------------------------=
+// FUNC: overlay_start
+// DESC: Starts an internal read-only repair-head barrier after the owning metadata service obtained its fresh owner quorum; it never creates a repair proposal.
+// ------------------=
+pub(super) fn overlay_start(
+    r: &mut InfinityRuntime,
+    user: StableId,
+    session: StableId,
+    anchor: Bundle,
+) -> Result<u64, RemoteError> {
+    if !storage_operator::authorized(r, user, session) {
+        return Err(RemoteError::AccessDenied);
+    }
+    if r.storage_metadata_repair.job.is_some() {
+        return Err(RemoteError::QueueFull);
+    }
+    let now = r.node_clock.ok_or(RemoteError::ServiceUnavailable)?;
+    let local = r.nodes.local_id().ok_or(RemoteError::ServiceUnavailable)?;
+    anchor
+        .authorize(local, storage_metadata::principal(), now)
+        .map_err(|_| RemoteError::AccessDenied)?;
+    let round = RepairReadRound::new(
+        &anchor.group,
+        &anchor.certificate.ok_or(RemoteError::InvalidState)?,
+    )
+    .map_err(|_| RemoteError::AccessDenied)?;
+    let id = (1u64 << 61) | r.storage_metadata_repair.next;
+    r.storage_metadata_repair.next = r
+        .storage_metadata_repair
+        .next
+        .checked_add(1)
+        .ok_or(RemoteError::QueueFull)?;
+    let mut job = Job::new(
+        id,
+        user,
+        session,
+        anchor.manifest.object,
+        NodeId([0; 32]),
+        now,
+    );
+    job.overlay_only = true;
+    job.deadline = now.saturating_add(900);
+    job.anchor = Some(anchor);
+    job.round = Some(round);
+    job.phase = Phase::LocalHead;
+    r.storage_metadata_repair.job = Some(job);
+    Ok(id)
+}
+// ------------------------=
+// FUNC: overlay_take
+// DESC: Delivers only the exact internal reader's completed fresh overlay, distinguishing pending, authenticated absence and effective signed placements.
+// ------------------=
+pub(super) fn overlay_take(
+    r: &mut InfinityRuntime,
+    user: StableId,
+    session: StableId,
+    id: u64,
+) -> Result<Option<Option<RepairBundle>>, RemoteError> {
+    if !storage_operator::authorized(r, user, session) {
+        return Err(RemoteError::AccessDenied);
+    }
+    let j = r
+        .storage_metadata_repair
+        .job
+        .as_ref()
+        .filter(|j| j.id == id && j.user == user && j.session == session && j.overlay_only)
+        .ok_or(RemoteError::NotFound)?;
+    let Some(result) = j.result else {
+        return Ok(None);
+    };
+    let resolved = result.and_then(|_| {
+        j.round
+            .as_ref()
+            .ok_or(RemoteError::InvalidState)?
+            .resolved()
+            .map_err(|_| RemoteError::ServiceUnavailable)
+    });
+    r.storage_metadata_repair.job = None;
+    resolved.map(Some)
+}
+// ------------------------=
+// FUNC: overlay_cancel
+// DESC: Releases only an exact initiating internal read after outer cancellation or revocation, including its outstanding request and capability.
+// ------------------=
+pub(super) fn overlay_cancel(r: &mut InfinityRuntime, user: StableId, session: StableId, id: u64) {
+    if !r
+        .storage_metadata_repair
+        .job
+        .as_ref()
+        .is_some_and(|j| j.id == id && j.user == user && j.session == session && j.overlay_only)
+    {
+        return;
+    }
+    if let Some(p) = r.storage_metadata_repair.pending.take() {
+        if let Some(caller) = r.service_identity(SERVICE_REPLICA_STORAGE) {
+            r.iop.remote.discard(caller, p.id);
+            let _ = r.capabilities.retire_leaf(p.cap, caller);
+        }
+    }
+    r.storage_metadata_repair.job = None;
 }
 // ------------------------=
 // FUNC: take
@@ -222,7 +343,7 @@ pub fn take(user: StableId, session: StableId, id: u64) -> Result<Option<u64>, R
             .storage_metadata_repair
             .job
             .as_ref()
-            .filter(|j| j.id == id && j.user == user && j.session == session)
+            .filter(|j| j.id == id && j.user == user && j.session == session && !j.overlay_only)
             .ok_or(RemoteError::NotFound)?;
         let Some(result) = j.result else {
             return Ok(None);
@@ -644,7 +765,23 @@ fn step(r: &mut InfinityRuntime, j: &mut Job, now: u64) -> Result<(), RemoteErro
                 j.phase = Phase::Build;
             }
         }
-        Phase::Build => build(r, j, now)?,
+        Phase::Build => {
+            if j.overlay_only {
+                let resolved = j
+                    .round
+                    .as_ref()
+                    .ok_or(RemoteError::InvalidState)?
+                    .resolved()
+                    .map_err(|_| RemoteError::ServiceUnavailable)?;
+                j.result = Some(Ok(resolved
+                    .map_or(j.anchor.unwrap().manifest.generation, |b| {
+                        b.manifest.generation
+                    })));
+                j.phase = Phase::Done;
+            } else {
+                build(r, j, now)?;
+            }
+        }
         Phase::Begin | Phase::Chunk | Phase::End => {
             let peer = if j.upload == Upload::Destination {
                 j.destination
