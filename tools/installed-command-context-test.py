@@ -10,6 +10,19 @@ spec.loader.exec_module(installed)
 
 class CommandContext(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_terminal_installer_failure_is_not_polled_until_timeout
+    # DESC: Injects a real terminal-state value at each installer step and verifies immediate failure on the first state inspection, without retries or elapsed-time sleeps.
+    # ------------------=
+    def test_terminal_installer_failure_is_not_polled_until_timeout(self):
+        for step in range(7):
+            guest = FailingInstaller(step)
+            with self.assertRaises(AssertionError) as failure:
+                installed.Guest.install(guest)
+            self.assertEqual(failure.exception.args[0]["state"][5], 9)
+            self.assertEqual(guest.failed_inspections, 1)
+            self.assertEqual(guest.values[3], 0)
+
+    # ------------------------=
     # FUNC: test_locked_operator_authenticates_before_submission
     # DESC: Exercises the actual submission method; a locked editor must never receive the command payload.
     # ------------------=
@@ -123,6 +136,63 @@ class LauncherGuest(ControlledGuest):
             self.values[4], self.values[8] = 8, 7
         else:
             raise AssertionError(code)
+
+
+class FailingInstaller:
+    # ------------------------=
+    # FUNC: __init__
+    # DESC: Models only native installer modes and a selected terminal failure boundary.
+    # ------------------=
+    def __init__(self, failure_step):
+        self.values = [0] * 512
+        self.values[6] = 1
+        self.failure_step = failure_step
+        self.failed_inspections = 0
+
+    # ------------------------=
+    # FUNC: boot
+    # DESC: Requires installer boot; a failed installation must not attempt installed boot.
+    # ------------------=
+    def boot(self, installer):
+        assert installer
+
+    # ------------------------=
+    # FUNC: wait
+    # DESC: Invokes the production predicate on one structured observation and counts terminal-state inspections.
+    # ------------------=
+    def wait(self, predicate, label, timeout=120):
+        if self.values[5] == 9:
+            self.failed_inspections += 1
+        assert predicate(self.values)
+        return tuple(self.values)
+
+    # ------------------------=
+    # FUNC: text
+    # DESC: Accepts startup selection only before the installer begins.
+    # ------------------=
+    def text(self, value):
+        assert self.values[4] == 0
+
+    # ------------------------=
+    # FUNC: screenshot
+    # DESC: Leaves image capture outside this typed-state harness test.
+    # ------------------=
+    def screenshot(self, label):
+        pass
+
+    # ------------------------=
+    # FUNC: key
+    # DESC: Advances one installer state per activation, preserving destructive default focus and injecting one terminal failure.
+    # ------------------=
+    def key(self, code):
+        if code == "tab":
+            self.values[6] = 1
+        elif self.values[4] == 0:
+            self.values[4] = 3
+        else:
+            self.values[5] = 9 if self.values[5] == self.failure_step else self.values[5] + 1
+            if self.values[5] == 6:
+                self.values[6] = 0
 
 
 if __name__ == "__main__":
