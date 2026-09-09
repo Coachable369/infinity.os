@@ -41,6 +41,20 @@ fn advance_four(peers: &mut [Fixture; 4], millisecond: &mut u64, seconds: u64, c
 // ------------------=
 #[test]
 fn four_node_confirmations_with_real_poll_cadence() {
+    std::thread::Builder::new()
+        .name("four-node-transport-fixture".into())
+        .stack_size(32 * 1024 * 1024)
+        .spawn(four_node_confirmations_case)
+        .expect("bounded fixture worker")
+        .join()
+        .expect("four-node transport behavior");
+}
+
+// ------------------------=
+// FUNC: four_node_confirmations_case
+// DESC: Holds four large isolated runtime fixtures on an explicitly bounded host-only worker stack, never the native kernel stack.
+// ------------------=
+fn four_node_confirmations_case() {
     let mut peers = core::array::from_fn(|index| {
         let number = index as u8 + 1;
         let others: Vec<u8> = (1..=4).filter(|peer| *peer != number).collect();
