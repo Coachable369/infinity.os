@@ -121,6 +121,31 @@ def peer_state(state, peer):
 
 
 # ------------------------=
+# FUNC: wait_peer_projection
+# DESC: Waits for a checkpoint-fenced typed node projection before judging one peer, rather than confusing live counts with cached rows.
+# ------------------=
+def wait_peer_projection(guest, peer, expected=None):
+    # ------------------------=
+    # FUNC: ready
+    # DESC: Requires current authoritative checkpoint and the requested exact peer trust state.
+    # ------------------=
+    def ready(state):
+        if state[22] or state[20] != state[21]:
+            return False
+        value = peer_state(state, peer)
+        return expected is None or value == expected
+    return guest.wait(ready, "exact peer projection reconciled", timeout=90)
+
+
+# ------------------------=
+# FUNC: loaded_ui_probe
+# DESC: Reserves active-transfer desktop verification for the required 256 KiB case without changing byte or replica acceptance.
+# ------------------=
+def loaded_ui_probe(length, callback):
+    return callback if length == 262144 else None
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Uses independently installed nodes and ordinary native operations; loses original A and never requests explicit repair.
 # ------------------=
@@ -239,13 +264,13 @@ def main():
             for left in range(4):
                 for right in range(left + 1, 4):
                     if args.resume_pairing:
-                        action = pair_action(peer_state(guests[left].state(), identities[right]),
-                                             peer_state(guests[right].state(), identities[left]))
+                        action = pair_action(peer_state(wait_peer_projection(guests[left], identities[right]), identities[right]),
+                                             peer_state(wait_peer_projection(guests[right], identities[left]), identities[left]))
                         if action == "preserve":
                             continue
                     D.pair(guests[left], guests[right])
-                    assert peer_state(guests[left].state(), identities[right]) == 3
-                    assert peer_state(guests[right].state(), identities[left]) == 3
+                    wait_peer_projection(guests[left], identities[right], 3)
+                    wait_peer_projection(guests[right], identities[left], 3)
             report["stage"] = "authority"
             report["authority"] = establish_authority(guests, D, checkpoint=lambda ids, grants: save_prepared(work, ids, grants))
         else:
@@ -286,7 +311,7 @@ def main():
         report["measurement"] = prior["measurement"] if args.resume_measured else measure(
             a, D.API.symbol, created["object_id"], traffic=hub.traffic_snapshot,
             submission_started=submission_started, submission_traffic=submission_traffic,
-            during_transfer=lambda: D.responsive_transfer(a, created["object_id"]))
+            during_transfer=loaded_ui_probe(args.length, lambda: D.responsive_transfer(a, created["object_id"])))
         report["persisted"] = [D.persisted_hash(g, args.verifier.resolve(), identities[0], created)
                                for g in (a, b, c)]
         if args.parity:

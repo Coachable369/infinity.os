@@ -4,6 +4,7 @@ import importlib.util
 import pathlib
 import unittest
 import copy
+import struct
 import ms10_installed_fixture as fixture
 
 SPEC = importlib.util.spec_from_file_location("owner_case", pathlib.Path(__file__).with_name("ms10-installed-owner-offline.py"))
@@ -12,6 +13,44 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CaseFence(unittest.TestCase):
+    # ------------------------=
+    # FUNC: test_only_full_size_runs_loaded_desktop_probe
+    # DESC: Smaller transfer cases do not run unrelated desktop work; the required full-size callback remains mandatory.
+    # ------------------=
+    def test_only_full_size_runs_loaded_desktop_probe(self):
+        calls = []
+        callback = lambda: calls.append(1)
+        self.assertIsNone(MODULE.loaded_ui_probe(32768, callback))
+        self.assertIsNone(MODULE.loaded_ui_probe(65536, callback))
+        MODULE.loaded_ui_probe(262144, callback)()
+        self.assertEqual(calls, [1])
+
+    # ------------------------=
+    # FUNC: test_live_count_does_not_replace_reconciled_peer_row
+    # DESC: Rejects old cached rows even with a successful live count, then accepts the exact trusted row at the matching checkpoint.
+    # ------------------=
+    def test_live_count_does_not_replace_reconciled_peer_row(self):
+        peer = "12"*32
+        stale = [0]*512
+        stale[20:26] = [5, 4, 0, 0, 1, 3]
+        row = bytearray(128)
+        row[:32], row[85] = bytes.fromhex(peer), 1
+        stale[128:144] = struct.unpack("<16Q", row)
+        refreshed = stale.copy()
+        refreshed[21] = 5
+        row[85] = 3
+        refreshed[128:144] = struct.unpack("<16Q", row)
+        class Guest:
+            # ------------------------=
+            # FUNC: wait
+            # DESC: Evaluates the real predicate before and after a typed projection refresh.
+            # ------------------=
+            def wait(self, predicate, label, timeout):
+                assert not predicate(stale)
+                assert predicate(refreshed)
+                return refreshed
+        self.assertEqual(MODULE.wait_peer_projection(Guest(), peer, 3), refreshed)
+
     # ------------------------=
     # FUNC: test_pairing_resume_preserves_exact_trust_and_artifact
     # DESC: Pairing-only failure cannot reuse authority/object stages or mismatched artifacts; asymmetric trust requires explicit repair.
