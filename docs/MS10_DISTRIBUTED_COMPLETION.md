@@ -58,6 +58,17 @@ Packet-level reproduction is pending; accumulated control-budget errors alone
 do not establish which confirmation was rejected. Lifecycle completion remains
 unverified.
 
+Focused installed B–D revalidation then passed three distinct reset/pairing
+ceremonies with all four nodes connected and unrelated trust preserved:
+`/tmp/ms10-order-installed-bab4753/pairing-trace-2-4-1788981832229220000.json`.
+No runtime change separated the failure from these retries. The captured public
+packet metadata did not overflow. This is repeated-success evidence, not proof
+that the earlier intermittent failure is fixed. Test-only `d034624` separately
+reproduces confirmation retry exhaustion under adversarial control-budget
+pressure. Exact causation of the original installed incident remains unproven.
+Tool `07713b1` permits a fenced pairing-only continuation against the existing
+artifact pins and identities without duplicating authority grants.
+
 Checkpoint `3cd58d1` (including `8f441aa`) removes the confirmed namespace-capacity
 dependency from atomic Pool audit, quorum payload/catalog and metadata-access
 configuration. Reserved native System Metadata identities retain legacy reads;
