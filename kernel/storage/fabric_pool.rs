@@ -36,7 +36,7 @@ struct Entry {
     object: ObjectId, backing: ObjectId, owner: NodeId, scope: u64,
     nonce: u64, creation_hash: [u8; 32], creation_policy: u8,
 }
-struct Catalog { id: ObjectId, entries: [Option<Entry>; LIMIT] }
+struct Catalog { id: ObjectId, deletion: ObjectId, entries: [Option<Entry>; LIMIT] }
 impl Catalog {
     // ------------------------=
     // FUNC: encode
@@ -44,6 +44,7 @@ impl Catalog {
     // ------------------=
     fn encode(&self) -> [u8; BYTES] {
         let mut out = [0; BYTES]; out[..8].copy_from_slice(b"INFPOOL1");
+        out[16..32].copy_from_slice(&self.deletion.0);
         for (i, e) in self.entries.iter().enumerate() {
             if let Some(e) = e {
                 let at = 32 + i * 128;
@@ -68,7 +69,7 @@ impl Catalog {
         if store.read(id, None, &mut bytes)? != BYTES || &bytes[..8] != b"INFPOOL1" {
             return Err(ObjectError::CorruptContent);
         }
-        let mut result = Self { id, entries: [None; LIMIT] };
+        let mut result = Self { id, deletion:ObjectId(bytes[16..32].try_into().unwrap()), entries: [None; LIMIT] };
         for i in 0..LIMIT {
             let at = 32 + i * 128;
             if bytes[at..at+128].iter().all(|b| *b == 0) { continue; }
@@ -184,7 +185,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         match self.resolve(PATH) {
             Ok(_) => { Catalog::load(self)?; },
             Err(ObjectError::NotFound | ObjectError::NamespaceNotFound) => {
-                let empty = Catalog { id: ObjectId([0; 16]), entries: [None; LIMIT] };
+                let empty = Catalog { id: ObjectId([0; 16]), deletion:ObjectId([0;16]), entries: [None; LIMIT] };
                 self.create_attached(b"pool-manifests", ObjectType::Metadata, Space::System, &empty.encode(), PATH)?;
             },
             Err(e) => return Err(e),

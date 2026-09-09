@@ -682,6 +682,8 @@ impl<D: BlockDevice> ObjectStore<D> {
         retired[1] = backing;
         retired[2..].copy_from_slice(&candidates);
         let (outbox, pending) = self.pool_stage_deletion(&manifest, scope)?;
+        // Outbox initialization may have atomically added its catalog child reference.
+        catalog.deletion = Catalog::load(self)?.deletion;
         self.pool_retire_owned_with_state(&retired, catalog.id, &catalog.encode(), Some((outbox, &pending)),Some(audit_record(Some(&manifest),&manifest,6)))
     }
 }

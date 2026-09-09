@@ -46,8 +46,15 @@ impl<D:BlockDevice> ObjectStore<D> {
     // ------------------=
     fn pool_deletion_state(&mut self)->Result<(ObjectId,[u8;BYTES]),ObjectError> {
         let mut bytes=[0;BYTES];bytes[..8].copy_from_slice(b"INFPDEL1");
-        let id=match self.resolve(PATH_DELETE){Ok(id)=>{if self.read(id,None,&mut bytes)?!=BYTES || &bytes[..8]!=b"INFPDEL1"{return Err(ObjectError::CorruptContent);}id},
-            Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>self.create_attached(b"pool-deletions",ObjectType::Metadata,Space::System,&bytes,PATH_DELETE)?,Err(e)=>return Err(e)};
+        self.initialize_pool_catalog()?;
+        let mut catalog=Catalog::load(self)?;
+        let id=if catalog.deletion.0!=[0;16]{catalog.deletion}else{match self.resolve(PATH_DELETE){
+            Ok(id)=>{catalog.deletion=id;self.replace_named_state(PATH,&catalog.encode())?;id},
+            Err(ObjectError::NotFound|ObjectError::NamespaceNotFound)=>{
+                self.replace_linked_state(catalog.id,&catalog.encode(),16,&bytes)?;
+                Catalog::load(self)?.deletion
+            },Err(e)=>return Err(e)}};
+        if self.read(id,None,&mut bytes)?!=BYTES || &bytes[..8]!=b"INFPDEL1"{return Err(ObjectError::CorruptContent);}
         for i in 0..8{decode(&bytes[32+i*RECORD..32+(i+1)*RECORD])?;}Ok((id,bytes))
     }
     // ------------------------=
