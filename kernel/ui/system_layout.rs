@@ -116,6 +116,10 @@ pub enum EditorScrollTarget {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditorDialogTarget {
     NameField,
+    LocationField,
+    Parent,
+    Previous,
+    Next,
     Row(usize),
     Cancel,
     Accept,
@@ -1818,61 +1822,18 @@ impl SystemLayout {
             window_height,
             maximized,
         );
-        let sheet_width =
-            (420 * self.scale).min((window.content.width as usize).saturating_sub(40 * self.scale));
-        let sheet_height = if open_picker {
-            330 * self.scale
-        } else {
-            220 * self.scale
-        };
-        let left = window.content.x.max(0) as usize
-            + (window.content.width as usize).saturating_sub(sheet_width) / 2;
-        let top = window.content.y.max(0) as usize
-            + (window.content.height as usize).saturating_sub(sheet_height) / 2;
-        if open_picker {
-            for index in 0..row_count.min(6) {
-                if rect(
-                    left + 24 * self.scale,
-                    top + (62 + index * 34) * self.scale,
-                    sheet_width.saturating_sub(48 * self.scale),
-                    30 * self.scale,
-                )
-                .contains(point)
-                {
-                    return Some(EditorDialogTarget::Row(index));
-                }
-            }
-        } else if rect(
-            left + 24 * self.scale,
-            top + 72 * self.scale,
-            sheet_width.saturating_sub(48 * self.scale),
-            46 * self.scale,
-        )
-        .contains(point)
-        {
-            return Some(EditorDialogTarget::NameField);
-        }
-        let button_top = top + sheet_height.saturating_sub(60 * self.scale);
-        let button_width = (sheet_width.saturating_sub(60 * self.scale)) / 2;
-        if rect(
-            left + 24 * self.scale,
-            button_top,
-            button_width,
-            UI_COMPACT_ACTION_HEIGHT * self.scale,
-        )
-        .contains(point)
-        {
-            return Some(EditorDialogTarget::Cancel);
-        }
-        if rect(
-            left + (24 + UI_CONTROL_GAP) * self.scale + button_width,
-            button_top,
-            button_width,
-            UI_COMPACT_ACTION_HEIGHT * self.scale,
-        )
-        .contains(point)
-        {
-            return Some(EditorDialogTarget::Accept);
+        let g=crate::ui::object_picker::geometry(window.content,self.scale,!open_picker);
+        if !open_picker && g.name.contains(point) {return Some(EditorDialogTarget::NameField);}
+        if g.location.contains(point) {return Some(EditorDialogTarget::LocationField);}
+        if g.parent.contains(point) {return Some(EditorDialogTarget::Parent);}
+        if g.previous.contains(point) {return Some(EditorDialogTarget::Previous);}
+        if g.next.contains(point) {return Some(EditorDialogTarget::Next);}
+        if g.cancel.contains(point) {return Some(EditorDialogTarget::Cancel);}
+        if g.accept.contains(point) {return Some(EditorDialogTarget::Accept);}
+        for index in 0..row_count.min(g.rows) {
+            let row=Rect {x:g.list.x,y:g.list.y+(index*g.row_height) as i32,
+                width:g.list.width,height:g.row_height as u32};
+            if row.contains(point) {return Some(EditorDialogTarget::Row(index));}
         }
         None
     }

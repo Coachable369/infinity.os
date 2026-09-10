@@ -309,6 +309,12 @@ object-vm-test:
 	@tools/object-vm-test.sh
 
 .PHONY: installer-entropy-test
+.PHONY: editor-window-test
+editor-window-test:
+	@mkdir -p build/behavior-tests
+	rustc --edition=2021 tools/editor-window-test.rs -o build/behavior-tests/editor-window-test
+	build/behavior-tests/editor-window-test
+
 installer-entropy-test:
 	@mkdir -p build/behavior-tests
 	cc -std=c11 -Wall -Wextra -Werror tools/tpm-random-test.c -o build/behavior-tests/tpm-random-test

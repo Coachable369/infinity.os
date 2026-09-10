@@ -445,6 +445,7 @@ struct ConsoleRuntime {
     node_input_lease: Option<crate::ui::trusted::SecureInputLease>,
     node_policy_offset: usize,
     settings_window: SettingsWindowState,
+    settings_open: bool,
     pool_view_revision: u64,
     settings_window_dragging: bool,
     settings_window_resizing: Option<usize>,
@@ -511,6 +512,7 @@ struct ConsoleRuntime {
     editor_document_name: [u8; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
     editor_document_name_length: usize,
     editor_dialog: EditorDialog,
+    editor_picker: crate::ui::object_picker::Picker,
     editor_scroll_row: usize,
     editor_scroll_dragging: bool,
     editor_scroll_grab_offset: i32,
@@ -584,6 +586,7 @@ impl ConsoleRuntime {
             node_input_lease: None,
             node_policy_offset: 0,
             pool_view_revision: 0,
+            settings_open: false,
             settings_window: SettingsWindowState {
                 x: 160,
                 y: 210,
@@ -668,6 +671,7 @@ impl ConsoleRuntime {
             editor_document_name: [0; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
             editor_document_name_length: 0,
             editor_dialog: EditorDialog::None,
+            editor_picker: crate::ui::object_picker::Picker::new(),
             editor_scroll_row: 0,
             editor_scroll_dragging: false,
             editor_scroll_grab_offset: 0,
@@ -1063,6 +1067,13 @@ impl ConsoleRuntime {
     // DESC: Implements the redraw operation.
     // ------------------=
     fn redraw(&self) {
+        crate::ui::object_picker::publish(self.editor_picker);
+        if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings|ConsoleMode::SystemMenu|ConsoleMode::AppLauncher) {
+            let (e,c,t)=self.desktop_app_windows();
+            let active=if self.mode==ConsoleMode::Settings {4} else {match self.desktop_app {
+                DesktopAppKind::None=>0,DesktopAppKind::CommandWindow=>1,DesktopAppKind::TextEditor=>2,DesktopAppKind::TaskManager=>3}};
+            crate::ui::desktop_stack::publish([self.home_window_visible,c.visible,e.visible,t.visible,self.settings_open],active,self.system_focus);
+        }
         if !unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).request() } { return; }
         crate::runtime::with_runtime(|runtime| { runtime.node_selection = self.selected_node_id; runtime.node_policy_offset = self.node_policy_offset; });
         self.publish_text_input_presentation();
@@ -1108,7 +1119,7 @@ impl ConsoleRuntime {
                         .copy_from_slice(machine.display_name.as_bytes());
                 }
             }
-            let displayed_input = if self.desktop_app == DesktopAppKind::TextEditor {
+            let displayed_input = if self.mode==ConsoleMode::Desktop && self.desktop_app == DesktopAppKind::TextEditor {
                 self.editor_document.bytes()
             } else if self.mode == ConsoleMode::Settings && !self.settings_editing {
                 &settings_value[..settings_value_length]
@@ -1914,23 +1925,17 @@ impl ConsoleRuntime {
     // ------------------=
     fn input_text_editor(&mut self, key: ConsoleKey) {
         if self.editor_dialog != EditorDialog::None {
-            if self.editor_dialog == EditorDialog::SaveAs && self.edit_system_text(key) {
-                return;
-            }
-            match (self.editor_dialog, key) {
-                (EditorDialog::SaveAs, ConsoleKey::Enter) => self.save_editor_document_as(),
-                (EditorDialog::Open, ConsoleKey::Up) => {
-                    self.system_focus = self.system_focus.saturating_sub(1)
+            if self.editor_picker.field<2 && self.edit_system_text(key) {self.editor_picker.error=0;return;}
+            match key {
+                ConsoleKey::Tab(_) => {
+                    let next=if self.editor_dialog==EditorDialog::Open {if self.editor_picker.field==1 {2}else{1}}
+                        else {(self.editor_picker.field+1)%3};
+                    self.select_editor_picker_field(next);
                 }
-                (EditorDialog::Open, ConsoleKey::Down) => {
-                    let count = self.editor_document_count();
-                    self.system_focus = self
-                        .system_focus
-                        .saturating_add(1)
-                        .min(count.saturating_sub(1));
-                }
-                (EditorDialog::Open, ConsoleKey::Enter) => self.open_selected_editor_document(),
-                (_, ConsoleKey::Escape) => self.close_editor_dialog(),
+                ConsoleKey::Up => self.editor_picker.selected=self.editor_picker.selected.saturating_sub(1),
+                ConsoleKey::Down => self.editor_picker.selected=(self.editor_picker.selected+1).min(self.editor_picker.count.saturating_sub(1)),
+                ConsoleKey::Enter => self.accept_editor_picker(),
+                ConsoleKey::Escape => self.close_editor_dialog(),
                 _ => {}
             }
             return;
@@ -2500,7 +2505,7 @@ impl ConsoleRuntime {
                 self.settings_window.width,
                 self.settings_window.height,
                 self.settings_window.maximized,
-                self.mode == ConsoleMode::Settings,
+                self.settings_open,
             ),
             editor: WindowPlacement::new(
                 self.editor_window.x,
@@ -2528,7 +2533,8 @@ impl ConsoleRuntime {
             ),
             desktop_item_positions: self.desktop_item_positions,
             focused_surface,
-            settings_section: self.system_focus,
+            settings_section: if self.mode==ConsoleMode::Settings {self.system_focus}
+                else {crate::ui::desktop_stack::current().settings_section},
             settings_expanded_row: self.settings_window.expanded_row,
             settings_scroll_offset: self.settings_window.scroll_offset,
             input_preferences: crate::ui::input_preferences::current().encode(),
@@ -2592,6 +2598,7 @@ impl ConsoleRuntime {
             visible: layout.task_manager.visible,
         };
         self.desktop_item_positions = layout.desktop_item_positions;
+        self.settings_open=layout.settings.visible;
         self.checkpoint_active_file_navigator();
         match layout.focused_surface {
             DesktopResumeSurface::Workspace => self.desktop_app = DesktopAppKind::None,
@@ -2744,6 +2751,37 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: activate_clicked_window
+    // DESC: Raises the topmost clicked native window using the painter's shared order, preserving all geometry and document state.
+    // ------------------=
+    fn activate_clicked_window(&mut self,layout:SystemLayout)->bool {
+        let stack=crate::ui::desktop_stack::current();
+        let (e,c,t)=self.desktop_app_windows();
+        let app_rect=|s:DesktopAppWindowState|layout.desktop_app_window_geometry(s.x,s.y,s.width,s.height,s.maximized).window;
+        let (x,y,w,h)=layout.home_window_geometry_sized(self.home_window_x,self.home_window_y,
+            self.home_window_width,self.home_window_height,self.home_window_maximized);
+        let mut home=crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32};
+        let point=crate::ui::geometry::Point{x:self.system.framebuffer_width as i32*self.pointer_x/1000,
+            y:self.system.framebuffer_height as i32*self.pointer_y/1000};
+        let navigator=self.inactive_file_navigator_at_pointer();
+        if navigator.is_some() {home=crate::ui::geometry::Rect{x:point.x,y:point.y,width:1,height:1};}
+        let Some(id)=stack.hit([home,app_rect(c),app_rect(e),app_rect(t),layout.settings_window_geometry(self.settings_window).window],point) else{return false;};
+        if id==stack.active && !(id==0 && navigator.is_some()) {return false;}
+        if self.mode==ConsoleMode::Settings && self.settings_editing {return false;}
+        self.store_active_app_window();
+        if id==4 {self.mode=ConsoleMode::Settings;self.system_focus=stack.settings_section;}
+        else {
+            self.mode=ConsoleMode::Desktop;
+            self.desktop_app=match id {1=>DesktopAppKind::CommandWindow,2=>DesktopAppKind::TextEditor,
+                3=>DesktopAppKind::TaskManager,_=>DesktopAppKind::None};
+            self.load_active_app_window();self.system_focus=0;
+            if id==0 {if let Some(index)=navigator {let _=self.load_file_navigator_window(index);}}
+        }
+        self.ai_chat_focus=0; self.shell_menu=0;
+        let _=self.checkpoint_desktop_layout(); true
+    }
+
+    // ------------------------=
     // FUNC: save_editor_document
     // DESC: Creates or updates the Text Editor document as a native Personal-space object.
     // ------------------=
@@ -2772,9 +2810,9 @@ impl ConsoleRuntime {
     // ------------------=
     fn open_editor_document(&mut self) {
         self.editor_dialog = EditorDialog::Open;
-        self.system_focus = 0;
-        self.reset_input();
-        self.refresh_editor_open_list();
+        if self.editor_picker.location.len==0 { self.editor_picker.set_location(b"/"); }
+        self.editor_picker.field=2; self.editor_picker.error=0;
+        self.reset_input(); self.refresh_editor_open_list();
     }
 
     // ------------------------=
@@ -2782,34 +2820,28 @@ impl ConsoleRuntime {
     // DESC: Loads the selected native Text object and retains its stable namespace reference for later versioned saves.
     // ------------------=
     fn open_selected_editor_document(&mut self) {
-        let entry = match crate::storage::namespace_list_nth(
-            crate::ui::text_editor::DOCUMENT_NAMESPACE,
-            self.system_focus,
-        ) {
-            Ok(Some(entry)) => entry,
-            _ => return,
-        };
-        let mut content = [0u8; crate::ui::text_editor::DOCUMENT_CAPACITY];
-        let path_length = entry.path_len as usize;
-        if let Ok((_, length)) =
-            crate::storage::object_read_path(&entry.path[..path_length], None, &mut content)
-        {
+        if self.editor_picker.selected>=self.editor_picker.count {return;}
+        let entry=self.editor_picker.entries[self.editor_picker.selected];
+        if entry.folder {
+            self.editor_picker.set_location(entry.bytes()); self.refresh_editor_open_list(); return;
+        }
+        let readable=crate::storage::object_inspect_path(entry.bytes()).is_ok_and(|(metadata,_)|
+            metadata.kind==crate::storage::object::ObjectType::Text
+                && metadata.logical_size as usize<=crate::ui::text_editor::DOCUMENT_CAPACITY);
+        if !readable {self.editor_picker.error=3;return;}
+        let mut content=[0u8; crate::ui::text_editor::DOCUMENT_CAPACITY];
+        if let Ok((_, length))=crate::storage::object_read_path(entry.bytes(),None,&mut content) {
             if self.editor_document.open(&content[..length]) {
-                self.editor_document_path[..path_length]
-                    .copy_from_slice(&entry.path[..path_length]);
-                self.editor_document_path_length = path_length;
-                let name =
-                    &entry.path[crate::ui::text_editor::DOCUMENT_NAMESPACE.len()..path_length];
-                let name_length = name.len().min(self.editor_document_name.len());
-                self.editor_document_name[..name_length].copy_from_slice(&name[..name_length]);
-                self.editor_document_name_length = name_length;
-                self.editor_scroll_row = 0;
-                self.close_editor_dialog();
-                crate::output_text(b"[editor] document opened\n");
-                return;
+                self.editor_document_path[..entry.len].copy_from_slice(entry.bytes());
+                self.editor_document_path_length=entry.len;
+                let name=crate::runtime::object_navigation::namespace_basename(entry.bytes());
+                let length=name.len().min(self.editor_document_name.len());
+                self.editor_document_name[..length].copy_from_slice(&name[..length]);
+                self.editor_document_name_length=length;
+                self.editor_scroll_row=0; self.close_editor_dialog(); return;
             }
         }
-        crate::output_text(b"[editor] open failed\n");
+        self.editor_picker.error=3;
     }
 
     // ------------------------=
@@ -2838,37 +2870,73 @@ impl ConsoleRuntime {
     // DESC: Opens a bounded native-object naming sheet without changing the active document.
     // ------------------=
     fn open_editor_save_as_dialog(&mut self) {
-        self.editor_dialog = EditorDialog::SaveAs;
-        self.reset_input();
+        self.editor_dialog=EditorDialog::SaveAs;
+        if self.editor_picker.location.len==0 {self.editor_picker.set_location(b"/personal/documents");}
+        self.editor_picker.name.len=self.editor_document_name_length;
+        self.editor_picker.name.path[..self.editor_document_name_length]
+            .copy_from_slice(&self.editor_document_name[..self.editor_document_name_length]);
+        self.editor_picker.field=2; self.editor_picker.error=0;
+        self.select_editor_picker_field(0);
+        self.refresh_editor_open_list();
+    }
+
+    // ------------------------=
+    // FUNC: select_editor_picker_field
+    // DESC: Preserves the filename while switching native filename/location text fields.
+    // ------------------=
+    fn select_editor_picker_field(&mut self, field:u8) {
+        if self.editor_picker.field==1 && field!=1 {
+            if !self.editor_picker.set_location(&self.command[..self.command_length]) {self.editor_picker.error=1;return;}
+            self.refresh_editor_open_list();
+        }
+        if self.editor_picker.field==0 {
+            let length=self.command_length.min(crate::ui::object_picker::PATH);
+            self.editor_picker.name.path[..length].copy_from_slice(&self.command[..length]);
+            self.editor_picker.name.len=length;
+        }
+        self.editor_picker.field=field; self.reset_input();
+        let value=if field==0 {self.editor_picker.name} else if field==1 {self.editor_picker.location}
+            else {crate::ui::object_picker::Entry::empty()};
+        self.command[..value.len].copy_from_slice(value.bytes());
+        self.command_length=value.len; self.command_cursor=value.len;
+    }
+
+    // ------------------------=
+    // FUNC: accept_editor_picker
+    // DESC: Applies an entered location, navigates a folder, or saves/opens the chosen Pool object.
+    // ------------------=
+    fn accept_editor_picker(&mut self) {
+        if self.editor_picker.field==1 {
+            if !self.editor_picker.set_location(&self.command[..self.command_length]) {
+                self.editor_picker.error=1; return;
+            }
+            self.select_editor_picker_field(2); self.refresh_editor_open_list(); return;
+        }
+        if self.editor_picker.field==2 && self.editor_picker.selected<self.editor_picker.count
+            && self.editor_picker.entries[self.editor_picker.selected].folder {
+            self.open_selected_editor_document();return;
+        }
+        if self.editor_dialog==EditorDialog::Open {self.open_selected_editor_document();}
+        else {self.save_editor_document_as();}
     }
 
     // ------------------------=
     // FUNC: save_editor_document_as
-    // DESC: Creates a uniquely named Text object and binds the editor to its new stable Object ID through a namespace reference.
+    // DESC: Creates a distinct named Text object at the selected Pool namespace and reports collisions without overwriting.
     // ------------------=
     fn save_editor_document_as(&mut self) {
-        let name = &self.command[..self.command_length];
-        let mut path = [0u8; crate::ui::text_editor::DOCUMENT_PATH_CAPACITY];
-        let Some(path_length) = crate::ui::text_editor::document_path(name, &mut path) else {
-            return;
-        };
-        if crate::storage::namespace_resolve(&path[..path_length]).is_ok() {
-            return;
+        if self.editor_picker.field==0 {self.select_editor_picker_field(2);}
+        let name=self.editor_picker.name;
+        let Some(path)=self.editor_picker.destination(name.bytes()) else {self.editor_picker.error=1;return;};
+        if crate::storage::namespace_resolve(path.bytes()).is_ok() {self.editor_picker.error=2;return;}
+        if crate::storage::object_create_note_at(name.bytes(),self.editor_document.bytes(),path.bytes()).is_err() {
+            self.editor_picker.error=4;return;
         }
-        if crate::storage::object_create_note_at(
-            name,
-            self.editor_document.bytes(),
-            &path[..path_length],
-        )
-        .is_ok()
-        {
-            self.editor_document_path[..path_length].copy_from_slice(&path[..path_length]);
-            self.editor_document_path_length = path_length;
-            self.editor_document_name[..name.len()].copy_from_slice(name);
-            self.editor_document_name_length = name.len();
-            self.editor_document.save();
-            self.close_editor_dialog();
-        }
+        self.editor_document_path[..path.len].copy_from_slice(path.bytes());
+        self.editor_document_path_length=path.len;
+        self.editor_document_name[..name.len].copy_from_slice(name.bytes());
+        self.editor_document_name_length=name.len;
+        self.editor_document.save(); self.close_editor_dialog();
     }
 
     // ------------------------=
@@ -2886,40 +2954,20 @@ impl ConsoleRuntime {
     // FUNC: editor_document_count
     // DESC: Counts discoverable Personal document namespace references for bounded picker navigation.
     // ------------------=
-    fn editor_document_count(&self) -> usize {
-        let mut count = 0usize;
-        while count < OUTPUT_ROWS
-            && matches!(
-                crate::storage::namespace_list_nth(
-                    crate::ui::text_editor::DOCUMENT_NAMESPACE,
-                    count,
-                ),
-                Ok(Some(_))
-            )
-        {
-            count += 1;
-        }
-        count
-    }
+    fn editor_document_count(&self) -> usize { self.editor_picker.count }
 
     // ------------------------=
     // FUNC: refresh_editor_open_list
-    // DESC: Projects discoverable native document names into the bounded picker without parsing rendered text for behavior.
+    // DESC: Browses real Pool references with explicit and inferred folders; presentation never drives object identity.
     // ------------------=
     fn refresh_editor_open_list(&mut self) {
-        self.output.clear();
-        for index in 0..OUTPUT_ROWS {
-            let entry = match crate::storage::namespace_list_nth(
-                crate::ui::text_editor::DOCUMENT_NAMESPACE,
-                index,
-            ) {
-                Ok(Some(entry)) => entry,
-                _ => break,
-            };
-            let path_length = entry.path_len as usize;
-            self.output.write_line(
-                &entry.path[crate::ui::text_editor::DOCUMENT_NAMESPACE.len()..path_length],
-            );
+        self.editor_picker.count=0; self.editor_picker.selected=0;
+        for index in 0..256 {
+            let Ok(Some(entry))=crate::storage::namespace_list_nth(self.editor_picker.location.bytes(),index) else {break;};
+            let path=&entry.path[..entry.path_len as usize];
+            let folder=crate::storage::object_inspect_path(path).map(|(m,_)|
+                m.kind==crate::storage::object::ObjectType::NamespaceNode).unwrap_or(false);
+            self.editor_picker.add(path,folder);
         }
     }
 
@@ -3107,6 +3155,7 @@ impl ConsoleRuntime {
     // DESC: Opens one Settings section without accidentally activating its first value.
     // ------------------=
     fn open_settings(&mut self, section: usize) {
+        self.settings_open=true;
         self.cancel_node_pairing_input();
         self.store_active_app_window();
         self.mode = ConsoleMode::Settings;
@@ -6396,6 +6445,12 @@ impl ConsoleRuntime {
             self.system.framebuffer_width,
             self.system.framebuffer_height,
         );
+        if clicked && matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings)
+            && self.editor_dialog==EditorDialog::None && !self.app_window_dragging
+            && self.app_window_resizing.is_none() && !self.settings_window_dragging
+            && self.settings_window_resizing.is_none() && self.activate_clicked_window(layout) {
+            self.redraw(); return;
+        }
         if self.mode == ConsoleMode::Desktop && (back_clicked || forward_clicked) {
             let _ = crate::runtime::with_runtime(|runtime| {
                 runtime.file_navigator.as_mut().map(|navigator| {
@@ -6626,45 +6681,36 @@ impl ConsoleRuntime {
                         self.editor_dialog == EditorDialog::Open,
                         count,
                     ) {
+                        let content=layout.desktop_app_window_geometry(self.app_window_x,self.app_window_y,
+                            self.app_window_width,self.app_window_height,self.app_window_maximized).content;
+                        let g=crate::ui::object_picker::geometry(content,layout.scale(),self.editor_dialog==EditorDialog::SaveAs);
+                        let page=self.editor_picker.selected/g.rows;
                         match target {
-                            EditorDialogTarget::Row(index) => self.system_focus = index,
-                            EditorDialogTarget::Cancel => self.close_editor_dialog(),
-                            EditorDialogTarget::Accept => {
-                                if self.editor_dialog == EditorDialog::Open {
+                            EditorDialogTarget::NameField => self.select_editor_picker_field(0),
+                            EditorDialogTarget::LocationField => self.select_editor_picker_field(1),
+                            EditorDialogTarget::Parent => {
+                                self.select_editor_picker_field(2); self.editor_picker.parent(); self.refresh_editor_open_list();
+                            }
+                            EditorDialogTarget::Previous => self.editor_picker.selected=self.editor_picker.selected.saturating_sub(g.rows),
+                            EditorDialogTarget::Next => self.editor_picker.selected=(self.editor_picker.selected+g.rows).min(count.saturating_sub(1)),
+                            EditorDialogTarget::Row(index) => {
+                                self.select_editor_picker_field(2);
+                                self.editor_picker.selected=(page*g.rows+index).min(count.saturating_sub(1));
+                                if count>0 && self.editor_picker.entries[self.editor_picker.selected].folder {
                                     self.open_selected_editor_document();
-                                } else {
-                                    self.save_editor_document_as();
+                                } else if count>0 && self.editor_dialog==EditorDialog::SaveAs {
+                                    let entry=self.editor_picker.entries[self.editor_picker.selected];
+                                    let name=crate::runtime::object_navigation::namespace_basename(entry.bytes());
+                                    let n=name.len().min(47); self.editor_picker.name.path[..n].copy_from_slice(&name[..n]);
+                                    self.editor_picker.name.len=n; self.select_editor_picker_field(0);
                                 }
                             }
-                            EditorDialogTarget::NameField => {
-                                let content = layout
-                                    .desktop_app_window_geometry(
-                                        self.app_window_x,
-                                        self.app_window_y,
-                                        self.app_window_width,
-                                        self.app_window_height,
-                                        self.app_window_maximized,
-                                    )
-                                    .content;
-                                let scale = layout.scale();
-                                let sheet_width = (420 * scale)
-                                    .min((content.width as usize).saturating_sub(40 * scale));
-                                let sheet_height = 220 * scale;
-                                let left = content.x.max(0) as usize
-                                    + (content.width as usize).saturating_sub(sheet_width) / 2;
-                                let top = content.y.max(0) as usize
-                                    + (content.height as usize).saturating_sub(sheet_height) / 2;
-                                let field = crate::ui::geometry::Rect {
-                                    x: (left + 24 * scale) as i32,
-                                    y: (top + 72 * scale) as i32,
-                                    width: sheet_width.saturating_sub(48 * scale) as u32,
-                                    height: (46 * scale) as u32,
-                                };
-                                self.command_cursor = self.clicked_caret_index(
-                                    field,
-                                    16 * scale,
-                                    self.command_length,
-                                );
+                            EditorDialogTarget::Cancel => self.close_editor_dialog(),
+                            EditorDialogTarget::Accept => {
+                                if self.editor_dialog==EditorDialog::SaveAs {
+                                    if self.editor_picker.field==1 {self.select_editor_picker_field(2);}
+                                    if self.editor_picker.field!=1 {self.save_editor_document_as();}
+                                } else {self.accept_editor_picker();}
                             }
                         }
                     }
@@ -7764,6 +7810,7 @@ impl ConsoleRuntime {
                         self.settings_window_resizing = Some(corner)
                     }
                     SettingsTarget::WindowControl(0 | 2) if clicked => {
+                        self.settings_open=false;
                         self.enter_desktop();
                         let _ = self.checkpoint_desktop_layout();
                     }

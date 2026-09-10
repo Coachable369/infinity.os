@@ -923,7 +923,7 @@ impl super::DisplayDevice {
         size: usize,
         active: bool,
     ) {
-        let role = [37usize, 0, 47, 46, 1, 17, 23, 26, 32, 34, 13, 28, 27]
+        let role = [37usize, 0, 47, 46, 1, 17, 23, 26, 32, 34, 13, 28, 27, 17]
             .get(kind.saturating_sub(1))
             .copied();
         if let Some(role) = role {
@@ -4066,138 +4066,54 @@ impl super::DisplayDevice {
         focus: usize,
         scale: usize,
     ) {
-        let sheet_width = (420 * scale).min((content.width as usize).saturating_sub(40 * scale));
-        let sheet_height = if open_picker {
-            330 * scale
-        } else {
-            220 * scale
-        };
-        let left =
-            content.x.max(0) as usize + (content.width as usize).saturating_sub(sheet_width) / 2;
-        let top =
-            content.y.max(0) as usize + (content.height as usize).saturating_sub(sheet_height) / 2;
-        self.fill_rounded_rect_alpha(
-            left.saturating_sub(8 * scale),
-            top + 8 * scale,
-            sheet_width.saturating_add(16 * scale),
-            sheet_height,
-            18 * scale,
-            0,
-            2,
-            8,
-            150,
-        );
-        self.glass_panel(left, top, sheet_width, sheet_height, true);
-        self.ui_text_strong(
-            left + 24 * scale,
-            top + 24 * scale,
-            if open_picker {
-                b"Open Document"
-            } else {
-                b"Save As"
-            },
-            234,
-            244,
-            250,
-            1,
-        );
-        if open_picker {
-            if output_count == 0 {
-                self.ui_text(
-                    left + 24 * scale,
-                    top + 70 * scale,
-                    b"No saved documents yet.",
-                    160,
-                    184,
-                    199,
-                    1,
-                );
-            }
-            for index in 0..output_count.min(6) {
-                let row_top = top + (62 + index * 34) * scale;
-                if index == focus {
-                    self.fill_rounded_rect_alpha(
-                        left + 24 * scale,
-                        row_top,
-                        sheet_width.saturating_sub(48 * scale),
-                        30 * scale,
-                        7 * scale,
-                        11,
-                        72,
-                        108,
-                        235,
-                    );
-                }
-                self.ui_text(
-                    left + 38 * scale,
-                    row_top + 8 * scale,
-                    &output_lines[index][..output_lengths[index].min(96)],
-                    218,
-                    234,
-                    244,
-                    1,
-                );
-            }
-        } else {
-            self.fill_rounded_rect_alpha(
-                left + 24 * scale,
-                top + 72 * scale,
-                sheet_width.saturating_sub(48 * scale),
-                46 * scale,
-                9 * scale,
-                2,
-                16,
-                29,
-                245,
-            );
-            self.outline_rounded_rect(
-                left + 24 * scale,
-                top + 72 * scale,
-                sheet_width.saturating_sub(48 * scale),
-                46 * scale,
-                9 * scale,
-                78,
-                195,
-                242,
-            );
-            self.ui_text(
-                left + 40 * scale,
-                top + 86 * scale,
-                name_input,
-                231,
-                241,
-                247,
-                1,
-            );
-            self.text_field_caret(
-                left + 40 * scale,
-                top + 72 * scale,
-                46 * scale,
-                name_input,
-                true,
-                1,
-            );
+        let picker=crate::ui::object_picker::presentation();
+        let g=crate::ui::object_picker::geometry(content,scale,!open_picker);
+        let _=(output_lines,output_lengths,output_count,focus);
+        let x=g.sheet.x.max(0) as usize; let y=g.sheet.y.max(0) as usize;
+        self.glass_panel(x,y,g.sheet.width as usize,g.sheet.height as usize,true);
+        self.ui_text_strong(x+24*scale,y+18*scale,if open_picker {b"Open from Infinity Pool"} else {b"Save As - Infinity Pool"},234,244,250,1);
+        let clip=self.render_clip;
+        for (field,rect,value,label) in [
+            (0u8,g.name,if picker.field==0 {name_input}else{picker.name.bytes()},b"File name" as &[u8]),
+            (1u8,g.location,if picker.field==1 {name_input}else{picker.location.bytes()},b"Location" as &[u8])] {
+            if open_picker && field==0 {continue;}
+            let fx=rect.x.max(0) as usize; let fy=rect.y.max(0) as usize;
+            self.fill_rounded_rect_alpha(fx,fy,rect.width as usize,rect.height as usize,8*scale,2,16,29,245);
+            self.outline_rounded_rect(fx,fy,rect.width as usize,rect.height as usize,8*scale,78,195,242);
+            let text_y=fy+(rect.height as usize).saturating_sub(28)/2;
+            self.ui_text(fx+10*scale,text_y,label,158,187,204,1);
+            let value_x=fx+120*scale;
+            self.intersect_render_clip(value_x,fy,rect.width.saturating_sub((130*scale) as u32) as usize,rect.height as usize);
+            self.ui_text(value_x,text_y,value,231,241,247,1);
+            self.text_field_caret(value_x,fy,rect.height as usize,value,picker.field==field,1);
+            self.render_clip=clip;
         }
-        let button_top = top + sheet_height.saturating_sub(60 * scale);
-        let button_width = (sheet_width.saturating_sub(60 * scale)) / 2;
-        self.polished_button(
-            left + 24 * scale,
-            button_top,
-            button_width,
-            crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT * scale,
-            b"CANCEL",
-            false,
-            false,
-        );
-        self.polished_button(
-            left + (24 + crate::ui::system_layout::UI_CONTROL_GAP) * scale + button_width,
-            button_top,
-            button_width,
-            crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT * scale,
-            if open_picker { b"OPEN" } else { b"SAVE" },
-            true,
-            false,
-        );
+        let page=picker.selected/g.rows;
+        for row in 0..g.rows {
+            let index=page*g.rows+row; if index>=picker.count {break;}
+            let entry=picker.entries[index]; let top=g.list.y.max(0) as usize+row*g.row_height;
+            let left=g.list.x.max(0) as usize;
+            if index==picker.selected {
+                self.fill_rounded_rect_alpha(left,top,g.list.width as usize,g.row_height,7*scale,11,72,108,235);
+            }
+            self.themed_icon(left+14*scale,top+g.row_height/2,if entry.folder {2}else{4},20*scale);
+            self.intersect_render_clip(left+30*scale,top,g.list.width.saturating_sub((38*scale) as u32) as usize,g.row_height);
+            self.ui_text(left+32*scale,top+g.row_height.saturating_sub(28)/2,crate::runtime::object_navigation::namespace_basename(entry.bytes()),218,234,244,1);
+            self.render_clip=clip;
+        }
+        if picker.count==0 {self.ui_text(g.list.x.max(0) as usize,g.list.y.max(0) as usize,b"This location is empty.",160,184,199,1);}
+        for (r,label,primary) in [(g.parent,b"UP" as &[u8],false),(g.previous,b"PREV",false),
+            (g.next,b"NEXT",false),(g.cancel,b"CANCEL",false),(g.accept,if open_picker {b"OPEN"}else{b"SAVE"},true)] {
+            self.polished_button(r.x.max(0) as usize,r.y.max(0) as usize,r.width as usize,r.height as usize,label,primary,false);
+        }
+        let error:&[u8]=match picker.error {1=>b"Enter a valid location and filename.",2=>b"That name exists. Choose another.",
+            3=>b"Cannot open this object as editable text.",4=>b"Save failed. Check storage and location.",
+            5=>b"Too many entries. Enter a narrower location.",_=>b"Tab: fields   Arrows: select   Enter: accept"};
+        self.intersect_render_clip(x+24*scale,g.cancel.y.saturating_sub((32*scale) as i32).max(0) as usize,
+            g.sheet.width.saturating_sub((48*scale) as u32) as usize,28*scale);
+        self.ui_text(x+24*scale,g.cancel.y.saturating_sub((32*scale) as i32).max(0) as usize,error,
+            if picker.error>0 {255}else{150},if picker.error>0 {120}else{185},if picker.error>0 {120}else{207},1);
+        self.render_clip=clip;
     }
 
     // ------------------------=
@@ -4275,7 +4191,7 @@ impl super::DisplayDevice {
         let margin = self.width * 4 / 100;
         let top_bar = self.system_top_bar((screen == 3).then_some(menu_kind), clock);
 
-        if matches!(screen, 3 | 7 | 8 | 9 | 10) {
+        if matches!(screen, 3 | 7) {
             self.desktop_shell(
                 scale,
                 window_x,
@@ -4310,122 +4226,40 @@ impl super::DisplayDevice {
             self.render_clip = launcher_clip;
         }
 
-        if matches!(screen, 2 | 8 | 9 | 10) {
-            let active_editor = screen == 9;
-            let active_command = screen == 8;
-            if command_window.visible && !active_command {
-                self.desktop_native_app_window(
-                    8,
-                    command_input,
-                    output_lines,
-                    output_lengths,
-                    output_count,
-                    command_window.x,
-                    command_window.y,
-                    command_window.width,
-                    command_window.height,
-                    command_window.maximized,
-                    true,
-                    false,
-                    editor_scroll_row,
-                    editor_dialog,
-                    editor_dialog_input,
-                    editor_dialog_focus,
-                    0,
-                    0,
-                );
-            }
-            if editor_window.visible && !active_editor {
-                self.desktop_native_app_window(
-                    9,
-                    editor_input,
-                    output_lines,
-                    output_lengths,
-                    output_count,
-                    editor_window.x,
-                    editor_window.y,
-                    editor_window.width,
-                    editor_window.height,
-                    editor_window.maximized,
-                    editor_saved,
-                    false,
-                    editor_scroll_row,
-                    editor_dialog,
-                    editor_dialog_input,
-                    editor_dialog_focus,
-                    0,
-                    0,
-                );
-            }
-            if task_manager_window.visible && screen != 10 {
-                self.desktop_native_app_window(
-                    10,
-                    input,
-                    output_lines,
-                    output_lengths,
-                    output_count,
-                    task_manager_window.x,
-                    task_manager_window.y,
-                    task_manager_window.width,
-                    task_manager_window.height,
-                    task_manager_window.maximized,
-                    true,
-                    false,
-                    editor_scroll_row,
-                    editor_dialog,
-                    editor_dialog_input,
-                    editor_dialog_focus,
-                    focus,
-                    0,
-                );
-            }
-            if screen == 2 {
-                self.desktop_shell(
-                    scale,
-                    window_x,
-                    window_y,
-                    window_width,
-                    window_height,
-                    window_visible,
-                    window_maximized,
-                    home_location,
-                    selected_item,
-                    dragging_item,
-                    note_location,
-                    desktop_items,
-                    desktop_item_positions,
-                    false,
-                );
+        if matches!(screen,2|4|8|9|10) {
+            let stack=crate::ui::desktop_stack::current();
+            self.desktop_base(scale,desktop_items,desktop_item_positions,false);
+            for id in stack.order {
+                if !stack.visible[id] {continue;}
+                if id==0 {
+                    self.desktop_navigator_windows(scale,window_x,window_y,window_width,window_height,
+                        window_visible,window_maximized,home_location,dragging_item);
+                } else if id==4 {
+                    self.render_settings_window(stack.settings_section,if screen==4 {input}else{b""},settings_window,scale);
+                } else {
+                    let (kind,state,text)=match id {
+                        1=>(8,command_window,command_input),
+                        2=>(9,editor_window,editor_input),
+                        _=>(10,task_manager_window,input),
+                    };
+                    self.desktop_native_app_window(kind,text,output_lines,output_lengths,output_count,
+                        state.x,state.y,state.width,state.height,state.maximized,editor_saved,false,
+                        editor_scroll_row,if kind==screen {editor_dialog}else{0},editor_dialog_input,
+                        editor_dialog_focus,if kind==screen {focus}else{0},if kind==screen {menu_kind}else{0});
+                }
+                if id==stack.active {
+                    let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
+                    let rect=if id==4 {layout.settings_window_geometry(settings_window).window}
+                    else if id==0 {let (x,y,w,h)=layout.home_window_geometry_sized(window_x,window_y,window_width,window_height,window_maximized);
+                        crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32}}
+                    else {let state=match id {1=>command_window,2=>editor_window,_=>task_manager_window};
+                        layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window};
+                    self.outline_rounded_rect(rect.x.max(0) as usize,rect.y.max(0) as usize,
+                        rect.width as usize,rect.height as usize,10*scale,105,199,245);
+                }
             }
         }
-        if matches!(screen, 8 | 9 | 10) {
-            self.desktop_native_app_window(
-                screen,
-                input,
-                output_lines,
-                output_lengths,
-                output_count,
-                app_window_x,
-                app_window_y,
-                app_window_width,
-                app_window_height,
-                app_window_maximized,
-                editor_saved,
-                false,
-                editor_scroll_row,
-                editor_dialog,
-                editor_dialog_input,
-                editor_dialog_focus,
-                focus,
-                menu_kind,
-            );
-        }
-
-        if screen == 4 {
-            self.render_settings_window(focus, input, settings_window, scale);
-            return;
-        }
-
+        if screen==4 {return;}
         if matches!(screen, 1 | 5 | 6) {
             let panel_top = if matches!(screen, 5 | 6) {
                 top_bar + self.height * 11 / 100
@@ -8111,6 +7945,16 @@ impl super::DisplayDevice {
         desktop_item_positions: &[[i32; 2]; 7],
         launcher_open: bool,
     ) {
+        self.desktop_base(scale,desktop_items,desktop_item_positions,launcher_open);
+        self.desktop_navigator_windows(scale,window_x,window_y,window_width,window_height,
+            window_visible,window_maximized,home_location,dragging_item);
+    }
+
+    // ------------------------=
+    // FUNC: desktop_base
+    // DESC: Paints desktop widgets, objects and dock once beneath the ordered application windows.
+    // ------------------=
+    fn desktop_base(&mut self,scale:usize,desktop_items:u8,desktop_item_positions:&[[i32;2];7],launcher_open:bool) {
         self.desktop_widgets(scale);
         for (index, (name, kind)) in [
             (b"Documents".as_slice(), 0),
@@ -8132,6 +7976,16 @@ impl super::DisplayDevice {
             let pixel_y = self.height * y.clamp(90, 880) as usize / 1000;
             self.desktop_icon(pixel_x, pixel_y, name, *kind);
         }
+        self.desktop_dock(scale, launcher_open);
+    }
+
+    // ------------------------=
+    // FUNC: desktop_navigator_windows
+    // DESC: Paints only navigator layers without repainting desktop widgets over other applications.
+    // ------------------=
+    fn desktop_navigator_windows(&mut self,scale:usize,window_x:i32,window_y:i32,
+        window_width:i32,window_height:i32,window_visible:bool,window_maximized:bool,
+        home_location:usize,dragging_item:Option<usize>) {
         let active_navigator =
             crate::runtime::with_runtime(|runtime| runtime.file_navigators.active_index())
                 .flatten();
@@ -8216,8 +8070,6 @@ impl super::DisplayDevice {
                 )
             });
         }
-
-        self.desktop_dock(scale, launcher_open);
     }
 
     // ------------------------=
@@ -9888,6 +9740,7 @@ pub fn system_ui_present(
                 let hash = runtime.chat.state_hash();
                 hash as u32 ^ (hash >> 32) as u32
             }) ^ crate::ui::text_input::presentation_hash()
+                ^ crate::ui::object_picker::presentation().state_hash()
                 ^ if screen == 10 {
                     u32::from(clock.second)
                 } else {

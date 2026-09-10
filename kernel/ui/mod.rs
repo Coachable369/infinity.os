@@ -32,6 +32,8 @@ pub mod status_menu;
 pub mod surface;
 pub mod system_layout;
 pub mod text_editor;
+pub mod object_picker;
+pub mod desktop_stack;
 pub mod text_input;
 pub mod trusted;
 pub mod vector;

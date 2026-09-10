@@ -583,31 +583,17 @@ fn app_launcher_behavior_test() {
     }
     assert!(toolbar.status.right() <= app_window.toolbar.right());
 
-    let sheet_width = 420;
-    let sheet_height = 220;
-    let sheet_left =
-        app_window.content.x + (app_window.content.width as i32 - sheet_width as i32) / 2;
-    let sheet_top =
-        app_window.content.y + (app_window.content.height as i32 - sheet_height as i32) / 2;
-    let sheet_button_top = sheet_top + sheet_height as i32 - 60;
-    let sheet_button_width = (sheet_width - 60) / 2;
-    for (target, center_x) in [
-        (
-            EditorDialogTarget::Cancel,
-            sheet_left + 24 + sheet_button_width as i32 / 2,
-        ),
-        (
-            EditorDialogTarget::Accept,
-            sheet_left
-                + 24
-                + ui::system_layout::UI_CONTROL_GAP as i32
-                + sheet_button_width as i32
-                + sheet_button_width as i32 / 2,
-        ),
+    let sheet = ui::object_picker::geometry(app_window.content, layout.scale(), true);
+    for (target, rect) in [
+        (EditorDialogTarget::Cancel, sheet.cancel),
+        (EditorDialogTarget::Accept, sheet.accept),
+        (EditorDialogTarget::NameField, sheet.name),
+        (EditorDialogTarget::LocationField, sheet.location),
+        (EditorDialogTarget::Parent, sheet.parent),
     ] {
         let (action_x, action_y) = normalized(
-            center_x,
-            sheet_button_top + ui::system_layout::UI_COMPACT_ACTION_HEIGHT as i32 / 2,
+            rect.x + rect.width as i32 / 2,
+            rect.y + rect.height as i32 / 2,
         );
         assert_eq!(
             layout.desktop_editor_dialog_target(
@@ -698,10 +684,8 @@ fn app_launcher_behavior_test() {
     let path_length = document_path(b"design-notes", &mut path).unwrap();
     assert_eq!(path_length, ui::text_editor::DOCUMENT_NAMESPACE.len() + 12);
     assert!(document_path(b"invalid/name", &mut path).is_none());
-    assert_eq!(
-        layout.desktop_editor_dialog_target(500, 500, 190, 160, 600, 620, false, false, 0),
-        Some(EditorDialogTarget::NameField)
-    );
+    assert!(sheet.name.bottom() < sheet.location.y);
+    assert!(sheet.location.bottom() < sheet.list.y);
 }
 
 // ------------------------=
