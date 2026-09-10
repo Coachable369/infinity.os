@@ -7,7 +7,6 @@ app_dir="$repo_dir/builds/InfinityOS Installer Studio.app"
 
 echo "Cleaning InfinityStudio..."
 swift package --package-path "$studio_dir" clean
-rm -rf "$app_dir"
 
 echo "Building InfinityStudio..."
 "$studio_dir/build.sh"

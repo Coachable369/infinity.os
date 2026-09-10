@@ -57,11 +57,13 @@ final class LiveDetailsTests: XCTestCase {
     }
 
     // ------------------------=
-    // FUNC: testSavedPlanSeparatesRuntimeDetailsFromAuthoredCopy
-    // DESC: Checks the shipped Plan Review geometry and optionally captures its actual canvas layers for visual review.
+    // FUNC: testDefaultPlanSeparatesRuntimeDetailsFromAuthoredCopy
+    // DESC: Checks factory Plan Review geometry independently of the user's editable project and optionally captures the fixture.
     // ------------------=
-    @MainActor func testSavedPlanSeparatesRuntimeDetailsFromAuthoredCopy() throws {
+    @MainActor func testDefaultPlanSeparatesRuntimeDetailsFromAuthoredCopy() throws {
         let store = TemplateStore()
+        // Saved projects may intentionally overlap layers; they must not gate building the editor.
+        store.document = .factoryDefault()
         store.selectScreen(6)
         store.showGrid = false
         store.selectElement(nil)
