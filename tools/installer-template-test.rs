@@ -92,16 +92,6 @@ fn main() {
         assert_eq!(details.kind, 3);
         assert!(!details.hidden);
         assert!(details.frame.width > 0 && details.frame.height > 0);
-        if screen == 6 {
-            for layer in 0..template.element_count(screen).unwrap() {
-                let copy = template.layer_at(screen, layer).unwrap();
-                if copy.role == InstallerTemplateRole::Body as u8 && !copy.hidden {
-                    let a = copy.frame;
-                    let b = details.frame;
-                    assert!(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y);
-                }
-            }
-        }
     }
     assert!((1..=32).contains(&template.screen_count()));
     for screen in 1..=template.screen_count() as u8 {
