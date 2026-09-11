@@ -44,6 +44,7 @@ pub static mut INFINITY_APP_FEATURE_SNAPSHOT: [u64; 32] = [
 pub fn publish(
     document: &super::text_editor::TextDocument,
     owner: Option<(usize, super::geometry::Rect)>,
+    scale: usize,
 ) {
     unsafe {
         let p = &mut *(&raw mut INFINITY_APP_FEATURE_SNAPSHOT);
@@ -71,6 +72,14 @@ pub fn publish(
         p[22] = r.y as u64;
         p[23] = r.width as u64;
         p[24] = r.height as u64;
+        let view = super::editor_tools::current();
+        p[25] = view.menu as u64;
+        p[26] = view.menu_index as u64;
+        let g = super::editor_chrome::Layout::new(r, scale, panel.expanded, view.field);
+        p[27] = g.body.width as u64;
+        p[28] = g.body.height as u64;
+        p[29] = g.body.y as u64;
+        p[30] = g.body.x as u64;
         p[2] = p[2].wrapping_add(1) & !1;
         p[31] = p[2];
     }

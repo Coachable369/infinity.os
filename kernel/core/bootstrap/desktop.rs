@@ -2875,6 +2875,13 @@ impl super::DisplayDevice {
         let height = geometry.window.height as usize;
         let toolbar_left = geometry.toolbar.x.max(0) as usize;
         let toolbar_top = geometry.toolbar.y.max(0) as usize;
+        if screen == 9 {
+            self.editor_window(geometry, input, editor_scroll_row, editor_saved, maximized, scale);
+            if editor_dialog != 0 {
+                self.desktop_editor_dialog(geometry.content, editor_dialog == 2, editor_dialog_input, output_lines, output_lengths, output_count, editor_dialog_focus, scale);
+            }
+            return;
+        }
         if !content_only {
             let (header_r, header_g, header_b) =
                 self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
@@ -3128,56 +3135,7 @@ impl super::DisplayDevice {
             );
         }
         let line_height = 24 * scale;
-        if screen == 9 {
-            let total_rows = self.code_editor(geometry.content,input,editor_scroll_row,scale);
-            let scroll_row = editor_scroll_row;
-            let scroll = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-                .desktop_editor_scroll_geometry(
-                    window_x,
-                    window_y,
-                    window_width,
-                    window_height,
-                    maximized,
-                    total_rows,
-                    scroll_row,
-                );
-            if scroll.maximum_scroll > 0 {
-                self.fill_rounded_rect_alpha(
-                    scroll.track.x.max(0) as usize,
-                    scroll.track.y.max(0) as usize,
-                    scroll.track.width as usize,
-                    scroll.track.height as usize,
-                    4 * scale,
-                    9,
-                    27,
-                    42,
-                    210,
-                );
-                self.fill_rounded_rect_alpha(
-                    scroll.thumb.x.max(0) as usize,
-                    scroll.thumb.y.max(0) as usize,
-                    scroll.thumb.width as usize,
-                    scroll.thumb.height as usize,
-                    4 * scale,
-                    95,
-                    206,
-                    250,
-                    245,
-                );
-            }
-            if editor_dialog != 0 {
-                self.desktop_editor_dialog(
-                    geometry.content,
-                    editor_dialog == 2,
-                    editor_dialog_input,
-                    output_lines,
-                    output_lengths,
-                    output_count,
-                    editor_dialog_focus,
-                    scale,
-                );
-            }
-        } else if screen != 10 {
+        if screen != 10 {
             for row in 0..output_count.min(6) {
                 self.ui_text(
                     content_left + 18 * scale,

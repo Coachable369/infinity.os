@@ -19,6 +19,7 @@ spec.loader.exec_module(base)
 # ------------------=
 def verify_artifacts():
     font = (ROOT / "assets/fonts/InfinityEditor-Mono-18.atlas").read_bytes()
+    ui_fonts = [(ROOT / "assets/fonts" / name).read_bytes() for name in ("InfinityUI-Regular-16.atlas", "InfinityUI-Semibold-16.atlas")]
     assert len(font) == 18 * 24 * 95 and any(font)
     for architecture in ("x86_64", "aarch64"):
         for name in ("kernel.elf", "installed-kernel.elf"):
@@ -27,6 +28,7 @@ def verify_artifacts():
             assert size == 256
             with path.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as binary:
                 assert binary.find(font) >= 0, (architecture, name, "missing code font")
+                assert all(binary.find(atlas) >= 0 for atlas in ui_fonts), (architecture, name, "missing compact UI typography")
 
 # ------------------------=
 # FUNC: features
@@ -64,9 +66,10 @@ def wait_feature(guest, predicate):
 # DESC: Types through actual keyboard events, including punctuation used by the code fixture.
 # ------------------=
 def text(guest, value):
-    aliases = {" ": "spc", "-": "minus", ".": "dot", "=": "equal", "/": "slash", ";": "semicolon", "\n": "ret"}
+    aliases = {" ": "spc", "-": "minus", ".": "dot", "=": "equal", "/": "slash", ";": "semicolon", "\n": "ret", "\t": "tab", ",": "comma"}
+    shifted = {"(": "9", ")": "0", "{": "bracket_left", "}": "bracket_right", '"': "apostrophe", "!": "1", ":": "semicolon"}
     for c in value:
-        guest.key(*(("shift", c.lower()) if c.isupper() else (aliases.get(c, c),)))
+        guest.key(*(("shift", shifted[c]) if c in shifted else ("shift", c.lower()) if c.isupper() else (aliases.get(c, c),)))
 
 # ------------------------=
 # FUNC: click
@@ -100,7 +103,7 @@ def panel_click(guest, control):
     x, y, w, h = p[21:25]
     display = guest.wait(lambda s: s[11] > 0 and s[12] > 0, "panel display geometry")
     scale = 2 if display[11] >= 2560 and display[12] >= 1440 else 1
-    width = min(320 * scale, w - 32 * scale)
+    width = min(400 * scale, w - 280 * scale)
     left, top, bottom = x + w - width - 8 * scale, y + 48 * scale, y + h - 8 * scale
     if control == "toggle":
         click(guest, x + w - 18 * scale, top + 32 * scale if p[13] else y + max(h // 3, 64 * scale) + 24 * scale)
@@ -146,10 +149,22 @@ def main():
             identity = guest.onboard()
             guest.launch("text", 5)
         wait_feature(guest, lambda p: p[12] == 2)
+        initial = wait_feature(guest, lambda p: p[7] == 0)
+        x, y, w, h = initial[21:25]
+        click(guest, x + 32, y + 66)
+        wait_feature(guest, lambda p: p[25] == 1)
+        guest.screenshot("editor-file-menu")
+        guest.key("down")
+        guest.key("ret")
+        wait_feature(guest, lambda p: p[12] != 2)
+        guest.key("esc")
+        wait_feature(guest, lambda p: p[12] == 2)
         text(guest, "let answer = 42;")
         initial = wait_feature(guest, lambda p: p[7] == 16)
-        guest.key("ctrl", "p")
-        text(guest, "syntax")
+        click(guest, x + w - 100, y + h - 16)
+        wait_feature(guest, lambda p: p[25] == 5)
+        guest.screenshot("editor-syntax-dropdown")
+        guest.key("down")
         guest.key("ret")
         wait_feature(guest, lambda p: p[20] == 1)
         guest.key("ctrl", "a")
@@ -169,8 +184,10 @@ def main():
         wait_feature(guest, lambda p: p[9:11] == (4, 10))
         guest.key("esc")
         guest.screenshot("editor-syntax-selection")
+        closed = features(guest)
         panel_click(guest, "toggle")
-        wait_feature(guest, lambda p: p[13] and p[15])
+        opened = wait_feature(guest, lambda p: p[13] and p[15])
+        assert opened[27] < closed[27] and opened[9:11] == closed[9:11]
         text(guest, "insert VALUE")
         guest.key("ret")
         proposed = wait_feature(guest, lambda p: p[14] == 5)
@@ -181,7 +198,7 @@ def main():
         assert applied[16] != initial[16]
         guest.screenshot("editor-ai-applied")
         panel_click(guest, "toggle")
-        saved = features(guest)
+        saved = wait_feature(guest, lambda p: not p[13] and p[27] == closed[27])
         if not live_only:
             guest.key("ctrl", "s")
             text(guest, "assistant-proof.rs")
@@ -190,6 +207,14 @@ def main():
             assert saved[16] == applied[16]
             guest.screenshot("editor-saved")
         panel_click(guest, "toggle")
+        text(guest, "help")
+        guest.key("ret")
+        wait_feature(guest, lambda p: p[19] > 0 and p[14] == 0)
+        panel_click(guest, "toggle")
+        guest.key("ctrl", "a")
+        text(guest, 'fn main() {\n\tlet answer = 42;\nlet message = "Hello, InfinityOS!";\nprintln!("{}", message);\n}\n')
+        panel_click(guest, "toggle")
+        guest.screenshot("editor-idesign-review")
         text(guest, "minimize")
         guest.key("ret")
         wait_feature(guest, lambda p: p[14] == 3)
@@ -205,6 +230,7 @@ def main():
         guest.screenshot("settings-ai-expanded")
         (work / "result.json").write_text(json.dumps({"fresh_install": not live_only, "iso_detached": not live_only,
             "cold_boot_identity": identity, "editor_history_clipboard_search_syntax": True, "saved": not live_only,
+            "file_menu_open_dialog": True, "named_syntax_dropdown": True, "assistant_viewport_reflow": True,
             "reviewed_ai_insert": True, "independent_settings_panel": True, "features": saved[3:7]}, indent=2))
         print("Live UI acceptance passed" if live_only else "Installed editor and shared assistant acceptance passed", flush=True)
     finally:

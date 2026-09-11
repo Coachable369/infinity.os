@@ -7,6 +7,7 @@ mod crash;
 mod desktop;
 mod editor_view;
 mod assistant_view;
+mod app_style;
 mod installer;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod launcher_backdrop;

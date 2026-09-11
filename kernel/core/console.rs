@@ -693,7 +693,7 @@ impl ConsoleRuntime {
             editor_selection_dragging: false,
             editor_selection_anchor: 0,
             editor_scroll_grab_offset: 0,
-            editor_window: DesktopAppWindowState::new(190, 160, 600, 620),
+            editor_window: crate::ui::editor_chrome::default_window(system.framebuffer_width,system.framebuffer_height),
             command_window: DesktopAppWindowState::new(240, 210, 600, 620),
             task_manager_window: DesktopAppWindowState::new(160, 140, 760, 650),
             task_manager_selected: 0,
@@ -834,7 +834,13 @@ impl ConsoleRuntime {
                     return false;
                 }
                 if self.desktop_app == DesktopAppKind::TextEditor {
-                    return true;
+                    let g = self.editor_layout();
+                    let p = crate::ui::geometry::Point {
+                        x: self.system.framebuffer_width as i32 * self.pointer_x / 1000,
+                        y: self.system.framebuffer_height as i32 * self.pointer_y / 1000,
+                    };
+                    return self.editor_tools.menu == crate::ui::editor_chrome::Menu::None
+                        && (g.body.contains(p) || (self.editor_tools.field != crate::ui::editor_tools::Field::None && g.field.contains(p)));
                 }
                 let geometry = layout.desktop_app_window_geometry(
                     window.x,
@@ -1087,8 +1093,10 @@ impl ConsoleRuntime {
     fn redraw(&self) {
         let mut editor_view = self.editor_tools;
         editor_view.selection = self.editor_document.selection(); editor_view.cursor = self.editor_document.cursor();
+        editor_view.filename_len = self.editor_document_name_length.min(editor_view.filename.len());
+        editor_view.filename[..editor_view.filename_len].copy_from_slice(&self.editor_document_name[..editor_view.filename_len]);
         crate::ui::editor_tools::publish(editor_view);
-        crate::ui::app_features::publish(&self.editor_document,self.assistant_owner());
+        crate::ui::app_features::publish(&self.editor_document,self.assistant_owner(),SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale());
         crate::ui::object_picker::publish(self.editor_picker);
         if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings|ConsoleMode::SystemMenu|ConsoleMode::AppLauncher) {
             let (e,c,t)=self.desktop_app_windows();
@@ -1546,6 +1554,7 @@ impl ConsoleRuntime {
     // DESC: Opens and executes the uniform Performance menu at the same header position in every native app.
     // ------------------=
     fn activate_native_app_performance_pointer(&mut self) -> bool {
+        if self.desktop_app == DesktopAppKind::TextEditor { return false; }
         let layout = SystemLayout::new(
             self.system.framebuffer_width,
             self.system.framebuffer_height,
@@ -3290,30 +3299,9 @@ impl ConsoleRuntime {
     // DESC: Computes live wrapped-row and proportional scrollbar geometry for the active Text Editor.
     // ------------------=
     fn editor_scroll_geometry(&self) -> crate::ui::system_layout::EditorScrollGeometry {
-        let layout = SystemLayout::new(
-            self.system.framebuffer_width,
-            self.system.framebuffer_height,
-        );
-        let window = layout.desktop_app_window_geometry(
-            self.app_window_x,
-            self.app_window_y,
-            self.app_window_width,
-            self.app_window_height,
-            self.app_window_maximized,
-        );
-        let columns = (window.content.width as usize).saturating_sub(92 * layout.scale())
-            / (crate::ui::editor_tools::CELL_WIDTH * layout.scale()).max(1);
-        let rows =
-            crate::ui::text_editor::visual_line_count(self.editor_document.bytes(), columns.max(1));
-        layout.desktop_editor_scroll_geometry(
-            self.app_window_x,
-            self.app_window_y,
-            self.app_window_width,
-            self.app_window_height,
-            self.app_window_maximized,
-            rows,
-            self.editor_scroll_row,
-        )
+        let g = self.editor_layout();
+        let rows = crate::ui::text_editor::visual_line_count(self.editor_document.bytes(), g.columns().max(1));
+        g.scrollbar(rows, self.editor_scroll_row)
     }
 
     // ------------------------=
@@ -6495,6 +6483,10 @@ impl ConsoleRuntime {
             && !self.settings_window_dragging && self.settings_window_resizing.is_none() && self.pointer_window_assistant(clicked) {
             if clicked {self.redraw();}return;
         }
+        if !self.app_window_dragging && self.app_window_resizing.is_none() && !self.editor_scroll_dragging
+            && self.pointer_editor_chrome(clicked) {
+            if clicked {self.redraw();} return;
+        }
         if self.mode == ConsoleMode::Desktop && (back_clicked || forward_clicked) {
             let _ = crate::runtime::with_runtime(|runtime| {
                 runtime.file_navigator.as_mut().map(|navigator| {
@@ -6940,51 +6932,7 @@ impl ConsoleRuntime {
                         }
                         DesktopAppWindowTarget::Content => {
                             if self.desktop_app == DesktopAppKind::TextEditor {
-                                let geometry = layout.desktop_app_window_geometry(
-                                    self.app_window_x,
-                                    self.app_window_y,
-                                    self.app_window_width,
-                                    self.app_window_height,
-                                    self.app_window_maximized,
-                                );
-                                let scale = layout.scale().max(1);
-                                let pointer_x =
-                                    self.system.framebuffer_width as i32 * self.pointer_x / 1000;
-                                let pointer_y =
-                                    self.system.framebuffer_height as i32 * self.pointer_y / 1000;
-                                if let Some(action)=crate::ui::editor_tools::action_at(geometry.content,scale,crate::ui::geometry::Point{x:pointer_x,y:pointer_y}) {
-                                    self.editor_tool_action(action);self.redraw();return;
-                                }
-                                if pointer_y<geometry.content.y+(90*scale)as i32 || pointer_y>=geometry.content.bottom()-(36*scale)as i32 {self.redraw();return;}
-                                self.editor_tools.field=crate::ui::editor_tools::Field::None;
-                                let row = self.editor_scroll_row
-                                    + pointer_y
-                                        .saturating_sub(geometry.content.y + (94 * scale) as i32).max(0)
-                                        as usize
-                                        / (24 * scale);
-                                let columns = (geometry.content.width as usize)
-                                    .saturating_sub(92 * scale)
-                                    / (crate::ui::editor_tools::CELL_WIDTH * scale);
-                                let start = crate::ui::text_editor::visual_line_start(
-                                    self.editor_document.bytes(),
-                                    columns.max(1),
-                                    row,
-                                );
-                                let end = crate::ui::text_editor::visual_line_start(
-                                    self.editor_document.bytes(),
-                                    columns.max(1),
-                                    row + 1,
-                                );
-                                let column = crate::ui::text_input::caret_from_x(
-                                    pointer_x - geometry.content.x - (64 * scale) as i32,
-                                    crate::ui::editor_tools::CELL_WIDTH * scale,
-                                    end.saturating_sub(start),
-                                );
-                                let next=(start+column).min(end).min(self.editor_document.bytes().len());
-                                if self.editor_tools.selecting {let anchor=self.editor_document.selection().map_or(self.editor_document.cursor(),|(a,_)|a);self.editor_document.select(anchor,next);}
-                                else {self.editor_document.set_cursor(next);}
-                                self.editor_selection_anchor=if self.editor_tools.selecting {self.editor_document.selection().map_or(next,|(a,_)|a)}else{next};
-                                self.editor_selection_dragging=true;
+                                let _ = self.pointer_editor_chrome(true);
                             } else if self.desktop_app == DesktopAppKind::CommandWindow {
                                 let geometry = layout.desktop_app_window_geometry(
                                     self.app_window_x,

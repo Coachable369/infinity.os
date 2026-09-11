@@ -31,6 +31,8 @@ pub struct Panel {
     pub input: [u8; 192],
     pub length: usize,
     pub response: [u8; 512],
+    pub request: [u8; 192],
+    pub request_len: usize,
     pub response_len: usize,
     pub pending: Action,
     pub argument: [u8; 192],
@@ -49,6 +51,8 @@ impl Panel {
             input: [0; 192],
             length: 0,
             response: [0; 512],
+            request: [0; 192],
+            request_len: 0,
             response_len: 0,
             pending: Action::None,
             argument: [0; 192],
@@ -143,7 +147,7 @@ pub struct Geometry {
 // ------------------=
 pub fn geometry(window: Rect, scale: usize, expanded: bool) -> Geometry {
     let s = scale.max(1) as u32;
-    let width = (320 * s).min(window.width.saturating_sub(32 * s)).max(1);
+    let width = (400 * s).min(window.width.saturating_sub(280 * s)).max(1);
     let panel = Rect {
         x: window.right() - width as i32 - 8 * s as i32,
         y: window.y + 48 * s as i32,
@@ -224,7 +228,9 @@ static REVISION: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::
 // DESC: Erases all transient app conversations and pending authority when the authenticated session changes.
 // ------------------=
 pub fn reset() {
-    unsafe { *(&raw mut PANELS) = [Panel::new(); PANEL_SLOTS]; }
+    unsafe {
+        *(&raw mut PANELS) = [Panel::new(); PANEL_SLOTS];
+    }
     REVISION.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
 }
 // ------------------------=

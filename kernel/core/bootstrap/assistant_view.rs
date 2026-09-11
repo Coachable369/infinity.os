@@ -1,4 +1,5 @@
-//! Shared IDesign assistant rail for native app windows.
+//! Shared compact IDesign assistant rail with explicit reviewed local actions.
+use super::app_style::{CYAN, MUTED, TEXT};
 use crate::ui::{
     app_assistant::{self as assistant, Action},
     geometry::Rect,
@@ -6,11 +7,11 @@ use crate::ui::{
 impl super::DisplayDevice {
     // ------------------------=
     // FUNC: window_assistant
-    // DESC: Paints the same expandable local assistant for every native app; caller owns window z-order.
+    // DESC: Renders real app-local conversation and reviewed actions in the shared docked rail.
     // ------------------=
-    pub(super) fn window_assistant(&mut self, id: usize, window: Rect, scale: usize) {
+    pub(super) fn window_assistant(&mut self, id: usize, window: Rect, s: usize) {
         let panel = assistant::read(id);
-        let g = assistant::geometry(window, scale, panel.expanded);
+        let g = assistant::geometry(window, s, panel.expanded);
         let clip = self.render_clip;
         self.intersect_render_clip(
             window.x.max(0) as usize,
@@ -20,231 +21,172 @@ impl super::DisplayDevice {
         );
         if panel.expanded {
             let p = g.panel;
-            let x = p.x.max(0) as usize;
-            let y = p.y.max(0) as usize;
-            let w = p.width as usize;
-            self.fill_rounded_rect_alpha(x, y, w, p.height as usize, 10 * scale, 11, 27, 43, 252);
-            self.outline_rounded_rect(x, y, w, p.height as usize, 10 * scale, 52, 112, 146);
-            self.ui_text_strong(
-                x + 16 * scale,
-                y + 16 * scale,
+            let x = p.x as usize;
+            let y = p.y as usize;
+            self.app_card(p, (11, 22, 37), (33, 58, 85), s);
+            let _ = self.themed_icon(x + 28 * s, y + 30 * s, 23, 28 * s);
+            self.app_label(
+                Rect {
+                    x: p.x + 52 * s as i32,
+                    y: p.y + 8 * s as i32,
+                    width: p.width.saturating_sub(96 * s as u32),
+                    height: 26 * s as u32,
+                },
                 b"Infinity AI",
-                216,
-                242,
-                255,
-                1,
+                TEXT,
+                true,
+                s,
             );
-            self.ui_text(
-                x + 16 * scale,
-                y + 43 * scale,
-                b"LOCAL / THIS APP ONLY",
-                93,
-                199,
-                227,
-                1,
+            self.app_label(
+                Rect {
+                    x: p.x + 52 * s as i32,
+                    y: p.y + 32 * s as i32,
+                    width: p.width.saturating_sub(96 * s as u32),
+                    height: 24 * s as u32,
+                },
+                b"Local / App context",
+                MUTED,
+                false,
+                s,
             );
             self.fill_rect(
-                x + 12 * scale,
-                y + 73 * scale,
-                w.saturating_sub(24 * scale),
-                scale,
-                32,
-                71,
-                94,
+                x + 12 * s,
+                y + 64 * s,
+                p.width as usize - 24 * s,
+                s,
+                33,
+                58,
+                85,
             );
-            let intro: &[u8] = if panel.response_len == 0 {
-                if id == 2 {
-                    b"Ask for help, describe document, find TEXT, or insert TEXT. Review each proposed app action before applying it."
-                } else {
-                    b"Ask for help, maximize, restore, minimize, or refresh. App actions require your confirmation."
-                }
-            } else {
-                &panel.response[..panel.response_len]
-            };
-            let reserve = if panel.pending != Action::None && panel.argument_len > 0 {
-                84
+            let mut top = p.y + 80 * s as i32;
+            if panel.request_len > 0 {
+                let r = Rect {
+                    x: p.x + 40 * s as i32,
+                    y: top,
+                    width: p.width.saturating_sub(56 * s as u32),
+                    height: 80 * s as u32,
+                };
+                self.app_card(r, (20, 36, 56), (33, 58, 85), s);
+                self.assistant_wrapped(
+                    &panel.request[..panel.request_len],
+                    inset(r, 12 * s),
+                    s,
+                    TEXT,
+                );
+                top = r.bottom() + 12 * s as i32;
+            }
+            let preview = panel.pending != Action::None && panel.argument_len > 0;
+            let available = (g.apply.y - top - 12 * s as i32).max(0) as u32;
+            let preview_height = if preview {
+                (100 * s as u32).min(available / 3)
             } else {
                 0
             };
-            self.assistant_wrapped(
-                intro,
-                Rect {
-                    x: p.x + 16 * scale as i32,
-                    y: p.y + 88 * scale as i32,
-                    width: p.width.saturating_sub(32 * scale as u32),
-                    height: g
-                        .apply
-                        .y
-                        .saturating_sub(p.y + (100 + reserve) * scale as i32)
-                        .max(0) as u32,
-                },
-                scale,
-                (194, 217, 233),
-            );
+            let r = Rect {
+                x: p.x + 16 * s as i32,
+                y: top,
+                width: p.width.saturating_sub(32 * s as u32),
+                height: available
+                    .saturating_sub(preview_height + if preview { 12 * s as u32 } else { 0 }),
+            };
+            let intro = if panel.response_len > 0 {
+                &panel.response[..panel.response_len]
+            } else if id == 2 {
+                b"Local editor assistance\n\nFind text, insert supplied text, undo, redo or save. Review a proposed action before applying it.\n\nType help for available commands. Code generation is not connected.".as_slice()
+            } else {
+                b"Local window assistance\n\nMaximize, restore, minimize or refresh this app. Review each action before applying it.\n\nType help for available commands."
+            };
+            self.app_card(r, (15, 27, 46), (33, 58, 85), s);
+            self.assistant_wrapped(intro, inset(r, 12 * s), s, TEXT);
+            if preview {
+                let r = Rect {
+                    x: r.x,
+                    y: r.bottom() + 12 * s as i32,
+                    width: r.width,
+                    height: preview_height,
+                };
+                self.app_card(r, (14, 35, 42), (33, 70, 80), s);
+                self.app_label(
+                    Rect {
+                        x: r.x + 12 * s as i32,
+                        y: r.y + 4 * s as i32,
+                        width: r.width.saturating_sub(24 * s as u32),
+                        height: 24 * s as u32,
+                    },
+                    b"Proposed text",
+                    MUTED,
+                    true,
+                    s,
+                );
+                self.assistant_wrapped(
+                    &panel.argument[..panel.argument_len],
+                    Rect {
+                        x: r.x + 12 * s as i32,
+                        y: r.y + 28 * s as i32,
+                        width: r.width.saturating_sub(24 * s as u32),
+                        height: r.height.saturating_sub(36 * s as u32),
+                    },
+                    s,
+                    (105, 233, 179),
+                );
+            }
             if panel.pending != Action::None {
-                for (rect, label, primary) in [
-                    (g.apply, b"Apply".as_slice(), true),
-                    (g.dismiss, b"Dismiss".as_slice(), false),
-                ] {
-                    self.fill_rounded_rect_alpha(
-                        rect.x as usize,
-                        rect.y as usize,
-                        rect.width as usize,
-                        rect.height as usize,
-                        6 * scale,
-                        if primary { 5 } else { 18 },
-                        if primary { 96 } else { 40 },
-                        if primary { 130 } else { 57 },
-                        250,
-                    );
-                    self.outline_rounded_rect(
-                        rect.x as usize,
-                        rect.y as usize,
-                        rect.width as usize,
-                        rect.height as usize,
-                        6 * scale,
-                        66,
-                        155,
-                        190,
-                    );
-                    self.ui_text(
-                        rect.x as usize + 12 * scale,
-                        rect.y as usize + 7 * scale,
-                        label,
-                        219,
-                        241,
-                        250,
-                        1,
-                    );
-                }
-                if panel.argument_len > 0 {
-                    self.assistant_wrapped(
-                        &panel.argument[..panel.argument_len],
-                        Rect {
-                            x: p.x + 16 * scale as i32,
-                            y: g.apply.y - 76 * scale as i32,
-                            width: p.width.saturating_sub(32 * scale as u32),
-                            height: 64 * scale as u32,
-                        },
-                        scale,
-                        (124, 225, 195),
-                    );
-                }
+                self.app_button(g.apply, b"Apply", true, s);
+                self.app_button(g.dismiss, b"Dismiss", false, s);
             }
             let c = g.composer;
-            self.fill_rounded_rect_alpha(
-                c.x as usize,
-                c.y as usize,
-                c.width as usize,
-                c.height as usize,
-                6 * scale,
-                5,
-                17,
-                29,
-                255,
-            );
-            self.outline_rounded_rect(
-                c.x as usize,
-                c.y as usize,
-                c.width as usize,
-                c.height as usize,
-                6 * scale,
-                if panel.focused { 61 } else { 36 },
-                if panel.focused { 208 } else { 92 },
-                if panel.focused { 246 } else { 123 },
+            self.app_card(
+                c,
+                (11, 18, 32),
+                if panel.focused { CYAN } else { (33, 58, 85) },
+                s,
             );
             let mut start = 0;
             while start < panel.length
-                && self.ui_text_width(&panel.input[start..panel.length], 1)
-                    > (c.width as usize).saturating_sub(16 * scale)
+                && self.app_text_width(&panel.input[start..panel.length], false, s)
+                    > c.width.saturating_sub(24 * s as u32) as usize
             {
                 start += 1;
             }
-            self.assistant_wrapped(
+            self.app_label(
+                inset(c, 12 * s),
                 if panel.length == 0 {
                     b"Ask this app..."
                 } else {
                     &panel.input[start..panel.length]
                 },
-                Rect {
-                    x: c.x + 8 * scale as i32,
-                    y: c.y + 8 * scale as i32,
-                    width: c.width.saturating_sub(16 * scale as u32),
-                    height: c.height.saturating_sub(12 * scale as u32),
-                },
-                scale,
-                (193, 218, 238),
+                if panel.length == 0 { MUTED } else { TEXT },
+                false,
+                s,
             );
-            self.fill_rounded_rect_alpha(
-                g.send.x as usize,
-                g.send.y as usize,
-                g.send.width as usize,
-                g.send.height as usize,
-                6 * scale,
-                6,
-                88,
-                122,
-                255,
-            );
-            self.ui_text(
-                g.send.x as usize + 10 * scale,
-                g.send.y as usize + 18 * scale,
-                b">",
-                223,
-                247,
-                255,
-                1,
-            );
+            self.app_button(g.send, b">", false, s);
         }
         let t = g.toggle;
-        self.fill_rounded_rect_alpha(
-            t.x as usize,
-            t.y as usize,
-            t.width as usize,
-            t.height as usize,
-            7 * scale,
-            7,
-            57,
-            83,
-            255,
-        );
-        self.outline_rounded_rect(
-            t.x as usize,
-            t.y as usize,
-            t.width as usize,
-            t.height as usize,
-            7 * scale,
-            51,
-            186,
-            231,
-        );
-        self.ui_text(
-            t.x as usize + 5 * scale,
-            t.y as usize + 7 * scale,
-            if panel.expanded { b">" } else { b"AI" },
-            192,
-            243,
-            255,
-            1,
-        );
-        self.ui_text(
-            t.x as usize + 9 * scale,
-            t.y as usize + 27 * scale,
-            b"*",
-            85,
-            220,
-            251,
-            1,
-        );
+        self.app_card(t, (15, 39, 59), (34, 157, 187), s);
+        if panel.expanded {
+            self.app_label(t, b"  >", CYAN, true, s);
+        } else {
+            let _ = self.themed_icon(t.x as usize + 14 * s, t.y as usize + 14 * s, 23, 20 * s);
+            self.app_label(
+                Rect {
+                    y: t.y + 24 * s as i32,
+                    height: 24 * s as u32,
+                    ..t
+                },
+                b" AI",
+                CYAN,
+                true,
+                s,
+            );
+        }
         self.render_clip = clip;
     }
     // ------------------------=
     // FUNC: assistant_wrapped
-    // DESC: Wraps bounded assistant text into its card without painting across controls or window edges.
+    // DESC: Wraps compact antialiased prose inside its card without painting over controls.
     // ------------------=
-    fn assistant_wrapped(&mut self, text: &[u8], rect: Rect, scale: usize, color: (u8, u8, u8)) {
-        let rows = rect.height as usize / (32 * scale);
-        let old_clip = self.render_clip;
+    fn assistant_wrapped(&mut self, text: &[u8], rect: Rect, s: usize, color: (u8, u8, u8)) {
+        let clip = self.render_clip;
         self.intersect_render_clip(
             rect.x.max(0) as usize,
             rect.y.max(0) as usize,
@@ -252,14 +194,14 @@ impl super::DisplayDevice {
             rect.height as usize,
         );
         let mut start = 0;
-        for row in 0..rows {
+        for row in 0..rect.height as usize / (24 * s) {
             if start >= text.len() {
                 break;
             }
             let mut end = start;
             let mut space = None;
             while end < text.len() && text[end] != b'\n' {
-                if self.ui_text_width(&text[start..end + 1], 1) > rect.width as usize {
+                if self.app_text_width(&text[start..end + 1], false, s) > rect.width as usize {
                     break;
                 }
                 if text[end] == b' ' {
@@ -270,20 +212,31 @@ impl super::DisplayDevice {
             if end < text.len() && text[end] != b'\n' {
                 end = space.unwrap_or(end.max(start + 1));
             }
-            self.ui_text(
+            self.app_text(
                 rect.x.max(0) as usize,
-                rect.y.max(0) as usize + row * 32 * scale,
+                rect.y.max(0) as usize + row * 24 * s,
                 &text[start..end],
-                color.0,
-                color.1,
-                color.2,
-                1,
+                color,
+                false,
+                s,
             );
             start = end;
             if matches!(text.get(start), Some(b'\n' | b' ')) {
                 start += 1;
             }
         }
-        self.render_clip = old_clip;
+        self.render_clip = clip;
+    }
+}
+// ------------------------=
+// FUNC: inset
+// DESC: Applies a consistent safe gutter to an app-local card.
+// ------------------=
+fn inset(r: Rect, padding: usize) -> Rect {
+    Rect {
+        x: r.x + padding as i32,
+        y: r.y + padding as i32,
+        width: r.width.saturating_sub(2 * padding as u32),
+        height: r.height.saturating_sub(2 * padding as u32),
     }
 }

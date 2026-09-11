@@ -3,12 +3,19 @@
 ## Implemented
 
 The Text Editor uses the existing InfinityOS renderer, file picker and persistence
-path. It now supports selection (drag, Shift + navigation, or the Select tool),
+path. It supports selection (drag or Shift + navigation),
 copy/cut/paste within the editor, eight-step undo/redo, literal find and replace
 all, go to line, duplicate line, automatic indentation, and an inline command
 palette. Line numbers, caret location, selection and syntax colors share the
 editor's actual viewport geometry. Opening and saving choose syntax mode from
-the filename; the Syntax tool cycles modes manually.
+the filename. The status-bar language selector and View → Syntax highlighting
+open a named dropdown; arrows and Enter also select a mode.
+
+The supplied editor IDesign kit is the visual reference: a landscape window,
+16 px antialiased UI text, navy surfaces, soft borders, compact document identity,
+and a slim status bar. File contains New, Open, Save, Save As, Delete and Close;
+Edit, Selection and View expose editing commands without button rows. Menu hits,
+code painting, scrolling and pointer selection use the same viewport geometry.
 
 Syntax modes: plain text, Rust, Python, JavaScript, C/C++, JSON, shell, HTML and
 CSS. These are lexical highlighters, not parsers or language servers.
@@ -40,6 +47,10 @@ is not complete Sublime Text parity: Unicode, multi-document tabs, projects,
 multi-cursor editing, regular expressions, folding, completion and LSP are not
 implemented.
 
+Known polish issue: the most recent find-result notice can remain in the
+document strip after leaving Find or editing. It does not change the selection,
+document contents, or saved-state indicator.
+
 ## Core window rule
 
 Normal application windows expose the same right-edge AI tab and expandable
@@ -53,7 +64,8 @@ login/lock surfaces, installer screens, and modal file sheets are excluded.
 Panel state is isolated by window and cleared with the editor clipboard on a
 session change. A tab expands/collapses the panel; clicking the
 composer focuses it, and clicking outside releases keyboard focus. The panel
-currently overlays the right side of app content rather than reflowing it.
+reflows the editor viewport instead of covering its code. Other existing app
+surfaces still use their shared overlay rail.
 
 `help` explains the available operations. All apps expose reviewed maximize,
 restore, minimize and refresh requests. The editor also supports `describe
@@ -65,17 +77,18 @@ changed. Inserted text participates in normal undo and save handling.
 Other prompts use the shipped local dialogue runtime in an isolated request.
 There is no external-model connection, automatic code generation, arbitrary
 shell execution, or ambient access to app files. The current panel retains the
-latest response, not a multi-turn conversation. It must not be presented as an
+latest user prompt and response, not a multi-turn conversation. It must not be presented as an
 unrestricted AI coding agent.
 
 ## Verification and packaging
 
 - `make editor-assistant-test`: typed editor operations, syntax categories,
+  menu-command mappings, named syntax state and reflowed popup/hit bounds,
   per-window assistant isolation, geometry and reviewed/stale action behavior.
 - `make editor-window-test`: existing native editor/window behavior.
 - `make x86_64 aarch64`: both live and installed kernels use these same modules.
 - `python3 tools/editor-assistant-installed-test.py --artifacts-only`: checks the
-  actual JetBrains Mono atlas bytes and feature contract in all four kernel
+  actual JetBrains Mono and compact UI atlas bytes and feature contract in all four kernel
   artifacts. This is packaging verification, not installed execution evidence.
 - `python3 tools/editor-assistant-installed-test.py /tmp/UNIQUE-RUN-DIRECTORY`:
   installs onto a newly created disposable disk, boots without ISO, then uses
@@ -83,17 +96,16 @@ unrestricted AI coding agent.
   independent app panels. QEMU and its x86_64 EDK2 firmware are required.
   Append `--live-only` for the same UI checks through the recovery Console's
   normal app-launch command; that mode deliberately excludes installation,
-  authentication and saving and reports those checks as unverified.
+The current kernel reservation accepts both real installed payloads; the older
+128 MiB reservation failure was corrected separately before this UI change.
+Build and artifact checks are distinct from disk-only runtime checks. The VM
+suite records its exact verification scope in `result.json`; a live-only result
+must never be described as proof of installed execution or persisted saving.
 
-The September 11 verification built both architectures, passed the host and
-binary-packaging tests, and passed the live-only QEMU interaction suite: syntax,
-selection, clipboard, undo/redo, find, reviewed AI insertion, window minimization,
-and an independent Settings assistant. Editor and Settings screenshots were
-reviewed after correcting glyph overlap and reply wrapping. Saving and installed
-execution remain unverified: the fresh-install test stopped safely before
-formatting because the current
-installed kernel is about 173 MiB while the native layout reserves 128 MiB
-(127 MiB usable for the kernel). `make installer-capacity-test` independently
-rejects those artifacts. The storage boundary has not been moved, and no
-installed-system parity claim is made until packaging is corrected and this test
-passes. Do not promote these ISOs as a verified fresh-install release.
+The September 11 menu/layout revision passed both host suites, the real-payload
+capacity check, both architecture builds and four-kernel font/contract packaging
+checks. QEMU x86_64 passed the live-only suite and a fresh install, detached-ISO
+boot, configuration, authenticated cold boot, File → Open, named syntax selection,
+history/clipboard/find, Save As, reviewed insertion, viewport reflow and independent
+Settings assistant checks. Actual live and installed screenshots were reviewed;
+the lingering find-result notice above remains a known visual issue.

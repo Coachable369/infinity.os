@@ -71,7 +71,12 @@ fn editing() {
 // ------------------=
 fn syntax() {
     let mut tools = ui::editor_tools::Presentation::new();
-    for field in [ui::editor_tools::Field::Command, ui::editor_tools::Field::Find, ui::editor_tools::Field::GoTo, ui::editor_tools::Field::ReplaceFind] {
+    for field in [
+        ui::editor_tools::Field::Command,
+        ui::editor_tools::Field::Find,
+        ui::editor_tools::Field::GoTo,
+        ui::editor_tools::Field::ReplaceFind,
+    ] {
         tools.query_len = 6;
         tools.replacement_len = 3;
         tools.begin(field);
@@ -219,11 +224,96 @@ fn panels() {
 // DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
 // ------------------=
 fn main() {
+    menus_and_viewport();
     editing();
     syntax();
     panels();
     ai::reset();
     for id in 0..ai::PANEL_SLOTS {
         assert!(ai::read(id) == ai::Panel::new());
+    }
+}
+
+// ------------------------=
+// FUNC: menus_and_viewport
+// DESC: Exercises executable command mappings, named syntax selection, keyboard state and reflowed hit bounds.
+// ------------------=
+fn menus_and_viewport() {
+    for (width,height) in [(2048,2048),(1920,1080),(1280,720),(3840,2160)] {
+        let state=ui::editor_chrome::default_window(width,height);
+        let geometry=ui::system_layout::SystemLayout::new(width,height).desktop_app_window_geometry(state.x,state.y,state.width,state.height,false);
+        assert!(geometry.window.width>geometry.window.height*3/2);
+    }
+    use ui::{
+        editor_chrome::{Command, Layout, Menu},
+        editor_tools::{Field, Presentation, LANGUAGES},
+    };
+    let mut state = Presentation::new();
+    state.open_menu(Menu::File);
+    assert_eq!(state.choose_menu(), Some(Command::New));
+    state.open_menu(Menu::File);
+    state.menu_step(-1);
+    assert_eq!(state.choose_menu(), Some(Command::Close));
+    for (index, command) in [
+        Command::New,
+        Command::Open,
+        Command::Save,
+        Command::SaveAs,
+        Command::Delete,
+        Command::Close,
+    ]
+    .iter()
+    .enumerate()
+    {
+        assert_eq!(Menu::File.entry(index).unwrap().command, *command);
+    }
+    for (index, language) in LANGUAGES.iter().enumerate() {
+        state.open_menu(Menu::Syntax);
+        state.menu_index = index;
+        assert_eq!(state.choose_menu(), Some(Command::Language(index)));
+        assert_eq!(state.language, *language);
+        assert_eq!(state.menu, Menu::None);
+        state.open_menu(Menu::Syntax);
+        assert_eq!(state.menu_index, index);
+    }
+    for scale in [1, 2] {
+        for width in [480, 800, 1440] {
+            let window = Rect {
+                x: 100,
+                y: 100,
+                width: width * scale,
+                height: 700 * scale,
+            };
+            let plain = Layout::new(window, scale as usize, false, Field::None);
+            let docked = Layout::new(window, scale as usize, true, Field::None);
+            assert!(docked.columns() < plain.columns());
+            assert!(docked.body.right() <= ai::geometry(window, scale as usize, true).panel.x);
+            let find = Layout::new(window, scale as usize, true, Field::Find);
+            assert!(find.rows() < docked.rows());
+            for layout in [plain, docked, find] {
+                for menu in [
+                    Menu::File,
+                    Menu::Edit,
+                    Menu::Selection,
+                    Menu::View,
+                    Menu::Syntax,
+                ] {
+                    let popup = layout.popup(menu);
+                    assert!(popup.x >= window.x && popup.right() <= layout.body.right());
+                    assert!(popup.y >= window.y && popup.bottom() <= window.bottom());
+                    for index in 0..menu.count() {
+                        let row = layout.menu_row(menu, index);
+                        let point = Point {
+                            x: row.x + 2,
+                            y: row.y + 2,
+                        };
+                        assert_eq!(layout.row_at(menu, point), Some(index));
+                    }
+                }
+                let scrollbar = layout.scrollbar(100, 100);
+                assert!(scrollbar.thumb.bottom() <= scrollbar.track.bottom());
+                assert!(scrollbar.track.right() <= layout.body.right());
+            }
+        }
     }
 }

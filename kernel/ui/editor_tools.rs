@@ -1,5 +1,4 @@
 //! Native code-editor presentation and allocation-free lexical classification.
-use super::geometry::{Point, Rect};
 pub const CELL_WIDTH: usize = 12;
 pub const FONT_WIDTH: usize = 18;
 pub const FONT_HEIGHT: usize = 24;
@@ -258,6 +257,10 @@ pub enum Field {
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Presentation {
+    pub menu: super::editor_chrome::Menu,
+    pub menu_index: usize,
+    pub filename: [u8; 64],
+    pub filename_len: usize,
     pub language: Language,
     pub selection: Option<(usize, usize)>,
     pub cursor: usize,
@@ -270,6 +273,45 @@ pub struct Presentation {
     pub selecting: bool,
 }
 impl Presentation {
+    // ------------------------=
+    // FUNC: open_menu
+    // DESC: Opens one menu with focus on the selected syntax or first command.
+    // ------------------=
+    pub fn open_menu(&mut self, menu: super::editor_chrome::Menu) {
+        self.menu = menu;
+        self.menu_index = if menu == super::editor_chrome::Menu::Syntax {
+            LANGUAGES
+                .iter()
+                .position(|l| *l == self.language)
+                .unwrap_or(0)
+        } else {
+            0
+        };
+    }
+    // ------------------------=
+    // FUNC: menu_step
+    // DESC: Wraps keyboard focus within executable entries.
+    // ------------------=
+    pub fn menu_step(&mut self, delta: isize) {
+        let count = self.menu.count();
+        if count > 0 {
+            self.menu_index =
+                (self.menu_index as isize + delta).rem_euclid(count as isize) as usize;
+        }
+    }
+    // ------------------------=
+    // FUNC: choose_menu
+    // DESC: Closes the menu and resolves its focused command, applying syntax selections directly.
+    // ------------------=
+    pub fn choose_menu(&mut self) -> Option<super::editor_chrome::Command> {
+        let command = self.menu.entry(self.menu_index)?.command;
+        self.menu = super::editor_chrome::Menu::None;
+        if let super::editor_chrome::Command::Language(i) = command {
+            self.language = LANGUAGES[i];
+        }
+        Some(command)
+    }
+
     // ------------------------=
     // FUNC: begin
     // DESC: Starts a fresh inline tool without carrying a command name or line number into its search fields.
@@ -285,6 +327,10 @@ impl Presentation {
     // ------------------=
     pub const fn new() -> Self {
         Self {
+            menu: super::editor_chrome::Menu::None,
+            menu_index: 0,
+            filename: [0; 64],
+            filename_len: 0,
             language: Language::Plain,
             selection: None,
             cursor: 0,
@@ -293,34 +339,10 @@ impl Presentation {
             query_len: 0,
             replacement: [0; 96],
             replacement_len: 0,
-            notice: b"Ctrl+P commands  |  Ctrl+F find  |  Ctrl+H replace",
+            notice: b"",
             selecting: false,
         }
     }
-}
-pub const ACTIONS: [&[u8]; 7] = [
-    b"Undo", b"Redo", b"Find", b"Replace", b"Go to", b"Select", b"Syntax",
-];
-// ------------------------=
-// FUNC: action_rect
-// DESC: Keeps seven editor commands evenly guttered at every supported window width.
-// ------------------=
-pub fn action_rect(content: Rect, scale: usize, index: usize) -> Rect {
-    let s = scale as u32;
-    let w = content.width.saturating_sub(16 * s) / 7;
-    Rect {
-        x: content.x + (8 * s + w * index as u32) as i32,
-        y: content.y + 4 * scale as i32,
-        width: w.saturating_sub(4 * s),
-        height: 28 * s,
-    }
-}
-// ------------------------=
-// FUNC: action_at
-// DESC: Resolves editor command clicks using exactly the painted bounds.
-// ------------------=
-pub fn action_at(content: Rect, scale: usize, point: Point) -> Option<usize> {
-    (0..7).find(|i| action_rect(content, scale, *i).contains(point))
 }
 static mut VIEW: Presentation = Presentation::new();
 static REVISION: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);

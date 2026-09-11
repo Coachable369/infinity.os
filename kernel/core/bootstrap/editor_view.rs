@@ -1,11 +1,13 @@
-//! IDesign native code-editor rendering; interaction consumes the same geometry.
+//! Native editor window composed from shared menu and viewport geometry.
+use super::app_style::{CYAN, MUTED, TEXT};
 use crate::ui::{
+    editor_chrome::{Layout, Menu},
     editor_tools::{self, Field, Token},
     geometry::Rect,
 };
 // ------------------------=
 // FUNC: decimal
-// DESC: Formats one bounded number without allocation for editor and assistant chrome.
+// DESC: Formats a bounded status number without allocation.
 // ------------------=
 pub(super) fn decimal(mut value: usize, out: &mut [u8; 20]) -> &[u8] {
     let mut i = out.len();
@@ -21,63 +23,175 @@ pub(super) fn decimal(mut value: usize, out: &mut [u8; 20]) -> &[u8] {
 }
 impl super::DisplayDevice {
     // ------------------------=
-    // FUNC: code_editor
-    // DESC: Paints tools, syntax, selection, line gutter, caret, search field, and status using one monospace grid.
+    // FUNC: editor_window
+    // DESC: Renders the kit-aligned editor with menus, document identity and a reflowed code viewport.
     // ------------------=
-    pub(super) fn code_editor(
+    pub(super) fn editor_window(
         &mut self,
-        content: Rect,
+        window: crate::ui::system_layout::DesktopAppWindowGeometry,
         input: &[u8],
         scroll: usize,
-        scale: usize,
-    ) -> usize {
+        saved: bool,
+        maximized: bool,
+        s: usize,
+    ) {
         let view = editor_tools::current();
-        let left = content.x.max(0) as usize;
-        let top = content.y.max(0) as usize;
-        let width = content.width as usize;
-        let height = content.height as usize;
-        for i in 0..editor_tools::ACTIONS.len() {
-            let r = editor_tools::action_rect(content, scale, i);
-            self.fill_rounded_rect_alpha(
-                r.x as usize,
-                r.y as usize,
-                r.width as usize,
-                r.height as usize,
-                6 * scale,
-                17,
-                40,
-                57,
-                245,
+        let g = Layout::new(
+            window.window,
+            s,
+            crate::ui::app_assistant::read(2).expanded,
+            view.field,
+        );
+        let w = g.window;
+        let x = w.x.max(0) as usize;
+        let y = w.y.max(0) as usize;
+        self.app_card(w, (11, 18, 32), (33, 105, 139), s);
+        self.fill_rect(x + s, y + 46 * s, w.width as usize - 2 * s, s, 33, 58, 85);
+        let _ = self.themed_icon(x + 25 * s, y + 24 * s, 49, 24 * s);
+        self.app_text(x + 48 * s, y + 15 * s, b"Text Editor", TEXT, true, s);
+        if g.search.width > 70 * s as u32 {
+            self.app_card(g.search, (15, 27, 46), (33, 58, 85), s);
+            self.app_label(
+                Rect {
+                    x: g.search.x + 12 * s as i32,
+                    width: g.search.width - 24 * s as u32,
+                    ..g.search
+                },
+                b"Search in file...   Ctrl+F",
+                MUTED,
+                false,
+                s,
             );
-            self.ui_text(
-                r.x as usize + 6 * scale,
-                r.y as usize + 6 * scale,
-                editor_tools::ACTIONS[i],
-                157,
-                218,
-                244,
-                1,
+        }
+        for (i, r) in [window.minimize, window.maximize, window.close]
+            .iter()
+            .enumerate()
+        {
+            self.window_control(
+                r.x.max(0) as usize,
+                r.y.max(0) as usize,
+                r.width as usize,
+                i,
+                maximized,
+            );
+        }
+        for (m, label) in [
+            (Menu::File, b"File".as_slice()),
+            (Menu::Edit, b"Edit"),
+            (Menu::Selection, b"Selection"),
+            (Menu::View, b"View"),
+        ] {
+            let r = g.menu_button(m);
+            if view.menu == m {
+                self.app_card(r, (20, 36, 56), (33, 58, 85), s);
+            }
+            self.app_label(
+                Rect {
+                    x: r.x + 8 * s as i32,
+                    width: r.width.saturating_sub(16 * s as u32),
+                    ..r
+                },
+                label,
+                TEXT,
+                false,
+                s,
             );
         }
         self.fill_rect(
-            left + 8 * scale,
-            top + 38 * scale,
-            width.saturating_sub(16 * scale),
-            scale,
-            31,
-            64,
-            82,
+            g.menu_bar.x as usize,
+            g.menu_bar.bottom() as usize - 1,
+            g.menu_bar.width as usize,
+            1,
+            33,
+            58,
+            85,
+        );
+        let name = if view.filename_len == 0 {
+            b"Untitled".as_slice()
+        } else {
+            &view.filename[..view.filename_len]
+        };
+        let tab = Rect {
+            x: g.document.x + 16 * s as i32,
+            y: g.document.y + 5 * s as i32,
+            width: (self.app_text_width(name, false, s) + 64 * s).min(g.document.width as usize / 2)
+                as u32,
+            height: 33 * s as u32,
+        };
+        self.app_card(tab, (15, 27, 46), (33, 92, 124), s);
+        self.fill_rect(
+            tab.x as usize + 8 * s,
+            tab.y as usize,
+            tab.width as usize - 16 * s,
+            2 * s,
+            34,
+            211,
+            238,
+        );
+        self.app_label(
+            Rect {
+                x: tab.x + 16 * s as i32,
+                width: tab.width.saturating_sub(42 * s as u32),
+                ..tab
+            },
+            name,
+            TEXT,
+            false,
+            s,
+        );
+        if !saved {
+            self.fill_rounded_rect_alpha(
+                tab.right() as usize - 18 * s,
+                tab.y as usize + 13 * s,
+                6 * s,
+                6 * s,
+                3 * s,
+                34,
+                211,
+                238,
+                255,
+            );
+        }
+        self.app_label(
+            Rect {
+                x: tab.right() + 16 * s as i32,
+                y: tab.y,
+                width: g.document.width.saturating_sub(tab.width + 64 * s as u32),
+                height: tab.height,
+            },
+            if !view.notice.is_empty() {
+                view.notice
+            } else if saved {
+                b"Saved"
+            } else {
+                b"Unsaved changes"
+            },
+            MUTED,
+            false,
+            s,
         );
         if view.field != Field::None {
-            let label: &[u8] = match view.field {
-                Field::Find => b"FIND",
-                Field::ReplaceFind => b"FIND (Tab: replacement)",
-                Field::ReplaceWith => b"REPLACE ALL (Enter)",
-                Field::GoTo => b"GO TO LINE",
-                Field::Command => b"COMMAND",
+            self.app_card(g.field, (15, 27, 46), (34, 157, 187), s);
+            let label = match view.field {
+                Field::Find => b"Find / Enter: next match".as_slice(),
+                Field::ReplaceFind => b"Find / Tab: replacement",
+                Field::ReplaceWith => b"Replace all / Enter: apply",
+                Field::GoTo => b"Go to line",
+                Field::Command => b"Command palette",
                 _ => b"",
             };
-            self.ui_text(left + 12 * scale, top + 46 * scale, label, 73, 215, 249, 1);
+            self.app_label(
+                Rect {
+                    x: g.field.x + 12 * s as i32,
+                    y: g.field.y,
+                    width: g.field.width - 24 * s as u32,
+                    height: 24 * s as u32,
+                },
+                label,
+                MUTED,
+                false,
+                s,
+            );
             let text = if view.field == Field::ReplaceWith {
                 &view.replacement[..view.replacement_len]
             } else {
@@ -85,120 +199,197 @@ impl super::DisplayDevice {
             };
             let mut start = 0;
             while start < text.len()
-                && self.ui_text_width(&text[start..], 1) > width.saturating_sub(40 * scale)
+                && self.app_text_width(&text[start..], false, s) > g.field.width as usize - 32 * s
             {
                 start += 1;
             }
-            self.ui_text(
-                left + 12 * scale,
-                top + 67 * scale,
+            self.app_text(
+                g.field.x as usize + 12 * s,
+                g.field.y as usize + 23 * s,
                 &text[start..],
-                225,
-                240,
-                250,
-                1,
+                TEXT,
+                false,
+                s,
             );
             self.fill_rect(
-                left + 12 * scale + self.ui_text_width(&text[start..], 1),
-                top + 65 * scale,
-                scale,
-                18 * scale,
-                73,
-                215,
-                249,
+                g.field.x as usize + 13 * s + self.app_text_width(&text[start..], false, s),
+                g.field.y as usize + 24 * s,
+                s,
+                17 * s,
+                34,
+                211,
+                238,
             );
-        } else {
-            let mut max = view.notice.len();
-            while max > 0
-                && self.ui_text_width(&view.notice[..max], 1) > width.saturating_sub(24 * scale)
-            {
-                max -= 1;
-            }
-            self.ui_text(
-                left + 12 * scale,
-                top + 52 * scale,
-                &view.notice[..view.notice.len().min(max)],
-                121,
-                155,
-                178,
-                1,
+            self.app_button(g.field_close, b"x", false, s);
+        }
+        self.code_editor(g, input, scroll, s);
+        self.fill_rect(
+            g.status.x as usize,
+            g.status.y as usize,
+            g.status.width as usize,
+            1,
+            33,
+            58,
+            85,
+        );
+        let mut n = [0; 20];
+        let cursor = view.cursor.min(input.len());
+        let line = input[..cursor].iter().filter(|b| **b == b'\n').count() + 1;
+        let col = cursor
+            - input[..cursor]
+                .iter()
+                .rposition(|b| *b == b'\n')
+                .map_or(0, |i| i + 1)
+            + 1;
+        self.app_text(
+            g.status.x as usize + 16 * s,
+            g.status.y as usize + 7 * s,
+            b"Ln",
+            MUTED,
+            false,
+            s,
+        );
+        self.app_text(
+            g.status.x as usize + 38 * s,
+            g.status.y as usize + 7 * s,
+            decimal(line, &mut n),
+            TEXT,
+            false,
+            s,
+        );
+        if g.status.width > 360 * s as u32 {
+            self.app_text(
+                g.status.x as usize + 86 * s,
+                g.status.y as usize + 7 * s,
+                b"Col",
+                MUTED,
+                false,
+                s,
+            );
+            self.app_text(
+                g.status.x as usize + 115 * s,
+                g.status.y as usize + 7 * s,
+                decimal(col, &mut n),
+                TEXT,
+                false,
+                s,
             );
         }
-        let cell = editor_tools::CELL_WIDTH;
-        let columns = width.saturating_sub(92 * scale) / (cell * scale);
-        let columns = columns.max(1);
+        if g.status.width > 540 * s as u32 {
+            self.app_text(
+                g.status.x as usize + 176 * s,
+                g.status.y as usize + 7 * s,
+                b"Spaces: 4    ASCII    LF",
+                MUTED,
+                false,
+                s,
+            );
+        }
+        self.app_label(
+            Rect {
+                x: g.syntax.x + 12 * s as i32,
+                width: g.syntax.width.saturating_sub(36 * s as u32),
+                ..g.syntax
+            },
+            view.language.name(),
+            CYAN,
+            false,
+            s,
+        );
+        self.app_label(
+            Rect {
+                x: g.syntax.right() - 22 * s as i32,
+                width: 16 * s as u32,
+                ..g.syntax
+            },
+            if view.menu == Menu::Syntax {
+                b"^"
+            } else {
+                b"v"
+            },
+            CYAN,
+            false,
+            s,
+        );
+        self.window_assistant(2, w, s);
+        if view.menu != Menu::None {
+            self.editor_popup(g, s);
+        }
+    }
+    // ------------------------=
+    // FUNC: code_editor
+    // DESC: Paints code and selection using the same reflowed monospace grid as navigation and hit testing.
+    // ------------------=
+    fn code_editor(&mut self, g: Layout, input: &[u8], scroll: usize, s: usize) {
+        let view = editor_tools::current();
+        let body = g.body;
+        let x = body.x as usize;
+        let y = body.y as usize;
+        let clip = self.render_clip;
+        self.intersect_render_clip(x, y, body.width as usize, body.height as usize);
+        self.fill_rect(x, y, body.width as usize, body.height as usize, 11, 18, 32);
+        self.fill_rect(x, y, 54 * s, body.height as usize, 10, 22, 37);
+        self.fill_rect(x + 54 * s, y, s, body.height as usize, 25, 43, 64);
+        let columns = g.columns().max(1);
         let total = crate::ui::text_editor::visual_line_count(input, columns);
-        let rows = height.saturating_sub(130 * scale) / (24 * scale);
+        let scroll = scroll.min(total.saturating_sub(g.rows().max(1)));
         let mut start = crate::ui::text_editor::visual_line_start(input, columns, scroll);
         let mut tokens = [Token::Text; crate::ui::text_editor::DOCUMENT_CAPACITY];
         editor_tools::highlight(input, view.language, &mut tokens);
-        self.fill_rect(
-            left + 8 * scale,
-            top + 90 * scale,
-            46 * scale,
-            height.saturating_sub(130 * scale),
-            9,
-            23,
-            36,
-        );
         let mut logical = input[..start.min(input.len())]
             .iter()
             .filter(|b| **b == b'\n')
             .count()
             + 1;
-        for row in 0..rows {
+        for row in 0..g.rows() {
             if start > input.len() {
                 break;
             }
-            let y = top + (94 + row * 24) * scale;
+            let line_y = y + (8 + row * 24) * s;
             let end = input[start..]
                 .iter()
                 .position(|b| *b == b'\n')
-                .map_or(input.len(), |n| start + n);
+                .map_or(input.len(), |i| start + i);
             let take = (end - start).min(columns);
             if view.cursor >= start && view.cursor <= start + take {
-                self.fill_rect_alpha(
-                    left + 56 * scale,
-                    y - 2 * scale,
-                    width.saturating_sub(78 * scale),
-                    24 * scale,
-                    25,
-                    54,
-                    77,
-                    170,
+                self.fill_rect(
+                    x + 55 * s,
+                    line_y,
+                    body.width as usize - 55 * s,
+                    24 * s,
+                    18,
+                    31,
+                    50,
                 );
             }
-            let mut num = [0; 20];
-            let n = decimal(logical, &mut num);
-            self.ui_text(left + 14 * scale, y, n, 109, 143, 166, 1);
+            let mut n = [0; 20];
+            let number = decimal(logical, &mut n);
+            let width = self.app_text_width(number, false, s);
+            self.app_text(x + 44 * s - width, line_y + 3 * s, number, MUTED, false, s);
             for col in 0..take {
-                let index = start + col;
-                let x = left + (64 + col * cell) * scale;
-                if view
-                    .selection
-                    .map_or(false, |(a, b)| index >= a && index < b)
-                {
-                    self.fill_rect(x, y - 2 * scale, cell * scale, 24 * scale, 69, 47, 111);
+                let i = start + col;
+                let cx = x + (64 + col * editor_tools::CELL_WIDTH) * s;
+                if view.selection.is_some_and(|(a, b)| i >= a && i < b) {
+                    self.fill_rect(cx, line_y, editor_tools::CELL_WIDTH * s, 24 * s, 57, 36, 97);
                 }
-                let (r, g, b) = tokens.get(index).copied().unwrap_or(Token::Text).color();
-                let byte = if matches!(input[index], b'\t' | b'\r') {
+                let byte = if matches!(input[i], b'\t' | b'\r') {
                     b' '
                 } else {
-                    input[index]
+                    input[i]
                 };
-                self.editor_glyph(x, y, byte, scale, (r, g, b));
+                self.editor_glyph(cx, line_y + 3 * s, byte, s, tokens[i].color());
             }
             if let Some((visible, cursor)) = crate::ui::text_input::caret(4) {
                 if visible && view.field == Field::None && cursor >= start && cursor <= start + take
                 {
                     self.fill_rect(
-                        left + (64 + (cursor - start) * cell) * scale,
-                        y,
-                        2 * scale,
-                        18 * scale,
-                        108,
-                        218,
-                        255,
+                        x + (64 + (cursor - start) * editor_tools::CELL_WIDTH) * s,
+                        line_y + 3 * s,
+                        s,
+                        19 * s,
+                        34,
+                        211,
+                        238,
                     );
                 }
             }
@@ -211,80 +402,101 @@ impl super::DisplayDevice {
                 logical += 1;
             }
         }
-        let status_y = top + height.saturating_sub(28 * scale);
-        self.fill_rect(
-            left + 8 * scale,
-            status_y - 6 * scale,
-            width.saturating_sub(16 * scale),
-            scale,
-            31,
-            64,
-            82,
-        );
-        self.ui_text(
-            left + 14 * scale,
-            status_y,
-            view.language.name(),
-            105,
-            210,
-            239,
-            1,
-        );
-        let cursor = view.cursor.min(input.len());
-        let line = input[..cursor].iter().filter(|b| **b == b'\n').count() + 1;
-        let column = cursor
-            - input[..cursor]
-                .iter()
-                .rposition(|b| *b == b'\n')
-                .map_or(0, |i| i + 1)
-            + 1;
-        let mut n = [0; 20];
-        let x = left + width.saturating_sub(235 * scale);
-        self.ui_text(x, status_y, b"Ln", 128, 161, 180, 1);
-        self.ui_text(
-            x + 27 * scale,
-            status_y,
-            decimal(line, &mut n),
-            218,
-            232,
-            242,
-            1,
-        );
-        self.ui_text(x + 78 * scale, status_y, b"Col", 128, 161, 180, 1);
-        self.ui_text(
-            x + 114 * scale,
-            status_y,
-            decimal(column, &mut n),
-            218,
-            232,
-            242,
-            1,
-        );
-        self.ui_text(x + 159 * scale, status_y, b"16 KiB", 128, 161, 180, 1);
-        total
+        let bar = g.scrollbar(total, scroll);
+        if bar.maximum_scroll > 0 {
+            self.fill_rounded_rect_alpha(
+                bar.thumb.x as usize,
+                bar.thumb.y as usize,
+                bar.thumb.width as usize,
+                bar.thumb.height as usize,
+                3 * s,
+                62,
+                89,
+                119,
+                255,
+            );
+        }
+        self.render_clip = clip;
     }
-
+    // ------------------------=
+    // FUNC: editor_popup
+    // DESC: Paints executable menu rows, shortcut hints and the selected syntax mode.
+    // ------------------=
+    fn editor_popup(&mut self, g: Layout, s: usize) {
+        let view = editor_tools::current();
+        let p = g.popup(view.menu);
+        self.app_card(p, (15, 27, 46), (49, 92, 123), s);
+        for i in 0..view.menu.count() {
+            let item = view.menu.entry(i).unwrap();
+            let r = g.menu_row(view.menu, i);
+            if i == view.menu_index {
+                self.app_card(r, (20, 54, 76), (36, 137, 169), s);
+            }
+            let selected = matches!(item.command,crate::ui::editor_chrome::Command::Language(index) if editor_tools::LANGUAGES[index]==view.language);
+            self.app_label(
+                Rect {
+                    x: r.x + 10 * s as i32,
+                    width: 18 * s as u32,
+                    ..r
+                },
+                if selected { b">" } else { b"" },
+                CYAN,
+                true,
+                s,
+            );
+            let hint = self.app_text_width(item.shortcut, false, s);
+            self.app_label(
+                Rect {
+                    x: r.x + 30 * s as i32,
+                    width: r.width.saturating_sub((54 * s + hint) as u32),
+                    ..r
+                },
+                item.label,
+                TEXT,
+                false,
+                s,
+            );
+            self.app_label(
+                Rect {
+                    x: r.right() - 12 * s as i32 - hint as i32,
+                    width: hint as u32,
+                    ..r
+                },
+                item.shortcut,
+                MUTED,
+                false,
+                s,
+            );
+        }
+    }
     // ------------------------=
     // FUNC: editor_glyph
-    // DESC: Rasterizes bundled antialiased JetBrains Mono in the same fixed-width cell used for caret and hit testing.
+    // DESC: Rasterizes bundled JetBrains Mono within the fixed cell used by caret and pointer selection.
     // ------------------=
-    fn editor_glyph(&mut self, x: usize, y: usize, byte: u8, scale: usize, color: (u8, u8, u8)) {
+    pub(super) fn editor_glyph(
+        &mut self,
+        x: usize,
+        y: usize,
+        byte: u8,
+        scale: usize,
+        color: (u8, u8, u8),
+    ) {
         if !(32..=126).contains(&byte) {
             return;
         }
         let glyph = (byte as usize - 32) * editor_tools::FONT_WIDTH;
         for row in 0..editor_tools::FONT_HEIGHT * scale {
             for col in 0..editor_tools::CELL_WIDTH * scale {
-                let alpha = editor_tools::FONT_ATLAS
-                    [(row / scale) * editor_tools::FONT_WIDTH * 95 + glyph + col / scale];
-                if alpha != 0 {
+                let a = editor_tools::FONT_ATLAS
+                    [row / scale * editor_tools::FONT_WIDTH * 95 + glyph + col / scale];
+                if a != 0 {
                     self.blend_color(
                         (x + col) as i32,
                         (y + row) as i32,
                         color.0,
                         color.1,
                         color.2,
-                        alpha,
+                        a,
                     );
                 }
             }

@@ -193,7 +193,10 @@ impl ConsoleRuntime {
         if panel.length == 0 {
             return;
         }
+        panel.request = panel.input;
+        panel.request_len = panel.length;
         if !panel.propose(id == 2, self.assistant_revision()) {
+            // Unsupported intents still retain only the prompt supplied to this app.
             let text = &panel.input[..panel.length];
             if text.eq_ignore_ascii_case(b"help") || text.eq_ignore_ascii_case(b"what can you do") {
                 panel.reply(if id==2 {b"Local editor actions: find TEXT, insert TEXT, undo, redo, select all, save, maximize, restore, minimize. Each action is previewed before Apply. This local assistant does not generate or refactor code."}
