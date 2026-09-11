@@ -12,6 +12,7 @@ use ui::system_layout::{
 // DESC: Verifies bounded Settings navigation, dashboard scrolling, and draggable scrollbar geometry.
 // ------------------=
 fn main() {
+    verify_authored_row_flow();
     verify_configuration_network_targets();
     for width in [1024, 1366, 1920, 2560] {
         let layout = SystemLayout::new(width, 1440);
@@ -156,6 +157,83 @@ fn main() {
     let minimum_window = SystemLayout::new(1920, 1080)
         .settings_window_geometry_for_section(minimum, SETTINGS_NETWORK_SECTION);
     assert!(minimum_window.maximum_scroll > 0);
+}
+
+// ------------------------=
+// FUNC: verify_authored_row_flow
+// DESC: Exercises saved-template rows through expansion, scrolling, resize, and disclosure hit testing.
+// ------------------=
+fn verify_authored_row_flow() {
+    use ui::installer_template::InstallerTemplateRole as Role;
+    let original = ui::installer_template::InstallerTemplate::parse_settings(
+        ui::installer_layout::SETTINGS_TEMPLATE_BYTES).unwrap();
+    for section in 0..11 {
+        let mut layers: Vec<_> = (0..original.element_count(section + 1).unwrap())
+            .map(|index| original.element_at(section + 1, index).unwrap()).collect();
+        layers.sort_by_key(|element| (element.z_index, element.id));
+        for (index, element) in layers.iter().enumerate() {
+            assert_eq!(ui::settings_template::layer_at(section as usize, index as u16), Some(*element));
+        }
+        assert_eq!(ui::settings_template::layer_at(section as usize, layers.len() as u16), None);
+        for role in [Role::Console, Role::Content, Role::Title, Role::Body,
+            Role::Metadata, Role::SettingsRowLabel, Role::SettingsRowValue, Role::SettingsDisclosure] {
+            let expected: Vec<_> = (0..original.element_count(section + 1).unwrap())
+                .filter_map(|index| original.element_at(section + 1, index))
+                .filter(|element| element.role == role as u8).collect();
+            for (index, element) in expected.iter().enumerate() {
+                assert_eq!(ui::settings_template::role_at(section as usize, role, index), Some(*element));
+            }
+            assert_eq!(ui::settings_template::role_at(section as usize, role, expected.len()), None);
+        }
+    }
+    for (width, height) in [(1024, 768), (1366, 768), (1920, 1080), (2048, 2048), (2560, 1440)] {
+        let layout = SystemLayout::new(width, height);
+        for section in [0, 1, 2, 3, 4, 5, 8, 9, 10] {
+            let count = if matches!(section, 1 | 8 | 10) { 8 } else if section == 3 { 7 } else { 5 };
+            let collapsed = SettingsWindowState { x: 80, y: 100, width: 850, height: 760,
+                maximized: false, expanded_row: None, scroll_offset: 0, control_focus: 0, row_count: count };
+            for expanded in 0..count {
+                let mut state = SettingsWindowState { expanded_row: Some(expanded), ..collapsed };
+                let window = layout.settings_window_geometry_for_section(state, section);
+                let assistant = ui::app_assistant::geometry(window.window, layout.scale(), false);
+                assert!(!window.scrollbar_track.intersects(assistant.toggle));
+                let heading = layout.authored_settings_rect(state, section, Role::Body, 0).unwrap();
+                assert!(window.viewport.y >= heading.bottom());
+                let detail = layout.settings_row_geometry_for_section(state, expanded, section).detail;
+                assert!(detail.height >= 78 * layout.scale() as u32);
+                if expanded == 0 {
+                    let short = SettingsWindowState { height: 420, ..state };
+                    let well = layout.settings_row_geometry_for_section(short, expanded, section).detail;
+                    let text_bottom = well.y + ((ui::system_layout::UI_GUTTER + 20) * layout.scale()) as i32;
+                    let action_top = well.bottom() - ((ui::system_layout::UI_COMPACT_ACTION_HEIGHT + 10) * layout.scale()) as i32;
+                    assert!(text_bottom + (8 * layout.scale()) as i32 <= action_top);
+                }
+                if expanded + 1 < count {
+                    let next = layout.settings_row_geometry_for_section(state, expanded + 1, section);
+                    assert!(detail.bottom() <= next.summary.y, "section {section}, expanded {expanded}");
+                }
+                for scroll in [0, window.maximum_scroll / 2, window.maximum_scroll] {
+                    state.scroll_offset = scroll;
+                    for index in 0..count {
+                        let row = layout.settings_row_geometry_for_section(state, index, section).summary;
+                        let base_row = layout.settings_row_geometry_for_section(collapsed, index, section).summary;
+                        for role in [Role::SettingsRowLabel, Role::SettingsRowValue, Role::SettingsDisclosure] {
+                            let child = layout.settings_row_element_geometry(state, section, index, role).unwrap();
+                            let base_child = layout.settings_row_element_geometry(collapsed, section, index, role).unwrap();
+                            assert_eq!(child.y - row.y, base_child.y - base_row.y);
+                            assert_eq!(child.x - row.x, base_child.x - base_row.x);
+                            assert_eq!(row.intersection(child), child);
+                            if role == Role::SettingsDisclosure && window.viewport.intersection(child) == child {
+                                let x = (child.x + child.width as i32 / 2) * 1000 / width as i32;
+                                let y = (child.y + child.height as i32 / 2) * 1000 / height as i32;
+                                assert_eq!(layout.settings_target_for_section(x, y, state, section), Some(SettingsTarget::ContentRow(index)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ------------------------=

@@ -8,6 +8,62 @@ static mut INFINITY_DIAGNOSTIC_SNAPSHOT: [u64; 512] = [0; 512];
 #[used]
 #[no_mangle]
 static mut INFINITY_POOL_DIAGNOSTIC_SNAPSHOT: [u64; 256] = [0; 256];
+#[used]
+#[no_mangle]
+static mut INFINITY_SETTINGS_DIAGNOSTIC_SNAPSHOT: [u64; 128] = [0; 128];
+
+// ------------------------=
+// FUNC: publish_settings
+// DESC: Exposes non-secret live Settings geometry and disclosure state to read-only behavioral verification.
+// ------------------=
+fn publish_settings(console: &ConsoleRuntime, generation: u64) {
+    let mut data = [0u64; 128];
+    data[0] = 0x494e465345545331;
+    data[1] = 1;
+    data[2] = generation;
+    data[127] = generation;
+    if console.mode == super::ConsoleMode::Settings {
+        let layout = crate::ui::system_layout::SystemLayout::new(
+            console.system.framebuffer_width, console.system.framebuffer_height);
+        let state = console.settings_window;
+        let section = console.system_focus;
+        let window = layout.settings_window_geometry_for_section(state, section);
+        data[3] = 1;
+        data[4] = section as u64;
+        data[5] = state.expanded_row.map(|i| i as u64 + 1).unwrap_or(0);
+        data[6] = state.scroll_offset as u64;
+        data[7] = window.maximum_scroll as u64;
+        data[8] = state.row_count as u64;
+        for (at, rect) in [(9, window.window), (13, window.viewport), (17, window.scrollbar_track), (21, window.scrollbar_thumb)] {
+            data[at..at+4].copy_from_slice(&[rect.x as u64, rect.y as u64, rect.width as u64, rect.height as u64]);
+        }
+        for index in 0..state.row_count.min(8) {
+            let row = layout.settings_row_geometry_for_section(state, index, section);
+            let arrow = layout.settings_row_element_geometry(state, section, index,
+                crate::ui::installer_template::InstallerTemplateRole::SettingsDisclosure).unwrap_or(row.summary);
+            let at = 25 + index * 8;
+            data[at..at+8].copy_from_slice(&[row.summary.x as u64, row.summary.y as u64,
+                row.summary.width as u64, row.summary.height as u64, arrow.x as u64,
+                arrow.y as u64, arrow.width as u64, arrow.height as u64]);
+            if state.expanded_row == Some(index) {
+                data[111..115].copy_from_slice(&[row.detail.x as u64, row.detail.y as u64,
+                    row.detail.width as u64, row.detail.height as u64]);
+            }
+        }
+        for index in 0..11 {
+            let nav = layout.settings_section_geometry_for_section(state, index, section);
+            data[89 + index * 2] = (nav.x + nav.width as i32 / 2) as u64;
+            data[90 + index * 2] = (nav.y + nav.height as i32 / 2) as u64;
+        }
+    }
+    unsafe {
+        let pointer = (&raw mut INFINITY_SETTINGS_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
+        core::ptr::write_volatile(pointer.add(2), generation | 1);
+        for index in 0..128 { if index != 2 { core::ptr::write_volatile(pointer.add(index), data[index]); } }
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        core::ptr::write_volatile(pointer.add(2), generation);
+    }
+}
 
 // ------------------------=
 // FUNC: words
@@ -168,6 +224,7 @@ pub(super) fn publish(console: &ConsoleRuntime) {
     unsafe {
         let pointer = (&raw mut INFINITY_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
         let generation = core::ptr::read_volatile(pointer.add(2)).wrapping_add(2) & !1;
+        publish_settings(console, generation);
         core::ptr::write_volatile(pointer.add(2), generation | 1);
         data[2] = generation; data[511] = generation;
         for index in 0..512 { if index != 2 { core::ptr::write_volatile(pointer.add(index), data[index]); } }

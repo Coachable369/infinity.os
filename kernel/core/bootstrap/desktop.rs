@@ -4734,13 +4734,11 @@ impl super::DisplayDevice {
         let width = geometry.window.width as usize;
         let height = geometry.window.height as usize;
         let title_height = geometry.title.height as usize;
-        let template_console = crate::ui::installer_layout::settings_template_element(
+        let template_console = crate::ui::settings_template::element(
             focus,
             crate::ui::installer_template::InstallerTemplateRole::Console,
         );
-        let settings_template = crate::ui::installer_template::InstallerTemplate::parse_settings(
-            crate::ui::installer_layout::SETTINGS_TEMPLATE_BYTES,
-        ).ok();
+        let settings_template = crate::ui::settings_template::template();
         let authored_rect = |element: crate::ui::installer_template::InstallerTemplateElement<'static>| {
             let console = template_console?;
             Some((
@@ -4762,15 +4760,15 @@ impl super::DisplayDevice {
             self.active_accent_surface(crate::ui::skin::AccentSurface::Widget);
         let (background_opacity, _) = self.active_background_effects();
         let panel_alpha = |base: u8| (u16::from(base) * u16::from(background_opacity) / 100) as u8;
-        let authored_header = crate::ui::installer_layout::settings_template_element(
+        let authored_header = crate::ui::settings_template::element(
             focus,
             crate::ui::installer_template::InstallerTemplateRole::Masthead,
         );
-        let authored_navigation = crate::ui::installer_layout::settings_template_element(
+        let authored_navigation = crate::ui::settings_template::element(
             focus,
             crate::ui::installer_template::InstallerTemplateRole::SectionLabel,
         );
-        let authored_content = crate::ui::installer_layout::settings_template_element(
+        let authored_content = crate::ui::settings_template::element(
             focus,
             crate::ui::installer_template::InstallerTemplateRole::Content,
         );
@@ -4854,7 +4852,7 @@ impl super::DisplayDevice {
                 crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationIcon,
                 crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationLabel,
             ] {
-                let Some(element) = crate::ui::installer_layout::settings_template_role_at(
+                let Some(element) = crate::ui::settings_template::role_at(
                     focus, role, index,
                 ).filter(|element| !element.hidden && element.opacity > 0) else { continue };
                 let Some((x, y, mapped_width, mapped_height)) = authored_rect(element) else {
@@ -4891,7 +4889,7 @@ impl super::DisplayDevice {
         if let Some(template) = settings_template {
             if let Some(count) = template.element_count(focus.saturating_add(1) as u8) {
                 for index in 0..count {
-                    let Some(element) = template.layer_at(focus.saturating_add(1) as u8, index)
+                    let Some(element) = crate::ui::settings_template::layer_at(focus, index)
                         .filter(|element| !element.hidden && element.opacity > 0)
                     else { continue };
                     if !matches!(
@@ -4916,11 +4914,11 @@ impl super::DisplayDevice {
                 }
             }
         }
-        let authored_title = crate::ui::installer_layout::settings_template_element(
+        let authored_title = crate::ui::settings_template::element(
             focus,
             crate::ui::installer_template::InstallerTemplateRole::Title,
         );
-        let authored_body = crate::ui::installer_layout::settings_template_element(
+        let authored_body = crate::ui::settings_template::element(
             focus,
             crate::ui::installer_template::InstallerTemplateRole::Body,
         );
@@ -5159,26 +5157,28 @@ impl super::DisplayDevice {
             .enumerate()
         {
             let row = layout.settings_row_geometry_for_section(settings_window, index, focus);
-            let authored_row = crate::ui::installer_layout::settings_template_role_at(
+            let authored_row = crate::ui::settings_template::role_at(
                 focus,
                 crate::ui::installer_template::InstallerTemplateRole::Metadata,
                 index,
             );
-            let authored_label = crate::ui::installer_layout::settings_template_role_at(
+            let authored_label = crate::ui::settings_template::role_at(
                 focus,
                 crate::ui::installer_template::InstallerTemplateRole::SettingsRowLabel,
                 index,
             );
-            let authored_value = crate::ui::installer_layout::settings_template_role_at(
+            let authored_value = crate::ui::settings_template::role_at(
                 focus,
                 crate::ui::installer_template::InstallerTemplateRole::SettingsRowValue,
                 index,
             );
-            let authored_disclosure = crate::ui::installer_layout::settings_template_role_at(
-                focus,
-                crate::ui::installer_template::InstallerTemplateRole::SettingsDisclosure,
-                index,
-            );
+            let row_frame = |role| layout.settings_row_element_geometry(
+                settings_window, focus, index, role,
+            ).map(|frame| (frame.x.max(0) as usize, frame.y.max(0) as usize,
+                frame.width as usize, frame.height as usize));
+            let label_frame = row_frame(crate::ui::installer_template::InstallerTemplateRole::SettingsRowLabel);
+            let value_frame = row_frame(crate::ui::installer_template::InstallerTemplateRole::SettingsRowValue);
+            let disclosure_frame = row_frame(crate::ui::installer_template::InstallerTemplateRole::SettingsDisclosure);
             let label = authored_label.map(|element| element.text)
                 .filter(|text| !text.is_empty()).unwrap_or(*label);
             if row.summary.intersects(geometry.viewport) {
@@ -5207,14 +5207,13 @@ impl super::DisplayDevice {
                     authored_row.map(|element| element.border[1]).unwrap_or(if expanded { outline_g } else { outline_g / 2 }),
                     authored_row.map(|element| element.border[2]).unwrap_or(if expanded { outline_b } else { outline_b / 2 }),
                 );
-                let label_limit = summary_width * 46 / 100;
+                let label_limit = label_frame.map(|frame| frame.2).unwrap_or(summary_width * 46 / 100);
                 let mut label_length = label.len();
                 while label_length > 0
                     && self.ui_text_width(&label[..label_length], 1) > label_limit
                 {
                     label_length -= 1;
                 }
-                let label_frame = authored_label.and_then(authored_rect);
                 self.ui_text_strong(
                     label_frame.map(|frame| frame.0).unwrap_or(
                         summary_left + crate::ui::system_layout::UI_GUTTER * scale
@@ -5226,7 +5225,7 @@ impl super::DisplayDevice {
                     authored_label.map(|element| element.fill[2]).unwrap_or(217),
                     1,
                 );
-                let value_limit = summary_width * 42 / 100;
+                let value_limit = value_frame.map(|frame| frame.2).unwrap_or(summary_width * 42 / 100);
                 let mut value_length = value.len();
                 while value_length > 0
                     && self.ui_text_width(&value[..value_length], 1) > value_limit
@@ -5235,7 +5234,6 @@ impl super::DisplayDevice {
                 }
                 let displayed_value = &value[..value_length];
                 let value_width = self.ui_text_width(displayed_value, 1);
-                let value_frame = authored_value.and_then(authored_rect);
                 self.ui_text(
                     value_frame.map(|frame| frame.0 + frame.2.saturating_sub(value_width))
                         .unwrap_or(summary_left + summary_width.saturating_sub(value_width + 40 * scale)),
@@ -5248,15 +5246,15 @@ impl super::DisplayDevice {
                 );
                 if focus == 0 && index == 0 {
                     self.text_field_caret(
-                        summary_left + summary_width.saturating_sub(value_width + 40 * scale),
-                        summary_top,
-                        row.summary.height as usize,
+                        value_frame.map(|frame| frame.0 + frame.2.saturating_sub(value_width))
+                            .unwrap_or(summary_left + summary_width.saturating_sub(value_width + 40 * scale)),
+                        value_frame.map(|frame| frame.1).unwrap_or(summary_top),
+                        value_frame.map(|frame| frame.3).unwrap_or(row.summary.height as usize),
                         displayed_value,
                         true,
                         1,
                     );
                 }
-                let disclosure_frame = authored_disclosure.and_then(authored_rect);
                 let twiddle_x = disclosure_frame.map(|frame| frame.0 + frame.2 / 2)
                     .unwrap_or(summary_left + summary_width.saturating_sub(20 * scale));
                 let twiddle_y = disclosure_frame.map(|frame| frame.1 + frame.3 / 2)
@@ -5417,14 +5415,14 @@ impl super::DisplayDevice {
                         }
                         _ => b"This value is read from the active System Generation.",
                     };
-                    self.ui_text(
+                    self.ui_text_elided_strong(
                         detail_left + crate::ui::system_layout::UI_GUTTER * scale,
                         detail_top + crate::ui::system_layout::UI_GUTTER * scale,
+                        detail_width.saturating_sub(crate::ui::system_layout::UI_GUTTER * 2 * scale),
                         description,
                         167,
                         188,
                         203,
-                        1,
                     );
                     let action: Option<&[u8]> = match (focus, index) {
                         (0, 0) => Some(b"EDIT NAME"),
@@ -5600,7 +5598,7 @@ impl super::DisplayDevice {
             (geometry.main, crate::ui::installer_template::InstallerTemplateRole::SettingsMainCard),
             (geometry.sidebar, crate::ui::installer_template::InstallerTemplateRole::SettingsSidebarCard),
         ] {
-            let authored = crate::ui::installer_layout::settings_template_element(7, role);
+            let authored = crate::ui::settings_template::element(7, role);
             self.fill_rounded_rect_alpha(
                 card.x.max(0) as usize,
                 card.y.max(0) as usize,
@@ -5639,7 +5637,7 @@ impl super::DisplayDevice {
         for index in 0..5 {
             let tab = geometry.tabs[index];
             let active = page == index;
-            let authored = crate::ui::installer_layout::settings_template_role_at(
+            let authored = crate::ui::settings_template::role_at(
                 7, crate::ui::installer_template::InstallerTemplateRole::SettingsTab, index,
             );
             self.fill_rounded_rect_alpha(
@@ -5687,7 +5685,7 @@ impl super::DisplayDevice {
         self.ui_text_strong(
             summary_left + 74 * scale,
             summary_top + 14 * scale,
-            crate::ui::installer_layout::settings_template_element(
+            crate::ui::settings_template::element(
                 7, crate::ui::installer_template::InstallerTemplateRole::SettingsSummaryCard,
             ).map(|value| value.text).filter(|text| !text.is_empty()).unwrap_or(b"NODE IDENTITY"),
             outline_r,
@@ -5777,7 +5775,7 @@ impl super::DisplayDevice {
         for index in 0..6 {
             let card = geometry.controls[index];
             let active = settings_window.control_focus.min(5) == index;
-            let authored = crate::ui::installer_layout::settings_template_role_at(
+            let authored = crate::ui::settings_template::role_at(
                 7, crate::ui::installer_template::InstallerTemplateRole::Metadata, index,
             );
             self.fill_rounded_rect_alpha(
@@ -5892,7 +5890,7 @@ impl super::DisplayDevice {
             let template = crate::ui::installer_template::InstallerTemplate::parse_settings(
                 crate::ui::installer_layout::SETTINGS_TEMPLATE_BYTES,
             ).ok();
-            let authored = crate::ui::installer_layout::settings_template_element(
+            let authored = crate::ui::settings_template::element(
                 7, crate::ui::installer_template::InstallerTemplateRole::SettingsArtwork,
             );
             let authored_rect = layout.authored_settings_rect(
@@ -6023,7 +6021,7 @@ impl super::DisplayDevice {
             (geometry.sidebar, crate::ui::installer_template::InstallerTemplateRole::SettingsSidebarCard),
         ];
         for (card, role) in cards {
-            let authored = crate::ui::installer_layout::settings_template_element(6, role);
+            let authored = crate::ui::settings_template::element(6, role);
             self.fill_rounded_rect_alpha(
                 card.x.max(0) as usize,
                 card.y.max(0) as usize,
@@ -6059,7 +6057,7 @@ impl super::DisplayDevice {
         ];
         for (index, tab) in geometry.tabs.iter().enumerate() {
             let active = page == index;
-            let authored = crate::ui::installer_layout::settings_template_role_at(
+            let authored = crate::ui::settings_template::role_at(
                 6, crate::ui::installer_template::InstallerTemplateRole::SettingsTab, index,
             );
             self.fill_rounded_rect_alpha(
@@ -6108,7 +6106,7 @@ impl super::DisplayDevice {
         self.ui_text_strong(
             overview_left + 74 * scale,
             overview_top + 14 * scale,
-            crate::ui::installer_layout::settings_template_element(
+            crate::ui::settings_template::element(
                 6, crate::ui::installer_template::InstallerTemplateRole::SettingsSummaryCard,
             ).map(|value| value.text).filter(|text| !text.is_empty()).unwrap_or(b"CONNECTIVITY"),
             outline_r,
@@ -6249,7 +6247,7 @@ impl super::DisplayDevice {
             let left = card.x.max(0) as usize;
             let top = card.y.max(0) as usize;
             let active = settings_window.control_focus.min(5) == index;
-            let authored = crate::ui::installer_layout::settings_template_role_at(
+            let authored = crate::ui::settings_template::role_at(
                 6, crate::ui::installer_template::InstallerTemplateRole::Metadata, index,
             );
             self.fill_rounded_rect_alpha(
