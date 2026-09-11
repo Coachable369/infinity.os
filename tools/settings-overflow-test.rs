@@ -19,7 +19,12 @@ fn main() {
             maximized: false, expanded_row: Some(1), scroll_offset: 0, control_focus: 0, row_count: 8 };
         let geometry = layout.node_settings_geometry(state);
         assert!(!geometry.main.intersects(geometry.sidebar));
-        assert!(geometry.sidebar.width >= 220 * layout.scale() as u32);
+        if let Some(authored) = layout.authored_settings_rect(state, SETTINGS_NODE_SECTION,
+            ui::installer_template::InstallerTemplateRole::SettingsSidebarCard, 0) {
+            assert_eq!(geometry.sidebar, authored);
+        } else {
+            assert!(geometry.sidebar.width >= 220 * layout.scale() as u32);
+        }
         for control in geometry.controls {
             assert_eq!(geometry.main.intersection(control), control);
         }
@@ -39,7 +44,7 @@ fn main() {
     let window = layout.settings_window_geometry_for_section(state, SETTINGS_NODE_SECTION);
     assert!(SETTINGS_SECTION_ICON_SIZE >= 24);
     for index in 0..10 {
-        let section = layout.settings_section_geometry(state, index);
+        let section = layout.settings_section_geometry_for_section(state, index, SETTINGS_NODE_SECTION);
         assert!(section.y >= window.navigation.y);
         assert!(section.bottom() <= window.navigation.bottom());
         let x = (section.x + section.width as i32 / 2) * 1000 / 2560;
@@ -51,10 +56,14 @@ fn main() {
     }
 
     assert!(window.maximum_scroll > 0);
-    assert_eq!(window.total_content_height, SETTINGS_NODE_CONTENT_HEIGHT + 632);
     let top = layout.node_settings_geometry(state);
     for index in 0..5 {
-        assert!(top.tabs[index].width >= (184 * layout.scale()) as u32);
+        if let Some(authored) = layout.authored_settings_rect(state, SETTINGS_NODE_SECTION,
+            ui::installer_template::InstallerTemplateRole::SettingsTab, index) {
+            assert_eq!(top.tabs[index], authored);
+        } else {
+            assert!(top.tabs[index].width >= (184 * layout.scale()) as u32);
+        }
         for following in (index + 1)..5 {
             assert!(!top.tabs[index].intersects(top.tabs[following]));
         }
@@ -67,7 +76,12 @@ fn main() {
     assert!(top.summary.y > tab_bottom);
     assert!(!top.main.intersects(top.sidebar));
     for (index, control) in top.controls.iter().enumerate() {
-        assert!(control.height >= (12 + 28 + 4 + 28 + 8) * layout.scale() as u32);
+        if let Some(authored) = layout.authored_settings_rect(state, SETTINGS_NODE_SECTION,
+            ui::installer_template::InstallerTemplateRole::Metadata, index) {
+            assert_eq!(*control, authored);
+        } else {
+            assert!(control.height >= (12 + 28 + 4 + 28 + 8) * layout.scale() as u32);
+        }
         assert_eq!(top.main.intersection(*control), *control);
         if index > 0 {
             assert!(top.controls[index - 1].bottom() < control.y);

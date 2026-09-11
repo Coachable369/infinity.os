@@ -83,7 +83,8 @@ impl BlockDevice for Disk {
     // DESC: Defines bounded sparse native test media.
     // ------------------=
     fn block_count(&self) -> u64 {
-        400000
+        // Preserve the original data capacity independently of the boot reservation.
+        crate::storage::object::STORE_RELATIVE_LBA + 137856
     }
     // ------------------------=
     // FUNC: read_sector

@@ -2231,7 +2231,7 @@ impl SystemLayout {
     // DESC: Fits all Settings sections inside the navigation viewport while preserving generous icon and pointer space.
     // ------------------=
     pub fn settings_section_geometry(self, state: SettingsWindowState, index: usize) -> Rect {
-        self.settings_section_geometry_for_section(state, index, index.min(10))
+        self.settings_section_geometry_for_section(state, index, usize::MAX)
     }
 
     // ------------------------=
@@ -2247,7 +2247,7 @@ impl SystemLayout {
         if let (Some(console), Some(item)) = (
             crate::ui::installer_layout::settings_template_element(
                 section.min(10), crate::ui::installer_template::InstallerTemplateRole::Console,
-            ),
+            ).filter(|_| section < 11),
             crate::ui::installer_layout::settings_template_role_at(
                 section.min(10),
                 crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationItem,

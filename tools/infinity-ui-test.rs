@@ -1387,14 +1387,17 @@ fn installed_system_hit_geometry_test() {
     let dragged_offset = compact.settings_scroll_offset_for_thumb(900, expanded, 0);
     assert_eq!(dragged_offset, expanded_geometry.maximum_scroll);
     let network_at_top = compact.network_settings_geometry(expanded);
+    let network_scroll = compact.settings_window_geometry_for_section(
+        expanded, ui::system_layout::SETTINGS_NETWORK_SECTION,
+    ).maximum_scroll;
     let scrolled_dashboard = SettingsWindowState {
-        scroll_offset: expanded_geometry.maximum_scroll,
+        scroll_offset: network_scroll,
         ..expanded
     };
     let network_at_bottom = compact.network_settings_geometry(scrolled_dashboard);
     assert_eq!(
         network_at_top.tabs[0].y - network_at_bottom.tabs[0].y,
-        (expanded_geometry.maximum_scroll * compact.scale()) as i32
+        (network_scroll * compact.scale()) as i32
     );
     assert!(network_at_bottom.sidebar.bottom() <= network_at_top.sidebar.bottom());
     let picker = square.settings_primary_geometry(expanded);
