@@ -328,6 +328,9 @@ pub fn initialize_object_store() {
         let disk_identity = object::device_identity(&mut device);
         match object::ObjectStore::mount(device, container) {
             Ok(mut store) => unsafe {
+                if store.recover_editor_documents().is_err() {
+                    crate::output_text(b"[storage] legacy Documents recovery incomplete; original references retained\n");
+                }
                 crate::output_text(b"[storage] container valid\n[storage] pool online\n");
                 crate::output_text(
                     b"[object] committed generation loaded\n[object] object index online\n",

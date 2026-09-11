@@ -1662,6 +1662,32 @@ impl ConsoleRuntime {
         let Some(state) = state else {
             return false;
         };
+        if state.context_menu_open {
+            match key {
+                ConsoleKey::Up | ConsoleKey::Down => {
+                    let count = state.context_actions().len();
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        if let Some(navigator) = runtime.file_navigator.as_mut() {
+                            let current = navigator.menu_selection as usize;
+                            navigator.menu_selection = if matches!(key, ConsoleKey::Up) {
+                                (current + count - 1) % count
+                            } else { (current + 1) % count } as u8;
+                        }
+                    });
+                }
+                ConsoleKey::Enter => self.activate_file_navigator_context(state.menu_selection as usize, state),
+                ConsoleKey::Escape | ConsoleKey::Left => {
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        if let Some(navigator) = runtime.file_navigator.as_mut() {
+                            if navigator.context_open_with { navigator.context_open_with = false; navigator.menu_selection = 1; }
+                            else { navigator.context_menu_open = false; }
+                        }
+                    });
+                }
+                _ => {}
+            }
+            return true;
+        }
         if state.location_editing || state.rename_editing {
             match key {
                 ConsoleKey::Character(_)
@@ -1935,7 +1961,11 @@ impl ConsoleRuntime {
     // DESC: Loads one selected UTF-8 NamespaceRef into the native Text Editor window.
     // ------------------=
     fn open_text_editor_path(&mut self, path: &[u8]) {
-        if !self.editor_document.is_saved() {self.editor_tools.notice=b"Save your modified document before opening another.";return;}
+        if !self.editor_document.is_saved() {
+            self.editor_tools.notice=b"Save your modified document before opening another.";
+            self.open_text_editor();
+            return;
+        }
         if !crate::storage::object_inspect_path(path).is_ok_and(|(m,_)|m.logical_size as usize<=crate::ui::text_editor::DOCUMENT_CAPACITY){return;}
         let mut content = [0u8; crate::ui::text_editor::DOCUMENT_CAPACITY];
         let Ok((_, length)) = crate::storage::object_read_path(path, None, &mut content) else {
@@ -2916,7 +2946,10 @@ impl ConsoleRuntime {
     // ------------------=
     fn open_editor_save_as_dialog(&mut self) {
         self.editor_dialog=EditorDialog::SaveAs;
-        if self.editor_picker.location.len==0 {self.editor_picker.set_location(b"/personal/documents");}
+        if self.editor_picker.location.len==0
+            || self.editor_picker.location.bytes()==crate::storage::object::LEGACY_DOCUMENTS_PATH {
+            self.editor_picker.set_location(crate::storage::object::DOCUMENTS_PATH);
+        }
         self.editor_picker.name.len=self.editor_document_name_length;
         self.editor_picker.name.path[..self.editor_document_name_length]
             .copy_from_slice(&self.editor_document_name[..self.editor_document_name_length]);
@@ -3162,7 +3195,7 @@ impl ConsoleRuntime {
             self.home_window_height,
             self.home_window_maximized,
         );
-        let scale = (self.system.framebuffer_width as usize / 1000).max(1);
+        let scale = layout.scale();
         let point_x =
             self.system.framebuffer_width as usize * self.pointer_x.max(0) as usize / 1000;
         let point_y =
@@ -6088,13 +6121,25 @@ impl ConsoleRuntime {
         action: usize,
         state: crate::runtime::object_navigation::FileNavigatorState,
     ) {
+        use crate::runtime::object_navigation::ContextAction as A;
+        let Some(action) = state.context_actions().get(action).copied() else { return; };
+        if matches!(action, A::OpenWith | A::Back) {
+            let _ = crate::runtime::with_runtime(|runtime| {
+                if let Some(navigator) = runtime.file_navigator.as_mut() {
+                    navigator.context_open_with = action == A::OpenWith;
+                    navigator.menu_selection = if action == A::Back { 1 } else { 0 };
+                }
+            });
+            return;
+        }
+        if action == A::Unavailable { return; }
         let selected =
             state.context_item != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION;
         if selected
             && (state.context_item as usize)
                 < crate::runtime::object_navigation::FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT
         {
-            if action == 0 {
+            if action == A::Open {
                 self.open_file_navigator_selection();
             }
             let _ = crate::runtime::with_runtime(|runtime| {
@@ -6116,8 +6161,14 @@ impl ConsoleRuntime {
         if let Some(entry) = entry {
             let path = &entry.path[..entry.path_len as usize];
             match action {
-                0 => self.open_file_navigator_selection(),
-                1 => {
+                A::Open | A::FileNavigator => self.open_file_navigator_selection(),
+                A::TextEditor => {
+                    if crate::storage::object_inspect_path(path).is_ok_and(|(m,_)|
+                        m.content_type == crate::storage::object::ContentType::Utf8Text) {
+                        self.open_text_editor_path(path);
+                    }
+                }
+                A::Rename => {
                     let name = crate::runtime::object_navigation::namespace_basename(path);
                     let _ = crate::runtime::with_runtime(|runtime| {
                         runtime
@@ -6127,30 +6178,30 @@ impl ConsoleRuntime {
                     });
                     return;
                 }
-                2 => self.copy_file_navigator_entry(path, state.active_namespace_ref.as_bytes()),
-                3 => {
+                A::Duplicate => self.copy_file_navigator_entry(path, state.active_namespace_ref.as_bytes()),
+                A::Trash => {
                     let _ = crate::storage::trash_move(path);
                 }
                 _ => {}
             }
         } else {
             match action {
-                0 => self.create_file_navigator_folder(state.active_namespace_ref.as_bytes()),
-                1 => {
+                A::NewFolder => self.create_file_navigator_folder(state.active_namespace_ref.as_bytes()),
+                A::List => {
                     let _ = crate::runtime::with_runtime(|runtime| {
                         runtime.file_navigator.as_mut().map(|navigator| {
                             navigator.view_mode = crate::runtime::object_navigation::ViewMode::List
                         })
                     });
                 }
-                2 => {
+                A::Grid => {
                     let _ = crate::runtime::with_runtime(|runtime| {
                         runtime.file_navigator.as_mut().map(|navigator| {
                             navigator.view_mode = crate::runtime::object_navigation::ViewMode::Grid
                         })
                     });
                 }
-                3 => {
+                A::Sort => {
                     let _ = crate::runtime::with_runtime(|runtime| {
                         runtime.file_navigator.as_mut().map(|navigator| {
                             navigator.sort_key = 0;
@@ -6986,6 +7037,7 @@ impl ConsoleRuntime {
                         context.context_y,
                         self.pointer_x,
                         self.pointer_y,
+                        context.context_actions().len(),
                     );
                     if let Some(action) = row {
                         self.activate_file_navigator_context(action, context);
@@ -7011,13 +7063,24 @@ impl ConsoleRuntime {
                         Some(DesktopTarget::HomeItem(index)) => Some(index),
                         _ => None,
                     };
+                    let open_target = crate::runtime::with_runtime(|runtime| runtime.file_navigator)
+                        .flatten().and_then(|state| item.and_then(|i|
+                            navigator_child_nth(state.active_namespace_ref.as_bytes(), i)))
+                        .and_then(|entry| crate::storage::object_inspect_path(&entry.path[..entry.path_len as usize]).ok())
+                        .map(|(m,_)| {
+                            use crate::runtime::object_navigation::OpenTarget;
+                            if m.kind == crate::storage::object::ObjectType::NamespaceNode { OpenTarget::FileNavigator }
+                            else if m.content_type == crate::storage::object::ContentType::Utf8Text { OpenTarget::TextEditor }
+                            else { OpenTarget::Unsupported }
+                        }).unwrap_or(crate::runtime::object_navigation::OpenTarget::Unsupported);
                     let _ = crate::runtime::with_runtime(|runtime| {
                         runtime.file_navigator.as_mut().map(|navigator| {
                             navigator.open_context_menu(
                                 self.pointer_x.min(800),
                                 self.pointer_y.min(780),
                                 item,
-                            )
+                            );
+                            navigator.context_target = open_target;
                         })
                     });
                     self.redraw();
@@ -11188,7 +11251,7 @@ fn home_location_path(location: usize) -> &'static [u8] {
     [
         b"/home/default".as_slice(),
         b"/home/default",
-        b"/home/default/documents",
+        crate::storage::object::DOCUMENTS_PATH,
         b"/home/default/downloads",
         b"/home/default/pictures",
         b"/home/default/media",

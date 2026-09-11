@@ -11,6 +11,55 @@ static mut INFINITY_POOL_DIAGNOSTIC_SNAPSHOT: [u64; 256] = [0; 256];
 #[used]
 #[no_mangle]
 static mut INFINITY_SETTINGS_DIAGNOSTIC_SNAPSHOT: [u64; 128] = [0; 128];
+#[used]
+#[no_mangle]
+static mut INFINITY_NAVIGATOR_DIAGNOSTIC_SNAPSHOT: [u64; 64] = [0; 64];
+
+// ------------------------=
+// FUNC: publish_navigator
+// DESC: Publishes read-only file identity hashes, picker state, and exact live menu bounds for end-to-end interaction verification.
+// ------------------=
+fn publish_navigator(console: &ConsoleRuntime, generation: u64) {
+    let mut data = [0u64;64];
+    data[0] = 0x494e464e41563131; data[1] = 1; data[2] = generation; data[63] = generation;
+    let layout = crate::ui::system_layout::SystemLayout::new(console.system.framebuffer_width, console.system.framebuffer_height);
+    let (x,y,w,h) = layout.home_window_geometry_sized(console.home_window_x, console.home_window_y,
+        console.home_window_width, console.home_window_height, console.home_window_maximized);
+    data[3] = console.home_window_visible as u64;
+    data[4..8].copy_from_slice(&[x as u64,y as u64,w as u64,h as u64]);
+    data[8] = layout.scale() as u64;
+    data[9] = console.editor_dialog as u64;
+    data[10] = console.editor_picker.field as u64;
+    data[11] = console.editor_picker.error as u64;
+    data[12] = crate::storage::object::crc32(console.editor_picker.location.bytes()) as u64;
+    data[13] = crate::storage::object::crc32(&console.editor_document_path[..console.editor_document_path_length]) as u64;
+    if let Some(state) = crate::runtime::with_runtime(|r| r.file_navigator).flatten() {
+        data[14] = crate::storage::object::crc32(state.active_namespace_ref.as_bytes()) as u64;
+        data[15] = crate::storage::namespace_child_count(state.active_namespace_ref.as_bytes()).unwrap_or(0) as u64;
+        data[16] = state.selected_index as u64;
+        data[17] = state.context_menu_open as u64;
+        data[18] = state.context_open_with as u64;
+        data[19] = state.context_target as u64;
+        data[20] = state.menu_selection as u64;
+        data[21] = state.view_mode as u64;
+        data[22] = state.scroll_offset as u64;
+        let menu = layout.file_navigator_context_geometry(state.context_x,state.context_y,state.context_actions().len());
+        data[23..27].copy_from_slice(&[menu.x as u64,menu.y as u64,menu.width as u64,menu.height as u64]);
+        if let Some(entry) = (state.selected_index != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION)
+            .then(|| super::navigator_child_nth(state.active_namespace_ref.as_bytes(),state.selected_index as usize)).flatten() {
+            data[27] = crate::storage::object::crc32(&entry.path[..entry.path_len as usize]) as u64;
+            data[28] = u64::from_le_bytes(entry.object.id.0[..8].try_into().unwrap());
+            data[29] = u64::from_le_bytes(entry.object.id.0[8..].try_into().unwrap());
+        }
+    }
+    unsafe {
+        let pointer = (&raw mut INFINITY_NAVIGATOR_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
+        core::ptr::write_volatile(pointer.add(2), generation | 1);
+        for index in 0..64 { if index != 2 { core::ptr::write_volatile(pointer.add(index),data[index]); } }
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        core::ptr::write_volatile(pointer.add(2), generation);
+    }
+}
 
 // ------------------------=
 // FUNC: publish_settings
@@ -225,6 +274,7 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         let pointer = (&raw mut INFINITY_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
         let generation = core::ptr::read_volatile(pointer.add(2)).wrapping_add(2) & !1;
         publish_settings(console, generation);
+        publish_navigator(console, generation);
         core::ptr::write_volatile(pointer.add(2), generation | 1);
         data[2] = generation; data[511] = generation;
         for index in 0..512 { if index != 2 { core::ptr::write_volatile(pointer.add(index), data[index]); } }

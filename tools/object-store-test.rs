@@ -86,6 +86,52 @@ impl BlockDevice for MemoryDisk {
     }
 }
 
+// ------------------------=
+// FUNC: editor_documents_recovery
+// DESC: Verifies saved document identity, collision-safe recovery, idempotence, and durable bytes after remount.
+// ------------------=
+fn editor_documents_recovery(sectors: usize) {
+    let disk = MemoryDisk::new(sectors);
+    let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0x92;16]).unwrap();
+    let legacy = b"/personal/documents/helloworld.txt";
+    let canonical = b"/home/default/documents/helloworld.txt";
+    let original = store.create_attached(b"helloworld.txt", ObjectType::Text, Space::Personal, b"hello world", legacy).unwrap();
+    assert_eq!(store.recover_editor_documents().unwrap(), 1);
+    assert_eq!(store.resolve(canonical).unwrap(), original);
+    assert!(store.resolve(legacy).is_err());
+    let version = store.generation();
+    assert_eq!(store.recover_editor_documents().unwrap(), 0);
+    assert_eq!(store.generation(), version);
+    // A distinct older file with the same name must survive alongside the canonical file.
+    let conflicting = store.create_attached(b"helloworld.txt", ObjectType::Text, Space::Personal, b"older text", legacy).unwrap();
+    assert_eq!(store.recover_editor_documents().unwrap(), 1);
+    assert_eq!(store.resolve(canonical).unwrap(), original);
+    assert_eq!(store.recover_editor_documents().unwrap(), 0);
+    let long_name = [b'x';63];
+    let mut long_legacy = b"/personal/documents/".to_vec();
+    long_legacy.extend_from_slice(&long_name);
+    let mut long_canonical = b"/home/default/documents/".to_vec();
+    long_canonical.extend_from_slice(&long_name);
+    let long_original = store.create_attached(b"long-original", ObjectType::Text, Space::Personal, b"keep", &long_canonical).unwrap();
+    store.create_attached(b"long-legacy", ObjectType::Text, Space::Personal, b"recover", &long_legacy).unwrap();
+    assert_eq!(store.recover_editor_documents().unwrap(), 1);
+    assert_eq!(store.resolve(&long_canonical).unwrap(), long_original);
+    assert!(store.resolve(&long_legacy).is_err());
+    drop(store);
+    let mut store = ObjectStore::mount(disk, 0).unwrap();
+    let mut ids = Vec::new();
+    for index in 0..256 {
+        let Some(entry) = store.namespace_list_nth(storage::object::DOCUMENTS_PATH, index) else { break; };
+        if entry.path_len as usize > storage::object::DOCUMENTS_PATH.len() { ids.push(entry.object.id); }
+    }
+    assert!(ids.contains(&original) && ids.contains(&conflicting));
+    let mut bytes = [0;32];
+    assert_eq!(store.read(original, None, &mut bytes).unwrap(), 11);
+    assert_eq!(&bytes[..11], b"hello world");
+    assert_eq!(store.read(conflicting, None, &mut bytes).unwrap(), 10);
+    assert_eq!(&bytes[..10], b"older text");
+}
+
 #[derive(Clone)]
 struct FailingDisk {
     inner: MemoryDisk,
@@ -160,6 +206,7 @@ fn main() {
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
     legacy_store_mount(test_sectors);
     checkpoint_replacement(test_sectors);
+    editor_documents_recovery(test_sectors);
     let disk = MemoryDisk::new(test_sectors);
     let seed = [0x41; 16];
     let mut completed_stages = Vec::new();

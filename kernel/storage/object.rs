@@ -42,6 +42,8 @@ const MAX_VERSIONS: usize = 64;
 const MAX_ENTRIES: usize = 32;
 const MAX_RELATIONSHIPS: usize = 16;
 const MAX_PATH: usize = 95;
+pub const DOCUMENTS_PATH: &[u8] = b"/home/default/documents";
+pub const LEGACY_DOCUMENTS_PATH: &[u8] = b"/personal/documents";
 const MAX_COMPONENT: usize = 63;
 pub const MAX_CONTENT: usize = 16 * 1024;
 const ALLOCATION_BYTES: usize = 1968;
@@ -547,7 +549,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             b"/",
             b"/home",
             b"/home/default",
-            b"/home/default/documents",
+            DOCUMENTS_PATH,
             b"/home/default/pictures",
             b"/home/default/media",
             b"/home/default/projects",
@@ -1359,6 +1361,42 @@ impl<D: BlockDevice> ObjectStore<D> {
             self.attach_record(path, id)
         })();
         self.finish(before, result)
+    }
+    // ------------------------=
+    // FUNC: recover_editor_documents
+    // DESC: Relocates legacy editor references into Documents without replacing objects or conflicting files; failures retain the original reference.
+    // ------------------=
+    pub fn recover_editor_documents(&mut self) -> Result<usize, ObjectError> {
+        let mut recovered = 0;
+        for index in 0..self.state.entries.len() {
+            let entry = self.state.entries[index];
+            if !entry.used || !entry.path().starts_with(LEGACY_DOCUMENTS_PATH)
+                || entry.path().get(LEGACY_DOCUMENTS_PATH.len()) != Some(&b'/') {
+                continue;
+            }
+            let name = &entry.path()[LEGACY_DOCUMENTS_PATH.len() + 1..];
+            if name.is_empty() || name.contains(&b'/') { continue; }
+            let mut path = [0u8; MAX_PATH];
+            let start = DOCUMENTS_PATH.len() + 1;
+            path[..DOCUMENTS_PATH.len()].copy_from_slice(DOCUMENTS_PATH);
+            path[DOCUMENTS_PATH.len()] = b'/';
+            let length = name.len().min(MAX_PATH - start);
+            path[start..start + length].copy_from_slice(&name[..length]);
+            let mut end = start + length;
+            let existing = self.resolve(&path[..end]).ok();
+            if existing == Some(entry.target) { continue; }
+            if existing.is_some() || length != name.len() {
+                // A stable suffix prevents collisions and makes repeated recovery a no-op.
+                end = end.min(MAX_PATH - 5).min(start + MAX_COMPONENT - 5);
+                path[end] = b'~';
+                for digit in 0..4 { path[end + 1 + digit] = b"0123456789abcdef"[(index >> ((3-digit)*4)) & 15]; }
+                end += 5;
+                if self.resolve(&path[..end]).is_ok() { continue; }
+            }
+            self.move_entry(entry.path(), &path[..end])?;
+            recovered += 1;
+        }
+        Ok(recovered)
     }
     // ------------------------=
     // FUNC: attach_record

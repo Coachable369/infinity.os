@@ -19,6 +19,28 @@ pub const FILE_NAVIGATOR_HISTORY_CAPACITY: usize = 12;
 pub const FILE_NAVIGATOR_NO_SELECTION: u16 = u16::MAX;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpenTarget { Unsupported, TextEditor, FileNavigator }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextAction { Open, OpenWith, Rename, Duplicate, Trash, NewFolder, List, Grid, Sort, TextEditor, FileNavigator, Unavailable, Back }
+
+impl ContextAction {
+    // ------------------------=
+    // FUNC: label
+    // DESC: Supplies native menu copy for typed actions shared by keyboard and pointer dispatch.
+    // ------------------=
+    pub const fn label(self) -> &'static [u8] {
+        match self {
+            Self::Open => b"Open", Self::OpenWith => b"Open With...", Self::Rename => b"Rename",
+            Self::Duplicate => b"Duplicate", Self::Trash => b"Move to Trash", Self::NewFolder => b"New Folder",
+            Self::List => b"List View", Self::Grid => b"Grid View", Self::Sort => b"Sort by Name",
+            Self::TextEditor => b"Text Editor", Self::FileNavigator => b"File Navigator",
+            Self::Unavailable => b"No compatible app", Self::Back => b"Back",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavigationError {
     InvalidPath,
     MissingNamespace,
@@ -1065,6 +1087,8 @@ pub struct FileNavigatorState {
     pub context_x: i32,
     pub context_y: i32,
     pub context_item: u16,
+    pub context_open_with: bool,
+    pub context_target: OpenTarget,
     pub menu_open: Option<FileNavigatorMenu>,
     pub menu_selection: u8,
     pub dialog_open: Option<FileNavigatorDialog>,
@@ -1360,6 +1384,8 @@ impl FileNavigatorState {
             context_x: 0,
             context_y: 0,
             context_item: FILE_NAVIGATOR_NO_SELECTION,
+            context_open_with: false,
+            context_target: OpenTarget::Unsupported,
             menu_open: None,
             menu_selection: 0,
             dialog_open: None,
@@ -1546,8 +1572,31 @@ impl FileNavigatorState {
             .and_then(|value| u16::try_from(value).ok())
             .unwrap_or(FILE_NAVIGATOR_NO_SELECTION);
         self.selected_index = self.context_item;
+        self.context_open_with = false;
+        self.context_target = OpenTarget::Unsupported;
+        self.menu_selection = 0;
+        self.menu_open = None;
+        self.dialog_open = None;
         self.location_editing = false;
         self.rename_editing = false;
+    }
+
+    // ------------------------=
+    // FUNC: context_actions
+    // DESC: Returns the exact actionable rows for an object, background, or compatible application chooser.
+    // ------------------=
+    pub fn context_actions(&self) -> &'static [ContextAction] {
+        use ContextAction::*;
+        if self.context_open_with {
+            return match self.context_target {
+                OpenTarget::TextEditor => &[TextEditor, Back],
+                OpenTarget::FileNavigator => &[FileNavigator, Back],
+                OpenTarget::Unsupported => &[Unavailable, Back],
+            };
+        }
+        if self.context_item == FILE_NAVIGATOR_NO_SELECTION { &[NewFolder, List, Grid, Sort] }
+        else if (self.context_item as usize) < FILE_NAVIGATOR_NAVIGATION_ENTRY_COUNT { &[Open] }
+        else { &[Open, OpenWith, Rename, Duplicate, Trash] }
     }
 
     // ------------------------=

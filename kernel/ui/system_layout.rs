@@ -692,12 +692,13 @@ impl SystemLayout {
     // FUNC: file_navigator_context_geometry
     // DESC: Returns the exact clamped pixel bounds used by the native File Navigator context menu.
     // ------------------=
-    pub fn file_navigator_context_geometry(self, normalized_x: i32, normalized_y: i32) -> Rect {
+    pub fn file_navigator_context_geometry(self, normalized_x: i32, normalized_y: i32, rows: usize) -> Rect {
+        let height = (12 + rows.min(5) * 28) * self.scale;
         let left = (self.width * normalized_x.max(0) as usize / 1000)
             .min(self.width.saturating_sub(210 * self.scale));
         let top = (self.height * normalized_y.max(0) as usize / 1000)
-            .min(self.height.saturating_sub(150 * self.scale));
-        rect(left, top, 190 * self.scale, 120 * self.scale)
+            .min(self.height.saturating_sub(height + 8 * self.scale));
+        rect(left, top, 190 * self.scale, height)
     }
 
     // ------------------------=
@@ -710,8 +711,9 @@ impl SystemLayout {
         context_y: i32,
         pointer_x: i32,
         pointer_y: i32,
+        rows: usize,
     ) -> Option<usize> {
-        let menu = self.file_navigator_context_geometry(context_x, context_y);
+        let menu = self.file_navigator_context_geometry(context_x, context_y, rows);
         let point = self.point(pointer_x, pointer_y);
         if !menu.contains(point) {
             return None;
@@ -721,7 +723,7 @@ impl SystemLayout {
             return None;
         }
         let row = (point.y - row_top) as usize / (28 * self.scale).max(1);
-        (row < 4).then_some(row)
+        (row < rows.min(5)).then_some(row)
     }
 
     // ------------------------=

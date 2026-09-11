@@ -8201,14 +8201,11 @@ impl super::DisplayDevice {
         );
         let title_center_y = browser_top + title_h / 2;
         self.small_infinity_mark(browser_left + 20 * scale, title_center_y, 24 * scale);
-        self.ui_text_strong(
+        self.app_text(
             browser_left + 38 * scale,
-            title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
+            title_center_y.saturating_sub(12 * scale),
             b"File Navigator",
-            226,
-            237,
-            245,
-            1,
+            (226, 237, 245), true, scale,
         );
         for (index, (label, offset)) in [
             (b"File".as_slice(), 160usize),
@@ -8237,14 +8234,11 @@ impl super::DisplayDevice {
                     190,
                 );
             }
-            self.ui_text(
+            self.app_text(
                 browser_left + offset * scale,
-                title_center_y.saturating_sub(UI_FONT_CELL_HEIGHT / 2),
+                title_center_y.saturating_sub(12 * scale),
                 label,
-                221,
-                233,
-                241,
-                1,
+                (221, 233, 241), false, scale,
             );
         }
         for index in 0..3usize {
@@ -8449,14 +8443,11 @@ impl super::DisplayDevice {
             31,
             216,
         );
-        self.ui_text(
+        self.app_text(
             browser_left + 14 * scale,
             tool_top + 51 * scale,
             b"FAVORITES",
-            90,
-            191,
-            230,
-            1,
+            (90, 191, 230), true, scale,
         );
         for (index, item) in [
             b"Home".as_slice(),
@@ -8511,14 +8502,12 @@ impl super::DisplayDevice {
                     index == home_location,
                 );
             }
-            self.ui_text(
+            self.app_text(
                 browser_left + (if index == 10 { 16 } else { 30 }) * scale,
                 item_y,
                 item,
-                if index == 10 { 90 } else { 204 },
-                if index == 10 { 191 } else { 224 },
-                236,
-                1,
+                (if index == 10 { 90 } else { 204 }, if index == 10 { 191 } else { 224 }, 236),
+                index == 10, scale,
             );
         }
         let grid_x = browser_left + sidebar_w + 28 * scale;
@@ -8861,22 +8850,17 @@ impl super::DisplayDevice {
             }
         }
         if let Some(context) = navigator_state.filter(|state| state.context_menu_open) {
+            let scale = crate::ui::system_layout::SystemLayout::new(self.width, self.height).scale();
             let menu = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-                .file_navigator_context_geometry(context.context_x, context.context_y);
+                .file_navigator_context_geometry(context.context_x, context.context_y, context.context_actions().len());
             let menu_left = menu.x.max(0) as usize;
             let menu_top = menu.y.max(0) as usize;
-            let object_menu = context.context_item
-                != crate::runtime::object_navigation::FILE_NAVIGATOR_NO_SELECTION;
-            let labels: [&[u8]; 4] = if object_menu {
-                [b"Open", b"Rename", b"Duplicate", b"Move to Trash"]
-            } else {
-                [b"New Folder", b"List View", b"Grid View", b"Sort by Name"]
-            };
+            let actions = context.context_actions();
             self.fill_rounded_rect_alpha(
                 menu_left,
                 menu_top,
-                190 * scale,
-                120 * scale,
+                menu.width as usize,
+                menu.height as usize,
                 8 * scale,
                 5,
                 18,
@@ -8886,23 +8870,24 @@ impl super::DisplayDevice {
             self.outline_rounded_rect(
                 menu_left,
                 menu_top,
-                190 * scale,
-                148 * scale,
+                menu.width as usize,
+                menu.height as usize,
                 8 * scale,
                 73,
                 180,
                 229,
             );
-            for (index, label) in labels.iter().enumerate() {
+            for (index, action) in actions.iter().enumerate() {
                 let row_top = menu_top + (6 + index * 28) * scale;
-                self.ui_text(
+                if index == context.menu_selection as usize {
+                    self.fill_rounded_rect_alpha(menu_left + 5 * scale, row_top,
+                        menu.width as usize - 10 * scale, 28 * scale, 4 * scale, 20, 66, 91, 255);
+                }
+                self.app_text(
                     menu_left + 14 * scale,
-                    row_top + 5 * scale,
-                    label,
-                    215,
-                    231,
-                    241,
-                    1,
+                    row_top + 2 * scale,
+                    action.label(),
+                    (215, 231, 241), false, scale,
                 );
             }
         }

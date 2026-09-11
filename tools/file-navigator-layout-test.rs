@@ -136,14 +136,23 @@ fn main() {
         Some(DesktopTarget::HomeDialogAction(0))
     );
 
-    let menu = layout.file_navigator_context_geometry(500, 500);
-    assert_eq!(menu.height, 120);
+    let menu = layout.file_navigator_context_geometry(500, 500, 4);
+    assert_eq!(menu.height, 124);
     let row_five_x = ((menu.x + 20) * 1000 / 1600) as i32;
     let row_five_y = ((menu.y + 6 + 28 * 4 + 10) * 1000 / 1000) as i32;
     assert_eq!(
-        layout.file_navigator_context_action(500, 500, row_five_x, row_five_y),
+        layout.file_navigator_context_action(500, 500, row_five_x, row_five_y, 4),
         None
     );
+    assert_eq!(layout.file_navigator_context_action(500, 500, row_five_x, row_five_y, 5), Some(4));
+    for rows in 1..=5 {
+        let bounds = layout.file_navigator_context_geometry(990, 990, rows);
+        assert!(bounds.right() <= 1600 && bounds.bottom() <= 1000);
+        for row in 0..rows {
+            assert_eq!(layout.file_navigator_context_action(990, 990,
+                (bounds.x + 20) * 1000 / 1600, bounds.y + 6 + row as i32 * 28 + 10, rows), Some(row));
+        }
+    }
     println!(
         "PASS File Navigator layout: toolbar, drop-down menus, modal actions, and context bounds"
     );

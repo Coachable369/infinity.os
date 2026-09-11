@@ -75,7 +75,7 @@ def text(guest, value):
 # FUNC: click
 # DESC: Moves the real relative pointer to a pixel coordinate and verifies press/release processing.
 # ------------------=
-def click(guest, x, y):
+def click(guest, x, y, button="left"):
     display = guest.wait(lambda s: s[11] > 0 and s[12] > 0, "display geometry")
     target = (x * 1000 // display[11], y * 1000 // display[12])
     for _ in range(60):
@@ -89,10 +89,11 @@ def click(guest, x, y):
         guest.wait(lambda v: v[13:15] != state[13:15], "pointer movement")
     else:
         raise AssertionError("Pointer did not reach requested hit region")
-    guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": True}}]})
-    guest.wait(lambda s: s[15] & 1, "pressed")
-    guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": "left", "down": False}}]})
-    guest.wait(lambda s: not s[15] & 1, "released")
+    mask = {"left": 1, "right": 2}[button]
+    guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": button, "down": True}}]})
+    guest.wait(lambda s: s[15] & mask, "pressed")
+    guest.qmp("input-send-event", {"events": [{"type": "btn", "data": {"button": button, "down": False}}]})
+    guest.wait(lambda s: not s[15] & mask, "released")
 
 # ------------------------=
 # FUNC: panel_click
