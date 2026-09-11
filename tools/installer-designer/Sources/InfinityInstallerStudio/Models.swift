@@ -65,6 +65,13 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case settingsNavigationIcon = 23
     case settingsArtwork = 24
     case settingsNavigationLabel = 25
+    case settingsTab = 26
+    case settingsSummaryCard = 27
+    case settingsMainCard = 28
+    case settingsSidebarCard = 29
+    case settingsRowLabel = 30
+    case settingsRowValue = 31
+    case settingsDisclosure = 32
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -95,6 +102,13 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .settingsNavigationIcon: "Settings Navigation Icon"
         case .settingsArtwork: "Settings Artwork"
         case .settingsNavigationLabel: "Settings Navigation Label"
+        case .settingsTab: "Settings Tab"
+        case .settingsSummaryCard: "Settings Summary Card"
+        case .settingsMainCard: "Settings Main Card"
+        case .settingsSidebarCard: "Settings Sidebar Card"
+        case .settingsRowLabel: "Settings Row Label"
+        case .settingsRowValue: "Settings Row Value"
+        case .settingsDisclosure: "Settings Disclosure"
         }
     }
 
@@ -195,8 +209,18 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
         if self == .systemSettings {
             if [.settingsNavigationItem, .settingsNavigationIcon, .settingsNavigationLabel]
                 .contains(role) { return 11 }
-            return [.masthead, .console, .content, .title, .body, .sectionLabel, .metadata,
-                    .settingsArtwork].contains(role) ? 1 : 0
+            let rowCounts = [5, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8]
+            let rowCount = rowCounts[screenID.clamped(to: 1...11) - 1]
+            if role == .metadata { return rowCount }
+            if [.settingsRowLabel, .settingsRowValue, .settingsDisclosure].contains(role) {
+                return [7, 8].contains(screenID) ? 0 : rowCount
+            }
+            if role == .settingsTab { return screenID == 7 ? 7 : screenID == 8 ? 5 : 0 }
+            if [.settingsSummaryCard, .settingsMainCard, .settingsSidebarCard].contains(role) {
+                return [7, 8].contains(screenID) ? 1 : 0
+            }
+            return [.masthead, .console, .content, .title, .body, .sectionLabel]
+                .contains(role) ? 1 : 0
         }
         if [.masthead, .console, .content, .title, .body, .backButton, .primaryButton, .footer]
             .contains(role)
@@ -231,7 +255,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
             return self == .installation && [3, 4, 6, 10].contains(screenID) ? 1 : 0
         }
         let required = requiredRoleCount(role, screenID: screenID)
-        if self == .systemSettings && role == .metadata { return nil }
+        if self == .systemSettings && role == .settingsArtwork { return 1 }
         guard required > 0, role != .body else { return nil }
         return required
     }
@@ -574,10 +598,23 @@ struct InstallerStudioDocument: Codable, Hashable {
             ["InfinityOS", "Architecture", "Boot", "Identity Format", "Icon Families"],
             ["Pointer Speed", "Scroll Speed", "Double Click", "Drag Threshold", "Natural Scroll", "Primary Button", "Keyboard Repeat", "Cursor Size"],
         ]
+        let rowValues = [
+            ["node1", "English (US)", "United States", "Active", "Generation based"],
+            ["InfinityOS Default Dark", "Crystal Blue Glass", "Custom color", "Custom color", "100%", "0 px", "Automatic", "Cosmic Horizon"],
+            ["Active", "Password", "Authenticated", "Private", "Persistent"],
+            ["Local only", "Enabled", "Local Model", "Off", "Off", "Disabled", "Capability gated"],
+            ["Denied", "Not granted", "Denied", "15 minutes", "Active"],
+            ["Ready", "Ready", "Ready", "Unavailable", "Unavailable"],
+            ["Offline", "5 operational modes", "Inspect", "Deny by default", "Bounded cache", "Deterministic", "Owner protected", "Observed counters"],
+            ["Observed", "Explicit trust", "Authenticated", "Active", "Capability scoped"],
+            ["Healthy", "Measured bytes", "Online / observed", "None", "No placement", "Target: 1 verified node", "Target: 2 verified nodes", "Target: 3 verified nodes"],
+            ["Development", "Native", "Verified", "Version 1", "3 complete sets"],
+            ["Balanced", "Balanced", "Standard", "Standard", "Off", "Left", "Standard", "Standard"],
+        ]
         let screens = sections.indices.map { index in
             var elements = systemSettingsElements(
                 sectionIndex: index, section: sections[index],
-                description: descriptions[index], rows: rowLabels[index]
+                description: descriptions[index], rows: rowLabels[index], values: rowValues[index]
             )
             for elementIndex in elements.indices {
                 elements[elementIndex].id = settingsElementID(
@@ -604,7 +641,7 @@ struct InstallerStudioDocument: Codable, Hashable {
     // DESC: Creates one complete Settings section with editable chrome, navigation, viewport, rows, and detail well.
     // ------------------=
     private static func systemSettingsElements(
-        sectionIndex: Int, section: String, description: String, rows: [String]
+        sectionIndex: Int, section: String, description: String, rows: [String], values: [String]
     ) -> [StudioElement] {
         let sections = [
             "General", "Themes & Skins", "Users & Accounts", "AI & Voice",
@@ -615,19 +652,6 @@ struct InstallerStudioDocument: Codable, Hashable {
             "26-settings", "27-search", "01-user", "23-microphone", "32-shield",
             "20-display", "17-network", "18-server", "12-drive-internal",
             "28-information", "33-key",
-        ]
-        let artwork = [
-            "assets/icons/crystal-blue-glass/128/base/26-settings.png",
-            "assets/desktop/infinity-shell-wallpaper-v3.png",
-            "assets/icons/crystal-blue-glass/128/base/01-user.png",
-            "assets/icons/crystal-blue-glass/128/base/23-microphone.png",
-            "assets/icons/crystal-blue-glass/128/base/32-shield.png",
-            "assets/icons/crystal-blue-glass/128/base/20-display.png",
-            "assets/icons/crystal-blue-glass/128/base/17-network.png",
-            "assets/mesh/infinity-node-trust-topology-v1.png",
-            "assets/boot/infinity-storage-hierarchy-v3.png",
-            "assets/icons/crystal-blue-glass/128/base/28-information.png",
-            "assets/icons/crystal-blue-glass/128/base/33-key.png",
         ]
         var elements: [StudioElement] = [
             .make(name: "Settings Window", kind: .console, role: .console,
@@ -642,9 +666,6 @@ struct InstallerStudioDocument: Codable, Hashable {
                   frame: CanvasRect(x: 370, y: 205, width: 500, height: 54), text: section, zIndex: 3),
             .make(name: "Section Description", kind: .text, role: .body,
                   frame: CanvasRect(x: 370, y: 262, width: 500, height: 48), text: description, zIndex: 3),
-            .make(name: "Section Artwork", kind: .image, role: .settingsArtwork,
-                  frame: CanvasRect(x: 650, y: 318, width: 220, height: 220),
-                  imageAsset: artwork[sectionIndex], zIndex: 2),
         ]
         elements[0].fill = StudioColor(red: 5, green: 18, blue: 31, alpha: 230)
         elements[0].border = StudioColor(red: 118, green: 210, blue: 255, alpha: 210)
@@ -655,7 +676,6 @@ struct InstallerStudioDocument: Codable, Hashable {
         elements[3].border = StudioColor(red: 65, green: 132, blue: 170, alpha: 80)
         elements[4].fontSize = 32
         elements[5].fontSize = 17
-        elements[6].opacity = sectionIndex == 7 || sectionIndex == 8 ? 34 : 18
         for index in sections.indices {
             let top = 170 + index * 52
             var item = StudioElement.make(
@@ -692,16 +712,29 @@ struct InstallerStudioDocument: Codable, Hashable {
             label.fontSize = 15
             elements.append(label)
         }
-        for (row, label) in rows.enumerated() {
-            var element = StudioElement.make(
-                name: "Setting Row \(row + 1)", kind: .panel, role: .metadata,
-                frame: CanvasRect(x: 370, y: 330 + row * 64, width: 500, height: 50),
-                text: label, zIndex: 4
+        if sectionIndex == 6 || sectionIndex == 7 {
+            appendPagedSettingsContent(
+                to: &elements, sectionIndex: sectionIndex, rowLabels: rows
             )
-            element.fill = StudioColor(red: 5, green: 20, blue: 34, alpha: 222)
-            element.border = StudioColor(red: 76, green: 151, blue: 190, alpha: 170)
-            element.fontSize = 17
-            elements.append(element)
+        } else {
+            if sectionIndex == 1 {
+                var artwork = StudioElement.make(
+                    name: "Wallpaper Preview", kind: .image, role: .settingsArtwork,
+                    frame: CanvasRect(x: 650, y: 318, width: 220, height: 220),
+                    imageAsset: "assets/desktop/infinity-shell-wallpaper-v3.png", zIndex: 2
+                )
+                artwork.opacity = 18
+                elements.append(artwork)
+            } else if sectionIndex == 8 {
+                var artwork = StudioElement.make(
+                    name: "Storage Topology", kind: .image, role: .settingsArtwork,
+                    frame: CanvasRect(x: 650, y: 520, width: 220, height: 190),
+                    imageAsset: "assets/boot/infinity-storage-hierarchy-v3.png", zIndex: 2
+                )
+                artwork.opacity = 34
+                elements.append(artwork)
+            }
+            appendSettingsRows(to: &elements, rows: rows, values: values)
         }
         var detail = StudioElement.make(
             name: "Expanded Detail Content", kind: .text, role: .liveDetails,
@@ -713,6 +746,124 @@ struct InstallerStudioDocument: Codable, Hashable {
         detail.hidden = true
         elements.append(detail)
         return elements
+    }
+
+    // ------------------------=
+    // FUNC: appendSettingsRows
+    // DESC: Adds the exact editable collapsed rows used by ordinary installed Settings panes.
+    // ------------------=
+    private static func appendSettingsRows(
+        to elements: inout [StudioElement], rows: [String], values: [String]
+    ) {
+        for (row, label) in rows.enumerated() {
+            var element = StudioElement.make(
+                name: "Setting Row \(row + 1)", kind: .panel, role: .metadata,
+                frame: CanvasRect(x: 370, y: 330 + row * 64, width: 500, height: 50),
+                text: "", zIndex: 4
+            )
+            element.fill = StudioColor(red: 5, green: 20, blue: 34, alpha: 222)
+            element.border = StudioColor(red: 76, green: 151, blue: 190, alpha: 170)
+            element.fontSize = 17
+            elements.append(element)
+            var labelElement = StudioElement.make(
+                name: "\(label) Label", kind: .text, role: .settingsRowLabel,
+                frame: CanvasRect(x: 386, y: 343 + row * 64, width: 220, height: 24),
+                text: label, zIndex: 5
+            )
+            labelElement.fontSize = 15
+            elements.append(labelElement)
+            var valueElement = StudioElement.make(
+                name: "\(label) Value", kind: .text, role: .settingsRowValue,
+                frame: CanvasRect(x: 620, y: 343 + row * 64, width: 210, height: 24),
+                text: values.indices.contains(row) ? values[row] : "", zIndex: 5
+            )
+            valueElement.fontSize = 15
+            elements.append(valueElement)
+            var disclosure = StudioElement.make(
+                name: "\(label) Disclosure", kind: .text, role: .settingsDisclosure,
+                frame: CanvasRect(x: 840, y: 343 + row * 64, width: 20, height: 24),
+                text: ">", zIndex: 5
+            )
+            disclosure.fontSize = 17
+            disclosure.fill = StudioColor(red: 109, green: 220, blue: 255, alpha: 255)
+            elements.append(disclosure)
+        }
+    }
+
+    // ------------------------=
+    // FUNC: appendPagedSettingsContent
+    // DESC: Authors the same tabs, summary, split cards, controls, and topology art used by installed Network and Nodes panes.
+    // ------------------=
+    private static func appendPagedSettingsContent(
+        to elements: inout [StudioElement], sectionIndex: Int, rowLabels _: [String]
+    ) {
+        let nodePane = sectionIndex == 7
+        let tabs = nodePane
+            ? ["TRUSTED NODES", "PAIR NODE", "MESH HEALTH", "ACCESS POLICY", "SECURITY AUDIT"]
+            : ["OVERVIEW", "INTERFACES", "IPv4", "DNS", "ROUTES", "PROFILES", "POLICY"]
+        let tabGap = 6
+        let tabWidth = (530 - tabGap * (tabs.count - 1)) / tabs.count
+        for (index, label) in tabs.enumerated() {
+            var tab = StudioElement.make(
+                name: "Tab \(label)", kind: .panel, role: .settingsTab,
+                frame: CanvasRect(x: 350 + index * (tabWidth + tabGap), y: 310,
+                                  width: tabWidth, height: 38),
+                text: label, zIndex: 4
+            )
+            tab.fill = index == 0
+                ? StudioColor(red: 18, green: 91, blue: 136, alpha: 225)
+                : StudioColor(red: 5, green: 20, blue: 34, alpha: 225)
+            tab.border = StudioColor(red: 87, green: 176, blue: 221, alpha: 165)
+            tab.cornerRadius = 7
+            tab.fontSize = 13
+            elements.append(tab)
+        }
+        var summary = StudioElement.make(
+            name: "Summary Card", kind: .panel, role: .settingsSummaryCard,
+            frame: CanvasRect(x: 350, y: 360, width: 530, height: 88),
+            text: nodePane ? "NODE IDENTITY" : "CONNECTIVITY", zIndex: 3
+        )
+        var main = StudioElement.make(
+            name: "Main Dashboard", kind: .panel, role: .settingsMainCard,
+            frame: CanvasRect(x: 350, y: 460, width: 350, height: 300), zIndex: 3
+        )
+        var sidebar = StudioElement.make(
+            name: "Dashboard Sidebar", kind: .panel, role: .settingsSidebarCard,
+            frame: CanvasRect(x: 712, y: 460, width: 168, height: 300),
+            text: nodePane ? "DISCOVERY IS NOT TRUST" : "LIVE CONFIGURATION", zIndex: 3
+        )
+        summary.fill = StudioColor(red: 4, green: 18, blue: 31, alpha: 220)
+        main.fill = summary.fill
+        sidebar.fill = summary.fill
+        summary.border = StudioColor(red: 64, green: 145, blue: 190, alpha: 150)
+        main.border = summary.border
+        sidebar.border = summary.border
+        summary.cornerRadius = 12
+        main.cornerRadius = 12
+        sidebar.cornerRadius = 12
+        elements.append(contentsOf: [summary, main, sidebar])
+        let controls = nodePane
+            ? ["DISCOVERED", "TRUSTED", "ONLINE", "SESSIONS", "AUTHORITY", "REFRESH"]
+            : ["AUTOMATIC", "WIRED", "WI-FI", "OFFLINE", "REFRESH STATE", "OPEN DIAGNOSTICS"]
+        for (index, label) in controls.enumerated() {
+            var control = StudioElement.make(
+                name: "Dashboard Control \(index + 1)", kind: .panel, role: .metadata,
+                frame: CanvasRect(x: 364, y: 474 + index * 45, width: 322, height: 36),
+                text: label, zIndex: 4
+            )
+            control.fill = StudioColor(red: 5, green: 24, blue: 40, alpha: 224)
+            control.border = StudioColor(red: 73, green: 157, blue: 201, alpha: 165)
+            control.cornerRadius = 8
+            control.fontSize = 13
+            elements.append(control)
+        }
+        if nodePane {
+            elements.append(.make(
+                name: "Trust Topology", kind: .image, role: .settingsArtwork,
+                frame: CanvasRect(x: 714, y: 462, width: 164, height: 226),
+                imageAsset: "assets/mesh/infinity-node-trust-topology-v1.png", zIndex: 4
+            ))
+        }
     }
 
     // ------------------------=

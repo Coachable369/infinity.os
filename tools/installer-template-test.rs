@@ -232,6 +232,10 @@ fn main() {
         let mut navigation_icons = 0;
         let mut navigation_labels = 0;
         let mut artwork = 0;
+        let mut tabs = 0;
+        let mut summary_cards = 0;
+        let mut main_cards = 0;
+        let mut sidebar_cards = 0;
         for layer in 0..count {
             let element = settings
                 .layer_at(section, layer)
@@ -255,13 +259,29 @@ fn main() {
                     assert_eq!(element.kind, 2);
                     assert!(settings.asset(element.image_asset).is_some());
                 }
+                role if role == InstallerTemplateRole::SettingsTab as u8 => tabs += 1,
+                role if role == InstallerTemplateRole::SettingsSummaryCard as u8 => {
+                    summary_cards += 1
+                }
+                role if role == InstallerTemplateRole::SettingsMainCard as u8 => main_cards += 1,
+                role if role == InstallerTemplateRole::SettingsSidebarCard as u8 => {
+                    sidebar_cards += 1
+                }
                 _ => {}
             }
         }
         assert_eq!(navigation_items, 11);
         assert_eq!(navigation_icons, 11);
         assert_eq!(navigation_labels, 11);
-        assert_eq!(artwork, 1);
+        assert!(artwork <= 1);
+        if section == 7 || section == 8 {
+            assert_eq!(tabs, if section == 7 { 7 } else { 5 });
+            assert_eq!(summary_cards, 1);
+            assert_eq!(main_cards, 1);
+            assert_eq!(sidebar_cards, 1);
+        } else {
+            assert_eq!(tabs + summary_cards + main_cards + sidebar_cards, 0);
+        }
     }
 
     let mut altered = FACTORY_TEMPLATE.to_vec();

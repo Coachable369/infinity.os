@@ -24,11 +24,21 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             XCTAssertEqual(screen.elements.filter { $0.role == .settingsNavigationItem }.count, 11)
             XCTAssertEqual(screen.elements.filter { $0.role == .settingsNavigationIcon }.count, 11)
             XCTAssertEqual(screen.elements.filter { $0.role == .settingsNavigationLabel }.count, 11)
-            XCTAssertEqual(screen.elements.filter { $0.role == .settingsArtwork }.count, 1)
+            XCTAssertLessThanOrEqual(screen.elements.filter { $0.role == .settingsArtwork }.count, 1)
             XCTAssertTrue(screen.elements.filter {
                 [.settingsNavigationIcon, .settingsArtwork].contains($0.role)
             }.allSatisfy { $0.kind == .image && $0.imageAsset.hasSuffix(".png") })
         }
+        let network = restored.screens[6]
+        let nodes = restored.screens[7]
+        XCTAssertEqual(network.elements.filter { $0.role == .settingsTab }.count, 7)
+        XCTAssertEqual(nodes.elements.filter { $0.role == .settingsTab }.count, 5)
+        for screen in [network, nodes] {
+            XCTAssertEqual(screen.elements.filter { $0.role == .settingsSummaryCard }.count, 1)
+            XCTAssertEqual(screen.elements.filter { $0.role == .settingsMainCard }.count, 1)
+            XCTAssertEqual(screen.elements.filter { $0.role == .settingsSidebarCard }.count, 1)
+        }
+        XCTAssertEqual(nodes.elements.filter { $0.role == .settingsArtwork }.count, 1)
     }
 
     // ------------------------=
@@ -599,11 +609,11 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     }
 
     // ------------------------=
-    // FUNC: testSaveWritesEditableAndRuntimeTemplatesAtomically
-    // DESC: Exercises the editor save path and decodes the resulting runtime artifact.
+    // FUNC: testSaveWritesActiveSettingsSourceAndRuntimeAtomically
+    // DESC: Proves Settings saves independently and decodes into the exact OS runtime document.
     // ------------------=
     @MainActor
-    func testSaveWritesEditableAndRuntimeTemplatesAtomically() throws {
+    func testSaveWritesActiveSettingsSourceAndRuntimeAtomically() throws {
         let root = FileManager.default.temporaryDirectory
             .appending(path: "infinity-installer-studio-\(UUID().uuidString)", directoryHint: .isDirectory)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -619,43 +629,39 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             }
         }
         store.projectRoot = root
+        store.selectScreenCollection(.systemSettings)
         let masthead = store.selectedScreen!.elements.first { $0.role == .masthead }!
         store.toggleElementLock(masthead.id)
         store.selectElement(masthead.id)
         store.updateSelected("Inspector edit") { $0.name = "Editable Masthead" }
 
+        store.document.screens.removeAll()
+        store.configurationDocument.screens.removeAll()
+
         store.save()
 
-        let editableURL = root.appending(path: "assets/boot/installer-screens.infinityui")
-        let runtimeURL = root.appending(path: "assets/boot/installer-screens.iuit")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: editableURL.path))
-        let editable = try JSONDecoder().decode(
-            InstallerStudioDocument.self,
-            from: Data(contentsOf: editableURL)
-        )
-        let runtime = try Data(contentsOf: runtimeURL)
-        XCTAssertEqual(editable, store.document)
-        XCTAssertEqual(try RuntimeTemplateCodec.decode(runtime), store.document)
-        let configurationEditableURL = root.appending(path: "assets/boot/configuration-screens.infinityui")
-        let configurationRuntimeURL = root.appending(path: "assets/boot/configuration-screens.iuit")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: configurationEditableURL.path))
-        let configurationEditable = try JSONDecoder().decode(
-            InstallerStudioDocument.self,
-            from: Data(contentsOf: configurationEditableURL)
-        )
-        let configurationRuntime = try Data(contentsOf: configurationRuntimeURL)
-        XCTAssertEqual(configurationEditable, store.configurationDocument)
-        XCTAssertEqual(try RuntimeTemplateCodec.decode(configurationRuntime), store.configurationDocument)
         let settingsEditableURL = root.appending(path: "assets/boot/settings-screens.infinityui")
         let settingsRuntimeURL = root.appending(path: "assets/boot/settings-screens.iuit")
         XCTAssertTrue(FileManager.default.fileExists(atPath: settingsEditableURL.path))
+        XCTAssertEqual(
+            try JSONDecoder().decode(
+                InstallerStudioDocument.self, from: Data(contentsOf: settingsEditableURL)
+            ),
+            store.settingsDocument
+        )
         XCTAssertEqual(
             try RuntimeTemplateCodec.decode(
                 Data(contentsOf: settingsRuntimeURL), collection: .systemSettings
             ),
             store.settingsDocument
         )
-        XCTAssertEqual(store.status, "Saved installation, first-boot, and System Settings templates")
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appending(path: "assets/boot/installer-screens.iuit").path
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appending(path: "assets/boot/configuration-screens.iuit").path
+        ))
+        XCTAssertEqual(store.status, "Saved System Settings source and OS runtime")
     }
 
     // ------------------------=

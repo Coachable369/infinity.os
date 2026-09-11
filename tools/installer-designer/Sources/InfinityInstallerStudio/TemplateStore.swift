@@ -990,10 +990,16 @@ final class TemplateStore: ObservableObject {
 
     // ------------------------=
     // FUNC: save
-    // DESC: Atomically saves editable JSON and runtime binary templates into the selected InfinityOS project.
+    // DESC: Atomically saves the active editor collection and its exact runtime binary into the selected InfinityOS project.
     // ------------------=
     func save() {
-        guard validate() else { return }
+        do {
+            try TemplateValidator.validate(activeDocument, for: selectedCollection)
+        } catch {
+            validationIssues = [String(describing: error)]
+            status = "Validation failed"
+            return
+        }
         guard let root = projectRoot ?? chooseProjectRoot() else {
             status = "Save cancelled"
             return
@@ -1003,41 +1009,30 @@ final class TemplateStore: ObservableObject {
             try FileManager.default.createDirectory(at: assetDirectory, withIntermediateDirectories: true)
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            let editable = try encoder.encode(document)
-            let runtime = try RuntimeTemplateCodec.encode(document, assetRoot: root, collection: .installation)
-            let configurationEditable = try encoder.encode(configurationDocument)
-            let configurationRuntime = try RuntimeTemplateCodec.encode(
-                configurationDocument, assetRoot: root, collection: .configuration
+            let source = activeDocument
+            let editable = try encoder.encode(source)
+            let runtime = try RuntimeTemplateCodec.encode(
+                source, assetRoot: root, collection: selectedCollection
             )
-            let settingsEditable = try encoder.encode(settingsDocument)
-            let settingsRuntime = try RuntimeTemplateCodec.encode(
-                settingsDocument, assetRoot: root, collection: .systemSettings
-            )
-            guard try RuntimeTemplateCodec.decode(runtime) == document else {
-                throw TemplateValidationIssue.invalidDocument("Generated runtime artifact failed round-trip verification")
+            guard try RuntimeTemplateCodec.decode(runtime, collection: selectedCollection) == source else {
+                throw TemplateValidationIssue.invalidDocument(
+                    "Generated \(selectedCollection.title) runtime artifact failed round-trip verification"
+                )
             }
-            guard try RuntimeTemplateCodec.decode(configurationRuntime) == configurationDocument else {
-                throw TemplateValidationIssue.invalidDocument("Generated configuration artifact failed round-trip verification")
+            let baseName = switch selectedCollection {
+            case .installation: "installer-screens"
+            case .configuration: "configuration-screens"
+            case .systemSettings: "settings-screens"
             }
-            guard try RuntimeTemplateCodec.decode(settingsRuntime, collection: .systemSettings) == settingsDocument else {
-                throw TemplateValidationIssue.invalidDocument("Generated Settings artifact failed round-trip verification")
-            }
-            try editable.write(to: assetDirectory.appending(path: "installer-screens.infinityui"), options: .atomic)
-            try runtime.write(to: assetDirectory.appending(path: "installer-screens.iuit"), options: .atomic)
-            try configurationEditable.write(
-                to: assetDirectory.appending(path: "configuration-screens.infinityui"), options: .atomic
+            try editable.write(
+                to: assetDirectory.appending(path: "\(baseName).infinityui"), options: .atomic
             )
-            try configurationRuntime.write(
-                to: assetDirectory.appending(path: "configuration-screens.iuit"), options: .atomic
-            )
-            try settingsEditable.write(
-                to: assetDirectory.appending(path: "settings-screens.infinityui"), options: .atomic
-            )
-            try settingsRuntime.write(
-                to: assetDirectory.appending(path: "settings-screens.iuit"), options: .atomic
+            try runtime.write(
+                to: assetDirectory.appending(path: "\(baseName).iuit"), options: .atomic
             )
             projectRoot = root
-            status = "Saved installation, first-boot, and System Settings templates"
+            validationIssues = []
+            status = "Saved \(selectedCollection.title) source and OS runtime"
         } catch {
             validationIssues = [error.localizedDescription]
             status = "Save failed"

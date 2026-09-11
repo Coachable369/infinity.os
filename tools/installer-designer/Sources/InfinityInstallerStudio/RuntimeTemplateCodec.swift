@@ -80,6 +80,16 @@ enum TemplateValidator {
                     throw TemplateValidationIssue.invalidScreen(screen.id, "Visible Back and Primary button actions are required")
                 }
             }
+            if collection == .systemSettings && ![7, 8].contains(screen.id) {
+                let rowCount = screen.elements.filter { $0.role == .metadata }.count
+                for role in [StudioElementRole.settingsRowLabel, .settingsRowValue, .settingsDisclosure] {
+                    guard screen.elements.filter({ $0.role == role }).count == rowCount else {
+                        throw TemplateValidationIssue.invalidScreen(
+                            screen.id, "Every Settings row requires one editable \(role.title) layer"
+                        )
+                    }
+                }
+            }
             guard screen.elements.contains(where: { $0.role == .console }) else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "A console frame is required")
             }
@@ -92,7 +102,9 @@ enum TemplateValidator {
                       element.role != .progressHero || element.kind == .image,
                       element.role != .liveDetails
                         || element.kind == .text
-                        || (collection == .systemSettings && element.kind == .panel)
+                        || (collection == .systemSettings && element.kind == .panel),
+                      ![StudioElementRole.settingsRowLabel, .settingsRowValue, .settingsDisclosure]
+                        .contains(element.role) || element.kind == .text
                 else {
                     throw TemplateValidationIssue.invalidElement(
                         screen.id, element.id, "Progress controls require their semantic element types"

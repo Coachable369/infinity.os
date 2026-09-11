@@ -2401,6 +2401,38 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: authored_settings_rect
+    // DESC: Maps one Studio-authored Settings layer into the current resizable window.
+    // ------------------=
+    pub fn authored_settings_rect(
+        self,
+        state: SettingsWindowState,
+        section: usize,
+        role: crate::ui::installer_template::InstallerTemplateRole,
+        ordinal: usize,
+    ) -> Option<Rect> {
+        let console = crate::ui::installer_layout::settings_template_element(
+            section, crate::ui::installer_template::InstallerTemplateRole::Console,
+        )?;
+        let element = crate::ui::installer_layout::settings_template_role_at(
+            section, role, ordinal,
+        )?;
+        let window = self.settings_window_geometry_for_section(state, section).window;
+        Some(rect(
+            window.x.max(0) as usize
+                + element.frame.x.saturating_sub(console.frame.x) as usize
+                    * window.width as usize / console.frame.width.max(1) as usize,
+            window.y.max(0) as usize
+                + element.frame.y.saturating_sub(console.frame.y) as usize
+                    * window.height as usize / console.frame.height.max(1) as usize,
+            element.frame.width as usize * window.width as usize
+                / console.frame.width.max(1) as usize,
+            element.frame.height as usize * window.height as usize
+                / console.frame.height.max(1) as usize,
+        ))
+    }
+
+    // ------------------------=
     // FUNC: paged_settings_geometry
     // DESC: Builds one readable scrolling dashboard with wrapped tabs and fixed-height action cards.
     // ------------------=
@@ -2483,13 +2515,38 @@ impl SystemLayout {
                 control_height,
             );
         }
+        for (index, tab) in tabs.iter_mut().take(page_count).enumerate() {
+            if let Some(authored) = self.authored_settings_rect(
+                state, section,
+                crate::ui::installer_template::InstallerTemplateRole::SettingsTab, index,
+            ) {
+                *tab = authored;
+            }
+        }
+        let mut summary = self.authored_settings_rect(
+            state, section,
+            crate::ui::installer_template::InstallerTemplateRole::SettingsSummaryCard, 0,
+        ).unwrap_or_else(|| rect(left, summary_top, width, summary_height));
+        let mut main = self.authored_settings_rect(
+            state, section,
+            crate::ui::installer_template::InstallerTemplateRole::SettingsMainCard, 0,
+        ).unwrap_or(main);
+        let mut sidebar = self.authored_settings_rect(
+            state, section,
+            crate::ui::installer_template::InstallerTemplateRole::SettingsSidebarCard, 0,
+        ).unwrap_or(sidebar);
+        for (index, control) in controls.iter_mut().enumerate() {
+            if let Some(authored) = self.authored_settings_rect(
+                state, section,
+                crate::ui::installer_template::InstallerTemplateRole::Metadata, index,
+            ) {
+                *control = authored;
+            }
+        }
         let scroll = (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
         for tab in tabs.iter_mut() {
             tab.y = tab.y.saturating_sub(scroll);
         }
-        let mut summary = rect(left, summary_top, width, summary_height);
-        let mut main = main;
-        let mut sidebar = sidebar;
         summary.y = summary.y.saturating_sub(scroll);
         main.y = main.y.saturating_sub(scroll);
         sidebar.y = sidebar.y.saturating_sub(scroll);

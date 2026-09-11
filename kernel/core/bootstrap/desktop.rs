@@ -5250,7 +5250,22 @@ impl super::DisplayDevice {
                 crate::ui::installer_template::InstallerTemplateRole::Metadata,
                 index,
             );
-            let label = authored_row.map(|element| element.text)
+            let authored_label = crate::ui::installer_layout::settings_template_role_at(
+                focus,
+                crate::ui::installer_template::InstallerTemplateRole::SettingsRowLabel,
+                index,
+            );
+            let authored_value = crate::ui::installer_layout::settings_template_role_at(
+                focus,
+                crate::ui::installer_template::InstallerTemplateRole::SettingsRowValue,
+                index,
+            );
+            let authored_disclosure = crate::ui::installer_layout::settings_template_role_at(
+                focus,
+                crate::ui::installer_template::InstallerTemplateRole::SettingsDisclosure,
+                index,
+            );
+            let label = authored_label.map(|element| element.text)
                 .filter(|text| !text.is_empty()).unwrap_or(*label);
             if row.summary.intersects(geometry.viewport) {
                 let summary_left = row.summary.x.max(0) as usize;
@@ -5285,13 +5300,16 @@ impl super::DisplayDevice {
                 {
                     label_length -= 1;
                 }
+                let label_frame = authored_label.and_then(authored_rect);
                 self.ui_text_strong(
-                    summary_left + crate::ui::system_layout::UI_GUTTER * scale,
-                    summary_top + 13 * scale,
+                    label_frame.map(|frame| frame.0).unwrap_or(
+                        summary_left + crate::ui::system_layout::UI_GUTTER * scale
+                    ),
+                    label_frame.map(|frame| frame.1).unwrap_or(summary_top + 13 * scale),
                     &label[..label_length],
-                    190,
-                    205,
-                    217,
+                    authored_label.map(|element| element.fill[0]).unwrap_or(190),
+                    authored_label.map(|element| element.fill[1]).unwrap_or(205),
+                    authored_label.map(|element| element.fill[2]).unwrap_or(217),
                     1,
                 );
                 let value_limit = summary_width * 42 / 100;
@@ -5303,13 +5321,15 @@ impl super::DisplayDevice {
                 }
                 let displayed_value = &value[..value_length];
                 let value_width = self.ui_text_width(displayed_value, 1);
+                let value_frame = authored_value.and_then(authored_rect);
                 self.ui_text(
-                    summary_left + summary_width.saturating_sub(value_width + 40 * scale),
-                    summary_top + 13 * scale,
+                    value_frame.map(|frame| frame.0 + frame.2.saturating_sub(value_width))
+                        .unwrap_or(summary_left + summary_width.saturating_sub(value_width + 40 * scale)),
+                    value_frame.map(|frame| frame.1).unwrap_or(summary_top + 13 * scale),
                     displayed_value,
-                    220,
-                    232,
-                    240,
+                    authored_value.map(|element| element.fill[0]).unwrap_or(220),
+                    authored_value.map(|element| element.fill[1]).unwrap_or(232),
+                    authored_value.map(|element| element.fill[2]).unwrap_or(240),
                     1,
                 );
                 if focus == 0 && index == 0 {
@@ -5322,8 +5342,11 @@ impl super::DisplayDevice {
                         1,
                     );
                 }
-                let twiddle_x = summary_left + summary_width.saturating_sub(20 * scale);
-                let twiddle_y = summary_top + 23 * scale;
+                let disclosure_frame = authored_disclosure.and_then(authored_rect);
+                let twiddle_x = disclosure_frame.map(|frame| frame.0 + frame.2 / 2)
+                    .unwrap_or(summary_left + summary_width.saturating_sub(20 * scale));
+                let twiddle_y = disclosure_frame.map(|frame| frame.1 + frame.3 / 2)
+                    .unwrap_or(summary_top + 23 * scale);
                 if expanded {
                     self.icon_line(
                         (twiddle_x - 5 * scale) as i32,
@@ -5658,17 +5681,22 @@ impl super::DisplayDevice {
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         let (selection_r, selection_g, selection_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
-        for card in [geometry.summary, geometry.main, geometry.sidebar] {
+        for (card, role) in [
+            (geometry.summary, crate::ui::installer_template::InstallerTemplateRole::SettingsSummaryCard),
+            (geometry.main, crate::ui::installer_template::InstallerTemplateRole::SettingsMainCard),
+            (geometry.sidebar, crate::ui::installer_template::InstallerTemplateRole::SettingsSidebarCard),
+        ] {
+            let authored = crate::ui::installer_layout::settings_template_element(7, role);
             self.fill_rounded_rect_alpha(
                 card.x.max(0) as usize,
                 card.y.max(0) as usize,
                 card.width as usize,
                 card.height as usize,
-                12 * scale,
-                4,
-                18,
-                31,
-                224,
+                authored.map(|value| value.corner_radius as usize * scale).unwrap_or(12 * scale),
+                authored.map(|value| value.fill[0]).unwrap_or(4),
+                authored.map(|value| value.fill[1]).unwrap_or(18),
+                authored.map(|value| value.fill[2]).unwrap_or(31),
+                authored.map(|value| value.fill[3]).unwrap_or(224),
             );
             self.outline_rounded_rect(
                 card.x.max(0) as usize,
@@ -5697,16 +5725,19 @@ impl super::DisplayDevice {
         for index in 0..5 {
             let tab = geometry.tabs[index];
             let active = page == index;
+            let authored = crate::ui::installer_layout::settings_template_role_at(
+                7, crate::ui::installer_template::InstallerTemplateRole::SettingsTab, index,
+            );
             self.fill_rounded_rect_alpha(
                 tab.x.max(0) as usize,
                 tab.y.max(0) as usize,
                 tab.width as usize,
                 tab.height as usize,
-                7 * scale,
-                if active { selection_r } else { 5 },
-                if active { selection_g } else { 20 },
-                if active { selection_b } else { 34 },
-                228,
+                authored.map(|value| value.corner_radius as usize * scale).unwrap_or(7 * scale),
+                if active { selection_r } else { authored.map(|value| value.fill[0]).unwrap_or(5) },
+                if active { selection_g } else { authored.map(|value| value.fill[1]).unwrap_or(20) },
+                if active { selection_b } else { authored.map(|value| value.fill[2]).unwrap_or(34) },
+                authored.map(|value| value.fill[3]).unwrap_or(228),
             );
             self.outline_rounded_rect(
                 tab.x.max(0) as usize,
@@ -5722,7 +5753,8 @@ impl super::DisplayDevice {
                 tab.x.max(0) as usize,
                 tab.width as usize,
                 tab.y.max(0) as usize + 9 * scale,
-                tabs[index],
+                authored.map(|value| value.text).filter(|text| !text.is_empty())
+                    .unwrap_or(tabs[index]),
                 if active { 242 } else { 166 },
                 if active { 248 } else { 190 },
                 if active { 252 } else { 207 },
@@ -5741,7 +5773,9 @@ impl super::DisplayDevice {
         self.ui_text_strong(
             summary_left + 74 * scale,
             summary_top + 14 * scale,
-            b"NODE IDENTITY",
+            crate::ui::installer_layout::settings_template_element(
+                7, crate::ui::installer_template::InstallerTemplateRole::SettingsSummaryCard,
+            ).map(|value| value.text).filter(|text| !text.is_empty()).unwrap_or(b"NODE IDENTITY"),
             outline_r,
             outline_g,
             outline_b,
@@ -5829,16 +5863,19 @@ impl super::DisplayDevice {
         for index in 0..6 {
             let card = geometry.controls[index];
             let active = settings_window.control_focus.min(5) == index;
+            let authored = crate::ui::installer_layout::settings_template_role_at(
+                7, crate::ui::installer_template::InstallerTemplateRole::Metadata, index,
+            );
             self.fill_rounded_rect_alpha(
                 card.x.max(0) as usize,
                 card.y.max(0) as usize,
                 card.width as usize,
                 card.height as usize,
-                8 * scale,
-                if active { selection_r } else { 6 },
-                if active { selection_g } else { 24 },
-                if active { selection_b } else { 39 },
-                230,
+                authored.map(|value| value.corner_radius as usize * scale).unwrap_or(8 * scale),
+                if active { selection_r } else { authored.map(|value| value.fill[0]).unwrap_or(6) },
+                if active { selection_g } else { authored.map(|value| value.fill[1]).unwrap_or(24) },
+                if active { selection_b } else { authored.map(|value| value.fill[2]).unwrap_or(39) },
+                authored.map(|value| value.fill[3]).unwrap_or(230),
             );
             self.outline_rounded_rect(
                 card.x.max(0) as usize,
@@ -5853,7 +5890,8 @@ impl super::DisplayDevice {
             self.ui_text_strong(
                 card.x.max(0) as usize + 15 * scale,
                 card.y.max(0) as usize + 12 * scale,
-                labels[index][0],
+                authored.map(|value| value.text).filter(|text| !text.is_empty())
+                    .unwrap_or(labels[index][0]),
                 220,
                 239,
                 249,
@@ -5936,13 +5974,28 @@ impl super::DisplayDevice {
             return;
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-        self.paint_bitmap_fit_rect(
-            NODE_TRUST_TOPOLOGY_BMP,
-            art.x.max(0) as usize + 2 * scale,
-            art.y.max(0) as usize + 2 * scale,
-            (art.width as usize).saturating_sub(4 * scale),
-            (art.height as usize).saturating_sub(4 * scale),
-        );
+        {
+            let template = crate::ui::installer_template::InstallerTemplate::parse_settings(
+                crate::ui::installer_layout::SETTINGS_TEMPLATE_BYTES,
+            ).ok();
+            let authored = crate::ui::installer_layout::settings_template_element(
+                7, crate::ui::installer_template::InstallerTemplateRole::SettingsArtwork,
+            );
+            let authored_rect = layout.authored_settings_rect(
+                settings_window, 7,
+                crate::ui::installer_template::InstallerTemplateRole::SettingsArtwork, 0,
+            ).unwrap_or(art);
+            let bytes = authored
+                .and_then(|element| template.and_then(|value| value.asset(element.image_asset)))
+                .unwrap_or(NODE_TRUST_TOPOLOGY_BMP);
+            self.paint_bitmap_fit_rect(
+                bytes,
+                authored_rect.x.max(0) as usize,
+                authored_rect.y.max(0) as usize,
+                authored_rect.width as usize,
+                authored_rect.height as usize,
+            );
+        }
         #[cfg(target_arch = "x86")]
         self.fill_rect(
             art.x.max(0) as usize + 2 * scale,
@@ -6050,28 +6103,33 @@ impl super::DisplayDevice {
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         let (selection_r, selection_g, selection_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Selection);
-        let cards = [geometry.summary, geometry.main, geometry.sidebar];
-        for card in cards {
+        let cards = [
+            (geometry.summary, crate::ui::installer_template::InstallerTemplateRole::SettingsSummaryCard),
+            (geometry.main, crate::ui::installer_template::InstallerTemplateRole::SettingsMainCard),
+            (geometry.sidebar, crate::ui::installer_template::InstallerTemplateRole::SettingsSidebarCard),
+        ];
+        for (card, role) in cards {
+            let authored = crate::ui::installer_layout::settings_template_element(6, role);
             self.fill_rounded_rect_alpha(
                 card.x.max(0) as usize,
                 card.y.max(0) as usize,
                 card.width as usize,
                 card.height as usize,
-                12 * scale,
-                4,
-                18,
-                31,
-                220,
+                authored.map(|value| value.corner_radius as usize * scale).unwrap_or(12 * scale),
+                authored.map(|value| value.fill[0]).unwrap_or(4),
+                authored.map(|value| value.fill[1]).unwrap_or(18),
+                authored.map(|value| value.fill[2]).unwrap_or(31),
+                authored.map(|value| value.fill[3]).unwrap_or(220),
             );
             self.outline_rounded_rect(
                 card.x.max(0) as usize,
                 card.y.max(0) as usize,
                 card.width as usize,
                 card.height as usize,
-                12 * scale,
-                outline_r / 2,
-                outline_g / 2,
-                outline_b / 2,
+                authored.map(|value| value.corner_radius as usize * scale).unwrap_or(12 * scale),
+                authored.map(|value| value.border[0]).unwrap_or(outline_r / 2),
+                authored.map(|value| value.border[1]).unwrap_or(outline_g / 2),
+                authored.map(|value| value.border[2]).unwrap_or(outline_b / 2),
             );
         }
 
@@ -6087,16 +6145,19 @@ impl super::DisplayDevice {
         ];
         for (index, tab) in geometry.tabs.iter().enumerate() {
             let active = page == index;
+            let authored = crate::ui::installer_layout::settings_template_role_at(
+                6, crate::ui::installer_template::InstallerTemplateRole::SettingsTab, index,
+            );
             self.fill_rounded_rect_alpha(
                 tab.x.max(0) as usize,
                 tab.y.max(0) as usize,
                 tab.width as usize,
                 tab.height as usize,
-                7 * scale,
-                if active { selection_r } else { 5 },
-                if active { selection_g } else { 20 },
-                if active { selection_b } else { 34 },
-                226,
+                authored.map(|value| value.corner_radius as usize * scale).unwrap_or(7 * scale),
+                if active { selection_r } else { authored.map(|value| value.fill[0]).unwrap_or(5) },
+                if active { selection_g } else { authored.map(|value| value.fill[1]).unwrap_or(20) },
+                if active { selection_b } else { authored.map(|value| value.fill[2]).unwrap_or(34) },
+                authored.map(|value| value.fill[3]).unwrap_or(226),
             );
             self.outline_rounded_rect(
                 tab.x.max(0) as usize,
@@ -6112,7 +6173,8 @@ impl super::DisplayDevice {
                 tab.x.max(0) as usize,
                 tab.width as usize,
                 tab.y.max(0) as usize + 9 * scale,
-                page_labels[index],
+                authored.map(|value| value.text).filter(|text| !text.is_empty())
+                    .unwrap_or(page_labels[index]),
                 if active { 242 } else { 166 },
                 if active { 248 } else { 190 },
                 if active { 252 } else { 207 },
@@ -6132,7 +6194,9 @@ impl super::DisplayDevice {
         self.ui_text_strong(
             overview_left + 74 * scale,
             overview_top + 14 * scale,
-            b"CONNECTIVITY",
+            crate::ui::installer_layout::settings_template_element(
+                6, crate::ui::installer_template::InstallerTemplateRole::SettingsSummaryCard,
+            ).map(|value| value.text).filter(|text| !text.is_empty()).unwrap_or(b"CONNECTIVITY"),
             outline_r,
             outline_g,
             outline_b,
@@ -6271,16 +6335,19 @@ impl super::DisplayDevice {
             let left = card.x.max(0) as usize;
             let top = card.y.max(0) as usize;
             let active = settings_window.control_focus.min(5) == index;
+            let authored = crate::ui::installer_layout::settings_template_role_at(
+                6, crate::ui::installer_template::InstallerTemplateRole::Metadata, index,
+            );
             self.fill_rounded_rect_alpha(
                 left,
                 top,
                 card.width as usize,
                 card.height as usize,
-                8 * scale,
-                if active { selection_r } else { 6 },
-                if active { selection_g } else { 24 },
-                if active { selection_b } else { 39 },
-                230,
+                authored.map(|value| value.corner_radius as usize * scale).unwrap_or(8 * scale),
+                if active { selection_r } else { authored.map(|value| value.fill[0]).unwrap_or(6) },
+                if active { selection_g } else { authored.map(|value| value.fill[1]).unwrap_or(24) },
+                if active { selection_b } else { authored.map(|value| value.fill[2]).unwrap_or(39) },
+                authored.map(|value| value.fill[3]).unwrap_or(230),
             );
             self.outline_rounded_rect(
                 left,
@@ -6295,7 +6362,8 @@ impl super::DisplayDevice {
             self.ui_text_strong(
                 left + 15 * scale,
                 top + card.height as usize / 2 - UI_FONT_CELL_HEIGHT / 2,
-                control_labels[index],
+                authored.map(|value| value.text).filter(|text| !text.is_empty())
+                    .unwrap_or(control_labels[index]),
                 if active { 240 } else { 190 },
                 if active { 247 } else { 211 },
                 if active { 251 } else { 224 },

@@ -590,7 +590,10 @@ private struct CanvasPanelPreview: View {
                         .stroke(recipe.border.color, lineWidth: max(recipe.borderWidth, canvasScale.height))
                 }
                 .overlay(alignment: .leading) {
-                    if (isField || [.metadata, .liveDetails, .settingsNavigationItem].contains(element.role)),
+                    if (isField || [
+                        .metadata, .liveDetails, .settingsNavigationItem, .settingsTab,
+                        .settingsSummaryCard, .settingsSidebarCard,
+                    ].contains(element.role)),
                        !element.text.isEmpty
                     {
                         HStack(spacing: 8 * canvasScale.height) {

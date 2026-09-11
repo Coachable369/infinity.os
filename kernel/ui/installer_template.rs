@@ -35,6 +35,13 @@ pub enum InstallerTemplateRole {
     SettingsNavigationIcon = 23,
     SettingsArtwork = 24,
     SettingsNavigationLabel = 25,
+    SettingsTab = 26,
+    SettingsSummaryCard = 27,
+    SettingsMainCard = 28,
+    SettingsSidebarCard = 29,
+    SettingsRowLabel = 30,
+    SettingsRowValue = 31,
+    SettingsDisclosure = 32,
 }
 
 // ------------------------=
@@ -176,6 +183,9 @@ impl<'a> InstallerTemplate<'a> {
         if screen_count == 0 || screen_count > MAX_SCREEN_COUNT {
             return Err(InstallerTemplateError::InvalidScreenSet);
         }
+        if !requires_navigation && screen_count != 11 {
+            return Err(InstallerTemplateError::InvalidScreenSet);
+        }
 
         let mut seen_screens = 0u32;
         for _ in 0..screen_count {
@@ -208,6 +218,13 @@ impl<'a> InstallerTemplate<'a> {
             let mut settings_icon_count = 0u8;
             let mut settings_artwork_count = 0u8;
             let mut settings_label_count = 0u8;
+            let mut settings_tab_count = 0u8;
+            let mut settings_summary_count = 0u8;
+            let mut settings_main_count = 0u8;
+            let mut settings_sidebar_count = 0u8;
+            let mut settings_row_label_count = 0u8;
+            let mut settings_row_value_count = 0u8;
+            let mut settings_disclosure_count = 0u8;
             for _ in 0..count {
                 let element = reader.element()?;
                 if !element_is_bounded(element.frame) {
@@ -243,6 +260,27 @@ impl<'a> InstallerTemplate<'a> {
                 if element.role == InstallerTemplateRole::SettingsNavigationLabel as u8 {
                     settings_label_count = settings_label_count.saturating_add(1);
                 }
+                if element.role == InstallerTemplateRole::SettingsTab as u8 {
+                    settings_tab_count = settings_tab_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SettingsSummaryCard as u8 {
+                    settings_summary_count = settings_summary_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SettingsMainCard as u8 {
+                    settings_main_count = settings_main_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SettingsSidebarCard as u8 {
+                    settings_sidebar_count = settings_sidebar_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SettingsRowLabel as u8 {
+                    settings_row_label_count = settings_row_label_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SettingsRowValue as u8 {
+                    settings_row_value_count = settings_row_value_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SettingsDisclosure as u8 {
+                    settings_disclosure_count = settings_disclosure_count.saturating_add(1);
+                }
                 if element.role == InstallerTemplateRole::Input as u8 && !element.hidden {
                     input_count = input_count.saturating_add(1);
                 }
@@ -264,12 +302,26 @@ impl<'a> InstallerTemplate<'a> {
             }
             let invalid_installer = requires_navigation
                 && (back_count != 1 || primary_count != 1 || console_count == 0);
+            let expected_settings_rows = [5u8, 8, 5, 7, 5, 5, 6, 6, 8, 5, 8]
+                [screen.saturating_sub(1) as usize];
             let invalid_settings = !requires_navigation
                 && (console_count != 1 || content_count != 1 || title_count == 0
-                    || body_count == 0 || section_count != 1 || row_count == 0
+                    || body_count == 0 || section_count != 1 || row_count != expected_settings_rows
                     || settings_navigation_count != 11 || settings_icon_count != 11
-                    || settings_label_count != 11 || settings_artwork_count != 1);
-            if invalid_installer || invalid_settings || input_count > 1 || details_count > 1 {
+                    || settings_label_count != 11 || settings_artwork_count > 1
+                    || (screen == 7 && (settings_tab_count != 7 || settings_summary_count != 1
+                        || settings_main_count != 1 || settings_sidebar_count != 1))
+                    || (screen == 8 && (settings_tab_count != 5 || settings_summary_count != 1
+                        || settings_main_count != 1 || settings_sidebar_count != 1))
+                    || (![7, 8].contains(&screen) && (settings_tab_count != 0
+                        || settings_summary_count != 0 || settings_main_count != 0
+                        || settings_sidebar_count != 0)));
+            let invalid_settings_rows = !requires_navigation && ![7, 8].contains(&screen)
+                && (settings_row_label_count != row_count
+                    || settings_row_value_count != row_count
+                    || settings_disclosure_count != row_count);
+            if invalid_installer || invalid_settings || invalid_settings_rows
+                || input_count > 1 || details_count > 1 {
                 return Err(InstallerTemplateError::InvalidNavigation);
             }
         }
@@ -567,7 +619,7 @@ impl<'a> Reader<'a> {
         let input_variable = self.u8()?;
         let flags = self.u8()?;
         if !(1..=6).contains(&kind)
-            || role > InstallerTemplateRole::SettingsNavigationLabel as u8
+            || role > InstallerTemplateRole::SettingsDisclosure as u8
             || input_variable > InstallerTemplateVariable::Password as u8
             || (kind == 6 && role != InstallerTemplateRole::ProgressBar as u8)
             || (role == InstallerTemplateRole::ProgressBar as u8 && kind != 6)
@@ -577,6 +629,13 @@ impl<'a> Reader<'a> {
             || (role == InstallerTemplateRole::SettingsNavigationIcon as u8 && kind != 2)
             || (role == InstallerTemplateRole::SettingsArtwork as u8 && kind != 2)
             || (role == InstallerTemplateRole::SettingsNavigationLabel as u8 && kind != 3)
+            || (role == InstallerTemplateRole::SettingsTab as u8 && kind != 1)
+            || (role == InstallerTemplateRole::SettingsSummaryCard as u8 && kind != 1)
+            || (role == InstallerTemplateRole::SettingsMainCard as u8 && kind != 1)
+            || (role == InstallerTemplateRole::SettingsSidebarCard as u8 && kind != 1)
+            || (role == InstallerTemplateRole::SettingsRowLabel as u8 && kind != 3)
+            || (role == InstallerTemplateRole::SettingsRowValue as u8 && kind != 3)
+            || (role == InstallerTemplateRole::SettingsDisclosure as u8 && kind != 3)
             || (role != InstallerTemplateRole::Input as u8
                 && input_variable != InstallerTemplateVariable::None as u8)
             || (role == InstallerTemplateRole::Input as u8
