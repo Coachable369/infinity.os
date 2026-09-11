@@ -445,7 +445,7 @@ impl State {
 
 pub struct ObjectStore<D: BlockDevice> {
     device: D,
-    container_lba: u64,
+    store_lba: u64,
     state: State,
     mounted_root: u8,
     in_transaction: bool,
@@ -479,7 +479,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             / ALLOCATION_BLOCK_SECTORS;
         let mut store = Self {
             device,
-            container_lba,
+            store_lba: container_lba.checked_add(STORE_RELATIVE_LBA).ok_or(ObjectError::InsufficientCapacity)?,
             state: State::empty(available.min((ALLOCATION_BYTES * 8) as u64) as u32),
             mounted_root: 0,
             in_transaction: false,
@@ -499,28 +499,34 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the mount operation.
     // ------------------=
     pub fn mount(mut device: D, container_lba: u64) -> Result<Self, ObjectError> {
-        let first = read_root(&mut device, container_lba, ROOT_A);
-        let second = read_root(&mut device, container_lba, ROOT_B);
-        let unsupported = matches!(first, Err(ObjectError::UnsupportedFormat))
-            || matches!(second, Err(ObjectError::UnsupportedFormat));
-        let first = first.unwrap_or(None);
-        let second = second.unwrap_or(None);
-        let mut candidates = [(first, 0u8), (second, 1u8)];
-        if candidates[1].0.map(|x| x.0).unwrap_or(0) > candidates[0].0.map(|x| x.0).unwrap_or(0) {
-            candidates.swap(0, 1);
-        }
-        for (root, slot) in candidates {
-            if let Some((generation, bank)) = root {
-                if let Ok(state) = read_bank(&mut device, container_lba, bank, generation) {
-                    return Ok(Self {
-                        device,
-                        container_lba,
-                        state,
-                        mounted_root: slot,
-                        in_transaction: false,
-                        protected_allocation: [0; ALLOCATION_BYTES],
-                        metadata_mutation_permit: None,
-                    });
+        let mut unsupported = false;
+        for offset in [STORE_RELATIVE_LBA, super::layout::LEGACY_STORE_RELATIVE_LBA] {
+            let store_lba = container_lba
+                .checked_add(offset)
+                .ok_or(ObjectError::CorruptMetadata)?;
+            let first = read_root(&mut device, store_lba, ROOT_A);
+            let second = read_root(&mut device, store_lba, ROOT_B);
+            unsupported |= matches!(first, Err(ObjectError::UnsupportedFormat))
+                || matches!(second, Err(ObjectError::UnsupportedFormat));
+            let first = first.unwrap_or(None);
+            let second = second.unwrap_or(None);
+            let mut candidates = [(first, 0u8), (second, 1u8)];
+            if candidates[1].0.map(|x| x.0).unwrap_or(0) > candidates[0].0.map(|x| x.0).unwrap_or(0) {
+                candidates.swap(0, 1);
+            }
+            for (root, slot) in candidates {
+                if let Some((generation, bank)) = root {
+                    if let Ok(state) = read_bank(&mut device, store_lba, bank, generation) {
+                        return Ok(Self {
+                            device,
+                            store_lba,
+                            state,
+                            mounted_root: slot,
+                            in_transaction: false,
+                            protected_allocation: [0; ALLOCATION_BYTES],
+                            metadata_mutation_permit: None,
+                        });
+                    }
                 }
             }
         }
@@ -1994,8 +2000,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Writes or updates write content data.
     // ------------------=
     fn write_content(&mut self, extent: u32, blocks: u16, data: &[u8]) -> Result<(), ObjectError> {
-        let base = self.container_lba
-            + STORE_RELATIVE_LBA
+        let base = self.store_lba
             + CONTENT
             + extent as u64 * ALLOCATION_BLOCK_SECTORS;
         for sector in 0..blocks as u64 * ALLOCATION_BLOCK_SECTORS {
@@ -2021,8 +2026,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         blocks: u16,
         out: &mut [u8],
     ) -> Result<(), ObjectError> {
-        let base = self.container_lba
-            + STORE_RELATIVE_LBA
+        let base = self.store_lba
             + CONTENT
             + extent as u64 * ALLOCATION_BLOCK_SECTORS;
         for sector in 0..blocks as u64 * ALLOCATION_BLOCK_SECTORS {
@@ -2052,7 +2056,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             BANK_A
         };
         self.state.generation = generation;
-        write_bank(&mut self.device, self.container_lba, bank, &self.state)?;
+        write_bank(&mut self.device, self.store_lba, bank, &self.state)?;
         if !self.device.flush() {
             return Err(ObjectError::TransactionFailed);
         }
@@ -2061,7 +2065,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         } else {
             ROOT_A
         };
-        write_root(&mut self.device, self.container_lba, root, generation, bank)?;
+        write_root(&mut self.device, self.store_lba, root, generation, bank)?;
         if !self.device.flush() {
             return Err(ObjectError::TransactionFailed);
         }
@@ -2431,7 +2435,7 @@ fn write_root<D: BlockDevice>(
     put64(&mut s, 16, g);
     put64(&mut s, 24, bank);
     finish_sector(&mut s);
-    if d.write_sector(c + STORE_RELATIVE_LBA + slot, &s) {
+    if d.write_sector(c + slot, &s) {
         Ok(())
     } else {
         Err(ObjectError::TransactionFailed)
@@ -2447,7 +2451,7 @@ fn read_root<D: BlockDevice>(
     slot: u64,
 ) -> Result<Option<(u64, u64)>, ObjectError> {
     let mut s = [0u8; 512];
-    if !d.read_sector(c + STORE_RELATIVE_LBA + slot, &mut s)
+    if !d.read_sector(c + slot, &mut s)
         || &s[..8] != b"INFOROOT"
         || !valid_sector(&s)
     {
@@ -2482,7 +2486,7 @@ fn write_bank<D: BlockDevice>(
     bank: u64,
     state: &State,
 ) -> Result<(), ObjectError> {
-    let base = c + STORE_RELATIVE_LBA + bank;
+    let base = c + bank;
     let mut h = [0u8; 512];
     h[..8].copy_from_slice(b"INFOSTAT");
     put32(&mut h, 8, FORMAT_VERSION);
@@ -2531,7 +2535,7 @@ fn write_bank<D: BlockDevice>(
             encode_version(&state.versions[sector * 8 + n], &mut s, 16 + n * 60);
         }
         finish_sector(&mut s);
-        write(d, c + STORE_RELATIVE_LBA + version_sector(bank, sector), &s)?;
+        write(d, c + version_sector(bank, sector), &s)?;
     }
     for sector in 0..8 {
         let mut s = [0u8; 512];
@@ -2561,7 +2565,7 @@ fn write_bank<D: BlockDevice>(
 // DESC: Reads read bank data.
 // ------------------=
 fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<State, ObjectError> {
-    let base = c + STORE_RELATIVE_LBA + bank;
+    let base = c + bank;
     let h = read(d, base)?;
     if &h[..8] != b"INFOSTAT"
         || !matches!(get32(&h, 8), 4 | FORMAT_VERSION)
@@ -2598,7 +2602,7 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
     }
     let version_sectors = if get32(&h, 8) == 4 { 4 } else { MAX_VERSIONS / 8 };
     for sector in 0..version_sectors {
-        let s = read(d, c + STORE_RELATIVE_LBA + version_sector(bank, sector))?;
+        let s = read(d, c + version_sector(bank, sector))?;
         check(&s, b"INFOVER2")?;
         for n in 0..8 {
             state.versions[sector * 8 + n] = decode_version(&s, 16 + n * 60)?;

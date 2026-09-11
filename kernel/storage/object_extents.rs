@@ -93,7 +93,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub(crate) fn write_staging_range(&mut self, id: ObjectId, offset: u64, bytes: &[u8]) -> Result<(), ObjectError> {
         let version = self.stream_extent_range(id, offset, bytes.len(), true)?;
-        let base = self.container_lba + STORE_RELATIVE_LBA + CONTENT + version.extent as u64 * ALLOCATION_BLOCK_SECTORS;
+        let base = self.store_lba + CONTENT + version.extent as u64 * ALLOCATION_BLOCK_SECTORS;
         let mut written = 0;
         while written < bytes.len() {
             let at = offset + written as u64;
@@ -117,7 +117,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub(crate) fn read_extent_range(&mut self, id: ObjectId, offset: u64, out: &mut [u8]) -> Result<(), ObjectError> {
         let version = self.stream_extent_range(id, offset, out.len(), false)?;
-        let base = self.container_lba + STORE_RELATIVE_LBA + CONTENT + version.extent as u64 * ALLOCATION_BLOCK_SECTORS;
+        let base = self.store_lba + CONTENT + version.extent as u64 * ALLOCATION_BLOCK_SECTORS;
         let mut read = 0;
         while read < out.len() {
             let at = offset + read as u64;

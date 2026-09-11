@@ -3,7 +3,7 @@
 #[path = "../kernel/storage/layout.rs"]
 mod layout;
 
-const BLOCKS_512_MIB: u64 = 512 * 1024 * 1024 / 512;
+const BLOCKS_1_GIB: u64 = 1024 * 1024 * 1024 / 512;
 const REPROVISION_DISK_BLOCKS: u64 = 16 * 1024 * 1024 * 1024 / 512;
 
 // ------------------------=
@@ -11,7 +11,9 @@ const REPROVISION_DISK_BLOCKS: u64 = 16 * 1024 * 1024 * 1024 / 512;
 // DESC: Reads an installer payload artifact size as its required sector count.
 // ------------------=
 fn image_blocks(path: &str) -> u64 {
-    let bytes = std::fs::metadata(path).expect("installer payload artifact").len();
+    let bytes = std::fs::metadata(path)
+        .expect("installer payload artifact")
+        .len();
     bytes.checked_add(511).expect("artifact size overflow") / 512
 }
 
@@ -24,14 +26,33 @@ fn main() {
     let arm_esp_blocks = image_blocks("build/aarch64/installed-esp.img");
     let x86_kernel_blocks = image_blocks("build/x86_64/installed-kernel.elf");
     let arm_kernel_blocks = image_blocks("build/aarch64/installed-kernel.elf");
-    let plan = layout::plan_entire_disk(BLOCKS_512_MIB, x86_esp_blocks, x86_kernel_blocks)
-        .unwrap_or_else(|_| panic!("blank 512 MiB virtual disk must be installable"));
-    let arm_plan = layout::plan_entire_disk(
+    // The loader's largest supported kernel must fit without touching the store.
+    let maximum_kernel_blocks = 256 * 1024 * 1024 / 512;
+    let maximum = layout::plan_entire_disk(
         REPROVISION_DISK_BLOCKS,
         arm_esp_blocks,
-        arm_kernel_blocks,
+        maximum_kernel_blocks,
     )
-    .unwrap_or_else(|_| panic!("the reprovisioned ARM64 VM disk must fit its real payload"));
+    .unwrap();
+    assert_eq!(
+        maximum.kernel_lba + maximum_kernel_blocks,
+        maximum.container_first + layout::STORE_RELATIVE_LBA
+    );
+    assert_eq!(
+        layout::plan_entire_disk(
+            REPROVISION_DISK_BLOCKS,
+            arm_esp_blocks,
+            maximum_kernel_blocks + 1,
+        ),
+        Err(layout::LayoutError::InsufficientCapacity)
+    );
+    let plan = layout::plan_entire_disk(BLOCKS_1_GIB, x86_esp_blocks, x86_kernel_blocks)
+        .unwrap_or_else(|_| panic!("blank 1 GiB virtual disk must be installable"));
+    let arm_plan =
+        layout::plan_entire_disk(REPROVISION_DISK_BLOCKS, arm_esp_blocks, arm_kernel_blocks)
+            .unwrap_or_else(|_| {
+                panic!("the reprovisioned ARM64 VM disk must fit its real payload")
+            });
 
     assert!(plan.esp_last < plan.container_first);
     assert!(plan.kernel_lba >= plan.container_first);
@@ -45,11 +66,7 @@ fn main() {
         "ARM64 object storage must begin after the enlarged kernel reservation"
     );
     assert!(matches!(
-        layout::plan_entire_disk(
-            64 * 1024 * 1024 / 512,
-            x86_esp_blocks,
-            x86_kernel_blocks,
-        ),
+        layout::plan_entire_disk(64 * 1024 * 1024 / 512, x86_esp_blocks, x86_kernel_blocks,),
         Err(layout::LayoutError::InsufficientCapacity)
     ));
     assert!(matches!(

@@ -158,6 +158,7 @@ impl ObjectCapabilityPolicy for Deny {
 // ------------------=
 fn main() {
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
+    legacy_store_mount(test_sectors);
     checkpoint_replacement(test_sectors);
     let disk = MemoryDisk::new(test_sectors);
     let seed = [0x41; 16];
@@ -568,6 +569,30 @@ fn main() {
     );
 
     println!("PASS: native IDs, typed metadata/query, persistent date/time settings, persistent relationships, multi-extent COW, per-Space accounting, conservative GC, namespace identity, reboot/restore, five crash boundaries, format rejection, root/allocation/object/namespace/relationship/content corruption detection");
+}
+
+// ------------------------=
+// FUNC: legacy_store_mount
+// DESC: Verifies reads and durable mutations at the historical store offset without migrating or overwriting it.
+// ------------------=
+fn legacy_store_mount(sectors: usize) {
+    let disk = MemoryDisk::new(sectors);
+    drop(ObjectStore::format(disk.clone(), 0, sectors as u64, [0x42; 16]).unwrap());
+    let old = storage::layout::LEGACY_STORE_RELATIVE_LBA as usize;
+    let new = STORE_RELATIVE_LBA as usize;
+    {
+        let mut data = disk.0.borrow_mut();
+        data.copy_within(new..sectors, old);
+        data[new..].fill([0; 512]);
+    }
+    let mut store = ObjectStore::mount(disk.clone(), 0).unwrap();
+    assert!(store.runtime_bootstrap_valid());
+    let documents = store.resolve(b"/home/default/documents").unwrap();
+    store.attach(b"/home/default/legacy-link", documents).unwrap();
+    drop(store);
+    let mounted = ObjectStore::mount(disk.clone(), 0).unwrap();
+    assert_eq!(mounted.resolve(b"/home/default/legacy-link").unwrap(), documents);
+    assert_eq!(disk.0.borrow()[new], [0; 512]);
 }
 
 // ------------------------=

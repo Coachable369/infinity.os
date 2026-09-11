@@ -24,6 +24,7 @@ else
 fi
 make x86_64
 make aarch64
+make installer-capacity-test
 make installer-entropy-test
 make editor-window-test
 make active-painter-test
