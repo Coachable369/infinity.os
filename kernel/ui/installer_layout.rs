@@ -36,6 +36,46 @@ pub fn configuration_network_row_rect(
 }
 pub const CONFIGURATION_TEMPLATE_BYTES: &[u8] =
     include_bytes!("../../assets/boot/configuration-screens.iuit");
+pub const SETTINGS_TEMPLATE_BYTES: &[u8] =
+    include_bytes!("../../assets/boot/settings-screens.iuit");
+
+// ------------------------=
+// FUNC: settings_template_element
+// DESC: Returns one singular WYSIWYG layer from the active System Settings section template.
+// ------------------=
+pub fn settings_template_element(
+    section: usize,
+    role: InstallerTemplateRole,
+) -> Option<InstallerTemplateElement<'static>> {
+    InstallerTemplate::parse_settings(SETTINGS_TEMPLATE_BYTES)
+        .ok()?
+        .element(section.saturating_add(1) as u8, role)
+}
+
+// ------------------------=
+// FUNC: settings_template_role_at
+// DESC: Returns the requested repeated semantic Settings layer in authored document order.
+// ------------------=
+pub fn settings_template_role_at(
+    section: usize,
+    role: InstallerTemplateRole,
+    ordinal: usize,
+) -> Option<InstallerTemplateElement<'static>> {
+    let template = InstallerTemplate::parse_settings(SETTINGS_TEMPLATE_BYTES).ok()?;
+    let screen = section.saturating_add(1) as u8;
+    let count = template.element_count(screen)?;
+    let mut found = 0usize;
+    for index in 0..count {
+        let element = template.element_at(screen, index)?;
+        if element.role == role as u8 {
+            if found == ordinal {
+                return Some(element);
+            }
+            found = found.saturating_add(1);
+        }
+    }
+    None
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InstallerRect {

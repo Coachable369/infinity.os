@@ -1,0 +1,5767 @@
+{
+  "canvasHeight" : 1000,
+  "canvasWidth" : 1000,
+  "screens" : [
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "General",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Manage this machine, language, region, generation, and updates.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Machine Name",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Language",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Region",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "System Generation",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-0001-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Updates",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-0001-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 1,
+      "title" : "General"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Themes & Skins",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Choose the visual system used across InfinityOS.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Skin",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Icon Set",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Primary",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Secondary",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Opacity",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 650
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 6",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Blur",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 714
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-000D-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 7",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "UI Scale",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "53595354-0002-000E-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 8",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Wallpaper",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-0002-000F-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 2,
+      "title" : "Themes & Skins"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Users & Accounts",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Manage identities, credentials, sessions, and Personal Space.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Current User",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Credential",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Session",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Personal Space",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-0003-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Profile",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-0003-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 3,
+      "title" : "Users & Accounts"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "AI & Voice",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Configure local intelligence, chat, models, and voice access.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "AI Provider",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Desktop AI Chat",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Chat Model",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Remote Processing",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Voice",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 650
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 6",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Activation",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 714
+          },
+          "hidden" : false,
+          "id" : "53595354-0004-000D-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 7",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Model Access",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-0004-000E-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 4,
+      "title" : "AI & Voice"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Privacy & Security",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Review authority, permissions, session security, and trusted UI.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Ambient Authority",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Microphone",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Remote AI",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "No Activity Timeout",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-0005-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Trusted UI",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-0005-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 5,
+      "title" : "Privacy & Security"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Devices",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Inspect displays, keyboards, pointers, and audio devices.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Display",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Keyboard",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Pointer",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Audio Input",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-0006-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Audio Output",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-0006-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 6,
+      "title" : "Devices"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Network",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Configure connectivity, interfaces, DNS, routes, and policy.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Connectivity",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Profiles",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Interfaces & Topology",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Application & Service Access",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "DNS / Resolution",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 650
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 6",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Routes",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 714
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-000D-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 7",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Connections",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "53595354-0007-000E-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 8",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Diagnostics",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-0007-000F-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 7,
+      "title" : "Network"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Nodes & Mesh",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Discover, pair, and govern trusted Infinity nodes.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Trusted Nodes",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Pair Node",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Mesh Health",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Access Policy",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-0008-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Security Audit",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-0008-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 8,
+      "title" : "Nodes & Mesh"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Storage",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Inspect Infinity Pool capacity, placement, and protection.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Infinity Pool",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Capacity",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Nodes",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Selected Object",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Replica Location",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 650
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 6",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Temporary",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 714
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-000D-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 7",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Protected",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "53595354-0009-000E-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 8",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Critical",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-0009-000F-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 9,
+      "title" : "Storage"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "About",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Review the active InfinityOS System Generation.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "InfinityOS",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Architecture",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Boot",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Identity Format",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-000A-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Icon Families",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-000A-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 10,
+      "title" : "About"
+    },
+    {
+      "elements" : [
+        {
+          "border" : {
+            "alpha" : 210,
+            "blue" : 255,
+            "green" : 210,
+            "red" : 118
+          },
+          "cornerRadius" : 18,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 230,
+            "blue" : 31,
+            "green" : 18,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 820,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-0001-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 4,
+          "locked" : false,
+          "name" : "Settings Window",
+          "opacity" : 100,
+          "role" : 2,
+          "text" : "",
+          "zIndex" : 0
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 224,
+            "blue" : 61,
+            "green" : 38,
+            "red" : 5
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 76,
+            "width" : 890,
+            "x" : 55,
+            "y" : 80
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-0002-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Title Bar",
+          "opacity" : 100,
+          "role" : 1,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 220,
+            "blue" : 28,
+            "green" : 16,
+            "red" : 3
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 744,
+            "width" : 250,
+            "x" : 55,
+            "y" : 156
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-0003-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Section Navigation",
+          "opacity" : 100,
+          "role" : 11,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 80,
+            "blue" : 170,
+            "green" : 132,
+            "red" : 65
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 168,
+            "blue" : 36,
+            "green" : 21,
+            "red" : 4
+          },
+          "fontSize" : 19,
+          "frame" : {
+            "height" : 690,
+            "width" : 580,
+            "x" : 335,
+            "y" : 176
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-0004-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Content Viewport",
+          "opacity" : 100,
+          "role" : 3,
+          "text" : "",
+          "zIndex" : 1
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 32,
+          "frame" : {
+            "height" : 54,
+            "width" : 500,
+            "x" : 370,
+            "y" : 205
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-0005-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Title",
+          "opacity" : 100,
+          "role" : 4,
+          "text" : "Input",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 255,
+            "blue" : 255,
+            "green" : 191,
+            "red" : 32
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 255,
+            "blue" : 250,
+            "green" : 245,
+            "red" : 241
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 48,
+            "width" : 500,
+            "x" : 370,
+            "y" : 262
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-0006-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Section Description",
+          "opacity" : 100,
+          "role" : 5,
+          "text" : "Tune pointer, keyboard, scrolling, and interaction behavior.",
+          "zIndex" : 3
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 330
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-0007-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 1",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Pointer Speed",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 394
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-0008-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 2",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Scroll Speed",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 458
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-0009-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 3",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Double Click",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 522
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-000A-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 4",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Drag Threshold",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 586
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-000B-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 5",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Natural Scroll",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 650
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-000C-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 6",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Primary Button",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 714
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-000D-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 7",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Keyboard Repeat",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 170,
+            "blue" : 190,
+            "green" : 151,
+            "red" : 76
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 222,
+            "blue" : 34,
+            "green" : 20,
+            "red" : 5
+          },
+          "fontSize" : 17,
+          "frame" : {
+            "height" : 50,
+            "width" : 500,
+            "x" : 370,
+            "y" : 778
+          },
+          "hidden" : false,
+          "id" : "53595354-000B-000E-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 1,
+          "locked" : false,
+          "name" : "Setting Row 8",
+          "opacity" : 100,
+          "role" : 17,
+          "text" : "Cursor Size",
+          "zIndex" : 4
+        },
+        {
+          "border" : {
+            "alpha" : 180,
+            "blue" : 255,
+            "green" : 220,
+            "red" : 109
+          },
+          "cornerRadius" : 10,
+          "crop" : {
+            "bottom" : 0,
+            "left" : 0,
+            "right" : 0,
+            "top" : 0
+          },
+          "fill" : {
+            "alpha" : 236,
+            "blue" : 40,
+            "green" : 24,
+            "red" : 5
+          },
+          "fontSize" : 24,
+          "frame" : {
+            "height" : 150,
+            "width" : 500,
+            "x" : 370,
+            "y" : 390
+          },
+          "hidden" : true,
+          "id" : "53595354-000B-000F-8000-000000000001",
+          "imageAsset" : "",
+          "inputVariable" : "",
+          "kind" : 3,
+          "locked" : false,
+          "name" : "Expanded Detail Content",
+          "opacity" : 100,
+          "role" : 21,
+          "text" : "Live controls and details appear here.",
+          "zIndex" : 5
+        }
+      ],
+      "id" : 11,
+      "title" : "Input"
+    }
+  ],
+  "version" : 1
+}

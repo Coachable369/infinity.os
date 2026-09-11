@@ -39,6 +39,7 @@ enum ConsoleLayoutPreset: String, CaseIterable, Identifiable {
 private struct ProjectSnapshot {
     var installation: InstallerStudioDocument
     var configuration: InstallerStudioDocument
+    var systemSettings: InstallerStudioDocument
 }
 
 @MainActor
@@ -47,6 +48,7 @@ final class TemplateStore: ObservableObject {
     static let maximumZoom = 3.0
     @Published var document: InstallerStudioDocument
     @Published var configurationDocument: InstallerStudioDocument
+    @Published var settingsDocument: InstallerStudioDocument
     @Published var selectedCollection = ScreenCollection.installation
     @Published var selectedScreenID = 1
     @Published var selectedElementID: UUID? {
@@ -77,16 +79,26 @@ final class TemplateStore: ObservableObject {
     private var gestureFrames: [UUID: CanvasRect] = [:]
 
     var activeScreens: [InstallerScreenTemplate] {
-        selectedCollection == .installation ? document.screens : configurationDocument.screens
+        switch selectedCollection {
+        case .installation: document.screens
+        case .configuration: configurationDocument.screens
+        case .systemSettings: settingsDocument.screens
+        }
     }
 
     private var activeDocument: InstallerStudioDocument {
-        get { selectedCollection == .installation ? document : configurationDocument }
+        get {
+            switch selectedCollection {
+            case .installation: document
+            case .configuration: configurationDocument
+            case .systemSettings: settingsDocument
+            }
+        }
         set {
-            if selectedCollection == .installation {
-                document = newValue
-            } else {
-                configurationDocument = newValue
+            switch selectedCollection {
+            case .installation: document = newValue
+            case .configuration: configurationDocument = newValue
+            case .systemSettings: settingsDocument = newValue
             }
         }
     }
@@ -137,10 +149,21 @@ final class TemplateStore: ObservableObject {
             try? JSONDecoder().decode(InstallerStudioDocument.self, from: data)
         }
         configurationDocument = if let configuration,
-                                   (try? TemplateValidator.validate(configuration)) != nil {
+                                   (try? TemplateValidator.validate(configuration, for: .configuration)) != nil {
             configuration
         } else {
             .factoryConfiguration()
+        }
+        let settings = root.flatMap { root in
+            try? Data(contentsOf: root.appending(path: "assets/boot/settings-screens.infinityui"))
+        }.flatMap { data in
+            try? JSONDecoder().decode(InstallerStudioDocument.self, from: data)
+        }
+        settingsDocument = if let settings,
+                              (try? TemplateValidator.validate(settings, for: .systemSettings)) != nil {
+            settings
+        } else {
+            .factorySystemSettings()
         }
         if let root,
            let data = try? Data(contentsOf: root.appending(path: "assets/boot/installer-screens.infinityui")),
@@ -316,9 +339,11 @@ final class TemplateStore: ObservableObject {
         }
         recordUndo()
         let insertion = min((selectedScreenIndex ?? (activeScreens.count - 1)) + 1, activeScreens.count)
-        let factory = selectedCollection == .installation
-            ? InstallerStudioDocument.factoryDefault()
-            : InstallerStudioDocument.factoryConfiguration()
+        let factory = switch selectedCollection {
+        case .installation: InstallerStudioDocument.factoryDefault()
+        case .configuration: InstallerStudioDocument.factoryConfiguration()
+        case .systemSettings: InstallerStudioDocument.factorySystemSettings()
+        }
         var screen = selectedScreen ?? factory.screens[0]
         screen.title = "New Screen"
         screen.elements = clonedElements(screen.elements)
@@ -835,7 +860,9 @@ final class TemplateStore: ObservableObject {
     // ------------------=
     func endGesture() {
         if let baseline = gestureBaseline,
-           baseline.installation != document || baseline.configuration != configurationDocument
+           baseline.installation != document
+            || baseline.configuration != configurationDocument
+            || baseline.systemSettings != settingsDocument
         {
             undoStack.append(baseline)
             redoStack.removeAll()
@@ -911,6 +938,7 @@ final class TemplateStore: ObservableObject {
         redoStack.append(projectSnapshot())
         document = previous.installation
         configurationDocument = previous.configuration
+        settingsDocument = previous.systemSettings
         selectedElementID = nil
         inlineEditorElementID = nil
         status = "Undo"
@@ -925,6 +953,7 @@ final class TemplateStore: ObservableObject {
         undoStack.append(projectSnapshot())
         document = next.installation
         configurationDocument = next.configuration
+        settingsDocument = next.systemSettings
         selectedElementID = nil
         inlineEditorElementID = nil
         status = "Redo"
@@ -946,10 +975,11 @@ final class TemplateStore: ObservableObject {
     @discardableResult
     func validate() -> Bool {
         do {
-            try TemplateValidator.validate(document)
-            try TemplateValidator.validate(configurationDocument)
+            try TemplateValidator.validate(document, for: .installation)
+            try TemplateValidator.validate(configurationDocument, for: .configuration)
+            try TemplateValidator.validate(settingsDocument, for: .systemSettings)
             validationIssues = []
-            status = "Validated \(document.screens.count) installation and \(configurationDocument.screens.count) configuration screens"
+            status = "Validated installation, first-boot configuration, and \(settingsDocument.screens.count) Settings sections"
             return true
         } catch {
             validationIssues = [String(describing: error)]
@@ -974,14 +1004,23 @@ final class TemplateStore: ObservableObject {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
             let editable = try encoder.encode(document)
-            let runtime = try RuntimeTemplateCodec.encode(document, assetRoot: root)
+            let runtime = try RuntimeTemplateCodec.encode(document, assetRoot: root, collection: .installation)
             let configurationEditable = try encoder.encode(configurationDocument)
-            let configurationRuntime = try RuntimeTemplateCodec.encode(configurationDocument, assetRoot: root)
+            let configurationRuntime = try RuntimeTemplateCodec.encode(
+                configurationDocument, assetRoot: root, collection: .configuration
+            )
+            let settingsEditable = try encoder.encode(settingsDocument)
+            let settingsRuntime = try RuntimeTemplateCodec.encode(
+                settingsDocument, assetRoot: root, collection: .systemSettings
+            )
             guard try RuntimeTemplateCodec.decode(runtime) == document else {
                 throw TemplateValidationIssue.invalidDocument("Generated runtime artifact failed round-trip verification")
             }
             guard try RuntimeTemplateCodec.decode(configurationRuntime) == configurationDocument else {
                 throw TemplateValidationIssue.invalidDocument("Generated configuration artifact failed round-trip verification")
+            }
+            guard try RuntimeTemplateCodec.decode(settingsRuntime, collection: .systemSettings) == settingsDocument else {
+                throw TemplateValidationIssue.invalidDocument("Generated Settings artifact failed round-trip verification")
             }
             try editable.write(to: assetDirectory.appending(path: "installer-screens.infinityui"), options: .atomic)
             try runtime.write(to: assetDirectory.appending(path: "installer-screens.iuit"), options: .atomic)
@@ -991,8 +1030,14 @@ final class TemplateStore: ObservableObject {
             try configurationRuntime.write(
                 to: assetDirectory.appending(path: "configuration-screens.iuit"), options: .atomic
             )
+            try settingsEditable.write(
+                to: assetDirectory.appending(path: "settings-screens.infinityui"), options: .atomic
+            )
+            try settingsRuntime.write(
+                to: assetDirectory.appending(path: "settings-screens.iuit"), options: .atomic
+            )
             projectRoot = root
-            status = "Saved installation and OS configuration templates"
+            status = "Saved installation, first-boot, and System Settings templates"
         } catch {
             validationIssues = [error.localizedDescription]
             status = "Save failed"
@@ -1013,14 +1058,14 @@ final class TemplateStore: ObservableObject {
         do {
             let data = try Data(contentsOf: url)
             var imported = if url.pathExtension.lowercased() == "iuit" {
-                try RuntimeTemplateCodec.decode(data)
+                try RuntimeTemplateCodec.decode(data, collection: selectedCollection)
             } else {
                 try JSONDecoder().decode(InstallerStudioDocument.self, from: data)
             }
             if selectedCollection == .installation {
                 imported = imported.migratedForInstallerRuntimeParity()
             }
-            try TemplateValidator.validate(imported)
+            try TemplateValidator.validate(imported, for: selectedCollection)
             recordUndo()
             activeDocument = imported
             selectedScreenID = 1
@@ -1038,11 +1083,13 @@ final class TemplateStore: ObservableObject {
     // DESC: Restores only the active screen from the factory template as an undoable action.
     // ------------------=
     func resetScreen() {
+        let factoryDocument = switch selectedCollection {
+        case .installation: InstallerStudioDocument.factoryDefault()
+        case .configuration: InstallerStudioDocument.factoryConfiguration()
+        case .systemSettings: InstallerStudioDocument.factorySystemSettings()
+        }
         guard let index = selectedScreenIndex,
-              let factory = (selectedCollection == .installation
-                  ? InstallerStudioDocument.factoryDefault()
-                  : InstallerStudioDocument.factoryConfiguration())
-                  .screens.first(where: { $0.id == selectedScreenID })
+              let factory = factoryDocument.screens.first(where: { $0.id == selectedScreenID })
         else { return }
         recordUndo()
         activeDocument.screens[index] = factory
@@ -1259,7 +1306,11 @@ final class TemplateStore: ObservableObject {
     // DESC: Captures both editable screen collections as one atomic undo state.
     // ------------------=
     private func projectSnapshot() -> ProjectSnapshot {
-        ProjectSnapshot(installation: document, configuration: configurationDocument)
+        ProjectSnapshot(
+            installation: document,
+            configuration: configurationDocument,
+            systemSettings: settingsDocument
+        )
     }
 
     // ------------------------=

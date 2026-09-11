@@ -29,13 +29,16 @@ WALLPAPER_ASSETS := assets/desktop/infinity-default-dark-wallpaper-v2.png \
 UI_ASSETS := $(shell find assets/skins -type f) $(WALLPAPER_ASSETS)
 INSTALLER_UI_ASSETS := assets/boot/infinity-installer-mesh-diagram-v1.png \
 	assets/boot/installer-screens.infinityui assets/boot/installer-screens.iuit \
-	assets/boot/configuration-screens.infinityui assets/boot/configuration-screens.iuit
+	assets/boot/configuration-screens.infinityui assets/boot/configuration-screens.iuit \
+	assets/boot/settings-screens.infinityui assets/boot/settings-screens.iuit
 INSTALLER_IMAGE_ASSET_DIR := assets/boot/installer-assets
 INSTALLER_IMAGE_ASSETS := $(shell find $(INSTALLER_IMAGE_ASSET_DIR) -type f)
 INSTALLER_TEMPLATE_SOURCE := assets/boot/installer-screens.infinityui
 INSTALLER_TEMPLATE_RUNTIME := assets/boot/installer-screens.iuit
 CONFIGURATION_TEMPLATE_SOURCE := assets/boot/configuration-screens.infinityui
 CONFIGURATION_TEMPLATE_RUNTIME := assets/boot/configuration-screens.iuit
+SETTINGS_TEMPLATE_SOURCE := assets/boot/settings-screens.infinityui
+SETTINGS_TEMPLATE_RUNTIME := assets/boot/settings-screens.iuit
 INSTALLER_DESIGNER_SOURCES := $(shell find tools/installer-designer/Sources -type f -name '*.swift') \
 	tools/installer-designer/Package.swift tools/installer-designer/compile-template.sh
 CRASH_ASSETS := $(shell find assets/crash -type f)
@@ -70,7 +73,7 @@ SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-
 	assets/boot/infinity-storage-hierarchy-v3.bmp \
 	assets/boot/infinity-disk-discovery-vision-v1.bmp \
 	assets/boot/infinity-storage-device-v1.bmp assets/boot/infinity-time-zone-map-v1.bmp \
-	assets/boot/installer-screens.iuit assets/boot/configuration-screens.iuit \
+	assets/boot/installer-screens.iuit assets/boot/configuration-screens.iuit assets/boot/settings-screens.iuit \
 	$(CRASH_ASSETS) $(NODE_ASSETS)
 
 .PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test installer-layout-test installer-template-runtime installer-template-test force-installer-template-compile component-manifest-test object-test namespace-test crash-recovery-test crash-screen-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test milestone-7c-test milestone-8-test milestone-9-test resource-policy-test network-test icon-theme-test settings-color-test settings-timeout-test desktop-system-test ui-install-parity-test input-regression-test app-launcher-interaction-test task-manager-test file-navigator-workspace-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
@@ -171,9 +174,12 @@ $(INSTALLER_TEMPLATE_RUNTIME): force-installer-template-compile $(INSTALLER_TEMP
 $(CONFIGURATION_TEMPLATE_RUNTIME): force-installer-template-compile $(CONFIGURATION_TEMPLATE_SOURCE) $(INSTALLER_DESIGNER_SOURCES) $(INSTALLER_IMAGE_ASSETS)
 	@tools/installer-designer/compile-template.sh $(CONFIGURATION_TEMPLATE_SOURCE) $(CONFIGURATION_TEMPLATE_RUNTIME)
 
-installer-template-runtime: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME)
+$(SETTINGS_TEMPLATE_RUNTIME): force-installer-template-compile $(SETTINGS_TEMPLATE_SOURCE) $(INSTALLER_DESIGNER_SOURCES) $(INSTALLER_IMAGE_ASSETS)
+	@tools/installer-designer/compile-template.sh $(SETTINGS_TEMPLATE_SOURCE) $(SETTINGS_TEMPLATE_RUNTIME)
 
-installer-template-test: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME)
+installer-template-runtime: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME)
+
+installer-template-test: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME)
 	@tools/installer-designer/verify-template-build.sh
 	@mkdir -p build/tools
 	@rustc --edition 2021 -A warnings tools/installer-template-test.rs -o build/tools/installer-template-test

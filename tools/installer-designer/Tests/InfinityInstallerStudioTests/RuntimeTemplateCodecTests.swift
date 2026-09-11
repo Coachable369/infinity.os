@@ -4,6 +4,47 @@ import SwiftUI
 
 final class RuntimeTemplateCodecTests: XCTestCase {
     // ------------------------=
+    // FUNC: testSystemSettingsFactoryRoundTripsEveryRuntimeSection
+    // DESC: Proves all logged-in Settings sections expose editable WYSIWYG structure in the saved runtime artifact.
+    // ------------------=
+    func testSystemSettingsFactoryRoundTripsEveryRuntimeSection() throws {
+        let document = InstallerStudioDocument.factorySystemSettings()
+
+        XCTAssertEqual(document.screens.count, 11)
+        XCTAssertNoThrow(try TemplateValidator.validate(document, for: .systemSettings))
+        let restored = try RuntimeTemplateCodec.decode(
+            RuntimeTemplateCodec.encode(document, collection: .systemSettings),
+            collection: .systemSettings
+        )
+        XCTAssertEqual(restored, document)
+        for screen in restored.screens {
+            XCTAssertEqual(screen.elements.filter { $0.role == .console }.count, 1)
+            XCTAssertEqual(screen.elements.filter { $0.role == .content }.count, 1)
+            XCTAssertFalse(screen.elements.filter { $0.role == .metadata }.isEmpty)
+        }
+    }
+
+    // ------------------------=
+    // FUNC: testSystemSettingsSelectionScopesCanvasEdits
+    // DESC: Exercises section selection and verifies geometry edits affect only the System Settings runtime document.
+    // ------------------=
+    @MainActor func testSystemSettingsSelectionScopesCanvasEdits() throws {
+        let store = TemplateStore()
+        store.document = .factoryDefault()
+        store.configurationDocument = .factoryConfiguration()
+        store.settingsDocument = .factorySystemSettings()
+        store.selectScreenCollection(.systemSettings, screen: 2)
+        let row = try XCTUnwrap(store.selectedScreen?.elements.first { $0.role == .metadata })
+        store.selectElement(row.id)
+        store.updateSelected { $0.frame.x += 20 }
+
+        XCTAssertEqual(store.selectedCollection, .systemSettings)
+        XCTAssertEqual(store.settingsDocument.screens[1].elements.first { $0.id == row.id }!.frame.x, row.frame.x + 20)
+        XCTAssertEqual(store.document, .factoryDefault())
+        XCTAssertEqual(store.configurationDocument, .factoryConfiguration())
+    }
+
+    // ------------------------=
     // FUNC: testNetworkPreviewRendersThreeSeparatedCards
     // DESC: Renders the real canvas network component and checks opaque card interiors and transparent gutters.
     // ------------------=
@@ -246,6 +287,8 @@ final class RuntimeTemplateCodecTests: XCTestCase {
     @MainActor
     func testCanvasMoveAndResizeSnapToConfiguredGrid() {
         let store = TemplateStore()
+        store.document = .factoryDefault()
+        store.selectScreenCollection(.installation)
         let body = store.selectedScreen!.elements.first { $0.role == .body }!
         store.beginGesture(elementID: body.id)
         store.moveSelected(translation: CGSize(width: 19, height: 16), canvasScale: CGSize(width: 1, height: 1))
@@ -560,6 +603,7 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         let store = TemplateStore()
         store.document = .factoryDefault()
         store.configurationDocument = .factoryConfiguration()
+        store.settingsDocument = .factorySystemSettings()
         store.projectRoot = root
         let masthead = store.selectedScreen!.elements.first { $0.role == .masthead }!
         store.toggleElementLock(masthead.id)
@@ -588,7 +632,16 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         let configurationRuntime = try Data(contentsOf: configurationRuntimeURL)
         XCTAssertEqual(configurationEditable, store.configurationDocument)
         XCTAssertEqual(try RuntimeTemplateCodec.decode(configurationRuntime), store.configurationDocument)
-        XCTAssertEqual(store.status, "Saved installation and OS configuration templates")
+        let settingsEditableURL = root.appending(path: "assets/boot/settings-screens.infinityui")
+        let settingsRuntimeURL = root.appending(path: "assets/boot/settings-screens.iuit")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: settingsEditableURL.path))
+        XCTAssertEqual(
+            try RuntimeTemplateCodec.decode(
+                Data(contentsOf: settingsRuntimeURL), collection: .systemSettings
+            ),
+            store.settingsDocument
+        )
+        XCTAssertEqual(store.status, "Saved installation, first-boot, and System Settings templates")
     }
 
     // ------------------------=

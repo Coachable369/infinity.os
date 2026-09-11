@@ -334,6 +334,8 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
         Path::new("assets/boot/installer-screens.iuit"),
         Path::new("assets/boot/configuration-screens.infinityui"),
         Path::new("assets/boot/configuration-screens.iuit"),
+        Path::new("assets/boot/settings-screens.infinityui"),
+        Path::new("assets/boot/settings-screens.iuit"),
     ] {
         let name = source
             .file_name()

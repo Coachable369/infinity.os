@@ -146,12 +146,14 @@ enum StudioInputVariable: String, Codable, CaseIterable, Identifiable {
 enum ScreenCollection: String, CaseIterable, Identifiable {
     case installation
     case configuration
+    case systemSettings
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .installation: "Installation Screens"
         case .configuration: "OS Configuration Screens"
+        case .systemSettings: "System Settings"
         }
     }
 
@@ -163,6 +165,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
         switch self {
         case .installation: 11
         case .configuration: 8
+        case .systemSettings: 11
         }
     }
 
@@ -171,7 +174,9 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Resolves the fixed InfinityOS runtime workflow represented by one template document.
     // ------------------=
     static func runtimeCollection(screenCount: Int) -> ScreenCollection? {
-        allCases.first { $0.requiredScreenCount == screenCount }
+        if screenCount == ScreenCollection.configuration.requiredScreenCount { return .configuration }
+        if screenCount == ScreenCollection.installation.requiredScreenCount { return .installation }
+        return nil
     }
 
     // ------------------------=
@@ -179,6 +184,10 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // DESC: Returns the minimum structural role count required by this runtime workflow and screen.
     // ------------------=
     func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
+        if self == .systemSettings {
+            return [.masthead, .console, .content, .title, .body, .sectionLabel, .metadata]
+                .contains(role) ? 1 : 0
+        }
         if [.masthead, .console, .content, .title, .body, .backButton, .primaryButton, .footer]
             .contains(role)
         {
@@ -196,6 +205,7 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
             if role == .input { return 1 }
             if role == .progressSegment { return 8 }
             return 0
+        case .systemSettings: return 0
         default:
             return 0
         }
@@ -207,9 +217,11 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // ------------------=
     func maximumRoleCount(_ role: StudioElementRole, screenID: Int) -> Int? {
         if role == .liveDetails {
+            if self == .systemSettings { return 1 }
             return self == .installation && [3, 4, 6, 10].contains(screenID) ? 1 : 0
         }
         let required = requiredRoleCount(role, screenID: screenID)
+        if self == .systemSettings && role == .metadata { return nil }
         guard required > 0, role != .body else { return nil }
         return required
     }
@@ -514,6 +526,119 @@ struct InstallerStudioDocument: Codable, Hashable {
             canvasHeight: 1000,
             screens: screens
         )
+    }
+
+    // ------------------------=
+    // FUNC: factorySystemSettings
+    // DESC: Builds the eleven editable section canvases consumed by the logged-in System Settings app.
+    // ------------------=
+    static func factorySystemSettings() -> InstallerStudioDocument {
+        let sections = [
+            "General", "Themes & Skins", "Users & Accounts", "AI & Voice",
+            "Privacy & Security", "Devices", "Network", "Nodes & Mesh",
+            "Storage", "About", "Input",
+        ]
+        let descriptions = [
+            "Manage this machine, language, region, generation, and updates.",
+            "Choose the visual system used across InfinityOS.",
+            "Manage identities, credentials, sessions, and Personal Space.",
+            "Configure local intelligence, chat, models, and voice access.",
+            "Review authority, permissions, session security, and trusted UI.",
+            "Inspect displays, keyboards, pointers, and audio devices.",
+            "Configure connectivity, interfaces, DNS, routes, and policy.",
+            "Discover, pair, and govern trusted Infinity nodes.",
+            "Inspect Infinity Pool capacity, placement, and protection.",
+            "Review the active InfinityOS System Generation.",
+            "Tune pointer, keyboard, scrolling, and interaction behavior.",
+        ]
+        let rowLabels = [
+            ["Machine Name", "Language", "Region", "System Generation", "Updates"],
+            ["Skin", "Icon Set", "Primary", "Secondary", "Opacity", "Blur", "UI Scale", "Wallpaper"],
+            ["Current User", "Credential", "Session", "Personal Space", "Profile"],
+            ["AI Provider", "Desktop AI Chat", "Chat Model", "Remote Processing", "Voice", "Activation", "Model Access"],
+            ["Ambient Authority", "Microphone", "Remote AI", "No Activity Timeout", "Trusted UI"],
+            ["Display", "Keyboard", "Pointer", "Audio Input", "Audio Output"],
+            ["Connectivity", "Profiles", "Interfaces & Topology", "Application & Service Access", "DNS / Resolution", "Routes", "Connections", "Diagnostics"],
+            ["Trusted Nodes", "Pair Node", "Mesh Health", "Access Policy", "Security Audit"],
+            ["Infinity Pool", "Capacity", "Nodes", "Selected Object", "Replica Location", "Temporary", "Protected", "Critical"],
+            ["InfinityOS", "Architecture", "Boot", "Identity Format", "Icon Families"],
+            ["Pointer Speed", "Scroll Speed", "Double Click", "Drag Threshold", "Natural Scroll", "Primary Button", "Keyboard Repeat", "Cursor Size"],
+        ]
+        let screens = sections.indices.map { index in
+            var elements = systemSettingsElements(
+                section: sections[index], description: descriptions[index], rows: rowLabels[index]
+            )
+            for elementIndex in elements.indices {
+                elements[elementIndex].id = settingsElementID(
+                    screen: index + 1, element: elementIndex + 1
+                )
+            }
+            return InstallerScreenTemplate(id: index + 1, title: sections[index], elements: elements)
+        }
+        return InstallerStudioDocument(
+            version: currentVersion, canvasWidth: 1000, canvasHeight: 1000, screens: screens
+        )
+    }
+
+    // ------------------------=
+    // FUNC: settingsElementID
+    // DESC: Creates stable identifiers for System Settings WYSIWYG layers.
+    // ------------------=
+    private static func settingsElementID(screen: Int, element: Int) -> UUID {
+        UUID(uuidString: String(format: "53595354-%04X-%04X-8000-000000000001", screen, element))!
+    }
+
+    // ------------------------=
+    // FUNC: systemSettingsElements
+    // DESC: Creates one complete Settings section with editable chrome, navigation, viewport, rows, and detail well.
+    // ------------------=
+    private static func systemSettingsElements(
+        section: String, description: String, rows: [String]
+    ) -> [StudioElement] {
+        var elements: [StudioElement] = [
+            .make(name: "Settings Window", kind: .console, role: .console,
+                  frame: CanvasRect(x: 55, y: 80, width: 890, height: 820), zIndex: 0),
+            .make(name: "Title Bar", kind: .panel, role: .masthead,
+                  frame: CanvasRect(x: 55, y: 80, width: 890, height: 76), zIndex: 1),
+            .make(name: "Section Navigation", kind: .panel, role: .sectionLabel,
+                  frame: CanvasRect(x: 55, y: 156, width: 250, height: 744), zIndex: 1),
+            .make(name: "Content Viewport", kind: .panel, role: .content,
+                  frame: CanvasRect(x: 335, y: 176, width: 580, height: 690), zIndex: 1),
+            .make(name: "Section Title", kind: .text, role: .title,
+                  frame: CanvasRect(x: 370, y: 205, width: 500, height: 54), text: section, zIndex: 3),
+            .make(name: "Section Description", kind: .text, role: .body,
+                  frame: CanvasRect(x: 370, y: 262, width: 500, height: 48), text: description, zIndex: 3),
+        ]
+        elements[0].fill = StudioColor(red: 5, green: 18, blue: 31, alpha: 230)
+        elements[0].border = StudioColor(red: 118, green: 210, blue: 255, alpha: 210)
+        elements[0].cornerRadius = 18
+        elements[1].fill = StudioColor(red: 5, green: 38, blue: 61, alpha: 224)
+        elements[2].fill = StudioColor(red: 3, green: 16, blue: 28, alpha: 220)
+        elements[3].fill = StudioColor(red: 4, green: 21, blue: 36, alpha: 168)
+        elements[3].border = StudioColor(red: 65, green: 132, blue: 170, alpha: 80)
+        elements[4].fontSize = 32
+        elements[5].fontSize = 17
+        for (row, label) in rows.enumerated() {
+            var element = StudioElement.make(
+                name: "Setting Row \(row + 1)", kind: .panel, role: .metadata,
+                frame: CanvasRect(x: 370, y: 330 + row * 64, width: 500, height: 50),
+                text: label, zIndex: 4
+            )
+            element.fill = StudioColor(red: 5, green: 20, blue: 34, alpha: 222)
+            element.border = StudioColor(red: 76, green: 151, blue: 190, alpha: 170)
+            element.fontSize = 17
+            elements.append(element)
+        }
+        var detail = StudioElement.make(
+            name: "Expanded Detail Content", kind: .text, role: .liveDetails,
+            frame: CanvasRect(x: 370, y: 390, width: 500, height: 150),
+            text: "Live controls and details appear here.", zIndex: 5
+        )
+        detail.fill = StudioColor(red: 5, green: 24, blue: 40, alpha: 236)
+        detail.border = StudioColor(red: 109, green: 220, blue: 255, alpha: 180)
+        detail.hidden = true
+        elements.append(detail)
+        return elements
     }
 
     // ------------------------=

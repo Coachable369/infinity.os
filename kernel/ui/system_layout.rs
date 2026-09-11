@@ -1999,15 +1999,49 @@ impl SystemLayout {
                 (self.height * state.height.clamp(420, 900) as usize / 1000).min(self.height),
             )
         };
-        let title_height = 54 * self.scale;
-        let navigation_width = width * 28 / 100;
-        let content_left = left + navigation_width + 34 * self.scale;
+        let authored = (section < 11).then(|| {
+            use crate::ui::installer_template::InstallerTemplateRole;
+            let console = crate::ui::installer_layout::settings_template_element(
+                section, InstallerTemplateRole::Console,
+            )?;
+            let title = crate::ui::installer_layout::settings_template_element(
+                section, InstallerTemplateRole::Masthead,
+            )?;
+            let navigation = crate::ui::installer_layout::settings_template_element(
+                section, InstallerTemplateRole::SectionLabel,
+            )?;
+            let content = crate::ui::installer_layout::settings_template_element(
+                section, InstallerTemplateRole::Content,
+            )?;
+            Some((console.frame, title.frame, navigation.frame, content.frame))
+        }).flatten();
+        let map = |frame: crate::ui::installer_template::InstallerTemplateRect,
+                   console: crate::ui::installer_template::InstallerTemplateRect| {
+            rect(
+                left + (frame.x.saturating_sub(console.x) as usize * width
+                    / console.width.max(1) as usize),
+                top + (frame.y.saturating_sub(console.y) as usize * height
+                    / console.height.max(1) as usize),
+                frame.width as usize * width / console.width.max(1) as usize,
+                frame.height as usize * height / console.height.max(1) as usize,
+            )
+        };
+        let authored_title = authored.map(|(console, title, _, _)| map(title, console));
+        let authored_navigation = authored.map(|(console, _, navigation, _)| map(navigation, console));
+        let authored_content = authored.map(|(console, _, _, content)| map(content, console));
+        let title_height = authored_title.map(|value| value.height as usize).unwrap_or(54 * self.scale);
+        let navigation_width = authored_navigation.map(|value| value.width as usize).unwrap_or(width * 28 / 100);
+        let content_left = authored_content.map(|value| value.x.max(0) as usize)
+            .unwrap_or(left + navigation_width + 34 * self.scale);
         let scrollbar_width = 10 * self.scale;
         let content_right_padding = 30 * self.scale;
-        let content_width = width.saturating_sub(navigation_width + 68 * self.scale);
-        let viewport_top = top + title_height + 98 * self.scale;
-        let viewport_height = height.saturating_sub(title_height + 116 * self.scale);
-        let total_content_height =
+        let content_width = authored_content.map(|value| value.width as usize)
+            .unwrap_or(width.saturating_sub(navigation_width + 68 * self.scale));
+        let viewport_top = authored_content.map(|value| value.y.max(0) as usize)
+            .unwrap_or(top + title_height + 98 * self.scale);
+        let viewport_height = authored_content.map(|value| value.height as usize)
+            .unwrap_or(height.saturating_sub(title_height + 116 * self.scale));
+        let mut total_content_height =
             if section == SETTINGS_NODE_SECTION {
                 SETTINGS_NODE_CONTENT_HEIGHT + if content_width < 840 * self.scale { 632 } else { 0 }
             } else if section == SETTINGS_NETWORK_SECTION {
@@ -2016,6 +2050,26 @@ impl SystemLayout {
                 let detail_height = state.expanded_row.map(settings_detail_height).unwrap_or(0);
                 state.row_count.clamp(1, 8) * 58 + detail_height
             };
+        if section != SETTINGS_NODE_SECTION && section != SETTINGS_NETWORK_SECTION {
+        if let Some((console, _, _, _)) = authored {
+            use crate::ui::installer_template::InstallerTemplateRole;
+            let mut last_bottom = viewport_top;
+            for index in 0..state.row_count.clamp(1, 8) {
+                let Some(row) = crate::ui::installer_layout::settings_template_role_at(
+                    section, InstallerTemplateRole::Metadata, index,
+                ) else { break };
+                last_bottom = last_bottom.max(map(row.frame, console).bottom().max(0) as usize);
+            }
+            let detail = state.expanded_row
+                .and_then(|_| crate::ui::installer_layout::settings_template_element(
+                    section, InstallerTemplateRole::LiveDetails,
+                ))
+                .map(|element| map(element.frame, console).height as usize)
+                .unwrap_or(0);
+            total_content_height = last_bottom.saturating_sub(viewport_top)
+                .saturating_add(detail) / self.scale.max(1);
+        }
+        }
         let visible_logical_height = viewport_height / self.scale.max(1);
         let maximum_scroll = total_content_height.saturating_sub(visible_logical_height);
         let track = rect(
@@ -2040,28 +2094,26 @@ impl SystemLayout {
         };
         SettingsWindowGeometry {
             window: rect(left, top, width, height),
-            title: rect(
-                left + 12 * self.scale,
-                top,
-                width.saturating_sub(150 * self.scale),
-                title_height,
-            ),
-            navigation: rect(
-                left,
-                top + title_height,
-                navigation_width,
+            title: authored_title.unwrap_or(rect(
+                left + 12 * self.scale, top,
+                width.saturating_sub(150 * self.scale), title_height,
+            )),
+            navigation: authored_navigation.unwrap_or(rect(
+                left, top + title_height, navigation_width,
                 height.saturating_sub(title_height),
-            ),
+            )),
             content: rect(
                 content_left,
-                top + title_height + 29 * self.scale,
-                content_width.saturating_sub(content_right_padding),
-                height.saturating_sub(title_height + 47 * self.scale),
+                authored_content.map(|value| value.y.max(0) as usize)
+                    .unwrap_or(top + title_height + 29 * self.scale),
+                if authored_content.is_some() { content_width } else { content_width.saturating_sub(content_right_padding) },
+                authored_content.map(|value| value.height as usize)
+                    .unwrap_or(height.saturating_sub(title_height + 47 * self.scale)),
             ),
             viewport: rect(
                 content_left,
                 viewport_top,
-                content_width.saturating_sub(content_right_padding),
+                if authored_content.is_some() { content_width } else { content_width.saturating_sub(content_right_padding) },
                 viewport_height,
             ),
             scrollbar_track: track,
@@ -2085,6 +2137,66 @@ impl SystemLayout {
         state: SettingsWindowState,
         index: usize,
     ) -> SettingsRowGeometry {
+        self.settings_row_geometry_for_section(state, index, usize::MAX)
+    }
+
+    // ------------------------=
+    // FUNC: settings_row_geometry_for_section
+    // DESC: Maps an authored Settings row into the live resizable viewport while retaining disclosure and scrolling behavior.
+    // ------------------=
+    pub fn settings_row_geometry_for_section(
+        self,
+        state: SettingsWindowState,
+        index: usize,
+        section: usize,
+    ) -> SettingsRowGeometry {
+        if section < 11 {
+            use crate::ui::installer_template::InstallerTemplateRole;
+            if let (Some(console), Some(row)) = (
+                crate::ui::installer_layout::settings_template_element(
+                    section, InstallerTemplateRole::Console,
+                ),
+                crate::ui::installer_layout::settings_template_role_at(
+                    section, InstallerTemplateRole::Metadata, index,
+                ),
+            ) {
+                let window = self.settings_window_geometry_for_section(state, section);
+                let outer = window.window;
+                let map_x = |value: u16| outer.x.max(0) as usize
+                    + value.saturating_sub(console.frame.x) as usize * outer.width as usize
+                        / console.frame.width.max(1) as usize;
+                let map_y = |value: u16| outer.y.max(0) as usize
+                    + value.saturating_sub(console.frame.y) as usize * outer.height as usize
+                        / console.frame.height.max(1) as usize;
+                let detail_height = state.expanded_row
+                    .and_then(|_| crate::ui::installer_layout::settings_template_element(
+                        section, InstallerTemplateRole::LiveDetails,
+                    ))
+                    .map(|element| element.frame.height as usize * outer.height as usize
+                        / console.frame.height.max(1) as usize)
+                    .unwrap_or(0);
+                let prior_detail = usize::from(state.expanded_row.is_some_and(|expanded| expanded < index))
+                    * detail_height;
+                let summary_top = map_y(row.frame.y) as i32 + prior_detail as i32
+                    - (state.scroll_offset * self.scale) as i32;
+                let summary = rect(
+                    map_x(row.frame.x), summary_top.max(0) as usize,
+                    row.frame.width as usize * outer.width as usize
+                        / console.frame.width.max(1) as usize,
+                    row.frame.height as usize * outer.height as usize
+                        / console.frame.height.max(1) as usize,
+                );
+                return SettingsRowGeometry {
+                    summary,
+                    detail: rect(
+                        summary.x.max(0) as usize,
+                        summary.bottom().saturating_add((4 * self.scale) as i32).max(0) as usize,
+                        summary.width as usize,
+                        if state.expanded_row == Some(index) { detail_height } else { 0 },
+                    ),
+                };
+            }
+        }
         let window = self.settings_window_geometry(state);
         let prior_detail = state
             .expanded_row
@@ -2211,7 +2323,7 @@ impl SystemLayout {
             return None;
         }
         for index in 0..state.row_count.clamp(1, 8) {
-            let row = self.settings_row_geometry(state, index);
+            let row = self.settings_row_geometry_for_section(state, index, section);
             if row.summary.contains(point) {
                 return Some(SettingsTarget::ContentRow(index));
             }
@@ -2501,7 +2613,7 @@ impl SystemLayout {
             return None;
         }
         let point = self.point(normalized_x, normalized_y);
-        let row = self.settings_row_geometry(state, 1);
+        let row = self.settings_row_geometry_for_section(state, 1, 1);
         let theme_count = super::icon_theme::ICON_THEME_COUNT as usize;
         let preview_gap = row.detail.width as usize / theme_count;
         for theme in 0..theme_count {
@@ -2544,7 +2656,7 @@ impl SystemLayout {
         state: SettingsWindowState,
         index: usize,
     ) -> SettingsAccentGeometry {
-        let row = self.settings_row_geometry(state, index);
+        let row = self.settings_row_geometry_for_section(state, index, 1);
         let hue_width = 24 * self.scale;
         let gap = 14 * self.scale;
         SettingsAccentGeometry {
@@ -2603,7 +2715,22 @@ impl SystemLayout {
         value: u8,
         maximum: u8,
     ) -> SettingsSliderGeometry {
-        let row = self.settings_row_geometry(state, index);
+        self.settings_effect_slider_geometry_for_section(state, index, value, maximum, usize::MAX)
+    }
+
+    // ------------------------=
+    // FUNC: settings_effect_slider_geometry_for_section
+    // DESC: Returns slider geometry aligned to the active section's authored WYSIWYG row.
+    // ------------------=
+    pub fn settings_effect_slider_geometry_for_section(
+        self,
+        state: SettingsWindowState,
+        index: usize,
+        value: u8,
+        maximum: u8,
+        section: usize,
+    ) -> SettingsSliderGeometry {
+        let row = self.settings_row_geometry_for_section(state, index, section);
         let track = rect(
             row.detail.x.max(0) as usize + 22 * self.scale,
             row.detail.y.max(0) as usize + 35 * self.scale,
@@ -2655,19 +2782,50 @@ impl SystemLayout {
         index: usize,
         maximum: u8,
     ) -> Option<u8> {
+        self.settings_slider_target_for_section(
+            normalized_x,
+            normalized_y,
+            state,
+            index,
+            maximum,
+            usize::MAX,
+        )
+    }
+
+    // ------------------------=
+    // FUNC: settings_slider_target_for_section
+    // DESC: Hit-tests a Settings slider against the active section's authored row geometry.
+    // ------------------=
+    pub fn settings_slider_target_for_section(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        state: SettingsWindowState,
+        index: usize,
+        maximum: u8,
+        section: usize,
+    ) -> Option<u8> {
         if state.expanded_row != Some(index) {
             return None;
         }
         let point = self.point(normalized_x, normalized_y);
-        let geometry = self.settings_effect_slider_geometry(state, index, 0, maximum);
-        let row = self.settings_row_geometry(state, index);
+        let geometry = self.settings_effect_slider_geometry_for_section(
+            state, index, 0, maximum, section,
+        );
+        let row = self.settings_row_geometry_for_section(state, index, section);
         if !row.detail.contains(point)
             || point.y < geometry.thumb.y
             || point.y >= geometry.thumb.bottom()
         {
             return None;
         }
-        Some(self.settings_slider_drag_value(normalized_x, state, index, maximum))
+        Some(self.settings_slider_drag_value_for_section(
+            normalized_x,
+            state,
+            index,
+            maximum,
+            section,
+        ))
     }
 
     // ------------------------=
@@ -2695,8 +2853,31 @@ impl SystemLayout {
         index: usize,
         maximum: u8,
     ) -> u8 {
+        self.settings_slider_drag_value_for_section(
+            normalized_x,
+            state,
+            index,
+            maximum,
+            usize::MAX,
+        )
+    }
+
+    // ------------------------=
+    // FUNC: settings_slider_drag_value_for_section
+    // DESC: Converts pointer motion using a Settings section's authored slider placement.
+    // ------------------=
+    pub fn settings_slider_drag_value_for_section(
+        self,
+        normalized_x: i32,
+        state: SettingsWindowState,
+        index: usize,
+        maximum: u8,
+        section: usize,
+    ) -> u8 {
         let point = self.point(normalized_x, 0);
-        let geometry = self.settings_effect_slider_geometry(state, index, 0, maximum);
+        let geometry = self.settings_effect_slider_geometry_for_section(
+            state, index, 0, maximum, section,
+        );
         let half_thumb = 10 * self.scale;
         let start = geometry.track.x + half_thumb as i32;
         let travel = geometry

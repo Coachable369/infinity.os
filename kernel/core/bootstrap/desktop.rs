@@ -4819,7 +4819,22 @@ impl super::DisplayDevice {
         let top = geometry.window.y.max(0) as usize;
         let width = geometry.window.width as usize;
         let height = geometry.window.height as usize;
-        let title_height = 54 * scale;
+        let title_height = geometry.title.height as usize;
+        let template_console = crate::ui::installer_layout::settings_template_element(
+            focus,
+            crate::ui::installer_template::InstallerTemplateRole::Console,
+        );
+        let authored_rect = |element: crate::ui::installer_template::InstallerTemplateElement<'static>| {
+            let console = template_console?;
+            Some((
+                left + element.frame.x.saturating_sub(console.frame.x) as usize * width
+                    / console.frame.width.max(1) as usize,
+                top + element.frame.y.saturating_sub(console.frame.y) as usize * height
+                    / console.frame.height.max(1) as usize,
+                element.frame.width as usize * width / console.frame.width.max(1) as usize,
+                element.frame.height as usize * height / console.frame.height.max(1) as usize,
+            ))
+        };
         let (header_r, header_g, header_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
         let (selection_r, selection_g, selection_b) =
@@ -4830,16 +4845,28 @@ impl super::DisplayDevice {
             self.active_accent_surface(crate::ui::skin::AccentSurface::Widget);
         let (background_opacity, _) = self.active_background_effects();
         let panel_alpha = |base: u8| (u16::from(base) * u16::from(background_opacity) / 100) as u8;
+        let authored_header = crate::ui::installer_layout::settings_template_element(
+            focus,
+            crate::ui::installer_template::InstallerTemplateRole::Masthead,
+        );
+        let authored_navigation = crate::ui::installer_layout::settings_template_element(
+            focus,
+            crate::ui::installer_template::InstallerTemplateRole::SectionLabel,
+        );
+        let authored_content = crate::ui::installer_layout::settings_template_element(
+            focus,
+            crate::ui::installer_template::InstallerTemplateRole::Content,
+        );
         self.glass_panel(left, top, width, height, true);
         self.fill_rect_alpha(
             left,
             top,
             width,
-            title_height,
-            header_r,
-            header_g,
-            header_b,
-            panel_alpha(222),
+            geometry.title.height as usize,
+            authored_header.map(|element| element.fill[0]).unwrap_or(header_r),
+            authored_header.map(|element| element.fill[1]).unwrap_or(header_g),
+            authored_header.map(|element| element.fill[2]).unwrap_or(header_b),
+            authored_header.map(|element| panel_alpha(element.fill[3])).unwrap_or(panel_alpha(222)),
         );
         let title_center_y = top + title_height / 2;
         self.small_infinity_mark(left + 25 * scale, title_center_y, 31 * scale);
@@ -4869,10 +4896,10 @@ impl super::DisplayDevice {
             top + title_height,
             nav_width,
             height.saturating_sub(title_height),
-            primary_r / 2,
-            primary_g / 2,
-            primary_b / 2,
-            panel_alpha(214),
+            authored_navigation.map(|element| element.fill[0]).unwrap_or(primary_r / 2),
+            authored_navigation.map(|element| element.fill[1]).unwrap_or(primary_g / 2),
+            authored_navigation.map(|element| element.fill[2]).unwrap_or(primary_b / 2),
+            authored_navigation.map(|element| panel_alpha(element.fill[3])).unwrap_or(panel_alpha(214)),
         );
         self.fill_rect_alpha(
             left + nav_width,
@@ -4904,6 +4931,10 @@ impl super::DisplayDevice {
             geometry.navigation.height as usize,
         );
         for (index, section) in sections.iter().enumerate() {
+            let section = crate::ui::installer_layout::settings_template_element(
+                index,
+                crate::ui::installer_template::InstallerTemplateRole::Title,
+            ).map(|element| element.text).filter(|text| !text.is_empty()).unwrap_or(*section);
             let row = layout.settings_section_geometry(settings_window, index);
             let row_left = row.x.max(0) as usize;
             let row_top = row.y.max(0) as usize;
@@ -4943,26 +4974,52 @@ impl super::DisplayDevice {
         self.render_clip = caller_clip;
         let content_x = geometry.content.x.max(0) as usize;
         let content_y = geometry.content.y.max(0) as usize;
+        if let Some(element) = authored_content {
+            self.fill_rounded_rect_alpha(
+                content_x,
+                content_y,
+                geometry.content.width as usize,
+                geometry.content.height as usize,
+                element.corner_radius as usize * scale,
+                element.fill[0], element.fill[1], element.fill[2], panel_alpha(element.fill[3]),
+            );
+        }
+        let authored_title = crate::ui::installer_layout::settings_template_element(
+            focus,
+            crate::ui::installer_template::InstallerTemplateRole::Title,
+        );
+        let authored_body = crate::ui::installer_layout::settings_template_element(
+            focus,
+            crate::ui::installer_template::InstallerTemplateRole::Body,
+        );
+        let title_frame = authored_title.and_then(authored_rect);
+        let body_frame = authored_body.and_then(authored_rect);
+        let section_title = authored_title.map(|element| element.text)
+            .filter(|text| !text.is_empty()).unwrap_or(sections[focus.min(10)]);
         self.ui_text_strong(
-            content_x,
-            content_y,
-            sections[focus.min(10)],
-            238,
-            244,
-            249,
-            2,
+            title_frame.map(|frame| frame.0).unwrap_or(content_x),
+            title_frame.map(|frame| frame.1).unwrap_or(content_y),
+            section_title,
+            authored_title.map(|element| element.fill[0]).unwrap_or(238),
+            authored_title.map(|element| element.fill[1]).unwrap_or(244),
+            authored_title.map(|element| element.fill[2]).unwrap_or(249),
+            authored_title.map(|element| (element.font_size as usize / 16).clamp(1, 2)).unwrap_or(2),
         );
         if focus != 8 { self.ui_text(
-            content_x,
-            content_y + if focus == 7 { 64 } else { 36 } * scale,
-            if focus == 10 {
-                b"Click a row to change its value. Changes apply immediately."
-            } else {
-                b"Open a row to view its controls and configuration details."
-            },
-            143,
-            160,
-            176,
+            body_frame.map(|frame| frame.0).unwrap_or(content_x),
+            body_frame.map(|frame| frame.1).unwrap_or(
+                content_y + if focus == 7 { 64 } else { 36 } * scale
+            ),
+            authored_body.map(|element| element.text).filter(|text| !text.is_empty()).unwrap_or(
+                if focus == 10 {
+                    b"Click a row to change its value. Changes apply immediately."
+                } else {
+                    b"Open a row to view its controls and configuration details."
+                }
+            ),
+            authored_body.map(|element| element.fill[0]).unwrap_or(143),
+            authored_body.map(|element| element.fill[1]).unwrap_or(160),
+            authored_body.map(|element| element.fill[2]).unwrap_or(176),
             1,
         ); }
         let icon_theme = crate::ui::icon_theme::IconThemeId::from_u8(self.active_icon_theme())
@@ -5169,7 +5226,14 @@ impl super::DisplayDevice {
             .take(settings_window.row_count.clamp(1, 8))
             .enumerate()
         {
-            let row = layout.settings_row_geometry(settings_window, index);
+            let row = layout.settings_row_geometry_for_section(settings_window, index, focus);
+            let authored_row = crate::ui::installer_layout::settings_template_role_at(
+                focus,
+                crate::ui::installer_template::InstallerTemplateRole::Metadata,
+                index,
+            );
+            let label = authored_row.map(|element| element.text)
+                .filter(|text| !text.is_empty()).unwrap_or(*label);
             if row.summary.intersects(geometry.viewport) {
                 let summary_left = row.summary.x.max(0) as usize;
                 let summary_top = row.summary.y.max(0) as usize;
@@ -5180,11 +5244,11 @@ impl super::DisplayDevice {
                     summary_top,
                     summary_width,
                     row.summary.height as usize,
-                    10 * scale,
-                    primary_r / 2,
-                    primary_g.saturating_mul(3) / 4,
-                    primary_b.saturating_mul(3) / 4,
-                    panel_alpha(218),
+                    authored_row.map(|element| element.corner_radius as usize * scale).unwrap_or(10 * scale),
+                    authored_row.map(|element| element.fill[0]).unwrap_or(primary_r / 2),
+                    authored_row.map(|element| element.fill[1]).unwrap_or(primary_g.saturating_mul(3) / 4),
+                    authored_row.map(|element| element.fill[2]).unwrap_or(primary_b.saturating_mul(3) / 4),
+                    authored_row.map(|element| panel_alpha(element.fill[3])).unwrap_or(panel_alpha(218)),
                 );
                 self.outline_rounded_rect(
                     summary_left,
@@ -5192,9 +5256,9 @@ impl super::DisplayDevice {
                     summary_width,
                     row.summary.height as usize,
                     10 * scale,
-                    if expanded { outline_r } else { outline_r / 2 },
-                    if expanded { outline_g } else { outline_g / 2 },
-                    if expanded { outline_b } else { outline_b / 2 },
+                    authored_row.map(|element| element.border[0]).unwrap_or(if expanded { outline_r } else { outline_r / 2 }),
+                    authored_row.map(|element| element.border[1]).unwrap_or(if expanded { outline_g } else { outline_g / 2 }),
+                    authored_row.map(|element| element.border[2]).unwrap_or(if expanded { outline_b } else { outline_b / 2 }),
                 );
                 let label_limit = summary_width * 46 / 100;
                 let mut label_length = label.len();
@@ -5382,6 +5446,7 @@ impl super::DisplayDevice {
                             )
                             .saturating_sub(1),
                         crate::runtime::identity::MAX_NO_ACTIVITY_TIMEOUT_MINUTES - 1,
+                        4,
                     );
                 } else {
                     let description: &[u8] = match (focus, index) {
@@ -6605,7 +6670,7 @@ impl super::DisplayDevice {
         } else {
             (blur, 8)
         };
-        self.settings_slider(settings_window, scale, index, value, maximum);
+        self.settings_slider(settings_window, scale, index, value, maximum, 1);
     }
 
     // ------------------------=
@@ -6619,10 +6684,16 @@ impl super::DisplayDevice {
         index: usize,
         value: u8,
         maximum: u8,
+        section: usize,
     ) {
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
-        let geometry =
-            layout.settings_effect_slider_geometry(settings_window, index, value, maximum);
+        let geometry = layout.settings_effect_slider_geometry_for_section(
+            settings_window,
+            index,
+            value,
+            maximum,
+            section,
+        );
         let (outline_r, outline_g, outline_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
         self.fill_rounded_rect_alpha(

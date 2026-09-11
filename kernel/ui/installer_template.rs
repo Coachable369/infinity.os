@@ -142,6 +142,25 @@ impl<'a> InstallerTemplate<'a> {
     // DESC: Validates a complete bounded installer template before it can affect runtime UI.
     // ------------------=
     pub fn parse(data: &'a [u8]) -> Result<Self, InstallerTemplateError> {
+        Self::parse_profile(data, true)
+    }
+
+    // ------------------------=
+    // FUNC: parse_settings
+    // DESC: Validates a System Settings design without imposing installer navigation controls.
+    // ------------------=
+    pub fn parse_settings(data: &'a [u8]) -> Result<Self, InstallerTemplateError> {
+        Self::parse_profile(data, false)
+    }
+
+    // ------------------------=
+    // FUNC: parse_profile
+    // DESC: Parses the shared IUIT format against installer or logged-in Settings structural requirements.
+    // ------------------=
+    fn parse_profile(
+        data: &'a [u8],
+        requires_navigation: bool,
+    ) -> Result<Self, InstallerTemplateError> {
         let mut reader = Reader::new(data);
         if reader.take(4)? != MAGIC {
             return Err(InstallerTemplateError::InvalidHeader);
@@ -176,6 +195,11 @@ impl<'a> InstallerTemplate<'a> {
             let mut console_count = 0u8;
             let mut input_count = 0u8;
             let mut details_count = 0u8;
+            let mut content_count = 0u8;
+            let mut title_count = 0u8;
+            let mut body_count = 0u8;
+            let mut section_count = 0u8;
+            let mut row_count = 0u8;
             for _ in 0..count {
                 let element = reader.element()?;
                 if !element_is_bounded(element.frame) {
@@ -183,6 +207,21 @@ impl<'a> InstallerTemplate<'a> {
                 }
                 if element.role == InstallerTemplateRole::Console as u8 {
                     console_count = console_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::Content as u8 {
+                    content_count = content_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::Title as u8 {
+                    title_count = title_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::Body as u8 {
+                    body_count = body_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SectionLabel as u8 {
+                    section_count = section_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::Metadata as u8 {
+                    row_count = row_count.saturating_add(1);
                 }
                 if element.role == InstallerTemplateRole::Input as u8 && !element.hidden {
                     input_count = input_count.saturating_add(1);
@@ -203,7 +242,12 @@ impl<'a> InstallerTemplate<'a> {
                     }
                 }
             }
-            if back_count != 1 || primary_count != 1 || console_count == 0 || input_count > 1 || details_count > 1 {
+            let invalid_installer = requires_navigation
+                && (back_count != 1 || primary_count != 1 || console_count == 0);
+            let invalid_settings = !requires_navigation
+                && (console_count != 1 || content_count != 1 || title_count == 0
+                    || body_count == 0 || section_count != 1 || row_count == 0);
+            if invalid_installer || invalid_settings || input_count > 1 || details_count > 1 {
                 return Err(InstallerTemplateError::InvalidNavigation);
             }
         }

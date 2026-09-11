@@ -11,6 +11,20 @@ struct InfinityInstallerStudioApp: App {
     // ------------------=
     init() {
         let arguments = CommandLine.arguments
+        if arguments.count == 3, arguments[1] == "--export-settings-default" {
+            do {
+                let source = URL(fileURLWithPath: arguments[2])
+                let document = InstallerStudioDocument.factorySystemSettings()
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+                try encoder.encode(document).write(to: source, options: .atomic)
+                print("Exported System Settings source template to \(source.path)")
+                Darwin.exit(0)
+            } catch {
+                fputs("Settings template export failed: \(error)\n", stderr)
+                Darwin.exit(1)
+            }
+        }
         if arguments.count == 4, arguments[1] == "--compile-template" {
             do {
                 let source = URL(fileURLWithPath: arguments[2])
@@ -22,12 +36,23 @@ struct InfinityInstallerStudioApp: App {
                 if source.lastPathComponent == "installer-screens.infinityui" {
                     document = document.migratedForInstallerRuntimeParity()
                 }
-                try TemplateValidator.validate(document)
+                let collection: ScreenCollection = if source.lastPathComponent == "configuration-screens.infinityui" {
+                    .configuration
+                } else if source.lastPathComponent == "settings-screens.infinityui" {
+                    .systemSettings
+                } else {
+                    .installation
+                }
+                try TemplateValidator.validate(document, for: collection)
                 try FileManager.default.createDirectory(
                     at: destination.deletingLastPathComponent(),
                     withIntermediateDirectories: true
                 )
-                try RuntimeTemplateCodec.encode(document, assetRoot: source.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()).write(to: destination, options: .atomic)
+                try RuntimeTemplateCodec.encode(
+                    document,
+                    assetRoot: source.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent(),
+                    collection: collection
+                ).write(to: destination, options: .atomic)
                 print("Compiled \(source.path) to \(destination.path)")
                 Darwin.exit(0)
             } catch {
@@ -41,13 +66,14 @@ struct InfinityInstallerStudioApp: App {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let document = InstallerStudioDocument.factoryDefault()
                 let configuration = InstallerStudioDocument.factoryConfiguration()
+                let settings = InstallerStudioDocument.factorySystemSettings()
                 let encoder = JSONEncoder()
                 encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
                 try encoder.encode(document).write(
                     to: directory.appending(path: "installer-screens.infinityui"),
                     options: .atomic
                 )
-                try RuntimeTemplateCodec.encode(document, assetRoot: directory.deletingLastPathComponent().deletingLastPathComponent()).write(
+                try RuntimeTemplateCodec.encode(document, assetRoot: directory.deletingLastPathComponent().deletingLastPathComponent(), collection: .installation).write(
                     to: directory.appending(path: "installer-screens.iuit"),
                     options: .atomic
                 )
@@ -55,11 +81,17 @@ struct InfinityInstallerStudioApp: App {
                     to: directory.appending(path: "configuration-screens.infinityui"),
                     options: .atomic
                 )
-                try RuntimeTemplateCodec.encode(configuration, assetRoot: directory.deletingLastPathComponent().deletingLastPathComponent()).write(
+                try RuntimeTemplateCodec.encode(configuration, assetRoot: directory.deletingLastPathComponent().deletingLastPathComponent(), collection: .configuration).write(
                     to: directory.appending(path: "configuration-screens.iuit"),
                     options: .atomic
                 )
-                print("Exported InfinityOS installer and OS configuration templates to \(directory.path)")
+                try encoder.encode(settings).write(
+                    to: directory.appending(path: "settings-screens.infinityui"), options: .atomic
+                )
+                try RuntimeTemplateCodec.encode(settings, assetRoot: directory.deletingLastPathComponent().deletingLastPathComponent(), collection: .systemSettings).write(
+                    to: directory.appending(path: "settings-screens.iuit"), options: .atomic
+                )
+                print("Exported InfinityOS installer, first-boot, and System Settings templates to \(directory.path)")
                 Darwin.exit(0)
             } catch {
                 fputs("Template export failed: \(error)\n", stderr)

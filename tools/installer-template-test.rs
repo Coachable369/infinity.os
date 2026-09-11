@@ -12,6 +12,7 @@ use installer_template::{InstallerTemplate, InstallerTemplateRole};
 
 const FACTORY_TEMPLATE: &[u8] = include_bytes!("../assets/boot/installer-screens.iuit");
 const CONFIGURATION_TEMPLATE: &[u8] = include_bytes!("../assets/boot/configuration-screens.iuit");
+const SETTINGS_TEMPLATE: &[u8] = include_bytes!("../assets/boot/settings-screens.iuit");
 
 // ------------------------=
 // FUNC: little_u16
@@ -216,6 +217,17 @@ fn main() {
             assert!(input.frame.y as u32 + input.frame.height as u32 <= 1000);
             assert_eq!(input.input_variable, screen - 1);
         }
+    }
+
+    let settings = InstallerTemplate::parse_settings(SETTINGS_TEMPLATE)
+        .expect("System Settings template must load");
+    assert_eq!(settings.screen_count(), 11);
+    for section in 1..=11 {
+        let viewport = settings
+            .element(section, InstallerTemplateRole::Content)
+            .expect("Settings section must expose its authored viewport");
+        assert!(viewport.frame.width > 0 && viewport.frame.height > 0);
+        assert!(settings.element_count(section).unwrap() >= 12);
     }
 
     let mut altered = FACTORY_TEMPLATE.to_vec();

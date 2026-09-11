@@ -3213,7 +3213,7 @@ impl ConsoleRuntime {
             .expanded_row
             .map(|expanded| {
                 layout
-                    .settings_row_geometry(unscrolled, expanded)
+                    .settings_row_geometry_for_section(unscrolled, expanded, self.system_focus)
                     .detail
                     .bottom()
                     .saturating_sub(window.viewport.bottom())
@@ -7527,11 +7527,12 @@ impl ConsoleRuntime {
         } else if self.mode == ConsoleMode::Settings {
             if self.settings_timeout_dragging {
                 if left_button {
-                    let value = layout.settings_slider_drag_value(
+                    let value = layout.settings_slider_drag_value_for_section(
                         self.pointer_x,
                         self.settings_window,
                         3,
                         crate::runtime::identity::MAX_NO_ACTIVITY_TIMEOUT_MINUTES - 1,
+                        4,
                     );
                     self.preview_user_no_activity_timeout(value.saturating_add(1));
                 }
@@ -7544,11 +7545,12 @@ impl ConsoleRuntime {
             } else if let Some(row) = self.settings_effect_dragging {
                 if left_button {
                     let maximum = if row == 4 { 15 } else { 8 };
-                    let value = layout.settings_effect_slider_drag_value(
+                    let value = layout.settings_slider_drag_value_for_section(
                         self.pointer_x,
                         self.settings_window,
                         row,
                         maximum,
+                        1,
                     );
                     self.preview_background_effect(
                         row,
@@ -7562,12 +7564,13 @@ impl ConsoleRuntime {
                 self.present_continuous_motion(released);
                 return;
             } else if self.system_focus == 4 && left_button && clicked {
-                if let Some(value) = layout.settings_slider_target(
+                if let Some(value) = layout.settings_slider_target_for_section(
                     self.pointer_x,
                     self.pointer_y,
                     self.settings_window,
                     3,
                     crate::runtime::identity::MAX_NO_ACTIVITY_TIMEOUT_MINUTES - 1,
+                    4,
                 ) {
                     self.settings_timeout_dragging = true;
                     self.preview_user_no_activity_timeout(value.saturating_add(1));
@@ -7635,12 +7638,13 @@ impl ConsoleRuntime {
                         .filter(|row| matches!(row, 4 | 5))
                     {
                         let maximum = if row == 4 { 15 } else { 8 };
-                        if let Some(value) = layout.settings_effect_slider_target(
+                        if let Some(value) = layout.settings_slider_target_for_section(
                             self.pointer_x,
                             self.pointer_y,
                             self.settings_window,
                             row,
                             maximum,
+                            1,
                         ) {
                             self.settings_effect_dragging = Some(row);
                             self.preview_background_effect(

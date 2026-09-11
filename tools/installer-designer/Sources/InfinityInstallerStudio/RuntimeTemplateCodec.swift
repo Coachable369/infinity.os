@@ -20,7 +20,10 @@ enum TemplateValidator {
     // FUNC: validate
     // DESC: Validates screen coverage, bounded geometry, roles, and immutable navigation controls.
     // ------------------=
-    static func validate(_ document: InstallerStudioDocument) throws {
+    static func validate(
+        _ document: InstallerStudioDocument,
+        for explicitCollection: ScreenCollection? = nil
+    ) throws {
         guard document.version == InstallerStudioDocument.currentVersion else {
             throw TemplateValidationIssue.invalidDocument("Unsupported document version")
         }
@@ -32,7 +35,8 @@ enum TemplateValidator {
         else {
             throw TemplateValidationIssue.invalidDocument("Installer screens must be ordered and numbered contiguously")
         }
-        let collection = ScreenCollection.runtimeCollection(screenCount: document.screens.count)
+        let collection = explicitCollection
+            ?? ScreenCollection.runtimeCollection(screenCount: document.screens.count)
         for screen in document.screens {
             guard !screen.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   screen.title.utf8.count <= 63
@@ -53,8 +57,12 @@ enum TemplateValidator {
                         "Required \(role.title) structure is missing"
                     )
                 }
-                let maximum = collection?.maximumRoleCount(role, screenID: screen.id)
-                    ?? (required > 0 && role != .body ? required : nil)
+                let maximum: Int?
+                if let collection {
+                    maximum = collection.maximumRoleCount(role, screenID: screen.id)
+                } else {
+                    maximum = required > 0 && role != .body ? required : nil
+                }
                 guard maximum.map({ count <= $0 }) ?? true else {
                     throw TemplateValidationIssue.invalidScreen(
                         screen.id,
@@ -62,13 +70,15 @@ enum TemplateValidator {
                     )
                 }
             }
-            guard back.count == 1, primary.count == 1 else {
-                throw TemplateValidationIssue.invalidScreen(screen.id, "Canonical Back and Primary buttons are required")
-            }
-            guard back[0].kind == .button, primary[0].kind == .button,
-                  !back[0].hidden, !primary[0].hidden
-            else {
-                throw TemplateValidationIssue.invalidScreen(screen.id, "Visible Back and Primary button actions are required")
+            if collection != .systemSettings {
+                guard back.count == 1, primary.count == 1 else {
+                    throw TemplateValidationIssue.invalidScreen(screen.id, "Canonical Back and Primary buttons are required")
+                }
+                guard back[0].kind == .button, primary[0].kind == .button,
+                      !back[0].hidden, !primary[0].hidden
+                else {
+                    throw TemplateValidationIssue.invalidScreen(screen.id, "Visible Back and Primary button actions are required")
+                }
             }
             guard screen.elements.contains(where: { $0.role == .console }) else {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "A console frame is required")
@@ -80,7 +90,9 @@ enum TemplateValidator {
                 guard element.kind != .progressBar || element.role == .progressBar,
                       element.role != .progressBar || element.kind == .progressBar,
                       element.role != .progressHero || element.kind == .image,
-                      element.role != .liveDetails || element.kind == .text
+                      element.role != .liveDetails
+                        || element.kind == .text
+                        || (collection == .systemSettings && element.kind == .panel)
                 else {
                     throw TemplateValidationIssue.invalidElement(
                         screen.id, element.id, "Progress controls require their semantic element types"
@@ -121,8 +133,12 @@ enum RuntimeTemplateCodec {
     // FUNC: encode
     // DESC: Encodes a validated editor document into the deterministic InfinityOS runtime format.
     // ------------------=
-    static func encode(_ document: InstallerStudioDocument, assetRoot: URL? = nil) throws -> Data {
-        try TemplateValidator.validate(document)
+    static func encode(
+        _ document: InstallerStudioDocument,
+        assetRoot: URL? = nil,
+        collection: ScreenCollection? = nil
+    ) throws -> Data {
+        try TemplateValidator.validate(document, for: collection)
         var output = Data()
         output.append(magic)
         output.appendLittleEndian(version)
@@ -221,7 +237,10 @@ enum RuntimeTemplateCodec {
     // FUNC: decode
     // DESC: Decodes runtime data back into an editable document and rejects malformed records.
     // ------------------=
-    static func decode(_ data: Data) throws -> InstallerStudioDocument {
+    static func decode(
+        _ data: Data,
+        collection: ScreenCollection? = nil
+    ) throws -> InstallerStudioDocument {
         var reader = DataReader(data: data)
         guard try reader.readData(count: 4) == magic else {
             throw TemplateValidationIssue.invalidDocument("Invalid runtime-template signature")
@@ -305,7 +324,7 @@ enum RuntimeTemplateCodec {
             canvasHeight: 1000,
             screens: screens
         )
-        try TemplateValidator.validate(document)
+        try TemplateValidator.validate(document, for: collection)
         return document
     }
 }

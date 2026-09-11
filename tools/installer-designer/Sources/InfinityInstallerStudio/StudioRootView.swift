@@ -128,6 +128,7 @@ private struct ScreenSidebar: View {
     @ObservedObject var store: TemplateStore
     @State private var installationExpanded = true
     @State private var configurationExpanded = true
+    @State private var settingsExpanded = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -137,11 +138,19 @@ private struct ScreenSidebar: View {
                 } label: {
                     collectionHeader(.installation)
                 }
+                .id(ScreenCollection.installation)
                 DisclosureGroup(isExpanded: $configurationExpanded) {
                     screenRows(for: .configuration, screens: store.configurationDocument.screens)
                 } label: {
                     collectionHeader(.configuration)
                 }
+                .id(ScreenCollection.configuration)
+                DisclosureGroup(isExpanded: $settingsExpanded) {
+                    screenRows(for: .systemSettings, screens: store.settingsDocument.screens)
+                } label: {
+                    collectionHeader(.systemSettings)
+                }
+                .id(ScreenCollection.systemSettings)
             }
             .listStyle(.sidebar)
             Divider()
@@ -202,7 +211,9 @@ private struct ScreenSidebar: View {
     // ------------------=
     private func collectionHeader(_ collection: ScreenCollection) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: collection == .installation ? "shippingbox" : "person.crop.rectangle.stack")
+            Image(systemName: collection == .installation
+                ? "shippingbox"
+                : collection == .configuration ? "person.crop.rectangle.stack" : "gearshape.2")
                 .foregroundStyle(store.selectedCollection == collection
                     ? InfinityUIKit.Palette.nativeAccent
                     : InfinityUIKit.Palette.nativeTextSecondary)

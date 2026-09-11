@@ -35,4 +35,7 @@ codesign --force --deep --sign - "$app_dir" >/dev/null
 "$script_dir/compile-template.sh" \
     "$repo_dir/assets/boot/configuration-screens.infinityui" \
     "$repo_dir/assets/boot/configuration-screens.iuit"
+"$script_dir/compile-template.sh" \
+    "$repo_dir/assets/boot/settings-screens.infinityui" \
+    "$repo_dir/assets/boot/settings-screens.iuit"
 echo "$app_dir"
