@@ -1,6 +1,6 @@
 //! Allocation-free document state for the installed native Text Editor.
 
-pub const DOCUMENT_CAPACITY: usize = 2048;
+pub const DOCUMENT_CAPACITY: usize = 16 * 1024;
 pub const DOCUMENT_NAME_CAPACITY: usize = 47;
 pub const DOCUMENT_PATH_CAPACITY: usize = 95;
 pub const DOCUMENT_NAMESPACE: &[u8] = b"/personal/documents/";
@@ -96,7 +96,26 @@ pub struct TextDocument {
     saved_length: usize,
     revision: u32,
     saved_revision: u32,
+    anchor: usize,
+    undo: [Snapshot; 8],
+    redo: [Snapshot; 8],
+    undo_count: usize,
+    redo_count: usize,
 }
+
+#[derive(Clone, Copy)]
+struct Snapshot {
+    bytes: [u8; DOCUMENT_CAPACITY],
+    length: usize,
+    cursor: usize,
+    revision: u32,
+}
+const EMPTY_SNAPSHOT: Snapshot = Snapshot {
+    bytes: [0; DOCUMENT_CAPACITY],
+    length: 0,
+    cursor: 0,
+    revision: 0,
+};
 
 impl TextDocument {
     // ------------------------=
@@ -111,6 +130,11 @@ impl TextDocument {
             saved_length: 0,
             revision: 0,
             saved_revision: 0,
+            anchor: 0,
+            undo: [EMPTY_SNAPSHOT; 8],
+            redo: [EMPTY_SNAPSHOT; 8],
+            undo_count: 0,
+            redo_count: 0,
         }
     }
 
@@ -136,6 +160,7 @@ impl TextDocument {
     // ------------------=
     pub fn set_cursor(&mut self, index: usize) {
         self.cursor = index.min(self.length);
+        self.anchor = self.cursor;
     }
 
     // ------------------------=
@@ -143,17 +168,7 @@ impl TextDocument {
     // DESC: Appends one printable byte or newline and records a document revision.
     // ------------------=
     pub fn insert(&mut self, byte: u8) -> bool {
-        if self.length >= DOCUMENT_CAPACITY || (!(32..=126).contains(&byte) && byte != b'\n') {
-            return false;
-        }
-        self.cursor = self.cursor.min(self.length);
-        self.bytes
-            .copy_within(self.cursor..self.length, self.cursor + 1);
-        self.bytes[self.cursor] = byte;
-        self.length += 1;
-        self.cursor += 1;
-        self.revision = self.revision.wrapping_add(1);
-        true
+        self.replace_selection(&[byte])
     }
 
     // ------------------------=
@@ -161,17 +176,15 @@ impl TextDocument {
     // DESC: Removes the last byte when present and records a document revision.
     // ------------------=
     pub fn backspace(&mut self) -> bool {
+        if self.selection().is_some() {
+            return self.replace_selection(b"");
+        }
         self.cursor = self.cursor.min(self.length);
         if self.cursor == 0 {
             return false;
         }
-        self.bytes
-            .copy_within(self.cursor..self.length, self.cursor - 1);
-        self.length -= 1;
-        self.cursor -= 1;
-        self.bytes[self.length] = 0;
-        self.revision = self.revision.wrapping_add(1);
-        true
+        self.anchor = self.cursor - 1;
+        self.replace_selection(b"")
     }
 
     // ------------------------=
@@ -179,15 +192,14 @@ impl TextDocument {
     // DESC: Deletes the document byte under the caret and preserves its insertion position.
     // ------------------=
     pub fn delete(&mut self) -> bool {
+        if self.selection().is_some() {
+            return self.replace_selection(b"");
+        }
         if self.cursor >= self.length {
             return false;
         }
-        self.bytes
-            .copy_within(self.cursor + 1..self.length, self.cursor);
-        self.length -= 1;
-        self.bytes[self.length] = 0;
-        self.revision = self.revision.wrapping_add(1);
-        true
+        self.anchor = self.cursor + 1;
+        self.replace_selection(b"")
     }
 
     // ------------------------=
@@ -195,7 +207,9 @@ impl TextDocument {
     // DESC: Applies standard horizontal, home, and end navigation to the document caret.
     // ------------------=
     pub fn move_cursor(&mut self, movement: i8) -> bool {
-        crate::ui::text_input::move_caret(&mut self.cursor, self.length, movement)
+        let changed = crate::ui::text_input::move_caret(&mut self.cursor, self.length, movement);
+        self.anchor = self.cursor;
+        changed
     }
 
     // ------------------------=
@@ -217,6 +231,7 @@ impl TextDocument {
                 .map(|index| index + 1)
                 .unwrap_or(0)
         };
+        self.anchor = self.cursor;
         self.cursor != original
     }
 
@@ -258,6 +273,7 @@ impl TextDocument {
                 .unwrap_or(self.length);
             self.cursor = (next_start + column).min(next_end);
         }
+        self.anchor = self.cursor;
         self.cursor != original
     }
 
@@ -266,6 +282,9 @@ impl TextDocument {
     // DESC: Starts a new empty saved document.
     // ------------------=
     pub fn clear(&mut self) {
+        self.anchor = 0;
+        self.undo_count = 0;
+        self.redo_count = 0;
         self.length = 0;
         self.cursor = 0;
         self.saved_length = 0;
@@ -281,17 +300,229 @@ impl TextDocument {
         if content.len() > DOCUMENT_CAPACITY
             || content
                 .iter()
-                .any(|byte| !(32..=126).contains(byte) && *byte != b'\n')
+                .any(|byte| !(32..=126).contains(byte) && !matches!(*byte, b'\n' | b'\t' | b'\r'))
         {
             return false;
         }
         self.bytes[..content.len()].copy_from_slice(content);
         self.length = content.len();
         self.cursor = content.len();
+        self.anchor = self.cursor;
+        self.undo_count = 0;
+        self.redo_count = 0;
         self.saved_length = content.len();
         self.revision = self.revision.wrapping_add(1);
         self.saved_revision = self.revision;
         true
+    }
+
+    // ------------------------=
+    // FUNC: selection
+    // DESC: Returns the half-open selected byte interval.
+    // ------------------=
+    pub fn selection(&self) -> Option<(usize, usize)> {
+        (self.anchor != self.cursor)
+            .then_some((self.anchor.min(self.cursor), self.anchor.max(self.cursor)))
+    }
+    // ------------------------=
+    // FUNC: select
+    // DESC: Extends an explicit bounded selection for keyboard, pointer, search, or app actions.
+    // ------------------=
+    pub fn select(&mut self, anchor: usize, cursor: usize) {
+        self.anchor = anchor.min(self.length);
+        self.cursor = cursor.min(self.length);
+    }
+    // ------------------------=
+    // FUNC: snapshot
+    // DESC: Captures an undoable document revision, not its external saved checkpoint.
+    // ------------------=
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            bytes: self.bytes,
+            length: self.length,
+            cursor: self.cursor,
+            revision: self.revision,
+        }
+    }
+    // ------------------------=
+    // FUNC: restore
+    // DESC: Restores one history entry without changing the saved checkpoint.
+    // ------------------=
+    fn restore(&mut self, state: Snapshot) {
+        self.bytes = state.bytes;
+        self.length = state.length;
+        self.cursor = state.cursor;
+        self.anchor = state.cursor;
+        self.revision = state.revision;
+    }
+    // ------------------------=
+    // FUNC: checkpoint
+    // DESC: Keeps the newest eight complete atomic edits and invalidates redo on a branch.
+    // ------------------=
+    fn checkpoint(&mut self) {
+        if self.undo_count == self.undo.len() {
+            self.undo.copy_within(1.., 0);
+            self.undo_count -= 1;
+        }
+        self.undo[self.undo_count] = self.snapshot();
+        self.undo_count += 1;
+        self.redo_count = 0;
+    }
+    // ------------------------=
+    // FUNC: undo
+    // DESC: Reverses one atomic edit, including a paste or replace-all.
+    // ------------------=
+    pub fn undo(&mut self) -> bool {
+        if self.undo_count == 0 {
+            return false;
+        }
+        self.redo[self.redo_count] = self.snapshot();
+        self.redo_count += 1;
+        self.undo_count -= 1;
+        self.restore(self.undo[self.undo_count]);
+        true
+    }
+    // ------------------------=
+    // FUNC: redo
+    // DESC: Reapplies an undone edit without generating an extra history entry.
+    // ------------------=
+    pub fn redo(&mut self) -> bool {
+        if self.redo_count == 0 {
+            return false;
+        }
+        self.undo[self.undo_count] = self.snapshot();
+        self.undo_count += 1;
+        self.redo_count -= 1;
+        self.restore(self.redo[self.redo_count]);
+        true
+    }
+    // ------------------------=
+    // FUNC: replace_selection
+    // DESC: Validates a complete edit before committing; capacity errors never remove selected content.
+    // ------------------=
+    pub fn replace_selection(&mut self, content: &[u8]) -> bool {
+        let (start, end) = self.selection().unwrap_or((self.cursor, self.cursor));
+        if self.length - (end - start) + content.len() > DOCUMENT_CAPACITY
+            || content
+                .iter()
+                .any(|b| !(32..=126).contains(b) && !matches!(*b, b'\n' | b'\t' | b'\r'))
+        {
+            return false;
+        }
+        if start == end && content.is_empty() {
+            return false;
+        }
+        self.checkpoint();
+        self.bytes
+            .copy_within(end..self.length, start + content.len());
+        self.bytes[start..start + content.len()].copy_from_slice(content);
+        self.length = self.length - (end - start) + content.len();
+        self.cursor = start + content.len();
+        self.anchor = self.cursor;
+        self.revision = self.revision.max(self.saved_revision).wrapping_add(1);
+        true
+    }
+    // ------------------------=
+    // FUNC: find
+    // DESC: Selects the next literal match with wrapping and optional ASCII case folding.
+    // ------------------=
+    pub fn find(&mut self, needle: &[u8], case_sensitive: bool) -> bool {
+        if needle.is_empty() || needle.len() > self.length {
+            return false;
+        }
+        let max = self.length - needle.len() + 1;
+        for step in 0..max {
+            let i = (self.cursor + step) % max;
+            let part = &self.bytes[i..i + needle.len()];
+            if if case_sensitive {
+                part == needle
+            } else {
+                part.eq_ignore_ascii_case(needle)
+            } {
+                self.select(i, i + needle.len());
+                return true;
+            }
+        }
+        false
+    }
+    // ------------------------=
+    // FUNC: replace_all
+    // DESC: Replaces non-overlapping literal matches as one undoable transaction without partial overflow edits.
+    // ------------------=
+    pub fn replace_all(&mut self, needle: &[u8], replacement: &[u8]) -> Option<usize> {
+        if needle.is_empty() {
+            return None;
+        }
+        let mut out = [0; DOCUMENT_CAPACITY];
+        let mut n = 0;
+        let mut i = 0;
+        let mut count = 0;
+        while i < self.length {
+            let matched = self.bytes[i..self.length].starts_with(needle);
+            let next = if matched {
+                replacement
+            } else {
+                &self.bytes[i..i + 1]
+            };
+            if n + next.len() > out.len() {
+                return None;
+            }
+            out[n..n + next.len()].copy_from_slice(next);
+            n += next.len();
+            i += if matched {
+                count += 1;
+                needle.len()
+            } else {
+                1
+            };
+        }
+        if count > 0 {
+            let old = (self.anchor, self.cursor);
+            self.select(0, self.length);
+            if !self.replace_selection(&out[..n]) {
+                self.select(old.0, old.1);
+                return None;
+            }
+        }
+        Some(count)
+    }
+    // ------------------------=
+    // FUNC: newline_indented
+    // DESC: Inserts a newline with the current line's indentation in one undo step.
+    // ------------------=
+    pub fn newline_indented(&mut self) -> bool {
+        let start = self.bytes[..self.cursor]
+            .iter()
+            .rposition(|b| *b == b'\n')
+            .map_or(0, |i| i + 1);
+        let mut data = [b' '; 129];
+        data[0] = b'\n';
+        let mut n = 1;
+        for b in &self.bytes[start..self.cursor] {
+            if !matches!(*b, b' ' | b'\t') || n == data.len() {
+                break;
+            }
+            data[n] = *b;
+            n += 1;
+        }
+        self.replace_selection(&data[..n])
+    }
+    // ------------------------=
+    // FUNC: goto_line
+    // DESC: Moves to a one-based logical line, clamped to the document end.
+    // ------------------=
+    pub fn goto_line(&mut self, line: usize) {
+        let mut at = 0;
+        for _ in 1..line {
+            match self.bytes[at..self.length].iter().position(|b| *b == b'\n') {
+                Some(i) => at += i + 1,
+                None => {
+                    at = self.length;
+                    break;
+                }
+            }
+        }
+        self.set_cursor(at);
     }
 
     // ------------------------=

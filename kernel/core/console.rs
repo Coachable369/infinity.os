@@ -31,6 +31,10 @@ const COMMAND_CAPACITY: usize = 256;
 mod diagnostics;
 #[path = "console_pool.rs"]
 mod pool_commands;
+#[path = "console_editor.rs"]
+mod editor_commands;
+#[path = "console_assistant.rs"]
+mod assistant_commands;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EditorDialog {
@@ -212,6 +216,8 @@ fn parse_bounded_number(input: &[u8], maximum: u32) -> Option<u32> {
 
 #[derive(Clone, Copy)]
 pub enum ConsoleKey {
+    Shortcut(u8),
+    SelectMove(i8),
     Character(u8),
     Backspace,
     Enter,
@@ -507,6 +513,10 @@ struct ConsoleRuntime {
     app_window_drag_offset_x: i32,
     app_window_drag_offset_y: i32,
     editor_document: TextDocument,
+    editor_tools: crate::ui::editor_tools::Presentation,
+    assistant_session: crate::runtime::identity::StableId,
+    editor_clipboard: [u8; crate::ui::text_editor::DOCUMENT_CAPACITY],
+    editor_clipboard_length: usize,
     editor_document_path: [u8; crate::ui::text_editor::DOCUMENT_PATH_CAPACITY],
     editor_document_path_length: usize,
     editor_document_name: [u8; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
@@ -515,6 +525,8 @@ struct ConsoleRuntime {
     editor_picker: crate::ui::object_picker::Picker,
     editor_scroll_row: usize,
     editor_scroll_dragging: bool,
+    editor_selection_dragging: bool,
+    editor_selection_anchor: usize,
     editor_scroll_grab_offset: i32,
     editor_window: DesktopAppWindowState,
     command_window: DesktopAppWindowState,
@@ -666,6 +678,10 @@ impl ConsoleRuntime {
             app_window_drag_offset_x: 0,
             app_window_drag_offset_y: 0,
             editor_document: TextDocument::new(),
+            editor_tools: crate::ui::editor_tools::Presentation::new(),
+            assistant_session: crate::runtime::identity::StableId::zero(),
+            editor_clipboard: [0; crate::ui::text_editor::DOCUMENT_CAPACITY],
+            editor_clipboard_length: 0,
             editor_document_path: [0; crate::ui::text_editor::DOCUMENT_PATH_CAPACITY],
             editor_document_path_length: 0,
             editor_document_name: [0; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
@@ -674,6 +690,8 @@ impl ConsoleRuntime {
             editor_picker: crate::ui::object_picker::Picker::new(),
             editor_scroll_row: 0,
             editor_scroll_dragging: false,
+            editor_selection_dragging: false,
+            editor_selection_anchor: 0,
             editor_scroll_grab_offset: 0,
             editor_window: DesktopAppWindowState::new(190, 160, 600, 620),
             command_window: DesktopAppWindowState::new(240, 210, 600, 620),
@@ -1067,6 +1085,10 @@ impl ConsoleRuntime {
     // DESC: Implements the redraw operation.
     // ------------------=
     fn redraw(&self) {
+        let mut editor_view = self.editor_tools;
+        editor_view.selection = self.editor_document.selection(); editor_view.cursor = self.editor_document.cursor();
+        crate::ui::editor_tools::publish(editor_view);
+        crate::ui::app_features::publish(&self.editor_document,self.assistant_owner());
         crate::ui::object_picker::publish(self.editor_picker);
         if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings|ConsoleMode::SystemMenu|ConsoleMode::AppLauncher) {
             let (e,c,t)=self.desktop_app_windows();
@@ -1209,6 +1231,7 @@ impl ConsoleRuntime {
     fn input(&mut self, key: ConsoleKey) {
         self.session_idle.note_activity();
         self.caret_visible = true;
+        if self.input_window_assistant(key) {self.redraw();return;}
         if self.mode == ConsoleMode::Desktop {
             if self.ai_chat_focus != 0 && self.input_ai_chat(key) {
                 self.redraw();
@@ -1901,6 +1924,8 @@ impl ConsoleRuntime {
     // DESC: Loads one selected UTF-8 NamespaceRef into the native Text Editor window.
     // ------------------=
     fn open_text_editor_path(&mut self, path: &[u8]) {
+        if !self.editor_document.is_saved() {self.editor_tools.notice=b"Save your modified document before opening another.";return;}
+        if !crate::storage::object_inspect_path(path).is_ok_and(|(m,_)|m.logical_size as usize<=crate::ui::text_editor::DOCUMENT_CAPACITY){return;}
         let mut content = [0u8; crate::ui::text_editor::DOCUMENT_CAPACITY];
         let Ok((_, length)) = crate::storage::object_read_path(path, None, &mut content) else {
             return;
@@ -1915,6 +1940,7 @@ impl ConsoleRuntime {
         let name_length = name.len().min(self.editor_document_name.len());
         self.editor_document_name[..name_length].copy_from_slice(&name[..name_length]);
         self.editor_document_name_length = name_length;
+        self.detect_editor_language();
         self.editor_scroll_row = 0;
         self.open_text_editor();
     }
@@ -1940,18 +1966,19 @@ impl ConsoleRuntime {
             }
             return;
         }
+        if self.input_editor_tools(key) { self.reveal_editor_cursor(); return; }
         match key {
             ConsoleKey::Character(character) if (32..=126).contains(&character) => {
-                let _ = self.editor_document.insert(character);
-                self.editor_scroll_row = self.editor_scroll_geometry().maximum_scroll;
+                if !self.editor_document.insert(character) {self.editor_tools.notice=b"Document is full (16 KiB). Save and split the file to continue.";}
+                self.reveal_editor_cursor();
             }
             ConsoleKey::Enter => {
-                let _ = self.editor_document.insert(b'\n');
-                self.editor_scroll_row = self.editor_scroll_geometry().maximum_scroll;
+                let _ = self.editor_document.newline_indented();
+                self.reveal_editor_cursor();
             }
             ConsoleKey::Backspace => {
                 let _ = self.editor_document.backspace();
-                self.editor_scroll_row = self.editor_scroll_geometry().maximum_scroll;
+                self.reveal_editor_cursor();
             }
             ConsoleKey::Delete => {
                 let _ = self.editor_document.delete();
@@ -1974,9 +2001,11 @@ impl ConsoleRuntime {
             ConsoleKey::Down => {
                 let _ = self.editor_document.move_cursor_vertical(false);
             }
-            ConsoleKey::Escape => self.close_desktop_app(),
+            ConsoleKey::Tab(false) => { self.editor_document.replace_selection(b"    "); }
+            ConsoleKey::Escape => { self.editor_document.set_cursor(self.editor_document.cursor()); self.editor_tools.selecting=false; }
             _ => {}
         }
+        self.reveal_editor_cursor();
     }
 
     // ------------------------=
@@ -2010,6 +2039,7 @@ impl ConsoleRuntime {
     // DESC: Enters the minimal authenticated graphical shell.
     // ------------------=
     fn enter_desktop(&mut self) {
+        self.reset_app_assistant_session();
         self.cancel_node_pairing_input();
         self.mode = ConsoleMode::Desktop;
         self.desktop_app = DesktopAppKind::None;
@@ -2798,8 +2828,10 @@ impl ConsoleRuntime {
         .is_ok();
         if saved {
             self.editor_document.save();
+            self.editor_tools.notice=b"Saved to your Personal Space.";
             crate::output_text(b"[editor] document persisted\n");
         } else {
+            self.editor_tools.notice=b"Save failed. Your modified document remains in memory.";
             crate::output_text(b"[editor] save failed\n");
         }
     }
@@ -2809,6 +2841,7 @@ impl ConsoleRuntime {
     // DESC: Opens the persisted Personal-space Text Editor document into the active buffer.
     // ------------------=
     fn open_editor_document(&mut self) {
+        if !self.editor_document.is_saved() { self.editor_tools.notice=b"Save your modified document before opening another.";return; }
         self.editor_dialog = EditorDialog::Open;
         if self.editor_picker.location.len==0 { self.editor_picker.set_location(b"/"); }
         self.editor_picker.field=2; self.editor_picker.error=0;
@@ -2838,6 +2871,7 @@ impl ConsoleRuntime {
                 let length=name.len().min(self.editor_document_name.len());
                 self.editor_document_name[..length].copy_from_slice(&name[..length]);
                 self.editor_document_name_length=length;
+                self.detect_editor_language();
                 self.editor_scroll_row=0; self.close_editor_dialog(); return;
             }
         }
@@ -2936,6 +2970,7 @@ impl ConsoleRuntime {
         self.editor_document_path_length=path.len;
         self.editor_document_name[..name.len].copy_from_slice(name.bytes());
         self.editor_document_name_length=name.len;
+        self.detect_editor_language();
         self.editor_document.save(); self.close_editor_dialog();
     }
 
@@ -3266,8 +3301,8 @@ impl ConsoleRuntime {
             self.app_window_height,
             self.app_window_maximized,
         );
-        let columns = (window.content.width as usize).saturating_sub(52 * layout.scale())
-            / (9 * layout.scale()).max(1);
+        let columns = (window.content.width as usize).saturating_sub(92 * layout.scale())
+            / (crate::ui::editor_tools::CELL_WIDTH * layout.scale()).max(1);
         let rows =
             crate::ui::text_editor::visual_line_count(self.editor_document.bytes(), columns.max(1));
         layout.desktop_editor_scroll_geometry(
@@ -4306,6 +4341,7 @@ impl ConsoleRuntime {
                         .end_session(self.current_session, self.current_user)
                 });
                 self.current_session = crate::runtime::identity::StableId::zero();
+                self.reset_app_assistant_session();
                 self.mode = ConsoleMode::Authentication;
                 self.system_focus = 0;
                 self.reset_input();
@@ -6445,11 +6481,19 @@ impl ConsoleRuntime {
             self.system.framebuffer_width,
             self.system.framebuffer_height,
         );
+        if self.editor_selection_dragging && self.mode==ConsoleMode::Desktop && self.desktop_app==DesktopAppKind::TextEditor {
+            if released {self.editor_selection_dragging=false;}
+            else if left_button && !clicked {let at=self.editor_pointer_index(layout);self.editor_document.select(self.editor_selection_anchor,at);self.redraw();return;}
+        }
         if clicked && matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings)
             && self.editor_dialog==EditorDialog::None && !self.app_window_dragging
             && self.app_window_resizing.is_none() && !self.settings_window_dragging
             && self.settings_window_resizing.is_none() && self.activate_clicked_window(layout) {
             self.redraw(); return;
+        }
+        if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) && !self.app_window_dragging && self.app_window_resizing.is_none()
+            && !self.settings_window_dragging && self.settings_window_resizing.is_none() && self.pointer_window_assistant(clicked) {
+            if clicked {self.redraw();}return;
         }
         if self.mode == ConsoleMode::Desktop && (back_clicked || forward_clicked) {
             let _ = crate::runtime::with_runtime(|runtime| {
@@ -6861,6 +6905,7 @@ impl ConsoleRuntime {
                             let _ = self.checkpoint_desktop_layout();
                         }
                         DesktopAppWindowTarget::NewDocument => {
+                            if !self.editor_document.is_saved() {self.editor_tools.notice=b"Save your modified document before creating a new one.";self.redraw();return;}
                             self.editor_document.clear();
                             self.editor_document_path_length = 0;
                             self.editor_document_name_length = 0;
@@ -6907,14 +6952,19 @@ impl ConsoleRuntime {
                                     self.system.framebuffer_width as i32 * self.pointer_x / 1000;
                                 let pointer_y =
                                     self.system.framebuffer_height as i32 * self.pointer_y / 1000;
+                                if let Some(action)=crate::ui::editor_tools::action_at(geometry.content,scale,crate::ui::geometry::Point{x:pointer_x,y:pointer_y}) {
+                                    self.editor_tool_action(action);self.redraw();return;
+                                }
+                                if pointer_y<geometry.content.y+(90*scale)as i32 || pointer_y>=geometry.content.bottom()-(36*scale)as i32 {self.redraw();return;}
+                                self.editor_tools.field=crate::ui::editor_tools::Field::None;
                                 let row = self.editor_scroll_row
                                     + pointer_y
-                                        .saturating_sub(geometry.content.y + (18 * scale) as i32)
+                                        .saturating_sub(geometry.content.y + (94 * scale) as i32).max(0)
                                         as usize
                                         / (24 * scale);
                                 let columns = (geometry.content.width as usize)
-                                    .saturating_sub(52 * scale)
-                                    / (9 * scale);
+                                    .saturating_sub(92 * scale)
+                                    / (crate::ui::editor_tools::CELL_WIDTH * scale);
                                 let start = crate::ui::text_editor::visual_line_start(
                                     self.editor_document.bytes(),
                                     columns.max(1),
@@ -6926,11 +6976,15 @@ impl ConsoleRuntime {
                                     row + 1,
                                 );
                                 let column = crate::ui::text_input::caret_from_x(
-                                    pointer_x - geometry.content.x - (20 * scale) as i32,
-                                    9 * scale,
+                                    pointer_x - geometry.content.x - (64 * scale) as i32,
+                                    crate::ui::editor_tools::CELL_WIDTH * scale,
                                     end.saturating_sub(start),
                                 );
-                                self.editor_document.set_cursor((start + column).min(end));
+                                let next=(start+column).min(end).min(self.editor_document.bytes().len());
+                                if self.editor_tools.selecting {let anchor=self.editor_document.selection().map_or(self.editor_document.cursor(),|(a,_)|a);self.editor_document.select(anchor,next);}
+                                else {self.editor_document.set_cursor(next);}
+                                self.editor_selection_anchor=if self.editor_tools.selecting {self.editor_document.selection().map_or(next,|(a,_)|a)}else{next};
+                                self.editor_selection_dragging=true;
                             } else if self.desktop_app == DesktopAppKind::CommandWindow {
                                 let geometry = layout.desktop_app_window_geometry(
                                     self.app_window_x,

@@ -298,6 +298,7 @@ pub fn run() -> ! {
     };
     let mut shift = false;
     let mut extended = false;
+    let mut control = false;
     loop {
         crate::drivers::network::poll();
         let status = pending_status();
@@ -323,13 +324,13 @@ pub fn run() -> ! {
             }
         } else {
             crate::console::input_batch(|| {
-                dispatch_keyboard(value, &mut shift, &mut extended);
+                dispatch_keyboard(value, &mut shift, &mut control, &mut extended);
                 // Bounded drain preserves every make/break event. Do not consume
                 // mouse bytes here: pointer presses retain immediate presentation.
                 for _ in 1..64 {
                     let next = pending_status();
                     if next & 1 == 0 || next & 0x20 != 0 { break; }
-                    dispatch_keyboard(read_pending(), &mut shift, &mut extended);
+                    dispatch_keyboard(read_pending(), &mut shift, &mut control, &mut extended);
                 }
             });
         }
@@ -343,14 +344,16 @@ pub fn run() -> ! {
 // FUNC: dispatch_keyboard
 // DESC: Decodes each ordered PS/2 make/break byte while retaining modifier and extended-prefix state across bounded drains.
 // ------------------=
-fn dispatch_keyboard(value: u8, shift: &mut bool, extended: &mut bool) {
+fn dispatch_keyboard(value: u8, shift: &mut bool, control: &mut bool, extended: &mut bool) {
     if value == 0xe0 { *extended = true; return; }
     let scan = value & 0x7f;
+    if scan == 0x1d { *control = value & 0x80 == 0; *extended=false; return; }
     if scan == 0x2a || scan == 0x36 { *shift = value & 0x80 == 0; return; }
-    let code = if *extended { match scan { 0x4d => 0x4f, 0x4b => 0x50, 0x50 => 0x51, 0x48 => 0x52, _ => 0 } }
+    let code = if *extended { match scan { 0x4d => 0x4f, 0x4b => 0x50, 0x50 => 0x51, 0x48 => 0x52,
+        0x47 => 0x4a, 0x4f => 0x4d, 0x49 => 0x4b, 0x51 => 0x4e, 0x53 => 0x4c, _ => 0 } }
         else { key_code(scan) };
     *extended = false;
     dispatch(InputEvent { source: InputSource::Keyboard,
         action: if value & 0x80 == 0 { InputAction::Pressed } else { InputAction::Released },
-        code, modifiers: *shift as u8, delta_x: 0, delta_y: 0 });
+        code, modifiers: *shift as u8 | ((*control as u8)<<1), delta_x: 0, delta_y: 0 });
 }

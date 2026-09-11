@@ -53,6 +53,21 @@ pub struct Window {
     pub accepts_input: bool,
 }
 
+impl Window {
+    // ------------------------=
+    // FUNC: assistant_geometry
+    // DESC: Makes the assistant a standard normal-window affordance, excluding privileged secure input and non-app surfaces.
+    // ------------------=
+    pub fn assistant_geometry(
+        &self,
+        scale: usize,
+        expanded: bool,
+    ) -> Option<super::app_assistant::Geometry> {
+        (self.visible && matches!(self.z_class, ZOrderClass::Normal | ZOrderClass::Floating))
+            .then(|| super::app_assistant::geometry(self.bounds, scale, expanded))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum WindowError {
     Full,

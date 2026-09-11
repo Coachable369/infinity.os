@@ -4,6 +4,8 @@
 //! selection, input focus, window/surface policy, damage tracking, and trusted
 //! UI state. Platform framebuffer code consumes its bounded render model.
 
+pub mod app_assistant;
+pub mod app_features;
 pub mod app_launcher;
 pub mod async_model;
 pub mod bitmap;
@@ -11,16 +13,19 @@ pub mod clipboard;
 pub mod compositor;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub mod crash_layout;
+pub mod desktop_stack;
+pub mod editor_tools;
 pub mod geometry;
 pub mod icon_theme;
 pub mod input;
-pub mod input_preferences;
 pub mod input_batch;
 pub mod input_capture;
+pub mod input_preferences;
 pub mod input_router;
 pub mod installer_layout;
 pub mod installer_template;
 pub mod localization;
+pub mod object_picker;
 pub mod performance;
 pub mod platform;
 pub mod present_damage;
@@ -32,8 +37,6 @@ pub mod status_menu;
 pub mod surface;
 pub mod system_layout;
 pub mod text_editor;
-pub mod object_picker;
-pub mod desktop_stack;
 pub mod text_input;
 pub mod trusted;
 pub mod vector;

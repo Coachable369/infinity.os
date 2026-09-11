@@ -1700,16 +1700,16 @@ impl SystemLayout {
             window_height,
             maximized,
         );
-        let visible_rows = (window.content.height as usize / (24 * self.scale).max(1)).max(1);
+        let visible_rows = ((window.content.height as usize).saturating_sub(130*self.scale) / (24 * self.scale).max(1)).max(1);
         let maximum_scroll = visual_rows.saturating_sub(visible_rows);
-        let track_height = (window.content.height as usize).saturating_sub(16 * self.scale);
+        let track_height = (window.content.height as usize).saturating_sub(130 * self.scale);
         let track = rect(
             window
                 .content
                 .right()
                 .saturating_sub((14 * self.scale) as i32)
                 .max(0) as usize,
-            window.content.y.max(0) as usize + 8 * self.scale,
+            window.content.y.max(0) as usize + 94 * self.scale,
             8 * self.scale,
             track_height,
         );

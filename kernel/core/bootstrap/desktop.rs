@@ -3129,53 +3129,8 @@ impl super::DisplayDevice {
         }
         let line_height = 24 * scale;
         if screen == 9 {
-            let mut row = 0usize;
-            let columns = content_width.saturating_sub(52 * scale) / (9 * scale).max(1);
-            let total_rows = crate::ui::text_editor::visual_line_count(input, columns.max(1));
-            let visible_rows = (content_height / line_height).max(1);
-            let maximum_scroll = total_rows.saturating_sub(visible_rows);
-            let scroll_row = editor_scroll_row.min(maximum_scroll);
-            let mut start =
-                crate::ui::text_editor::visual_line_start(input, columns.max(1), scroll_row);
-            while start < input.len() && row * line_height + 36 * scale < content_height {
-                let remaining = &input[start..];
-                let explicit_end = remaining
-                    .iter()
-                    .position(|byte| *byte == b'\n')
-                    .unwrap_or(remaining.len());
-                let take = explicit_end.min(columns.max(1));
-                self.ui_text(
-                    content_left + 20 * scale,
-                    content_top + 18 * scale + row * line_height,
-                    &remaining[..take],
-                    218,
-                    232,
-                    241,
-                    1,
-                );
-                start += take;
-                if take == explicit_end && start < input.len() && input[start] == b'\n' {
-                    start += 1;
-                    row += 1;
-                }
-                if take < explicit_end {
-                    row += 1;
-                }
-            }
-            if let Some((visible, cursor)) = crate::ui::text_input::caret(4) {
-                let caret_row =
-                    crate::ui::text_editor::visual_cursor_row(input, columns.max(1), cursor);
-                if visible && caret_row >= scroll_row && caret_row < scroll_row + visible_rows {
-                    let line_start =
-                        crate::ui::text_editor::visual_line_start(input, columns.max(1), caret_row);
-                    let caret_end = cursor.min(input.len());
-                    let caret_width =
-                        self.ui_text_width(&input[line_start.min(caret_end)..caret_end], 1);
-                    let caret_x = content_left + 20 * scale + caret_width;
-                    let caret_y = content_top + 18 * scale + (caret_row - scroll_row) * line_height;
-                    self.fill_rect(caret_x, caret_y, 2 * scale, 18 * scale, 111, 220, 255);
-                }
-            }
+            let total_rows = self.code_editor(geometry.content,input,editor_scroll_row,scale);
+            let scroll_row = editor_scroll_row;
             let scroll = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
                 .desktop_editor_scroll_geometry(
                     window_x,
@@ -4247,15 +4202,16 @@ impl super::DisplayDevice {
                         editor_scroll_row,if kind==screen {editor_dialog}else{0},editor_dialog_input,
                         editor_dialog_focus,if kind==screen {focus}else{0},if kind==screen {menu_kind}else{0});
                 }
-                if id==stack.active {
+                {
                     let layout=crate::ui::system_layout::SystemLayout::new(self.width,self.height);
                     let rect=if id==4 {layout.settings_window_geometry(settings_window).window}
                     else if id==0 {let (x,y,w,h)=layout.home_window_geometry_sized(window_x,window_y,window_width,window_height,window_maximized);
                         crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32}}
                     else {let state=match id {1=>command_window,2=>editor_window,_=>task_manager_window};
                         layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window};
-                    self.outline_rounded_rect(rect.x.max(0) as usize,rect.y.max(0) as usize,
-                        rect.width as usize,rect.height as usize,10*scale,105,199,245);
+                    if id!=0 && !(id==2 && editor_dialog!=0) {self.window_assistant(id,rect,scale);}
+                    if id==stack.active {self.outline_rounded_rect(rect.x.max(0) as usize,rect.y.max(0) as usize,
+                        rect.width as usize,rect.height as usize,10*scale,105,199,245);}
                 }
             }
         }
@@ -8199,6 +8155,7 @@ impl super::DisplayDevice {
                 1,
             );
             self.outline_rounded_rect(left, top, width, height, 10 * scale, 94, 184, 239);
+            self.window_assistant(5+index,crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},scale);
             if !navigator.maximized {
                 let outline =
                     self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
@@ -8226,6 +8183,7 @@ impl super::DisplayDevice {
                     dragging_item,
                 )
             });
+            self.window_assistant(5+active_navigator.unwrap_or(0),crate::ui::geometry::Rect{x:bounds.0 as i32,y:bounds.1 as i32,width:bounds.2 as u32,height:bounds.3 as u32},scale);
         }
     }
 
@@ -10818,6 +10776,8 @@ fn system_content_hash(
         }
     }
     hash ^= editor_saved as u32;
+    hash ^= crate::ui::editor_tools::revision().wrapping_mul(0x01000193);
+    hash ^= crate::ui::app_assistant::revision().rotate_left(13);
     for byte in editor_input.iter().chain(command_input.iter()) {
         hash ^= *byte as u32;
         hash = hash.wrapping_mul(0x0100_0193);

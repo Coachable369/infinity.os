@@ -308,6 +308,7 @@ pub fn run() -> ! {
                     8 => Some(crate::console::ConsoleKey::Backspace),
                     9 => Some(crate::console::ConsoleKey::Tab(false)),
                     13 => Some(crate::console::ConsoleKey::Enter),
+                    1..=26 => Some(crate::console::ConsoleKey::Shortcut(b'a' + character as u8 - 1)),
                     32..=126 => Some(crate::console::ConsoleKey::Character(character as u8)),
                     _ if key.scan_code == 0x01 => Some(crate::console::ConsoleKey::Up),
                     _ if key.scan_code == 0x02 => Some(crate::console::ConsoleKey::Down),
@@ -732,7 +733,8 @@ fn poll_usb_keyboard(usb: *mut UsbIo, endpoint: u8) {
         report[2], report[3], report[4], report[5], report[6], report[7],
     ];
     let previous = unsafe { USB_KEYS };
-    let modifiers = if report[0] & 0x22 != 0 { 1 } else { 0 };
+    let modifiers = (if report[0] & 0x22 != 0 { 1 } else { 0 })
+        | (if report[0] & 0x11 != 0 { 2 } else { 0 });
     for &usage in &current {
         if usage != 0 && !previous.contains(&usage) {
             dispatch(InputEvent {

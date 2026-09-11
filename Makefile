@@ -318,6 +318,12 @@ object-vm-test:
 
 .PHONY: installer-entropy-test
 .PHONY: editor-window-test
+.PHONY: editor-assistant-test
+editor-assistant-test:
+	@mkdir -p build/behavior-tests
+	rustc --edition=2021 tools/editor-assistant-test.rs -o build/behavior-tests/editor-assistant-test
+	build/behavior-tests/editor-assistant-test
+
 editor-window-test:
 	@mkdir -p build/behavior-tests
 	rustc --edition=2021 tools/editor-window-test.rs -o build/behavior-tests/editor-window-test
