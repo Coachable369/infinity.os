@@ -1,9 +1,9 @@
 //! Native code-editor presentation and allocation-free lexical classification.
-pub const CELL_WIDTH: usize = 12;
-pub const FONT_WIDTH: usize = 18;
-pub const FONT_HEIGHT: usize = 24;
+pub const CELL_WIDTH: usize = 10;
+pub const FONT_WIDTH: usize = 14;
+pub const FONT_HEIGHT: usize = 20;
 pub const FONT_ATLAS: &[u8; FONT_WIDTH * FONT_HEIGHT * 95] =
-    include_bytes!("../../assets/fonts/InfinityEditor-Mono-18.atlas");
+    include_bytes!("../../assets/fonts/InfinityEditor-Mono-14.atlas");
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Language {
     Plain,
@@ -82,11 +82,11 @@ impl Token {
     pub fn color(self) -> (u8, u8, u8) {
         match self {
             Self::Text => (221, 232, 244),
-            Self::Keyword => (73, 215, 249),
-            Self::String => (139, 220, 167),
-            Self::Number => (247, 194, 115),
-            Self::Comment => (116, 146, 165),
-            Self::Punctuation => (188, 163, 232),
+            Self::Keyword => (34, 235, 255),
+            Self::String => (98, 255, 124),
+            Self::Number => (255, 219, 82),
+            Self::Comment => (95, 134, 167),
+            Self::Punctuation => (221, 232, 244),
         }
     }
 }
@@ -261,6 +261,8 @@ pub struct Presentation {
     pub menu_index: usize,
     pub filename: [u8; 64],
     pub filename_len: usize,
+    pub path: [u8; 95],
+    pub path_len: usize,
     pub language: Language,
     pub selection: Option<(usize, usize)>,
     pub cursor: usize,
@@ -318,8 +320,17 @@ impl Presentation {
     // ------------------=
     pub fn begin(&mut self, field: Field) {
         self.field = field;
+        self.notice = b"";
         self.query_len = 0;
         self.replacement_len = 0;
+    }
+    // ------------------------=
+    // FUNC: finish_tool
+    // DESC: Dismisses an inline tool and its transient notice without changing the document selection.
+    // ------------------=
+    pub fn finish_tool(&mut self) {
+        self.field = Field::None;
+        self.notice = b"";
     }
     // ------------------------=
     // FUNC: new
@@ -331,6 +342,8 @@ impl Presentation {
             menu_index: 0,
             filename: [0; 64],
             filename_len: 0,
+            path: [0; 95],
+            path_len: 0,
             language: Language::Plain,
             selection: None,
             cursor: 0,

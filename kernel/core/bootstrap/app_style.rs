@@ -1,7 +1,7 @@
 //! Compact native-app typography and surfaces from the editor IDesign kit.
 use crate::ui::geometry::Rect;
-pub(super) const TEXT: (u8, u8, u8) = (239, 245, 255);
-pub(super) const MUTED: (u8, u8, u8) = (159, 188, 216);
+pub(super) const TEXT: (u8, u8, u8) = (255, 255, 255);
+pub(super) const MUTED: (u8, u8, u8) = (159, 176, 200);
 pub(super) const CYAN: (u8, u8, u8) = (34, 211, 238);
 pub(super) const FONT: &[u8] = include_bytes!("../../../assets/fonts/InfinityUI-Regular-16.atlas");
 pub(super) const MEDIUM: &[u8] =
@@ -113,7 +113,7 @@ impl super::DisplayDevice {
     }
     // ------------------------=
     // FUNC: app_card
-    // DESC: Draws a restrained opaque glass surface with the kit's soft one-pixel border.
+    // DESC: Draws the reference glass recipe with a curved blue top light and a soft one-pixel border.
     // ------------------=
     pub(super) fn app_card(
         &mut self,
@@ -133,6 +133,31 @@ impl super::DisplayDevice {
             color.2,
             255,
         );
+        let radius = (8 * s).min(r.width as usize / 2).min(r.height as usize / 2);
+        let light_height = (72 * s).min(r.height as usize);
+        for row in 1..light_height {
+            let edge_row = row.min((r.height as usize).saturating_sub(row + 1));
+            let inset = if edge_row < radius {
+                let dy = radius - edge_row;
+                let mut dx = radius;
+                while dx * dx + dy * dy > radius * radius {
+                    dx -= 1;
+                }
+                radius - dx
+            } else {
+                1
+            };
+            let strength = (light_height - row) * 12 / light_height.max(1);
+            self.fill_rect(
+                r.x.max(0) as usize + inset,
+                r.y.max(0) as usize + row,
+                (r.width as usize).saturating_sub(inset * 2),
+                1,
+                color.0.saturating_add((strength / 3) as u8),
+                color.1.saturating_add((strength * 2 / 3) as u8),
+                color.2.saturating_add(strength as u8),
+            );
+        }
         self.outline_rounded_rect(
             r.x.max(0) as usize,
             r.y.max(0) as usize,
@@ -143,6 +168,83 @@ impl super::DisplayDevice {
             border.1,
             border.2,
         );
+    }
+    // ------------------------=
+    // FUNC: app_symbol
+    // DESC: Draws the kit's small functional line icons using the native vector primitive family.
+    // ------------------=
+    pub(super) fn app_symbol(&mut self, r: Rect, symbol: u8, color: (u8, u8, u8), s: usize) {
+        let x = r.x + r.width as i32 / 2;
+        let y = r.y + r.height as i32 / 2;
+        let k = s as i32;
+        let lines: &[(i32, i32, i32, i32)] = match symbol {
+            b'x' => &[(-5, -5, 5, 5), (-5, 5, 5, -5)],
+            b'+' => &[(-5, 0, 5, 0), (0, -5, 0, 5)],
+            b'^' => &[(0, 7, 0, -7), (-5, -2, 0, -7), (0, -7, 5, -2)],
+            b'-' => &[(-5, 0, 5, 0)],
+            b'm' => &[
+                (-5, -5, 5, -5),
+                (5, -5, 5, 5),
+                (5, 5, -5, 5),
+                (-5, 5, -5, -5),
+            ],
+            b'd' => &[
+                (-5, -7, 1, -7),
+                (1, -7, 5, -3),
+                (5, -3, 5, 7),
+                (5, 7, -5, 7),
+                (-5, 7, -5, -7),
+                (1, -7, 1, -3),
+                (1, -3, 5, -3),
+                (-2, 1, 2, 1),
+                (-2, 4, 2, 4),
+            ],
+            _ => &[],
+        };
+        for &(a, b, c, d) in lines {
+            for offset in 0..s as i32 {
+                self.line(
+                    x + a * k + offset,
+                    y + b * k,
+                    x + c * k + offset,
+                    y + d * k,
+                    color.0,
+                    color.1,
+                    color.2,
+                );
+            }
+        }
+    }
+    // ------------------------=
+    // FUNC: app_ai_mark
+    // DESC: Extends the native icon family with the reference's luminous four-point assistant mark.
+    // ------------------=
+    pub(super) fn app_ai_mark(&mut self, r: Rect) {
+        let cx = r.x + r.width as i32 / 2;
+        let cy = r.y + r.height as i32 / 2;
+        let radius = (r.width.min(r.height) as i32 / 2).max(1);
+        for y in -radius..=radius {
+            for x in -radius..=radius {
+                let distance = x * x + y * y;
+                if distance < radius * radius {
+                    let glow = ((radius * radius - distance) * 65 / (radius * radius)) as u8;
+                    self.blend_color(cx + x, cy + y, 34, 211, 238, glow);
+                }
+                let ax = x.abs();
+                let ay = y.abs();
+                let arm = (radius - ax - ay).max(0);
+                if arm > 0 && ax * ay * 7 < radius * radius / 2 {
+                    self.blend_color(
+                        cx + x,
+                        cy + y,
+                        150,
+                        239,
+                        255,
+                        (arm * 255 / (radius / 3).max(1)).min(255) as u8,
+                    );
+                }
+            }
+        }
     }
     // ------------------------=
     // FUNC: app_button

@@ -1095,6 +1095,8 @@ impl ConsoleRuntime {
         editor_view.selection = self.editor_document.selection(); editor_view.cursor = self.editor_document.cursor();
         editor_view.filename_len = self.editor_document_name_length.min(editor_view.filename.len());
         editor_view.filename[..editor_view.filename_len].copy_from_slice(&self.editor_document_name[..editor_view.filename_len]);
+        editor_view.path_len = self.editor_document_path_length.min(editor_view.path.len());
+        editor_view.path[..editor_view.path_len].copy_from_slice(&self.editor_document_path[..editor_view.path_len]);
         crate::ui::editor_tools::publish(editor_view);
         crate::ui::app_features::publish(&self.editor_document,self.assistant_owner(),SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height).scale());
         crate::ui::object_picker::publish(self.editor_picker);
@@ -6773,7 +6775,7 @@ impl ConsoleRuntime {
                         if self.desktop_app == DesktopAppKind::TaskManager {
                             (620, 500)
                         } else {
-                            (420, 360)
+                            (420, layout.desktop_app_minimum_height())
                         };
                     let resized = crate::ui::system_layout::resize_native_window(
                         self.app_window_x,

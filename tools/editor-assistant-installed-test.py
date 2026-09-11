@@ -18,9 +18,9 @@ spec.loader.exec_module(base)
 # DESC: Verifies the actual code-font bytes and typed feature contract are packaged in both live and installed architectures.
 # ------------------=
 def verify_artifacts():
-    font = (ROOT / "assets/fonts/InfinityEditor-Mono-18.atlas").read_bytes()
+    font = (ROOT / "assets/fonts/InfinityEditor-Mono-14.atlas").read_bytes()
     ui_fonts = [(ROOT / "assets/fonts" / name).read_bytes() for name in ("InfinityUI-Regular-16.atlas", "InfinityUI-Semibold-16.atlas")]
-    assert len(font) == 18 * 24 * 95 and any(font)
+    assert len(font) == 14 * 20 * 95 and any(font)
     for architecture in ("x86_64", "aarch64"):
         for name in ("kernel.elf", "installed-kernel.elf"):
             path = ROOT / "build" / architecture / name
@@ -103,14 +103,14 @@ def panel_click(guest, control):
     x, y, w, h = p[21:25]
     display = guest.wait(lambda s: s[11] > 0 and s[12] > 0, "panel display geometry")
     scale = 2 if display[11] >= 2560 and display[12] >= 1440 else 1
-    width = min(400 * scale, w - 280 * scale)
-    left, top, bottom = x + w - width - 8 * scale, y + 48 * scale, y + h - 8 * scale
+    width = min(max(w * 336 // 1000, 320 * scale), 480 * scale, w - 280 * scale)
+    left, top, bottom = x + w - width - scale, y + 48 * scale, y + h - scale
     if control == "toggle":
-        click(guest, x + w - 18 * scale, top + 32 * scale if p[13] else y + max(h // 3, 64 * scale) + 24 * scale)
+        click(guest, x + w - 18 * scale, top + 24 * scale if p[13] else y + max(h // 3, 64 * scale) + 24 * scale)
     elif control == "apply":
-        click(guest, left + 12 * scale + (width - 32 * scale) // 4, bottom - 100 * scale)
+        click(guest, left + 12 * scale + (width - 32 * scale) // 4, bottom - 80 * scale)
     elif control == "composer":
-        click(guest, left + 40 * scale, bottom - 48 * scale)
+        click(guest, left + 40 * scale, bottom - 32 * scale)
 
 # ------------------------=
 # FUNC: main

@@ -47,9 +47,14 @@ is not complete Sublime Text parity: Unicode, multi-document tabs, projects,
 multi-cursor editing, regular expressions, folding, completion and LSP are not
 implemented.
 
-Known polish issue: the most recent find-result notice can remain in the
-document strip after leaving Find or editing. It does not change the selection,
-document contents, or saved-state indicator.
+Closing Find now clears its transient result notice while preserving selection.
+
+The exact-target revision uses the supplied sheet's approximately 2:1 default
+window, one-third assistant, 14 px JetBrains Mono, compact content-fitting
+conversation bubbles, soft glass top lighting and a 40 px composer. The actual
+document path appears beside the menus. The single-document tab's close and
+plus controls use the guarded New workflow: modified content must be saved
+before it can be cleared. They do not imply multi-document support.
 
 ## Core window rule
 
@@ -96,6 +101,8 @@ unrestricted AI coding agent.
   independent app panels. QEMU and its x86_64 EDK2 firmware are required.
   Append `--live-only` for the same UI checks through the recovery Console's
   normal app-launch command; that mode deliberately excludes installation,
+  authentication and persisted saving.
+
 The current kernel reservation accepts both real installed payloads; the older
 128 MiB reservation failure was corrected separately before this UI change.
 Build and artifact checks are distinct from disk-only runtime checks. The VM
@@ -108,4 +115,13 @@ checks. QEMU x86_64 passed the live-only suite and a fresh install, detached-ISO
 boot, configuration, authenticated cold boot, File → Open, named syntax selection,
 history/clipboard/find, Save As, reviewed insertion, viewport reflow and independent
 Settings assistant checks. Actual live and installed screenshots were reviewed;
-the lingering find-result notice above remains a known visual issue.
+this was evidence for that earlier revision, not the later exact-target changes.
+
+The exact-target pass rebuilt both architectures and passed the host editor,
+window, capacity and four-kernel font-packaging checks. Its first x86_64 fresh
+installation passed the complete editing/save/assistant suite. A second
+ISO-detached installed review captured the corrected 2:1 window at 2048x2048.
+The final small-framebuffer aspect-fit adjustment is covered by the host
+geometry matrix, not a separate low-resolution installed VM run. ARM64 has build
+and artifact evidence only. The remaining visual acceptance gaps are listed in
+`editor-exact-target.md`; this is not an exact-match completion claim.

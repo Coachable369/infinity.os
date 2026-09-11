@@ -1,7 +1,7 @@
 //! Native editor window composed from shared menu and viewport geometry.
 use super::app_style::{CYAN, MUTED, TEXT};
 use crate::ui::{
-    editor_chrome::{Layout, Menu},
+    editor_chrome::{Layout, Menu, CODE_INSET, LINE_HEIGHT},
     editor_tools::{self, Field, Token},
     geometry::Rect,
 };
@@ -32,7 +32,7 @@ impl super::DisplayDevice {
         input: &[u8],
         scroll: usize,
         saved: bool,
-        maximized: bool,
+        _maximized: bool,
         s: usize,
     ) {
         let view = editor_tools::current();
@@ -47,7 +47,17 @@ impl super::DisplayDevice {
         let y = w.y.max(0) as usize;
         self.app_card(w, (11, 18, 32), (33, 105, 139), s);
         self.fill_rect(x + s, y + 46 * s, w.width as usize - 2 * s, s, 33, 58, 85);
-        let _ = self.themed_icon(x + 25 * s, y + 24 * s, 49, 24 * s);
+        self.app_symbol(
+            Rect {
+                x: w.x + 16 * s as i32,
+                y: w.y + 12 * s as i32,
+                width: 24 * s as u32,
+                height: 24 * s as u32,
+            },
+            b'd',
+            MUTED,
+            s,
+        );
         self.app_text(x + 48 * s, y + 15 * s, b"Text Editor", TEXT, true, s);
         if g.search.width > 70 * s as u32 {
             self.app_card(g.search, (15, 27, 46), (33, 58, 85), s);
@@ -67,13 +77,7 @@ impl super::DisplayDevice {
             .iter()
             .enumerate()
         {
-            self.window_control(
-                r.x.max(0) as usize,
-                r.y.max(0) as usize,
-                r.width as usize,
-                i,
-                maximized,
-            );
+            self.app_symbol(*r, [b'-', b'm', b'x'][i], MUTED, s);
         }
         for (m, label) in [
             (Menu::File, b"File".as_slice()),
@@ -97,6 +101,20 @@ impl super::DisplayDevice {
                 s,
             );
         }
+        if g.menu_bar.width > 540 * s as u32 && view.path_len > 0 {
+            self.app_label(
+                Rect {
+                    x: g.menu_bar.x + 288 * s as i32,
+                    y: g.menu_bar.y,
+                    width: g.menu_bar.width.saturating_sub(304 * s as u32),
+                    height: g.menu_bar.height,
+                },
+                &view.path[..view.path_len],
+                MUTED,
+                false,
+                s,
+            );
+        }
         self.fill_rect(
             g.menu_bar.x as usize,
             g.menu_bar.bottom() as usize - 1,
@@ -111,27 +129,24 @@ impl super::DisplayDevice {
         } else {
             &view.filename[..view.filename_len]
         };
-        let tab = Rect {
-            x: g.document.x + 16 * s as i32,
-            y: g.document.y + 5 * s as i32,
-            width: (self.app_text_width(name, false, s) + 64 * s).min(g.document.width as usize / 2)
-                as u32,
-            height: 33 * s as u32,
-        };
+        let tab = g.document_tab();
         self.app_card(tab, (15, 27, 46), (33, 92, 124), s);
-        self.fill_rect(
-            tab.x as usize + 8 * s,
-            tab.y as usize,
-            tab.width as usize - 16 * s,
-            2 * s,
-            34,
-            211,
-            238,
+        self.app_symbol(
+            Rect {
+                x: tab.x + 6 * s as i32,
+                width: 24 * s as u32,
+                ..tab
+            },
+            b'd',
+            MUTED,
+            s,
         );
+        self.app_symbol(g.tab_close(), b'x', MUTED, s);
+        self.app_symbol(g.new_document(), b'+', MUTED, s);
         self.app_label(
             Rect {
-                x: tab.x + 16 * s as i32,
-                width: tab.width.saturating_sub(42 * s as u32),
+                x: tab.x + 36 * s as i32,
+                width: tab.width.saturating_sub(70 * s as u32),
                 ..tab
             },
             name,
@@ -141,11 +156,11 @@ impl super::DisplayDevice {
         );
         if !saved {
             self.fill_rounded_rect_alpha(
-                tab.right() as usize - 18 * s,
-                tab.y as usize + 13 * s,
-                6 * s,
-                6 * s,
-                3 * s,
+                tab.x as usize + 7 * s,
+                tab.y as usize + 27 * s,
+                4 * s,
+                4 * s,
+                2 * s,
                 34,
                 211,
                 238,
@@ -154,9 +169,9 @@ impl super::DisplayDevice {
         }
         self.app_label(
             Rect {
-                x: tab.right() + 16 * s as i32,
+                x: tab.right() + 56 * s as i32,
                 y: tab.y,
-                width: g.document.width.saturating_sub(tab.width + 64 * s as u32),
+                width: g.document.width.saturating_sub(tab.width + 88 * s as u32),
                 height: tab.height,
             },
             if !view.notice.is_empty() {
@@ -328,8 +343,8 @@ impl super::DisplayDevice {
         let clip = self.render_clip;
         self.intersect_render_clip(x, y, body.width as usize, body.height as usize);
         self.fill_rect(x, y, body.width as usize, body.height as usize, 11, 18, 32);
-        self.fill_rect(x, y, 54 * s, body.height as usize, 10, 22, 37);
-        self.fill_rect(x + 54 * s, y, s, body.height as usize, 25, 43, 64);
+        self.fill_rect(x, y, 76 * s, body.height as usize, 10, 22, 37);
+        self.fill_rect(x + 76 * s, y, s, body.height as usize, 25, 43, 64);
         let columns = g.columns().max(1);
         let total = crate::ui::text_editor::visual_line_count(input, columns);
         let scroll = scroll.min(total.saturating_sub(g.rows().max(1)));
@@ -345,7 +360,7 @@ impl super::DisplayDevice {
             if start > input.len() {
                 break;
             }
-            let line_y = y + (8 + row * 24) * s;
+            let line_y = y + (8 + row * LINE_HEIGHT) * s;
             let end = input[start..]
                 .iter()
                 .position(|b| *b == b'\n')
@@ -353,10 +368,10 @@ impl super::DisplayDevice {
             let take = (end - start).min(columns);
             if view.cursor >= start && view.cursor <= start + take {
                 self.fill_rect(
-                    x + 55 * s,
+                    x + 77 * s,
                     line_y,
-                    body.width as usize - 55 * s,
-                    24 * s,
+                    body.width as usize - 77 * s,
+                    LINE_HEIGHT * s,
                     18,
                     31,
                     50,
@@ -365,12 +380,20 @@ impl super::DisplayDevice {
             let mut n = [0; 20];
             let number = decimal(logical, &mut n);
             let width = self.app_text_width(number, false, s);
-            self.app_text(x + 44 * s - width, line_y + 3 * s, number, MUTED, false, s);
+            self.app_text(x + 58 * s - width, line_y, number, MUTED, false, s);
             for col in 0..take {
                 let i = start + col;
-                let cx = x + (64 + col * editor_tools::CELL_WIDTH) * s;
+                let cx = x + (CODE_INSET + col * editor_tools::CELL_WIDTH) * s;
                 if view.selection.is_some_and(|(a, b)| i >= a && i < b) {
-                    self.fill_rect(cx, line_y, editor_tools::CELL_WIDTH * s, 24 * s, 57, 36, 97);
+                    self.fill_rect(
+                        cx,
+                        line_y,
+                        editor_tools::CELL_WIDTH * s,
+                        LINE_HEIGHT * s,
+                        49,
+                        31,
+                        90,
+                    );
                 }
                 let byte = if matches!(input[i], b'\t' | b'\r') {
                     b' '
@@ -383,7 +406,7 @@ impl super::DisplayDevice {
                 if visible && view.field == Field::None && cursor >= start && cursor <= start + take
                 {
                     self.fill_rect(
-                        x + (64 + (cursor - start) * editor_tools::CELL_WIDTH) * s,
+                        x + (CODE_INSET + (cursor - start) * editor_tools::CELL_WIDTH) * s,
                         line_y + 3 * s,
                         s,
                         19 * s,

@@ -4,17 +4,26 @@ use super::{
     geometry::{Point, Rect},
 };
 pub const ROW_HEIGHT: u32 = 32;
-pub const LINE_HEIGHT: usize = 24;
+pub const LINE_HEIGHT: usize = 22;
+pub const CODE_INSET: usize = 96;
 
 // ------------------------=
 // FUNC: default_window
 // DESC: Preserves the kit's landscape proportions even when firmware reports a square framebuffer.
 // ------------------=
-pub fn default_window(width:usize,height:usize)->super::system_layout::DesktopAppWindowState {
-    let scale=super::system_layout::SystemLayout::new(width,height).scale().max(1);
-    let w=(1440*scale).min(width*9/10)*1000/width.max(1);
-    let h=(800*scale).min(height*3/4)*1000/height.max(1);
-    super::system_layout::DesktopAppWindowState::new((1000-w as i32)/2,(1000-h as i32)/2,w as i32,h as i32)
+pub fn default_window(width: usize, height: usize) -> super::system_layout::DesktopAppWindowState {
+    let scale = super::system_layout::SystemLayout::new(width, height)
+        .scale()
+        .max(1);
+    let pixels = (1250 * scale).min(width * 9 / 10).min(height * 3 / 4 * 1250 / 622);
+    let w = pixels * 1000 / width.max(1);
+    let h = (pixels * 622 / 1250).min(height * 3 / 4) * 1000 / height.max(1);
+    super::system_layout::DesktopAppWindowState::new(
+        (1000 - w as i32) / 2,
+        (1000 - h as i32) / 2,
+        w as i32,
+        h as i32,
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -280,6 +289,44 @@ impl Layout {
         }
     }
     // ------------------------=
+    // FUNC: document_tab
+    // DESC: Gives the single document tab a stable, shared icon and title gutter.
+    // ------------------=
+    pub fn document_tab(self) -> Rect {
+        box_at(
+            self.document.x + 16 * self.scale as i32,
+            self.document.y + 5 * self.scale as i32,
+            (184 * self.scale as u32).min(self.document.width / 2),
+            33 * self.scale as u32,
+        )
+    }
+    // ------------------------=
+    // FUNC: tab_close
+    // DESC: Provides the hit area for guarded closing of the current document.
+    // ------------------=
+    pub fn tab_close(self) -> Rect {
+        let tab = self.document_tab();
+        box_at(
+            tab.right() - 28 * self.scale as i32,
+            tab.y,
+            28 * self.scale as u32,
+            tab.height,
+        )
+    }
+    // ------------------------=
+    // FUNC: new_document
+    // DESC: Provides the hit area for the existing guarded New workflow.
+    // ------------------=
+    pub fn new_document(self) -> Rect {
+        let tab = self.document_tab();
+        box_at(
+            tab.right() + 8 * self.scale as i32,
+            tab.y,
+            28 * self.scale as u32,
+            tab.height,
+        )
+    }
+    // ------------------------=
     // FUNC: menu_button
     // DESC: Keeps File, Edit, Selection and View hit targets identical to their painted locations.
     // ------------------=
@@ -347,7 +394,7 @@ impl Layout {
     // DESC: Shares the code font's cell width with renderer, scrolling and pointer selection.
     // ------------------=
     pub fn columns(self) -> usize {
-        (self.body.width as usize).saturating_sub(80 * self.scale)
+        (self.body.width as usize).saturating_sub((CODE_INSET + 16) * self.scale)
             / (super::editor_tools::CELL_WIDTH * self.scale)
     }
     // ------------------------=

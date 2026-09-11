@@ -82,6 +82,12 @@ fn syntax() {
         tools.begin(field);
         assert!(tools.field == field);
         assert_eq!((tools.query_len, tools.replacement_len), (0, 0));
+        tools.selection = Some((2, 5));
+        tools.notice = b"transient";
+        tools.finish_tool();
+        assert!(tools.field == ui::editor_tools::Field::None);
+        assert_eq!(tools.notice.len(), 0);
+        assert_eq!(tools.selection, Some((2, 5)));
     }
     // Bundled code-font ink must fit the same cells used for pointer and caret geometry.
     for glyph in 0..95 {
@@ -125,6 +131,17 @@ fn syntax() {
 // DESC: Verifies independent window state, action allowlists, explicit approval, stale-context rejection and hit geometry.
 // ------------------=
 fn panels() {
+    let reference = Rect {
+        x: 0,
+        y: 0,
+        width: 1250,
+        height: 622,
+    };
+    let geometry = ai::geometry(reference, 1, true);
+    assert_eq!(geometry.panel.width, 420);
+    assert_eq!(geometry.composer.height, 40);
+    assert_eq!(geometry.panel.right(), reference.right() - 1);
+    assert_eq!(geometry.panel.bottom(), reference.bottom() - 1);
     for scale in 1..=2 {
         for width in [480, 800, 1200] {
             let window = Rect {
@@ -239,10 +256,12 @@ fn main() {
 // DESC: Exercises executable command mappings, named syntax selection, keyboard state and reflowed hit bounds.
 // ------------------=
 fn menus_and_viewport() {
-    for (width,height) in [(2048,2048),(1920,1080),(1280,720),(3840,2160)] {
-        let state=ui::editor_chrome::default_window(width,height);
-        let geometry=ui::system_layout::SystemLayout::new(width,height).desktop_app_window_geometry(state.x,state.y,state.width,state.height,false);
-        assert!(geometry.window.width>geometry.window.height*3/2);
+    for (width, height) in [(2048, 2048), (1920, 1080), (1280, 720), (3840, 2160)] {
+        let state = ui::editor_chrome::default_window(width, height);
+        let geometry = ui::system_layout::SystemLayout::new(width, height)
+            .desktop_app_window_geometry(state.x, state.y, state.width, state.height, false);
+        assert!((geometry.window.width as i64*622-geometry.window.height as i64*1250).abs()<5000,
+            "framebuffer={width}x{height}, actual={}x{}",geometry.window.width,geometry.window.height);
     }
     use ui::{
         editor_chrome::{Command, Layout, Menu},
@@ -291,6 +310,12 @@ fn menus_and_viewport() {
             let find = Layout::new(window, scale as usize, true, Field::Find);
             assert!(find.rows() < docked.rows());
             for layout in [plain, docked, find] {
+                let tab=layout.document_tab();
+                let close=layout.tab_close();
+                let new=layout.new_document();
+                assert!(close.x>=tab.x && close.right()<=tab.right());
+                assert!(new.x>tab.right() && new.right()<=layout.document.right());
+                assert!(close.bottom()<=layout.document.bottom() && new.bottom()<=layout.document.bottom());
                 for menu in [
                     Menu::File,
                     Menu::Edit,

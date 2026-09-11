@@ -91,8 +91,12 @@ impl ConsoleRuntime {
             y: self.system.framebuffer_height as i32 * self.pointer_y / 1000,
         };
         if self.editor_tools.menu == Menu::None
-            && (p.x < g.window.x + 6*g.scale as i32 || p.x >= g.window.right() - 6*g.scale as i32
-                || p.y >= g.window.bottom() - 8*g.scale as i32) {return false;}
+            && (p.x < g.window.x + 6 * g.scale as i32
+                || p.x >= g.window.right() - 6 * g.scale as i32
+                || p.y >= g.window.bottom() - 8 * g.scale as i32)
+        {
+            return false;
+        }
         if clicked {
             for menu in [Menu::File, Menu::Edit, Menu::Selection, Menu::View] {
                 if g.menu_button(menu).contains(p) {
@@ -138,8 +142,12 @@ impl ConsoleRuntime {
             self.editor_tools.begin(Field::Find);
             return true;
         }
+        if g.tab_close().contains(p) || g.new_document().contains(p) {
+            self.editor_command(crate::ui::editor_chrome::Command::New);
+            return true;
+        }
         if self.editor_tools.field != Field::None && g.field_close.contains(p) {
-            self.editor_tools.field = Field::None;
+            self.editor_tools.finish_tool();
             return true;
         }
         if g.body.contains(p) {
@@ -153,7 +161,7 @@ impl ConsoleRuntime {
                 self.system.framebuffer_height,
             ));
             self.editor_document.set_cursor(at);
-            self.editor_tools.field = Field::None;
+            self.editor_tools.finish_tool();
             self.editor_selection_anchor = at;
             self.editor_selection_dragging = true;
             return true;
@@ -317,7 +325,9 @@ impl ConsoleRuntime {
             return false;
         }
         match key {
-            ConsoleKey::Escape => self.editor_tools.field = Field::None,
+            ConsoleKey::Escape => {
+                self.editor_tools.finish_tool();
+            }
             ConsoleKey::Tab(_) => {
                 self.editor_tools.field = if self.editor_tools.field == Field::ReplaceWith {
                     Field::ReplaceFind
@@ -458,7 +468,9 @@ impl ConsoleRuntime {
         let s = l.scale().max(1);
         let x = self.system.framebuffer_width as i32 * self.pointer_x / 1000;
         let y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
-        let row = self.editor_scroll_row + (y - g.body.y - 8 * s as i32).max(0) as usize / (24 * s);
+        let row = self.editor_scroll_row
+            + (y - g.body.y - 8 * s as i32).max(0) as usize
+                / (crate::ui::editor_chrome::LINE_HEIGHT * s);
         let cols = g.columns();
         let bytes = self.editor_document.bytes();
         let start = crate::ui::text_editor::visual_line_start(bytes, cols.max(1), row);
@@ -468,7 +480,8 @@ impl ConsoleRuntime {
             .map_or(bytes.len(), |i| start + i)
             .min(start + cols.max(1));
         (start
-            + (x - g.body.x - 64 * s as i32).max(0) as usize
+            + (x - g.body.x - crate::ui::editor_chrome::CODE_INSET as i32 * s as i32).max(0)
+                as usize
                 / (crate::ui::editor_tools::CELL_WIDTH * s))
             .min(end)
     }

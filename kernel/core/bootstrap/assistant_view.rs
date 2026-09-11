@@ -24,10 +24,15 @@ impl super::DisplayDevice {
             let x = p.x as usize;
             let y = p.y as usize;
             self.app_card(p, (11, 22, 37), (33, 58, 85), s);
-            let _ = self.themed_icon(x + 28 * s, y + 30 * s, 23, 28 * s);
+            self.app_ai_mark(Rect {
+                x: p.x + 16 * s as i32,
+                y: p.y + 12 * s as i32,
+                width: 36 * s as u32,
+                height: 40 * s as u32,
+            });
             self.app_label(
                 Rect {
-                    x: p.x + 52 * s as i32,
+                    x: p.x + 68 * s as i32,
                     y: p.y + 8 * s as i32,
                     width: p.width.saturating_sub(96 * s as u32),
                     height: 26 * s as u32,
@@ -39,7 +44,7 @@ impl super::DisplayDevice {
             );
             self.app_label(
                 Rect {
-                    x: p.x + 52 * s as i32,
+                    x: p.x + 68 * s as i32,
                     y: p.y + 32 * s as i32,
                     width: p.width.saturating_sub(96 * s as u32),
                     height: 24 * s as u32,
@@ -64,7 +69,14 @@ impl super::DisplayDevice {
                     x: p.x + 40 * s as i32,
                     y: top,
                     width: p.width.saturating_sub(56 * s as u32),
-                    height: 80 * s as u32,
+                    height: (self.assistant_lines(
+                        &panel.request[..panel.request_len],
+                        p.width.saturating_sub(80 * s as u32) as usize,
+                        s,
+                    ) * 24
+                        * s
+                        + 24 * s)
+                        .min(104 * s) as u32,
                 };
                 self.app_card(r, (20, 36, 56), (33, 58, 85), s);
                 self.assistant_wrapped(
@@ -82,7 +94,7 @@ impl super::DisplayDevice {
             } else {
                 0
             };
-            let r = Rect {
+            let mut r = Rect {
                 x: p.x + 16 * s as i32,
                 y: top,
                 width: p.width.saturating_sub(32 * s as u32),
@@ -96,6 +108,12 @@ impl super::DisplayDevice {
             } else {
                 b"Local window assistance\n\nMaximize, restore, minimize or refresh this app. Review each action before applying it.\n\nType help for available commands."
             };
+            r.height = r.height.min(
+                (self.assistant_lines(intro, r.width.saturating_sub(24 * s as u32) as usize, s)
+                    * 24
+                    * s
+                    + 24 * s) as u32,
+            );
             self.app_card(r, (15, 27, 46), (33, 58, 85), s);
             self.assistant_wrapped(intro, inset(r, 12 * s), s, TEXT);
             if preview {
@@ -113,7 +131,7 @@ impl super::DisplayDevice {
                         width: r.width.saturating_sub(24 * s as u32),
                         height: 24 * s as u32,
                     },
-                    b"Proposed text",
+                    b"Proposed changes",
                     MUTED,
                     true,
                     s,
@@ -149,7 +167,12 @@ impl super::DisplayDevice {
                 start += 1;
             }
             self.app_label(
-                inset(c, 12 * s),
+                Rect {
+                    x: c.x + 12 * s as i32,
+                    y: c.y + 8 * s as i32,
+                    width: c.width.saturating_sub(24 * s as u32),
+                    height: c.height.saturating_sub(16 * s as u32),
+                },
                 if panel.length == 0 {
                     b"Ask this app..."
                 } else {
@@ -159,17 +182,23 @@ impl super::DisplayDevice {
                 false,
                 s,
             );
-            self.app_button(g.send, b">", false, s);
+            self.app_card(g.send, (15, 27, 46), CYAN, s);
+            self.app_symbol(g.send, b'^', CYAN, s);
         }
         let t = g.toggle;
-        self.app_card(t, (15, 39, 59), (34, 157, 187), s);
         if panel.expanded {
-            self.app_label(t, b"  >", CYAN, true, s);
+            self.app_symbol(t, b'x', TEXT, s);
         } else {
-            let _ = self.themed_icon(t.x as usize + 14 * s, t.y as usize + 14 * s, 23, 20 * s);
+            self.app_card(t, (15, 39, 59), (34, 157, 187), s);
+            self.app_ai_mark(Rect {
+                x: t.x + 2 * s as i32,
+                y: t.y + 8 * s as i32,
+                width: 24 * s as u32,
+                height: 28 * s as u32,
+            });
             self.app_label(
                 Rect {
-                    y: t.y + 24 * s as i32,
+                    y: t.y + 40 * s as i32,
                     height: 24 * s as u32,
                     ..t
                 },
@@ -180,6 +209,36 @@ impl super::DisplayDevice {
             );
         }
         self.render_clip = clip;
+    }
+    // ------------------------=
+    // FUNC: assistant_lines
+    // DESC: Measures content-fitting bubbles with the same word wrapping used by the native painter.
+    // ------------------=
+    fn assistant_lines(&self, text: &[u8], width: usize, s: usize) -> usize {
+        let mut start = 0;
+        let mut lines = 0;
+        while start < text.len() {
+            let mut end = start;
+            let mut space = None;
+            while end < text.len() && text[end] != b'\n' {
+                if self.app_text_width(&text[start..end + 1], false, s) > width {
+                    break;
+                }
+                if text[end] == b' ' {
+                    space = Some(end);
+                }
+                end += 1;
+            }
+            if end < text.len() && text[end] != b'\n' {
+                end = space.unwrap_or(end.max(start + 1));
+            }
+            start = end;
+            if matches!(text.get(start), Some(b'\n' | b' ')) {
+                start += 1;
+            }
+            lines += 1;
+        }
+        lines.max(1)
     }
     // ------------------------=
     // FUNC: assistant_wrapped

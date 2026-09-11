@@ -1500,7 +1500,7 @@ impl SystemLayout {
                 self.width * window_x.clamp(0, 900) as usize / 1000,
                 self.height * window_y.clamp(50, 850) as usize / 1000,
                 (self.width * window_width.clamp(420, 900) as usize / 1000).min(self.width),
-                (self.height * window_height.clamp(360, 820) as usize / 1000).min(self.height),
+                (self.height * window_height.clamp(self.desktop_app_minimum_height(), 820) as usize / 1000).min(self.height),
             )
         };
         let title_height = 48 * self.scale;
@@ -1545,6 +1545,14 @@ impl SystemLayout {
                 height.saturating_sub(title_height + toolbar_height + 28 * self.scale),
             ),
         }
+    }
+
+    // ------------------------=
+    // FUNC: desktop_app_minimum_height
+    // DESC: Keeps app minimum height pixel-based on tall firmware displays so landscape designs are not stretched.
+    // ------------------=
+    pub fn desktop_app_minimum_height(self) -> i32 {
+        (480*self.scale*1000/self.height.max(1)).min(360) as i32
     }
 
     // ------------------------=

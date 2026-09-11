@@ -147,12 +147,16 @@ pub struct Geometry {
 // ------------------=
 pub fn geometry(window: Rect, scale: usize, expanded: bool) -> Geometry {
     let s = scale.max(1) as u32;
-    let width = (400 * s).min(window.width.saturating_sub(280 * s)).max(1);
+    let width = (window.width * 336 / 1000)
+        .max(320 * s)
+        .min(480 * s)
+        .min(window.width.saturating_sub(280 * s))
+        .max(1);
     let panel = Rect {
-        x: window.right() - width as i32 - 8 * s as i32,
+        x: window.right() - width as i32 - s as i32,
         y: window.y + 48 * s as i32,
         width,
-        height: window.height.saturating_sub(56 * s),
+        height: window.height.saturating_sub(49 * s),
     };
     let toggle = Rect {
         x: window.right() - 32 * s as i32,
@@ -162,19 +166,19 @@ pub fn geometry(window: Rect, scale: usize, expanded: bool) -> Geometry {
             window.y + (window.height / 3).max(64 * s) as i32
         },
         width: 28 * s,
-        height: 48 * s,
+        height: if expanded { 32 * s } else { 72 * s },
     };
     let composer = Rect {
         x: panel.x + 12 * s as i32,
-        y: panel.bottom() - 72 * s as i32,
+        y: panel.bottom() - 52 * s as i32,
         width: width.saturating_sub(68 * s),
-        height: 56 * s,
+        height: 40 * s,
     };
     let send = Rect {
         x: composer.right() + 8 * s as i32,
         y: composer.y,
         width: 36 * s,
-        height: 56 * s,
+        height: 40 * s,
     };
     let apply = Rect {
         x: panel.x + 12 * s as i32,
