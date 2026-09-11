@@ -3,7 +3,7 @@
 use super::bitmap::RuntimeBitmap;
 
 const MAGIC: &[u8; 4] = b"IUIT";
-const FORMAT_VERSION: u16 = 5;
+const FORMAT_VERSION: u16 = 6;
 const MAX_SCREEN_COUNT: u16 = 32;
 const MAX_ASSET_COUNT: u16 = 128;
 
@@ -111,6 +111,7 @@ pub struct InstallerTemplateRect {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InstallerTemplateElement<'a> {
     pub id: [u8; 16],
+    pub code_identifier: &'a [u8],
     pub kind: u8,
     pub role: u8,
     pub input_variable: u8,
@@ -420,6 +421,31 @@ impl<'a> InstallerTemplate<'a> {
     }
 
     // ------------------------=
+    // FUNC: element_by_identifier
+    // DESC: Resolves one screen element through its authored application binding identifier.
+    // ------------------=
+    pub fn element_by_identifier(
+        &self,
+        target_screen: u8,
+        target_identifier: &[u8],
+    ) -> Option<InstallerTemplateElement<'a>> {
+        let mut reader = Reader::new(self.data);
+        reader.take(8).ok()?;
+        for _ in 0..self.screen_count {
+            let screen = reader.u8().ok()?;
+            reader.short_string().ok()?;
+            let count = reader.u16().ok()?;
+            for _ in 0..count {
+                let element = reader.element().ok()?;
+                if screen == target_screen && element.code_identifier == target_identifier {
+                    return Some(element);
+                }
+            }
+        }
+        None
+    }
+
+    // ------------------------=
     // FUNC: element_count
     // DESC: Reports the number of saved layers in one validated screen.
     // ------------------=
@@ -614,6 +640,7 @@ impl<'a> Reader<'a> {
         let id_bytes = self.take(16)?;
         let mut id = [0u8; 16];
         id.copy_from_slice(id_bytes);
+        let code_identifier = self.short_string()?;
         let kind = self.u8()?;
         let role = self.u8()?;
         let input_variable = self.u8()?;
@@ -664,7 +691,8 @@ impl<'a> Reader<'a> {
         let text = self.long_string()?;
         let image_asset = self.short_string()?;
         let crop = [self.u8()?, self.u8()?, self.u8()?, self.u8()?];
-        if core::str::from_utf8(name).is_err()
+        if !valid_code_identifier(code_identifier)
+            || core::str::from_utf8(name).is_err()
             || core::str::from_utf8(text).is_err()
             || core::str::from_utf8(image_asset).is_err()
         {
@@ -681,6 +709,7 @@ impl<'a> Reader<'a> {
         }
         Ok(InstallerTemplateElement {
             id,
+            code_identifier,
             kind,
             role,
             input_variable,
@@ -699,6 +728,46 @@ impl<'a> Reader<'a> {
             crop,
         })
     }
+}
+
+// ------------------------=
+// FUNC: valid_code_identifier
+// DESC: Validates an authored dot-camelcase application binding identifier without allocation.
+// ------------------=
+fn valid_code_identifier(identifier: &[u8]) -> bool {
+    if identifier.is_empty() || identifier.len() > 127 {
+        return false;
+    }
+    let mut segment_start = true;
+    let mut first_segment = true;
+    let mut numeric_segment = false;
+    for byte in identifier {
+        if *byte == b'.' {
+            if segment_start {
+                return false;
+            }
+            segment_start = true;
+            first_segment = false;
+            numeric_segment = false;
+            continue;
+        }
+        if !byte.is_ascii_alphanumeric() {
+            return false;
+        }
+        if segment_start {
+            if first_segment && !byte.is_ascii_lowercase() {
+                return false;
+            }
+            if !first_segment && !byte.is_ascii_lowercase() && !byte.is_ascii_digit() {
+                return false;
+            }
+            numeric_segment = byte.is_ascii_digit();
+            segment_start = false;
+        } else if numeric_segment && !byte.is_ascii_digit() {
+            return false;
+        }
+    }
+    !segment_start
 }
 
 // ------------------------=

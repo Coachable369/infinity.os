@@ -182,7 +182,7 @@ installer-template-runtime: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLA
 installer-template-test: $(INSTALLER_TEMPLATE_RUNTIME) $(CONFIGURATION_TEMPLATE_RUNTIME) $(SETTINGS_TEMPLATE_RUNTIME)
 	@tools/installer-designer/verify-template-build.sh
 	@mkdir -p build/tools
-	@rustc --edition 2021 -A warnings tools/installer-template-test.rs -o build/tools/installer-template-test
+	@rustc --edition 2021 -A warnings -O tools/installer-template-test.rs -o build/tools/installer-template-test
 	@build/tools/installer-template-test
 
 all: x86_64

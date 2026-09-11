@@ -119,6 +119,13 @@ final class TemplateStore: ObservableObject {
         return screen.elements.first(where: { $0.id == id })
     }
 
+    var selectedCodeIdentifierIsDuplicate: Bool {
+        guard let selectedElement, let selectedScreen else { return false }
+        return selectedScreen.elements.filter {
+            $0.codeIdentifier == selectedElement.codeIdentifier
+        }.count > 1
+    }
+
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
     var canAddScreen: Bool { activeScreens.count < InstallerStudioDocument.maximumScreenCount }
@@ -519,6 +526,21 @@ final class TemplateStore: ObservableObject {
     }
 
     // ------------------------=
+    // FUNC: updateSelectedCodeIdentifier
+    // DESC: Updates the code-facing element identity while preserving the immutable internal UUID.
+    // ------------------=
+    func updateSelectedCodeIdentifier(_ identifier: String) {
+        guard let location = selectedLocation() else { return }
+        let bounded = String(identifier.prefix(127))
+        guard activeDocument.screens[location.screen].elements[location.elementIndex].codeIdentifier != bounded else {
+            return
+        }
+        recordUndo()
+        activeDocument.screens[location.screen].elements[location.elementIndex].codeIdentifier = bounded
+        status = "Element ID updated"
+    }
+
+    // ------------------------=
     // FUNC: selectLiveDetails
     // DESC: Opens the screen's runtime text region in the sidebar without creating duplicate live-data layers.
     // ------------------=
@@ -557,6 +579,7 @@ final class TemplateStore: ObservableObject {
                 : kind == .text ? "Editable text" : "",
             zIndex: nextZIndex(in: screen)
         )
+        element.codeIdentifier = uniqueCodeIdentifier(element.codeIdentifier, in: screen)
         if kind == .progressBar {
             element.fill = StudioColor(red: 174, green: 219, blue: 247, alpha: 255)
             element.border = StudioColor(red: 53, green: 165, blue: 220, alpha: 255)
@@ -761,6 +784,7 @@ final class TemplateStore: ObservableObject {
         var copy = location.element
         copy.id = UUID()
         copy.name += " Copy"
+        copy.codeIdentifier = uniqueCodeIdentifier(copy.codeIdentifier, in: location.screen)
         copy.frame.x += gridSize
         copy.frame.y += gridSize
         copy.frame = copy.frame.clamped()
@@ -1241,6 +1265,20 @@ final class TemplateStore: ObservableObject {
             copy.id = UUID()
             return copy
         }
+    }
+
+    // ------------------------=
+    // FUNC: uniqueCodeIdentifier
+    // DESC: Produces the next available dot-qualified identifier for a newly created layer.
+    // ------------------=
+    private func uniqueCodeIdentifier(_ preferred: String, in screen: Int) -> String {
+        let existing = Set(activeDocument.screens[screen].elements.map(\.codeIdentifier))
+        guard existing.contains(preferred) else { return preferred }
+        var ordinal = 2
+        while existing.contains("\(preferred).\(ordinal)") {
+            ordinal += 1
+        }
+        return "\(preferred).\(ordinal)"
     }
 
     // ------------------------=

@@ -4,6 +4,53 @@ import SwiftUI
 
 final class RuntimeTemplateCodecTests: XCTestCase {
     // ------------------------=
+    // FUNC: testEveryElementHasUniqueEditableCodeIdentityAndReadOnlyUUID
+    // DESC: Proves application binding IDs are meaningful, editable even on locked layers, and independent from UUID identity.
+    // ------------------=
+    @MainActor func testEveryElementHasUniqueEditableCodeIdentityAndReadOnlyUUID() throws {
+        for document in [
+            InstallerStudioDocument.factoryDefault(),
+            InstallerStudioDocument.factoryConfiguration(),
+            InstallerStudioDocument.factorySystemSettings(),
+        ] {
+            for screen in document.screens {
+                XCTAssertTrue(screen.elements.allSatisfy(\.hasValidCodeIdentifier))
+                XCTAssertEqual(Set(screen.elements.map(\.codeIdentifier)).count, screen.elements.count)
+            }
+        }
+        let store = TemplateStore()
+        store.settingsDocument = .factorySystemSettings()
+        store.settingsDocument.screens[0].elements[0].locked = true
+        store.selectScreenCollection(.systemSettings, screen: 1)
+        let locked = try XCTUnwrap(store.selectedScreen?.elements.first { $0.locked })
+        store.selectElement(locked.id)
+        store.updateSelectedCodeIdentifier("settingsWindow.root")
+
+        XCTAssertEqual(store.selectedElement?.id, locked.id)
+        XCTAssertEqual(store.selectedElement?.codeIdentifier, "settingsWindow.root")
+        let restored = try RuntimeTemplateCodec.decode(
+            RuntimeTemplateCodec.encode(store.settingsDocument, collection: .systemSettings),
+            collection: .systemSettings
+        )
+        let restoredElement = try XCTUnwrap(restored.screens[0].elements.first { $0.id == locked.id })
+        XCTAssertEqual(restoredElement.codeIdentifier, "settingsWindow.root")
+    }
+
+    // ------------------------=
+    // FUNC: testCodeIdentityValidationRejectsInvalidAndDuplicateBindings
+    // DESC: Exercises syntax and per-screen uniqueness as behavioral save-contract failures.
+    // ------------------=
+    func testCodeIdentityValidationRejectsInvalidAndDuplicateBindings() throws {
+        var invalid = InstallerStudioDocument.factoryDefault()
+        invalid.screens[0].elements[0].codeIdentifier = "Setting Row 1"
+        XCTAssertThrowsError(try TemplateValidator.validate(invalid))
+
+        var duplicate = InstallerStudioDocument.factoryDefault()
+        duplicate.screens[0].elements[1].codeIdentifier = duplicate.screens[0].elements[0].codeIdentifier
+        XCTAssertThrowsError(try TemplateValidator.validate(duplicate))
+    }
+
+    // ------------------------=
     // FUNC: testSystemSettingsFactoryRoundTripsEveryRuntimeSection
     // DESC: Proves all logged-in Settings sections expose editable WYSIWYG structure in the saved runtime artifact.
     // ------------------=

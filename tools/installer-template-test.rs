@@ -30,6 +30,8 @@ fn little_u16(data: &[u8], offset: &mut usize) -> u16 {
 // ------------------=
 fn skip_element(data: &[u8], offset: &mut usize) -> (u8, usize) {
     *offset += 16;
+    let identifier = data[*offset] as usize;
+    *offset += 1 + identifier;
     let kind_offset = *offset;
     *offset += 1;
     let role = data[*offset];
@@ -69,6 +71,20 @@ fn first_primary_kind_offset(data: &[u8]) -> usize {
         }
     }
     panic!("factory primary button missing")
+}
+
+// ------------------------=
+// FUNC: first_identifier_byte_offset
+// DESC: Locates the first authored code identifier byte in a runtime template.
+// ------------------=
+fn first_identifier_byte_offset(data: &[u8]) -> usize {
+    let mut offset = 8;
+    offset += 1;
+    let title = data[offset] as usize;
+    offset += 1 + title;
+    offset += 2 + 16;
+    assert!(data[offset] > 0);
+    offset + 1
 }
 
 // ------------------------=
@@ -112,6 +128,13 @@ fn main() {
             }
             previous = Some((element.z_index, element.id));
         }
+        let first = template
+            .element_at(screen, 0)
+            .expect("screen must expose its first authored element");
+        let resolved = template
+            .element_by_identifier(screen, first.code_identifier)
+            .expect("authored element identifier must resolve");
+        assert_eq!(resolved.id, first.id);
         assert!(template
             .element(screen, InstallerTemplateRole::Console)
             .is_some());
@@ -290,5 +313,12 @@ fn main() {
     assert!(matches!(
         InstallerTemplate::parse(&altered),
         Err(installer_template::InstallerTemplateError::InvalidNavigation)
+    ));
+    let mut invalid_identifier = FACTORY_TEMPLATE.to_vec();
+    let identifier = first_identifier_byte_offset(&invalid_identifier);
+    invalid_identifier[identifier] = b'A';
+    assert!(matches!(
+        InstallerTemplate::parse(&invalid_identifier),
+        Err(installer_template::InstallerTemplateError::InvalidElement)
     ));
 }

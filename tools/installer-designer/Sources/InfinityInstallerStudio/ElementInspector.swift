@@ -24,7 +24,7 @@ struct ElementInspector: View {
                                 .frame(width: 18)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(element.name).lineLimit(1)
-                                Text(element.role.title).font(.caption2).foregroundStyle(.secondary)
+                                Text(element.codeIdentifier).font(.caption2.monospaced()).foregroundStyle(.secondary)
                             }
                             Spacer()
                             if element.hidden { Image(systemName: "eye.slash").foregroundStyle(.secondary) }
@@ -104,6 +104,29 @@ struct ElementInspector: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(InfinityUIKit.Palette.nativeAccent)
             }
+            GroupBox("Identity") {
+                VStack(alignment: .leading, spacing: 7) {
+                    TextField("Element ID", text: codeIdentifierBinding)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.body.monospaced())
+                    if !element.hasValidCodeIdentifier {
+                        Label("Use dot-camelcase, for example settingsRow.1", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    } else if store.selectedCodeIdentifierIsDuplicate {
+                        Label("This ID is already used on this screen", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    LabeledContent("UUID") {
+                        Text(element.id.uuidString.lowercased())
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
             TextField("Layer name", text: stringBinding(\.name))
                 .disabled(element.locked)
             Picker("Role", selection: enumBinding(\.role, fallback: element.role)) {
@@ -111,6 +134,17 @@ struct ElementInspector: View {
             }
             .disabled(element.locked || element.kind == .button)
         }
+    }
+
+    // ------------------------=
+    // FUNC: codeIdentifierBinding
+    // DESC: Exposes the application binding identifier independently from visual layer locking.
+    // ------------------=
+    private var codeIdentifierBinding: Binding<String> {
+        Binding(
+            get: { store.selectedElement?.codeIdentifier ?? "" },
+            set: { store.updateSelectedCodeIdentifier($0) }
+        )
     }
 
     // ------------------------=

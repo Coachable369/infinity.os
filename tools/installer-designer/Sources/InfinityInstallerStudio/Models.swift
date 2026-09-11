@@ -331,6 +331,7 @@ struct StudioColor: Codable, Hashable {
 
 struct StudioElement: Identifiable, Codable, Hashable {
     var id: UUID
+    var codeIdentifier: String
     var name: String
     var kind: StudioElementKind
     var role: StudioElementRole
@@ -356,6 +357,7 @@ struct StudioElement: Identifiable, Codable, Hashable {
         name: String,
         kind: StudioElementKind,
         role: StudioElementRole = .decoration,
+        codeIdentifier: String? = nil,
         frame: CanvasRect,
         text: String = "",
         imageAsset: String = "",
@@ -364,6 +366,7 @@ struct StudioElement: Identifiable, Codable, Hashable {
     ) -> StudioElement {
         StudioElement(
             id: UUID(),
+            codeIdentifier: codeIdentifier ?? Self.codeIdentifier(from: name),
             name: name,
             kind: kind,
             role: role,
@@ -380,6 +383,50 @@ struct StudioElement: Identifiable, Codable, Hashable {
             locked: locked,
             hidden: false
         )
+    }
+
+    // ------------------------=
+    // FUNC: codeIdentifier
+    // DESC: Derives a stable dot-camelcase application binding identifier from a human layer name.
+    // ------------------=
+    static func codeIdentifier(from name: String) -> String {
+        let asciiName = name.map { character in
+            character.unicodeScalars.allSatisfy { $0.isASCII && CharacterSet.alphanumerics.contains($0) }
+                ? character : " "
+        }
+        let tokens = String(asciiName).split(separator: " ").map(String.init)
+        guard let first = tokens.first, first.first?.isNumber == false else { return "element" }
+        var result = first.prefix(1).lowercased() + first.dropFirst()
+        for token in tokens.dropFirst() {
+            if token.allSatisfy(\.isNumber) {
+                result += ".\(token)"
+            } else {
+                result += token.prefix(1).uppercased() + token.dropFirst()
+            }
+        }
+        return result
+    }
+
+    // ------------------------=
+    // FUNC: hasValidCodeIdentifier
+    // DESC: Validates the dot-camelcase syntax reserved for future application code bindings.
+    // ------------------=
+    var hasValidCodeIdentifier: Bool {
+        let bytes = Array(codeIdentifier.utf8)
+        guard !bytes.isEmpty, bytes.count <= 127, (97...122).contains(Int(bytes[0])) else { return false }
+        let segments = codeIdentifier.split(separator: ".", omittingEmptySubsequences: false)
+        return segments.allSatisfy { segment in
+            let segmentBytes = Array(segment.utf8)
+            guard let first = segmentBytes.first,
+                  segmentBytes.allSatisfy({ byte in
+                      (48...57).contains(Int(byte))
+                          || (65...90).contains(Int(byte))
+                          || (97...122).contains(Int(byte))
+                  })
+            else { return false }
+            return (97...122).contains(Int(first))
+                || segmentBytes.allSatisfy { (48...57).contains(Int($0)) }
+        }
     }
 }
 
@@ -410,7 +457,7 @@ struct ImageCrop: Codable, Hashable {
 
 extension StudioElement {
     private enum CodingKeys: String, CodingKey {
-        case id, name, kind, role, inputVariable, frame, text, imageAsset, crop, fill, border
+        case id, codeIdentifier, name, kind, role, inputVariable, frame, text, imageAsset, crop, fill, border
         case fontSize, opacity, cornerRadius, zIndex, locked, hidden
     }
 
@@ -422,6 +469,8 @@ extension StudioElement {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         id = try values.decode(UUID.self, forKey: .id)
         name = try values.decode(String.self, forKey: .name)
+        codeIdentifier = try values.decodeIfPresent(String.self, forKey: .codeIdentifier)
+            ?? Self.codeIdentifier(from: name)
         kind = try values.decode(StudioElementKind.self, forKey: .kind)
         role = try values.decode(StudioElementRole.self, forKey: .role)
         inputVariable = try values.decodeIfPresent(StudioInputVariable.self, forKey: .inputVariable) ?? .none
@@ -758,6 +807,7 @@ struct InstallerStudioDocument: Codable, Hashable {
         for (row, label) in rows.enumerated() {
             var element = StudioElement.make(
                 name: "Setting Row \(row + 1)", kind: .panel, role: .metadata,
+                codeIdentifier: "settingsRow.\(row + 1)",
                 frame: CanvasRect(x: 370, y: 330 + row * 64, width: 500, height: 50),
                 text: "", zIndex: 4
             )
@@ -767,6 +817,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             elements.append(element)
             var labelElement = StudioElement.make(
                 name: "\(label) Label", kind: .text, role: .settingsRowLabel,
+                codeIdentifier: "settingsRow.\(row + 1).label",
                 frame: CanvasRect(x: 386, y: 343 + row * 64, width: 220, height: 24),
                 text: label, zIndex: 5
             )
@@ -774,6 +825,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             elements.append(labelElement)
             var valueElement = StudioElement.make(
                 name: "\(label) Value", kind: .text, role: .settingsRowValue,
+                codeIdentifier: "settingsRow.\(row + 1).value",
                 frame: CanvasRect(x: 620, y: 343 + row * 64, width: 210, height: 24),
                 text: values.indices.contains(row) ? values[row] : "", zIndex: 5
             )
@@ -781,6 +833,7 @@ struct InstallerStudioDocument: Codable, Hashable {
             elements.append(valueElement)
             var disclosure = StudioElement.make(
                 name: "\(label) Disclosure", kind: .text, role: .settingsDisclosure,
+                codeIdentifier: "settingsRow.\(row + 1).disclosure",
                 frame: CanvasRect(x: 840, y: 343 + row * 64, width: 20, height: 24),
                 text: ">", zIndex: 5
             )

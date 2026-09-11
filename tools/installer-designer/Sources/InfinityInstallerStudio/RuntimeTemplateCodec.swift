@@ -46,6 +46,10 @@ enum TemplateValidator {
             let back = screen.elements.filter { $0.role == .backButton }
             let primary = screen.elements.filter { $0.role == .primaryButton }
             let liveInputs = screen.elements.filter { $0.role == .input && !$0.hidden }
+            let identifiers = screen.elements.map(\.codeIdentifier)
+            guard Set(identifiers).count == identifiers.count else {
+                throw TemplateValidationIssue.invalidScreen(screen.id, "Element IDs must be unique within a screen")
+            }
             for role in StudioElementRole.allCases {
                 let required = collection?.requiredRoleCount(role, screenID: screen.id)
                     ?? ([StudioElementRole.masthead, .console, .content, .title, .body,
@@ -97,6 +101,12 @@ enum TemplateValidator {
                 throw TemplateValidationIssue.invalidScreen(screen.id, "Only one live input field is supported per screen")
             }
             for element in screen.elements {
+                guard element.hasValidCodeIdentifier else {
+                    throw TemplateValidationIssue.invalidElement(
+                        screen.id, element.id,
+                        "Element ID must use dot-camelcase, for example settingsRow.1"
+                    )
+                }
                 guard element.kind != .progressBar || element.role == .progressBar,
                       element.role != .progressBar || element.kind == .progressBar,
                       element.role != .progressHero || element.kind == .image,
@@ -139,7 +149,7 @@ enum TemplateValidator {
 
 enum RuntimeTemplateCodec {
     static let magic = Data([0x49, 0x55, 0x49, 0x54])
-    static let version: UInt16 = 5
+    static let version: UInt16 = 6
 
     // ------------------------=
     // FUNC: encode
@@ -161,6 +171,7 @@ enum RuntimeTemplateCodec {
             output.appendLittleEndian(UInt16(screen.elements.count))
             for element in screen.elements {
                 output.append(contentsOf: element.id.bytes)
+                output.appendLengthPrefixed(element.codeIdentifier, length: .u8, limit: 127)
                 output.append(element.kind.rawValue)
                 output.append(element.role.rawValue)
                 output.append(element.inputVariable.runtimeCode)
@@ -269,6 +280,7 @@ enum RuntimeTemplateCodec {
             var elements: [StudioElement] = []
             for _ in 0..<elementCount {
                 let id = try UUID(bytes: reader.readBytes(count: 16))
+                let codeIdentifier = try reader.readString(length: .u8, limit: 127)
                 guard let kind = StudioElementKind(rawValue: try reader.readUInt8()),
                       let role = StudioElementRole(rawValue: try reader.readUInt8()),
                       let inputVariable = StudioInputVariable(runtimeCode: try reader.readUInt8())
@@ -297,6 +309,7 @@ enum RuntimeTemplateCodec {
                 )
                 elements.append(StudioElement(
                     id: id,
+                    codeIdentifier: codeIdentifier,
                     name: name,
                     kind: kind,
                     role: role,
