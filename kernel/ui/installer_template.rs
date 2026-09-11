@@ -31,6 +31,10 @@ pub enum InstallerTemplateRole {
     ProgressBar = 19,
     ProgressHero = 20,
     LiveDetails = 21,
+    SettingsNavigationItem = 22,
+    SettingsNavigationIcon = 23,
+    SettingsArtwork = 24,
+    SettingsNavigationLabel = 25,
 }
 
 // ------------------------=
@@ -200,6 +204,10 @@ impl<'a> InstallerTemplate<'a> {
             let mut body_count = 0u8;
             let mut section_count = 0u8;
             let mut row_count = 0u8;
+            let mut settings_navigation_count = 0u8;
+            let mut settings_icon_count = 0u8;
+            let mut settings_artwork_count = 0u8;
+            let mut settings_label_count = 0u8;
             for _ in 0..count {
                 let element = reader.element()?;
                 if !element_is_bounded(element.frame) {
@@ -222,6 +230,18 @@ impl<'a> InstallerTemplate<'a> {
                 }
                 if element.role == InstallerTemplateRole::Metadata as u8 {
                     row_count = row_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SettingsNavigationItem as u8 {
+                    settings_navigation_count = settings_navigation_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SettingsNavigationIcon as u8 {
+                    settings_icon_count = settings_icon_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SettingsArtwork as u8 {
+                    settings_artwork_count = settings_artwork_count.saturating_add(1);
+                }
+                if element.role == InstallerTemplateRole::SettingsNavigationLabel as u8 {
+                    settings_label_count = settings_label_count.saturating_add(1);
                 }
                 if element.role == InstallerTemplateRole::Input as u8 && !element.hidden {
                     input_count = input_count.saturating_add(1);
@@ -246,7 +266,9 @@ impl<'a> InstallerTemplate<'a> {
                 && (back_count != 1 || primary_count != 1 || console_count == 0);
             let invalid_settings = !requires_navigation
                 && (console_count != 1 || content_count != 1 || title_count == 0
-                    || body_count == 0 || section_count != 1 || row_count == 0);
+                    || body_count == 0 || section_count != 1 || row_count == 0
+                    || settings_navigation_count != 11 || settings_icon_count != 11
+                    || settings_label_count != 11 || settings_artwork_count != 1);
             if invalid_installer || invalid_settings || input_count > 1 || details_count > 1 {
                 return Err(InstallerTemplateError::InvalidNavigation);
             }
@@ -545,12 +567,16 @@ impl<'a> Reader<'a> {
         let input_variable = self.u8()?;
         let flags = self.u8()?;
         if !(1..=6).contains(&kind)
-            || role > InstallerTemplateRole::LiveDetails as u8
+            || role > InstallerTemplateRole::SettingsNavigationLabel as u8
             || input_variable > InstallerTemplateVariable::Password as u8
             || (kind == 6 && role != InstallerTemplateRole::ProgressBar as u8)
             || (role == InstallerTemplateRole::ProgressBar as u8 && kind != 6)
             || (role == InstallerTemplateRole::ProgressHero as u8 && kind != 2)
             || (role == InstallerTemplateRole::LiveDetails as u8 && kind != 3)
+            || (role == InstallerTemplateRole::SettingsNavigationItem as u8 && kind != 1)
+            || (role == InstallerTemplateRole::SettingsNavigationIcon as u8 && kind != 2)
+            || (role == InstallerTemplateRole::SettingsArtwork as u8 && kind != 2)
+            || (role == InstallerTemplateRole::SettingsNavigationLabel as u8 && kind != 3)
             || (role != InstallerTemplateRole::Input as u8
                 && input_variable != InstallerTemplateVariable::None as u8)
             || (role == InstallerTemplateRole::Input as u8

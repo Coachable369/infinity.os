@@ -38,18 +38,6 @@ struct InstallerCanvas: View {
                             ConfigurationNetworkPreview(canvasScale: canvasScale, content: content.frame, projectRoot: store.projectRoot)
                                 .zIndex(7_500)
                         }
-                        if store.selectedCollection == .systemSettings,
-                           let navigation = store.selectedScreen?.elements.first(where: {
-                               $0.role == .sectionLabel && !$0.hidden
-                           })
-                        {
-                            SystemSettingsNavigationPreview(
-                                canvasScale: canvasScale,
-                                frame: navigation.frame,
-                                selectedSection: store.selectedScreenID - 1
-                            )
-                            .zIndex(7_400)
-                        }
                         if store.marqueeSelectionEnabled {
                             Rectangle()
                                 .fill(Color.clear)
@@ -602,7 +590,7 @@ private struct CanvasPanelPreview: View {
                         .stroke(recipe.border.color, lineWidth: max(recipe.borderWidth, canvasScale.height))
                 }
                 .overlay(alignment: .leading) {
-                    if (isField || [.metadata, .liveDetails].contains(element.role)),
+                    if (isField || [.metadata, .liveDetails, .settingsNavigationItem].contains(element.role)),
                        !element.text.isEmpty
                     {
                         HStack(spacing: 8 * canvasScale.height) {
@@ -633,58 +621,6 @@ private struct CanvasPanelPreview: View {
                 )
                 .onHover { hovered = $0 }
         }
-    }
-}
-
-private struct SystemSettingsNavigationPreview: View {
-    let canvasScale: CGSize
-    let frame: CanvasRect
-    let selectedSection: Int
-    private let sections = [
-        "General", "Themes & Skins", "Users & Accounts", "AI & Voice",
-        "Privacy & Security", "Devices", "Network", "Nodes & Mesh",
-        "Storage", "About", "Input",
-    ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: max(2, 5 * canvasScale.height)) {
-            ForEach(sections.indices, id: \.self) { index in
-                HStack(spacing: max(4, 10 * canvasScale.height)) {
-                    Image(systemName: sectionIcon(index))
-                        .frame(width: 22 * canvasScale.height)
-                    Text(sections[index]).lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .font(.system(size: max(8, 15 * canvasScale.height), weight: .medium, design: .rounded))
-                .foregroundStyle(index == selectedSection ? Color.white : Color.white.opacity(0.72))
-                .padding(.horizontal, 12 * canvasScale.height)
-                .frame(maxWidth: .infinity, minHeight: 45 * canvasScale.height, alignment: .leading)
-                .background(index == selectedSection
-                    ? InfinityUIKit.Palette.nativeAccent.opacity(0.42) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 9 * canvasScale.height))
-            }
-        }
-        .padding(10 * canvasScale.height)
-        .frame(
-            width: CGFloat(frame.width) * canvasScale.width,
-            height: CGFloat(frame.height) * canvasScale.height,
-            alignment: .topLeading
-        )
-        .position(
-            x: CGFloat(frame.x) * canvasScale.width + CGFloat(frame.width) * canvasScale.width / 2,
-            y: CGFloat(frame.y) * canvasScale.height + CGFloat(frame.height) * canvasScale.height / 2
-        )
-        .allowsHitTesting(false)
-    }
-
-    // ------------------------=
-    // FUNC: sectionIcon
-    // DESC: Mirrors the semantic icon family used by the runtime Settings navigation.
-    // ------------------=
-    private func sectionIcon(_ index: Int) -> String {
-        ["gearshape", "paintbrush", "person.2", "waveform", "lock.shield",
-         "display", "network", "point.3.connected.trianglepath.dotted", "externaldrive",
-         "info.circle", "cursorarrow.motionlines"][index]
     }
 }
 

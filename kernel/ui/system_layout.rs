@@ -2231,6 +2231,43 @@ impl SystemLayout {
     // DESC: Fits all Settings sections inside the navigation viewport while preserving generous icon and pointer space.
     // ------------------=
     pub fn settings_section_geometry(self, state: SettingsWindowState, index: usize) -> Rect {
+        self.settings_section_geometry_for_section(state, index, index.min(10))
+    }
+
+    // ------------------------=
+    // FUNC: settings_section_geometry_for_section
+    // DESC: Maps one navigation item from the currently displayed WYSIWYG Settings section.
+    // ------------------=
+    pub fn settings_section_geometry_for_section(
+        self,
+        state: SettingsWindowState,
+        index: usize,
+        section: usize,
+    ) -> Rect {
+        if let (Some(console), Some(item)) = (
+            crate::ui::installer_layout::settings_template_element(
+                section.min(10), crate::ui::installer_template::InstallerTemplateRole::Console,
+            ),
+            crate::ui::installer_layout::settings_template_role_at(
+                section.min(10),
+                crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationItem,
+                index.min(10),
+            ),
+        ) {
+            let window = self.settings_window_geometry_for_section(state, section.min(10)).window;
+            return rect(
+                window.x.max(0) as usize
+                    + item.frame.x.saturating_sub(console.frame.x) as usize
+                        * window.width as usize / console.frame.width.max(1) as usize,
+                window.y.max(0) as usize
+                    + item.frame.y.saturating_sub(console.frame.y) as usize
+                        * window.height as usize / console.frame.height.max(1) as usize,
+                item.frame.width as usize * window.width as usize
+                    / console.frame.width.max(1) as usize,
+                item.frame.height as usize * window.height as usize
+                    / console.frame.height.max(1) as usize,
+            );
+        }
         let geometry = self.settings_window_geometry(state);
         let navigation = geometry.navigation;
         let inset = 10 * self.scale;
@@ -2295,7 +2332,7 @@ impl SystemLayout {
             return Some(SettingsTarget::Title);
         }
         for index in 0..11usize {
-            if self.settings_section_geometry(state, index).contains(point) {
+            if self.settings_section_geometry_for_section(state, index, section).contains(point) {
                 return Some(SettingsTarget::Section(index));
             }
         }

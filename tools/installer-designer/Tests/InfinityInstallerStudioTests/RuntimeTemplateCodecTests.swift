@@ -21,6 +21,13 @@ final class RuntimeTemplateCodecTests: XCTestCase {
             XCTAssertEqual(screen.elements.filter { $0.role == .console }.count, 1)
             XCTAssertEqual(screen.elements.filter { $0.role == .content }.count, 1)
             XCTAssertFalse(screen.elements.filter { $0.role == .metadata }.isEmpty)
+            XCTAssertEqual(screen.elements.filter { $0.role == .settingsNavigationItem }.count, 11)
+            XCTAssertEqual(screen.elements.filter { $0.role == .settingsNavigationIcon }.count, 11)
+            XCTAssertEqual(screen.elements.filter { $0.role == .settingsNavigationLabel }.count, 11)
+            XCTAssertEqual(screen.elements.filter { $0.role == .settingsArtwork }.count, 1)
+            XCTAssertTrue(screen.elements.filter {
+                [.settingsNavigationIcon, .settingsArtwork].contains($0.role)
+            }.allSatisfy { $0.kind == .image && $0.imageAsset.hasSuffix(".png") })
         }
     }
 
@@ -604,6 +611,13 @@ final class RuntimeTemplateCodecTests: XCTestCase {
         store.document = .factoryDefault()
         store.configurationDocument = .factoryConfiguration()
         store.settingsDocument = .factorySystemSettings()
+        for screenIndex in store.settingsDocument.screens.indices {
+            for elementIndex in store.settingsDocument.screens[screenIndex].elements.indices
+            where store.settingsDocument.screens[screenIndex].elements[elementIndex].kind == .image {
+                store.settingsDocument.screens[screenIndex].elements[elementIndex].imageAsset =
+                    "infinity-installer-masthead-v2.png"
+            }
+        }
         store.projectRoot = root
         let masthead = store.selectedScreen!.elements.first { $0.role == .masthead }!
         store.toggleElementLock(masthead.id)

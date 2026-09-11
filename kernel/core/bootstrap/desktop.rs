@@ -4824,6 +4824,9 @@ impl super::DisplayDevice {
             focus,
             crate::ui::installer_template::InstallerTemplateRole::Console,
         );
+        let settings_template = crate::ui::installer_template::InstallerTemplate::parse_settings(
+            crate::ui::installer_layout::SETTINGS_TEMPLATE_BYTES,
+        ).ok();
         let authored_rect = |element: crate::ui::installer_template::InstallerTemplateElement<'static>| {
             let console = template_console?;
             Some((
@@ -4931,45 +4934,32 @@ impl super::DisplayDevice {
             geometry.navigation.height as usize,
         );
         for (index, section) in sections.iter().enumerate() {
-            let section = crate::ui::installer_layout::settings_template_element(
-                index,
-                crate::ui::installer_template::InstallerTemplateRole::Title,
-            ).map(|element| element.text).filter(|text| !text.is_empty()).unwrap_or(*section);
-            let row = layout.settings_section_geometry(settings_window, index);
-            let row_left = row.x.max(0) as usize;
-            let row_top = row.y.max(0) as usize;
-            let row_width = row.width as usize;
-            let row_height = row.height as usize;
-            if focus == index {
-                self.fill_rounded_rect_alpha(
-                    row_left,
-                    row_top,
-                    row_width,
-                    row_height,
-                    9 * scale,
-                    selection_r,
-                    selection_g,
-                    selection_b,
-                    226,
+            let _ = section;
+            for role in [
+                crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationItem,
+                crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationIcon,
+                crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationLabel,
+            ] {
+                let Some(element) = crate::ui::installer_layout::settings_template_role_at(
+                    focus, role, index,
+                ).filter(|element| !element.hidden && element.opacity > 0) else { continue };
+                let Some((x, y, mapped_width, mapped_height)) = authored_rect(element) else {
+                    continue;
+                };
+                let image = if element.kind == 2 {
+                    settings_template.and_then(|template| template.asset(element.image_asset))
+                } else {
+                    None
+                };
+                self.template_element_in_rect(
+                    element,
+                    image,
+                    None,
+                    crate::ui::installer_layout::InstallerRect {
+                        left: x, top: y, width: mapped_width, height: mapped_height,
+                    },
                 );
             }
-            self.authentication_icon(
-                left + 27 * scale,
-                row_top + row_height / 2,
-                [8usize, 13, 6, 7, 8, 11, 14, 6, 11, 12, 11][index],
-                (crate::ui::system_layout::SETTINGS_SECTION_ICON_SIZE * scale)
-                    .min(row_height.saturating_sub(6 * scale).max(12 * scale)),
-                focus == index,
-            );
-            self.ui_text_strong(
-                left + 48 * scale,
-                row_top + row_height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
-                section,
-                if focus == index { 237 } else { 180 },
-                if focus == index { 245 } else { 198 },
-                if focus == index { 251 } else { 211 },
-                1,
-            );
         }
         self.render_clip = caller_clip;
         let content_x = geometry.content.x.max(0) as usize;
@@ -4983,6 +4973,34 @@ impl super::DisplayDevice {
                 element.corner_radius as usize * scale,
                 element.fill[0], element.fill[1], element.fill[2], panel_alpha(element.fill[3]),
             );
+        }
+        if let Some(template) = settings_template {
+            if let Some(count) = template.element_count(focus.saturating_add(1) as u8) {
+                for index in 0..count {
+                    let Some(element) = template.layer_at(focus.saturating_add(1) as u8, index)
+                        .filter(|element| !element.hidden && element.opacity > 0)
+                    else { continue };
+                    if !matches!(
+                        element.role,
+                        value if value == 0
+                            || value == crate::ui::installer_template::InstallerTemplateRole::Image as u8
+                            || value == crate::ui::installer_template::InstallerTemplateRole::SettingsArtwork as u8
+                    ) {
+                        continue;
+                    }
+                    let Some((x, y, mapped_width, mapped_height)) = authored_rect(element) else {
+                        continue;
+                    };
+                    self.template_element_in_rect(
+                        element,
+                        if element.kind == 2 { template.asset(element.image_asset) } else { None },
+                        None,
+                        crate::ui::installer_layout::InstallerRect {
+                            left: x, top: y, width: mapped_width, height: mapped_height,
+                        },
+                    );
+                }
+            }
         }
         let authored_title = crate::ui::installer_layout::settings_template_element(
             focus,

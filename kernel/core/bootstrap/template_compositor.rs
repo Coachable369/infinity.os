@@ -175,6 +175,20 @@ impl DisplayDevice {
             return;
         }
         let rect = scale_template_rect(element.frame, self.width, self.height);
+        self.template_element_in_rect(element, image, navigation, rect);
+    }
+
+    // ------------------------=
+    // FUNC: template_element_in_rect
+    // DESC: Paints an authored layer inside an explicitly mapped runtime rectangle.
+    // ------------------=
+    pub(super) fn template_element_in_rect(
+        &mut self,
+        element: InstallerTemplateElement<'_>,
+        image: Option<&[u8]>,
+        navigation: Option<(usize, bool, Option<(i32, i32, bool)>)>,
+        rect: crate::ui::installer_layout::InstallerRect,
+    ) {
         let opacity = element.opacity as u16;
         let fill_alpha = (element.fill[3] as u16 * opacity / 100) as u8;
         let border_alpha = (element.border[3] as u16 * opacity / 100) as u8;

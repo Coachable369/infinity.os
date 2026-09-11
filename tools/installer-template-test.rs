@@ -227,7 +227,41 @@ fn main() {
             .element(section, InstallerTemplateRole::Content)
             .expect("Settings section must expose its authored viewport");
         assert!(viewport.frame.width > 0 && viewport.frame.height > 0);
-        assert!(settings.element_count(section).unwrap() >= 12);
+        let count = settings.element_count(section).unwrap();
+        let mut navigation_items = 0;
+        let mut navigation_icons = 0;
+        let mut navigation_labels = 0;
+        let mut artwork = 0;
+        for layer in 0..count {
+            let element = settings
+                .layer_at(section, layer)
+                .expect("Settings layer must resolve");
+            match element.role {
+                role if role == InstallerTemplateRole::SettingsNavigationItem as u8 => {
+                    navigation_items += 1;
+                    assert_eq!(element.kind, 1);
+                }
+                role if role == InstallerTemplateRole::SettingsNavigationIcon as u8 => {
+                    navigation_icons += 1;
+                    assert_eq!(element.kind, 2);
+                    assert!(settings.asset(element.image_asset).is_some());
+                }
+                role if role == InstallerTemplateRole::SettingsNavigationLabel as u8 => {
+                    navigation_labels += 1;
+                    assert_eq!(element.kind, 3);
+                }
+                role if role == InstallerTemplateRole::SettingsArtwork as u8 => {
+                    artwork += 1;
+                    assert_eq!(element.kind, 2);
+                    assert!(settings.asset(element.image_asset).is_some());
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(navigation_items, 11);
+        assert_eq!(navigation_icons, 11);
+        assert_eq!(navigation_labels, 11);
+        assert_eq!(artwork, 1);
     }
 
     let mut altered = FACTORY_TEMPLATE.to_vec();

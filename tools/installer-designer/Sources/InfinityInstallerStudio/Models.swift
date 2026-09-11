@@ -61,6 +61,10 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
     case progressBar = 19
     case progressHero = 20
     case liveDetails = 21
+    case settingsNavigationItem = 22
+    case settingsNavigationIcon = 23
+    case settingsArtwork = 24
+    case settingsNavigationLabel = 25
 
     var id: UInt8 { rawValue }
     var title: String {
@@ -87,6 +91,10 @@ enum StudioElementRole: UInt8, Codable, CaseIterable, Identifiable {
         case .progressBar: "Installation Progress"
         case .progressHero: "Progress Hero"
         case .liveDetails: "Live Installer Details"
+        case .settingsNavigationItem: "Settings Navigation Item"
+        case .settingsNavigationIcon: "Settings Navigation Icon"
+        case .settingsArtwork: "Settings Artwork"
+        case .settingsNavigationLabel: "Settings Navigation Label"
         }
     }
 
@@ -185,8 +193,10 @@ enum ScreenCollection: String, CaseIterable, Identifiable {
     // ------------------=
     func requiredRoleCount(_ role: StudioElementRole, screenID: Int) -> Int {
         if self == .systemSettings {
-            return [.masthead, .console, .content, .title, .body, .sectionLabel, .metadata]
-                .contains(role) ? 1 : 0
+            if [.settingsNavigationItem, .settingsNavigationIcon, .settingsNavigationLabel]
+                .contains(role) { return 11 }
+            return [.masthead, .console, .content, .title, .body, .sectionLabel, .metadata,
+                    .settingsArtwork].contains(role) ? 1 : 0
         }
         if [.masthead, .console, .content, .title, .body, .backButton, .primaryButton, .footer]
             .contains(role)
@@ -566,7 +576,8 @@ struct InstallerStudioDocument: Codable, Hashable {
         ]
         let screens = sections.indices.map { index in
             var elements = systemSettingsElements(
-                section: sections[index], description: descriptions[index], rows: rowLabels[index]
+                sectionIndex: index, section: sections[index],
+                description: descriptions[index], rows: rowLabels[index]
             )
             for elementIndex in elements.indices {
                 elements[elementIndex].id = settingsElementID(
@@ -593,8 +604,31 @@ struct InstallerStudioDocument: Codable, Hashable {
     // DESC: Creates one complete Settings section with editable chrome, navigation, viewport, rows, and detail well.
     // ------------------=
     private static func systemSettingsElements(
-        section: String, description: String, rows: [String]
+        sectionIndex: Int, section: String, description: String, rows: [String]
     ) -> [StudioElement] {
+        let sections = [
+            "General", "Themes & Skins", "Users & Accounts", "AI & Voice",
+            "Privacy & Security", "Devices", "Network", "Nodes & Mesh",
+            "Storage", "About", "Input",
+        ]
+        let navigationIcons = [
+            "26-settings", "27-search", "01-user", "23-microphone", "32-shield",
+            "20-display", "17-network", "18-server", "12-drive-internal",
+            "28-information", "33-key",
+        ]
+        let artwork = [
+            "assets/icons/crystal-blue-glass/128/base/26-settings.png",
+            "assets/desktop/infinity-shell-wallpaper-v3.png",
+            "assets/icons/crystal-blue-glass/128/base/01-user.png",
+            "assets/icons/crystal-blue-glass/128/base/23-microphone.png",
+            "assets/icons/crystal-blue-glass/128/base/32-shield.png",
+            "assets/icons/crystal-blue-glass/128/base/20-display.png",
+            "assets/icons/crystal-blue-glass/128/base/17-network.png",
+            "assets/mesh/infinity-node-trust-topology-v1.png",
+            "assets/boot/infinity-storage-hierarchy-v3.png",
+            "assets/icons/crystal-blue-glass/128/base/28-information.png",
+            "assets/icons/crystal-blue-glass/128/base/33-key.png",
+        ]
         var elements: [StudioElement] = [
             .make(name: "Settings Window", kind: .console, role: .console,
                   frame: CanvasRect(x: 55, y: 80, width: 890, height: 820), zIndex: 0),
@@ -608,6 +642,9 @@ struct InstallerStudioDocument: Codable, Hashable {
                   frame: CanvasRect(x: 370, y: 205, width: 500, height: 54), text: section, zIndex: 3),
             .make(name: "Section Description", kind: .text, role: .body,
                   frame: CanvasRect(x: 370, y: 262, width: 500, height: 48), text: description, zIndex: 3),
+            .make(name: "Section Artwork", kind: .image, role: .settingsArtwork,
+                  frame: CanvasRect(x: 650, y: 318, width: 220, height: 220),
+                  imageAsset: artwork[sectionIndex], zIndex: 2),
         ]
         elements[0].fill = StudioColor(red: 5, green: 18, blue: 31, alpha: 230)
         elements[0].border = StudioColor(red: 118, green: 210, blue: 255, alpha: 210)
@@ -618,6 +655,43 @@ struct InstallerStudioDocument: Codable, Hashable {
         elements[3].border = StudioColor(red: 65, green: 132, blue: 170, alpha: 80)
         elements[4].fontSize = 32
         elements[5].fontSize = 17
+        elements[6].opacity = sectionIndex == 7 || sectionIndex == 8 ? 34 : 18
+        for index in sections.indices {
+            let top = 170 + index * 52
+            var item = StudioElement.make(
+                name: "Navigation \(sections[index])", kind: .panel,
+                role: .settingsNavigationItem,
+                frame: CanvasRect(x: 67, y: top, width: 226, height: 46),
+                text: "", zIndex: 2
+            )
+            item.fill = index == sectionIndex
+                ? StudioColor(red: 18, green: 91, blue: 136, alpha: 218)
+                : StudioColor(red: 3, green: 16, blue: 28, alpha: 0)
+            item.border = index == sectionIndex
+                ? StudioColor(red: 114, green: 216, blue: 255, alpha: 150)
+                : StudioColor(red: 3, green: 16, blue: 28, alpha: 0)
+            item.fontSize = 15
+            item.cornerRadius = 9
+            elements.append(item)
+            elements.append(.make(
+                name: "Navigation \(sections[index]) Icon", kind: .image,
+                role: .settingsNavigationIcon,
+                frame: CanvasRect(x: 76, y: top + 9, width: 28, height: 28),
+                imageAsset: "assets/icons/crystal-blue-glass/64/base/\(navigationIcons[index]).png",
+                zIndex: 3
+            ))
+            var label = StudioElement.make(
+                name: "Navigation \(sections[index]) Label", kind: .text,
+                role: .settingsNavigationLabel,
+                frame: CanvasRect(x: 112, y: top + 12, width: 170, height: 24),
+                text: sections[index], zIndex: 3
+            )
+            label.fill = index == sectionIndex
+                ? StudioColor(red: 241, green: 248, blue: 255, alpha: 255)
+                : StudioColor(red: 180, green: 198, blue: 211, alpha: 255)
+            label.fontSize = 15
+            elements.append(label)
+        }
         for (row, label) in rows.enumerated() {
             var element = StudioElement.make(
                 name: "Setting Row \(row + 1)", kind: .panel, role: .metadata,
