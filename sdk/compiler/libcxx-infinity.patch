@@ -6,3 +6,19 @@
 +#  elif defined(__wasi__) || defined(__EMSCRIPTEN__) || defined(__INFINITY__)
  #    define _LIBCPP_USING_GETENTROPY
  #  elif defined(__Fuchsia__)
+--- a/libcxx/src/regex.cpp
++++ b/libcxx/src/regex.cpp
+@@ -310,5 +310,5 @@
+     {"alnum", ctype_base::alnum},
+     {"alpha", ctype_base::alpha},
+-    {"blank", ctype_base::blank},
++    {"blank", static_cast<make_unsigned<ctype_base::mask>::type>(ctype_base::blank)},
+     {"cntrl", ctype_base::cntrl},
+     {"d", ctype_base::digit},
+@@ -316,5 +316,5 @@
+     {"graph", ctype_base::graph},
+     {"lower", ctype_base::lower},
+-    {"print", ctype_base::print},
++    {"print", static_cast<make_unsigned<ctype_base::mask>::type>(ctype_base::print)},
+     {"punct", ctype_base::punct},
+     {"s", ctype_base::space},

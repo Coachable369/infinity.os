@@ -193,3 +193,33 @@ table or suppress the errors. The build directory now requests localization,
 but its installed sysroot is the last successful non-localized, random-enabled
 build. Full compiler linking, native service integration and ISO-detached
 acceptance remain outstanding.
+
+## Newlib localization correction checkpoint
+
+Setting `RUNTIMES_USE_LIBC=newlib` selects the proper libc++ locale backend.
+The target's signed `char` then exposed two narrowing errors in libc++'s regex
+character-class table. The pinned patch now converts the blank/print masks
+through their unsigned mask type before widening. This preserves their low-byte
+bits without setting the separate regex word bit or changing Newlib's ABI.
+
+The localized, random-enabled libc++/libc++abi archives now build and install
+successfully. `sdk/compiler/cmake/runtime-options.cmake` records these runtime
+options; load it with `cmake -C` alongside the target/compiler/sysroot flags.
+Build `cxx cxxabi` successfully before invoking `install-cxx install-cxxabi`, so
+a failed build does not install mismatched headers ahead of its archives.
+
+`sh tools/native-c-probe/locale-test.sh` links the actual target libc++ regex
+table and Newlib character operations into a freestanding x86-64 probe. The
+disposable QEMU guest passed with exit status 33, verifying blank/print mask
+values, separation of the word-class bit, unknown classes, case-insensitive
+class expansion and native character classification. Results are recorded in
+`build/native-c/locale-proof.json`. The host cross-compiles this probe; this is
+native library execution, not native compilation or installed-system acceptance.
+
+LLVM subsequently compiled Mustache.cpp (the previous string-stream blocker).
+Its next failure is `Unix/Unix.h` unconditionally including missing `dlfcn.h`
+while compiling RandomNumberGenerator.cpp, despite `HAVE_DLOPEN` being absent.
+Dynamic loading is not implemented by the current static payload. The next
+change must remove that unsupported platform assumption or add a truthful
+native adapter, not claim a host dynamic loader exists. The two-correction limit
+was reached here; the compiler remains unlinked and uninstalled.
