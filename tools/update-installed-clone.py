@@ -72,6 +72,16 @@ def main():
                 found.append((first, last))
         assert len(found) == 1
         first, last = found[0]
+        stores = []
+        for offset in (262144, 257 * 2048):
+            for slot in (0, 1):
+                root = read(first + offset + slot)
+                if root[:8] == b'INFOROOT':
+                    record_crc(root)
+                    stores.append(offset)
+                    break
+        assert len(stores) == 1, 'Ambiguous or missing object-store boundary'
+        kernel_limit = stores[0]
         header = read(first)
         record_crc(header)
         assert integer(header, 16, 4) == 4
@@ -85,7 +95,7 @@ def main():
         assert integer(manifest, 24) == integer(catalog, 24)
         relative, old_size, old_crc = integer(manifest, 40), integer(manifest, 48), integer(manifest, 56, 4)
         assert relative == integer(header, 48) == 2048
-        assert old_size == integer(header, 56) and 0 < old_size <= (262144 - relative) * 512
+        assert old_size == integer(header, 56) and 0 < old_size <= (kernel_limit - relative) * 512
         assert zlib.crc32(read(first + relative, old_size)) == old_crc
         components_lba = first + integer(manifest, 64)
         components = read(components_lba, 1024)
@@ -107,7 +117,7 @@ def main():
                 references += 1
         assert references
         padded = kernel + bytes((-len(kernel)) % 512)
-        assert relative + len(padded) // 512 <= 262144
+        assert relative + len(padded) // 512 <= kernel_limit
         assert first + relative + len(padded) // 512 <= last
         put(header, 56, len(kernel))
         put(manifest, 48, len(kernel))
