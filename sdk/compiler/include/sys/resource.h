@@ -6,6 +6,7 @@
 extern "C" {
 #endif
 typedef uint64_t rlim_t;
+#define RLIM_INFINITY ((rlim_t)UINT64_MAX)
 struct rlimit { rlim_t rlim_cur, rlim_max; };
 struct rusage { struct timeval ru_utime, ru_stime; };
 #define RUSAGE_SELF 0

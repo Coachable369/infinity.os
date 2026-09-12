@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <assert.h>
 #include <sys/random.h>
+#include <sys/resource.h>
 
 struct State { uint64_t ns; int error; unsigned calls; int protection; unsigned char bytes[16]; };
 
@@ -83,6 +84,10 @@ static int test_entropy(void *context, void *out, size_t size) {
 int main(void) {
     struct timespec stamp = {17, 19};
     infinity_compiler_set_host(0);
+    struct rlimit limit = {17, 19};
+    assert(RLIM_INFINITY == UINT64_MAX && RLIM_INFINITY > limit.rlim_max);
+    assert(getrlimit(RLIMIT_STACK, &limit) == -1 && errno == ENOSYS);
+    assert(limit.rlim_cur == 17 && limit.rlim_max == 19);
     assert(clock_gettime(CLOCK_MONOTONIC, &stamp) == -1 && errno == ENOSYS);
     assert(stamp.tv_sec == 17 && stamp.tv_nsec == 19);
     assert(mmap(0, 16, PROT_READ, MAP_PRIVATE, 3, 0) == MAP_FAILED && errno == ENOSYS);

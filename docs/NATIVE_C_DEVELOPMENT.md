@@ -399,3 +399,25 @@ corrections, the next failure is `clang/tools/driver/cc1_main.cpp:94,97`: the
 resource compatibility header lacks `RLIM_INFINITY`. Compiler linking, native
 runtime providers, installation and detached-media compile/run acceptance are
 still outstanding. No new ISO is produced at this checkpoint.
+
+## Resource constant and cross-link selection checkpoint
+
+The resource ABI now defines the uint64 unlimited sentinel `RLIM_INFINITY`.
+This does not claim unlimited resources: unavailable `getrlimit` still returns
+ENOSYS without changing the caller's limits. The platform behavioral test covers
+that result and passes, together with freestanding platform compilation.
+
+Clang and ELF LLD compilation now reach executable linking. The CMake platform
+explicitly passes `CMAKE_LINKER` to the Clang driver using `--ld-path`; setting
+CMAKE_LINKER alone had allowed selection of the host macOS linker. The local
+cross-build's inherited host OpenSSL search path was also cleared using
+`-DCMAKE_EXE_LINKER_FLAGS=`. `linker-test.sh` successfully uses this platform to
+build a dependency-free executable and validates its binary ELF64/x86-64 type
+and nonzero entry point. It does not execute that artifact on InfinityOS.
+
+After these two corrections, the full link reports missing `crt0.o`, `-lrt`,
+and the target compiler-rt builtins archive. LLD also rejects four BLAKE3 assembly
+archive members as neither ELF relocatables nor bitcode. Next work must supply
+the real native startup/runtime and correct assembly target configuration,
+not hide unresolved dependencies. No linked compiler, runtime integration,
+fresh-install acceptance or new ISO is claimed.
