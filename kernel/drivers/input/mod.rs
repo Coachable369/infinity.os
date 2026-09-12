@@ -4,6 +4,8 @@ mod buffer;
 mod ps2;
 #[cfg(target_arch = "aarch64")]
 pub(crate) mod uefi;
+#[cfg(target_arch = "aarch64")]
+mod firmware_key;
 
 use crate::boot_info::BootInfo;
 pub use pointer::{AbsolutePointerEvent, PointerCapabilities, PointerEvent};

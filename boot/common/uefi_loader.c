@@ -1283,7 +1283,16 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     gather_firmware_entropy(system, info);
     gather_framebuffer(system, info);
 #if defined(INFINITY_AARCH64)
-    if (system->con_in && system->con_in->read_key_stroke) {
+    /* The extended console preserves Ctrl/Shift, unlike legacy text input. */
+    EFI_GUID input_ex_guid = {0xdd9e7534, 0x7762, 0x4698,
+        {0x8c, 0x14, 0xf5, 0x85, 0x17, 0xa6, 0x25, 0xaa}};
+    void *input_ex = NULL;
+    if (system->boot_services->handle_protocol(system->console_in_handle,
+            &input_ex_guid, &input_ex) == EFI_SUCCESS && input_ex) {
+        info->firmware_input = (uint64_t)(uintptr_t)input_ex;
+        info->boot_flags |= 2 | 64;
+    }
+    else if (system->con_in && system->con_in->read_key_stroke) {
         info->firmware_input = (uint64_t)(uintptr_t)system->con_in;
         info->boot_flags |= 2;
         serial_write("[BOOT] firmware input bridge ready\n");

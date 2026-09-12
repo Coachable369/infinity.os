@@ -18,6 +18,23 @@ struct SimpleTextInput {
 }
 
 #[repr(C)]
+struct KeyData {
+    key: InputKey,
+    shift_state: u32,
+    toggle_state: u8,
+}
+
+#[repr(C)]
+struct SimpleTextInputEx {
+    reset: usize,
+    read_key_stroke: unsafe extern "efiapi" fn(*mut SimpleTextInputEx, *mut KeyData) -> u64,
+    wait_for_key: usize,
+    set_state: usize,
+    register_notify: usize,
+    unregister_notify: usize,
+}
+
+#[repr(C)]
 struct PointerState {
     relative_x: i32,
     relative_y: i32,
@@ -104,6 +121,7 @@ struct UsbIo {
 }
 
 static mut INPUT: *mut SimpleTextInput = core::ptr::null_mut();
+static mut INPUT_EX: *mut SimpleTextInputEx = core::ptr::null_mut();
 static mut POINTER: *mut SimplePointer = core::ptr::null_mut();
 static mut ABSOLUTE_POINTER: *mut AbsolutePointer = core::ptr::null_mut();
 static mut POINTERS: *mut FirmwarePointers = core::ptr::null_mut();
@@ -268,7 +286,13 @@ pub fn initialize(info: &BootInfo) -> InputStatus {
     let pointer = discovered_pointer_capabilities();
     if info.boot_flags & 2 != 0 && info.firmware_input != 0 {
         unsafe {
-            INPUT = info.firmware_input as usize as *mut SimpleTextInput;
+            INPUT = core::ptr::null_mut();
+            INPUT_EX = core::ptr::null_mut();
+            if info.boot_flags & 64 != 0 {
+                INPUT_EX = info.firmware_input as usize as *mut SimpleTextInputEx;
+            } else {
+                INPUT = info.firmware_input as usize as *mut SimpleTextInput;
+            }
         }
         InputStatus {
             keyboard: true,
@@ -292,35 +316,27 @@ pub fn run() -> ! {
     loop {
         crate::drivers::network::poll();
         let input = unsafe { INPUT };
+        let input_ex = unsafe { INPUT_EX };
         let direct_keyboard = unsafe { USE_DIRECT_USB_KEYBOARD }
             && unsafe { POINTERS.as_ref() }
                 .map(|pointers| pointers.usb_keyboard_count != 0)
                 .unwrap_or(false);
-        if !direct_keyboard && !input.is_null() {
-            let mut key = InputKey {
-                scan_code: 0,
-                unicode_character: 0,
+        if !direct_keyboard && (!input_ex.is_null() || !input.is_null()) {
+            let mut data = KeyData {
+                key: InputKey { scan_code: 0, unicode_character: 0 },
+                shift_state: 0,
+                toggle_state: 0,
             };
-            let status = unsafe { ((*input).read_key_stroke)(input, &mut key) };
+            let status = unsafe {
+                if !input_ex.is_null() {
+                    ((*input_ex).read_key_stroke)(input_ex, &mut data)
+                } else {
+                    ((*input).read_key_stroke)(input, &mut data.key)
+                }
+            };
             if status == 0 {
-                let character = key.unicode_character;
-                let console_key = match character {
-                    8 => Some(crate::console::ConsoleKey::Backspace),
-                    9 => Some(crate::console::ConsoleKey::Tab(false)),
-                    13 => Some(crate::console::ConsoleKey::Enter),
-                    1..=26 => Some(crate::console::ConsoleKey::Shortcut(b'a' + character as u8 - 1)),
-                    32..=126 => Some(crate::console::ConsoleKey::Character(character as u8)),
-                    _ if key.scan_code == 0x01 => Some(crate::console::ConsoleKey::Up),
-                    _ if key.scan_code == 0x02 => Some(crate::console::ConsoleKey::Down),
-                    _ if key.scan_code == 0x03 => Some(crate::console::ConsoleKey::Right),
-                    _ if key.scan_code == 0x04 => Some(crate::console::ConsoleKey::Left),
-                    _ if key.scan_code == 0x05 => Some(crate::console::ConsoleKey::Home),
-                    _ if key.scan_code == 0x06 => Some(crate::console::ConsoleKey::End),
-                    _ if key.scan_code == 0x08 => Some(crate::console::ConsoleKey::Delete),
-                    _ if key.scan_code == 0x0b => Some(crate::console::ConsoleKey::Help),
-                    _ if key.scan_code == 0x17 => Some(crate::console::ConsoleKey::Escape),
-                    _ => None,
-                };
+                let console_key = super::firmware_key::decode(
+                    data.key.scan_code, data.key.unicode_character, data.shift_state);
                 if let Some(key) = console_key {
                     crate::console::input(key);
                 }
