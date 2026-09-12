@@ -71,6 +71,25 @@ their exact shard sizes and SHA-256, plus loader and license bytes.
 
 ## Verification status
 
+### September 12 Q6 optimization and guest baseline
+
+The running `infinityos-4` desktop selected Ministral 3 3B with Ctrl+J,
+Ctrl+M and produced a coherent greeting, reporting 1.2 tokens/sec when finished.
+This was the older installed kernel (streamed response and old widget row still
+visible), with the ISO still attached. It is a functional guest baseline, not
+ISO-detached acceptance of the current build or a responsiveness pass.
+
+The ARM Q6 decoder now loads eight packed values at once, widens them with NEON,
+and performs the same two ordered four-lane accumulations. Q4, sampling and
+worker scheduling are unchanged. `make ai-test` verifies bit-identical results
+against scalar math, including Ministral widths 3072 and 9216 and row tails.
+The real-weight `ministral-native-test --forward` completed after this change.
+Sequential warm-cache host microbenchmarks measured eight-row Q6 work at width
+3072 as 0.1988s before / 0.1361s after, and width 9216 as 0.5539s / 0.4119s
+(20,000 repetitions). These are isolated host arithmetic measurements, not
+end-to-end guest speedups. Updating the installed VM and measuring it again
+remain required before proceeding to HTTPS work.
+
 The native host harness completed a real instruction with a one-token `Hello`
 answer and EOS in approximately 16.8 seconds, including prompt processing.
 This is neither guest throughput nor installed-system acceptance. Qwen's

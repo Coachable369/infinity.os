@@ -49,15 +49,17 @@ void infinity_qwen_dot(uint32_t kind,const uint8_t *data,const float *input,size
         } else {
             float d=qwen_half(p+208);
 #if defined(__aarch64__) && !defined(QWEN_SCALAR)
-            for(unsigned part=0;part<2;part++)for(unsigned g=0;g<4;g++)for(unsigned lane=0;lane<32;lane+=4) {
+            for(unsigned part=0;part<2;part++)for(unsigned g=0;g<4;g++)for(unsigned lane=0;lane<32;lane+=8) {
                 const uint8_t *lo=p+part*64+(g%2)*32+lane,*hi=p+128+part*32+lane;
-                uint32x4_t low={lo[0],lo[1],lo[2],lo[3]},high={hi[0],hi[1],hi[2],hi[3]};
-                low=g<2?vandq_u32(low,vdupq_n_u32(15)):vshrq_n_u32(low,4);
-                high=vandq_u32(vshlq_u32(high,vdupq_n_s32(-(int)(g*2))),vdupq_n_u32(3));
-                int32x4_t q=vsubq_s32(vreinterpretq_s32_u32(vorrq_u32(low,vshlq_n_u32(high,4))),vdupq_n_s32(32));
+                uint8x8_t low=vld1_u8(lo),high=vld1_u8(hi);
+                low=g<2?vand_u8(low,vdup_n_u8(15)):vshr_n_u8(low,4);
+                high=vand_u8(vshl_u8(high,vdup_n_s8(-(int)(g*2))),vdup_n_u8(3));
+                int16x8_t q=vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(vorr_u8(low,vshl_n_u8(high,4)))),vdupq_n_s16(32));
                 float ds=d*(float)(int8_t)p[192+part*8+g*2+lane/16];
-                float32x4_t weight=vmulq_n_f32(vcvtq_f32_s32(q),ds);
+                float32x4_t weight=vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(q))),ds);
                 accum=vaddq_f32(accum,vmulq_f32(weight,vld1q_f32(x+part*128+g*32+lane)));
+                weight=vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(q))),ds);
+                accum=vaddq_f32(accum,vmulq_f32(weight,vld1q_f32(x+part*128+g*32+lane+4)));
             }
 #else
             for(unsigned part=0;part<2;part++)for(unsigned g=0;g<4;g++)for(unsigned lane=0;lane<32;lane++) {

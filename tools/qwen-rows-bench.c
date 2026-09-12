@@ -19,7 +19,7 @@ int main(void) {
     static uint8_t data[9*48*210]; static float input[12288];
     float reference[9],actual[9]; uint32_t seed=42;
     for(unsigned kind=12;kind<=14;kind+=2) {
-        unsigned widths[]={256,512,1024,2048,4096,8192,12288};
+        unsigned widths[]={256,512,1024,2048,3072,4096,8192,9216,12288};
         for(unsigned wi=0;wi<sizeof(widths)/sizeof(widths[0]);wi++) {
             unsigned width=widths[wi];
             size_t stride=width/256*(kind==12?144:210);
