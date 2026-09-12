@@ -14,6 +14,8 @@ pub struct Service {
     output_count: usize,
     generated: usize,
     busy: bool,
+    pub reused_tokens: usize,
+    pub prefill_tokens: usize,
 }
 impl Service {
     // ------------------------=
@@ -78,6 +80,8 @@ impl Service {
             output_count: 0,
             generated: 0,
             busy: false,
+            reused_tokens: 0,
+            prefill_tokens: 0,
         })
     }
     // ------------------------=
@@ -95,13 +99,19 @@ impl Service {
             self.prompt_count = previous;
             return Err(error);
         }
-        self.engine.reset();
-        self.consumed = 0;
+        // Completed positions are an immutable prefix of the retained token history.
+        // An interrupted token may have partially written KV rows; begin overwrites
+        // that position across every layer before it becomes visible to attention.
+        self.consumed = self.engine.resume_prefix();
+        self.reused_tokens = self.consumed;
+        self.prefill_tokens = self.prompt_count - self.consumed;
         self.output_count = 0;
         self.generated = 0;
-        self.engine
-            .begin_with_prediction(self.prompt[0], self.prompt_count == 1)?;
-        self.consumed = 1;
+        self.engine.begin_with_prediction(
+            self.prompt[self.consumed],
+            self.consumed + 1 == self.prompt_count,
+        )?;
+        self.consumed += 1;
         self.busy = true;
         Ok(())
     }

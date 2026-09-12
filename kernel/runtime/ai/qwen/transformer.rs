@@ -223,6 +223,15 @@ impl<'a, 'b> Engine<'a, 'b> {
         self.cancelled = true;
     }
     // ------------------------=
+    // FUNC: resume_prefix
+    // DESC: Discards an unfinished token while retaining only fully computed KV positions.
+    // ------------------=
+    pub fn resume_prefix(&mut self) -> usize {
+        self.active = false;
+        self.cancelled = false;
+        self.position
+    }
+    // ------------------------=
     // FUNC: begin
     // DESC: Embeds one input token and schedules its forward pass.
     // ------------------=

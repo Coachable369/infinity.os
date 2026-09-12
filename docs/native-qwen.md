@@ -1,5 +1,25 @@
 # Native Qwen3-8B bring-up
 
+## Performance follow-up
+
+New turns preserve fully computed KV positions. Only uncached tokens are
+prefilled; cancellation discards the in-progress position, not the valid prefix.
+Changing authenticated owner still clears conversation/cache state. Real-weight
+parity checks compare resumed execution after partial-token cancellation with a
+cold replay, asserting the same selected token.
+
+`ai status` reports model-load time, elapsed first-token latency (including
+tokenization), prefill/decode compute time, maximum individual engine slice,
+maximum complete service-pump time, and reused/new prompt-token counts.
+Existing decode tokens/time remain available.
+Timing is gathered without per-slice logging; zero timings mean the monotonic
+clock was unavailable. Maximum slice is not an end-to-end desktop latency metric.
+
+Inference remains single-core: ARM secondary-core startup and a worker scheduler
+are not implemented. Batched prefill is also not implemented. Guest comparative
+benchmarks and responsiveness acceptance remain pending; host parity is not
+evidence of guest speedup.
+
 The desktop chat header shows a rotating eight-spoke spinner and a grayscale
 shimmer on `Thinking...` during active generation. Its 30 Hz monotonic-clock
 animation only damages the chat header; it reuses retained application surfaces

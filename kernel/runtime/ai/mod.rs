@@ -34,6 +34,7 @@ pub struct AiRuntime {
     chat_owner: [u8; 16],
     pub qwen_tokens: u64,
     pub qwen_decode_ns: u64,
+    pub qwen_metrics: qwen::metrics::Metrics,
     qwen_first_token_ns: Option<u64>,
     initialized: bool,
     inference_count: u64,
@@ -78,8 +79,11 @@ impl AiRuntime {
     // DESC: Installs the verified native backend into the existing local AI service.
     // ------------------=
     pub fn load_qwen(&mut self, bytes: &'static [u8], arena: &'static mut [u8]) -> bool {
+        let started = crate::ui::performance::monotonic_ns();
         match qwen::service::Service::load(bytes, arena) {
             Ok(service) => {
+                self.qwen_metrics.load_ns = started.zip(crate::ui::performance::monotonic_ns())
+                    .map_or(0, |(a,b)| b.saturating_sub(a));
                 let descriptor = ModelDescriptor {
                     id: chat::QWEN_FULL_MODEL_ID,
                     version: 1,
@@ -126,6 +130,7 @@ impl AiRuntime {
         if !self.chat.enabled() || service.busy() {
             return false;
         }
+        let submitted_ns = crate::ui::performance::monotonic_ns();
         if let Err(error) = service.submit(self.chat.input()) {
             self.chat.generation_state = if error == qwen::gguf::Error::Overflow {
                 chat::GenerationState::ContextFull
@@ -135,6 +140,7 @@ impl AiRuntime {
             return false;
         }
         self.chat.generation_state = chat::GenerationState::Running;
+        self.qwen_metrics.begin(submitted_ns, service.reused_tokens, service.prefill_tokens);
         self.qwen_tokens = 0;
         self.qwen_decode_ns = 0;
         self.qwen_first_token_ns = None;
@@ -146,6 +152,21 @@ impl AiRuntime {
     // DESC: Advances local inference outside rendering and publishes model-produced text only.
     // ------------------=
     pub fn poll_qwen(&mut self) -> bool {
+        if !self.qwen.as_ref().is_some_and(|service| service.busy()) {
+            return false;
+        }
+        let started = crate::ui::performance::monotonic_ns();
+        let changed = self.poll_qwen_inner();
+        if let Some((a,b)) = started.zip(crate::ui::performance::monotonic_ns()) {
+            self.qwen_metrics.max_pump_ns = self.qwen_metrics.max_pump_ns.max(b.saturating_sub(a));
+        }
+        changed
+    }
+    // ------------------------=
+    // FUNC: poll_qwen_inner
+    // DESC: Performs one cooperative inference pump, including response publication.
+    // ------------------=
+    fn poll_qwen_inner(&mut self) -> bool {
         let Some(service) = self.qwen.as_mut() else {
             return false;
         };
@@ -156,7 +177,10 @@ impl AiRuntime {
         #[cfg(target_os = "none")]
         let started = crate::ui::performance::monotonic_ns();
         for _ in 0..256 {
-            match service.poll() {
+            let slice_start = crate::ui::performance::monotonic_ns();
+            let result = service.poll();
+            self.qwen_metrics.slice(slice_start, crate::ui::performance::monotonic_ns(), matches!(result, Ok(true)));
+            match result {
                 Ok(true) => {
                     self.chat.update_native_response(service.output());
                     if !service.busy() {
@@ -214,6 +238,7 @@ impl AiRuntime {
             chat_owner: [0; 16],
             qwen_tokens: 0,
             qwen_decode_ns: 0,
+            qwen_metrics: qwen::metrics::Metrics::new(),
             qwen_first_token_ns: None,
             initialized: false,
             inference_count: 0,

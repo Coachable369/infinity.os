@@ -1,5 +1,10 @@
 # InfinityOS Repository Rules
 
+## Correction-loop limit
+
+Stop and report remaining acceptance failures after six unsuccessful correction
+loops, rather than two. Avoid speculative rewrites between verification passes.
+
 ## Fresh-install parity is mandatory
 
 Every implementation added to InfinityOS must also be included in the System Generation produced by a fresh installation from the ISO. This includes runtime components, services, manifests, policies, schemas, registries, fonts, artwork, other UI assets, and user-visible behavior.

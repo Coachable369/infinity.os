@@ -98,6 +98,42 @@ fn main() {
                 }
             }
         }
+        // An interrupted token must not make partial KV rows part of the prefix.
+        engine.begin(next).unwrap();
+        // Advance beyond the first layer so this exercises partially written KV,
+        // not merely an interrupted query projection before any cache writes.
+        for _ in 0..8000 {
+            engine.step().unwrap();
+        }
+        engine.cancel();
+        assert_eq!(engine.resume_prefix(), prompt.len());
+        engine.begin(next).unwrap();
+        let warm_next = loop {
+            if let qwen::transformer::Progress::Token(value) = engine.step().unwrap() {
+                break value;
+            }
+        };
+        let mut replay = prompt.clone();
+        replay.push(next);
+        engine.reset();
+        assert_eq!(engine.resume_prefix(), 0);
+        for (index, &token) in replay.iter().enumerate() {
+            engine
+                .begin_with_prediction(token, index + 1 == replay.len())
+                .unwrap();
+            loop {
+                match engine.step().unwrap() {
+                    qwen::transformer::Progress::Token(value) => {
+                        assert_eq!(value, warm_next);
+                        next = value;
+                        break;
+                    }
+                    qwen::transformer::Progress::Prefilled => break,
+                    qwen::transformer::Progress::Working => (),
+                    state => panic!("Unexpected cache replay state {state:?}"),
+                }
+            }
+        }
         for _ in 0..8 {
             if next == 151645 {
                 break;

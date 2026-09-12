@@ -354,6 +354,9 @@ milestone-8-test: network-test runtime-test
 
 ai-test:
 	@tools/ai-test.sh
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 --test kernel/runtime/ai/qwen/metrics.rs -o build/behavior-tests/qwen-metrics-test
+	@build/behavior-tests/qwen-metrics-test
 
 milestone-6-test: ai-test object-test runtime-test
 

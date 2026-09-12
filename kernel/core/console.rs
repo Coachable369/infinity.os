@@ -10643,6 +10643,14 @@ impl ConsoleRuntime {
                     .write_number(b"Inference failures: ", ai.inference_failures());
                 self.output.write_number(b"Native Qwen output tokens: ",ai.qwen_tokens);
                 self.output.write_number(b"Native Qwen decode milliseconds: ",ai.qwen_decode_ns/1_000_000);
+                self.output.write_number(b"Model load milliseconds: ",ai.qwen_metrics.load_ns/1_000_000);
+                self.output.write_number(b"First token milliseconds: ",ai.qwen_metrics.first_token_ns/1_000_000);
+                self.output.write_number(b"Prefill compute milliseconds: ",ai.qwen_metrics.prefill_work_ns/1_000_000);
+                self.output.write_number(b"Decode compute milliseconds: ",ai.qwen_metrics.decode_work_ns/1_000_000);
+                self.output.write_number(b"Maximum slice microseconds: ",ai.qwen_metrics.max_slice_ns/1_000);
+                self.output.write_number(b"Maximum AI pump microseconds: ",ai.qwen_metrics.max_pump_ns/1_000);
+                self.output.write_number(b"Cached prompt tokens: ",ai.qwen_metrics.reused_tokens as u64);
+                self.output.write_number(b"New prompt tokens: ",ai.qwen_metrics.prefill_tokens as u64);
             });
             return true;
         }
