@@ -51,6 +51,10 @@ this 12 GiB target.
 ESP inside a 10 GiB ISO EFI image. Existing 6 GiB ESPs cannot hold both models;
 do not overwrite or repartition an existing user disk without a migration plan.
 Fresh installation derives the partition size from the complete ESP payload.
+Installer/recovery media now boot their own `EFI/INFINITY/KERNEL.ELF` before
+probing installed generations. This prevents a new media loader from handing
+its boot ABI to an older installed kernel during reinstallation. Disk-only boot
+continues using the validated installed-generation path.
 `qwen-install-parity -- <ESP> --ministral` extracts both models and validates
 their exact shard sizes and SHA-256, plus loader and license bytes.
 
@@ -64,3 +68,12 @@ installation, model switching, and tokens/sec comparison still require VM QA.
 
 No Linux, Python, PyTorch, llama.cpp, GPU, or vision runtime is included in
 InfinityOS. Host harnesses are development verification only.
+
+## Distribution media
+
+The current 10 GiB ISO exceeds both single-layer and dual-layer DVD capacity.
+Use sufficiently large USB media for this combined model image. A future smaller
+boot image with a separately discoverable model payload/companion medium should
+retain the same verified installation and offline-installed-boot guarantees.
+The present installer does not yet support installing these models from a
+second DVD or downloading them after boot.

@@ -352,6 +352,12 @@ milestone-8-test: network-test runtime-test
 	@tools/milestone-8-object-navigation-test.sh
 	@tools/milestone-8-install-parity-test.sh
 
+.PHONY: boot-media-test
+boot-media-test:
+	@mkdir -p build/behavior-tests
+	@clang -O2 -fshort-wchar -Wno-ignored-attributes tools/boot-media-test.c -o build/behavior-tests/boot-media-test
+	@build/behavior-tests/boot-media-test
+
 ai-test:
 	@tools/ai-test.sh
 	@mkdir -p build/behavior-tests

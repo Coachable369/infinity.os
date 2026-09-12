@@ -795,6 +795,26 @@ static void *load_kernel_file(EFI_HANDLE image, EFI_SYSTEM_TABLE *system, size_t
 }
 
 // ------------------------=
+// FUNC: boot_media_has_kernel
+// DESC: Keeps installer and recovery media paired with their own kernel instead of an older installed generation.
+// ------------------=
+static uint8_t boot_media_has_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
+    EFI_LOADED_IMAGE_PROTOCOL *loaded = NULL;
+    EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *filesystem = NULL;
+    EFI_FILE_PROTOCOL *root = NULL, *file = NULL;
+    EFI_GUID guid = loaded_image_guid;
+    if (system->boot_services->handle_protocol(image, &guid, (void **)&loaded) != EFI_SUCCESS) return 0;
+    guid = simple_fs_guid;
+    if (system->boot_services->handle_protocol(loaded->device_handle, &guid, (void **)&filesystem) != EFI_SUCCESS ||
+        filesystem->open_volume(filesystem, &root) != EFI_SUCCESS) return 0;
+    CHAR16 path[] = L"\\EFI\\INFINITY\\KERNEL.ELF";
+    uint8_t present = root->open(root, &file, path, EFI_FILE_MODE_READ, 0) == EFI_SUCCESS && file != NULL;
+    if (file) file->close(file);
+    root->close(root);
+    return present;
+}
+
+// ------------------------=
 // FUNC: load_elf
 // DESC: Reads load elf from firmware or device state.
 // ------------------=
@@ -1230,7 +1250,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     serial_write("InfinityOS bootstrap\n[BOOT] firmware entry\n");
 
     size_t image_size = 0;
-    void *kernel_image = try_load_installed_kernel(system, &image_size);
+    uint8_t media_boot = boot_media_has_kernel(image, system);
+    void *kernel_image = media_boot ? NULL : try_load_installed_kernel(system, &image_size);
     if (!kernel_image && installed_generation_invalid) {
         switch (installed_generation_stage) {
             case 2: firmware_write(system, L"Installed boot validation: container only\r\n"); break;
