@@ -22,9 +22,15 @@ typedef struct InfinityCompilerHost {
     int (*directory_open)(void *, const char *, uint64_t *);
     int (*directory_next)(void *, uint64_t, char *, size_t);
     int (*directory_close)(void *, uint64_t);
+    /* Bind to the owning Execution Context's fatal-fault notification. Provider
+       must not resume a faulted context or treat this as Unix signal authority. */
+    int (*register_crash_handler)(void *, void (*)(void *), void *);
+    int (*unregister_crash_handler)(void *);
 } InfinityCompilerHost;
 void infinity_compiler_set_host(const InfinityCompilerHost *);
 const char *infinity_compiler_executable_path(void);
+int infinity_compiler_register_crash_handler(void (*)(void *), void *);
+int infinity_compiler_unregister_crash_handler(void);
 #ifdef __cplusplus
 }
 #endif

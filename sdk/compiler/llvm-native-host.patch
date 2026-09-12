@@ -1,0 +1,115 @@
+--- a/llvm/lib/Support/Unix/Signals.inc
++++ b/llvm/lib/Support/Unix/Signals.inc
+@@ -53,6 +53,9 @@
+ #include <signal.h>
+ #include <sys/stat.h>
+ #include <dlfcn.h>
++#if defined(__INFINITY__)
++#include <infinity/compiler_host.h>
++#endif
+ #if HAVE_MACH_MACH_H
+ #include <mach/mach.h>
+ #endif
+@@ -284,6 +287,10 @@
+                               std::size(InfoSigs) + 1 /* SIGPIPE */;
+
+ static std::atomic<unsigned> NumRegisteredSignals = 0;
++#if defined(__INFINITY__)
++static ManagedStatic<sys::SmartMutex<true>> NativeRegistrationMutex;
++static bool NativeRegistered = false;
++#endif
+ static struct {
+   struct sigaction SA;
+   int SigNo;
+@@ -322,6 +329,17 @@
+
+ static void RegisterHandlers(
+     bool NeedsPOSIXUtilitySignalHandling = false) { // Not signal-safe.
++#if defined(__INFINITY__)
++  if (NeedsPOSIXUtilitySignalHandling)
++    ReportErrnumFatal("POSIX utility signal handling is unsupported", ENOSYS);
++  sys::SmartScopedLock<true> Guard(*NativeRegistrationMutex);
++  if (!NativeRegistered) {
++    if (infinity_compiler_register_crash_handler(
++            [](void *) { llvm::sys::RunSignalHandlers(); }, nullptr) != 0)
++      ReportErrnumFatal("Native context crash notification unavailable", errno);
++    NativeRegistered = true;
++  }
++#else
+   // The mutex prevents other threads from registering handlers while we're
+   // doing it. We also have to protect the handlers and their count because
+   // a signal handler could fire while we're registering handlers.
+@@ -386,15 +404,25 @@
+     registerHandler(SIGPIPE, SignalKind::IsKill);
+   for (auto S : InfoSigs)
+     registerHandler(S, SignalKind::IsInfo);
++#endif
+ }
+
+ void sys::unregisterHandlers() {
++#if defined(__INFINITY__)
++  sys::SmartScopedLock<true> Guard(*NativeRegistrationMutex);
++  if (NativeRegistered) {
++    if (infinity_compiler_unregister_crash_handler() != 0)
++      ReportErrnumFatal("Native context crash unregistration failed", errno);
++    NativeRegistered = false;
++  }
++#else
+   // Restore all of the signal handlers to how they were before we showed up.
+   for (unsigned i = 0, e = NumRegisteredSignals.load(); i != e; ++i) {
+     sigaction(RegisteredSignalInfo[i].SigNo, &RegisteredSignalInfo[i].SA,
+               nullptr);
+     --NumRegisteredSignals;
+   }
++#endif
+ }
+
+ /// Process the FilesToRemove list.
+@@ -477,9 +505,11 @@
+ #else
+   // Signal sent from another userspace process, do not assume that continuing
+   // the execution would re-raise it.
++#if !defined(__INFINITY__)
+   if (Info->si_pid != getpid() && Info->si_pid != 0)
+     raise(Sig);
+ #endif
++#endif
+ }
+
+ static void SignalHandlerTerminate(int Sig, siginfo_t *Info, void *Context) {
+--- a/llvm/lib/TargetParser/Unix/Host.inc
++++ b/llvm/lib/TargetParser/Unix/Host.inc
+@@ -19,7 +19,9 @@
+ #include "llvm/Config/config.h"
+ #include <cctype>
+ #include <string>
++#if !defined(__INFINITY__)
+ #include <sys/utsname.h>
++#endif
+
+ #ifdef HAVE_UNISTD_H
+ #include <unistd.h>
+@@ -27,6 +29,15 @@
+
+ using namespace llvm;
+
++#if defined(__INFINITY__)
++// ------------------------=
++// FUNC: updateTripleOSVersion
++// DESC: Preserves the configured cross-target without inventing a Unix host release.
++// ------------------=
++static std::string updateTripleOSVersion(std::string TargetTripleString) {
++  return TargetTripleString;
++}
++#else
+ static std::string getOSVersion() {
+   struct utsname info;
+
+@@ -92,6 +103,7 @@
+   return TargetTripleString;
+ }
+
++#endif
+ std::string sys::getDefaultTargetTriple() {
+   std::string TargetTripleString =
+       updateTripleOSVersion(LLVM_DEFAULT_TARGET_TRIPLE);

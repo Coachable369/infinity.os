@@ -10,6 +10,8 @@
 #include <sys/stat.h>
 
 static const InfinityCompilerHost *host;
+static InfinityCompilerHost crash_owner;
+static int crash_registered;
 
 /* Handles never recycle, so a closed pointer cannot become another directory.
    This initial bridge bounds each compiler process to 64 directory opens. */
@@ -41,6 +43,32 @@ const char *infinity_compiler_executable_path(void) {
 // DESC: Preserves an explicit service failure in errno without pretending the operation succeeded.
 // ------------------=
 static int fail(int error) { errno = error; return -1; }
+
+// ------------------------=
+// FUNC: infinity_compiler_register_crash_handler
+// DESC: Requests real context fault notification; missing registration support fails explicitly.
+// ------------------=
+int infinity_compiler_register_crash_handler(void (*callback)(void *), void *context) {
+    if (!callback) return fail(EINVAL);
+    if (crash_registered) return fail(EBUSY);
+    if (!host || !host->register_crash_handler || !host->unregister_crash_handler)
+        return fail(ENOSYS);
+    InfinityCompilerHost owner = *host;
+    int error = owner.register_crash_handler(owner.context, callback, context);
+    if (!error) { crash_owner = owner; crash_registered = 1; }
+    return error ? fail(error) : 0;
+}
+
+// ------------------------=
+// FUNC: infinity_compiler_unregister_crash_handler
+// DESC: Releases through the registering provider; failed release retains ownership for retry.
+// ------------------=
+int infinity_compiler_unregister_crash_handler(void) {
+    if (!crash_registered) return fail(EINVAL);
+    int error = crash_owner.unregister_crash_handler(crash_owner.context);
+    if (!error) { crash_registered = 0; crash_owner = (InfinityCompilerHost){0}; }
+    return error ? fail(error) : 0;
+}
 
 // ------------------------=
 // FUNC: getrlimit

@@ -318,3 +318,37 @@ The full LLVM retry passes the missing-header point but fails in
 `SA_RESETHAND`, `SA_ONSTACK`, `SA_SIGINFO`, and `siginfo_t.si_pid`. Resolving that
 requires a separate native crash/signal boundary, not made-up Unix signal
 support. No new ISO or working on-device compiler is produced by this change.
+
+## Native crash registration and target identity checkpoint
+
+Apply `llvm-native-host.patch` after the previous two LLVM patches. InfinityOS
+now bypasses Unix signal registration in favor of explicit compiler-host crash
+registration/unregistration callbacks. Registration failure is fatal to compiler
+startup rather than falsely claiming fault protection. Requests for POSIX
+utility signal semantics remain unsupported. The service provider must bind the
+callback to its owning Execution Context and must not resume a faulted context.
+It is not wired to the production kernel yet.
+
+The adapter preserves the registering provider across service-table changes,
+rejects duplicate registration, retains ownership on failed release, and permits
+release retry. Calls are serialized by the compiler integration; this initial
+platform table is scoped to one compiler process. The callback contract is not
+proof of working hardware fault isolation, async-signal safety, or crash recovery.
+
+The native host-version branch preserves the configured target triple without
+querying Unix `uname` or inventing a release number. Both host and default target
+remain configured as `x86_64-unknown-elf` in this cross-build.
+
+TESTED: crash-hook lifecycle behavior (`crash-hook-test.sh`), actual patched
+host-version behavior (`host-triple-test.sh`), existing platform/directory/dlfcn
+tests, freestanding platform compilation and upstream patch applicability.
+The target Signals.cpp and Host.cpp objects compile successfully.
+
+The full retry advanced through 1,906 build steps, including Clang semantic
+analysis and parsing, before failing in `clang/lib/Frontend/CompilerInvocation.cpp`
+at the `std::ifstream` used by `-frandomize-layout-seed-file`. The configured
+libc++ disables filesystem support, leaving that stream template unavailable.
+The next correction must preserve authorized object-backed reads (or explicitly
+reject that option), not enable a host filesystem fallback. Two correction
+loops completed this checkpoint. Clang is still unlinked, providers remain
+unbound, and no ISO-detached native compilation acceptance is claimed.
