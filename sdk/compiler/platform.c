@@ -45,6 +45,12 @@ const char *infinity_compiler_executable_path(void) {
 }
 
 // ------------------------=
+// FUNC: infinity_compiler_home_path
+// DESC: Returns only the launcher's authorized native home namespace.
+// ------------------=
+const char *infinity_compiler_home_path(void) { return host ? host->home_path : 0; }
+
+// ------------------------=
 // FUNC: fail
 // DESC: Preserves an explicit service failure in errno without pretending the operation succeeded.
 // ------------------=

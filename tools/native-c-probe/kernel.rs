@@ -241,5 +241,9 @@ pub extern "C" fn infinity_kernel_entry(_: *const u8) -> ! {
     assert_eq!(store.metadata(result).unwrap().kind, ObjectType::Text);
     let size = store.read(result, None, bytes).unwrap();
     assert_eq!(&bytes[..size], b"Object-backed C Streams\n!");
+    let sync_program = include_bytes!("../../build/native-c/sync-x86_64.elf");
+    let loaded = image::Image::load(sync_program, 62, arena).unwrap();
+    let entry: extern "C" fn(*const AppApi) -> i32 = unsafe { core::mem::transmute(arena.as_ptr().add(loaded.entry)) };
+    assert_eq!(entry(&api), 0);
     finish(0x10)
 }

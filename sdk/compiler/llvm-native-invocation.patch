@@ -1,0 +1,77 @@
+--- a/llvm/lib/Support/Unix/Path.inc
++++ b/llvm/lib/Support/Unix/Path.inc
+@@ -709,6 +709,10 @@
+
+   // This is a string of the form ~username/, look up this user's entry in the
+   // password database.
++#if defined(__INFINITY__)
++  // Other identities are not resolved through a Unix password database.
++  return;
++#else
+   std::unique_ptr<char[]> Buf;
+   long BufSize = sysconf(_SC_GETPW_R_SIZE_MAX);
+   if (BufSize <= 0)
+@@ -728,6 +732,7 @@
+   Path.clear();
+   Path.append(Entry->pw_dir, Entry->pw_dir + strlen(Entry->pw_dir));
+   llvm::sys::path::append(Path, Storage);
++#endif
+ }
+
+ void expand_tilde(const Twine &path, SmallVectorImpl<char> &dest) {
+@@ -1496,6 +1501,11 @@
+ namespace path {
+
+ bool home_directory(SmallVectorImpl<char> &result) {
++#if defined(__INFINITY__)
++  const char *RequestedDir = infinity_compiler_home_path();
++  if (!RequestedDir || !*RequestedDir)
++    return false;
++#else
+   std::unique_ptr<char[]> Buf;
+   char *RequestedDir = getenv("HOME");
+   if (!RequestedDir) {
+@@ -1511,6 +1521,7 @@
+   }
+   if (!RequestedDir)
+     return false;
++#endif
+
+   result.clear();
+   result.append(RequestedDir, RequestedDir + strlen(RequestedDir));
+--- a/llvm/lib/Support/Unix/Process.inc
++++ b/llvm/lib/Support/Unix/Process.inc
+@@ -254,6 +254,11 @@
+ }
+
+ std::error_code Process::SafelyCloseFileDescriptor(int FD) {
++#if defined(__INFINITY__)
++  // Native close consumes the handle even on failure; Unix signal masking
++  // cannot add safety and is not part of this runtime's authority model.
++  return ::close(FD) < 0 ? errnoAsErrorCode() : std::error_code();
++#else
+   // Create a signal set filled with *all* signals.
+   sigset_t FullSet, SavedSet;
+   if (sigfillset(&FullSet) < 0 || sigfillset(&SavedSet) < 0)
+@@ -286,6 +291,7 @@
+   if (ErrnoFromClose)
+     return std::error_code(ErrnoFromClose, std::generic_category());
+   return std::error_code(EC, std::generic_category());
++#endif
+ }
+
+ bool Process::StandardInIsUserInput() {
+--- a/llvm/cmake/modules/llvm-driver-template.cpp.in
++++ b/llvm/cmake/modules/llvm-driver-template.cpp.in
+@@ -13,6 +13,11 @@
+ int @TOOL_NAME@_main(int argc, char **, const llvm::ToolContext &);
+
+ int main(int argc, char **argv) {
++#if defined(__INFINITY__)
++  llvm::InitLLVM X(argc, argv, /*InstallPipeSignalExitHandler=*/false,
++                   /*NeedsPOSIXUtilitySignalHandling=*/false);
++#else
+   llvm::InitLLVM X(argc, argv@INITLLVM_ARGS@);
++#endif
+   return @TOOL_NAME@_main(argc, argv, {argv[0], nullptr, false});
+ }

@@ -512,3 +512,49 @@ blocked by synchronization/TLS, termination, additional namespace operations and
 Unix process assumptions. Diagnostics: `/tmp/infinity-native-c-metadata.log`.
 All new adapters remain development runtime components, not a delivered native
 compiler. No ISO was rebuilt and no user's VirtualBox VM was modified.
+
+## Serial compiler synchronization and native invocation checkpoint
+
+The existing LLVM build has LLVM_ENABLE_THREADS=OFF. Its C++ synchronization
+requirements now have an explicitly single-thread implementation rather than
+successful no-op locks. Startup rejects launchers that do not guarantee
+serial_execution=1. This is not an OS-wide pthread implementation.
+
+`serial_sync.c` implements normal and recursive mutex ownership, busy/deadlock
+errors, unlock validation and destroy-while-held rejection. `serial_tls.c`
+implements 128 nonrecycled invocation-local keys and 256 LIFO thread-destructor
+registrations with bounded cleanup. These are serial runtime data structures,
+not hardware TLS setup; ELF TLS register/segment initialization remains part of
+the missing execution integration. Dynamic library unloading is unsupported.
+
+`pthread.c` translates Newlib's actual types to that implementation. Additional
+thread creation and condition waits return ENOTSUP. Condition notification with
+no possible concurrent waiter is supported; it never manufactures a successful
+wait or timeout. Parallel compiler options are not supported by this first
+serial runtime. Ordinary lock/key operations require the explicit launch flag.
+
+TESTED: serial-sync-test exercises lock/key/destructor state transitions on the
+host and compiles the Newlib wrappers. The expanded QEMU native C probe loads
+and executes the actual x86-64 wrapper ELF, testing recursive ownership, busy
+locks, native key cleanup, invalid conditions and explicit unsupported thread
+operations. It returned debug exit 33 with native_serial_sync_abi=true.
+Existing object I/O and trusted execution assertions also passed. This is not
+an on-device compiler or installed-system acceptance result.
+
+`llvm-native-invocation.patch`, applied after the preceding LLVM patches,
+removes Unix signal masking from native descriptor close, obtains home from
+the explicit native launch namespace, leaves other-user tilde expressions
+unexpanded instead of querying a password database, and disables requests for
+POSIX utility signal handlers in generated native drivers. Native crash-handler
+registration is not removed. Reverse dry-run validates the stored patch against
+the changed source; target compilation reaches the linker. Home-provider tests
+check absence and exact namespace forwarding. Linker garbage collection is now
+recorded in the CMake platform and its ELF artifact test passes.
+
+After this pass the full link still has 19 unresolved functions, including
+CrashRecoveryContext's sigaction/sigprocmask, termination (_exit/kill), namespace
+mutation/canonicalization, descriptor controls, working-directory and identity
+queries. The current full-link diagnostics are
+`/tmp/infinity-compiler-serial-final.log`. Native crash containment, provider
+binding, linker execution, resource packaging and detached-install acceptance
+remain incomplete. No compiler executable or ISO release is claimed.

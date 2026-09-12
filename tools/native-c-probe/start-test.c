@@ -35,7 +35,7 @@ static int program(int argc, char **argv) {
 // DESC: Exercises rejected launches, constructor ordering, result propagation and one-shot lifecycle.
 // ------------------=
 int main(void) {
-    InfinityCompilerHost host = {0};
+    InfinityCompilerHost host = {.serial_execution = 1};
     char name[] = "cc";
     char *argv[] = {name, 0};
     InfinityCompilerLaunch launch = {INFINITY_COMPILER_LAUNCH_ABI, sizeof launch, &host, 1, argv};
@@ -48,6 +48,9 @@ int main(void) {
     argv[1] = name;
     assert(infinity_compiler_run(&launch, program, init, 1, fini, 2) == 126);
     argv[1] = 0;
+    host.serial_execution = 0;
+    assert(infinity_compiler_run(&launch, program, init, 1, fini, 2) == 126);
+    host.serial_execution = 1;
     assert(!active && order == 0);
     assert(infinity_compiler_run(&launch, program, init, 1, fini, 2) == 37);
     assert(!active && order == 4);

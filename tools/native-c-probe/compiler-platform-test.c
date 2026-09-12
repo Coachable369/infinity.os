@@ -99,6 +99,9 @@ int main(void) {
         .protect=protect_memory, .sync=sync_memory, .entropy=test_entropy};
     infinity_compiler_set_host(&host);
     assert(infinity_compiler_executable_path() == executable);
+    assert(infinity_compiler_home_path() == 0);
+    host.home_path = executable;
+    assert(infinity_compiler_home_path() == executable);
     assert(clock_gettime(CLOCK_MONOTONIC, &stamp) == 0);
     assert(stamp.tv_sec == 2 && stamp.tv_nsec == 3);
     unsigned calls = state.calls;

@@ -40,6 +40,7 @@ def main():
         proof = {"guest_exit_code": result, "cross_compiled_with_clang": True,
                  "object_store_round_trip": result == 33, "trusted_native_app_execution": result == 33,
                  "native_c_stdio_object_io": result == 33,
+                 "native_serial_sync_abi": result == 33,
                  "on_device_compiler": False, "hardware_isolation": False, "installed_acceptance": False}
         if options.locale:
             proof = {"guest_exit_code": result, "native_newlib_ctype": result == 33,

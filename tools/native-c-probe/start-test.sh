@@ -2,9 +2,9 @@
 set -eu
 cd "$(dirname "$0")/../.."
 /opt/homebrew/opt/llvm/bin/clang -Wall -Wextra -Werror -Isdk/compiler/include \
-  sdk/compiler/start.c tools/native-c-probe/start-test.c -o build/native-c/start-test
+  sdk/compiler/start.c sdk/compiler/serial_tls.c tools/native-c-probe/start-test.c -o build/native-c/start-test
 build/native-c/start-test
-for unit in start entry platform dlfcn; do
+for unit in start entry platform dlfcn serial_tls; do
   /opt/homebrew/opt/llvm/bin/clang --target=x86_64-unknown-elf \
     --sysroot=build/native-c/sysroot/x86_64-unknown-elf \
     -include sdk/compiler/target.h -Isdk/compiler/include -ffreestanding \

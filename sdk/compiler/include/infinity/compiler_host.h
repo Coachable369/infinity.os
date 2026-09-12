@@ -56,10 +56,15 @@ typedef struct InfinityCompilerHost {
     uint32_t page_size;
     /* Relative monotonic wait; EINTR returns measured remaining nanoseconds. */
     int (*sleep_ns)(void *, uint64_t, uint64_t *);
+    /* Must be explicitly guaranteed by the launcher; serial synchronization
+       is not safe for multiple threads entering the same compiler image. */
+    uint32_t serial_execution;
+    const char *home_path;
 } InfinityCompilerHost;
 void infinity_compiler_set_host(const InfinityCompilerHost *);
 const InfinityCompilerHost *infinity_compiler_get_host(void);
 const char *infinity_compiler_executable_path(void);
+const char *infinity_compiler_home_path(void);
 int infinity_compiler_register_crash_handler(void (*)(void *), void *);
 int infinity_compiler_unregister_crash_handler(void);
 #ifdef __cplusplus
