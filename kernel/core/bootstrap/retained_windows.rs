@@ -20,6 +20,7 @@ pub(super) fn invalidate_revision(slot:usize,previous:&mut Option<u64>,current:O
 #[derive(Clone, Copy)]
 struct CachedWindow {
     valid: bool,
+    icon_theme: u8,
     width: usize,
     height: usize,
     inset: (usize, usize),
@@ -28,6 +29,7 @@ struct CachedWindow {
 }
 static mut WINDOWS: [CachedWindow; SLOTS] = [CachedWindow {
     valid: false,
+    icon_theme: u8::MAX,
     width: 0,
     height: 0,
     inset: (0, 0),
@@ -116,9 +118,11 @@ impl DisplayDevice {
         let Some(region) = self.clipped_render_region(left, top, width, height) else {
             return;
         };
+        let icon_theme = self.active_icon_theme();
         unsafe {
             let cache = &mut (*(&raw mut WINDOWS))[slot];
             let rebuild = !cache.valid
+                || cache.icon_theme != icon_theme
                 || cache.width != width
                 || cache.height != height
                 || cache.inset != inset;
@@ -149,6 +153,7 @@ impl DisplayDevice {
                 cache.height = height;
                 cache.inset = inset;
                 cache.valid = true;
+                cache.icon_theme = icon_theme;
                 cache.damage = None;
             }
             let (opacity, blur) = self.active_background_effects();

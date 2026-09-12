@@ -37,6 +37,13 @@ mod retained_windows;
 mod window_chrome;
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: active_icon_theme
+    // DESC: Supplies mutable theme state for retained-surface appearance regression tests.
+    // ------------------=
+    fn active_icon_theme(&self) -> u8 {
+        TEST_THEME.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    // ------------------------=
     // FUNC: active_background_effects
     // DESC: Selects no backdrop blur for deterministic surface pixel fixtures.
     // ------------------=
@@ -162,6 +169,7 @@ fn launcher_backdrop_test() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    retained_theme_test();
     icon_downscale_test();
     launcher_backdrop_test();
     window_controls_test();
@@ -224,6 +232,35 @@ fn main() {
             println!("{{\"fixture\":\"active_painter_{label}\",\"format\":{},\"average_ns\":{},\"p95_ns\":{},\"damage_submissions\":{}}}",format,times.iter().sum::<u128>()/20,times[18],display.submissions);
         }
     }
+}
+
+static TEST_THEME: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+// ------------------------=
+// FUNC: retained_theme_test
+// DESC: Checks every cached app surface repaints after theme selection without explicit global invalidation.
+// ------------------=
+fn retained_theme_test() {
+    retained_windows::invalidate();
+    let mut pixels = vec![0u32; 320 * 200];
+    let mut display = DisplayDevice { buffer: pixels.as_mut_ptr(), width: 320, height: 200,
+        stride: 320, format: 0, render_clip: None, fast_motion_frame: false,
+        submissions: 0, recording_surface: false };
+    for theme in 0..4 {
+        TEST_THEME.store(theme, std::sync::atomic::Ordering::Relaxed);
+        for slot in 0..6 {
+            let mut paints = 0;
+            display.retained_window(slot, (40, 40, 40, 40), |target| {
+                paints += 1;
+                target.fill_rect(50, 50, 10, 10, theme + 1, 0, 0);
+            });
+            assert_eq!(paints, 1);
+            assert_eq!(pixels[50 * 320 + 50], theme as u32 + 1);
+            display.retained_window(slot, (40, 40, 40, 40), |_| panic!("unchanged theme repainted"));
+        }
+    }
+    TEST_THEME.store(0, std::sync::atomic::Ordering::Relaxed);
+    retained_windows::invalidate();
 }
 
 // ------------------------=
