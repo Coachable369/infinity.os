@@ -1,16 +1,10 @@
 #![allow(dead_code)]
 
-#[path = "../kernel/ui/app_launcher.rs"]
-mod app_launcher;
-#[path = "../kernel/ui/geometry.rs"]
-mod geometry;
-#[path = "../kernel/ui/icon_theme.rs"]
-mod icon_theme;
-#[path = "../kernel/ui/system_layout.rs"]
-mod system_layout;
+#[path = "../kernel/ui/mod.rs"]
+mod ui;
 
-use icon_theme::{IconThemeId, IconThemeRegistry, ICON_ROLE_COUNT, ICON_THEME_COUNT};
-use system_layout::{SettingsWindowState, SystemLayout};
+use ui::icon_theme::{IconThemeId, IconThemeRegistry, ICON_ROLE_COUNT, ICON_THEME_COUNT};
+use ui::system_layout::{SettingsWindowState, SystemLayout};
 
 // ------------------------=
 // FUNC: main

@@ -12,6 +12,7 @@ use ui::system_layout::{
 // DESC: Verifies bounded Settings navigation, dashboard scrolling, and draggable scrollbar geometry.
 // ------------------=
 fn main() {
+    sidebar_spacing();
     verify_authored_row_flow();
     verify_configuration_network_targets();
     for width in [1024, 1366, 1920, 2560] {
@@ -157,6 +158,43 @@ fn main() {
     let minimum_window = SystemLayout::new(1920, 1080)
         .settings_window_geometry_for_section(minimum, SETTINGS_NETWORK_SECTION);
     assert!(minimum_window.maximum_scroll > 0);
+}
+
+// ------------------------=
+// FUNC: sidebar_spacing
+// DESC: Verifies authored sidebar gutters, themed role validity, row separation and shared navigator hit geometry.
+// ------------------=
+fn sidebar_spacing() {
+    use ui::installer_template::InstallerTemplateRole as R;
+    for section in 0..11 {
+        let mut bottom = 0;
+        for index in 0..11 {
+            let row = ui::settings_template::role_at(section, R::SettingsNavigationItem, index).unwrap().frame;
+            let icon = ui::settings_template::role_at(section, R::SettingsNavigationIcon, index).unwrap().frame;
+            let label = ui::settings_template::role_at(section, R::SettingsNavigationLabel, index).unwrap().frame;
+            assert!(row.y >= bottom + if index == 0 {0} else {12});
+            assert_eq!(icon.x-row.x, 16);
+            assert_eq!(label.x-icon.x-icon.width, 12);
+            assert_eq!(icon.width, icon.height);
+            assert_eq!(icon.y+icon.height/2, row.y+row.height/2);
+            assert!(label.x+label.width <= row.x+row.width-16);
+            assert!(ui::icon_theme::settings_section_icon(index) < ui::icon_theme::ICON_ROLE_COUNT);
+            bottom = row.y+row.height;
+        }
+    }
+    for (width,height) in [(1280,720),(1920,1080),(3840,2160)] {
+        let layout = SystemLayout::new(width,height);
+        let s=layout.scale() as u32;
+        let window = ui::geometry::Rect{x:0,y:0,width:780*s,height:560*s};
+        let mut bottom=0;
+        for index in 0..12 {
+            let row=layout.navigator_sidebar_row(window,index);
+            assert_eq!(row.x,16*s as i32);
+            assert!(row.y>=bottom);
+            assert!(row.bottom()<=window.bottom()-16*s as i32);
+            bottom=row.bottom()+4*s as i32;
+        }
+    }
 }
 
 // ------------------------=

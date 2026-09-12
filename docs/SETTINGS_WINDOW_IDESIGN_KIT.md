@@ -27,6 +27,11 @@
 
 ## States
 
+- Navigation uses semantic roles from the currently selected installed icon pack,
+  not the template's fixed preview images. The authored rail has 16-unit outer
+  gutters, 50-unit rows separated by 12 units, a centered 24-unit icon and a
+  12-unit icon-to-label gap. Runtime and Studio retain the same row hit bounds.
+
 - Summary: quiet deep-navy surface, label left, current value and twiddle right.
 - Hover/focus: brighter outline and twiddle.
 - Expanded: down twiddle, accent edge, contained detail surface.

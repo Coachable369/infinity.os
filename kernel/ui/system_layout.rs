@@ -1179,13 +1179,7 @@ impl SystemLayout {
             }
             let sidebar_width = browser_width * 27 / 100;
             for index in 0..9usize {
-                let item_y = tool_top + (72 + index * 20) * self.scale;
-                if rect(
-                    browser_left + 7,
-                    item_y.saturating_sub(3),
-                    sidebar_width.saturating_sub(14),
-                    20 * self.scale,
-                )
+                if self.navigator_sidebar_row(rect(browser_left, browser_top, browser_width, browser_height), index)
                 .contains(point)
                 {
                     return Some(DesktopTarget::HomeSidebar(index));
@@ -2318,6 +2312,19 @@ impl SystemLayout {
     // ------------------=
     pub fn settings_section_geometry(self, state: SettingsWindowState, index: usize) -> Rect {
         self.settings_section_geometry_for_section(state, index, usize::MAX)
+    }
+
+    // ------------------------=
+    // FUNC: navigator_sidebar_row
+    // DESC: Shares padded, density-aware sidebar paint and hit bounds while keeping device rows inside short windows.
+    // ------------------=
+    pub fn navigator_sidebar_row(self, window: Rect, index: usize) -> Rect {
+        let step = ((window.height as usize).saturating_sub(138*self.scale)/12)
+            .clamp(20*self.scale, 32*self.scale);
+        rect(window.x.max(0) as usize+16*self.scale,
+            window.y.max(0) as usize+106*self.scale+index*step,
+            (window.width as usize*27/100).saturating_sub(32*self.scale),
+            step.saturating_sub(4*self.scale))
     }
 
     // ------------------------=

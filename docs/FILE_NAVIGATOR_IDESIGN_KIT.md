@@ -21,6 +21,12 @@
 
 ## Component states
 
+- Sidebar rows use 16-unit outer gutters, a 20-unit icon slot and a 12-unit
+  icon-to-label gap. Default row pitch is 32 units with a 4-unit separation;
+  short windows compact the pitch to keep the device group visible. Painting
+  and hit testing use the same density-aware row geometry. Icons preserve their
+  square aspect ratio and use the active installed theme's semantic roles.
+
 - Breadcrumb segments use quiet glass wells, white labels, and a blue hover/focus edge. Direct entry accepts NamespaceRef or ObjectId and reports typed resolution errors inline.
 - Object rows carry a semantic type icon, display name, type, size when meaningful, modified value, owner, reference count, version, and protection state. Grid cards preserve the same selection and capability states.
 - Selected objects use a translucent blue fill plus a white-blue outline. Protected or unavailable operations remain visible when discoverability is useful, but disabled with a policy reason.

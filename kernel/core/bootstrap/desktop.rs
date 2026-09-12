@@ -4982,6 +4982,11 @@ impl super::DisplayDevice {
                 let Some((x, y, mapped_width, mapped_height)) = authored_rect(element) else {
                     continue;
                 };
+                if role == crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationIcon
+                    && self.themed_icon(x + mapped_width/2, y + mapped_height/2,
+                        crate::ui::icon_theme::settings_section_icon(index), mapped_width.min(mapped_height)) {
+                    continue;
+                }
                 let image = if element.kind == 2 {
                     settings_template.and_then(|template| template.asset(element.image_asset))
                 } else {
@@ -8597,13 +8602,16 @@ impl super::DisplayDevice {
         .iter()
         .enumerate()
         {
-            let item_y = tool_top + (72 + index * 20) * scale;
+            let row = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
+                .navigator_sidebar_row(crate::ui::geometry::Rect {x: browser_left as i32, y: browser_top as i32,
+                    width: browser_width as u32, height: browser_height as u32}, index);
+            let item_y = row.y.max(0) as usize + (row.height as usize).saturating_sub(20*scale)/2;
             if index == home_location {
                 self.fill_rect_alpha(
-                    browser_left + 7,
-                    item_y - 3,
-                    sidebar_w - 14,
-                    20 * scale,
+                    row.x.max(0) as usize,
+                    row.y.max(0) as usize,
+                    row.width as usize,
+                    row.height as usize,
                     selection_r,
                     selection_g,
                     selection_b,
@@ -8611,34 +8619,18 @@ impl super::DisplayDevice {
                 );
             }
             if !item.is_empty() && index != 10 {
-                let icon_kind = match index {
-                    0 => 2,
-                    1 => 8,
-                    2 => 5,
-                    3 => 4,
-                    4 => 13,
-                    5 => 7,
-                    6 => 11,
-                    7 => 8,
-                    8 => 9,
-                    11 | 12 => 11,
-                    _ => 0,
-                };
-                self.authentication_icon(
-                    browser_left + 16 * scale,
-                    item_y + 8 * scale,
-                    icon_kind,
-                    18 * scale,
-                    index == home_location,
-                );
+                let role = [0,1,4,5,6,7,8,9,10,2,2,12,13][index];
+                self.themed_icon(row.x.max(0) as usize + 10*scale,
+                    row.y.max(0) as usize + row.height as usize/2, role,
+                    (20*scale).min(row.height as usize));
             }
             if scale == 1 {
-                self.app_text(browser_left + (if index == 10 { 16 } else { 32 }), item_y, item,
+                self.app_text(row.x.max(0) as usize + (if index == 10 { 0 } else { 32 }), item_y, item,
                     (if index == 10 { 90 } else { 204 }, if index == 10 { 191 } else { 224 }, 236),
                     index == 10, 1);
             } else {
                 self.ui_text_weighted(
-                    browser_left + (if index == 10 { 16 } else { 32 }) * scale,
+                    row.x.max(0) as usize + (if index == 10 { 0 } else { 32 }) * scale,
                     item_y,
                     item,
                     if index == 10 { 90 } else { 204 }, if index == 10 { 191 } else { 224 }, 236,

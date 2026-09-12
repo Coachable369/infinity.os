@@ -3,6 +3,14 @@
 pub const ICON_THEME_COUNT: u8 = 4;
 pub const ICON_ROLE_COUNT: usize = 60;
 
+// ------------------------=
+// FUNC: settings_section_icon
+// DESC: Maps Settings navigation to semantic roles shared by every installed icon family.
+// ------------------=
+pub fn settings_section_icon(section: usize) -> usize {
+    [26, 6, 1, 23, 32, 19, 17, 18, 12, 28, 19].get(section).copied().unwrap_or(26)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum IconThemeId {
