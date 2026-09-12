@@ -289,3 +289,32 @@ includes `dlfcn.h`. Native signal/crash symbolization support needs a truthful
 platform boundary. Two correction loops reached this new failure; no compiler
 binary, new ISO, production provider wiring or detached-media compilation proof
 is claimed by this checkpoint.
+
+## dlfcn compatibility boundary
+
+`sdk/compiler/include/dlfcn.h` now declares `dlopen`, `dlsym`, `dlclose`,
+`dlerror`, `dladdr`, `Dl_info` and the initial supported flag vocabulary.
+`sdk/compiler/dlfcn.c` supplies deterministic failure behavior for the static
+toolchain port. This is **not a dynamic linker**: loads (including `dlopen(NULL)`),
+symbol lookups, closes and address symbolization report unavailable services.
+Invalid binding flags and null required arguments report invalid arguments.
+No path, image handle or address is dereferenced to discover host resources.
+Failed symbolization leaves the caller's result unchanged.
+
+Errors are thread-local, consumed by `dlerror`, and replaced by the next failed
+operation. Production execution therefore requires working native TLS; no
+installed TLS acceptance is claimed here. The source is not yet linked into a
+production compiler runtime, and `HAVE_DLOPEN` remains disabled in the existing
+LLVM configuration. Exporting compatibility declarations does not establish
+dynamic-loader availability or authorize loading executable objects.
+
+TESTED: `sh tools/native-c-probe/dlfcn-test.sh` checks return values, error codes,
+diagnostic consumption, thread isolation and unchanged result fields, then
+cross-compiles the implementation for freestanding x86-64. The host tests rename
+the entry points so they cannot interpose on the host's actual dynamic loader.
+
+The full LLVM retry passes the missing-header point but fails in
+`Unix/Signals.inc`: Newlib lacks `sigaction.sa_sigaction`, `SA_NODEFER`,
+`SA_RESETHAND`, `SA_ONSTACK`, `SA_SIGINFO`, and `siginfo_t.si_pid`. Resolving that
+requires a separate native crash/signal boundary, not made-up Unix signal
+support. No new ISO or working on-device compiler is produced by this change.
