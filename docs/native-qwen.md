@@ -107,8 +107,8 @@ ARM kernel/loader, x86 loader/check, AI tests and generated installed-ESP parity
 passed. This revision was tested by updating a preserved installed QA clone;
 the new ISO's full fresh-install interaction was not repeated.
 
-The desktop chat header shows a rotating eight-spoke spinner and a grayscale
-shimmer on `Thinking...` during active generation. Its 30 Hz monotonic-clock
+The desktop chat header shows a grayscale shimmer on `Thinking...` during
+active generation. The rotating spinner has been removed. Its 30 Hz monotonic-clock
 animation only damages the chat header; it reuses retained application surfaces
 and the existing font atlas. Hidden/minimized chat and terminal generation states
 stop animation. The installed kernel includes this code without extra assets.

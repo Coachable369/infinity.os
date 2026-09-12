@@ -9463,17 +9463,6 @@ impl super::DisplayDevice {
             false,
             thinking.then_some((frame * 3 * scale, 96 * scale)),
         );
-        if thinking {
-            let points = [(0,-8),(6,-6),(8,0),(6,6),(0,8),(-6,6),(-8,0),(-6,-6)];
-            for (index, (dx, dy)) in points.iter().enumerate() {
-                let gray = 245u8.saturating_sub(((index + 8 - (frame / 3) % 8) % 8) as u8 * 20);
-                let cx = state_x.saturating_sub(15 * scale) as i32;
-                let cy = (top + 23 * scale) as i32;
-                self.icon_line(cx + dx * scale as i32, cy + dy * scale as i32,
-                    cx + dx * scale as i32 * 5 / 4, cy + dy * scale as i32 * 5 / 4,
-                    (gray, gray, gray), 18 * scale);
-            }
-        }
         self.ui_text(
             geometry.minimize.x.max(0) as usize + 5 * scale,
             geometry.minimize.y.max(0) as usize + 2 * scale,
