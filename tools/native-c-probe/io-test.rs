@@ -60,6 +60,10 @@ fn main() {
     let read = io.open(&mut store, b"./hello.c", READ).unwrap();
     store.write(id, b"int main(void) { return 17; }\n").unwrap();
     let mut bytes = [0;MAX_CONTENT];
+    assert_eq!(io.read_at(read, 2, &mut bytes[..3]).unwrap(), 3);
+    assert_eq!(&bytes[..3], &source[2..5]);
+    assert_eq!(io.read_at(read, usize::MAX, &mut bytes[..3]).unwrap(), 0);
+    assert_eq!(io.seek(read, 0, 1).unwrap(), 0);
     let length = io.read(read, &mut bytes).unwrap();
     assert_eq!(&bytes[..length], source); // opened version remains coherent
     assert_eq!(io.read(read, &mut bytes).unwrap(), 0);

@@ -471,3 +471,44 @@ are in `/tmp/infinity-native-c-files.log`. These must be implemented using nativ
 services or removed from inapplicable upstream paths, not filled with successful
 no-ops. Native providers, safe execution, packaging and ISO-detached acceptance
 remain outstanding. No working compiler or fresh ISO is claimed.
+
+## Object metadata, positional reads, heap and timing checkpoint
+
+The file bridge now implements `pread`, `stat`, `fstat` and `access` using
+explicit native metadata/read-at callbacks. Metadata conversion checks identity,
+size and timestamp representability before changing output. Effective capability
+rights map to compatibility permission bits; they do not grant authority to
+later operations. Fields with no native mapping remain zero, not measured Unix
+user/device statistics. The metadata identity must fit this Newlib ABI; oversized
+identities are rejected rather than truncated. A production provider still needs
+a collision-free compatibility identity mapping where necessary.
+
+`ObjectIo::read_at` now reads a real opened ObjectStore snapshot without changing
+its sequential cursor. The existing Rust object-store harness checks exact
+snapshot bytes, extreme offsets and unchanged cursor state. The C callback is
+not yet wired to that Rust service in the installed runtime.
+
+`heap.c` supplies Newlib's break allocator only within a launcher-granted,
+committed private region. It checks capacity, negative increments including
+PTRDIFF_MIN, alignment and provider replacement. This is a serial boundary, not
+a page allocator or proof of thread-safe malloc. The launcher still must provide
+the region and enforce memory protection.
+
+`time.c` implements gettimeofday, nanosleep, usleep and getpagesize through
+explicit observed-time/wait/page-size services. Tests cover conversions, absent
+services, interruption remainders, invalid values and preserved failure output.
+No guessed page size, clock or successful no-op sleep is used.
+
+TESTED: files-test, heap-test, time-test, start-test, compiler-platform-test,
+directory-test, crash-hook-test, dlfcn-test and the existing native C probe.
+The QEMU probe returned guest exit code 33 and passed object round-trip, trusted
+native execution and C stdio object-I/O assertions. That probe cross-compiles on
+the host: on-device compiler, hardware isolation and installed acceptance remain
+false. Its existing boot-loader build used the current working tree; unrelated
+boot edits were not changed or committed as part of this pass.
+
+The full Clang/LLD link was retried with the new files/heap/time objects. It remains
+blocked by synchronization/TLS, termination, additional namespace operations and
+Unix process assumptions. Diagnostics: `/tmp/infinity-native-c-metadata.log`.
+All new adapters remain development runtime components, not a delivered native
+compiler. No ISO was rebuilt and no user's VirtualBox VM was modified.

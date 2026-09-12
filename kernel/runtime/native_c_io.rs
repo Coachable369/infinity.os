@@ -193,6 +193,19 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     }
 
     // ------------------------=
+    // FUNC: read_at
+    // DESC: Reads the opened snapshot at an explicit offset without moving its cursor.
+    // ------------------=
+    pub fn read_at(&self, token: i32, offset: usize, out: &mut [u8]) -> Result<usize, IoError> {
+        let slot = self.slot(token)?;
+        let h = self.handles[slot].as_ref().unwrap();
+        if h.flags & READ == 0 { return Err(IoError::Denied); }
+        let count = out.len().min(h.length.saturating_sub(offset));
+        if count > 0 { out[..count].copy_from_slice(&self.buffers[slot][offset..offset + count]); }
+        Ok(count)
+    }
+
+    // ------------------------=
     // FUNC: write
     // DESC: Buffers an all-or-nothing bounded write, zero-filling seek gaps and honoring append on each call.
     // ------------------=

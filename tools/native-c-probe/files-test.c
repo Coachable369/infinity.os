@@ -4,9 +4,11 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
+#include <sys/stat.h>
 static const InfinityCompilerHost *host;
 static int denied, closes;
 static uint32_t observed_mode;
+static InfinityCompilerMetadata metadata = {41, 3, 123, 456, 1, 3};
 // ------------------------=
 // FUNC: infinity_compiler_get_host
 // DESC: Supplies explicit fixture services without host file access.
@@ -54,11 +56,35 @@ static int object_close(void *context, uint64_t id) {
     assert(context == &denied && id == 41); ++closes; return denied;
 }
 // ------------------------=
+// FUNC: object_read_at
+// DESC: Supplies a positional snapshot read independently of cursor operations.
+// ------------------=
+static int object_read_at(void *context, uint64_t id, uint64_t offset, void *out, size_t size, size_t *count) {
+    assert(offset == 2);
+    return object_read(context, id, out, size, count);
+}
+// ------------------------=
+// FUNC: object_inspect
+// DESC: Supplies controlled metadata or a revocation failure.
+// ------------------=
+static int object_inspect(void *context, uint64_t id, InfinityCompilerMetadata *out) {
+    assert(context == &denied && id == 41);
+    *out = metadata; return denied;
+}
+// ------------------------=
+// FUNC: path_inspect
+// DESC: Resolves a fixture path without accessing the host filesystem.
+// ------------------=
+static int path_inspect(void *context, const char *path, InfinityCompilerMetadata *out) {
+    assert(path && *path); return object_inspect(context, 41, out);
+}
+// ------------------------=
 // FUNC: main
 // DESC: Tests mode translation, revocation, ownership, stale descriptors, reuse and bounded capacity.
 // ------------------=
 int main(void) {
-    InfinityCompilerFiles files = {object_open, object_read, object_write, object_seek, object_close};
+    InfinityCompilerFiles files = {object_open, object_read, object_write, object_seek, object_close,
+                                  object_read_at, object_inspect, path_inspect};
     InfinityCompilerHost services = {.context = &denied, .files = &files};
     assert(open("object", O_RDONLY) == -1 && errno == ENOSYS);
     host = &services;
@@ -69,7 +95,22 @@ int main(void) {
     host = 0;
     assert(read(fd, buffer, sizeof buffer) == 3 && memcmp(buffer, "abc", 3) == 0);
     assert(write(fd, "xyz", 3) == 3 && lseek(fd, 17, SEEK_SET) == 17);
+    assert(pread(fd, buffer, 3, 2) == 3);
+    assert(pread(fd, buffer, 3, -1) == -1 && errno == EINVAL);
+    struct stat info = {0};
+    assert(fstat(fd, &info) == 0 && info.st_size == 3 && info.st_ino == 41 && S_ISREG(info.st_mode));
+    host = &services;
+    assert(stat("object", &info) == 0 && info.st_mtime == 123);
+    assert(access("object", R_OK | W_OK) == 0);
+    assert(access("object", X_OK) == -1 && errno == EACCES);
+    metadata.size = UINT64_MAX;
+    assert(stat("object", &info) == -1 && errno == EOVERFLOW && info.st_size == 3);
+    metadata.size = 3;
+    metadata.modified_nanoseconds = 1000000000;
+    assert(fstat(fd, &info) == -1 && errno == EIO && info.st_mtime == 123);
+    metadata.modified_nanoseconds = 456;
     denied = EACCES;
+    assert(fstat(fd, &info) == -1 && errno == EACCES && info.st_size == 3);
     assert(read(fd, buffer, 3) == -1 && errno == EACCES);
     assert(close(fd) == -1 && errno == EACCES && closes == 1);
     assert(read(fd, buffer, 3) == -1 && errno == EBADF);

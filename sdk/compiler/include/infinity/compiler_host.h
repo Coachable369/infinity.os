@@ -5,6 +5,14 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+typedef struct InfinityCompilerMetadata {
+    uint64_t identity;
+    uint64_t size;
+    int64_t modified_seconds;
+    uint32_t modified_nanoseconds;
+    uint32_t kind; /* 1=content object, 2=namespace */
+    uint32_t access; /* effective capability rights: read=1, write=2, execute=4 */
+} InfinityCompilerMetadata;
 typedef struct InfinityCompilerFiles {
     /* Native mode bits: read=1, write=2, create=4, truncate=8, append=16,
        exclusive=32. Provider must authorize each operation, including revocation.
@@ -14,6 +22,10 @@ typedef struct InfinityCompilerFiles {
     int (*write)(void *, uint64_t, const void *, size_t, size_t *);
     int (*seek)(void *, uint64_t, int64_t, int, int64_t *);
     int (*close)(void *, uint64_t);
+    /* Positional reads must not alter the opened cursor, including on failure. */
+    int (*read_at)(void *, uint64_t, uint64_t, void *, size_t, size_t *);
+    int (*inspect)(void *, uint64_t, InfinityCompilerMetadata *);
+    int (*inspect_path)(void *, const char *, InfinityCompilerMetadata *);
 } InfinityCompilerFiles;
 typedef struct InfinityCompilerHost {
     void *context;
@@ -37,6 +49,13 @@ typedef struct InfinityCompilerHost {
     int (*register_crash_handler)(void *, void (*)(void *), void *);
     int (*unregister_crash_handler)(void *);
     const InfinityCompilerFiles *files;
+    /* Launcher-owned, writable, committed private region; never an address to
+       allocate or map speculatively. Stable for the lifetime of this image. */
+    void *heap_base;
+    size_t heap_size;
+    uint32_t page_size;
+    /* Relative monotonic wait; EINTR returns measured remaining nanoseconds. */
+    int (*sleep_ns)(void *, uint64_t, uint64_t *);
 } InfinityCompilerHost;
 void infinity_compiler_set_host(const InfinityCompilerHost *);
 const InfinityCompilerHost *infinity_compiler_get_host(void);

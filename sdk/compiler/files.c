@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <limits.h>
+#include <sys/stat.h>
 #ifdef __INFINITY__
 typedef _READ_WRITE_RETURN_TYPE InfinityIoCount;
 #else
@@ -140,4 +141,99 @@ int close(int fd) {
     ++slot->generation;
     int error = slot->api.close(slot->context, slot->object);
     return error ? file_error(error) : 0;
+}
+
+// ------------------------=
+// FUNC: pread
+// DESC: Reads an explicit object offset without changing the sequential cursor.
+// ------------------=
+ssize_t pread(int fd, void *buffer, size_t size, off_t offset) {
+    struct FileSlot *slot = lookup(fd);
+    if (!slot) return -1;
+    if (!(slot->mode & 1)) return file_error(EBADF);
+    if ((!buffer && size) || size > (size_t)INT_MAX || offset < 0) return file_error(EINVAL);
+    if (!slot->api.read_at) return file_error(ENOSYS);
+    size_t count = 0;
+    int error = slot->api.read_at(slot->context, slot->object, (uint64_t)offset, buffer, size, &count);
+    if (error) return file_error(error);
+    return count > size ? file_error(EIO) : (ssize_t)count;
+}
+
+// ------------------------=
+// FUNC: convert_metadata
+// DESC: Projects native object metadata into representable compatibility fields atomically.
+// ------------------=
+static int convert_metadata(const InfinityCompilerMetadata *value, struct stat *out) {
+    if (!out) return file_error(EFAULT);
+    if ((value->kind != 1 && value->kind != 2) || value->access > 7 ||
+        value->modified_nanoseconds >= 1000000000) return file_error(EIO);
+    struct stat result = {0};
+    result.st_ino = (ino_t)value->identity;
+    result.st_size = (off_t)value->size;
+    result.st_mtime = (time_t)value->modified_seconds;
+    if ((uint64_t)result.st_ino != value->identity || result.st_size < 0 ||
+        (uint64_t)result.st_size != value->size ||
+        (int64_t)result.st_mtime != value->modified_seconds) return file_error(EOVERFLOW);
+#ifdef __APPLE__
+    result.st_mtimespec.tv_nsec = value->modified_nanoseconds;
+#else
+    result.st_mtim.tv_nsec = value->modified_nanoseconds;
+#endif
+    result.st_mode = value->kind == 1 ? S_IFREG : S_IFDIR;
+    if (value->access & 1) result.st_mode |= S_IRUSR;
+    if (value->access & 2) result.st_mode |= S_IWUSR;
+    if (value->access & 4) result.st_mode |= S_IXUSR;
+    *out = result;
+    return 0;
+}
+
+// ------------------------=
+// FUNC: fstat
+// DESC: Inspects the opened snapshot through its owning provider.
+// ------------------=
+int fstat(int fd, struct stat *out) {
+    struct FileSlot *slot = lookup(fd);
+    if (!slot) return -1;
+    if (!out) return file_error(EFAULT);
+    if (!slot->api.inspect) return file_error(ENOSYS);
+    InfinityCompilerMetadata value = {0};
+    int error = slot->api.inspect(slot->context, slot->object, &value);
+    return error ? file_error(error) : convert_metadata(&value, out);
+}
+
+// ------------------------=
+// FUNC: path_metadata
+// DESC: Requests authorized native namespace metadata, never consulting a host filesystem.
+// ------------------=
+static int path_metadata(const char *path, InfinityCompilerMetadata *value) {
+    if (!path || !*path) return file_error(EINVAL);
+    const InfinityCompilerHost *host = infinity_compiler_get_host();
+    if (!host || !host->files || !host->files->inspect_path) return file_error(ENOSYS);
+    int error = host->files->inspect_path(host->context, path, value);
+    return error ? file_error(error) : 0;
+}
+
+// ------------------------=
+// FUNC: stat
+// DESC: Returns current path metadata while preserving output on failure.
+// ------------------=
+int stat(const char *path, struct stat *out) {
+    if (!out) return file_error(EFAULT);
+    InfinityCompilerMetadata value = {0};
+    if (path_metadata(path, &value)) return -1;
+    return convert_metadata(&value, out);
+}
+
+// ------------------------=
+// FUNC: access
+// DESC: Checks effective native rights without granting subsequent operations authority.
+// ------------------=
+int access(const char *path, int mode) {
+    if (mode & ~(R_OK | W_OK | X_OK)) return file_error(EINVAL);
+    InfinityCompilerMetadata value = {0};
+    if (path_metadata(path, &value)) return -1;
+    if (value.access > 7 || (value.kind != 1 && value.kind != 2)) return file_error(EIO);
+    uint32_t requested = ((mode & R_OK) ? 1u : 0u) |
+                         ((mode & W_OK) ? 2u : 0u) | ((mode & X_OK) ? 4u : 0u);
+    return (value.access & requested) == requested ? 0 : file_error(EACCES);
 }
