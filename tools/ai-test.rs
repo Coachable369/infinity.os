@@ -574,6 +574,14 @@ fn desktop_chat() {
         Some(runtime::ai::generation::ResponseKind::Comparison)
     );
     assert!(!chat.select_model_index(CHAT_MODELS.len()));
+    let before = chat.message_count();
+    assert!(chat.select_model_index(3));
+    assert_eq!(chat.selected_model(), runtime::ai::chat::QWEN_FULL_MODEL_ID);
+    assert!(!chat.selected_model_ready());
+    assert!(!chat.submit(b"hello"));
+    assert_eq!(chat.message_count(), before);
+    assert_eq!(chat.select_next_model(), 0);
+    assert!(chat.selected_model_ready());
     for _ in 0..CHAT_MESSAGE_CAPACITY {
         assert!(chat.submit(b"system status"));
     }
@@ -590,13 +598,16 @@ fn desktop_chat() {
         .create_user(b"chat-user", b"Chat User", 1)
         .unwrap();
     identities
-        .update_ai_chat_preferences(user.id, user.id, false, 1)
+        .update_ai_chat_preferences(user.id, user.id, false, 3)
         .unwrap();
     let encoded = identities.encode();
     let restored = runtime::identity::IdentitySystem::decode(&encoded).unwrap();
     let preferences = restored.ai_profile(user.id).unwrap();
     assert!(!preferences.chat_enabled);
-    assert_eq!(preferences.chat_model_index, 1);
+    assert_eq!(preferences.chat_model_index, 3);
+    let mut restored_chat = runtime::ai::chat::ChatRuntime::new();
+    assert!(restored_chat.select_model_index(preferences.chat_model_index as usize));
+    assert_eq!(restored_chat.selected_model(), runtime::ai::chat::QWEN_FULL_MODEL_ID);
     let other = identities
         .create_user(b"other-user", b"Other User", 2)
         .unwrap();

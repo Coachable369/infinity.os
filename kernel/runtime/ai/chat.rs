@@ -9,6 +9,7 @@ pub const CHAT_TEXT_CAPACITY: usize = 192;
 pub const CHAT_INPUT_CAPACITY: usize = 96;
 pub const SYSTEM_ASSISTANT_MODEL_ID: ModelId = DIALOGUE_MODEL_ID;
 pub const INTENT_ASSISTANT_MODEL_ID: ModelId = super::model::LOCAL_INTENT_MODEL_ID;
+pub const QWEN_FULL_MODEL_ID: ModelId = 0x4149_1003;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChatRole {
@@ -56,7 +57,7 @@ pub struct ChatModel {
     pub description: &'static [u8],
 }
 
-pub const CHAT_MODELS: [ChatModel; 3] = [
+pub const CHAT_MODELS: [ChatModel; 4] = [
     ChatModel {
         id: SYSTEM_ASSISTANT_MODEL_ID,
         name: b"Infinity Dialogue v1",
@@ -71,6 +72,11 @@ pub const CHAT_MODELS: [ChatModel; 3] = [
         id: INTENT_ASSISTANT_MODEL_ID,
         name: b"Local Intent v1",
         description: b"Typed operation classification",
+    },
+    ChatModel {
+        id: QWEN_FULL_MODEL_ID,
+        name: b"Qwen3.8-27B",
+        description: b"Full local model - backend and weights not installed",
     },
 ];
 
@@ -134,6 +140,14 @@ impl ChatRuntime {
     // ------------------=
     pub const fn selected_model(&self) -> ModelId {
         self.selected_model
+    }
+
+    // ------------------------=
+    // FUNC: selected_model_ready
+    // DESC: Keeps catalog selection distinct from actual local inference availability.
+    // ------------------=
+    pub const fn selected_model_ready(&self) -> bool {
+        self.selected_model != QWEN_FULL_MODEL_ID
     }
 
     // ------------------------=
@@ -366,6 +380,9 @@ impl ChatRuntime {
     // DESC: Appends a user turn and a bounded local response produced by the selected model.
     // ------------------=
     pub fn submit(&mut self, input: &[u8]) -> bool {
+        if !self.selected_model_ready() {
+            return false;
+        }
         let trimmed = trim_ascii(input);
         if trimmed.is_empty() {
             return false;

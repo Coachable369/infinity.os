@@ -4986,7 +4986,9 @@ impl super::DisplayDevice {
         let (chat_enabled, chat_model) = crate::runtime::ai::with_ai_runtime(|runtime| {
             (
                 runtime.chat.enabled(),
-                runtime.chat.selected_model_descriptor().name,
+                if runtime.chat.selected_model_ready() {
+                    runtime.chat.selected_model_descriptor().name
+                } else { b"Qwen3.8-27B (Unavailable)".as_slice() },
             )
         });
         if focus == 6 {
@@ -9296,6 +9298,8 @@ impl super::DisplayDevice {
         );
         let state = if chat.minimized() {
             b"LOCAL  +".as_slice()
+        } else if !chat.selected_model_ready() {
+            b"UNAVAILABLE".as_slice()
         } else {
             b"LOCAL  READY".as_slice()
         };
@@ -9509,7 +9513,7 @@ impl super::DisplayDevice {
             composer_left + 12 * scale,
             composer_top + 15 * scale,
             if composer_text.is_empty() {
-                b"Ask InfinityOS..."
+                if chat.selected_model_ready() { b"Ask InfinityOS..." } else { b"Model unavailable" }
             } else {
                 composer_text
             },
