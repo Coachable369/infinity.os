@@ -2,6 +2,60 @@
 
 ## Performance follow-up
 
+### Balanced batches and four-row Q4 kernels
+
+The dispatcher balances small projections across online workers and limits each
+worker to 4,096 rows per job. Larger output mailboxes add 60 KiB across four
+workers compared with 256-row jobs; model format, weights, context and KV layout
+are unchanged. Cancellable jobs still publish into private buffers only.
+
+Q4_K rows are interleaved four at a time, sharing activation loads and exposing
+independent arithmetic to the CPU. Each row retains the original accumulation
+order; Q6_K and 1–3-row tails use the existing kernel. Behavioral tests compare
+float bits across widths 256 through 12,288, zero rows, tails, multiple worker
+batches and cancellation. Host timings are diagnostics, never test pass criteria.
+
+`ai timing` shows per-request first-token latency, token count, decode interval,
+BSP prefill/decode work and maximum pump duration in six visible console rows.
+`ai workers` shows cumulative worker compute and completed-result idle time,
+summed across cores. Those sums are not elapsed request times and exclude pending
+uncollected jobs. Timing uses the hardware counter without per-job logging.
+
+The longer busy-poll experiment was rejected: decode improved only from 15.4 to
+14.3 seconds while BSP work rose from 3.25 to 6.18 seconds. The original bounded
+256-iteration / 2 ms pump remains. A vector-byte-unpacking experiment was also
+rejected because it showed no speed gain. The four-row Q6 experiment was slower
+and is not included.
+
+### Installed guest measurements (2026-09-12)
+
+The 12 GiB, six-vCPU ARM VirtualBox QA clone booted from its installed disk with
+the ISO detached and no NIC. The final kernel answered `hello` with
+`Hello! How can I assist you today?` (11 tokens). First-token latency was
+15,352 ms; the following ten decode intervals totaled 14,386 ms (0.695 tokens/s,
+displayed as 0.6). This is roughly twice the earlier 0.3 tokens/s guest baseline,
+but **still below satisfactory interactive performance**.
+
+BSP prefill/decode work was 2,582/3,178 ms and maximum service pump was 4,619 us.
+Four workers completed 24,672 jobs, totaling 55,056 ms compute and 34,099 ms
+completed-result idle across cores. These aggregate counters are not wall time.
+Compared with the same balanced dispatcher using the original row kernel,
+decode fell from 15,424 to 14,386 ms; host Q4 microbenchmarks improved about 30%,
+which must not be confused with end-to-end guest speedup. Runs were single samples
+on the same host, not statistically controlled benchmarks.
+
+A second request showed the animated thinking indicator; keyboard Escape
+cancelled it and the desktop remained visible. Arithmetic tests cover exact-bit
+parity, cancellation, multi-batch outputs and tails. The final installed clone was
+updated in place with rollback disks retained; the full fresh-install interaction
+was not repeated for this optimization. Rebuilt media and extracted installed-ESP
+parity cover packaging, separately from that installed runtime check.
+
+Remaining performance work is batched prompt prefill and reducing worker result
+collection idle without busy-waiting on the desktop CPU. Neither is claimed here.
+
+### Earlier worker bring-up baseline
+
 New turns preserve fully computed KV positions. Only uncached tokens are
 prefilled; cancellation discards the in-progress position, not the valid prefix.
 Changing authenticated owner still clears conversation/cache state. Real-weight

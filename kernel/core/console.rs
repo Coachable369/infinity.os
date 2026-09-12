@@ -10624,6 +10624,25 @@ impl ConsoleRuntime {
     // ------------------=
     fn execute_ai_command(&mut self, command: &[u8]) -> bool {
         use crate::runtime::ai::{model::LOCAL_INTENT_MODEL_ID, types::DataLocality};
+        if command == b"ai workers" {
+            let (compute, idle) = crate::runtime::ai::qwen::workers::profile_ms();
+            self.output.write_number(b"Online workers: ", crate::runtime::ai::qwen::workers::online() as u64);
+            self.output.write_number(b"Completed jobs: ", crate::runtime::ai::qwen::workers::completed() as u64);
+            self.output.write_number(b"Summed worker compute milliseconds: ", compute);
+            self.output.write_number(b"Summed completed-job idle milliseconds: ", idle);
+            return true;
+        }
+        if command == b"ai timing" {
+            crate::runtime::ai::with_ai_runtime(|ai| {
+                self.output.write_number(b"Output tokens: ", ai.qwen_tokens);
+                self.output.write_number(b"Decode milliseconds: ", ai.qwen_decode_ns / 1_000_000);
+                self.output.write_number(b"First token milliseconds: ", ai.qwen_metrics.first_token_ns / 1_000_000);
+                self.output.write_number(b"BSP prefill milliseconds: ", ai.qwen_metrics.prefill_work_ns / 1_000_000);
+                self.output.write_number(b"BSP decode milliseconds: ", ai.qwen_metrics.decode_work_ns / 1_000_000);
+                self.output.write_number(b"Maximum pump microseconds: ", ai.qwen_metrics.max_pump_ns / 1_000);
+            });
+            return true;
+        }
         if command == b"ai status" {
             crate::output_text(b"[operation] AI.Status\n");
             crate::runtime::ai::with_ai_runtime(|ai| {

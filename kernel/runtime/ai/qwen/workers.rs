@@ -1,15 +1,17 @@
 //! Bounded AP jobs. Only the BSP submits/polls; APs touch immutable weights and
 //! private activation/output buffers, never the engine, framebuffer or services.
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 const COUNT: usize = 4;
-const ROWS: usize = 256;
+const ROWS: usize = 4096;
 const WIDTH: usize = 12288;
 struct Job {
     data: *const u8,
     kind: u32,
     width: usize,
     rows: usize,
+    finished: u64,
+    elapsed: u64,
     input: [f32; WIDTH],
     output: [f32; ROWS],
 }
@@ -32,6 +34,8 @@ impl Slot {
                 kind: 0,
                 width: 0,
                 rows: 0,
+                finished: 0,
+                elapsed: 0,
                 input: [0.0; WIDTH],
                 output: [0.0; ROWS],
             }),
@@ -41,6 +45,41 @@ impl Slot {
 static SLOTS: [Slot; COUNT] = [const { Slot::new() }; COUNT];
 static READY: AtomicUsize = AtomicUsize::new(0);
 static COMPLETED: AtomicUsize = AtomicUsize::new(0);
+static COMPUTE_TICKS: AtomicU64 = AtomicU64::new(0);
+static IDLE_TICKS: AtomicU64 = AtomicU64::new(0);
+
+// ------------------------=
+// FUNC: counter
+// DESC: Reads the shared ARM counter without logging, allocation, or firmware calls.
+// ------------------=
+fn counter() -> u64 {
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    unsafe {
+        let value: u64;
+        core::arch::asm!("mrs {0}, cntvct_el0", out(reg) value, options(nomem, nostack));
+        return value;
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+    0
+}
+// ------------------------=
+// FUNC: profile_ms
+// DESC: Reports cumulative summed worker compute and completed-result waiting time in milliseconds.
+// ------------------=
+pub fn profile_ms() -> (u64, u64) {
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    unsafe {
+        let frequency: u64;
+        core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) frequency, options(nomem, nostack));
+        if frequency != 0 {
+            return (
+                COMPUTE_TICKS.load(Ordering::Relaxed).saturating_mul(1000) / frequency,
+                IDLE_TICKS.load(Ordering::Relaxed).saturating_mul(1000) / frequency,
+            );
+        }
+    }
+    (0, 0)
+}
 // BSP-only submission state. No pointers into movable engine memory are retained.
 static mut PENDING: (usize, usize, bool) = (0, 0, false);
 
@@ -111,25 +150,27 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
         match slot.state.load(Ordering::Acquire) {
             1 => {
                 let job = &mut *slot.job.get();
-                let stride = job.width / 256 * if job.kind == 12 { 144 } else { 210 };
+                let started = counter();
                 extern "C" {
-                    fn infinity_qwen_dot(
+                    fn infinity_qwen_dot_rows(
                         kind: u32,
                         data: *const u8,
                         input: *const f32,
                         width: usize,
+                        rows: usize,
                         output: *mut f32,
                     );
                 }
-                for row in 0..job.rows {
-                    infinity_qwen_dot(
-                        job.kind,
-                        job.data.add(row * stride),
-                        job.input.as_ptr(),
-                        job.width,
-                        &mut job.output[row],
-                    );
-                }
+                infinity_qwen_dot_rows(
+                    job.kind,
+                    job.data,
+                    job.input.as_ptr(),
+                    job.width,
+                    job.rows,
+                    job.output.as_mut_ptr(),
+                );
+                job.finished = counter();
+                job.elapsed = job.finished.saturating_sub(started);
                 COMPLETED.fetch_add(1, Ordering::Relaxed);
                 slot.state.store(2, Ordering::Release);
                 #[cfg(all(target_arch = "aarch64", target_os = "none"))]
@@ -187,6 +228,8 @@ pub unsafe fn rows(
                     continue;
                 }
                 let job = &*slot.job.get();
+                COMPUTE_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
+                IDLE_TICKS.fetch_add(counter().saturating_sub(job.finished), Ordering::Relaxed);
                 if !discarded {
                     output[at..at + job.rows].copy_from_slice(&job.output[..job.rows]);
                 }
@@ -215,12 +258,17 @@ pub unsafe fn rows(
         }
         let mut at = *cursor;
         let mut mask = 0;
+        // Balance even small GQA projections across available cores, while
+        // amortizing firmware/input-loop round trips for large matrices.
+        let batch = (output.len() - at)
+            .div_ceil(ready.count_ones() as usize)
+            .min(ROWS);
         for (i, slot) in SLOTS.iter().enumerate() {
             if ready & (1 << i) == 0 || at == output.len() {
                 continue;
             }
             let job = &mut *slot.job.get();
-            job.rows = ROWS.min(output.len() - at);
+            job.rows = batch.min(output.len() - at);
             job.width = input.len();
             job.kind = kind;
             job.data = data.as_ptr().add(at * stride);
@@ -284,7 +332,8 @@ mod tests {
         }
         for kind in [12, 14] {
             let stride = if kind == 12 { 144 } else { 210 };
-            let mut data = vec![0u8; 513 * stride];
+            let count = 2 * ROWS + 1;
+            let mut data = vec![0u8; count * stride];
             for (i, b) in data.iter_mut().enumerate() {
                 *b = (i * 37 + 19) as u8;
             }
@@ -296,7 +345,7 @@ mod tests {
                 }
             }
             let input: Vec<f32> = (0..256).map(|i| (i as f32 - 128.0) / 128.0).collect();
-            let mut expected = vec![0.0; 513];
+            let mut expected = vec![0.0; count];
             for (row, out) in expected.iter_mut().enumerate() {
                 unsafe {
                     infinity_qwen_dot(
@@ -308,7 +357,7 @@ mod tests {
                     );
                 }
             }
-            let mut actual = vec![0.0; 513];
+            let mut actual = vec![0.0; count];
             let mut cursor = 0;
             assert_eq!(
                 unsafe { rows(kind, &data, &input, &mut actual, &mut cursor) },

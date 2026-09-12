@@ -360,6 +360,8 @@ ai-test:
 	@clang -O3 -ffp-contract=off -c kernel/runtime/ai/qwen/cpu_math.c -o build/behavior-tests/qwen-worker-math.o
 	@rustc --edition=2021 --test kernel/runtime/ai/qwen/workers.rs -C link-arg=build/behavior-tests/qwen-worker-math.o -o build/behavior-tests/qwen-workers-test
 	@build/behavior-tests/qwen-workers-test
+	@clang -O3 -ffp-contract=off tools/qwen-rows-bench.c kernel/runtime/ai/qwen/cpu_math.c -o build/behavior-tests/qwen-rows-test
+	@build/behavior-tests/qwen-rows-test
 	@clang -O2 tools/psci-topology-test.c -o build/behavior-tests/psci-topology-test
 	@build/behavior-tests/psci-topology-test
 

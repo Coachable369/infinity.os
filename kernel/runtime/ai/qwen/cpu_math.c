@@ -74,3 +74,52 @@ void infinity_qwen_dot(uint32_t kind,const uint8_t *data,const float *input,size
 #endif
     *output=(sums[0]+sums[1])+(sums[2]+sums[3]);
 }
+
+// ------------------------=
+// FUNC: infinity_qwen_dot_rows
+// DESC: Interleaves four independent rows, reusing activations while preserving each row's floating-point accumulation order.
+// ------------------=
+void infinity_qwen_dot_rows(uint32_t kind,const uint8_t *data,const float *input,size_t width,size_t rows,float *output) {
+    size_t stride=width/256*(kind==12?144:210),row=0;
+#if defined(__aarch64__) && !defined(QWEN_SCALAR)
+    for(;kind==12 && row+4<=rows;row+=4) {
+        float32x4_t accum[4]={vdupq_n_f32(0),vdupq_n_f32(0),vdupq_n_f32(0),vdupq_n_f32(0)};
+        for(size_t block=0;block<width/256;block++) {
+            const uint8_t *p[4]; float d[4],m[4];
+            for(unsigned r=0;r<4;r++) {
+                p[r]=data+(row+r)*stride+block*(kind==12?144:210);
+                d[r]=qwen_half(p[r]+(kind==12?0:208));
+                m[r]=kind==12?qwen_half(p[r]+2):0;
+            }
+            const float *x=input+block*256;
+            if(kind==12) {
+                for(unsigned g=0;g<8;g++) {
+                    float ds[4],dm[4];
+                    for(unsigned r=0;r<4;r++) {
+                        const uint8_t *s=p[r]+4;
+                        unsigned scale=g<4?s[g]&63:(s[g+4]&15)|((s[g-4]>>6)<<4);
+                        unsigned minimum=g<4?s[g+4]&63:(s[g+4]>>4)|((s[g]>>6)<<4);
+                        ds[r]=d[r]*(float)scale; dm[r]=m[r]*(float)minimum;
+                    }
+                    for(unsigned lane=0;lane<32;lane+=4) {
+                        float32x4_t activation=vld1q_f32(x+g*32+lane);
+                        #pragma clang loop unroll(full)
+                        for(unsigned r=0;r<4;r++) {
+                            const uint8_t *v=p[r]+16+(g/2)*32+lane;
+                            uint32x4_t packed={v[0],v[1],v[2],v[3]};
+                            uint32x4_t q=(g&1)?vshrq_n_u32(packed,4):vandq_u32(packed,vdupq_n_u32(15));
+                            float32x4_t weight=vsubq_f32(vmulq_n_f32(vcvtq_f32_u32(q),ds[r]),vdupq_n_f32(dm[r]));
+                            accum[r]=vaddq_f32(accum[r],vmulq_f32(weight,activation));
+                        }
+                    }
+                }
+            }
+        }
+        for(unsigned r=0;r<4;r++) {
+            float sums[4]; vst1q_f32(sums,accum[r]);
+            output[row+r]=(sums[0]+sums[1])+(sums[2]+sums[3]);
+        }
+    }
+#endif
+    for(;row<rows;row++) infinity_qwen_dot(kind,data+row*stride,input,width,output+row);
+}
