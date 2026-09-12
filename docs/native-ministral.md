@@ -90,6 +90,24 @@ Sequential warm-cache host microbenchmarks measured eight-row Q6 work at width
 end-to-end guest speedups. Updating the installed VM and measuring it again
 remain required before proceeding to HTTPS work.
 
+### Updated installed-system check
+
+The installed kernel was updated without reinstalling on September 12. The
+offline updater validated GPT, container, generation and component checksums,
+updated eleven kernel references, and verified all unrelated logical disk bytes
+unchanged. The final VDI compared identical to the validated patched RAW image.
+An APFS clone of the original disk and copies of its firmware/settings remain
+at `/Users/jonathan.mcallister/VirtualBox VMs/ministral-update.MVzD0m/`.
+
+With the optical drive empty, the VM reached login, retained the existing user
+and Ministral selection, and answered `Hello` coherently. No partial assistant
+bubble appeared while generating. The completed response was visible by the
+31-second observation, with a displayed decode rate of 1.5 tokens/sec versus
+the earlier 1.2 baseline (rounded UI measurements, not an isolated Q6 speedup).
+Cancellation was also observed. Command/launcher focus and repaint behavior
+was inconsistent during diagnostics, so overall desktop responsiveness is not
+accepted yet. HTTPS work remains deferred until that requirement passes.
+
 The native host harness completed a real instruction with a one-token `Hello`
 answer and EOS in approximately 16.8 seconds, including prompt processing.
 This is neither guest throughput nor installed-system acceptance. Qwen's

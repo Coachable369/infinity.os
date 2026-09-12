@@ -3,6 +3,7 @@ import argparse
 import os
 import zlib
 import hashlib
+import json
 
 # ------------------------=
 # FUNC: integer
@@ -41,6 +42,7 @@ def main():
     parser.add_argument('clone')
     parser.add_argument('kernel')
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--export-dir', help='Export validated sector patches for an offline backed-up image')
     args = parser.parse_args()
     with open(args.kernel, 'rb') as stream:
         kernel = stream.read()
@@ -153,6 +155,17 @@ def main():
             for lba, data in changes:
                 assert read(lba, len(data)) == data
             assert unchanged_digest() == unchanged, 'Unrelated disk bytes changed'
+        if args.export_dir:
+            os.mkdir(args.export_dir)
+            patches = []
+            for index, (lba, data) in enumerate(changes):
+                path = os.path.abspath(os.path.join(args.export_dir, f'{index}.bin'))
+                with open(path, 'xb') as stream:
+                    stream.write(data)
+                patches.append(dict(offset=lba * 512, length=len(data), path=path,
+                                    sha256=hashlib.sha256(data).hexdigest()))
+            with open(os.path.join(args.export_dir, 'patches.json'), 'x') as stream:
+                json.dump(patches, stream)
         print(dict(applied=args.apply, kernel_bytes=len(kernel), references=references, container_lba=first))
 
 if __name__ == '__main__':
