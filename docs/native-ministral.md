@@ -71,6 +71,14 @@ InfinityOS. Host harnesses are development verification only.
 
 ## Distribution media
 
+### VirtualBox reinstall check (2026-09-12)
+
+The combined ISO completed a fresh installation on the backed-up 16 GiB
+`infinityos-4` disk. With the ISO detached, the installed disk passed the previous
+boot-contract failure and reached the boot artwork's ready stage. It had not yet
+reached onboarding after several minutes; installed chat output and throughput
+remain unverified. This is not full installed-system acceptance.
+
 The current 10 GiB ISO exceeds both single-layer and dual-layer DVD capacity.
 Use sufficiently large USB media for this combined model image. A future smaller
 boot image with a separately discoverable model payload/companion medium should
