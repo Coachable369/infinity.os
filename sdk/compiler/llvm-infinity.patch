@@ -1,3 +1,21 @@
+--- a/llvm/lib/Support/raw_socket_stream.cpp
++++ b/llvm/lib/Support/raw_socket_stream.cpp
+@@ -23,1 +23,5 @@
++#if defined(__INFINITY__)
++#include <infinity/llvm_socket_unavailable.inc>
++#else
++
+ #ifndef _WIN32
+@@ -397,2 +401,3 @@
+   return raw_fd_stream::read(Ptr, Size);
+ }
++#endif // __INFINITY__
+--- a/llvm/lib/Support/Unix/Unix.h
++++ b/llvm/lib/Support/Unix/Unix.h
+@@ -41,1 +41,3 @@
++#ifdef HAVE_DLOPEN
+ #include <dlfcn.h>
++#endif
 --- a/llvm/lib/Support/Unix/Path.inc
 +++ b/llvm/lib/Support/Unix/Path.inc
 @@ -18,3 +18,6 @@

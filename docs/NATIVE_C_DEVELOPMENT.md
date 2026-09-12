@@ -223,3 +223,34 @@ Dynamic loading is not implemented by the current static payload. The next
 change must remove that unsupported platform assumption or add a truthful
 native adapter, not claim a host dynamic loader exists. The two-correction limit
 was reached here; the compiler remains unlinked and uninstalled.
+
+## Dynamic-loading and socket correction checkpoint
+
+The common LLVM Unix header now includes `dlfcn.h` only with `HAVE_DLOPEN`,
+matching LLVM's existing unsupported dynamic-loader branch. The target
+`RandomNumberGenerator.cpp` object compiles successfully.
+
+InfinityOS's raw Unix socket stream branch explicitly rejects listener and
+connection creation with `operation_not_supported`. Reads fail without changing
+the caller's buffer, even for an indefinite timeout. It does not adopt supplied
+descriptors or create socket files. This is an unsupported compatibility API,
+not a native networking implementation. The tracked LLVM patch selects
+`sdk/compiler/include/infinity/llvm_socket_unavailable.inc` only for InfinityOS.
+
+TESTED: `sh tools/native-c-probe/socket-unavailable-test.sh` executes those
+typed failure paths against host LLVM 23.1.0; compiler-platform contract tests
+also pass. Both corrected translation units compile for the freestanding
+x86-64 target. Host tests do not establish installed runtime acceptance.
+
+The next full compiler build fails first in `Unix/Path.inc`: Newlib's generic
+target has no directory backend (`DIR` is unavailable), and `sys/statvfs.h`
+is missing. Concurrent compilation also exposes missing resource-limit and
+process-wait interfaces in `Unix/Process.inc` and `Unix/Program.inc` (`rlimit`,
+`RLIMIT_CORE`, `RLIMIT_DATA`, `wait4`, `rusage.ru_maxrss`, `_POSIX_ARG_MAX`).
+The next continuation must map directory operations to authorized ObjectStore
+enumeration and explicitly handle unsupported process/resource operations;
+do not fabricate headers with successful no-op semantics.
+
+The two-correction limit was reached at this checkpoint. No linked native Clang
+binary or new installer payload was produced. Production service wiring and
+ISO-detached compile/edit/recompile/run acceptance remain outstanding.
