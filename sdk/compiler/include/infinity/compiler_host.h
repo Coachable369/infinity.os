@@ -14,6 +14,8 @@ typedef struct InfinityCompilerHost {
     int (*unmap)(void *, void *, size_t);
     int (*protect)(void *, void *, size_t, int);
     int (*sync)(void *, void *, size_t, int);
+    /* Fill the entire request with native entropy or return a positive errno. */
+    int (*entropy)(void *, void *, size_t);
 } InfinityCompilerHost;
 void infinity_compiler_set_host(const InfinityCompilerHost *);
 const char *infinity_compiler_executable_path(void);

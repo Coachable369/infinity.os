@@ -166,3 +166,30 @@ Architecture requirements remain authoritative:
 Third-party C libraries are separate ports with their own dependency, licensing
 and behavioral checks; broad libc compatibility does not imply arbitrary Unix
 applications already work.
+
+## Random-device correction checkpoint
+
+The `std::random_device` build failure is resolved: libc++ was rebuilt and
+installed with `LIBCXX_ENABLE_RANDOM_DEVICE=ON`, and LLVM subsequently compiled
+its ExponentialBackoff implementation. `libcxx-infinity.patch` selects
+`getentropy` for InfinityOS instead of opening `/dev/urandom`. Both C and C++
+target flags include `sdk/compiler/target.h` and `sdk/compiler/include`.
+
+The compiler service table now accepts an entropy callback. `getentropy` bounds
+requests to 256 bytes, rejects invalid pointers, returns ENOSYS without a
+provider, preserves provider errors, and publishes no partial bytes on failure.
+It clears its temporary buffer. Host behavioral tests verify byte forwarding,
+boundary handling and failure atomicity; target C compilation also passes.
+There is no production entropy callback wired to this compiler yet, and these
+tests do not claim that fixture bytes are real randomness.
+
+LLVM next failed in Mustache.cpp because `std::ostringstream` requires libc++
+localization. Enabling `LIBCXX_ENABLE_LOCALIZATION=ON` revealed incorrect libc
+selection: the generic/IBM locale fallback conflicts with Newlib's `strtod_l`,
+`strtof_l` and `strtold_l` declarations and reports an unknown character table.
+The two-correction limit was reached. Next resolve libc++'s Newlib selection
+in its CMake configuration and rebuild consistently; do not add a dummy locale
+table or suppress the errors. The build directory now requests localization,
+but its installed sysroot is the last successful non-localized, random-enabled
+build. Full compiler linking, native service integration and ISO-detached
+acceptance remain outstanding.

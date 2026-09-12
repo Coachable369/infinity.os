@@ -7,6 +7,7 @@ mkdir -p build/native-c
     -Isdk/compiler/include -Dclock_gettime=infinity_test_clock_gettime \
     -Dmmap=infinity_test_mmap -Dmunmap=infinity_test_munmap \
     -Dmprotect=infinity_test_mprotect -Dmsync=infinity_test_msync \
+    -Dgetentropy=infinity_test_getentropy \
     sdk/compiler/platform.c tools/native-c-probe/compiler-platform-test.c \
     -o build/native-c/compiler-platform-test
 build/native-c/compiler-platform-test

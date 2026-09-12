@@ -1,0 +1,8 @@
+--- a/libcxx/include/__config
++++ b/libcxx/include/__config
+@@ -98,4 +98,4 @@
+ #    define _LIBCPP_USING_ARC4_RANDOM
+-#  elif defined(__wasi__) || defined(__EMSCRIPTEN__)
++#  elif defined(__wasi__) || defined(__EMSCRIPTEN__) || defined(__INFINITY__)
+ #    define _LIBCPP_USING_GETENTROPY
+ #  elif defined(__Fuchsia__)

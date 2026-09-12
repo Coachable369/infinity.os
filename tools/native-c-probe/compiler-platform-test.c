@@ -3,6 +3,7 @@
 #include <time.h>
 #include <errno.h>
 #include <assert.h>
+#include <sys/random.h>
 
 struct State { uint64_t ns; int error; unsigned calls; int protection; unsigned char bytes[16]; };
 
@@ -64,6 +65,18 @@ static int sync_memory(void *context, void *address, size_t size, int flags) {
 }
 
 // ------------------------=
+// FUNC: test_entropy
+// DESC: Supplies deterministic fixture bytes to verify forwarding, not as production randomness.
+// ------------------=
+static int test_entropy(void *context, void *out, size_t size) {
+    struct State *state = context;
+    state->calls++;
+    unsigned char *bytes = out;
+    for (size_t i = 0; i < size; ++i) bytes[i] = (unsigned char)(i ^ 0xa5);
+    return state->error;
+}
+
+// ------------------------=
 // FUNC: main
 // DESC: Exercises service absence, exact time conversion, successful forwarding and failure preservation through the compiler's C ABI.
 // ------------------=
@@ -76,7 +89,7 @@ int main(void) {
     assert(mprotect(0, 16, PROT_READ) == -1 && errno == ENOSYS);
     struct State state = {.ns = 2000000003ull};
     const char executable[] = "/system/compiler/clang";
-    InfinityCompilerHost host = {&state, executable, measured_clock, mapped_memory, release_memory, protect_memory, sync_memory};
+    InfinityCompilerHost host = {&state, executable, measured_clock, mapped_memory, release_memory, protect_memory, sync_memory, test_entropy};
     infinity_compiler_set_host(&host);
     assert(infinity_compiler_executable_path() == executable);
     assert(clock_gettime(CLOCK_MONOTONIC, &stamp) == 0);
@@ -98,6 +111,19 @@ int main(void) {
     assert(munmap(state.bytes, 16) == -1 && errno == EACCES);
     assert(msync(state.bytes, 16, MS_SYNC) == -1 && errno == EACCES);
     assert(clock_gettime(CLOCK_REALTIME, &stamp) == -1 && errno == EACCES);
+    unsigned char entropy[256] = {17};
+    calls = state.calls;
+    assert(getentropy(entropy, 257) == -1 && errno == EIO);
+    assert(getentropy(0, 1) == -1 && errno == EFAULT);
+    assert(getentropy(0, 0) == 0);
+    assert(state.calls == calls);
+    assert(getentropy(entropy, sizeof entropy) == -1 && errno == EACCES);
+    assert(entropy[0] == 17 && entropy[255] == 0);
+    state.error = 0;
+    assert(getentropy(entropy, sizeof entropy) == 0);
+    for (size_t i = 0; i < sizeof entropy; ++i) assert(entropy[i] == (unsigned char)(i ^ 0xa5));
     infinity_compiler_set_host(0);
+    assert(getentropy(entropy, 1) == -1 && errno == ENOSYS);
+    assert(entropy[0] == 0xa5);
     return 0;
 }

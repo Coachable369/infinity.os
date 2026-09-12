@@ -2,6 +2,7 @@
 #include <sys/mman.h>
 #include <time.h>
 #include <errno.h>
+#include <sys/random.h>
 
 static const InfinityCompilerHost *host;
 
@@ -24,6 +25,26 @@ const char *infinity_compiler_executable_path(void) {
 // DESC: Preserves an explicit service failure in errno without pretending the operation succeeded.
 // ------------------=
 static int fail(int error) { errno = error; return -1; }
+
+// ------------------------=
+// FUNC: getentropy
+// DESC: Obtains up to 256 bytes from the native entropy service, publishing no partial output on failure.
+// ------------------=
+int getentropy(void *out, size_t size) {
+    if (size > 256) return fail(EIO);
+    if (!size) return 0;
+    if (!out) return fail(EFAULT);
+    if (!host || !host->entropy) return fail(ENOSYS);
+    unsigned char temporary[256] = {0};
+    int error = host->entropy(host->context, temporary, size);
+    if (!error) {
+        unsigned char *bytes = out;
+        for (size_t i = 0; i < size; ++i) bytes[i] = temporary[i];
+    }
+    volatile unsigned char *wipe = temporary;
+    for (size_t i = 0; i < sizeof temporary; ++i) wipe[i] = 0;
+    return error ? fail(error) : 0;
+}
 
 // ------------------------=
 // FUNC: clock_gettime
