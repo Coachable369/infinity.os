@@ -585,3 +585,38 @@ does not switch page tables. Compiler-sized loading, hardware TLS, fault
 containment, standard-stream/service binding, compiler invocation and installed
 payload acceptance remain unimplemented. Resolving linker names alone cannot
 close those gates. No compiler ISO was produced in this checkpoint.
+
+## Process, console and reference boundary checkpoint
+
+The SDK now defines every symbol from the preceding 12-function link failure.
+Native process and session identities come only from the launch service. Node
+identity is bounded and launch supplied. `kill` supports a read-only liveness
+query but rejects signal delivery, while `_exit` requests native context
+termination and traps if a provider incorrectly returns. POSIX `sigaction` and
+signal masks remain explicit unsupported adapters rather than fabricated fault
+containment.
+
+Standard streams 0, 1 and 2 are now launch-bound console services. Reads are
+limited to stdin, writes to stdout/stderr, terminal status is queried through
+the provider, and metadata identifies an actual bound character stream. LLVM's
+CrashRecoveryContext patch no longer compiles or installs Unix signal handlers
+for InfinityOS; explicit HandleExit recovery remains, while hardware faults are
+owned by the containing native Execution Context.
+
+Hard links map to additional ObjectStore namespace references to the same stable
+ObjectId. The production ObjectIo operation enforces source-read and destination-
+write grants, preserves identity, rejects conflicting names and does not copy
+content. Symbolic references remain unsupported until the object model gains a
+truthful target-reference representation. The C bridge preserves readlink output
+on provider failure.
+
+TESTED: process identity/session/node behavior, terminal detection, liveness
+queries, explicit signal rejection, console read/write/metadata, C namespace
+reference forwarding, and real ObjectStore hard-reference identity and removal.
+The updated LLVM patch dry-runs against the pinned upstream sources. All host
+behavioral tests pass. `build-compiler-runtime.sh` now assembles the complete
+native bridge object set, including the new process boundary, against a restored
+target sysroot. The ignored Newlib/LLVM build directory was absent at this
+checkpoint, so target compilation and the full Clang link were not rerun. A
+linked compiler, production provider binding, compiler-sized execution,
+packaging and detached-install acceptance remain outstanding.

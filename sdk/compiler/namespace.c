@@ -88,3 +88,45 @@ int unlink(const char *path) {
     int error = host->namespaces->remove(host->context, path);
     return error ? namespace_error(error) : 0;
 }
+
+// ------------------------=
+// FUNC: create_link
+// DESC: Creates a capability-checked native ObjectStore reference without copying content.
+// ------------------=
+static int create_link(const char *existing, const char *created, uint32_t symbolic) {
+    if (!existing || !*existing || !created || !*created) return namespace_error(EINVAL);
+    const InfinityCompilerHost *host = infinity_compiler_get_host();
+    if (!host || !host->namespaces || !host->namespaces->link) return namespace_error(ENOSYS);
+    int error = host->namespaces->link(host->context, existing, created, symbolic);
+    return error ? namespace_error(error) : 0;
+}
+
+// ------------------------=
+// FUNC: link
+// DESC: Creates an additional authorized name for an existing ObjectStore identity.
+// ------------------=
+int link(const char *existing, const char *created) { return create_link(existing, created, 0); }
+
+// ------------------------=
+// FUNC: symlink
+// DESC: Requests an explicitly supported symbolic native reference from the namespace provider.
+// ------------------=
+int symlink(const char *existing, const char *created) { return create_link(existing, created, 1); }
+
+// ------------------------=
+// FUNC: readlink
+// DESC: Reads a bounded native symbolic reference without adding a terminating byte.
+// ------------------=
+ssize_t readlink(const char *path, char *out, size_t size) {
+    if (!path || !*path || (!out && size)) return namespace_error(EINVAL);
+    const InfinityCompilerHost *host = infinity_compiler_get_host();
+    if (!host || !host->namespaces || !host->namespaces->read_link) return namespace_error(ENOSYS);
+    char temporary[96] = {0};
+    size_t capacity = size < sizeof temporary ? size : sizeof temporary;
+    size_t length = 0;
+    int error = host->namespaces->read_link(host->context, path, temporary, capacity, &length);
+    if (error) return namespace_error(error);
+    if (length > capacity || (ssize_t)length < 0) return namespace_error(EIO);
+    if (length) memcpy(out, temporary, length);
+    return (ssize_t)length;
+}

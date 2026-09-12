@@ -113,3 +113,37 @@
  std::string sys::getDefaultTargetTriple() {
    std::string TargetTripleString =
        updateTripleOSVersion(LLVM_DEFAULT_TARGET_TRIPLE);
+--- a/llvm/lib/Support/CrashRecoveryContext.cpp
++++ b/llvm/lib/Support/CrashRecoveryContext.cpp
+@@ -249 +249,22 @@
+-#if defined(_WIN32)
++#if defined(__INFINITY__)
++
++// InfinityOS faults are contained by the owning Execution Context. RunSafely
++// still handles explicit HandleExit longjmps, but must not install process-wide
++// POSIX signal state that the OS does not implement.
++// ------------------------=
++// FUNC: installExceptionOrSignalHandlers
++// DESC: Rejects unsupported utility signals while retaining explicit native HandleExit recovery.
++// ------------------=
++static void
++installExceptionOrSignalHandlers(bool NeedsPOSIXUtilitySignalHandling) {
++  if (NeedsPOSIXUtilitySignalHandling)
++    report_fatal_error("POSIX utility signal handling is unsupported");
++}
++
++// ------------------------=
++// FUNC: uninstallExceptionOrSignalHandlers
++// DESC: Leaves native fault ownership with the containing Execution Context.
++// ------------------=
++static void uninstallExceptionOrSignalHandlers() {}
++
++#elif defined(_WIN32)
+@@ -425 +446 @@
+-#endif // !_WIN32
++#endif // platform crash recovery
+@@ -484 +505,3 @@
+-#if defined(_WIN32)
++#if defined(__INFINITY__)
++  return false;
++#elif defined(_WIN32)

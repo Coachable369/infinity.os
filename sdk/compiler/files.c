@@ -26,6 +26,18 @@ struct FileSlot {
 static struct FileSlot slots[128];
 
 // ------------------------=
+// FUNC: standard_stream
+// DESC: Returns the explicitly launch-bound console service for descriptors zero through two.
+// ------------------=
+static const InfinityCompilerConsole *standard_stream(int fd, const InfinityCompilerHost **owner) {
+    if (fd < 0 || fd > 2) return 0;
+    const InfinityCompilerHost *host = infinity_compiler_get_host();
+    if (!host || !host->console) { errno = EBADF; return 0; }
+    if (owner) *owner = host;
+    return host->console;
+}
+
+// ------------------------=
 // FUNC: file_error
 // DESC: Preserves a native provider error at the compatibility boundary.
 // ------------------=
@@ -89,6 +101,17 @@ int open(const char *path, int flags, ...) {
 // DESC: Reads a bounded byte request from the descriptor's owning object provider.
 // ------------------=
 InfinityIoCount read(int fd, void *buffer, size_t size) {
+    if (fd >= 0 && fd <= 2) {
+        if (fd != 0) return file_error(EBADF);
+        if ((!buffer && size) || size > (size_t)INT_MAX) return file_error(EINVAL);
+        const InfinityCompilerHost *owner = 0;
+        const InfinityCompilerConsole *console = standard_stream(fd, &owner);
+        if (!console || !console->read) return file_error(console ? ENOSYS : errno);
+        size_t count = 0;
+        int error = console->read(owner->context, (uint32_t)fd, buffer, size, &count);
+        if (error) return file_error(error);
+        return count > size ? file_error(EIO) : (InfinityIoCount)count;
+    }
     struct FileSlot *slot = lookup(fd);
     if (!slot) return -1;
     if (!(slot->mode & 1)) return file_error(EBADF);
@@ -106,6 +129,17 @@ InfinityIoCount read(int fd, void *buffer, size_t size) {
 // DESC: Writes through the original provider without bypassing native version checks.
 // ------------------=
 InfinityIoCount write(int fd, const void *buffer, size_t size) {
+    if (fd >= 0 && fd <= 2) {
+        if (fd == 0) return file_error(EBADF);
+        if ((!buffer && size) || size > (size_t)INT_MAX) return file_error(EINVAL);
+        const InfinityCompilerHost *owner = 0;
+        const InfinityCompilerConsole *console = standard_stream(fd, &owner);
+        if (!console || !console->write) return file_error(console ? ENOSYS : errno);
+        size_t count = 0;
+        int error = console->write(owner->context, (uint32_t)fd, buffer, size, &count);
+        if (error) return file_error(error);
+        return count > size ? file_error(EIO) : (InfinityIoCount)count;
+    }
     struct FileSlot *slot = lookup(fd);
     if (!slot) return -1;
     if (!(slot->mode & 2)) return file_error(EBADF);
@@ -196,6 +230,14 @@ static int convert_metadata(const InfinityCompilerMetadata *value, struct stat *
 // DESC: Inspects the opened snapshot through its owning provider.
 // ------------------=
 int fstat(int fd, struct stat *out) {
+    if (fd >= 0 && fd <= 2) {
+        if (!out) return file_error(EFAULT);
+        if (!standard_stream(fd, 0)) return -1;
+        struct stat result = {0};
+        result.st_mode = S_IFCHR | (fd == 0 ? S_IRUSR : S_IWUSR);
+        *out = result;
+        return 0;
+    }
     struct FileSlot *slot = lookup(fd);
     if (!slot) return -1;
     if (!out) return file_error(EFAULT);

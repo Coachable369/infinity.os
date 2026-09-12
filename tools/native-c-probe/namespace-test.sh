@@ -3,7 +3,8 @@ set -eu
 cd "$(dirname "$0")/../.."
 /opt/homebrew/opt/llvm/bin/clang -Wall -Wextra -Werror -Isdk/compiler/include \
   -Dgetcwd=infinity_test_getcwd -Drealpath=infinity_test_realpath -Dchdir=infinity_test_chdir \
-  -Dmkdir=infinity_test_mkdir -Dunlink=infinity_test_unlink \
+  -Dmkdir=infinity_test_mkdir -Dunlink=infinity_test_unlink -Dlink=infinity_test_link \
+  -Dsymlink=infinity_test_symlink -Dreadlink=infinity_test_readlink \
   sdk/compiler/namespace.c tools/native-c-probe/namespace-test.c -o build/native-c/namespace-test
 build/native-c/namespace-test
 /opt/homebrew/opt/llvm/bin/clang --target=x86_64-unknown-elf \

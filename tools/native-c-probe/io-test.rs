@@ -139,4 +139,11 @@ fn main() {
     io.unlink(&mut store, b"temporary.o").unwrap();
     assert!(store.resolve(b"/home/default/documents/compile-work/temporary.o").is_err());
     io.change_directory(&store, b"..").unwrap();
+    let hello = store.resolve(b"/home/default/documents/hello.c").unwrap();
+    io.link(&mut store, b"hello.c", b"hello-reference.c", false).unwrap();
+    assert_eq!(store.resolve(b"/home/default/documents/hello-reference.c").unwrap(), hello);
+    assert_eq!(io.link(&mut store, b"hello.c", b"hello-reference.c", false), Err(IoError::Exists));
+    assert_eq!(io.link(&mut store, b"hello.c", b"symbolic.c", true), Err(IoError::Unsupported));
+    io.unlink(&mut store, b"hello-reference.c").unwrap();
+    assert_eq!(store.resolve(b"/home/default/documents/hello.c").unwrap(), hello);
 }

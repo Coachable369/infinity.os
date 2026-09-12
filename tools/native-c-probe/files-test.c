@@ -79,6 +79,24 @@ static int path_inspect(void *context, const char *path, InfinityCompilerMetadat
     assert(path && *path); return object_inspect(context, 41, out);
 }
 // ------------------------=
+// FUNC: console_read
+// DESC: Returns bounded input only through standard stream zero.
+// ------------------=
+static int console_read(void *context, uint32_t stream, void *out, size_t size, size_t *count) {
+    assert(context == &denied && stream == 0 && size == 4);
+    if (denied) return denied;
+    memcpy(out, "in", 2); *count = 2; return 0;
+}
+// ------------------------=
+// FUNC: console_write
+// DESC: Verifies diagnostic bytes are forwarded to a launch-bound output stream.
+// ------------------=
+static int console_write(void *context, uint32_t stream, const void *bytes, size_t size, size_t *count) {
+    assert(context == &denied && stream == 2 && size == 3 && !memcmp(bytes, "err", 3));
+    if (denied) return denied;
+    *count = size; return 0;
+}
+// ------------------------=
 // FUNC: object_truncate
 // DESC: Verifies exact length forwarding and provider failure propagation.
 // ------------------=
@@ -92,7 +110,18 @@ static int object_truncate(void *context, uint64_t id, uint64_t length) {
 int main(void) {
     InfinityCompilerFiles files = {object_open, object_read, object_write, object_seek, object_close,
                                   object_read_at, object_inspect, path_inspect, object_truncate};
-    InfinityCompilerHost services = {.context = &denied, .files = &files};
+    InfinityCompilerConsole console = {.read = console_read, .write = console_write};
+    InfinityCompilerHost services = {.context = &denied, .files = &files, .console = &console};
+    char console_buffer[4] = {0};
+    denied = 0;
+    host = &services;
+    assert(read(0, console_buffer, sizeof console_buffer) == 2 && !memcmp(console_buffer, "in", 2));
+    assert(write(2, "err", 3) == 3);
+    struct stat console_info = {0};
+    assert(fstat(2, &console_info) == 0 && S_ISCHR(console_info.st_mode));
+    assert(read(1, console_buffer, 1) == -1 && errno == EBADF);
+    assert(write(0, "x", 1) == -1 && errno == EBADF);
+    host = 0;
     assert(open("object", O_RDONLY) == -1 && errno == ENOSYS);
     host = &services;
     assert(open("object", O_RDONLY | O_TRUNC) == -1 && errno == EINVAL);

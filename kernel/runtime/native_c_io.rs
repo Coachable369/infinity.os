@@ -15,7 +15,7 @@ static DOCUMENT_GRANTS: [Grant<'static>; 1] = [Grant { root: DOCUMENTS, write: t
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(i32)]
-pub enum IoError { Invalid = 1, Denied, NotFound, Exists, Capacity, BadHandle, Conflict, Storage, IsDirectory }
+pub enum IoError { Invalid = 1, Denied, NotFound, Exists, Capacity, BadHandle, Conflict, Storage, IsDirectory, Unsupported }
 
 pub struct Grant<'a> { pub root: &'a [u8], pub write: bool }
 
@@ -201,6 +201,37 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
         if self.handles.iter().flatten().any(|h| h.id == id && h.flags & WRITE != 0) { return Err(IoError::Conflict); }
         store.remove_path(path).map_err(storage_error)?;
         Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: link
+    // DESC: Adds a capability-authorized namespace reference to the same content identity without copying bytes.
+    // ------------------=
+    pub fn link<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, existing: &[u8], created: &[u8], symbolic: bool) -> Result<(), IoError> {
+        if symbolic { return Err(IoError::Unsupported); }
+        let mut source = [0; MAX_PATH];
+        let source_length = normalize(&self.cwd[..self.cwd_len], existing, &mut source)?;
+        if !self.authorized(&source[..source_length], false) { return Err(IoError::Denied); }
+        let id = store.resolve(&source[..source_length]).map_err(storage_error)?;
+        let metadata = store.metadata(id).map_err(storage_error)?;
+        if !matches!(metadata.kind, ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData) {
+            return Err(IoError::IsDirectory);
+        }
+        let mut destination = [0; MAX_PATH];
+        let destination_length = normalize(&self.cwd[..self.cwd_len], created, &mut destination)?;
+        let destination = &destination[..destination_length];
+        if !self.authorized(destination, true) { return Err(IoError::Denied); }
+        match store.resolve(destination) {
+            Ok(_) => return Err(IoError::Exists),
+            Err(ObjectError::NamespaceNotFound) => (),
+            Err(error) => return Err(storage_error(error)),
+        }
+        let separator = destination.iter().rposition(|b| *b == b'/').ok_or(IoError::Invalid)?;
+        let parent = store.resolve(&destination[..separator.max(1)]).map_err(storage_error)?;
+        let parent_metadata = store.metadata(parent).map_err(storage_error)?;
+        if parent_metadata.kind != ObjectType::NamespaceNode { return Err(IoError::Invalid); }
+        if !matches!(parent_metadata.space, Space::Personal | Space::Applications) { return Err(IoError::Denied); }
+        store.attach(destination, id).map_err(storage_error)
     }
 
     // ------------------------=

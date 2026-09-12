@@ -36,7 +36,17 @@ typedef struct InfinityCompilerNamespace {
     int (*change)(void *, const char *);
     int (*create)(void *, const char *);
     int (*remove)(void *, const char *);
+    /* Native references are aliases to ObjectStore identities. Symbolic
+       aliases may be rejected when the namespace does not support them. */
+    int (*link)(void *, const char *, const char *, uint32_t);
+    int (*read_link)(void *, const char *, char *, size_t, size_t *);
 } InfinityCompilerNamespace;
+typedef struct InfinityCompilerConsole {
+    /* Stream numbers are the launch-bound standard streams 0, 1 and 2. */
+    int (*read)(void *, uint32_t, void *, size_t, size_t *);
+    int (*write)(void *, uint32_t, const void *, size_t, size_t *);
+    int (*is_terminal)(void *, uint32_t, int *);
+} InfinityCompilerConsole;
 typedef struct InfinityCompilerHost {
     void *context;
     const char *executable_path;
@@ -71,6 +81,15 @@ typedef struct InfinityCompilerHost {
     uint32_t serial_execution;
     const char *home_path;
     const InfinityCompilerNamespace *namespaces;
+    const InfinityCompilerConsole *console;
+    /* Stable, nonzero identifiers scoped to this native Execution Context. */
+    uint32_t process_identity;
+    uint32_t session_identity;
+    const char *node_name;
+    /* Query another context without granting control over it. */
+    int (*process_alive)(void *, uint32_t, int *);
+    /* A successful implementation does not return. */
+    int (*terminate)(void *, int);
 } InfinityCompilerHost;
 void infinity_compiler_set_host(const InfinityCompilerHost *);
 const InfinityCompilerHost *infinity_compiler_get_host(void);
