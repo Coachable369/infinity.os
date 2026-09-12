@@ -89,7 +89,9 @@ int main(void) {
     assert(mprotect(0, 16, PROT_READ) == -1 && errno == ENOSYS);
     struct State state = {.ns = 2000000003ull};
     const char executable[] = "/system/compiler/clang";
-    InfinityCompilerHost host = {&state, executable, measured_clock, mapped_memory, release_memory, protect_memory, sync_memory, test_entropy};
+    InfinityCompilerHost host = {.context=&state, .executable_path=executable,
+        .clock_ns=measured_clock, .map=mapped_memory, .unmap=release_memory,
+        .protect=protect_memory, .sync=sync_memory, .entropy=test_entropy};
     infinity_compiler_set_host(&host);
     assert(infinity_compiler_executable_path() == executable);
     assert(clock_gettime(CLOCK_MONOTONIC, &stamp) == 0);

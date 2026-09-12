@@ -3,8 +3,24 @@
 #include <time.h>
 #include <errno.h>
 #include <sys/random.h>
+#include <dirent.h>
+#include <sys/statvfs.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
 
 static const InfinityCompilerHost *host;
+
+/* Handles never recycle, so a closed pointer cannot become another directory.
+   This initial bridge bounds each compiler process to 64 directory opens. */
+struct InfinityDirectory {
+    InfinityCompilerHost owner;
+    uint64_t cursor;
+    int active;
+    struct dirent entry;
+};
+static struct InfinityDirectory directories[64];
+static size_t directory_count;
 
 // ------------------------=
 // FUNC: infinity_compiler_set_host
@@ -25,6 +41,131 @@ const char *infinity_compiler_executable_path(void) {
 // DESC: Preserves an explicit service failure in errno without pretending the operation succeeded.
 // ------------------=
 static int fail(int error) { errno = error; return -1; }
+
+// ------------------------=
+// FUNC: getrlimit
+// DESC: Rejects unavailable resource measurements without inventing limits.
+// ------------------=
+int getrlimit(int resource, struct rlimit *out) {
+    (void)resource; return fail(out ? ENOSYS : EFAULT);
+}
+// ------------------------=
+// FUNC: setrlimit
+// DESC: Rejects changes until a capability-governed resource service is bound.
+// ------------------=
+int setrlimit(int resource, const struct rlimit *limit) {
+    (void)resource; return fail(limit ? ENOSYS : EFAULT);
+}
+// ------------------------=
+// FUNC: getrusage
+// DESC: Reports unavailable process observations without publishing fabricated counters.
+// ------------------=
+int getrusage(int who, struct rusage *out) {
+    (void)who; return fail(out ? ENOSYS : EFAULT);
+}
+// ------------------------=
+// FUNC: wait4
+// DESC: Rejects Unix child waits without changing status or usage outputs.
+// ------------------=
+pid_t wait4(pid_t pid, int *status, int options, struct rusage *usage) {
+    (void)pid; (void)status; (void)options; (void)usage; return fail(ENOSYS);
+}
+// ------------------------=
+// FUNC: lstat
+// DESC: Rejects unbound link metadata queries rather than falling through to host storage.
+// ------------------=
+int lstat(const char *path, struct stat *out) {
+    return fail(path && out ? ENOSYS : EFAULT);
+}
+// ------------------------=
+// FUNC: madvise
+// DESC: Reports unavailable memory advice without promising page eviction or prefetch.
+// ------------------=
+int madvise(void *address, size_t size, int advice) {
+    (void)address; (void)advice; return fail(size ? ENOSYS : EINVAL);
+}
+
+// ------------------------=
+// FUNC: valid_directory
+// DESC: Checks handle identity before dereferencing caller-provided pointers.
+// ------------------=
+static int valid_directory(DIR *directory) {
+    for (size_t i = 0; i < directory_count; ++i)
+        if (directory == &directories[i]) return directory->active;
+    return 0;
+}
+
+// ------------------------=
+// FUNC: opendir
+// DESC: Opens a bounded, explicitly authorized provider cursor without host I/O.
+// ------------------=
+DIR *opendir(const char *path) {
+    if (!path || !*path) { fail(EINVAL); return 0; }
+    if (!host || !host->directory_open || !host->directory_next ||
+        !host->directory_close) { fail(ENOSYS); return 0; }
+    if (directory_count == 64) { fail(EMFILE); return 0; }
+    InfinityCompilerHost owner = *host;
+    uint64_t cursor = 0;
+    int error = owner.directory_open(owner.context, path, &cursor);
+    if (error) { fail(error); return 0; }
+    DIR *directory = &directories[directory_count++];
+    directory->owner = owner;
+    directory->cursor = cursor;
+    directory->active = 1;
+    return directory;
+}
+
+// ------------------------=
+// FUNC: readdir
+// DESC: Publishes only complete direct-child names and distinguishes EOF from failure.
+// ------------------=
+struct dirent *readdir(DIR *directory) {
+    if (!valid_directory(directory)) { fail(EBADF); return 0; }
+    char name[96] = {0};
+    int error = directory->owner.directory_next(directory->owner.context,
+        directory->cursor, name, sizeof name);
+    if (error) { fail(error); return 0; }
+    size_t length = 0;
+    while (length < sizeof name && name[length]) ++length;
+    if (length == sizeof name) { fail(EOVERFLOW); return 0; }
+    if (!length) { errno = 0; return 0; }
+    for (size_t i = 0; i < length; ++i)
+        if (name[i] == '/') { fail(EIO); return 0; }
+    if ((length == 1 && name[0] == '.') ||
+        (length == 2 && name[0] == '.' && name[1] == '.')) {
+        fail(EIO); return 0;
+    }
+    for (size_t i = 0; i <= length; ++i) directory->entry.d_name[i] = name[i];
+    return &directory->entry;
+}
+
+// ------------------------=
+// FUNC: closedir
+// DESC: Closes through the opening provider and permanently invalidates the handle.
+// ------------------=
+int closedir(DIR *directory) {
+    if (!valid_directory(directory)) return fail(EBADF);
+    directory->active = 0;
+    int error = directory->owner.directory_close(directory->owner.context,
+        directory->cursor);
+    return error ? fail(error) : 0;
+}
+
+// ------------------------=
+// FUNC: statvfs
+// DESC: Reports unavailable capacity observations without fabricating Pool statistics.
+// ------------------=
+int statvfs(const char *path, struct statvfs *out) {
+    return fail(!path || !out ? EFAULT : ENOSYS);
+}
+
+// ------------------------=
+// FUNC: fstatvfs
+// DESC: Rejects unsupported descriptor-capacity queries without modifying output.
+// ------------------=
+int fstatvfs(int fd, struct statvfs *out) {
+    return fail(!out ? EFAULT : fd < 0 ? EBADF : ENOSYS);
+}
 
 // ------------------------=
 // FUNC: getentropy

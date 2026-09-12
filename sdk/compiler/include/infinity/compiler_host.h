@@ -16,6 +16,12 @@ typedef struct InfinityCompilerHost {
     int (*sync)(void *, void *, size_t, int);
     /* Fill the entire request with native entropy or return a positive errno. */
     int (*entropy)(void *, void *, size_t);
+    /* Provider must authorize namespace access and bind the cursor to that grant.
+       next returns a direct child basename or an empty name at end; errors must
+       not advance the cursor. close consumes the cursor even on error. */
+    int (*directory_open)(void *, const char *, uint64_t *);
+    int (*directory_next)(void *, uint64_t, char *, size_t);
+    int (*directory_close)(void *, uint64_t);
 } InfinityCompilerHost;
 void infinity_compiler_set_host(const InfinityCompilerHost *);
 const char *infinity_compiler_executable_path(void);

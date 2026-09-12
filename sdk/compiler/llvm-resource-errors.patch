@@ -1,0 +1,91 @@
+--- a/llvm/lib/Support/Unix/Program.inc
++++ b/llvm/lib/Support/Unix/Program.inc
+@@ -141,7 +141,8 @@
+   __typeof__(r.rlim_cur) limit = (__typeof__(r.rlim_cur))(size)*1048576;
+
+   // Heap size
+-  getrlimit(RLIMIT_DATA, &r);
++  if (getrlimit(RLIMIT_DATA, &r) != 0)
++    ReportErrnumFatal("Data resource limit unavailable", errno);
+   r.rlim_cur = limit;
+   setrlimit(RLIMIT_DATA, &r);
+ #ifdef RLIMIT_RSS
+@@ -167,6 +168,11 @@
+                     ArrayRef<std::optional<StringRef>> Redirects,
+                     unsigned MemoryLimit, std::string *ErrMsg,
+                     BitVector *AffinityMask, bool DetachProcess) {
++#if defined(__INFINITY__)
++  errno = ENOSYS;
++  MakeErrMsg(ErrMsg, "Native process launch is not bound", ENOSYS);
++  return false;
++#else
+   assert(!AffinityMask && "Starting a process with an affinity mask is "
+                           "currently not supported on Unix!");
+
+@@ -329,6 +335,7 @@
+   PI.Process = child;
+
+   return true;
++#endif
+ }
+
+ namespace llvm {
+@@ -460,7 +467,7 @@
+     std::chrono::microseconds UserT = toDuration(Info.ru_utime);
+     std::chrono::microseconds KernelT = toDuration(Info.ru_stime);
+     uint64_t PeakMemory = 0;
+-#if !defined(__HAIKU__) && !defined(__MVS__)
++#if !defined(__HAIKU__) && !defined(__MVS__) && !defined(__INFINITY__)
+     PeakMemory = static_cast<uint64_t>(Info.ru_maxrss);
+ #endif
+     *ProcStat = ProcessStatistics{UserT + KernelT, UserT, PeakMemory};
+@@ -547,6 +554,9 @@
+
+ bool llvm::sys::commandLineFitsWithinSystemLimits(StringRef Program,
+                                                   ArrayRef<StringRef> Args) {
++#if defined(__INFINITY__)
++  return false; // Native process launch has no bound argument contract yet.
++#else
+   static long ArgMax = sysconf(_SC_ARG_MAX);
+   // POSIX requires that _POSIX_ARG_MAX is 4096, which is the lowest possible
+   // value for ARG_MAX on a POSIX compliant system.
+@@ -584,4 +594,5 @@
+   }
+
+   return true;
++#endif
+ }
+--- a/llvm/lib/Support/Unix/Process.inc
++++ b/llvm/lib/Support/Unix/Process.inc
+@@ -50,7 +50,8 @@
+ getRUsageTimes() {
+ #if defined(HAVE_GETRUSAGE)
+   struct rusage RU;
+-  ::getrusage(RUSAGE_SELF, &RU);
++  if (::getrusage(RUSAGE_SELF, &RU) != 0)
++    ReportErrnumFatal("Process usage unavailable", errno);
+   return {toDuration(RU.ru_utime), toDuration(RU.ru_stime)};
+ #else
+ #ifndef __MVS__ // Exclude for MVS in case -pedantic is used
+@@ -137,7 +138,8 @@
+ // what's necessary to prevent their generation.
+ void Process::PreventCoreFiles() {
+   struct rlimit rlim;
+-  getrlimit(RLIMIT_CORE, &rlim);
++  if (getrlimit(RLIMIT_CORE, &rlim) != 0)
++    ReportErrnumFatal("Core resource limits unavailable", errno);
+ #ifdef __linux__
+   // On Linux, if the kernel.core_pattern sysctl starts with a '|' (i.e. it
+   // is being piped to a coredump handler such as systemd-coredumpd), the
+--- a/llvm/lib/Support/ProgramStack.cpp
++++ b/llvm/lib/Support/ProgramStack.cpp
+@@ -44,7 +44,8 @@
+ unsigned llvm::getDefaultStackSize() {
+ #ifdef LLVM_ON_UNIX
+   rlimit RL;
+-  getrlimit(RLIMIT_STACK, &RL);
++  if (getrlimit(RLIMIT_STACK, &RL) != 0)
++    llvm::report_fatal_error("Stack resource limit unavailable");
+   return RL.rlim_cur;
+ #else
+   // Clang recursively parses, instantiates templates, and evaluates constant

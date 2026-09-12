@@ -254,3 +254,38 @@ do not fabricate headers with successful no-op semantics.
 The two-correction limit was reached at this checkpoint. No linked native Clang
 binary or new installer payload was produced. Production service wiring and
 ISO-detached compile/edit/recompile/run acceptance remain outstanding.
+
+## Directory and resource-boundary continuation
+
+The original Path, Process, Program and ProgramStack translation units now
+compile for the freestanding target. Apply `llvm-resource-errors.patch` after
+`llvm-infinity.patch` when preparing the pinned LLVM sources. Both patches were
+checked against the original upstream archive.
+
+The compiler platform table now has directory-open/next/close callbacks. The
+compatibility adapter owns bounded cursors, binds each to its opening provider,
+rejects closed/unknown handles, distinguishes end-of-directory from errors, and
+publishes only complete direct-child names. The provider must enforce namespace
+authorization, revocation and snapshot semantics. There is no host-directory
+fallback. This checkpoint permits 64 lifetime opens per compiler process without
+handle reuse; it needs scaling before hosting a real Clang compilation. No
+production ObjectStore directory provider is wired yet.
+
+Capacity, link metadata, memory-advice, process-wait and resource-limit queries
+return explicit errors where no native provider exists. LLVM resource-limit and
+usage callers now check failed queries rather than reading uninitialized output.
+Its Unix process-launch path rejects execution on InfinityOS; an Execution
+Context launch service must replace that path. These are unsupported boundaries,
+not claims of operational POSIX services or a complete hosted C library.
+
+TESTED: `sh tools/native-c-probe/directory-test.sh` verifies denied paths, distinct
+cursors, provider binding, EOF, malformed entries, failure atomicity, stale
+handles, the open bound, and unchanged output on unavailable resource queries.
+Those callbacks are fixtures, not installed storage evidence. Existing compiler
+platform tests and freestanding compilation also pass.
+
+The full compiler build next fails in `Unix/Signals.inc:55`, which unconditionally
+includes `dlfcn.h`. Native signal/crash symbolization support needs a truthful
+platform boundary. Two correction loops reached this new failure; no compiler
+binary, new ISO, production provider wiring or detached-media compilation proof
+is claimed by this checkpoint.

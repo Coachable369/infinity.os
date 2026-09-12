@@ -15,6 +15,9 @@
 #define MS_ASYNC 1
 #define MS_INVALIDATE 2
 #define MS_SYNC 4
+#define MADV_DONTNEED 1
+#define MADV_WILLNEED 2
+#define MADV_RANDOM 3
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -22,6 +25,7 @@ void *mmap(void *, size_t, int, int, int, off_t);
 int munmap(void *, size_t);
 int mprotect(void *, size_t, int);
 int msync(void *, size_t, int);
+int madvise(void *, size_t, int);
 #ifdef __cplusplus
 }
 #endif
