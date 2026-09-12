@@ -1,0 +1,54 @@
+--- a/lld/CMakeLists.txt
++++ b/lld/CMakeLists.txt
+@@ -208,11 +208,13 @@
+ endif()
+
+ add_subdirectory(docs)
+-add_subdirectory(COFF)
+ add_subdirectory(ELF)
+-add_subdirectory(MachO)
+-add_subdirectory(MinGW)
+-add_subdirectory(wasm)
++if(NOT CMAKE_SYSTEM_NAME STREQUAL "InfinityOS")
++  add_subdirectory(COFF)
++  add_subdirectory(MachO)
++  add_subdirectory(MinGW)
++  add_subdirectory(wasm)
++endif()
+
+ add_custom_target(lld-headers)
+ set_target_properties(lld-headers PROPERTIES FOLDER "Misc")
+--- a/lld/tools/lld/CMakeLists.txt
++++ b/lld/tools/lld/CMakeLists.txt
+@@ -24,6 +24,10 @@
+   target_link_libraries(${target} ${type} ${ARGN})
+ endfunction()
+
++if(CMAKE_SYSTEM_NAME STREQUAL "InfinityOS")
++lld_target_link_libraries(lld PRIVATE lldCommon lldELF)
++set(LLD_SYMLINKS_TO_CREATE ld.lld)
++else()
+ lld_target_link_libraries(lld
+   PRIVATE
+   lldCommon
+@@ -33,6 +37,7 @@
+   lldMinGW
+   lldWasm
+   )
++endif()
+
+ if(NOT LLD_SYMLINKS_TO_CREATE)
+   set(LLD_SYMLINKS_TO_CREATE
+--- a/lld/tools/lld/lld.cpp
++++ b/lld/tools/lld/lld.cpp
+@@ -72,6 +72,11 @@
+ LLD_HAS_DRIVER(macho)
+ LLD_HAS_DRIVER(wasm)
+
++#if defined(__INFINITY__)
++#undef LLD_ALL_DRIVERS
++#define LLD_ALL_DRIVERS {{lld::Gnu, &lld::elf::link}}
++#endif
++
+ int lld_main(int argc, char **argv, const llvm::ToolContext &) {
+   sys::Process::UseANSIEscapeCodes(true);

@@ -1,0 +1,63 @@
+--- a/clang/lib/Frontend/LayoutOverrideSource.cpp
++++ b/clang/lib/Frontend/LayoutOverrideSource.cpp
+@@ -11,7 +11,9 @@
+ #include "clang/AST/Type.h"
+ #include "clang/Basic/CharInfo.h"
+ #include "llvm/Support/raw_ostream.h"
+-#include <fstream>
++#include "llvm/Support/VirtualFileSystem.h"
++#include "llvm/Support/MemoryBuffer.h"
++#include <sstream>
+ #include <string>
+
+ using namespace clang;
+@@ -40,10 +42,22 @@
+   return true;
+ }
+
+-LayoutOverrideSource::LayoutOverrideSource(StringRef Filename) {
+-  std::ifstream Input(Filename.str().c_str());
+-  if (!Input.is_open())
++// ------------------------=
++// FUNC: LayoutOverrideSource
++// DESC: Preserves the default entry point while routing reads through LLVM VFS.
++// ------------------=
++LayoutOverrideSource::LayoutOverrideSource(StringRef Filename)
++    : LayoutOverrideSource(Filename, *llvm::vfs::getRealFileSystem()) {}
++
++// ------------------------=
++// FUNC: LayoutOverrideSource
++// DESC: Parses a layout snapshot from the supplied filesystem authority without file streams.
++// ------------------=
++LayoutOverrideSource::LayoutOverrideSource(StringRef Filename, llvm::vfs::FileSystem &FS) {
++  auto Buffer = FS.getBufferForFile(Filename);
++  if (!Buffer)
+     return;
++  std::istringstream Input((*Buffer)->getBuffer().str());
+
+   // Parse the output of -fdump-record-layouts.
+   std::string CurrentType;
+@@ -260,4 +274,3 @@
+     OS << "]\n";
+   }
+ }
+-
+--- a/clang/include/clang/Frontend/LayoutOverrideSource.h
++++ b/clang/include/clang/Frontend/LayoutOverrideSource.h
+@@ -14,6 +14,8 @@
+ #include "llvm/ADT/StringMap.h"
+ #include "llvm/ADT/StringRef.h"
+
++namespace llvm { namespace vfs { class FileSystem; } }
++
+ namespace clang {
+   /// An external AST source that overrides the layout of
+   /// a specified set of record types.
+@@ -49,6 +51,7 @@
+     ///
+     /// The file is the result of passing -fdump-record-layouts to a file.
+     explicit LayoutOverrideSource(StringRef Filename);
++    LayoutOverrideSource(StringRef Filename, llvm::vfs::FileSystem &FS);
+
+     /// If this particular record type has an overridden layout,
+     /// return that layout.

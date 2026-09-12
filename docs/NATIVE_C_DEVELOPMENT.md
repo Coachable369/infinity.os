@@ -374,3 +374,28 @@ The next retry fails in `clang/lib/Frontend/LayoutOverrideSource.cpp:44`, anothe
 `std::ifstream` dependency. Two corrections were required for this checkpoint;
 that separate reader remains unresolved. No linked compiler or new ISO was
 produced, and the on-device compile/run goal remains incomplete.
+
+## Layout overrides and ELF linker checkpoint
+
+`llvm-layout-reader.patch` removes the layout-override file-stream dependency.
+The default constructor delegates to an overload accepting an LLVM VFS
+instance; the parser consumes an in-memory string stream from that snapshot.
+Existing parsing semantics remain unchanged. `layout-reader-test.sh` compiles
+the actual patched parser and verifies numeric record size, alignment, field
+offsets, missing input, CRLF input, and a changed snapshot through in-memory VFS.
+Both that behavioral test and the target LayoutOverrideSource.cpp build pass.
+This still does not establish a production ObjectStore VFS binding.
+
+The build then reached LLD's Mach-O backend, which required unavailable Apple
+compact-unwind headers. `llvm-elf-linker.patch` restricts InfinityOS builds to
+the ELF backend and `ld.lld` alias; other platforms retain all existing drivers.
+The native dispatch table includes only the ELF driver, consistent with the
+current executable loader. Mach-O, COFF and WebAssembly linking are not claimed
+for this native toolchain. CMake regeneration and compilation advanced beyond
+the missing Apple header; linker executable behavior is not verified yet.
+
+Both new patches apply to the pinned upstream archive. After these two
+corrections, the next failure is `clang/tools/driver/cc1_main.cpp:94,97`: the
+resource compatibility header lacks `RLIM_INFINITY`. Compiler linking, native
+runtime providers, installation and detached-media compile/run acceptance are
+still outstanding. No new ISO is produced at this checkpoint.
