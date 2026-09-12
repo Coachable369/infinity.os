@@ -1,5 +1,13 @@
 # Native Qwen3-8B bring-up
 
+The desktop chat header shows a rotating eight-spoke spinner and a grayscale
+shimmer on `Thinking...` during active generation. Its 30 Hz monotonic-clock
+animation only damages the chat header; it reuses retained application surfaces
+and the existing font atlas. Hidden/minimized chat and terminal generation states
+stop animation. The installed kernel includes this code without extra assets.
+Lifecycle tests and actual shaded-font pixel/clip tests cover this path; a guest
+visual check is still required before claiming installed-animation acceptance.
+
 The ARM64 streamed ISO is built by `sh tools/build-qwen.sh`, and is selected
 by `build.sh` for the published ARM64 image. This path needs a 12 GiB VM,
 at least a 16 GiB disk, EFI, xHCI USB input, and a firmware entropy source

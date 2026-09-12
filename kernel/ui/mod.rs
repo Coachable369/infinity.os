@@ -5,6 +5,7 @@
 //! UI state. Platform framebuffer code consumes its bounded render model.
 
 pub mod app_assistant;
+pub mod thinking;
 pub mod app_features;
 pub mod app_launcher;
 pub mod async_model;

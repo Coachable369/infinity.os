@@ -169,6 +169,7 @@ fn launcher_backdrop_test() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    thinking_text_pixels_test();
     retained_theme_test();
     icon_downscale_test();
     launcher_backdrop_test();
@@ -232,6 +233,31 @@ fn main() {
             println!("{{\"fixture\":\"active_painter_{label}\",\"format\":{},\"average_ns\":{},\"p95_ns\":{},\"damage_submissions\":{}}}",format,times.iter().sum::<u128>()/20,times[18],display.submissions);
         }
     }
+}
+
+// ------------------------=
+// FUNC: thinking_text_pixels_test
+// DESC: Verifies font shading changes pixels, preserves glyph edges, and respects header clipping.
+// ------------------=
+fn thinking_text_pixels_test() {
+    let mut pixels = vec![0u32; 320 * 120];
+    let mut display = DisplayDevice { buffer: pixels.as_mut_ptr(), width: 320, height: 120,
+        stride: 320, format: 0, render_clip: Some(Region { left: 0, top: 0, right: 320, bottom: 48 }),
+        fast_motion_frame: false, submissions: 0, recording_surface: false };
+    display.ui_text_shaded(20, 10, b"Thinking...", 255, 255, 255, 1, false, Some((0, 96)));
+    let first = pixels.clone();
+    pixels.fill(0);
+    display.ui_text_shaded(20, 10, b"Thinking...", 255, 255, 255, 1, false, Some((32, 96)));
+    assert_ne!(first, pixels);
+    for (before, after) in first.iter().zip(&pixels) {
+        // A one-level antialiased fringe may round to zero at the dim phase.
+        if (*before == 0) != (*after == 0) {
+            assert!((before & 255).max(after & 255) <= 1);
+        }
+        assert_eq!(after & 255, (after >> 8) & 255);
+        assert_eq!(after & 255, (after >> 16) & 255);
+    }
+    assert!(pixels[320 * 48..].iter().all(|pixel| *pixel == 0));
 }
 
 static TEST_THEME: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);

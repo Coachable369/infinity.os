@@ -744,7 +744,7 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn ui_text_weighted(
         &mut self,
-        mut x: usize,
+        x: usize,
         y: usize,
         text: &[u8],
         red: u8,
@@ -752,6 +752,17 @@ impl super::DisplayDevice {
         blue: u8,
         scale: usize,
         semibold: bool,
+    ) {
+        self.ui_text_shaded(x, y, text, red, green, blue, scale, semibold, None);
+    }
+
+    // ------------------------=
+    // FUNC: ui_text_shaded
+    // DESC: Uses the shared glyph rasterizer with an optional horizontal grayscale tint.
+    // ------------------=
+    pub(super) fn ui_text_shaded(
+        &mut self, mut x: usize, y: usize, text: &[u8], red: u8, green: u8,
+        blue: u8, scale: usize, semibold: bool, shade: Option<(usize, usize)>,
     ) {
         let scale = self.ui_effective_text_scale(scale);
         let font_size = FontSize::new(
@@ -792,6 +803,10 @@ impl super::DisplayDevice {
                     let source_column = font_size.source_index(column).min(UI_FONT_CELL_WIDTH - 1);
                     let alpha = atlas[source_row * UI_FONT_CELL_WIDTH * 95 + glyph + source_column];
                     if alpha != 0 {
+                        let (red, green, blue) = if let Some((offset, period)) = shade {
+                            let gray = crate::ui::thinking::grayscale(x + column, offset, period);
+                            (gray, gray, gray)
+                        } else { (red, green, blue) };
                         self.blend_color(
                             (x + column) as i32,
                             (y + row) as i32,

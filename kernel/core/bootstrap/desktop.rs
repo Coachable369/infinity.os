@@ -2,6 +2,26 @@
 
 use super::*;
 
+static mut THINKING_ANIMATION: crate::ui::thinking::ThinkingAnimation =
+    crate::ui::thinking::ThinkingAnimation::new();
+static mut THINKING_HEADER_DIRTY: bool = false;
+
+// ------------------------=
+// FUNC: thinking_animation_tick
+// DESC: Schedules a bounded header repaint on the UI thread while generation is visible.
+// ------------------=
+pub fn thinking_animation_tick(visible: bool) -> bool {
+    let active = visible && crate::runtime::ai::with_ai_runtime(|ai|
+        ai.chat.enabled() && !ai.chat.minimized()
+        && ai.chat.generation_state == crate::runtime::ai::chat::GenerationState::Running);
+    let now = crate::ui::performance::monotonic_ns().unwrap_or(0);
+    unsafe {
+        let changed = (&mut *(&raw mut THINKING_ANIMATION)).advance(active, now);
+        THINKING_HEADER_DIRTY |= changed;
+        changed
+    }
+}
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const AUTHENTICATION_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-default-dark-wallpaper-v2.bmp");
@@ -9419,7 +9439,7 @@ impl super::DisplayDevice {
         } else {
             use crate::runtime::ai::chat::GenerationState;
             match chat.generation_state {
-                GenerationState::Running => b"GENERATING".as_slice(),
+                GenerationState::Running => b"Thinking...".as_slice(),
                 GenerationState::Cancelled => b"CANCELLED".as_slice(),
                 GenerationState::Failed => b"FAILED".as_slice(),
                 GenerationState::ContextFull => b"CONTEXT FULL".as_slice(),
@@ -9428,15 +9448,32 @@ impl super::DisplayDevice {
             }
         };
         let state_width = self.ui_text_width(state, 1);
-        self.ui_text(
-            left + width.saturating_sub(state_width + 72 * scale),
+        let thinking = chat.generation_state == crate::runtime::ai::chat::GenerationState::Running
+            && !chat.minimized();
+        let state_x = left + width.saturating_sub(state_width + 72 * scale);
+        let frame = unsafe { THINKING_ANIMATION.frame as usize };
+        self.ui_text_shaded(
+            state_x,
             top + 15 * scale,
             state,
             139,
             184,
             207,
             1,
+            false,
+            thinking.then_some((frame * 3 * scale, 96 * scale)),
         );
+        if thinking {
+            let points = [(0,-8),(6,-6),(8,0),(6,6),(0,8),(-6,6),(-8,0),(-6,-6)];
+            for (index, (dx, dy)) in points.iter().enumerate() {
+                let gray = 245u8.saturating_sub(((index + 8 - (frame / 3) % 8) % 8) as u8 * 20);
+                let cx = state_x.saturating_sub(15 * scale) as i32;
+                let cy = (top + 23 * scale) as i32;
+                self.icon_line(cx + dx * scale as i32, cy + dy * scale as i32,
+                    cx + dx * scale as i32 * 5 / 4, cy + dy * scale as i32 * 5 / 4,
+                    (gray, gray, gray), 18 * scale);
+            }
+        }
         self.ui_text(
             geometry.minimize.x.max(0) as usize + 5 * scale,
             geometry.minimize.y.max(0) as usize + 2 * scale,
@@ -9455,7 +9492,9 @@ impl super::DisplayDevice {
             246,
             1,
         );
-        if chat.minimized() {
+        if chat.minimized()
+            || self.render_clip.is_some_and(|clip| clip.bottom <= top + 48 * scale)
+        {
             return;
         }
         let model = chat.selected_model_descriptor();
@@ -10081,6 +10120,7 @@ pub fn system_ui_present(
                     window_maximized,
                 );
             let content_changed = console.last_system_content != content;
+            let thinking_header_changed = core::mem::replace(&mut *(&raw mut THINKING_HEADER_DIRTY), false);
             let command_input_only = screen == 8 && console.last_system_screen == 8
                 && content_changed && static_content == console.last_system_static_content
                 && !structural_change_without_window && !file_navigator_changed && !focus_changed
@@ -10578,9 +10618,13 @@ pub fn system_ui_present(
                 );
             } else if crate::ui::redraw::desktop_chat_content_requires_bounded_redraw(
                 screen,
-                content_changed,
+                content_changed || thinking_header_changed,
             ) {
-                let widgets = layout.desktop_foreground_geometry().widgets;
+                let mut widgets = layout.desktop_foreground_geometry().widgets;
+                if thinking_header_changed && !content_changed {
+                    widgets = layout.ai_chat_geometry(false).panel;
+                    widgets.height = (48 * layout.scale()) as u32;
+                }
                 console.display.set_render_clip(
                     widgets.x.max(0) as usize,
                     widgets.y.max(0) as usize,

@@ -11995,6 +11995,10 @@ pub fn ui_animation_tick() -> bool {
             return false;
         };
         let motion_frame = runtime.continuous_motion_frames.take_for_tick();
+        let thinking_changed = crate::bootstrap::thinking_animation_tick(runtime.mode == ConsoleMode::Desktop);
+        if thinking_changed && !motion_frame {
+            runtime.redraw();
+        }
         let mut frame_changed = motion_frame;
         let pool_revision = crate::runtime::storage_view::visibility(runtime.current_user, runtime.current_session,
             runtime.mode == ConsoleMode::Settings && runtime.system_focus == 8);
