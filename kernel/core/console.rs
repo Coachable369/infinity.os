@@ -10650,6 +10650,8 @@ impl ConsoleRuntime {
                 self.output.write_number(b"Maximum slice microseconds: ",ai.qwen_metrics.max_slice_ns/1_000);
                 self.output.write_number(b"Maximum AI pump microseconds: ",ai.qwen_metrics.max_pump_ns/1_000);
                 self.output.write_number(b"Cached prompt tokens: ",ai.qwen_metrics.reused_tokens as u64);
+                self.output.write_number(b"Online inference workers: ",crate::runtime::ai::qwen::workers::online() as u64);
+                self.output.write_number(b"Completed worker jobs: ",crate::runtime::ai::qwen::workers::completed() as u64);
                 self.output.write_number(b"New prompt tokens: ",ai.qwen_metrics.prefill_tokens as u64);
             });
             return true;

@@ -188,6 +188,12 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
             )
         };
         let ready = runtime::ai::with_ai_runtime(|ai| ai.load_qwen(model, arena));
+        if ready {
+            output_text(if info.worker_bridge == 0 {
+                b"[AI] MP startup bridge unavailable; single-core fallback\n"
+            } else { b"[AI] MP startup bridge discovered\n" });
+            unsafe { runtime::ai::qwen::workers::initialize(info.worker_bridge); }
+        }
         output_text(if ready {
             b"[AI] native Qwen3-8B verified and ready\n"
         } else {

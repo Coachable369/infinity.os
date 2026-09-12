@@ -25,3 +25,42 @@ infinity_handoff:
 .Lpark:
     wfe
     b .Lpark
+
+.p2align 6
+.globl infinity_ap_entry
+// ------------------------=
+// FUNC: infinity_ap_entry
+// DESC: Restores validated identity-mapped EL1 translation state on a PSCI-started AP before entering its native worker.
+// ------------------=
+infinity_ap_entry:
+    msr daifset, #0xf
+    mrs x4, CurrentEL
+    cmp x4, #4
+    b.ne .Lpark
+    msr spsel, #1
+    ldp x9, x10, [x0]       // stack, callback
+    ldr x11, [x0, #16]      // callback argument
+    ldr x12, [x0, #32]      // SCTLR
+    ldr x4, [x0, #40]
+    msr tcr_el1, x4
+    ldr x4, [x0, #48]
+    msr ttbr0_el1, x4
+    ldr x4, [x0, #56]
+    msr ttbr1_el1, x4
+    ldr x4, [x0, #64]
+    msr mair_el1, x4
+    ldr x4, [x0, #72]
+    msr vbar_el1, x4
+    dsb sy
+    isb
+    tlbi vmalle1
+    ic iallu
+    dsb sy
+    isb
+    msr sctlr_el1, x12
+    isb
+    mov sp, x9
+    mov x0, x11
+    mov x29, xzr
+    blr x10
+    b .Lpark

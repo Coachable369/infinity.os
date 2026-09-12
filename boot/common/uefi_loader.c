@@ -196,6 +196,10 @@ typedef struct {
     EFI_CONFIGURATION_TABLE *configuration_table;
 } EFI_SYSTEM_TABLE;
 
+#if defined(INFINITY_AARCH64)
+#include "worker_bridge.h"
+#endif
+
 typedef struct {
     uint32_t revision;
     EFI_HANDLE parent_handle;
@@ -1261,6 +1265,10 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
 
     info->magic = INFINITY_BOOT_MAGIC;
     info->version = INFINITY_BOOT_VERSION;
+    info->worker_bridge = 0;
+#if defined(INFINITY_AARCH64)
+    info->worker_bridge = infinity_worker_bridge(system);
+#endif
     info->architecture = INFINITY_ARCHITECTURE;
     info->memory_map_address = 0;
     info->firmware_revision = system->header.revision;

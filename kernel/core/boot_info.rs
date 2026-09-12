@@ -1,5 +1,5 @@
 pub const BOOT_MAGIC: u64 = 0x494e_4642_4f4f_5430;
-pub const BOOT_VERSION: u32 = 7;
+pub const BOOT_VERSION: u32 = 8;
 #[cfg(target_arch = "x86")]
 pub const ARCH_X86: u32 = 1;
 #[cfg(target_arch = "x86_64")]
@@ -42,6 +42,7 @@ pub struct BootInfo {
     pub model_bytes: u64,
     pub model_work_address: u64,
     pub model_work_bytes: u64,
+    pub worker_bridge: u64,
 }
 
-const _: () = assert!(core::mem::size_of::<BootInfo>() == 256);
+const _: () = assert!(core::mem::size_of::<BootInfo>() == 264);

@@ -357,6 +357,11 @@ ai-test:
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 --test kernel/runtime/ai/qwen/metrics.rs -o build/behavior-tests/qwen-metrics-test
 	@build/behavior-tests/qwen-metrics-test
+	@clang -O3 -ffp-contract=off -c kernel/runtime/ai/qwen/cpu_math.c -o build/behavior-tests/qwen-worker-math.o
+	@rustc --edition=2021 --test kernel/runtime/ai/qwen/workers.rs -C link-arg=build/behavior-tests/qwen-worker-math.o -o build/behavior-tests/qwen-workers-test
+	@build/behavior-tests/qwen-workers-test
+	@clang -O2 tools/psci-topology-test.c -o build/behavior-tests/psci-topology-test
+	@build/behavior-tests/psci-topology-test
 
 milestone-6-test: ai-test object-test runtime-test
 
@@ -518,7 +523,7 @@ $(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld $(B
 $(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o
 	$(LD_LLD) -nostdlib -static -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o
 
-$(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/common/payload_loader.h
+$(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/common/payload_loader.h boot/common/worker_bridge.h boot/common/psci_workers.h
 	@mkdir -p $(@D)
 	$(CLANG) --target=aarch64-pc-windows-msvc -DINFINITY_AARCH64 -ffreestanding -fshort-wchar \
 		-fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -c $< -o $@

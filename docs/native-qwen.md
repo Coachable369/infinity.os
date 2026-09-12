@@ -15,10 +15,39 @@ Existing decode tokens/time remain available.
 Timing is gathered without per-slice logging; zero timings mean the monotonic
 clock was unavailable. Maximum slice is not an end-to-end desktop latency metric.
 
-Inference remains single-core: ARM secondary-core startup and a worker scheduler
-are not implemented. Batched prefill is also not implemented. Guest comparative
-benchmarks and responsiveness acceptance remain pending; host parity is not
-evidence of guest speedup.
+ARM inference now dispatches bounded Q4_K/Q6_K row batches to up to four native
+secondary-core workers. Boot ABI v8 appends a versioned worker-start bridge
+(264-byte BootInfo). UEFI MP Services is preferred; validated ACPI FADT/MADT
+data permits a PSCI CPU_ON fallback on identity-mapped EL1 systems. AP stacks
+are reserved before the boot memory map is captured. Unsupported firmware or
+unavailable CPUs retain the single-core path; x86 initializes the bridge to zero.
+
+Workers own private activation/result mailboxes and read immutable model weights.
+They never access the desktop, services, allocator, or engine state. Release/acquire
+ownership publishes bounded jobs; cancellation discards results without reclaiming
+worker-owned memory, and engine destruction drains jobs before releasing weights.
+This is a dedicated inference worker pool, not a general SMP scheduler. One CPU
+is reserved for the desktop and an additional spare is retained when available.
+Batched prefill and worker-fault recovery remain unimplemented.
+
+The disk-only 12 GiB, six-CPU VirtualBox QA guest (ISO detached, NIC absent)
+completed `hello` with `Hello! How can I assist you today?`. The final 256-row
+batches produced visible text within 56 seconds and completed within 88 seconds
+of submission; these are screenshot observation bounds, not exact latency metrics.
+The guest displayed 0.3 tokens/sec. The initial 32-row batches had no visible text
+at 126 seconds and first observed text at 185 seconds, so that granularity was
+rejected. A rigorous repeated single-core/multicore benchmark remains outstanding;
+0.3 tokens/sec is still not satisfactory interactive LLM performance.
+
+After a second request and keyboard cancellation, the final guest reported four
+online workers, 208,520 completed jobs, 24 cached prompt tokens and a maximum
+AI pump of 4,385 microseconds. Spinner/clock continued updating; Escape cancelled
+the request and a second Escape released chat focus for launcher keyboard use.
+Concurrent host tests compare Q4_K/Q6_K results bit-for-bit with direct execution,
+including multi-batch tails, cancellation and changed destination geometry.
+ARM kernel/loader, x86 loader/check, AI tests and generated installed-ESP parity
+passed. This revision was tested by updating a preserved installed QA clone;
+the new ISO's full fresh-install interaction was not repeated.
 
 The desktop chat header shows a rotating eight-spoke spinner and a grayscale
 shimmer on `Thinking...` during active generation. Its 30 Hz monotonic-clock
@@ -85,8 +114,8 @@ the main build script cleans that directory.
 
 The separate 12 GiB VirtualBox ARM QA VM completed installation onto a fresh
 16 GiB disk, booted with its ISO detached, completed first-boot account setup,
-and reached the desktop with no network adapter. Real guest model output,
-guest throughput, and responsiveness during inference are not yet verified.
+and reached the desktop with no network adapter. Subsequent installed-clone
+output and performance observations are recorded in Performance follow-up above.
 
 Use the `qwen-contract-test`, `qwen-native-test`, and `qwen-install-parity`
 bins in `tools/behavior-harness/Cargo.toml`. The native test's `--forward`
@@ -104,8 +133,7 @@ UTF-8 tokenizer input; conversation tokens retained within 4K; a bounded
 still needs Unicode text-entry support beyond its existing byte-key events.
 The model is loaded at boot, and initialization hashes all weights.
 Cancellation is cooperative. No GPU, vision, 27B model, or DeltaNet support.
-Guest throughput and full installed-desktop acceptance remain unverified
-until the VM test cycle completes.
+Broader prompt-quality and sustained desktop-interaction acceptance remain pending.
 
 ## Direct keyboard access
 

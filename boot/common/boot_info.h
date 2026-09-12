@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define INFINITY_BOOT_MAGIC UINT64_C(0x494e46424f4f5430)
-#define INFINITY_BOOT_VERSION 7u
+#define INFINITY_BOOT_VERSION 8u
 #define INFINITY_ARCH_X86_64 2u
 #define INFINITY_ARCH_AARCH64 3u
 
@@ -42,8 +42,9 @@ typedef struct {
     uint64_t model_bytes;
     uint64_t model_work_address;
     uint64_t model_work_bytes;
+    uint64_t worker_bridge;
 } InfinityBootInfo;
 
-_Static_assert(sizeof(InfinityBootInfo) == 256, "BootInfo ABI changed");
+_Static_assert(sizeof(InfinityBootInfo) == 264, "BootInfo ABI changed");
 
 #endif

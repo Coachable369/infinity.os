@@ -159,6 +159,16 @@ pub struct Engine<'a, 'b> {
     predict: bool,
     rotary: [(f32, f32); 64],
 }
+impl Drop for Engine<'_, '_> {
+    // ------------------------=
+    // FUNC: drop
+    // DESC: Preserves weight lifetimes until all AP readers have retired.
+    // ------------------=
+    fn drop(&mut self) {
+        #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+        super::workers::drain();
+    }
+}
 impl<'a, 'b> Engine<'a, 'b> {
     // ------------------------=
     // FUNC: new
@@ -211,6 +221,7 @@ impl<'a, 'b> Engine<'a, 'b> {
     // DESC: Starts a new sequence without clearing or reallocating a gigabyte-scale cache.
     // ------------------=
     pub fn reset(&mut self) {
+        super::workers::discard();
         self.position = 0;
         self.active = false;
         self.cancelled = false;
@@ -220,6 +231,7 @@ impl<'a, 'b> Engine<'a, 'b> {
     // DESC: Cancels the next bounded work slice without performing further tensor work.
     // ------------------=
     pub fn cancel(&mut self) {
+        super::workers::discard();
         self.cancelled = true;
     }
     // ------------------------=
@@ -227,6 +239,7 @@ impl<'a, 'b> Engine<'a, 'b> {
     // DESC: Discards an unfinished token while retaining only fully computed KV positions.
     // ------------------=
     pub fn resume_prefix(&mut self) -> usize {
+        super::workers::discard();
         self.active = false;
         self.cancelled = false;
         self.position
@@ -439,6 +452,11 @@ fn mat_rows(
         return Err(Error::Format);
     }
     let end = (*cursor + 8).min(output.len());
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    // SAFETY: the sole service-owned engine retains its weights until Drop drains APs.
+    if let Some(done) = unsafe { super::workers::rows(t.kind, t.data, input, output, cursor) } {
+        return Ok(done);
+    }
     for at in *cursor..end {
         #[cfg(all(target_arch = "aarch64", target_os = "none"))]
         if t.kind == 12 || t.kind == 14 {
