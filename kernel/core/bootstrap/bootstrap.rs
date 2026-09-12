@@ -4,6 +4,9 @@ use super::installer::INSTALLER_FONT_CELL_HEIGHT;
 use super::*;
 use crate::boot_info::BootInfo;
 
+#[path = "reveal.rs"]
+mod reveal;
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const SPLASH_BMP: &[u8] =
     include_bytes!("../../../assets/boot/infinity-eclipse-header-v1.bmp");
@@ -144,7 +147,7 @@ impl super::DisplayDevice {
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
     // FUNC: emblem_reveal_band
-    // DESC: Reveals one vertical animation band of the infinity emblem.
+    // DESC: Advances a feathered light front, repainting only columns whose exposure changed.
     // ------------------=
     pub(super) fn emblem_reveal_band(&mut self, step: usize, total: usize) {
         if EMBLEM_BMP.len() < 138 || &EMBLEM_BMP[0..2] != b"BM" {
@@ -154,11 +157,18 @@ impl super::DisplayDevice {
         let source_height = (le32(EMBLEM_BMP, 22) as i32).unsigned_abs() as usize;
         let target_width =
             (self.width * 52 / 100).min((self.height * 70 / 100) * source_width / source_height);
-        let half = target_width / 2;
-        let start = half * step / total;
-        let end = half * (step + 1) / total;
-        self.emblem_range(half.saturating_sub(end), half.saturating_sub(start), 255);
-        self.emblem_range(half + start, (half + end).min(target_width), 255);
+        let target_height = target_width * source_height / source_width;
+        let left = (self.width - target_width) / 2;
+        let top = self.height * BOOT_EMBLEM_TOP_PERCENT / 100;
+        for x in 0..target_width {
+            let before = reveal::opacity(x, target_width, step, total);
+            let after = reveal::opacity(x, target_width, step + 1, total);
+            if before == after {
+                continue;
+            }
+            self.paint_background_rect(left + x, top, 1, target_height);
+            self.emblem_range(x, x + 1, after);
+        }
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -1457,10 +1467,9 @@ pub fn show_splash(info: &BootInfo) -> bool {
         for frame in 0..30 {
             let sequence = stage_index * 30 + frame;
             display.emblem_reveal_band(sequence, 120);
-            display.infinity_pulse(sequence * 3);
             display.progress(stage.saturating_sub(24) + frame * 24 / 30, label);
             display.present_damage();
-            wait_frame(35);
+            wait_frame(20);
         }
     }
     // Keep the completed bootstrap composition intact for the startup menu.

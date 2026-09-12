@@ -353,6 +353,12 @@ milestone-8-test: network-test runtime-test
 	@tools/milestone-8-install-parity-test.sh
 
 .PHONY: boot-media-test
+.PHONY: boot-reveal-test
+boot-reveal-test:
+	@mkdir -p build/behavior-tests
+	@rustc --test kernel/core/bootstrap/reveal.rs -o build/behavior-tests/boot-reveal-test
+	@build/behavior-tests/boot-reveal-test
+
 boot-media-test:
 	@mkdir -p build/behavior-tests
 	@clang -O2 -fshort-wchar -Wno-ignored-attributes tools/boot-media-test.c -o build/behavior-tests/boot-media-test
