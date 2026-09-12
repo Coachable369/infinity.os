@@ -71,6 +71,12 @@ InfinityOS. Host harnesses are development verification only.
 
 ## Distribution media
 
+`re-provision.sh` now defaults directly to the combined model-enabled ISO from
+`tools/build-qwen.sh`, not a potentially older `builds/` export. A missing image
+stops provisioning before VM deletion. An explicit second argument still allows
+selecting a different installer intentionally. Existing installations created
+from older media are not upgraded by this selection fix.
+
 ### VirtualBox reinstall check (2026-09-12)
 
 The combined ISO completed a fresh installation on the backed-up 16 GiB
