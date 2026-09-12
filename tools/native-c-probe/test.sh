@@ -5,6 +5,8 @@ cd "$(dirname "$0")/../.."
 sh tools/native-c-probe/build-hello.sh
 rustc --edition=2021 tools/native-c-probe/image-test.rs -o build/native-c/image-test
 build/native-c/image-test
+rustc --edition=2021 -A warnings tools/native-c-probe/io-test.rs -o build/native-c/io-test
+build/native-c/io-test
 RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=build/native-c/cargo cargo build --release \
     -Z build-std=core --target x86_64-unknown-none --manifest-path tools/native-c-probe/Cargo.toml
 /opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/x86_64.ld \

@@ -23,8 +23,18 @@ after cold boot with the ISO detached. Never overwrite a user's existing
 - `sdk/c/examples/hello.c` is embedded as a normal Documents Text Object when
   formatting a fresh ObjectStore, shared by live and installed initialization.
   Mounting an existing store does not overwrite or re-create this user document.
-- `sdk/c/runtime.c` implements ABI negotiation, `puts`, `putchar`, and returning
-  `main`'s status. It is not a complete C standard library.
+- `sdk/c/runtime.c` implements ABI v2 negotiation, `puts`, `putchar`, stream
+  cleanup and returning `main`'s status. `sdk/c/stdio.c` supplies bounded
+  `fopen`/`fclose`, element reads/writes, seek/tell, EOF/error state and line I/O.
+  This is not a complete C standard library: for example `printf`, `errno`,
+  allocation, threads and clocks still require the larger runtime port.
+- `kernel/runtime/native_c_io.rs` is a safe, typed object-stream adapter with
+  explicit path grants, normalized namespace references, independent opened
+  snapshots, bounded seek/append, and optimistic write-conflict detection.
+  Flush publishes one ObjectStore version; close reports conflicts without
+  replacing a newer editor save. Open handles are never recycled within a session.
+  It currently shares ObjectStore's 16 KiB per-object limit. It is used by the
+  development probe, not yet exposed as a production syscall or console service.
 - `kernel/runtime/native_c_image.rs` validates the initial static PIE ELF64
   envelope and copies it into caller-owned memory. It rejects wrong architectures,
   overlapping segments, writable executable segments, dynamic dependencies,
@@ -35,6 +45,11 @@ after cold boot with the ISO detached. Never overwrite a user's existing
   QEMU probe. The probe resolves the provisioned Text Object and creates the executable as
   an ApplicationData Object using production ObjectStore, remounts the store,
   verifies stable identities and source editing, and executes the stored ELF.
+- A second Clang-built C executable opens the **edited** source with `fopen`,
+  verifies its current bytes, writes and appends a Documents Text Object using
+  standard stream calls, and exits. The VM remounts the store and verifies the
+  resulting bytes and object type. Host I/O tests also cover access denial,
+  aliases to System objects, stale handles, overflow and external-edit conflicts.
 - This is a trusted fixture with shared-address-space execution. Do not expose
   it as a launcher for arbitrary user programs. There is no hardware isolation,
   on-device compiler or full fresh-install/desktop acceptance
@@ -74,3 +89,36 @@ that pre-existing limit needs a separately validated storage-format change.
 
 Sources: https://clang.llvm.org/docs/Toolchain.html,
 https://clang.llvm.org/c_status.html, https://lld.llvm.org/.
+
+## Native toolchain port attempt: 2026-09-12
+
+The cross-toolchain experiment is isolated under ignored `build/native-c`.
+No host package paths or dependency sources were installed into the OS, and no
+user VM was modified. Sources were downloaded from their upstream projects:
+
+| Source | Pin | Archive SHA-256 |
+| --- | --- | --- |
+| LLVM / Clang / libc++ / LLD | `llvmorg-23.1.0`, commit `ea7d852a70e8bdfaf601d6626a760f9771b2c4b4` | `5878830436d5fc0f460fa756073880e0fc124df74fd5556c798e2ed85dc7bd55` |
+| Newlib | `4.6.0.20260123` | `6ff27e3bf022666f43f7802255be680eeff722ac181b1725d21e2e8318604ee3` |
+
+Newlib configured for `x86_64-unknown-elf` and built/installed to the local
+sysroot, without supplied syscalls, libgloss, multilib or multithreading.
+libc++ and libc++abi also cross-built with threads/exceptions/RTTI/filesystem/
+localization disabled. These are **build results**, not runtime verification.
+
+Building the Clang/LLD libraries against that sysroot failed: LLVM's
+BalancedPartitioning, RWMutex and ThreadPool still require standard mutexes,
+condition variables, shared locks and futures with `LLVM_ENABLE_THREADS=OFF`.
+The subsequent pthread-enabled libc++ attempt required enabling its monotonic
+clock, then failed in `libcxx/src/chrono.cpp:245` because `CLOCK_MONOTONIC` is
+not defined by the target. No synchronization or clock syscall implementation
+has been supplied. The two-correction limit was reached; the compiler build
+was not continued or represented as successful.
+
+For resumption, generated build directories retain exact CMake caches and Ninja
+commands: `cxx-build-x86_64`, `clang-build-x86_64`, and `newlib-build-x86_64`.
+The threaded C++ build directory is currently failed; the installed sysroot
+contains the earlier non-threaded libraries. Do not treat them as matching the
+new configuration. The next implementation must supply real target runtime
+services and rebuild consistently, not substitute successful no-op thread calls
+or a dummy clock merely to satisfy linkage.

@@ -1,7 +1,8 @@
 #include <infinity/app.h>
 #include <stdio.h>
+#include "internal.h"
 
-static const InfinityAppApi *api;
+const InfinityAppApi *infinity_host;
 extern int main(void);
 
 // ------------------------=
@@ -10,7 +11,7 @@ extern int main(void);
 // ------------------=
 int putchar(int character) {
     unsigned char byte = (unsigned char)character;
-    if (!api || api->write_stdout(api->context, &byte, 1) != 1) return EOF;
+    if (!infinity_host || infinity_host->write_stdout(infinity_host->context, &byte, 1) != 1) return EOF;
     return byte;
 }
 
@@ -19,10 +20,10 @@ int putchar(int character) {
 // DESC: Writes a null-terminated string and newline through the native console endpoint.
 // ------------------=
 int puts(const char *text) {
-    if (!text || !api) return EOF;
+    if (!text || !infinity_host) return EOF;
     size_t length = 0;
     while (text[length]) ++length;
-    if (api->write_stdout(api->context, (const unsigned char *)text, length) != (int)length)
+    if (infinity_host->write_stdout(infinity_host->context, (const unsigned char *)text, length) != (int)length)
         return EOF;
     return putchar('\n') == EOF ? EOF : 0;
 }
@@ -34,8 +35,10 @@ int puts(const char *text) {
 int infinity_app_entry(const InfinityAppApi *host) {
     if (!host || host->version != INFINITY_APP_ABI || host->size < sizeof(*host) || !host->write_stdout)
         return 126;
-    api = host;
+    infinity_host = host;
+    infinity_stdio_reset();
     int result = main();
-    api = 0;
+    if (infinity_stdio_finish() && result == 0) result = 74;
+    infinity_host = 0;
     return result;
 }

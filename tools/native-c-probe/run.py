@@ -34,6 +34,7 @@ def main():
                     process.wait()
         proof = {"guest_exit_code": result, "cross_compiled_with_clang": True,
                  "object_store_round_trip": result == 33, "trusted_native_app_execution": result == 33,
+                 "native_c_stdio_object_io": result == 33,
                  "on_device_compiler": False, "hardware_isolation": False, "installed_acceptance": False}
         (ROOT / "build/native-c/proof.json").write_text(json.dumps(proof, indent=2) + "\n")
         if result != 33:
