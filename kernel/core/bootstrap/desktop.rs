@@ -9351,7 +9351,6 @@ impl super::DisplayDevice {
             (b"Runtime", b"Online".as_slice()),
             (b"Storage Service", b"Ready".as_slice()),
             (b"Input", b"Ready".as_slice()),
-            (b"Appearance", b"Default Dark".as_slice()),
         ]
         .iter()
         .enumerate()
