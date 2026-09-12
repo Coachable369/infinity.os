@@ -119,8 +119,8 @@ create_arm64_vm() {
         --chipset armv8virtual \
         --vram 128 \
         --graphicscontroller vmsvga \
-        --boot1 dvd \
-        --boot2 disk \
+        --boot1 disk \
+        --boot2 dvd \
         --boot3 none \
         --boot4 none \
         --nic1 nat \

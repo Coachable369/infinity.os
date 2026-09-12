@@ -78,6 +78,11 @@ case "$command_name" in
                     shift
                     printf '%s\n' "$1" > "$TEST_STATE_PATH/cpus"
                     ;;
+                --boot1|--boot2)
+                    boot_option=$1
+                    shift
+                    printf '%s\n' "$1" > "$TEST_STATE_PATH/$boot_option"
+                    ;;
                 --graphicscontroller)
                     shift
                     printf '%s\n' "$1" > "$TEST_STATE_PATH/graphics"
