@@ -56,13 +56,7 @@ impl ConsoleRuntime {
             match command {
                 C::SaveAs => self.open_editor_save_as_dialog(),
                 C::Delete => self.delete_editor_document(),
-                C::Close => {
-                    if self.editor_document.is_saved() {
-                        self.close_desktop_app();
-                    } else {
-                        self.editor_tools.notice = b"Save your modified document before closing.";
-                    }
-                }
+                C::Close => self.request_editor_action(PendingDocumentAction::Close),
                 C::Syntax => self.editor_tools.open_menu(Menu::Syntax),
                 C::Assistant => {
                     self.input_window_assistant(ConsoleKey::Shortcut(b'i'));
@@ -138,11 +132,30 @@ impl ConsoleRuntime {
         if !clicked {
             return false;
         }
+        if g.menu_bar.width > 700 * g.scale as u32 {
+            for (index, command) in [
+                crate::ui::editor_chrome::Command::New,
+                crate::ui::editor_chrome::Command::Open,
+                crate::ui::editor_chrome::Command::Save,
+            ]
+            .iter()
+            .enumerate()
+            {
+                if g.toolbar_action(index).contains(p) {
+                    self.editor_command(*command);
+                    return true;
+                }
+            }
+        }
         if g.search.contains(p) {
             self.editor_tools.begin(Field::Find);
             return true;
         }
-        if g.tab_close().contains(p) || g.new_document().contains(p) {
+        if g.tab_close().contains(p) {
+            self.editor_command(crate::ui::editor_chrome::Command::Close);
+            return true;
+        }
+        if g.new_document().contains(p) {
             self.editor_command(crate::ui::editor_chrome::Command::New);
             return true;
         }
@@ -257,17 +270,12 @@ impl ConsoleRuntime {
                         self.editor_tools.notice = b"Paste rejected: document limit is 16 KiB.";
                     }
                 }
-                b's' => self.save_editor_document(),
+                b's' => {
+                    self.save_editor_document();
+                }
                 b'o' => self.open_editor_document(),
                 b'n' => {
-                    if self.editor_document.is_saved() {
-                        self.editor_document.clear();
-                        self.editor_document_path_length = 0;
-                        self.editor_document_name_length = 0;
-                    } else {
-                        self.editor_tools.notice =
-                            b"Save your modified document before creating a new one.";
-                    }
+                    self.request_editor_action(PendingDocumentAction::New);
                 }
                 b'p' => {
                     self.editor_tools.begin(Field::Command);

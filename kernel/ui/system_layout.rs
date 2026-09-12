@@ -123,6 +123,8 @@ pub enum EditorDialogTarget {
     Row(usize),
     Cancel,
     Accept,
+    Discard,
+    Save,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1846,6 +1848,40 @@ impl SystemLayout {
             if row.contains(point) {return Some(EditorDialogTarget::Row(index));}
         }
         None
+    }
+
+    // ------------------------=
+    // FUNC: desktop_editor_unsaved_target
+    // DESC: Resolves the three explicit dirty-document decisions from shared editor sheet geometry.
+    // ------------------=
+    pub fn desktop_editor_unsaved_target(
+        self,
+        normalized_x: i32,
+        normalized_y: i32,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        maximized: bool,
+    ) -> Option<EditorDialogTarget> {
+        let point = self.point(normalized_x, normalized_y);
+        let window = self.desktop_app_window_geometry(
+            window_x,
+            window_y,
+            window_width,
+            window_height,
+            maximized,
+        );
+        let g = crate::ui::editor_chrome::unsaved_dialog_geometry(window.content, self.scale);
+        if g.cancel.contains(point) {
+            Some(EditorDialogTarget::Cancel)
+        } else if g.discard.contains(point) {
+            Some(EditorDialogTarget::Discard)
+        } else if g.save.contains(point) {
+            Some(EditorDialogTarget::Save)
+        } else {
+            None
+        }
     }
 
     // ------------------------=

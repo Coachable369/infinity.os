@@ -2877,7 +2877,14 @@ impl super::DisplayDevice {
         let toolbar_top = geometry.toolbar.y.max(0) as usize;
         if screen == 9 {
             self.editor_window(geometry, input, editor_scroll_row, editor_saved, maximized, scale);
-            if editor_dialog != 0 {
+            if editor_dialog == 3 {
+                self.desktop_editor_unsaved_dialog(
+                    geometry.content,
+                    editor_dialog_input,
+                    editor_dialog_focus,
+                    scale,
+                );
+            } else if editor_dialog != 0 {
                 self.desktop_editor_dialog(geometry.content, editor_dialog == 2, editor_dialog_input, output_lines, output_lengths, output_count, editor_dialog_focus, scale);
             }
             return;
@@ -4027,6 +4034,103 @@ impl super::DisplayDevice {
         self.ui_text(x+24*scale,g.cancel.y.saturating_sub((32*scale) as i32).max(0) as usize,error,
             if picker.error>0 {255}else{150},if picker.error>0 {120}else{185},if picker.error>0 {120}else{207},1);
         self.render_clip=clip;
+    }
+
+    // ------------------------=
+    // FUNC: desktop_editor_unsaved_dialog
+    // DESC: Renders the blocking kit-aligned Save, Discard, Cancel decision without obscuring document identity.
+    // ------------------=
+    fn desktop_editor_unsaved_dialog(
+        &mut self,
+        content: crate::ui::geometry::Rect,
+        filename: &[u8],
+        focus: usize,
+        scale: usize,
+    ) {
+        let g = crate::ui::editor_chrome::unsaved_dialog_geometry(content, scale);
+        let clip = self.render_clip;
+        self.intersect_render_clip(
+            content.x.max(0) as usize,
+            content.y.max(0) as usize,
+            content.width as usize,
+            content.height as usize,
+        );
+        self.fill_rect_alpha(
+            content.x.max(0) as usize,
+            content.y.max(0) as usize,
+            content.width as usize,
+            content.height as usize,
+            3,
+            9,
+            18,
+            174,
+        );
+        let x = g.sheet.x.max(0) as usize;
+        let y = g.sheet.y.max(0) as usize;
+        self.fill_rounded_rect_alpha(
+            x,
+            y,
+            g.sheet.width as usize,
+            g.sheet.height as usize,
+            12 * scale,
+            15,
+            27,
+            46,
+            252,
+        );
+        self.outline_rounded_rect(
+            x,
+            y,
+            g.sheet.width as usize,
+            g.sheet.height as usize,
+            12 * scale,
+            34,
+            211,
+            238,
+        );
+        self.ui_text_strong(
+            x + 26 * scale,
+            y + 24 * scale,
+            b"Save changes before closing?",
+            255,
+            255,
+            255,
+            1,
+        );
+        self.ui_text(
+            x + 26 * scale,
+            y + 61 * scale,
+            if filename.is_empty() { b"Untitled" } else { filename },
+            34,
+            211,
+            238,
+            1,
+        );
+        self.ui_text(
+            x + 26 * scale,
+            y + 91 * scale,
+            b"Your edits are still in memory. Choose Save, Discard, or Cancel.",
+            159,
+            176,
+            200,
+            1,
+        );
+        for (index, rect, label, primary) in [
+            (0usize, g.cancel, b"CANCEL" as &[u8], false),
+            (1usize, g.discard, b"DISCARD", false),
+            (2usize, g.save, b"SAVE", true),
+        ] {
+            self.polished_button(
+                rect.x.max(0) as usize,
+                rect.y.max(0) as usize,
+                rect.width as usize,
+                rect.height as usize,
+                label,
+                primary,
+                focus == index,
+            );
+        }
+        self.render_clip = clip;
     }
 
     // ------------------------=

@@ -7,6 +7,48 @@ pub const ROW_HEIGHT: u32 = 32;
 pub const LINE_HEIGHT: usize = 22;
 pub const CODE_INSET: usize = 96;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UnsavedDialogGeometry {
+    pub sheet: Rect,
+    pub cancel: Rect,
+    pub discard: Rect,
+    pub save: Rect,
+}
+
+// ------------------------=
+// FUNC: unsaved_dialog_geometry
+// DESC: Returns one compact kit-aligned three-way decision sheet contained by the editor viewport.
+// ------------------=
+pub fn unsaved_dialog_geometry(content: Rect, scale: usize) -> UnsavedDialogGeometry {
+    let scale = scale.max(1);
+    let width = (560 * scale).min((content.width as usize).saturating_sub(24 * scale));
+    let height = (220 * scale).min((content.height as usize).saturating_sub(24 * scale));
+    let x = content.x + (content.width as i32 - width as i32) / 2;
+    let y = content.y + (content.height as i32 - height as i32) / 2;
+    let button_y = y + height as i32 - 62 * scale as i32;
+    let button_width = (142 * scale).min(width.saturating_sub(64 * scale) / 3);
+    let gap = 12 * scale;
+    let group_width = button_width * 3 + gap * 2;
+    let button_x = x + (width.saturating_sub(group_width) / 2) as i32;
+    let button = |offset: usize| Rect {
+        x: button_x + offset as i32,
+        y: button_y,
+        width: button_width as u32,
+        height: (40 * scale) as u32,
+    };
+    UnsavedDialogGeometry {
+        sheet: Rect {
+            x,
+            y,
+            width: width as u32,
+            height: height as u32,
+        },
+        cancel: button(0),
+        discard: button(button_width + gap),
+        save: button((button_width + gap) * 2),
+    }
+}
+
 // ------------------------=
 // FUNC: default_window
 // DESC: Preserves the kit's landscape proportions even when firmware reports a square framebuffer.
@@ -343,6 +385,20 @@ impl Layout {
             self.menu_bar.y + 2 * self.scale as i32,
             w * self.scale as u32,
             32 * self.scale as u32,
+        )
+    }
+    // ------------------------=
+    // FUNC: toolbar_action
+    // DESC: Places the kit's New, Open, and Save actions on the right side of the breadcrumb toolbar.
+    // ------------------=
+    pub fn toolbar_action(self, index: usize) -> Rect {
+        let s = self.scale as i32;
+        let width = 72 * s;
+        box_at(
+            self.menu_bar.right() - ((3 - index.min(2)) as i32 * width) - 6 * s,
+            self.menu_bar.y + 3 * s,
+            width as u32,
+            30 * self.scale as u32,
         )
     }
     // ------------------------=

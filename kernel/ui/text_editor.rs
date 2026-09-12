@@ -5,6 +5,47 @@ pub const DOCUMENT_NAME_CAPACITY: usize = 47;
 pub const DOCUMENT_PATH_CAPACITY: usize = 95;
 pub const DOCUMENT_NAMESPACE: &[u8] = b"/personal/documents/";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum PendingDocumentAction {
+    None,
+    Close,
+    New,
+    Open,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnsavedDecision {
+    Cancel,
+    Discard,
+    Save,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnsavedTransition {
+    Stay,
+    Perform(PendingDocumentAction),
+    Save(PendingDocumentAction),
+    SaveAs(PendingDocumentAction),
+}
+
+// ------------------------=
+// FUNC: resolve_unsaved_decision
+// DESC: Resolves a dirty-document choice without allowing a close, replacement, or open to bypass Save, Discard, or Cancel.
+// ------------------=
+pub const fn resolve_unsaved_decision(
+    pending: PendingDocumentAction,
+    decision: UnsavedDecision,
+    has_path: bool,
+) -> UnsavedTransition {
+    match decision {
+        UnsavedDecision::Cancel => UnsavedTransition::Stay,
+        UnsavedDecision::Discard => UnsavedTransition::Perform(pending),
+        UnsavedDecision::Save if has_path => UnsavedTransition::Save(pending),
+        UnsavedDecision::Save => UnsavedTransition::SaveAs(pending),
+    }
+}
+
 // ------------------------=
 // FUNC: document_path
 // DESC: Builds a bounded human-namespace reference for one native Text object without making the path its identity.
@@ -506,6 +547,36 @@ impl TextDocument {
             n += 1;
         }
         self.replace_selection(&data[..n])
+    }
+    // ------------------------=
+    // FUNC: outdent_line
+    // DESC: Removes one leading four-space or tab indentation level from the caret's current line as an undoable edit.
+    // ------------------=
+    pub fn outdent_line(&mut self) -> bool {
+        let cursor = self.cursor.min(self.length);
+        let start = self.bytes[..cursor]
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map_or(0, |index| index + 1);
+        let amount = if self.bytes.get(start) == Some(&b'\t') {
+            1
+        } else {
+            self.bytes[start..self.length]
+                .iter()
+                .take(4)
+                .take_while(|byte| **byte == b' ')
+                .count()
+        };
+        if amount == 0 {
+            return false;
+        }
+        let next_cursor = cursor.saturating_sub(amount);
+        self.select(start, start + amount);
+        if !self.replace_selection(b"") {
+            return false;
+        }
+        self.set_cursor(next_cursor);
+        true
     }
     // ------------------------=
     // FUNC: goto_line

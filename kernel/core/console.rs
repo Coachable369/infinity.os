@@ -20,7 +20,9 @@ use crate::ui::system_layout::{
     EditorDialogTarget, EditorScrollTarget, NetworkSettingsTarget, OnboardingTarget,
     SettingsAccentTarget, SettingsTarget, SettingsWindowState, SystemLayout, SystemMenuTarget,
 };
-use crate::ui::text_editor::TextDocument;
+use crate::ui::text_editor::{
+    PendingDocumentAction, TextDocument, UnsavedDecision, UnsavedTransition,
+};
 
 const OUTPUT_ROWS: usize = 6;
 const LINE_CAPACITY: usize = 96;
@@ -41,6 +43,7 @@ enum EditorDialog {
     None,
     SaveAs,
     Open,
+    Unsaved,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -522,6 +525,7 @@ struct ConsoleRuntime {
     editor_document_name: [u8; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
     editor_document_name_length: usize,
     editor_dialog: EditorDialog,
+    editor_pending_action: PendingDocumentAction,
     editor_picker: crate::ui::object_picker::Picker,
     editor_scroll_row: usize,
     editor_scroll_dragging: bool,
@@ -687,6 +691,7 @@ impl ConsoleRuntime {
             editor_document_name: [0; crate::ui::text_editor::DOCUMENT_NAME_CAPACITY],
             editor_document_name_length: 0,
             editor_dialog: EditorDialog::None,
+            editor_pending_action: PendingDocumentAction::None,
             editor_picker: crate::ui::object_picker::Picker::new(),
             editor_scroll_row: 0,
             editor_scroll_dragging: false,
@@ -1204,7 +1209,11 @@ impl ConsoleRuntime {
                 task_manager_window,
                 self.editor_scroll_row,
                 self.editor_dialog as u8,
-                &self.command[..self.command_length],
+                if self.editor_dialog == EditorDialog::Unsaved {
+                    &self.editor_document_name[..self.editor_document_name_length]
+                } else {
+                    &self.command[..self.command_length]
+                },
                 self.system_focus,
                 self.presenting_fast_motion_frame,
             );
@@ -1991,6 +2000,31 @@ impl ConsoleRuntime {
     // DESC: Applies bounded multiline editing and native close keyboard behavior.
     // ------------------=
     fn input_text_editor(&mut self, key: ConsoleKey) {
+        if self.editor_dialog == EditorDialog::Unsaved {
+            match key {
+                ConsoleKey::Left | ConsoleKey::Up => {
+                    self.system_focus = self.system_focus.saturating_sub(1)
+                }
+                ConsoleKey::Right | ConsoleKey::Down => {
+                    self.system_focus = (self.system_focus + 1).min(2)
+                }
+                ConsoleKey::Tab(reverse) => {
+                    self.system_focus = if reverse {
+                        (self.system_focus + 2) % 3
+                    } else {
+                        (self.system_focus + 1) % 3
+                    }
+                }
+                ConsoleKey::Enter => match self.system_focus.min(2) {
+                    0 => self.resolve_editor_unsaved(UnsavedDecision::Cancel),
+                    1 => self.resolve_editor_unsaved(UnsavedDecision::Discard),
+                    _ => self.resolve_editor_unsaved(UnsavedDecision::Save),
+                },
+                ConsoleKey::Escape => self.resolve_editor_unsaved(UnsavedDecision::Cancel),
+                _ => {}
+            }
+            return;
+        }
         if self.editor_dialog != EditorDialog::None {
             if self.editor_picker.field<2 && self.edit_system_text(key) {self.editor_picker.error=0;return;}
             match key {
@@ -2043,6 +2077,7 @@ impl ConsoleRuntime {
                 let _ = self.editor_document.move_cursor_vertical(false);
             }
             ConsoleKey::Tab(false) => { self.editor_document.replace_selection(b"    "); }
+            ConsoleKey::Tab(true) => { self.editor_document.outdent_line(); }
             ConsoleKey::Escape => { self.editor_document.set_cursor(self.editor_document.cursor()); self.editor_tools.selecting=false; }
             _ => {}
         }
@@ -2433,9 +2468,21 @@ impl ConsoleRuntime {
 
     // ------------------------=
     // FUNC: close_desktop_app
-    // DESC: Dismisses the active desktop application without changing session or desktop state.
+    // DESC: Guards dirty Text Editor closure and dismisses other active desktop applications immediately.
     // ------------------=
     fn close_desktop_app(&mut self) {
+        if self.desktop_app == DesktopAppKind::TextEditor && !self.editor_document.is_saved() {
+            self.request_editor_action(PendingDocumentAction::Close);
+            return;
+        }
+        self.close_desktop_app_unchecked();
+    }
+
+    // ------------------------=
+    // FUNC: close_desktop_app_unchecked
+    // DESC: Dismisses the active desktop application after its document lifecycle has explicitly authorized closure.
+    // ------------------=
+    fn close_desktop_app_unchecked(&mut self) {
         self.store_active_app_window();
         if self.desktop_app == DesktopAppKind::CommandWindow {
             self.command_window_suspended = false;
@@ -2451,6 +2498,7 @@ impl ConsoleRuntime {
         self.app_window_resizing = None;
         self.editor_scroll_dragging = false;
         self.editor_dialog = EditorDialog::None;
+        self.editor_pending_action = PendingDocumentAction::None;
         self.reset_input();
         let _ = self.checkpoint_desktop_layout();
     }
@@ -2856,10 +2904,10 @@ impl ConsoleRuntime {
     // FUNC: save_editor_document
     // DESC: Creates or updates the Text Editor document as a native Personal-space object.
     // ------------------=
-    fn save_editor_document(&mut self) {
+    fn save_editor_document(&mut self) -> bool {
         if self.editor_document_path_length == 0 {
             self.open_editor_save_as_dialog();
-            return;
+            return false;
         }
         let content = self.editor_document.bytes();
         let saved = crate::storage::object_write_path(
@@ -2875,6 +2923,7 @@ impl ConsoleRuntime {
             self.editor_tools.notice=b"Save failed. Your modified document remains in memory.";
             crate::output_text(b"[editor] save failed\n");
         }
+        saved
     }
 
     // ------------------------=
@@ -2882,11 +2931,85 @@ impl ConsoleRuntime {
     // DESC: Opens the persisted Personal-space Text Editor document into the active buffer.
     // ------------------=
     fn open_editor_document(&mut self) {
-        if !self.editor_document.is_saved() { self.editor_tools.notice=b"Save your modified document before opening another.";return; }
+        if !self.editor_document.is_saved() {
+            self.request_editor_action(PendingDocumentAction::Open);
+            return;
+        }
+        self.open_editor_document_unchecked();
+    }
+
+    // ------------------------=
+    // FUNC: open_editor_document_unchecked
+    // DESC: Opens the native object picker after the active buffer has passed its dirty-document decision.
+    // ------------------=
+    fn open_editor_document_unchecked(&mut self) {
         self.editor_dialog = EditorDialog::Open;
         if self.editor_picker.location.len==0 { self.editor_picker.set_location(b"/"); }
         self.editor_picker.field=2; self.editor_picker.error=0;
         self.reset_input(); self.refresh_editor_open_list();
+    }
+
+    // ------------------------=
+    // FUNC: request_editor_action
+    // DESC: Performs a safe document transition immediately or presents the blocking Save, Discard, Cancel sheet.
+    // ------------------=
+    fn request_editor_action(&mut self, action: PendingDocumentAction) {
+        if self.editor_document.is_saved() {
+            self.perform_editor_action(action);
+            return;
+        }
+        self.editor_pending_action = action;
+        self.editor_dialog = EditorDialog::Unsaved;
+        self.system_focus = 2;
+        self.editor_tools.menu = crate::ui::editor_chrome::Menu::None;
+        self.editor_tools.finish_tool();
+        self.reset_input();
+    }
+
+    // ------------------------=
+    // FUNC: perform_editor_action
+    // DESC: Applies an already-authorized close, new-buffer, or open-picker transition exactly once.
+    // ------------------=
+    fn perform_editor_action(&mut self, action: PendingDocumentAction) {
+        self.editor_pending_action = PendingDocumentAction::None;
+        self.editor_dialog = EditorDialog::None;
+        match action {
+            PendingDocumentAction::Close => self.close_desktop_app_unchecked(),
+            PendingDocumentAction::New => {
+                self.editor_document.clear();
+                self.editor_document_path_length = 0;
+                self.editor_document_name_length = 0;
+                self.editor_scroll_row = 0;
+                self.editor_tools.notice = b"New untitled document.";
+            }
+            PendingDocumentAction::Open => self.open_editor_document_unchecked(),
+            PendingDocumentAction::None => {}
+        }
+    }
+
+    // ------------------------=
+    // FUNC: resolve_editor_unsaved
+    // DESC: Applies one explicit dirty-document decision while retaining unsaved bytes on cancellation or failed save.
+    // ------------------=
+    fn resolve_editor_unsaved(&mut self, decision: UnsavedDecision) {
+        let action = self.editor_pending_action;
+        match crate::ui::text_editor::resolve_unsaved_decision(
+            action,
+            decision,
+            self.editor_document_path_length != 0,
+        ) {
+            UnsavedTransition::Stay => self.close_editor_dialog(),
+            UnsavedTransition::Perform(action) => self.perform_editor_action(action),
+            UnsavedTransition::Save(action) => {
+                if self.save_editor_document() {
+                    self.perform_editor_action(action);
+                }
+            }
+            UnsavedTransition::SaveAs(action) => {
+                self.editor_pending_action = action;
+                self.open_editor_save_as_dialog();
+            }
+        }
     }
 
     // ------------------------=
@@ -3015,7 +3138,15 @@ impl ConsoleRuntime {
         self.editor_document_name[..name.len].copy_from_slice(name.bytes());
         self.editor_document_name_length=name.len;
         self.detect_editor_language();
-        self.editor_document.save(); self.close_editor_dialog();
+        self.editor_document.save();
+        let pending = self.editor_pending_action;
+        self.editor_dialog = EditorDialog::None;
+        self.system_focus = 0;
+        self.reset_input();
+        self.output.clear();
+        if pending != PendingDocumentAction::None {
+            self.perform_editor_action(pending);
+        }
     }
 
     // ------------------------=
@@ -3024,6 +3155,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn close_editor_dialog(&mut self) {
         self.editor_dialog = EditorDialog::None;
+        self.editor_pending_action = PendingDocumentAction::None;
         self.system_focus = 0;
         self.reset_input();
         self.output.clear();
@@ -6758,6 +6890,32 @@ impl ConsoleRuntime {
             }
             if self.editor_dialog != EditorDialog::None {
                 if clicked {
+                    if self.editor_dialog == EditorDialog::Unsaved {
+                        if let Some(target) = layout.desktop_editor_unsaved_target(
+                            self.pointer_x,
+                            self.pointer_y,
+                            self.app_window_x,
+                            self.app_window_y,
+                            self.app_window_width,
+                            self.app_window_height,
+                            self.app_window_maximized,
+                        ) {
+                            match target {
+                                EditorDialogTarget::Cancel => {
+                                    self.resolve_editor_unsaved(UnsavedDecision::Cancel)
+                                }
+                                EditorDialogTarget::Discard => {
+                                    self.resolve_editor_unsaved(UnsavedDecision::Discard)
+                                }
+                                EditorDialogTarget::Save => {
+                                    self.resolve_editor_unsaved(UnsavedDecision::Save)
+                                }
+                                _ => {}
+                            }
+                        }
+                        self.redraw();
+                        return;
+                    }
                     let count = self.editor_document_count();
                     if let Some(target) = layout.desktop_editor_dialog_target(
                         self.pointer_x,
@@ -6801,6 +6959,7 @@ impl ConsoleRuntime {
                                     if self.editor_picker.field!=1 {self.save_editor_document_as();}
                                 } else {self.accept_editor_picker();}
                             }
+                            EditorDialogTarget::Discard | EditorDialogTarget::Save => {}
                         }
                     }
                 }

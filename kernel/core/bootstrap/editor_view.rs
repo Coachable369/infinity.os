@@ -106,7 +106,7 @@ impl super::DisplayDevice {
                 Rect {
                     x: g.menu_bar.x + 288 * s as i32,
                     y: g.menu_bar.y,
-                    width: g.menu_bar.width.saturating_sub(304 * s as u32),
+                    width: g.menu_bar.width.saturating_sub(536 * s as u32),
                     height: g.menu_bar.height,
                 },
                 &view.path[..view.path_len],
@@ -114,6 +114,36 @@ impl super::DisplayDevice {
                 false,
                 s,
             );
+        }
+        if g.menu_bar.width > 700 * s as u32 {
+            for (index, symbol, label) in [
+                (0usize, b'+', b"New" as &[u8]),
+                (1usize, b'o', b"Open"),
+                (2usize, b's', b"Save"),
+            ] {
+                let r = g.toolbar_action(index);
+                self.app_symbol(
+                    Rect {
+                        x: r.x + 5 * s as i32,
+                        width: 22 * s as u32,
+                        ..r
+                    },
+                    symbol,
+                    if index == 2 { CYAN } else { MUTED },
+                    s,
+                );
+                self.app_label(
+                    Rect {
+                        x: r.x + 27 * s as i32,
+                        width: r.width.saturating_sub(30 * s as u32),
+                        ..r
+                    },
+                    label,
+                    TEXT,
+                    false,
+                    s,
+                );
+            }
         }
         self.fill_rect(
             g.menu_bar.x as usize,

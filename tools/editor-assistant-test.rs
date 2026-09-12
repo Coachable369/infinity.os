@@ -5,7 +5,10 @@ use ui::{
     app_assistant::{self as ai, Action, Target},
     editor_tools::{highlight, Language, Token},
     geometry::{Point, Rect},
-    text_editor::{TextDocument, DOCUMENT_CAPACITY},
+    text_editor::{
+        resolve_unsaved_decision, PendingDocumentAction, TextDocument, UnsavedDecision,
+        UnsavedTransition, DOCUMENT_CAPACITY,
+    },
 };
 // ------------------------=
 // FUNC: editing
@@ -38,6 +41,10 @@ fn editing() {
     assert!(d.newline_indented());
     assert_eq!(&d.bytes()[13..22], b"    \n    ");
     assert!(d.undo());
+    d.goto_line(2);
+    assert!(d.outdent_line());
+    assert_eq!(&d.bytes()[13..], b"let x = 42;\n}\n");
+    assert!(d.undo());
     assert!(d.open(&[b'a'; DOCUMENT_CAPACITY]));
     d.select(1, 2);
     assert!(!d.replace_selection(b"too large"));
@@ -64,6 +71,35 @@ fn editing() {
     assert!(d.is_saved());
     assert!(!d.open(&[0xff]));
     assert_eq!(d.bytes(), b"\tcode\r\n");
+}
+
+// ------------------------=
+// FUNC: dirty_document_lifecycle
+// DESC: Verifies that destructive editor transitions require an explicit save, save-as, discard, or cancellation outcome.
+// ------------------=
+fn dirty_document_lifecycle() {
+    for action in [
+        PendingDocumentAction::Close,
+        PendingDocumentAction::New,
+        PendingDocumentAction::Open,
+    ] {
+        assert_eq!(
+            resolve_unsaved_decision(action, UnsavedDecision::Cancel, true),
+            UnsavedTransition::Stay
+        );
+        assert_eq!(
+            resolve_unsaved_decision(action, UnsavedDecision::Discard, true),
+            UnsavedTransition::Perform(action)
+        );
+        assert_eq!(
+            resolve_unsaved_decision(action, UnsavedDecision::Save, true),
+            UnsavedTransition::Save(action)
+        );
+        assert_eq!(
+            resolve_unsaved_decision(action, UnsavedDecision::Save, false),
+            UnsavedTransition::SaveAs(action)
+        );
+    }
 }
 // ------------------------=
 // FUNC: syntax
@@ -243,6 +279,7 @@ fn panels() {
 fn main() {
     menus_and_viewport();
     editing();
+    dirty_document_lifecycle();
     syntax();
     panels();
     ai::reset();
@@ -310,6 +347,22 @@ fn menus_and_viewport() {
             let find = Layout::new(window, scale as usize, true, Field::Find);
             assert!(find.rows() < docked.rows());
             for layout in [plain, docked, find] {
+                let dialog = ui::editor_chrome::unsaved_dialog_geometry(layout.body, scale as usize);
+                for rect in [dialog.sheet, dialog.cancel, dialog.discard, dialog.save] {
+                    assert!(rect.x >= layout.body.x && rect.right() <= layout.body.right());
+                    assert!(rect.y >= layout.body.y && rect.bottom() <= layout.body.bottom());
+                }
+                assert!(dialog.cancel.right() < dialog.discard.x);
+                assert!(dialog.discard.right() < dialog.save.x);
+                if layout.menu_bar.width > 700 * scale {
+                    for index in 0..3 {
+                        let action = layout.toolbar_action(index);
+                        assert!(action.x >= layout.menu_bar.x);
+                        assert!(action.right() <= layout.menu_bar.right());
+                        assert!(action.y >= layout.menu_bar.y);
+                        assert!(action.bottom() <= layout.menu_bar.bottom());
+                    }
+                }
                 let tab=layout.document_tab();
                 let close=layout.tab_close();
                 let new=layout.new_document();
