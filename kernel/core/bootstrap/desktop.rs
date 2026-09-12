@@ -10845,6 +10845,26 @@ pub fn system_ui_cursor(x: i32, y: i32) {
 }
 
 // ------------------------=
+// FUNC: system_ui_editor_blink
+// DESC: Updates the active editor caret and clock without invalidating retained application surfaces.
+// ------------------=
+pub fn system_ui_editor_blink(g: crate::ui::editor_chrome::Layout, input: &[u8], scroll: usize, clock: crate::storage::DateTimeConfiguration) {
+    unsafe {
+        if let Some(console) = (*(&raw mut CONSOLE)).as_mut() {
+            console.display.frame_started_ns = crate::ui::performance::monotonic_ns();
+            console.restore_cursor();
+            console.display.editor_caret_blink(g, input, scroll);
+            if console.last_system_clock != clock {
+                console.display.system_top_bar_clock(clock);
+                console.last_system_clock = clock;
+            }
+            console.save_and_draw_cursor(console.cursor_x, console.cursor_y);
+            console.display.present_damage();
+        }
+    }
+}
+
+// ------------------------=
 // FUNC: parse_leading_u8
 // DESC: Reads the bounded numeric prefix used by a Settings value label.
 // ------------------=

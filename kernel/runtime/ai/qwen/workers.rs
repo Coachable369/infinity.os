@@ -2,7 +2,8 @@
 //! private activation/output buffers, never the engine, framebuffer or services.
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-const COUNT: usize = 4;
+// One mailbox per secondary CPU; BSP remains dedicated to input/services.
+const COUNT: usize = 64;
 const ROWS: usize = 4096;
 const WIDTH: usize = 12288;
 struct Job {
@@ -322,17 +323,17 @@ mod tests {
     // ------------------=
     #[test]
     fn concurrent_rows_and_cancellation() {
-        let threads: Vec<_> = (1..=2)
+        let threads: Vec<_> = (1..=6)
             .map(|id| std::thread::spawn(move || unsafe { worker_entry(id as *mut u8) }))
             .collect();
         let deadline = std::time::Instant::now();
-        while online() != 2 {
+        while online() != 6 {
             assert!(deadline.elapsed().as_secs() < 5);
             std::thread::yield_now();
         }
         for kind in [12, 14] {
             let stride = if kind == 12 { 144 } else { 210 };
-            let count = 2 * ROWS + 1;
+            let count = 6 * ROWS + 1;
             let mut data = vec![0u8; count * stride];
             for (i, b) in data.iter_mut().enumerate() {
                 *b = (i * 37 + 19) as u8;
@@ -384,7 +385,7 @@ mod tests {
             drain();
         }
         assert!(completed() >= 10);
-        for slot in &SLOTS[..2] {
+        for slot in &SLOTS[..6] {
             slot.state.store(3, Ordering::Release);
         }
         for thread in threads {

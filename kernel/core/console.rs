@@ -6687,11 +6687,19 @@ impl ConsoleRuntime {
         }
         if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) && !self.app_window_dragging && self.app_window_resizing.is_none()
             && !self.settings_window_dragging && self.settings_window_resizing.is_none() && self.pointer_window_assistant(clicked) {
-            if clicked {self.redraw();}return;
+            if clicked {self.redraw();} else {
+                self.publish_text_input_presentation();
+                crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
+            }
+            return;
         }
         if !self.app_window_dragging && self.app_window_resizing.is_none() && !self.editor_scroll_dragging
             && self.pointer_editor_chrome(clicked) {
-            if clicked {self.redraw();} return;
+            if clicked {self.redraw();} else {
+                self.publish_text_input_presentation();
+                crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
+            }
+            return;
         }
         if self.mode == ConsoleMode::Desktop && (back_clicked || forward_clicked) {
             let _ = crate::runtime::with_runtime(|runtime| {
@@ -12141,6 +12149,20 @@ pub fn clock_tick() {
                 return;
             }
             let next = firmware_date_time(runtime.system.firmware_runtime_services);
+            if runtime.mode == ConsoleMode::Desktop
+                && runtime.desktop_app == DesktopAppKind::TextEditor
+                && runtime.editor_dialog == EditorDialog::None
+                && runtime.editor_tools.field == crate::ui::editor_tools::Field::None
+                && runtime.editor_tools.menu == crate::ui::editor_chrome::Menu::None
+                && runtime.ai_chat_focus == 0
+                && !crate::ui::app_assistant::read(2).focused
+            {
+                runtime.desktop_clock = next;
+                runtime.publish_text_input_presentation();
+                crate::bootstrap::system_ui_editor_blink(runtime.editor_layout(),
+                    runtime.editor_document.bytes(), runtime.editor_scroll_row, next);
+                return;
+            }
             let task_manager_live = runtime.mode == ConsoleMode::Desktop
                 && runtime.desktop_app == DesktopAppKind::TaskManager;
             if task_manager_live {

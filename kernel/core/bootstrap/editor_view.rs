@@ -23,6 +23,23 @@ pub(super) fn decimal(mut value: usize, out: &mut [u8; 20]) -> &[u8] {
 }
 impl super::DisplayDevice {
     // ------------------------=
+    // FUNC: editor_caret_blink
+    // DESC: Repaints only the caret strip, retaining window chrome and all other document pixels.
+    // ------------------=
+    pub(super) fn editor_caret_blink(&mut self, g: Layout, input: &[u8], scroll: usize) {
+        let view = editor_tools::current();
+        for rect in g.caret_damage(input, view.cursor, scroll) {
+            self.set_render_clip(
+                rect.x.max(0) as usize,
+                rect.y.max(0) as usize,
+                rect.width as usize,
+                rect.height as usize,
+            );
+            self.code_editor(g, input, scroll, g.scale);
+        }
+        self.clear_render_clip();
+    }
+    // ------------------------=
     // FUNC: editor_window
     // DESC: Renders the kit-aligned editor with menus, document identity and a reflowed code viewport.
     // ------------------=
@@ -396,6 +413,22 @@ impl super::DisplayDevice {
                 .position(|b| *b == b'\n')
                 .map_or(input.len(), |i| start + i);
             let take = (end - start).min(columns);
+            // Blink repaint has a one-pixel-wide clip. Skip untouched rows before
+            // text measurement and glyph work, not just at framebuffer writes.
+            if self
+                .render_clip
+                .is_some_and(|clip| line_y >= clip.bottom || line_y + LINE_HEIGHT * s <= clip.top)
+            {
+                if take == columns {
+                    start += take;
+                } else if end == input.len() {
+                    break;
+                } else {
+                    start = end + 1;
+                    logical += 1;
+                }
+                continue;
+            }
             if view.cursor >= start && view.cursor <= start + take {
                 self.fill_rect(
                     x + 77 * s,
@@ -535,6 +568,14 @@ impl super::DisplayDevice {
         color: (u8, u8, u8),
     ) {
         if !(32..=126).contains(&byte) {
+            return;
+        }
+        if self.render_clip.is_some_and(|clip| {
+            x >= clip.right
+                || y >= clip.bottom
+                || x + editor_tools::CELL_WIDTH * scale <= clip.left
+                || y + editor_tools::FONT_HEIGHT * scale <= clip.top
+        }) {
             return;
         }
         let glyph = (byte as usize - 32) * editor_tools::FONT_WIDTH;

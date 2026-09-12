@@ -277,6 +277,7 @@ fn panels() {
 // DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
 // ------------------=
 fn main() {
+    caret_damage_is_bounded();
     menus_and_viewport();
     editing();
     dirty_document_lifecycle();
@@ -289,6 +290,45 @@ fn main() {
 }
 
 // ------------------------=
+// FUNC: caret_damage_is_bounded
+// DESC: Verifies blinking damages only visible caret strips across wrapping, scrolling and scale changes.
+// ------------------=
+fn caret_damage_is_bounded() {
+    for scale in 1..=3 {
+        let g = ui::editor_chrome::Layout::new(
+            Rect {
+                x: 10,
+                y: 20,
+                width: 1000 * scale,
+                height: 650 * scale,
+            },
+            scale as usize,
+            false,
+            ui::editor_tools::Field::None,
+        );
+        let input = vec![b'a'; g.columns() * 100];
+        for cursor in [0, 3, g.columns(), input.len()] {
+            let rects: Vec<_> = g.caret_damage(&input, cursor, 0).collect();
+            assert!(rects.len() <= 2);
+            assert!(rects
+                .iter()
+                .all(|r| r.width == scale && r.height == 19 * scale));
+            assert!(rects.iter().map(|r| r.width * r.height).sum::<u32>() <= 38 * scale * scale);
+            if cursor == input.len() {
+                assert!(rects.is_empty());
+            }
+        }
+        assert!(g.caret_damage(&input, 0, 50).next().is_none());
+        let empty: Vec<_> = g.caret_damage(b"", 0, 0).collect();
+        assert_eq!(empty.len(), 1);
+        assert_eq!(
+            empty[0].x,
+            g.body.x + (ui::editor_chrome::CODE_INSET * scale as usize) as i32
+        );
+    }
+}
+
+// ------------------------=
 // FUNC: menus_and_viewport
 // DESC: Exercises executable command mappings, named syntax selection, keyboard state and reflowed hit bounds.
 // ------------------=
@@ -297,8 +337,13 @@ fn menus_and_viewport() {
         let state = ui::editor_chrome::default_window(width, height);
         let geometry = ui::system_layout::SystemLayout::new(width, height)
             .desktop_app_window_geometry(state.x, state.y, state.width, state.height, false);
-        assert!((geometry.window.width as i64*622-geometry.window.height as i64*1250).abs()<5000,
-            "framebuffer={width}x{height}, actual={}x{}",geometry.window.width,geometry.window.height);
+        assert!(
+            (geometry.window.width as i64 * 622 - geometry.window.height as i64 * 1250).abs()
+                < 5000,
+            "framebuffer={width}x{height}, actual={}x{}",
+            geometry.window.width,
+            geometry.window.height
+        );
     }
     use ui::{
         editor_chrome::{Command, Layout, Menu},
@@ -347,7 +392,8 @@ fn menus_and_viewport() {
             let find = Layout::new(window, scale as usize, true, Field::Find);
             assert!(find.rows() < docked.rows());
             for layout in [plain, docked, find] {
-                let dialog = ui::editor_chrome::unsaved_dialog_geometry(layout.body, scale as usize);
+                let dialog =
+                    ui::editor_chrome::unsaved_dialog_geometry(layout.body, scale as usize);
                 for rect in [dialog.sheet, dialog.cancel, dialog.discard, dialog.save] {
                     assert!(rect.x >= layout.body.x && rect.right() <= layout.body.right());
                     assert!(rect.y >= layout.body.y && rect.bottom() <= layout.body.bottom());
@@ -363,12 +409,15 @@ fn menus_and_viewport() {
                         assert!(action.bottom() <= layout.menu_bar.bottom());
                     }
                 }
-                let tab=layout.document_tab();
-                let close=layout.tab_close();
-                let new=layout.new_document();
-                assert!(close.x>=tab.x && close.right()<=tab.right());
-                assert!(new.x>tab.right() && new.right()<=layout.document.right());
-                assert!(close.bottom()<=layout.document.bottom() && new.bottom()<=layout.document.bottom());
+                let tab = layout.document_tab();
+                let close = layout.tab_close();
+                let new = layout.new_document();
+                assert!(close.x >= tab.x && close.right() <= tab.right());
+                assert!(new.x > tab.right() && new.right() <= layout.document.right());
+                assert!(
+                    close.bottom() <= layout.document.bottom()
+                        && new.bottom() <= layout.document.bottom()
+                );
                 for menu in [
                     Menu::File,
                     Menu::Edit,

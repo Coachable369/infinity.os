@@ -14,12 +14,12 @@ struct InfinityMp {
 typedef struct { uint64_t version; uint64_t (EFIAPI *start)(INFINITY_AP_PROC, uint64_t); } InfinityWorkers;
 static InfinityMp *worker_mp;
 static EFI_BOOT_SERVICES *worker_boot;
-static void *worker_events[4];
+static void *worker_events[64];
 static uint8_t worker_started;
 
 // ------------------------=
 // FUNC: infinity_start_workers
-// DESC: Starts at most four APs asynchronously, reserving the BSP and one spare CPU when available.
+// DESC: Starts available APs asynchronously, retaining only the BSP for input and services.
 // ------------------=
 static uint64_t EFIAPI infinity_start_workers(INFINITY_AP_PROC procedure, uint64_t requested) {
     if (worker_started || !procedure) return 0;
@@ -27,9 +27,9 @@ static uint64_t EFIAPI infinity_start_workers(INFINITY_AP_PROC procedure, uint64
     if (!worker_mp) return start_psci_workers(procedure,requested);
     size_t total = 0, enabled = 0;
     if (worker_mp->count(worker_mp, &total, &enabled) || enabled < 2) return start_psci_workers(procedure,requested);
-    size_t limit = enabled > 2 ? enabled - 2 : 1;
+    size_t limit = enabled - 1;
     if (limit > requested) limit = requested;
-    if (limit > 4) limit = 4;
+    if (limit > 64) limit = 64;
     typedef EFI_STATUS (EFIAPI *CreateEvent)(uint32_t, size_t, void *, void *, void **);
     typedef EFI_STATUS (EFIAPI *CloseEvent)(void *);
     CreateEvent create = (CreateEvent)worker_boot->unused_07_15[0];

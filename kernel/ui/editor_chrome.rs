@@ -7,6 +7,50 @@ pub const ROW_HEIGHT: u32 = 32;
 pub const LINE_HEIGHT: usize = 22;
 pub const CODE_INSET: usize = 96;
 
+impl Layout {
+    // ------------------------=
+    // FUNC: caret_damage
+    // DESC: Returns only visible caret strips, including both cells at an exact soft-wrap boundary.
+    // ------------------=
+    pub fn caret_damage(
+        self,
+        input: &[u8],
+        cursor: usize,
+        scroll: usize,
+    ) -> impl Iterator<Item = Rect> + '_ {
+        let columns = self.columns().max(1);
+        let total = super::text_editor::visual_line_count(input, columns);
+        let scroll = scroll.min(total.saturating_sub(self.rows().max(1)));
+        let mut start = super::text_editor::visual_line_start(input, columns, scroll);
+        (0..self.rows()).filter_map(move |row| {
+            if start > input.len() {
+                return None;
+            }
+            let end = input[start..]
+                .iter()
+                .position(|b| *b == b'\n')
+                .map_or(input.len(), |n| start + n);
+            let take = (end - start).min(columns);
+            let result = (cursor >= start && cursor <= start + take).then(|| Rect {
+                x: self.body.x
+                    + ((CODE_INSET + (cursor - start) * super::editor_tools::CELL_WIDTH)
+                        * self.scale) as i32,
+                y: self.body.y + ((11 + row * LINE_HEIGHT) * self.scale) as i32,
+                width: self.scale as u32,
+                height: (19 * self.scale) as u32,
+            });
+            start = if take == columns {
+                start + take
+            } else if end == input.len() {
+                input.len() + 1
+            } else {
+                end + 1
+            };
+            result
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UnsavedDialogGeometry {
     pub sheet: Rect,
@@ -57,7 +101,9 @@ pub fn default_window(width: usize, height: usize) -> super::system_layout::Desk
     let scale = super::system_layout::SystemLayout::new(width, height)
         .scale()
         .max(1);
-    let pixels = (1250 * scale).min(width * 9 / 10).min(height * 3 / 4 * 1250 / 622);
+    let pixels = (1250 * scale)
+        .min(width * 9 / 10)
+        .min(height * 3 / 4 * 1250 / 622);
     let w = pixels * 1000 / width.max(1);
     let h = (pixels * 622 / 1250).min(height * 3 / 4) * 1000 / height.max(1);
     super::system_layout::DesktopAppWindowState::new(

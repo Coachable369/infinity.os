@@ -2,7 +2,7 @@
 typedef struct {
     uint64_t stack, procedure, argument, level, sctlr, tcr, ttbr0, ttbr1, mair, vbar;
 } InfinityApContext;
-static InfinityApContext psci_contexts[4] __attribute__((aligned(64)));
+static InfinityApContext psci_contexts[64] __attribute__((aligned(64)));
 static uint64_t psci_cpus[64];
 static size_t psci_count;
 static uint8_t psci_hvc;
@@ -85,7 +85,7 @@ static void discover_psci_workers(EFI_SYSTEM_TABLE *system) {
     parse_psci_cpus(madt,self);
     // Reserve stacks before the boot memory map is captured, not after the
     // kernel allocator has taken ownership of the reported free ranges.
-    for (size_t i=0; i<4 && i<psci_count; ++i) {
+    for (size_t i=0; i<64 && i<psci_count; ++i) {
         uint64_t stack=UINT64_C(0xffffffff);
         if (system->boot_services->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS,EFI_LOADER_DATA,16,&stack)) break;
         psci_contexts[i].stack=stack+16*PAGE_SIZE;
@@ -121,8 +121,9 @@ static uint64_t start_psci_workers(INFINITY_AP_PROC procedure, uint64_t requeste
     uint64_t level;
     __asm__ volatile("mrs %0, CurrentEL" : "=r"(level));
     if (level!=4 || !psci_count || !worker_identity((uint64_t)(uintptr_t)infinity_ap_entry) || !worker_identity((uint64_t)(uintptr_t)procedure)) return 0;
-    size_t limit=psci_count>1 ? psci_count-1 : 1;
-    if (limit>4) limit=4;
+    // Discovery already excludes the BSP. Do not strand a second core.
+    size_t limit=psci_count;
+    if (limit>64) limit=64;
     if (limit>requested) limit=requested;
     size_t launched=0;
     for (size_t i=0;i<psci_count && launched<limit;++i) {

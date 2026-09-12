@@ -2,6 +2,10 @@
 
 ## Performance follow-up
 
+The later [editor/CPU follow-up](editor-pointer-performance.md) removes the
+four-worker cap and extra spare-core reservation. The timings below remain
+historical four-worker measurements, not measurements of that new policy.
+
 ### Balanced batches and four-row Q4 kernels
 
 The dispatcher balances small projections across online workers and limits each
