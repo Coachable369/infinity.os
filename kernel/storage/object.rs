@@ -29,7 +29,7 @@ pub const ROOT_B: u64 = 1;
 pub const BANK_A: u64 = 8;
 pub const BANK_B: u64 = 40;
 const CONTENT: u64 = 80;
-pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 15;
+pub const BOOTSTRAP_CONTENT_OBJECTS: u64 = 16;
 // Thirteen object-table sectors fit in each 32-sector metadata bank. The first
 // six retain their original offsets and the remaining seven occupy the bank's
 // reserved tail, leaving useful object headroom after bootstrap System objects.
@@ -706,6 +706,11 @@ impl<D: BlockDevice> ObjectStore<D> {
             self.create_record(b"shell-profile-state", ObjectType::Metadata, Space::System)?;
         self.write_record(shell_profiles, b"INFSHL01\x01\0")?;
         self.attach_record(b"/system/settings/shell/profiles", shell_profiles)?;
+        // Seed only while formatting a new store, never while mounting an
+        // existing one: the example is an ordinary, user-owned document.
+        let hello = self.create_record(b"hello.c", ObjectType::Text, Space::Personal)?;
+        self.write_record(hello, include_bytes!("../../sdk/c/examples/hello.c"))?;
+        self.attach_record(b"/home/default/documents/hello.c", hello)?;
         Ok(())
     }
 

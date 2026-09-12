@@ -132,6 +132,35 @@ fn editor_documents_recovery(sectors: usize) {
     assert_eq!(&bytes[..10], b"older text");
 }
 
+// ------------------------=
+// FUNC: hello_document_provisioning
+// DESC: Verifies the fresh-store C document is discoverable, typed as editable text, and preserves saved changes across remounts.
+// ------------------=
+fn hello_document_provisioning(sectors: usize) {
+    let disk = MemoryDisk::new(sectors);
+    let mut store = ObjectStore::format(disk.clone(), 0, sectors as u64, [0x93;16]).unwrap();
+    let id = store.resolve(b"/home/default/documents/hello.c").unwrap();
+    let metadata = store.metadata(id).unwrap();
+    assert_eq!(metadata.kind, ObjectType::Text);
+    assert_eq!(metadata.content_type, ContentType::Utf8Text);
+    assert_eq!(metadata.space, Space::Personal);
+    let listed = (0..32).filter_map(|index|
+        store.namespace_list_nth(storage::object::DOCUMENTS_PATH, index)
+    ).any(|entry| entry.object.id == id);
+    assert!(listed);
+    let mut bytes = [0u8;1024];
+    let len = store.read(id, None, &mut bytes).unwrap();
+    assert_eq!(&bytes[..len], include_bytes!("../sdk/c/examples/hello.c"));
+    let edited = b"int main(void) { return 23; }\n";
+    let version = store.write(id, edited).unwrap();
+    drop(store);
+    let mut store = ObjectStore::mount(disk, 0).unwrap();
+    assert_eq!(store.resolve(b"/home/default/documents/hello.c").unwrap(), id);
+    assert_eq!(store.metadata(id).unwrap().current_version, version);
+    let len = store.read(id, None, &mut bytes).unwrap();
+    assert_eq!(&bytes[..len], edited);
+}
+
 #[derive(Clone)]
 struct FailingDisk {
     inner: MemoryDisk,
@@ -207,6 +236,7 @@ fn main() {
     legacy_store_mount(test_sectors);
     checkpoint_replacement(test_sectors);
     editor_documents_recovery(test_sectors);
+    hello_document_provisioning(test_sectors);
     let disk = MemoryDisk::new(test_sectors);
     let seed = [0x41; 16];
     let mut completed_stages = Vec::new();
@@ -215,6 +245,10 @@ fn main() {
     assert_eq!(completed_stages, [56, 57, 59, 60, 62, 64, 65, 66]);
     assert!(completed_stages.windows(2).all(|pair| pair[0] < pair[1]));
     assert!(store.runtime_bootstrap_valid());
+    // This fixture exercises all five free namespace slots. The independent
+    // provisioning test above verifies the sample; delete it here as a user
+    // may do, retaining the same namespace budget for the lifecycle tests.
+    store.remove_path(b"/home/default/documents/hello.c").unwrap();
     assert!(store.resolve(b"/home/default/documents").is_ok());
     let documents = store
         .resolve(b"/home/default/documents")
@@ -287,7 +321,9 @@ fn main() {
         space: Some(Space::Personal),
         include_tombstones: false,
     };
-    assert_eq!(store.query_nth(query, 0).unwrap().object.id, id);
+    let matches: Vec<_> = (0..52).filter_map(|index| store.query_nth(query, index))
+        .map(|entry| entry.object.id).collect();
+    assert!(matches.contains(&id));
 
     let large = [0xA5u8; 9000];
     let large_id = store

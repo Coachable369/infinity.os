@@ -66,14 +66,24 @@ def documents(guest):
 # FUNC: open_with
 # DESC: Right-clicks the saved row, chooses Open With, and invokes the real Text Editor app.
 # ------------------=
-def open_with(guest, expected_hash, capture):
+def open_with(guest, expected_hash, capture, path=FILE):
     state = documents(guest)
-    assert state[15] == 1, state
+    assert state[15] >= 1, state
     guest.screenshot(capture + "-documents")
     x, y, w, h = state[4:8]
     scale = state[8]
-    helpers.click(guest, x + w * 27 // 100 + 55 * scale, y + 168 * scale, button="right")
-    state = wait_navigator(guest, lambda s: s[17] and s[16] == 2 and s[27] == zlib.crc32(FILE))
+    # Find the requested object; Documents may also contain seeded examples.
+    count = state[15]
+    for row in range(count):
+        helpers.click(guest, x + w * 27 // 100 + 55 * scale,
+                      y + (168 + row * 34) * scale, button="right")
+        state = wait_navigator(guest, lambda s: s[17] and s[16] == row + 2)
+        if state[27] == zlib.crc32(path):
+            break
+        guest.key("esc")
+        wait_navigator(guest, lambda s: not s[17])
+    else:
+        raise AssertionError("Requested document not present in Navigator")
     identity = state[28:30]
     assert any(identity) and state[19] == 1
     guest.screenshot(capture + "-context")
@@ -84,7 +94,7 @@ def open_with(guest, expected_hash, capture):
     mx, my, mw, mh = state[23:27]
     helpers.click(guest, mx + 70 * scale, my + 20 * scale)
     helpers.wait_feature(guest, lambda s: s[12] == 2 and s[11] and s[16] == expected_hash)
-    wait_navigator(guest, lambda s: s[13] == zlib.crc32(FILE) and not s[17])
+    wait_navigator(guest, lambda s: s[13] == zlib.crc32(path) and not s[17])
     guest.screenshot(capture + "-opened")
     return identity
 
@@ -128,6 +138,12 @@ def main():
         guest.install()
         guest.stop()
         identity = guest.onboard()
+        source_hash = 1469598103934665603
+        for byte in (ROOT / "sdk/c/examples/hello.c").read_bytes():
+            source_hash = ((source_hash ^ byte) * 1099511628211) & ((1 << 64) - 1)
+        sample_path = DOCUMENTS + b"/hello.c"
+        sample_id = open_with(guest, source_hash, "seeded-c-source", sample_path)
+        guest.key("ctrl", "n")
         guest.launch("text", 5)
         helpers.wait_feature(guest, lambda s: s[12] == 2 and s[7] == 0)
         helpers.text(guest, "Hello world")
@@ -149,10 +165,12 @@ def main():
         guest.stop()
         guest.boot(False)
         guest.authenticate()
+        assert open_with(guest, source_hash, "cold-boot-c-source", sample_path) == sample_id
         assert open_with(guest, expected, "cold-boot") == file_id
         result = {"fresh_install": True, "iso_detached": True, "save_to_documents": True,
                   "navigator_lists_saved_file": True, "right_click_open_with": True,
                   "exact_content_reopened": True, "cold_boot_same_object": True,
+                  "seeded_c_source_opened": True, "seeded_c_source_iso_detached": True,
                   "both_architectures_built": True, "node_identity": identity}
         (work / "result.json").write_text(json.dumps(result, indent=2))
         print("Installed Documents acceptance passed", flush=True)
