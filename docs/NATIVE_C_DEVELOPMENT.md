@@ -117,8 +117,52 @@ was not continued or represented as successful.
 
 For resumption, generated build directories retain exact CMake caches and Ninja
 commands: `cxx-build-x86_64`, `clang-build-x86_64`, and `newlib-build-x86_64`.
-The threaded C++ build directory is currently failed; the installed sysroot
-contains the earlier non-threaded libraries. Do not treat them as matching the
-new configuration. The next implementation must supply real target runtime
-services and rebuild consistently, not substitute successful no-op thread calls
-or a dummy clock merely to satisfy linkage.
+At that checkpoint the threaded build was failed. The subsequent continuation
+enabled Newlib's monotonic-clock declarations and successfully rebuilt and
+installed matching thread-enabled libc++/libc++abi archives. This supplies types
+and library code, not working native synchronization or clock services.
+
+The new `sdk/compiler` platform bridge defines explicit clock, mapping,
+protection, synchronization and executable-object-path callbacks. Missing
+services return errors. Its host behavioral contract test and x86-64 freestanding
+compilation pass (`tools/native-c-probe/compiler-platform-test.sh`); neither
+proves native page protection or native clocks. The LLVM patch uses the supplied
+executable object path instead of assuming Linux procfs. `InfinityOS.cmake`
+detects available interfaces rather than declaring the target Linux.
+
+The current compiler build directory is `clang-build-infinity-x86_64`. After two
+corrections, LLVM support compilation stops in `ExponentialBackoff.h` because
+`std::random_device` is unavailable in the current libc++ configuration. A real
+native entropy provider and the corresponding library configuration are still
+needed. No complete compiler binary, production runtime integration, installer
+payload or installed compilation acceptance exists yet.
+
+## Standard C library compatibility scope
+
+Target broad hosted C library compatibility using the ported Newlib libc/libm,
+not just the small bootstrap SDK. Prioritize strings and memory, character
+classification, numeric conversion, formatted and buffered I/O, allocation,
+sorting/searching, integer types, errors, floating-point math, time, wide
+characters and multibyte conversion. Track supported C language/library versions
+and exceptions explicitly; this is a target, not a conformance claim.
+
+Architecture requirements remain authoritative:
+
+- File names and descriptors resolve to capability-authorized ObjectStore
+  objects and namespaces. Reads, writes, seeking, rename and removal must obey
+  native versioning, persistence and access rules; no second filesystem.
+- Allocators, clocks, entropy, atomics and synchronization use actual native
+  services. No host OS fallback or successful no-op service implementations.
+- POSIX extensions are compatibility adapters only where native semantics can
+  support them. Process creation, shell execution, signals, sockets and memory
+  mapping are not permission bypasses; unavailable operations fail explicitly.
+- Locale, timezone data, headers, archives and compiler resources must be
+  packaged in both live and freshly installed System Generations through the
+  existing object-storage architecture.
+- Acceptance exercises numeric results, formatted byte buffers, allocation
+  behavior, object versions, access denial and persistence. Final proof compiles
+  saved editable C source and runs the result after booting without the ISO.
+
+Third-party C libraries are separate ports with their own dependency, licensing
+and behavioral checks; broad libc compatibility does not imply arbitrary Unix
+applications already work.

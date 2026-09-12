@@ -1,0 +1,16 @@
+--- a/llvm/lib/Support/Unix/Path.inc
++++ b/llvm/lib/Support/Unix/Path.inc
+@@ -18,3 +18,6 @@
+ #include "Unix.h"
++#if defined(__INFINITY__)
++#include <infinity/compiler_host.h>
++#endif
+ 
+ #include "llvm/Support/IOSandbox.h"
+@@ -328,4 +331,6 @@
+   }
++#elif defined(__INFINITY__)
++  return infinity_compiler_executable_path();
+ #elif defined(HAVE_DLOPEN)
+   // Use dladdr to get executable path if available.
+   Dl_info DLInfo;
