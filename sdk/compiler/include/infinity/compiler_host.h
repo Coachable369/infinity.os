@@ -5,6 +5,16 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+typedef struct InfinityCompilerFiles {
+    /* Native mode bits: read=1, write=2, create=4, truncate=8, append=16,
+       exclusive=32. Provider must authorize each operation, including revocation.
+       Reads use an opened ObjectStore snapshot; writes commit native versions. */
+    int (*open)(void *, const char *, uint32_t, uint64_t *);
+    int (*read)(void *, uint64_t, void *, size_t, size_t *);
+    int (*write)(void *, uint64_t, const void *, size_t, size_t *);
+    int (*seek)(void *, uint64_t, int64_t, int, int64_t *);
+    int (*close)(void *, uint64_t);
+} InfinityCompilerFiles;
 typedef struct InfinityCompilerHost {
     void *context;
     const char *executable_path;
@@ -26,8 +36,10 @@ typedef struct InfinityCompilerHost {
        must not resume a faulted context or treat this as Unix signal authority. */
     int (*register_crash_handler)(void *, void (*)(void *), void *);
     int (*unregister_crash_handler)(void *);
+    const InfinityCompilerFiles *files;
 } InfinityCompilerHost;
 void infinity_compiler_set_host(const InfinityCompilerHost *);
+const InfinityCompilerHost *infinity_compiler_get_host(void);
 const char *infinity_compiler_executable_path(void);
 int infinity_compiler_register_crash_handler(void (*)(void *), void *);
 int infinity_compiler_unregister_crash_handler(void);

@@ -31,6 +31,12 @@ static size_t directory_count;
 void infinity_compiler_set_host(const InfinityCompilerHost *services) { host = services; }
 
 // ------------------------=
+// FUNC: infinity_compiler_get_host
+// DESC: Returns this invocation's explicit service table without ambient host fallback.
+// ------------------=
+const InfinityCompilerHost *infinity_compiler_get_host(void) { return host; }
+
+// ------------------------=
 // FUNC: infinity_compiler_executable_path
 // DESC: Returns the launcher's actual executable object reference without requiring procfs or a host path.
 // ------------------=

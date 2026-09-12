@@ -1,0 +1,7 @@
+# Load with the compiler/sysroot/target flags for the selected architecture.
+set(COMPILER_RT_BAREMETAL_BUILD ON CACHE BOOL "" FORCE)
+set(COMPILER_RT_DEFAULT_TARGET_ONLY ON CACHE BOOL "" FORCE)
+set(COMPILER_RT_BUILD_BUILTINS ON CACHE BOOL "" FORCE)
+foreach(component SANITIZERS XRAY LIBFUZZER PROFILE MEMPROF ORC)
+  set(COMPILER_RT_BUILD_${component} OFF CACHE BOOL "" FORCE)
+endforeach()

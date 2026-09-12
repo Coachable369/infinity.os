@@ -4,6 +4,10 @@ set(UNIX 1)
 set(CMAKE_EXECUTABLE_SUFFIX ".elf")
 set(CMAKE_DL_LIBS "")
 set(CMAKE_SHARED_LIBRARY_SUPPORTED FALSE)
+# Assembly must use the same target as C; otherwise Clang emits host objects.
+if(CMAKE_C_COMPILER_TARGET AND NOT CMAKE_ASM_COMPILER_TARGET)
+  set(CMAKE_ASM_COMPILER_TARGET "${CMAKE_C_COMPILER_TARGET}")
+endif()
 # CMAKE_LINKER alone does not select the linker invoked by the Clang driver.
 if(CMAKE_LINKER)
   add_link_options("--ld-path=${CMAKE_LINKER}")

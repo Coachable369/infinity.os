@@ -421,3 +421,53 @@ archive members as neither ELF relocatables nor bitcode. Next work must supply
 the real native startup/runtime and correct assembly target configuration,
 not hide unresolved dependencies. No linked compiler, runtime integration,
 fresh-install acceptance or new ISO is claimed.
+
+## Six-round native runtime checkpoint
+
+The correction limit is now six (also already present in repository AGENTS.md).
+This pass addressed assembly targeting, compiler builtins, native startup,
+runtime autolink assumptions, object I/O, and Newlib's read/write return ABI.
+
+- The CMake platform propagates the C target to assembly. Binary inspection of
+  all four BLAKE3 assembly objects now verifies ELF64 x86-64 relocatables.
+  SIMD implementations were retained, not replaced by slower portable code.
+- `builtins-options.cmake` configures bare-metal compiler-rt from the pinned
+  LLVM source. All 171 build steps succeeded, producing
+  `build/native-c/builtins-x86_64/lib/generic/libclang_rt.builtins-x86_64.a`.
+  This is a cross-build result, not runtime arithmetic acceptance.
+- `compiler-options.cmake` removes the stale host librt probe; runtime options
+  disable separate pthread/rt library autolinking without disabling threads.
+  Matching libc++/libc++abi archives rebuilt and installed into the local sysroot.
+  Actual synchronization functions remain required at link time.
+- `start.c` and `entry.c` supply an explicit one-shot native launch boundary
+  rather than a Unix crt0 stack contract. Tests verify invalid launch rejection,
+  argument forwarding, service binding, constructor order, reverse finalizer
+  order, exit-status propagation and repeat-launch rejection.
+  The launcher must supply validated memory, TLS and isolation before entry.
+  This does not yet handle abnormal termination or C-library atexit cleanup.
+- `files.c` bridges open/read/write/seek/close to explicit object-provider
+  callbacks, retaining provider ownership across table changes. It bounds active
+  handles to 128 and uses nonwrapping generations to reject stale descriptors.
+  Tests verify mode translation, short reads, write delivery, revocation,
+  failed close consumption, read-only enforcement, capacity and repeated reuse.
+  Newlib returns int for read/write in this configuration, so requests are
+  bounded to INT_MAX and the target declaration is respected.
+
+TESTED: `files-test.sh`, `start-test.sh`, `compiler-platform-test.sh`,
+`directory-test.sh`, `dlfcn-test.sh`, `crash-hook-test.sh`, `linker-test.sh`.
+These exercise host fixtures and target compilation/artifact state, not installed
+ObjectStore access. File callbacks must still be wired to the production native
+services; no ambient descriptors 0/1/2 or host filesystem fallback are supplied.
+
+The full link now consumes the startup/platform/files/dlfcn objects and explicit
+libc++, libc++abi, Newlib and compiler-rt archives using `-nostdlib` and entry
+`infinity_compiler_entry`. Exact invocation remains in the current CMake cache.
+Load compiler-options only during initial configuration, before supplying those
+explicit runtime link flags. The link still fails: remaining dependencies include
+pthread synchronization and TLS destruction, `sbrk`, `_exit`, object metadata and
+namespace operations (stat/fstat/access/rename-related support), positional reads,
+clocks/waits and unsupported Unix process/signal assumptions. Current diagnostics
+are in `/tmp/infinity-native-c-files.log`. These must be implemented using native
+services or removed from inapplicable upstream paths, not filled with successful
+no-ops. Native providers, safe execution, packaging and ISO-detached acceptance
+remain outstanding. No working compiler or fresh ISO is claimed.

@@ -17,3 +17,7 @@ set(LIBCXXABI_ENABLE_THREADS ON CACHE BOOL "Match libc++" FORCE)
 set(LIBCXXABI_ENABLE_EXCEPTIONS OFF CACHE BOOL "Match libc++" FORCE)
 set(LIBCXXABI_ENABLE_SHARED OFF CACHE BOOL "Static native payload" FORCE)
 set(LIBCXXABI_ENABLE_STATIC ON CACHE BOOL "Static native payload" FORCE)
+# API declarations do not imply separately installed Unix runtime libraries.
+set(LIBCXX_HAS_PTHREAD_LIB OFF CACHE INTERNAL "Native service bridge supplies calls" FORCE)
+set(LIBCXXABI_HAS_PTHREAD_LIB OFF CACHE INTERNAL "Native service bridge supplies calls" FORCE)
+set(LIBCXX_HAS_RT_LIB OFF CACHE INTERNAL "Native service bridge supplies clocks" FORCE)
