@@ -98,11 +98,26 @@ fn installed_density_empty_pool_creation_survives_version_table_expansion() {
     let disk = Disk::default();
     let mut store = ObjectStore::format(disk.clone(), 0, disk.block_count(), [7; 16]).unwrap();
     store.initialize_pool_catalog().unwrap();
-    for n in 0..14 {
-        store.create(b"Core state", ObjectType::Metadata, Space::System, &[n]).unwrap();
-    }
     let owner = NodeId([3; 32]); let resource = ResourceId([4; 16]);
     let first = store.pool_create(owner, 0, 1, StorageClass::Critical, b"retained", owner, resource, [5; 16], 1).unwrap();
+    // Fill to the migration boundary from actual persisted occupancy; newly
+    // packaged system objects must not silently change this fixture's density.
+    loop {
+        let occupied = {
+            let persisted = disk.0.borrow();
+            let bank = [0, 1].map(|i| {
+                let root = persisted.sectors.get(&(STORE_RELATIVE_LBA + i)).unwrap();
+                (u64::from_le_bytes(root[16..24].try_into().unwrap()), u64::from_le_bytes(root[24..32].try_into().unwrap()))
+            }).into_iter().max().unwrap().1;
+            (0..4).map(|s| {
+                let bytes = persisted.sectors.get(&(STORE_RELATIVE_LBA + bank + 11 + s)).unwrap();
+                (0..8).filter(|n| bytes[16 + n * 60] != 0).count()
+            }).sum::<usize>()
+        };
+        assert!(occupied <= 31, "baseline exceeds the legacy migration fixture");
+        if occupied == 31 { break; }
+        store.create(b"Core state", ObjectType::Metadata, Space::System, &[0]).unwrap();
+    }
     drop(store);
     // Format-4 banks have the same original-sector layout and only 32 slots.
     // Recreate those exact binary headers and checksums, not a prose fixture.
