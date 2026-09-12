@@ -21,7 +21,9 @@ def main():
             shutil.copyfile(root / "tools/test-fixtures/re-provision" / name, target)
             target.chmod(0o700)
         iso = work / "test.iso"
-        iso.touch()
+        # The VirtualBox/file fixtures model ISO structure; the real selector
+        # still requires a nonempty artifact before any destructive operation.
+        iso.write_bytes(b"infinity-test-iso\x00")
         environment = dict(os.environ, PATH=f"{binary}:{os.environ['PATH']}",
             TEST_STATE_PATH=str(state), TEST_VM_DIRECTORY=str(vm), TEST_ISO_PATH=str(iso),
             TEST_MEDIUM_MODE="orphan", INFINITY_VBOXMANAGE=str(binary / "VBoxManage"))

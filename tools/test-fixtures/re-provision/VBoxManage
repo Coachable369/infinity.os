@@ -18,7 +18,7 @@ case "$command_name" in
                 printf 'platformArchitecture="ARM"\n'
                 printf 'ostype="Other/Unknown (ARM 64-bit)"\n'
                 printf 'memory=%s\n' "$(sed -n '1p' "$TEST_STATE_PATH/memory")"
-                printf 'cpus=6\n'
+                printf 'cpus=%s\n' "$(sed -n '1p' "$TEST_STATE_PATH/cpus")"
                 printf 'graphicscontroller="%s"\n' "$(sed -n '1p' "$TEST_STATE_PATH/graphics")"
                 printf 'usb="off"\n'
                 printf 'xhci="on"\n'
@@ -73,6 +73,10 @@ case "$command_name" in
                 --memory)
                     shift
                     printf '%s\n' "$1" > "$TEST_STATE_PATH/memory"
+                    ;;
+                --cpus)
+                    shift
+                    printf '%s\n' "$1" > "$TEST_STATE_PATH/cpus"
                     ;;
                 --graphicscontroller)
                     shift

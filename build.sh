@@ -6,6 +6,10 @@ output_dir="$project_root/builds"
 
 cd "$project_root"
 
+# Catch provisioning contract failures before expensive builds or cleanup.
+sh tools/select-install-iso-test.sh
+python3 tools/re-provision-tpm-test.py
+
 echo "==> Building InfinityOS for x86_64 and AArch64"
 make clean
 
@@ -62,6 +66,8 @@ if [ "$legacy_x86_built" = true ]; then
 fi
 cp build/infinity-x86_64.iso "$output_dir/InfinityOS-x86_64.iso"
 cp build/qwen/InfinityOS-Qwen3-8B-aarch64.iso "$output_dir/InfinityOS-aarch64.iso"
+# Assert binary parity: never publish the legacy ARM image under the release name.
+cmp build/qwen/InfinityOS-Qwen3-8B-aarch64.iso "$output_dir/InfinityOS-aarch64.iso"
 cp tools/configure-virtualbox-arm64.sh "$output_dir/configure-virtualbox-arm64.sh"
 cp tools/start-virtualbox-arm64.sh "$output_dir/start-virtualbox-arm64.sh"
 chmod +x "$output_dir/configure-virtualbox-arm64.sh" "$output_dir/start-virtualbox-arm64.sh"

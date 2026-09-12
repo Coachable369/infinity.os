@@ -6,7 +6,7 @@
 select_install_iso() {
     selected_iso=${2:-$1/build/qwen/InfinityOS-Qwen3-8B-aarch64.iso}
     if ! test -s "$selected_iso"; then
-        printf 'ERROR: installer missing: %s. Run sh tools/build-qwen.sh first.\n' "$selected_iso" >&2
+        printf 'ERROR: installer missing or empty: %s. Run sh build.sh to build the installer, or supply a valid ISO path.\n' "$selected_iso" >&2
         return 1
     fi
     printf '%s\n' "$selected_iso"
