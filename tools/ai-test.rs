@@ -532,8 +532,14 @@ fn desktop_chat() {
     let mut isolated = AiRuntime::new();
     isolated.bind_chat_owner([1; 16]);
     isolated.chat.begin_native_turn();
+    assert_eq!(isolated.chat.message_count(), 1);
+    assert!(!isolated.chat.publish_native_completion(b"partial", false));
+    assert_eq!(isolated.chat.message_count(), 1);
     let response = [b'x'; 4096];
-    isolated.chat.update_native_response(&response);
+    assert!(isolated.chat.publish_native_completion(&response, true));
+    assert_eq!(isolated.chat.message(1).unwrap().text(), &response);
+    assert_eq!(isolated.chat.generation_state, runtime::ai::chat::GenerationState::Complete);
+    assert!(!isolated.chat.publish_native_completion(b"unpublished", false));
     assert_eq!(isolated.chat.message(1).unwrap().text(), &response);
     isolated.bind_chat_owner([1; 16]);
     assert_eq!(isolated.chat.message_count(), 2);

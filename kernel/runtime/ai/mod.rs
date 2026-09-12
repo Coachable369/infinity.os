@@ -213,10 +213,7 @@ impl AiRuntime {
             self.qwen_metrics.slice(slice_start, crate::ui::performance::monotonic_ns(), matches!(result, Ok(true)));
             match result {
                 Ok(true) => {
-                    self.chat.update_native_response(service.output());
-                    if !service.busy() {
-                        self.chat.generation_state = chat::GenerationState::Complete;
-                    }
+                    let published = self.chat.publish_native_completion(service.output(), !service.busy());
                     self.qwen_tokens += 1;
                     #[cfg(target_os = "none")]
                     if let Some(now) = crate::ui::performance::monotonic_ns() {
@@ -226,7 +223,7 @@ impl AiRuntime {
                             self.qwen_first_token_ns = Some(now);
                         }
                     }
-                    return true;
+                    return published;
                 }
                 Ok(false) => (),
                 Err(_) => {
@@ -238,7 +235,7 @@ impl AiRuntime {
             }
             if !service.busy() {
                 if self.chat.generation_state == chat::GenerationState::Running {
-                    self.chat.generation_state = chat::GenerationState::Complete;
+                    self.chat.publish_native_completion(service.output(), true);
                     return true;
                 }
                 break;

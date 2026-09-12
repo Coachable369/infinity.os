@@ -34,6 +34,17 @@ Only one engine dispatches work at a time. Switching cancels the active job
 before changing engines; each model retains separate mutable KV and token state.
 Both models use the existing bounded service pump and CPU worker pool.
 
+### Complete-response presentation
+
+Native inference retains decoded intermediate tokens inside the AI service.
+The desktop adds the assistant message only when inference completes; partial
+tokens neither create an empty bubble nor invalidate the chat transcript.
+Cancellation and failure keep their explicit status without publishing partial
+answers. This applies to both Ministral and Qwen and does not change sampling,
+model selection, or inference throughput. The host AI acceptance harness checks
+that incomplete publication leaves the transcript unchanged and completion
+publishes the full bounded response.
+
 ## Boot and installation
 
 P2 remains the unchanged Qwen shard stream. P3 adds four FAT-safe Ministral

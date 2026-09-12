@@ -92,7 +92,7 @@ pub const CHAT_MODELS: [ChatModel; 5] = [
     ChatModel {
         id: MINISTRAL_MODEL_ID,
         name: b"Ministral 3 3B",
-        description: b"Native CPU - Q4_K_M - 4K context",
+        description: b"Lightweight local CPU - Q4_K_M - 4K context",
     },
 ];
 
@@ -201,7 +201,6 @@ impl ChatRuntime {
             ChatRole::User,
             &input[..self.input_length],
         ));
-        self.push(ChatMessage::new(ChatRole::Assistant, b""));
         self.input_length = 0;
         self.input_cursor = 0;
     }
@@ -210,9 +209,26 @@ impl ChatRuntime {
     // DESC: Publishes only decoded model output in the active assistant turn.
     // ------------------=
     pub fn update_native_response(&mut self, bytes: &[u8]) {
-        if self.count != 0 {
+        if self.count != 0
+            && self.message(self.count - 1).is_some_and(|m| m.role == ChatRole::Assistant)
+        {
             self.messages[self.count - 1] = Some(ChatMessage::new(ChatRole::Assistant, bytes));
+        } else {
+            self.push(ChatMessage::new(ChatRole::Assistant, bytes));
         }
+    }
+
+    // ------------------------=
+    // FUNC: publish_native_completion
+    // DESC: Keeps partial inference private and publishes the complete assistant response exactly at completion.
+    // ------------------=
+    pub fn publish_native_completion(&mut self, bytes: &[u8], complete: bool) -> bool {
+        if !complete {
+            return false;
+        }
+        self.update_native_response(bytes);
+        self.generation_state = GenerationState::Complete;
+        true
     }
 
     // ------------------------=
