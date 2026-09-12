@@ -529,6 +529,17 @@ fn services_and_events() {
 // DESC: Verifies bounded conversation, real model selection, session minimization, and enablement behavior.
 // ------------------=
 fn desktop_chat() {
+    let mut isolated = AiRuntime::new();
+    isolated.bind_chat_owner([1; 16]);
+    isolated.chat.begin_native_turn();
+    let response = [b'x'; 4096];
+    isolated.chat.update_native_response(&response);
+    assert_eq!(isolated.chat.message(1).unwrap().text(), &response);
+    isolated.bind_chat_owner([1; 16]);
+    assert_eq!(isolated.chat.message_count(), 2);
+    isolated.bind_chat_owner([2; 16]);
+    assert_eq!(isolated.chat.message_count(), 0);
+    assert!(!isolated.cancel_chat());
     let mut chat = ChatRuntime::new();
     assert!(chat.enabled());
     assert!(!chat.minimized());

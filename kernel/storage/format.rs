@@ -4,14 +4,19 @@ use super::{
     StorageDevice, StorageError, StorageProfile, StorageProvisioningPlan, StorageStrategy,
 };
 
-#[cfg(target_arch = "x86_64")]
-const ESP_IMAGE: &[u8] = include_bytes!("../../build/x86_64/installed-esp.img");
-#[cfg(target_arch = "x86_64")]
-const KERNEL_IMAGE: &[u8] = include_bytes!("../../build/x86_64/installed-kernel.elf");
-#[cfg(target_arch = "aarch64")]
-const ESP_IMAGE: &[u8] = include_bytes!("../../build/aarch64/installed-esp.img");
-#[cfg(target_arch = "aarch64")]
-const KERNEL_IMAGE: &[u8] = include_bytes!("../../build/aarch64/installed-kernel.elf");
+use super::payload::Image;
+#[cfg(all(target_arch = "x86_64",not(feature="streamed-payload")))]
+const ESP_IMAGE: Image = Image::embedded(include_bytes!("../../build/x86_64/installed-esp.img"));
+#[cfg(all(target_arch = "x86_64",not(feature="streamed-payload")))]
+const KERNEL_IMAGE: Image = Image::embedded(include_bytes!("../../build/x86_64/installed-kernel.elf"));
+#[cfg(all(target_arch = "aarch64",not(feature="streamed-payload")))]
+const ESP_IMAGE: Image = Image::embedded(include_bytes!("../../build/aarch64/installed-esp.img"));
+#[cfg(all(target_arch = "aarch64",not(feature="streamed-payload")))]
+const KERNEL_IMAGE: Image = Image::embedded(include_bytes!("../../build/aarch64/installed-kernel.elf"));
+#[cfg(all(target_arch="aarch64",feature="streamed-payload"))]
+include!("../../build/qwen/payload-manifest.rs");
+#[cfg(all(not(target_arch="aarch64"),feature="streamed-payload"))]
+compile_error!("streamed-payload currently requires the ARM64 firmware storage bridge");
 const ESP_FIRST: u64 = 2048;
 const ESP_BLOCKS: u64 = (ESP_IMAGE.len() / 512) as u64;
 const ALIGNMENT_BLOCKS: u64 = 2048;
@@ -331,15 +336,7 @@ fn write_partition(
 // DESC: Writes or updates write esp data.
 // ------------------=
 fn write_esp<D: BlockDevice, F: FnMut(u8, &[u8])>(device: &mut D, plan: &StorageProvisioningPlan, progress: &mut F) -> Result<(), ()> {
-    for (index, chunk) in ESP_IMAGE.chunks(512).enumerate() {
-        let mut sector = [0u8; 512];
-        sector[..chunk.len()].copy_from_slice(chunk);
-        if !device.write_sector(plan.esp_first_lba + index as u64, &sector) {
-            return Err(());
-        }
-        report_transfer(progress, index, ESP_IMAGE.len(), 12, 23, b"INSTALLING EFI BOOTLOADER AND BOOT ASSETS");
-    }
-    Ok(())
+    ESP_IMAGE.transfer(device,plan.esp_first_lba,false,|index| report_transfer(progress,index,ESP_IMAGE.len(),12,23,b"INSTALLING EFI BOOTLOADER AND BOOT ASSETS"))
 }
 
 // ------------------------=
@@ -501,8 +498,8 @@ fn write_system_generation<D: BlockDevice>(
     state: u32,
     activate: bool,
 ) -> Result<(), ()> {
-    let kernel_crc = crc32(KERNEL_IMAGE);
-    let esp_crc = crc32(ESP_IMAGE);
+    let kernel_crc = KERNEL_IMAGE.checksum();
+    let esp_crc = ESP_IMAGE.checksum();
     let components = component_manifest::encode(
         architecture(),
         kernel_crc,
@@ -608,7 +605,7 @@ fn verify_system_generation<D: BlockDevice>(
         || get_u32(&s, 16) != state
         || get_u32(&s, 20) != architecture()
         || get_u64(&s, 24) != GENERATION_ID
-        || get_u32(&s, 56) != crc32(KERNEL_IMAGE)
+        || get_u32(&s, 56) != KERNEL_IMAGE.checksum()
         || get_u32(&s, 60) != component_manifest::COMPONENT_COUNT
         || get_u64(&s, 64) != COMPONENT_MANIFEST_RELATIVE_LBA
         || !valid_record(&s, 512, 508)
@@ -629,7 +626,7 @@ fn verify_system_generation<D: BlockDevice>(
     if !component_manifest::validate(
         &components,
         architecture(),
-        crc32(KERNEL_IMAGE),
+        KERNEL_IMAGE.checksum(),
         KERNEL_RELATIVE_LBA,
         KERNEL_IMAGE.len() as u64,
     ) {
@@ -668,15 +665,7 @@ fn report_transfer<F: FnMut(u8, &[u8])>(progress: &mut F, index: usize, bytes: u
 // DESC: Writes or updates write kernel data.
 // ------------------=
 fn write_kernel<D: BlockDevice, F: FnMut(u8, &[u8])>(device: &mut D, plan: &StorageProvisioningPlan, progress: &mut F) -> Result<(), ()> {
-    for (index, chunk) in KERNEL_IMAGE.chunks(512).enumerate() {
-        let mut sector = [0u8; 512];
-        sector[..chunk.len()].copy_from_slice(chunk);
-        if !device.write_sector(plan.kernel_lba + index as u64, &sector) {
-            return Err(());
-        }
-        report_transfer(progress, index, KERNEL_IMAGE.len(), 43, 55, b"INSTALLING KERNEL, DRIVERS AND CORE COMPONENTS");
-    }
-    Ok(())
+    KERNEL_IMAGE.transfer(device,plan.kernel_lba,false,|index| report_transfer(progress,index,KERNEL_IMAGE.len(),43,55,b"INSTALLING KERNEL, DRIVERS AND CORE COMPONENTS"))
 }
 
 // ------------------------=
@@ -724,14 +713,7 @@ fn verify<D: BlockDevice, F: FnMut(u8, &[u8])>(
     if crc32_slices(&entries) != entries_crc {
         return Err(StorageError::VerifyGpt);
     }
-    for (index, chunk) in ESP_IMAGE.chunks(512).enumerate() {
-        if !device.read_sector(plan.esp_first_lba + index as u64, &mut sector)
-            || &sector[..chunk.len()] != chunk
-        {
-            return Err(StorageError::VerifyBootEnvironment);
-        }
-        report_transfer(progress, index, ESP_IMAGE.len(), 67, 73, b"VERIFYING EFI BOOTLOADER AND BOOT ASSETS");
-    }
+    ESP_IMAGE.transfer(device,plan.esp_first_lba,true,|index| report_transfer(progress,index,ESP_IMAGE.len(),67,73,b"VERIFYING EFI BOOTLOADER AND BOOT ASSETS")).map_err(|_|StorageError::VerifyBootEnvironment)?;
     if !device.read_sector(plan.container_first_lba, &mut sector)
         || &sector[..8] != b"INFCONT1"
         || !valid_record(&sector, 512, 508)
@@ -751,14 +733,7 @@ fn verify<D: BlockDevice, F: FnMut(u8, &[u8])>(
     {
         return Err(StorageError::VerifySpaces);
     }
-    for (index, chunk) in KERNEL_IMAGE.chunks(512).enumerate() {
-        if !device.read_sector(plan.kernel_lba + index as u64, &mut sector)
-            || &sector[..chunk.len()] != chunk
-        {
-            return Err(StorageError::VerifyKernel);
-        }
-        report_transfer(progress, index, KERNEL_IMAGE.len(), 73, 78, b"VERIFYING INSTALLED KERNEL AND CORE COMPONENTS");
-    }
+    KERNEL_IMAGE.transfer(device,plan.kernel_lba,true,|index| report_transfer(progress,index,KERNEL_IMAGE.len(),73,78,b"VERIFYING INSTALLED KERNEL AND CORE COMPONENTS")).map_err(|_|StorageError::VerifyKernel)?;
     Ok(())
 }
 

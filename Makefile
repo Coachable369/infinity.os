@@ -476,8 +476,12 @@ $(BUILD)/aarch64/installed-kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICO
 	cp $(BUILD)/cargo-installed-aarch64/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a $(BUILD)/aarch64/libinstalled-kernel.a
 	touch $@
 
-$(BUILD)/aarch64/installed-kernel.elf: $(BUILD)/aarch64/installed-kernel.stamp linker/aarch64.ld
-	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a
+$(BUILD)/aarch64/qwen-math.o: kernel/runtime/ai/qwen/cpu_math.c
+	@mkdir -p $(@D)
+	$(CLANG) --target=aarch64-none-elf -ffreestanding -fno-builtin -fno-stack-protector -ffp-contract=off -O3 -c $< -o $@
+
+$(BUILD)/aarch64/installed-kernel.elf: $(BUILD)/aarch64/installed-kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o
+	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a $(BUILD)/aarch64/qwen-math.o
 
 $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(ICON_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS) $(NODE_ASSETS)
 	rm -rf $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Crash
@@ -505,13 +509,13 @@ $(BUILD)/aarch64/kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/aarch6
 	cp $(BUILD)/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a $(BUILD)/aarch64/libkernel.a
 	touch $@
 
-$(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld
-	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libkernel.a
+$(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o
+	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o
 
-$(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld
-	$(LD_LLD) -nostdlib -static -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a
+$(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o
+	$(LD_LLD) -nostdlib -static -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o
 
-$(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h
+$(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/common/payload_loader.h
 	@mkdir -p $(@D)
 	$(CLANG) --target=aarch64-pc-windows-msvc -DINFINITY_AARCH64 -ffreestanding -fshort-wchar \
 		-fno-stack-protector -fno-builtin -O2 -Wall -Wextra -Werror -c $< -o $@

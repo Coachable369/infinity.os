@@ -108,7 +108,7 @@ pub struct ModelDescriptor {
     pub provider: ProviderId,
     pub adapter: RuntimeAdapter,
     pub capabilities: u32,
-    pub size: u32,
+    pub size: u64,
     pub requirements: ModelRequirements,
     pub trust: TrustState,
     pub object_ref: [u8; 16],

@@ -188,7 +188,7 @@ pub fn conversation_model_descriptor(id: ModelId, object_ref: [u8; 16]) -> Model
         provider: LOCAL_PROVIDER_ID,
         adapter: RuntimeAdapter::InfinityNative,
         capabilities: CAP_REASONING,
-        size: super::generation::CONVERSATION_MODEL_OBJECT_BYTES as u32,
+        size: super::generation::CONVERSATION_MODEL_OBJECT_BYTES as u64,
         requirements: ModelRequirements {
             memory_bytes: 4 * 1024 * 1024,
             backend: BackendClass::Cpu,
@@ -354,7 +354,7 @@ pub fn local_model_descriptor() -> ModelDescriptor {
         provider: LOCAL_PROVIDER_ID,
         adapter: RuntimeAdapter::InfinityNative,
         capabilities: CAP_INTENT_RESOLUTION | CAP_CLASSIFICATION,
-        size: model_object_bytes().len() as u32,
+        size: model_object_bytes().len() as u64,
         requirements: ModelRequirements {
             memory_bytes: 64 * 1024,
             backend: BackendClass::Cpu,

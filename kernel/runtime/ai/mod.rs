@@ -6,6 +6,7 @@ pub mod intent;
 pub mod memory;
 pub mod model;
 pub mod provider;
+pub mod qwen;
 pub mod types;
 pub mod voice;
 
@@ -29,6 +30,11 @@ pub struct AiRuntime {
     pub agents: AgentManager,
     pub chat: ChatRuntime,
     cpu: LocalCpuBackend,
+    qwen: Option<qwen::service::Service>,
+    chat_owner: [u8; 16],
+    pub qwen_tokens: u64,
+    pub qwen_decode_ns: u64,
+    qwen_first_token_ns: Option<u64>,
     initialized: bool,
     inference_count: u64,
     inference_failures: u64,
@@ -37,6 +43,161 @@ pub struct AiRuntime {
 }
 
 impl AiRuntime {
+    // ------------------------=
+    // FUNC: bind_chat_owner
+    // DESC: Prevents conversation context from crossing authenticated user boundaries.
+    // ------------------=
+    pub fn bind_chat_owner(&mut self, owner: [u8; 16]) {
+        if self.chat_owner != owner {
+            if let Some(service) = self.qwen.as_mut() {
+                service.clear_conversation();
+            }
+            let ready = self.qwen.is_some();
+            self.chat = ChatRuntime::new();
+            self.chat.set_qwen_ready(ready);
+            self.chat_owner = owner;
+        }
+    }
+    // ------------------------=
+    // FUNC: cancel_chat
+    // DESC: Cancels active native generation while preserving its partial response.
+    // ------------------=
+    pub fn cancel_chat(&mut self) -> bool {
+        let Some(service) = self.qwen.as_mut() else {
+            return false;
+        };
+        let active = service.busy();
+        service.cancel();
+        if active {
+            self.chat.generation_state = chat::GenerationState::Cancelled;
+        }
+        active
+    }
+    // ------------------------=
+    // FUNC: load_qwen
+    // DESC: Installs the verified native backend into the existing local AI service.
+    // ------------------=
+    pub fn load_qwen(&mut self, bytes: &'static [u8], arena: &'static mut [u8]) -> bool {
+        match qwen::service::Service::load(bytes, arena) {
+            Ok(service) => {
+                let descriptor = ModelDescriptor {
+                    id: chat::QWEN_FULL_MODEL_ID,
+                    version: 1,
+                    provider: model::LOCAL_PROVIDER_ID,
+                    adapter: RuntimeAdapter::InfinityNative,
+                    capabilities: CAP_REASONING,
+                    size: 5_027_783_488,
+                    requirements: ModelRequirements {
+                        memory_bytes: 6_369_960_768,
+                        backend: BackendClass::Cpu,
+                        minimum_backend_version: 1,
+                    },
+                    trust: TrustState::SystemVerified,
+                    object_ref: [0; 16],
+                    install_state: InstallState::Loaded,
+                    install_class: InstallClass::SystemOptional,
+                    checksum: 0xbdcd98d9,
+                    private_data_eligible: true,
+                };
+                if self.models.register(descriptor).is_err() {
+                    return false;
+                }
+                self.qwen = Some(service);
+                self.chat.set_qwen_ready(true);
+                true
+            }
+            Err(_) => {
+                self.chat.set_qwen_ready(false);
+                false
+            }
+        }
+    }
+    // ------------------------=
+    // FUNC: submit_chat
+    // DESC: Routes Qwen to bounded local inference; legacy models retain their existing behavior.
+    // ------------------=
+    pub fn submit_chat(&mut self) -> bool {
+        if self.chat.selected_model() != chat::QWEN_FULL_MODEL_ID {
+            return self.chat.submit_input();
+        }
+        let Some(service) = self.qwen.as_mut() else {
+            return false;
+        };
+        if !self.chat.enabled() || service.busy() {
+            return false;
+        }
+        if let Err(error) = service.submit(self.chat.input()) {
+            self.chat.generation_state = if error == qwen::gguf::Error::Overflow {
+                chat::GenerationState::ContextFull
+            } else {
+                chat::GenerationState::Failed
+            };
+            return false;
+        }
+        self.chat.generation_state = chat::GenerationState::Running;
+        self.qwen_tokens = 0;
+        self.qwen_decode_ns = 0;
+        self.qwen_first_token_ns = None;
+        self.chat.begin_native_turn();
+        true
+    }
+    // ------------------------=
+    // FUNC: poll_qwen
+    // DESC: Advances local inference outside rendering and publishes model-produced text only.
+    // ------------------=
+    pub fn poll_qwen(&mut self) -> bool {
+        let Some(service) = self.qwen.as_mut() else {
+            return false;
+        };
+        if self.chat.selected_model() != chat::QWEN_FULL_MODEL_ID || !self.chat.enabled() {
+            service.cancel();
+            return false;
+        }
+        #[cfg(target_os = "none")]
+        let started = crate::ui::performance::monotonic_ns();
+        for _ in 0..256 {
+            match service.poll() {
+                Ok(true) => {
+                    self.chat.update_native_response(service.output());
+                    if !service.busy() {
+                        self.chat.generation_state = chat::GenerationState::Complete;
+                    }
+                    self.qwen_tokens += 1;
+                    #[cfg(target_os = "none")]
+                    if let Some(now) = crate::ui::performance::monotonic_ns() {
+                        if let Some(first) = self.qwen_first_token_ns {
+                            self.qwen_decode_ns = now.saturating_sub(first);
+                        } else {
+                            self.qwen_first_token_ns = Some(now);
+                        }
+                    }
+                    return true;
+                }
+                Ok(false) => (),
+                Err(_) => {
+                    service.cancel();
+                    self.inference_failures += 1;
+                    self.chat.generation_state = chat::GenerationState::Failed;
+                    return true;
+                }
+            }
+            if !service.busy() {
+                if self.chat.generation_state == chat::GenerationState::Running {
+                    self.chat.generation_state = chat::GenerationState::Complete;
+                    return true;
+                }
+                break;
+            }
+            #[cfg(target_os = "none")]
+            if started
+                .zip(crate::ui::performance::monotonic_ns())
+                .is_some_and(|(a, b)| b.saturating_sub(a) >= 2_000_000)
+            {
+                break;
+            }
+        }
+        false
+    }
     // ------------------------=
     // FUNC: new
     // DESC: Creates the modular AI runtime with bounded queues and no ambient providers.
@@ -49,6 +210,11 @@ impl AiRuntime {
             agents: AgentManager::new(),
             chat: ChatRuntime::new(),
             cpu: LocalCpuBackend::new(4),
+            qwen: None,
+            chat_owner: [0; 16],
+            qwen_tokens: 0,
+            qwen_decode_ns: 0,
+            qwen_first_token_ns: None,
             initialized: false,
             inference_count: 0,
             inference_failures: 0,

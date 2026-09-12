@@ -219,7 +219,7 @@ struct EFI_FILE_PROTOCOL {
     EFI_STATUS (EFIAPI *read)(EFI_FILE_PROTOCOL *, size_t *, void *);
     void *write;
     void *get_position;
-    void *set_position;
+    EFI_STATUS (EFIAPI *set_position)(EFI_FILE_PROTOCOL *, uint64_t);
     EFI_STATUS (EFIAPI *get_info)(EFI_FILE_PROTOCOL *, EFI_GUID *, size_t *, void *);
 };
 
@@ -1214,6 +1214,12 @@ static void gather_firmware_network(EFI_SYSTEM_TABLE *system, InfinityBootInfo *
 // FUNC: efi_main
 // DESC: Runs the UEFI loader entry point.
 // ------------------=
+#include "payload_loader.h"
+
+// ------------------------=
+// FUNC: efi_main
+// DESC: Boots the native kernel with optional streamed installation payloads.
+// ------------------=
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     serial_initialize();
     firmware_write(system, L"InfinityOS bootstrap\r\n");
@@ -1280,6 +1286,12 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     memset(info->firmware_entropy, 0, sizeof(info->firmware_entropy));
     info->firmware_entropy_valid = 0;
     info->boot_reserved = 0;
+    info->payload_bridge = 0;
+    info->model_address = 0;
+    info->model_bytes = 0;
+    info->model_work_address = 0;
+    info->model_work_bytes = 0;
+    prepare_payloads(image, system, info, booted_installed_generation);
     gather_firmware_entropy(system, info);
     gather_framebuffer(system, info);
 #if defined(INFINITY_AARCH64)

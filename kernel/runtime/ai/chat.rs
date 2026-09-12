@@ -5,11 +5,21 @@ use super::memory::{AiMemory, MemoryResponseKind};
 use super::types::ModelId;
 
 pub const CHAT_MESSAGE_CAPACITY: usize = 8;
-pub const CHAT_TEXT_CAPACITY: usize = 192;
-pub const CHAT_INPUT_CAPACITY: usize = 96;
+pub const CHAT_TEXT_CAPACITY: usize = 16384;
+pub const CHAT_INPUT_CAPACITY: usize = 4096;
 pub const SYSTEM_ASSISTANT_MODEL_ID: ModelId = DIALOGUE_MODEL_ID;
 pub const INTENT_ASSISTANT_MODEL_ID: ModelId = super::model::LOCAL_INTENT_MODEL_ID;
 pub const QWEN_FULL_MODEL_ID: ModelId = 0x4149_1003;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GenerationState {
+    Ready,
+    Running,
+    Complete,
+    Cancelled,
+    Failed,
+    ContextFull,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChatRole {
@@ -21,7 +31,7 @@ pub enum ChatRole {
 pub struct ChatMessage {
     pub role: ChatRole,
     bytes: [u8; CHAT_TEXT_CAPACITY],
-    length: u8,
+    length: u16,
 }
 
 impl ChatMessage {
@@ -37,7 +47,7 @@ impl ChatMessage {
         };
         let length = text.len().min(CHAT_TEXT_CAPACITY);
         message.bytes[..length].copy_from_slice(&text[..length]);
-        message.length = length as u8;
+        message.length = length as u16;
         message
     }
 
@@ -75,8 +85,8 @@ pub const CHAT_MODELS: [ChatModel; 4] = [
     },
     ChatModel {
         id: QWEN_FULL_MODEL_ID,
-        name: b"Qwen3.8-27B",
-        description: b"Full local model - backend and weights not installed",
+        name: b"Qwen3-8B",
+        description: b"Native CPU - Q4_K_M - 4K context",
     },
 ];
 
@@ -85,6 +95,8 @@ pub struct ChatRuntime {
     messages: [Option<ChatMessage>; CHAT_MESSAGE_CAPACITY],
     count: usize,
     selected_model: ModelId,
+    qwen_ready: bool,
+    pub generation_state: GenerationState,
     enabled: bool,
     minimized: bool,
     input: [u8; CHAT_INPUT_CAPACITY],
@@ -106,6 +118,8 @@ impl ChatRuntime {
             messages: [None; CHAT_MESSAGE_CAPACITY],
             count: 0,
             selected_model: SYSTEM_ASSISTANT_MODEL_ID,
+            qwen_ready: false,
+            generation_state: GenerationState::Ready,
             enabled: true,
             minimized: false,
             input: [0; CHAT_INPUT_CAPACITY],
@@ -147,7 +161,38 @@ impl ChatRuntime {
     // DESC: Keeps catalog selection distinct from actual local inference availability.
     // ------------------=
     pub const fn selected_model_ready(&self) -> bool {
-        self.selected_model != QWEN_FULL_MODEL_ID
+        self.selected_model != QWEN_FULL_MODEL_ID || self.qwen_ready
+    }
+
+    // ------------------------=
+    // FUNC: set_qwen_ready
+    // DESC: Publishes verified native backend readiness.
+    // ------------------=
+    pub fn set_qwen_ready(&mut self, ready: bool) {
+        self.qwen_ready = ready;
+    }
+    // ------------------------=
+    // FUNC: begin_native_turn
+    // DESC: Records an accepted asynchronous turn without a canned response.
+    // ------------------=
+    pub fn begin_native_turn(&mut self) {
+        let input = self.input;
+        self.push(ChatMessage::new(
+            ChatRole::User,
+            &input[..self.input_length],
+        ));
+        self.push(ChatMessage::new(ChatRole::Assistant, b""));
+        self.input_length = 0;
+        self.input_cursor = 0;
+    }
+    // ------------------------=
+    // FUNC: update_native_response
+    // DESC: Publishes only decoded model output in the active assistant turn.
+    // ------------------=
+    pub fn update_native_response(&mut self, bytes: &[u8]) {
+        if self.count != 0 {
+            self.messages[self.count - 1] = Some(ChatMessage::new(ChatRole::Assistant, bytes));
+        }
     }
 
     // ------------------------=
@@ -380,7 +425,7 @@ impl ChatRuntime {
     // DESC: Appends a user turn and a bounded local response produced by the selected model.
     // ------------------=
     pub fn submit(&mut self, input: &[u8]) -> bool {
-        if !self.selected_model_ready() {
+        if !self.selected_model_ready() || self.selected_model == QWEN_FULL_MODEL_ID {
             return false;
         }
         let trimmed = trim_ascii(input);

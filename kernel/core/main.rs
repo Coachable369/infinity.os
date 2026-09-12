@@ -111,6 +111,7 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     }
 
     let info = unsafe { &*info };
+    storage::payload::initialize(info.payload_bridge);
     unsafe {
         output::initialize(info.boot_flags & 1 != 0);
     }
@@ -121,11 +122,12 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     let devices = drivers::initialize(info);
     crash::set_phase(crash::CrashPhase::Runtime);
     runtime::initialize(cfg!(target_arch = "x86") || info.boot_flags & 32 == 0);
-    storage::initialize_installation_identity(&info.firmware_entropy, info.firmware_entropy_valid == 1);
-    let _ = runtime::initialize_node_identity(
+    storage::initialize_installation_identity(
         &info.firmware_entropy,
         info.firmware_entropy_valid == 1,
     );
+    let _ =
+        runtime::initialize_node_identity(&info.firmware_entropy, info.firmware_entropy_valid == 1);
     if info.network_device_count > 0 {
         let mut hardware_address = [0u8; 6];
         hardware_address.copy_from_slice(&info.network_mac[..6]);
@@ -169,6 +171,29 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     crash::set_phase(crash::CrashPhase::Services);
     runtime::announce_services();
     crash::set_phase(crash::CrashPhase::UserInterface);
+    if info.model_address != 0
+        && info.model_bytes == 5_027_783_488
+        && info.model_work_address != 0
+        && info.model_work_bytes >= 1280 * 1024 * 1024
+    {
+        // SAFETY: the boot ABI owns these dedicated non-overlapping allocations;
+        // firmware reserves them and they are handed to the AI service once.
+        let model = unsafe {
+            core::slice::from_raw_parts(info.model_address as *const u8, info.model_bytes as usize)
+        };
+        let arena = unsafe {
+            core::slice::from_raw_parts_mut(
+                info.model_work_address as *mut u8,
+                info.model_work_bytes as usize,
+            )
+        };
+        let ready = runtime::ai::with_ai_runtime(|ai| ai.load_qwen(model, arena));
+        output_text(if ready {
+            b"[AI] native Qwen3-8B verified and ready\n"
+        } else {
+            b"[AI] native Qwen3-8B verification failed\n"
+        });
+    }
     console::initialize(system::SystemSnapshot::new(info, devices));
     crash::set_phase(crash::CrashPhase::Input);
     drivers::input::run()

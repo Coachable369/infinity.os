@@ -1,3 +1,4 @@
 /build/
 /builds/
+/model-cache/
 *.log

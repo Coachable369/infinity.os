@@ -56,6 +56,26 @@ impl UefiBlockDevice {
 
 impl BlockDevice for UefiBlockDevice {
     // ------------------------=
+    // FUNC: read_blocks
+    // DESC: Performs bounded multi-sector firmware reads for streamed payload verification.
+    // ------------------=
+    fn read_blocks(&mut self,lba:u64,bytes:&mut [u8])->bool {
+        if bytes.len()%512!=0 || bytes.len()>1024*1024 || lba.checked_add(bytes.len() as u64/512).is_none_or(|end|end>self.blocks) { return false; }
+        let address=unsafe{(*self.protocol).read_blocks}; if address==0 { return false; }
+        let read:BlockTransfer=unsafe{core::mem::transmute(address)};
+        unsafe{read(self.protocol,self.media_id,lba,bytes.len(),bytes.as_mut_ptr())==0}
+    }
+    // ------------------------=
+    // FUNC: write_blocks
+    // DESC: Performs bounded multi-sector firmware writes without per-sector transaction overhead.
+    // ------------------=
+    fn write_blocks(&mut self,lba:u64,bytes:&[u8])->bool {
+        if bytes.len()%512!=0 || bytes.len()>1024*1024 || lba.checked_add(bytes.len() as u64/512).is_none_or(|end|end>self.blocks) { return false; }
+        let address=unsafe{(*self.protocol).write_blocks}; if address==0 { return false; }
+        let write:BlockTransfer=unsafe{core::mem::transmute(address)};
+        unsafe{write(self.protocol,self.media_id,lba,bytes.len(),bytes.as_ptr() as *mut u8)==0}
+    }
+    // ------------------------=
     // FUNC: block_count
     // DESC: Implements the block count operation.
     // ------------------=

@@ -417,6 +417,7 @@ pub fn run() -> ! {
         // it first let HID reports queue behind visual effects and made only
         // the animated startup screen feel delayed.
         crate::bootstrap::animation_tick();
+        crate::console::poll_native_ai();
     }
 }
 

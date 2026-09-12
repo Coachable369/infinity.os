@@ -29,7 +29,9 @@ struct CachedWindow {
 }
 static mut WINDOWS: [CachedWindow; SLOTS] = [CachedWindow {
     valid: false,
-    icon_theme: u8::MAX,
+    // Invalid entries never consult their theme. Keep the initializer zero so
+    // the 94 MiB pixel cache occupies BSS, not bytes in the installed kernel.
+    icon_theme: 0,
     width: 0,
     height: 0,
     inset: (0, 0),

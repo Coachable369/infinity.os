@@ -7,6 +7,7 @@ mod format;
 #[cfg(feature = "installer")]
 mod install_identity;
 pub mod layout;
+pub mod payload;
 pub mod object;
 pub(crate) mod fabric;
 pub(crate) mod fabric_pool_metadata;
@@ -1347,6 +1348,24 @@ pub fn local_ai_model_object_refs() -> Option<[[u8; 16]; 3]> {
 
 pub trait BlockDevice {
     // ------------------------=
+    // FUNC: read_blocks
+    // DESC: Reads a bounded sector-aligned span; drivers may override with bulk I/O.
+    // ------------------=
+    fn read_blocks(&mut self, lba:u64, bytes:&mut [u8])->bool {
+        if bytes.len()%512!=0 { return false; }
+        for (i,chunk) in bytes.chunks_exact_mut(512).enumerate() { if !self.read_sector(lba+i as u64,chunk.try_into().unwrap()) { return false; } }
+        true
+    }
+    // ------------------------=
+    // FUNC: write_blocks
+    // DESC: Writes a bounded sector-aligned span; drivers may override with bulk I/O.
+    // ------------------=
+    fn write_blocks(&mut self, lba:u64, bytes:&[u8])->bool {
+        if bytes.len()%512!=0 { return false; }
+        for (i,chunk) in bytes.chunks_exact(512).enumerate() { if !self.write_sector(lba+i as u64,chunk.try_into().unwrap()) { return false; } }
+        true
+    }
+    // ------------------------=
     // FUNC: block_count
     // DESC: Implements the block count operation.
     // ------------------=
@@ -1369,6 +1388,16 @@ pub trait BlockDevice {
 }
 
 impl<T: BlockDevice + ?Sized> BlockDevice for &mut T {
+    // ------------------------=
+    // FUNC: read_blocks
+    // DESC: Preserves driver bulk reads through borrowed block devices.
+    // ------------------=
+    fn read_blocks(&mut self,lba:u64,bytes:&mut [u8])->bool { (**self).read_blocks(lba,bytes) }
+    // ------------------------=
+    // FUNC: write_blocks
+    // DESC: Preserves driver bulk writes through borrowed block devices.
+    // ------------------=
+    fn write_blocks(&mut self,lba:u64,bytes:&[u8])->bool { (**self).write_blocks(lba,bytes) }
     // ------------------------=
     // FUNC: block_count
     // DESC: Implements the block count operation.

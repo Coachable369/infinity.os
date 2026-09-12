@@ -1250,6 +1250,16 @@ impl ConsoleRuntime {
     fn input(&mut self, key: ConsoleKey) {
         self.session_idle.note_activity();
         self.caret_visible = true;
+        // Global chat access is handled before application-specific shortcuts.
+        if matches!(key, ConsoleKey::Shortcut(b'j')) && matches!(self.mode,
+            ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher) {
+            self.enter_desktop();
+            self.set_ai_chat_enabled(true);
+            crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.set_minimized(false));
+            self.ai_chat_focus = 2;
+            self.redraw();
+            return;
+        }
         if self.input_window_assistant(key) {self.redraw();return;}
         if self.mode == ConsoleMode::Desktop {
             if self.ai_chat_focus != 0 && self.input_ai_chat(key) {
@@ -1296,6 +1306,13 @@ impl ConsoleRuntime {
     // ------------------=
     fn input_ai_chat(&mut self, key: ConsoleKey) -> bool {
         match key {
+            ConsoleKey::Shortcut(b'm') => {
+                self.select_next_chat_model();
+                self.ai_chat_focus = 2;
+            }
+            ConsoleKey::Shortcut(b'c') => {
+                crate::runtime::ai::with_ai_runtime(|runtime| runtime.cancel_chat());
+            }
             ConsoleKey::Character(_)
             | ConsoleKey::Backspace
             | ConsoleKey::Delete
@@ -1336,7 +1353,10 @@ impl ConsoleRuntime {
                 5 => self.set_ai_chat_enabled(false),
                 _ => {}
             },
-            ConsoleKey::Escape => self.ai_chat_focus = 0,
+            ConsoleKey::Escape => {
+                let cancelled = crate::runtime::ai::with_ai_runtime(|runtime| runtime.cancel_chat());
+                if !cancelled { self.ai_chat_focus = 0; }
+            }
             _ => {}
         }
         true
@@ -2151,6 +2171,7 @@ impl ConsoleRuntime {
     // DESC: Applies the authenticated user's persistent chat visibility and model choice.
     // ------------------=
     fn sync_ai_chat_preferences(&mut self) {
+        crate::runtime::ai::with_ai_runtime(|runtime| runtime.bind_chat_owner(self.current_user.0));
         let preferences =
             crate::runtime::with_runtime(|runtime| runtime.identity.ai_profile(self.current_user))
                 .flatten();
@@ -2180,7 +2201,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn submit_ai_chat_input(&mut self) {
         let memory = crate::runtime::ai::with_ai_runtime(|runtime| {
-            if !runtime.chat.submit_input() {
+            if !runtime.submit_chat() {
                 return None;
             }
             runtime.chat.take_memory_update()
@@ -10620,6 +10641,8 @@ impl ConsoleRuntime {
                     .write_number(b"Completed inference: ", ai.inference_count());
                 self.output
                     .write_number(b"Inference failures: ", ai.inference_failures());
+                self.output.write_number(b"Native Qwen output tokens: ",ai.qwen_tokens);
+                self.output.write_number(b"Native Qwen decode milliseconds: ",ai.qwen_decode_ns/1_000_000);
             });
             return true;
         }
@@ -11832,6 +11855,16 @@ fn object_error_text(error: crate::storage::object::ObjectError) -> &'static [u8
 }
 
 static mut RUNTIME: Option<ConsoleRuntime> = None;
+
+// ------------------------=
+// FUNC: poll_native_ai
+// DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
+// ------------------=
+pub fn poll_native_ai() {
+    if crate::runtime::ai::with_ai_runtime(|ai|ai.poll_qwen()) {
+        unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
+    }
+}
 static mut INPUT_PRESENTATION: crate::ui::input_batch::PresentationBatch = crate::ui::input_batch::PresentationBatch::new();
 
 // ------------------------=

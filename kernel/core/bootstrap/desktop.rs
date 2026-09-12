@@ -5092,7 +5092,7 @@ impl super::DisplayDevice {
                 runtime.chat.enabled(),
                 if runtime.chat.selected_model_ready() {
                     runtime.chat.selected_model_descriptor().name
-                } else { b"Qwen3.8-27B (Unavailable)".as_slice() },
+                } else { b"Qwen3-8B (Unavailable)".as_slice() },
             )
         });
         if focus == 6 {
@@ -9400,12 +9400,32 @@ impl super::DisplayDevice {
             accent_b,
             1,
         );
+        let mut throughput = [0u8; 32];
+        let throughput_len = crate::runtime::ai::with_ai_runtime(|runtime| {
+            if chat.selected_model() != crate::runtime::ai::chat::QWEN_FULL_MODEL_ID
+                || runtime.qwen_tokens < 2 || runtime.qwen_decode_ns == 0 { return 0; }
+            let tenths = runtime.qwen_tokens.saturating_sub(1).saturating_mul(10_000_000_000)
+                / runtime.qwen_decode_ns;
+            let n = navigator_decimal(&mut throughput, (tenths / 10) as usize);
+            throughput[n] = b'.';
+            throughput[n + 1] = b'0' + (tenths % 10) as u8;
+            throughput[n + 2..n + 8].copy_from_slice(b" TOK/S");
+            n + 8
+        });
         let state = if chat.minimized() {
             b"LOCAL  +".as_slice()
         } else if !chat.selected_model_ready() {
             b"UNAVAILABLE".as_slice()
         } else {
-            b"LOCAL  READY".as_slice()
+            use crate::runtime::ai::chat::GenerationState;
+            match chat.generation_state {
+                GenerationState::Running => b"GENERATING".as_slice(),
+                GenerationState::Cancelled => b"CANCELLED".as_slice(),
+                GenerationState::Failed => b"FAILED".as_slice(),
+                GenerationState::ContextFull => b"CONTEXT FULL".as_slice(),
+                GenerationState::Complete if throughput_len != 0 => &throughput[..throughput_len],
+                _ => b"LOCAL  READY".as_slice(),
+            }
         };
         let state_width = self.ui_text_width(state, 1);
         self.ui_text(
