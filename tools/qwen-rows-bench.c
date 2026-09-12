@@ -3,6 +3,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#ifndef QWEN_BENCH_REPEATS
+#define QWEN_BENCH_REPEATS 2000
+#endif
+#ifdef QWEN_VERIFY_SCALAR
+void infinity_qwen_scalar_dot(uint32_t,const uint8_t *,const float *,size_t,float *);
+#endif
 void infinity_qwen_dot(uint32_t,const uint8_t *,const float *,size_t,float *);
 void infinity_qwen_dot_rows(uint32_t,const uint8_t *,const float *,size_t,size_t,float *);
 // ------------------------=
@@ -25,6 +31,13 @@ int main(void) {
                 if(kind==12){data[at+2]=0;data[at+3]=0x20;}
             }
             for(unsigned r=0;r<9;r++) infinity_qwen_dot(kind,data+r*stride,input,width,&reference[r]);
+#ifdef QWEN_VERIFY_SCALAR
+            for(unsigned r=0;r<9;r++) {
+                float scalar;
+                infinity_qwen_scalar_dot(kind,data+r*stride,input,width,&scalar);
+                assert(memcmp(&scalar,&reference[r],sizeof(float))==0);
+            }
+#endif
             for(unsigned rows=0;rows<=9;rows++) {
                 actual[rows<9?rows:8]=123;
                 infinity_qwen_dot_rows(kind,data,input,width,rows,actual);
@@ -32,10 +45,10 @@ int main(void) {
                 if(rows<9)assert(actual[rows]==123);
             }
             clock_t start=clock();
-            for(unsigned repeat=0;repeat<2000;repeat++)for(unsigned r=0;r<8;r++)infinity_qwen_dot(kind,data+r*stride,input,width,&actual[r]);
+            for(unsigned repeat=0;repeat<QWEN_BENCH_REPEATS;repeat++)for(unsigned r=0;r<8;r++)infinity_qwen_dot(kind,data+r*stride,input,width,&actual[r]);
             double single=(double)(clock()-start)/CLOCKS_PER_SEC;
             start=clock();
-            for(unsigned repeat=0;repeat<2000;repeat++)infinity_qwen_dot_rows(kind,data,input,width,8,actual);
+            for(unsigned repeat=0;repeat<QWEN_BENCH_REPEATS;repeat++)infinity_qwen_dot_rows(kind,data,input,width,8,actual);
             double batch=(double)(clock()-start)/CLOCKS_PER_SEC;
             printf("kind=%u width=%u single=%.4f batch=%.4f speedup=%.2f\n",kind,width,single,batch,single/batch);
         }

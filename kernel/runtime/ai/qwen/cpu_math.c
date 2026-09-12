@@ -101,15 +101,19 @@ void infinity_qwen_dot_rows(uint32_t kind,const uint8_t *data,const float *input
                         unsigned minimum=g<4?s[g+4]&63:(s[g+4]>>4)|((s[g]>>6)<<4);
                         ds[r]=d[r]*(float)scale; dm[r]=m[r]*(float)minimum;
                     }
-                    for(unsigned lane=0;lane<32;lane+=4) {
+                    for(unsigned lane=0;lane<32;lane+=8) {
                         float32x4_t activation=vld1q_f32(x+g*32+lane);
+                        float32x4_t activation_hi=vld1q_f32(x+g*32+lane+4);
                         #pragma clang loop unroll(full)
                         for(unsigned r=0;r<4;r++) {
                             const uint8_t *v=p[r]+16+(g/2)*32+lane;
-                            uint32x4_t packed={v[0],v[1],v[2],v[3]};
-                            uint32x4_t q=(g&1)?vshrq_n_u32(packed,4):vandq_u32(packed,vdupq_n_u32(15));
-                            float32x4_t weight=vsubq_f32(vmulq_n_f32(vcvtq_f32_u32(q),ds[r]),vdupq_n_f32(dm[r]));
+                            uint8x8_t packed=vld1_u8(v);
+                            uint8x8_t q=(g&1)?vshr_n_u8(packed,4):vand_u8(packed,vdup_n_u8(15));
+                            uint16x8_t wide=vmovl_u8(q);
+                            float32x4_t weight=vsubq_f32(vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(wide))),ds[r]),vdupq_n_f32(dm[r]));
+                            float32x4_t weight_hi=vsubq_f32(vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(wide))),ds[r]),vdupq_n_f32(dm[r]));
                             accum[r]=vaddq_f32(accum[r],vmulq_f32(weight,activation));
+                            accum[r]=vaddq_f32(accum[r],vmulq_f32(weight_hi,activation_hi));
                         }
                     }
                 }
