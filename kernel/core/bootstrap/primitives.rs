@@ -1960,27 +1960,38 @@ impl super::DisplayDevice {
         let cell_x = (cell % columns) * cell_width;
         let cell_y = (cell / columns) * cell_height;
         let row_bytes = source_width * 4;
+        // Average premultiplied samples when reducing an icon; transparent RGB
+        // must not introduce dark fringes. Work is bounded to 16 samples/pixel.
+        let samples_x = (cell_width / size).clamp(1, 4);
+        let samples_y = (cell_height / size).clamp(1, 4);
         for y in 0..size.min(self.height.saturating_sub(top)) {
-            let atlas_y = cell_y + y * cell_height / size;
-            let source_y = if signed_height < 0 {
-                atlas_y
-            } else {
-                source_height - 1 - atlas_y
-            };
             for x in 0..size.min(self.width.saturating_sub(left)) {
-                let source_x = cell_x + x * cell_width / size;
-                let index = offset + source_y * row_bytes + source_x * 4;
-                if index + 3 >= bitmap.len() {
-                    return false;
+                let mut channels = [0u32; 3];
+                let mut coverage = 0u32;
+                for sy in 0..samples_y {
+                    let atlas_y = cell_y + ((y * samples_y * 2 + sy * 2 + 1)
+                        * cell_height / (size * samples_y * 2)).min(cell_height - 1);
+                    let source_y = if signed_height < 0 { atlas_y } else { source_height - 1 - atlas_y };
+                    for sx in 0..samples_x {
+                        let source_x = cell_x + ((x * samples_x * 2 + sx * 2 + 1)
+                            * cell_width / (size * samples_x * 2)).min(cell_width - 1);
+                        let index = offset + source_y * row_bytes + source_x * 4;
+                        if index + 3 >= bitmap.len() { return false; }
+                        let alpha = bitmap[index + 3] as u32;
+                        coverage += alpha;
+                        for channel in 0..3 {
+                            channels[channel] += bitmap[index + channel] as u32 * alpha;
+                        }
+                    }
                 }
-                let alpha = bitmap[index + 3];
+                let alpha = (coverage / (samples_x * samples_y) as u32) as u8;
                 if alpha != 0 {
                     self.blend_color(
                         (left + x) as i32,
                         (top + y) as i32,
-                        bitmap[index + 2],
-                        bitmap[index + 1],
-                        bitmap[index],
+                        (channels[2] / coverage) as u8,
+                        (channels[1] / coverage) as u8,
+                        (channels[0] / coverage) as u8,
                         alpha,
                     );
                 }

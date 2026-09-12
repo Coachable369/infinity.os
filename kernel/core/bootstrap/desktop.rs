@@ -8443,12 +8443,16 @@ impl super::DisplayDevice {
             31,
             216,
         );
-        self.app_text(
-            browser_left + 14 * scale,
-            tool_top + 51 * scale,
-            b"FAVORITES",
-            (90, 191, 230), true, scale,
-        );
+        if scale == 1 {
+            self.app_text(browser_left + 14, tool_top + 51, b"FAVORITES", (90, 191, 230), true, 1);
+        } else {
+            self.ui_text_strong(
+                browser_left + 14 * scale,
+                tool_top + 51 * scale,
+                b"FAVORITES",
+                90, 191, 230, 1,
+            );
+        }
         for (index, item) in [
             b"Home".as_slice(),
             b"Personal Space",
@@ -8498,17 +8502,23 @@ impl super::DisplayDevice {
                     browser_left + 16 * scale,
                     item_y + 8 * scale,
                     icon_kind,
-                    13 * scale,
+                    18 * scale,
                     index == home_location,
                 );
             }
-            self.app_text(
-                browser_left + (if index == 10 { 16 } else { 30 }) * scale,
-                item_y,
-                item,
-                (if index == 10 { 90 } else { 204 }, if index == 10 { 191 } else { 224 }, 236),
-                index == 10, scale,
-            );
+            if scale == 1 {
+                self.app_text(browser_left + (if index == 10 { 16 } else { 32 }), item_y, item,
+                    (if index == 10 { 90 } else { 204 }, if index == 10 { 191 } else { 224 }, 236),
+                    index == 10, 1);
+            } else {
+                self.ui_text_weighted(
+                    browser_left + (if index == 10 { 16 } else { 32 }) * scale,
+                    item_y,
+                    item,
+                    if index == 10 { 90 } else { 204 }, if index == 10 { 191 } else { 224 }, 236,
+                    1, index == 10,
+                );
+            }
         }
         let grid_x = browser_left + sidebar_w + 28 * scale;
         let grid_y = tool_top + 58 * scale;

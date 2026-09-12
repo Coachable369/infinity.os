@@ -162,6 +162,7 @@ fn launcher_backdrop_test() {
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
 // ------------------=
 fn main() {
+    icon_downscale_test();
     launcher_backdrop_test();
     window_controls_test();
     retained_window_benchmark();
@@ -223,6 +224,28 @@ fn main() {
             println!("{{\"fixture\":\"active_painter_{label}\",\"format\":{},\"average_ns\":{},\"p95_ns\":{},\"damage_submissions\":{}}}",format,times.iter().sum::<u128>()/20,times[18],display.submissions);
         }
     }
+}
+
+// ------------------------=
+// FUNC: icon_downscale_test
+// DESC: Verifies subpixel icon coverage and transparent edge colors through the production painter.
+// ------------------=
+fn icon_downscale_test() {
+    let mut bitmap = vec![0u8; 54 + 16];
+    bitmap[..2].copy_from_slice(b"BM");
+    bitmap[10..14].copy_from_slice(&54u32.to_le_bytes());
+    bitmap[18..22].copy_from_slice(&2u32.to_le_bytes());
+    bitmap[22..26].copy_from_slice(&2i32.to_le_bytes());
+    bitmap[28..30].copy_from_slice(&32u16.to_le_bytes());
+    bitmap[54..58].copy_from_slice(&[255, 255, 255, 255]);
+    let mut pixels = [0u32; 2];
+    let mut display = DisplayDevice { buffer: pixels.as_mut_ptr(), width: 2, height: 1,
+        stride: 2, format: 0, render_clip: None, fast_motion_frame: false,
+        submissions: 0, recording_surface: false };
+    assert!(display.paint_bitmap_alpha_atlas_cell(&bitmap, 1, 1, 0, 0, 0, 1));
+    display.blend_color(1, 0, 255, 255, 255, 63);
+    assert_ne!(pixels[0], 0);
+    assert_eq!(pixels[0], pixels[1]);
 }
 
 // ------------------------=
