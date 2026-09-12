@@ -1,0 +1,37 @@
+--- a/clang/lib/Frontend/CompilerInvocation.cpp
++++ b/clang/lib/Frontend/CompilerInvocation.cpp
+@@ -85,7 +85,11 @@
+ #include <cstddef>
+ #include <cstring>
+ #include <ctime>
++#if defined(__INFINITY__)
++#include <infinity/llvm_seed_file.h>
++#else
+ #include <fstream>
++#endif
+ #include <limits>
+ #include <memory>
+ #include <optional>
+@@ -4589,6 +4593,14 @@
+   }
+
+   if (const Arg *A = Args.getLastArg(OPT_frandomize_layout_seed_file_EQ)) {
++#if defined(__INFINITY__)
++    auto Seed = infinityos::readLayoutSeed(*llvm::vfs::getRealFileSystem(), A->getValue(0));
++    if (!Seed)
++      Diags.Report(diag::err_drv_cannot_open_randomize_layout_seed_file)
++          << A->getValue(0);
++    else
++      Opts.RandstructSeed = std::move(*Seed);
++#else
+     std::ifstream SeedFile(A->getValue(0));
+
+     if (!SeedFile.is_open())
+@@ -4596,6 +4608,7 @@
+           << A->getValue(0);
+
+     std::getline(SeedFile, Opts.RandstructSeed);
++#endif
+   }
+
+   if (const Arg *A = Args.getLastArg(OPT_frandomize_layout_seed_EQ))

@@ -352,3 +352,25 @@ The next correction must preserve authorized object-backed reads (or explicitly
 reject that option), not enable a host filesystem fallback. Two correction
 loops completed this checkpoint. Clang is still unlinked, providers remain
 unbound, and no ISO-detached native compilation acceptance is claimed.
+
+## Layout seed reader checkpoint
+
+`llvm-seed-reader.patch` replaces the InfinityOS layout-seed option's C++
+`ifstream` with an LLVM VFS buffer read. The helper accepts a filesystem instance,
+preserves first-line semantics (including empty input and retained carriage
+return), and propagates read errors to Clang's existing diagnostic. Other
+platforms keep their previous implementation. Its namespace is `infinityos`,
+avoiding Newlib's global `infinity()` math function.
+
+TESTED: `seed-file-test.sh` executes the reader against LLVM's in-memory VFS,
+including a missing path and different versions of the same path. The target
+CompilerInvocation.cpp object now compiles, and the patch applies to the pinned
+upstream archive. This is not installed ObjectStore acceptance: the production
+LLVM filesystem backend still needs native object-service wiring. No host file
+access was used by these behavioral tests, and no filesystem capability is
+granted by this helper.
+
+The next retry fails in `clang/lib/Frontend/LayoutOverrideSource.cpp:44`, another
+`std::ifstream` dependency. Two corrections were required for this checkpoint;
+that separate reader remains unresolved. No linked compiler or new ISO was
+produced, and the on-device compile/run goal remains incomplete.
