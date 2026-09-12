@@ -68,6 +68,7 @@ fn main() {
     assert_eq!(&bytes[..length], source); // opened version remains coherent
     assert_eq!(io.read(read, &mut bytes).unwrap(), 0);
     assert_eq!(io.write(read, b"bad"), Err(IoError::Denied));
+    assert_eq!(io.truncate(read, 0), Err(IoError::Denied));
     assert_eq!(io.seek(read, -1, 0), Err(IoError::Invalid));
     assert_eq!(io.seek(read, i64::MAX, 2), Err(IoError::Invalid));
     io.close(&mut store, read).unwrap();
@@ -81,6 +82,12 @@ fn main() {
     let output_id = store.resolve(b"/home/default/documents/output.txt").unwrap();
     assert_eq!(store.metadata(output_id).unwrap().kind, ObjectType::Text);
     io.write(output, b"abc").unwrap();
+    io.truncate(output, 6).unwrap();
+    assert_eq!(io.seek(output, 0, 1).unwrap(), 3);
+    assert_eq!(io.read_at(output, 3, &mut bytes[..3]).unwrap(), 3);
+    assert_eq!(&bytes[..3], &[0, 0, 0]);
+    io.truncate(output, 3).unwrap();
+    assert_eq!(io.truncate(output, MAX_CONTENT + 1), Err(IoError::Capacity));
     io.seek(output, 5, 0).unwrap();
     io.write(output, b"z").unwrap();
     let before = store.metadata(output_id).unwrap().current_version;
@@ -115,4 +122,21 @@ fn main() {
     let system = store.create(b"test-system", ObjectType::Blob, Space::System, b"immutable").unwrap();
     store.attach(b"/home/default/documents/system-alias", system).unwrap();
     assert_eq!(io.open(&mut store, b"system-alias", WRITE), Err(IoError::Denied));
+    assert_eq!(io.unlink(&mut store, b"system-alias"), Err(IoError::Denied));
+    assert_eq!(io.make_directory(&mut store, b"../pictures/forbidden"), Err(IoError::Denied));
+    io.make_directory(&mut store, b"compile-work").unwrap();
+    io.change_directory(&store, b"compile-work").unwrap();
+    let mut path = [0; 95];
+    let length = io.current_directory(&mut path).unwrap();
+    assert_eq!(&path[..length], b"/home/default/documents/compile-work");
+    assert_eq!(io.change_directory(&store, b"../hello.c"), Err(IoError::Invalid));
+    let canonical = io.canonical_path(&store, b"../hello.c", &mut path).unwrap();
+    assert_eq!(&path[..canonical], b"/home/default/documents/hello.c");
+    let created = io.open(&mut store, b"temporary.o", WRITE | CREATE).unwrap();
+    io.write(created, b"object fixture").unwrap();
+    assert_eq!(io.unlink(&mut store, b"temporary.o"), Err(IoError::Conflict));
+    io.close(&mut store, created).unwrap();
+    io.unlink(&mut store, b"temporary.o").unwrap();
+    assert!(store.resolve(b"/home/default/documents/compile-work/temporary.o").is_err());
+    io.change_directory(&store, b"..").unwrap();
 }

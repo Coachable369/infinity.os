@@ -558,3 +558,30 @@ queries. The current full-link diagnostics are
 `/tmp/infinity-compiler-serial-final.log`. Native crash containment, provider
 binding, linker execution, resource packaging and detached-install acceptance
 remain incomplete. No compiler executable or ISO release is claimed.
+
+## Namespace and descriptor checkpoint
+
+TESTED: native ObjectIo working-directory changes, canonical resolution,
+namespace creation, content-reference removal, and truncation. Behavioral
+tests exercise real ObjectStore state, authority rejection, open-writer
+conflicts, zero-filled extension and cursor preservation. The C namespace
+bridge also rejects malformed provider output without publishing partial paths.
+Descriptor flags and writable-provider truncation are implemented in files.c.
+These C callbacks are not yet bound to an installed compiler execution context.
+
+The ten focused SDK checks and QEMU native C probe pass. The guest returned
+exit 33, including object I/O and serial synchronization. Its proof still
+reports on_device_compiler=false, hardware_isolation=false and
+installed_acceptance=false. This does not demonstrate native compilation.
+
+The full Clang/LLD link after these changes still fails on 12 functions:
+sigaction, sigprocmask, getpid, isatty, readlink, _exit, kill, link, dup2,
+symlink, gethostname and getsid. Diagnostics are in
+`/tmp/infinity-compiler-namespace-link.log`. No successful link is claimed.
+
+Completion also requires actual execution integration: native_c_image currently
+limits images to 256 KiB and rejects TLS/dynamic records, while execution.rs
+does not switch page tables. Compiler-sized loading, hardware TLS, fault
+containment, standard-stream/service binding, compiler invocation and installed
+payload acceptance remain unimplemented. Resolving linker names alone cannot
+close those gates. No compiler ISO was produced in this checkpoint.

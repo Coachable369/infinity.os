@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <sys/stat.h>
+#include <stdarg.h>
 #ifdef __INFINITY__
 typedef _READ_WRITE_RETURN_TYPE InfinityIoCount;
 #else
@@ -20,6 +21,7 @@ struct FileSlot {
     unsigned generation;
     uint32_t mode;
     int active;
+    int open_flags, descriptor_flags;
 };
 static struct FileSlot slots[128];
 
@@ -47,7 +49,7 @@ static struct FileSlot *lookup(int fd) {
 // ------------------=
 int open(const char *path, int flags, ...) {
     if (!path || !*path) return file_error(EINVAL);
-    const int supported = O_ACCMODE | O_CREAT | O_TRUNC | O_APPEND | O_EXCL;
+    const int supported = O_ACCMODE | O_CREAT | O_TRUNC | O_APPEND | O_EXCL | O_CLOEXEC;
     if (flags & ~supported) return file_error(ENOTSUP);
     uint32_t mode;
     switch (flags & O_ACCMODE) {
@@ -75,6 +77,8 @@ int open(const char *path, int flags, ...) {
         if (error) return file_error(error);
         slot->api = api; slot->context = context; slot->object = object;
         slot->mode = mode; slot->active = 1;
+        slot->open_flags = flags & (O_ACCMODE | O_APPEND);
+        slot->descriptor_flags = (flags & O_CLOEXEC) ? FD_CLOEXEC : 0;
         return (int)(slot->generation * 128 + i + 3);
     }
     return file_error(EMFILE);
@@ -236,4 +240,37 @@ int access(const char *path, int mode) {
     uint32_t requested = ((mode & R_OK) ? 1u : 0u) |
                          ((mode & W_OK) ? 2u : 0u) | ((mode & X_OK) ? 4u : 0u);
     return (value.access & requested) == requested ? 0 : file_error(EACCES);
+}
+
+// ------------------------=
+// FUNC: fcntl
+// DESC: Maintains descriptor flags; unsupported locking and duplication requests remain explicit errors.
+// ------------------=
+int fcntl(int fd, int command, ...) {
+    struct FileSlot *slot = lookup(fd);
+    if (!slot) return -1;
+    if (command == F_GETFD) return slot->descriptor_flags;
+    if (command == F_GETFL) return slot->open_flags;
+    if (command == F_SETFD) {
+        va_list args; va_start(args, command);
+        int flags = va_arg(args, int); va_end(args);
+        if (flags & ~FD_CLOEXEC) return file_error(EINVAL);
+        slot->descriptor_flags = flags;
+        return 0;
+    }
+    return file_error(ENOTSUP);
+}
+
+// ------------------------=
+// FUNC: ftruncate
+// DESC: Changes an authorized object's snapshot length through the owning versioned provider.
+// ------------------=
+int ftruncate(int fd, off_t length) {
+    struct FileSlot *slot = lookup(fd);
+    if (!slot) return -1;
+    if (!(slot->mode & 2)) return file_error(EBADF);
+    if (length < 0) return file_error(EINVAL);
+    if (!slot->api.truncate) return file_error(ENOSYS);
+    int error = slot->api.truncate(slot->context, slot->object, (uint64_t)length);
+    return error ? file_error(error) : 0;
 }

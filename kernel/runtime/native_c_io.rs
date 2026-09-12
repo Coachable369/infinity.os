@@ -130,6 +130,80 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
     }
 
     // ------------------------=
+    // FUNC: current_directory
+    // DESC: Copies this context's native working namespace without changing state.
+    // ------------------=
+    pub fn current_directory(&self, out: &mut [u8]) -> Result<usize, IoError> {
+        if out.len() < self.cwd_len { return Err(IoError::Capacity); }
+        out[..self.cwd_len].copy_from_slice(&self.cwd[..self.cwd_len]);
+        Ok(self.cwd_len)
+    }
+
+    // ------------------------=
+    // FUNC: canonical_path
+    // DESC: Resolves a normalized existing namespace reference under explicit read authority.
+    // ------------------=
+    pub fn canonical_path<D: BlockDevice>(&self, store: &ObjectStore<D>, path: &[u8], out: &mut [u8]) -> Result<usize, IoError> {
+        let mut canonical = [0; MAX_PATH];
+        let length = normalize(&self.cwd[..self.cwd_len], path, &mut canonical)?;
+        if !self.authorized(&canonical[..length], false) { return Err(IoError::Denied); }
+        store.resolve(&canonical[..length]).map_err(storage_error)?;
+        if out.len() < length { return Err(IoError::Capacity); }
+        out[..length].copy_from_slice(&canonical[..length]);
+        Ok(length)
+    }
+
+    // ------------------------=
+    // FUNC: change_directory
+    // DESC: Commits a working namespace only after resolution, type and grant validation.
+    // ------------------=
+    pub fn change_directory<D: BlockDevice>(&mut self, store: &ObjectStore<D>, path: &[u8]) -> Result<(), IoError> {
+        let mut canonical = [0; MAX_PATH];
+        let length = self.canonical_path(store, path, &mut canonical)?;
+        let id = store.resolve(&canonical[..length]).map_err(storage_error)?;
+        if store.metadata(id).map_err(storage_error)?.kind != ObjectType::NamespaceNode { return Err(IoError::Invalid); }
+        self.cwd = canonical; self.cwd_len = length;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: make_directory
+    // DESC: Creates a normal namespace object only beneath an authorized writable parent.
+    // ------------------=
+    pub fn make_directory<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, path: &[u8]) -> Result<(), IoError> {
+        let mut canonical = [0; MAX_PATH];
+        let length = normalize(&self.cwd[..self.cwd_len], path, &mut canonical)?;
+        let path = &canonical[..length];
+        if !self.authorized(path, true) { return Err(IoError::Denied); }
+        let separator = path.iter().rposition(|b| *b == b'/').ok_or(IoError::Invalid)?;
+        let parent = store.resolve(&path[..separator.max(1)]).map_err(storage_error)?;
+        let metadata = store.metadata(parent).map_err(storage_error)?;
+        if metadata.kind != ObjectType::NamespaceNode { return Err(IoError::Invalid); }
+        if !matches!(metadata.space, Space::Personal | Space::Applications) { return Err(IoError::Denied); }
+        store.create_attached(&path[separator + 1..], ObjectType::NamespaceNode, metadata.space, b"", path).map_err(storage_error)?;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: unlink
+    // DESC: Removes an authorized content reference using ObjectStore's atomic reclamation rules.
+    // ------------------=
+    pub fn unlink<D: BlockDevice>(&mut self, store: &mut ObjectStore<D>, path: &[u8]) -> Result<(), IoError> {
+        let mut canonical = [0; MAX_PATH];
+        let length = normalize(&self.cwd[..self.cwd_len], path, &mut canonical)?;
+        let path = &canonical[..length];
+        if !self.authorized(path, true) { return Err(IoError::Denied); }
+        let id = store.resolve(path).map_err(storage_error)?;
+        let metadata = store.metadata(id).map_err(storage_error)?;
+        if metadata.kind == ObjectType::NamespaceNode { return Err(IoError::IsDirectory); }
+        if !matches!(metadata.space, Space::Personal | Space::Applications) ||
+            !matches!(metadata.kind, ObjectType::Text | ObjectType::Blob | ObjectType::ApplicationData) { return Err(IoError::Denied); }
+        if self.handles.iter().flatten().any(|h| h.id == id && h.flags & WRITE != 0) { return Err(IoError::Conflict); }
+        store.remove_path(path).map_err(storage_error)?;
+        Ok(())
+    }
+
+    // ------------------------=
     // FUNC: open
     // DESC: Opens the saved object version or creates a normal namespace object after validating grants and capacity.
     // ------------------=
@@ -222,6 +296,20 @@ impl<'a, const N: usize> ObjectIo<'a, N> {
         h.length = h.length.max(end);
         h.dirty = true;
         Ok(bytes.len())
+    }
+
+    // ------------------------=
+    // FUNC: truncate
+    // DESC: Resizes the writable snapshot with zero-filled growth and unchanged cursor.
+    // ------------------=
+    pub fn truncate(&mut self, token: i32, length: usize) -> Result<(), IoError> {
+        let slot = self.slot(token)?;
+        let h = self.handles[slot].as_mut().unwrap();
+        if h.flags & WRITE == 0 { return Err(IoError::Denied); }
+        if length > MAX_CONTENT { return Err(IoError::Capacity); }
+        if length > h.length { self.buffers[slot][h.length..length].fill(0); }
+        if length != h.length { h.length = length; h.dirty = true; }
+        Ok(())
     }
 
     // ------------------------=

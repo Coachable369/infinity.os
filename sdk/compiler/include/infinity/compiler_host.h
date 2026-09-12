@@ -26,7 +26,17 @@ typedef struct InfinityCompilerFiles {
     int (*read_at)(void *, uint64_t, uint64_t, void *, size_t, size_t *);
     int (*inspect)(void *, uint64_t, InfinityCompilerMetadata *);
     int (*inspect_path)(void *, const char *, InfinityCompilerMetadata *);
+    int (*truncate)(void *, uint64_t, uint64_t);
 } InfinityCompilerFiles;
+typedef struct InfinityCompilerNamespace {
+    /* Output paths are canonical native references, at most 95 bytes, without
+       a NUL terminator. Every request is capability checked by the provider. */
+    int (*current)(void *, char *, size_t, size_t *);
+    int (*resolve)(void *, const char *, char *, size_t, size_t *);
+    int (*change)(void *, const char *);
+    int (*create)(void *, const char *);
+    int (*remove)(void *, const char *);
+} InfinityCompilerNamespace;
 typedef struct InfinityCompilerHost {
     void *context;
     const char *executable_path;
@@ -60,6 +70,7 @@ typedef struct InfinityCompilerHost {
        is not safe for multiple threads entering the same compiler image. */
     uint32_t serial_execution;
     const char *home_path;
+    const InfinityCompilerNamespace *namespaces;
 } InfinityCompilerHost;
 void infinity_compiler_set_host(const InfinityCompilerHost *);
 const InfinityCompilerHost *infinity_compiler_get_host(void);
