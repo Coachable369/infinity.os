@@ -353,6 +353,11 @@ milestone-8-test: network-test runtime-test
 	@tools/milestone-8-install-parity-test.sh
 
 .PHONY: boot-media-test
+.PHONY: install-boot-handoff-test
+install-boot-handoff-test:
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 --test kernel/core/install_boot.rs -o build/behavior-tests/install-boot-test
+	@build/behavior-tests/install-boot-test
 .PHONY: boot-reveal-test
 boot-reveal-test:
 	@mkdir -p build/behavior-tests

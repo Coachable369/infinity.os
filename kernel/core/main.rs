@@ -8,6 +8,7 @@ mod crash;
 #[path = "../drivers/mod.rs"]
 mod drivers;
 mod intent;
+mod install_boot;
 mod memory;
 #[cfg(target_arch = "x86")]
 #[path = "../arch/x86/output.rs"]

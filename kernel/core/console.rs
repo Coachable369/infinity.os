@@ -5626,6 +5626,14 @@ impl ConsoleRuntime {
                 }
             }
             InstallerStep::Complete => {
+                let registered = self.storage_plan.as_ref().is_some_and(|plan| {
+                    crate::install_boot::prepare(self.system.firmware_runtime_services,
+                        plan.esp_uuid, plan.esp_first_lba, plan.esp_last_lba)
+                });
+                if !registered {
+                    self.output.write_line(b"Could not register the installed UEFI boot target. Remove the installer media before restarting.");
+                    return;
+                }
                 crate::output_text(b"[install] reboot countdown started\n");
                 crate::bootstrap::installer_reboot_countdown();
                 crate::output_text(b"[install] firmware reboot requested\n");

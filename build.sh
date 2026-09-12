@@ -9,6 +9,7 @@ cd "$project_root"
 # Catch provisioning contract failures before expensive builds or cleanup.
 sh tools/select-install-iso-test.sh
 python3 tools/re-provision-tpm-test.py
+make install-boot-handoff-test
 
 echo "==> Building InfinityOS for x86_64 and AArch64"
 make clean
