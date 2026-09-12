@@ -103,3 +103,7 @@ path = "../settings-overflow-test.rs"
 [[bin]]
 name = "resource-policy-test"
 path = "../resource-policy-test.rs"
+
+[[bin]]
+name = "ministral-native-test"
+path = "../ministral-native-test.rs"

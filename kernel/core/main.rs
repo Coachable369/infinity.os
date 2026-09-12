@@ -172,7 +172,7 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     runtime::announce_services();
     crash::set_phase(crash::CrashPhase::UserInterface);
     if info.model_address != 0
-        && info.model_bytes == 5_027_783_488
+        && matches!(info.model_bytes, 5_027_783_488 | 7_174_806_496)
         && info.model_work_address != 0
         && info.model_work_bytes >= 1280 * 1024 * 1024
     {
@@ -187,7 +187,13 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
                 info.model_work_bytes as usize,
             )
         };
-        let ready = runtime::ai::with_ai_runtime(|ai| ai.load_qwen(model, arena));
+        let ready = runtime::ai::with_ai_runtime(|ai| {
+            let (qwen, second) = model.split_at(5_027_783_488);
+            let (qwen_arena, second_arena) = arena.split_at_mut(1280 * 1024 * 1024);
+            let ready = ai.load_qwen(qwen, qwen_arena);
+            if !second.is_empty() { ai.load_ministral(second, second_arena); }
+            ready
+        });
         if ready {
             output_text(if info.worker_bridge == 0 {
                 b"[AI] MP startup bridge unavailable; single-core fallback\n"

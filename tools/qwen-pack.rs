@@ -60,7 +60,18 @@ fn split(source: &str, directory: &str, slot: u32) -> (u64, u32, [u8; 32]) {
 // ------------------=
 fn main() {
     let args: Vec<_> = std::env::args().collect();
-    if args[1] == "model" {
+    if args[1] == "ministral" {
+        let (length, _, digest) = split(&args[2], &args[3], 3);
+        assert_eq!(length, 2_147_023_008);
+        assert_eq!(
+            digest,
+            [
+                0x9e, 0xd1, 0x50, 0xd4, 0x36, 0x7e, 0x68, 0xdf, 0x0a, 0xc8, 0xe1, 0x54, 0x0f, 0x6d,
+                0xdc, 0x65, 0xb4, 0x2d, 0x0e, 0xe2, 0x63, 0x78, 0x32, 0x9d, 0x1e, 0xcb, 0xca, 0x60,
+                0xf9, 0x3f, 0xc5, 0xf8
+            ]
+        );
+    } else if args[1] == "model" {
         let (length, _, digest) = split(&args[2], &args[3], 2);
         assert_eq!(length, 5_027_783_488);
         assert_eq!(

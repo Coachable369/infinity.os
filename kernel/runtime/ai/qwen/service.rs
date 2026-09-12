@@ -5,6 +5,7 @@ use super::{
     transformer::{Engine, Progress, Weights, CONTEXT, KV_FLOATS, WORK_FLOATS},
 };
 pub struct Service {
+    ministral: bool,
     engine: Engine<'static, 'static>,
     tokenizer: Tokenizer<'static, 'static>,
     prompt: [u32; CONTEXT],
@@ -29,7 +30,19 @@ impl Service {
             0xe3, 0x4c, 0x14, 0x17, 0xf5, 0x0b, 0x5c, 0x00, 0x19, 0xdd, 0x56, 0x0e, 0x48, 0x82,
             0xc5, 0x74, 0x57, 0x85,
         ];
-        if bytes.len() != 5_027_783_488 || Sha256::digest(bytes).as_slice() != HASH {
+        let ministral = bytes.len() == 2_147_023_008;
+        let expected = if ministral {
+            [
+                0x9e, 0xd1, 0x50, 0xd4, 0x36, 0x7e, 0x68, 0xdf, 0x0a, 0xc8, 0xe1, 0x54, 0x0f, 0x6d,
+                0xdc, 0x65, 0xb4, 0x2d, 0x0e, 0xe2, 0x63, 0x78, 0x32, 0x9d, 0x1e, 0xcb, 0xca, 0x60,
+                0xf9, 0x3f, 0xc5, 0xf8,
+            ]
+        } else {
+            HASH
+        };
+        if (!ministral && bytes.len() != 5_027_783_488)
+            || Sha256::digest(bytes).as_slice() != expected
+        {
             return Err(Error::Format);
         }
         let model = Model::parse(bytes)?;
@@ -71,6 +84,7 @@ impl Service {
         let tokenizer = Tokenizer::load(model, vocabulary, merge_index)?;
         let engine = Engine::new(weights, kv, work)?;
         Ok(Self {
+            ministral,
             engine,
             tokenizer,
             prompt: [0; CONTEXT],
@@ -120,6 +134,20 @@ impl Service {
     // DESC: Retains prior turns as tokens and bounds the complete conversation to the context window.
     // ------------------=
     fn append_turn(&mut self, text: &str) -> Result<(), Error> {
+        if self.ministral {
+            if self.prompt_count == 0 {
+                self.control(b"<s>")?;
+            } else {
+                self.control(b"</s>")?;
+            }
+            self.control(b"[INST]")?;
+            self.text(text)?;
+            self.control(b"[/INST]")?;
+            if self.prompt_count >= CONTEXT - 1 {
+                return Err(Error::Overflow);
+            }
+            return Ok(());
+        }
         if self.prompt_count != 0 {
             self.control(b"<|im_end|>")?;
             self.text("\n")?;
@@ -222,7 +250,10 @@ impl Service {
             self.consumed += 1;
             return Ok(false);
         }
-        if next == 151645 || next == 151643 || self.prompt_count >= CONTEXT {
+        if (self.ministral && next == 2)
+            || (!self.ministral && (next == 151645 || next == 151643))
+            || self.prompt_count >= CONTEXT
+        {
             self.busy = false;
             return Ok(false);
         }

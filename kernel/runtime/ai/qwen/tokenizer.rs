@@ -10,6 +10,7 @@ pub const EMPTY: Entry<'static> = Entry { bytes: &[], id: 0 };
 pub struct Tokenizer<'a, 'b> {
     vocabulary: &'b [Entry<'a>],
     merges: &'b [Entry<'a>],
+    tekken: bool,
 }
 impl<'a, 'b> Tokenizer<'a, 'b> {
     // ------------------------=
@@ -41,7 +42,16 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
             }
             target.sort_unstable_by(|a, b| a.bytes.cmp(b.bytes));
         }
-        Ok(Self { vocabulary, merges })
+        let (_, mut pre) = model.metadata(b"tokenizer.ggml.pre")?;
+        let pre = pre.string()?;
+        if pre != b"qwen2" && pre != b"tekken" {
+            return Err(Error::Unsupported);
+        }
+        Ok(Self {
+            vocabulary,
+            merges,
+            tekken: pre == b"tekken",
+        })
     }
     // ------------------------=
     // FUNC: lookup
@@ -68,7 +78,11 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
         let mut used = 0;
         let mut remaining = text;
         while !remaining.is_empty() {
-            let length = piece_length(remaining);
+            let length = if self.tekken {
+                tekken_piece_length(remaining)?
+            } else {
+                piece_length(remaining)
+            };
             used += self.piece(&remaining.as_bytes()[..length], &mut output[used..])?;
             remaining = &remaining[length..];
         }
@@ -159,6 +173,46 @@ fn byte_character(byte: u8) -> char {
         let rank = (0..byte).filter(|b| !kept(*b)).count();
         char::from_u32(256 + rank as u32).unwrap()
     }
+}
+// ------------------------=
+// FUNC: tekken_piece_length
+// DESC: Matches Tekken's case-sensitive ASCII branches; unsupported Unicode fails explicitly instead of mis-tokenizing.
+// ------------------=
+fn tekken_piece_length(text: &str) -> Result<usize, Error> {
+    if !text.is_ascii() {
+        return Err(Error::Unsupported);
+    }
+    let b = text.as_bytes();
+    let mut start = 0;
+    if !b[0].is_ascii_alphanumeric()
+        && b[0] != b'\r'
+        && b[0] != b'\n'
+        && b.get(1).is_some_and(u8::is_ascii_alphabetic)
+    {
+        start = 1;
+    }
+    if b[start].is_ascii_alphabetic() {
+        let mut end = start;
+        while end < b.len() && b[end].is_ascii_uppercase() {
+            end += 1;
+        }
+        while end < b.len() && b[end].is_ascii_lowercase() {
+            end += 1;
+        }
+        return Ok(end);
+    }
+    // Numeric, punctuation, and whitespace alternatives are shared, except
+    // Tekken has no contraction branch and accepts trailing slash after newline.
+    if b[0] == b'\'' {
+        return Ok(1);
+    }
+    let mut end = piece_length(text);
+    if b[..end].iter().any(|c| *c == b'\r' || *c == b'\n') && !b[0].is_ascii_whitespace() {
+        while end < b.len() && matches!(b[end], b'\r' | b'\n' | b'/') {
+            end += 1;
+        }
+    }
+    Ok(end)
 }
 // ------------------------=
 // FUNC: piece_length

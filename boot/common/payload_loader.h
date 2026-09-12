@@ -10,7 +10,7 @@ static uint32_t payload_kind = UINT32_MAX, payload_part = UINT32_MAX;
 // DESC: Reads a bounded logical payload range across independently seekable shards.
 // ------------------=
 static uint64_t EFIAPI payload_read(uint32_t kind, uint64_t offset, size_t length, void *destination) {
-    if (!payload_root || kind > 2 || length > 1024 * 1024) return 1;
+    if (!payload_root || kind > 3 || length > 1024 * 1024) return 1;
     uint8_t *out = destination;
     while (length) {
         uint64_t part64 = offset / UINT64_C(536870912);
@@ -57,8 +57,11 @@ static void prepare_payloads(EFI_HANDLE image, EFI_SYSTEM_TABLE *system, Infinit
     if (!installed || payload_read(2, 0, sizeof(probe), probe) != 0) return;
     if (!equal_bytes(probe, (const uint8_t *)"GGUF", 4))
         fail(system, L"Invalid native model payload\r\n", "Invalid native model payload\n");
-    const uint64_t model_bytes = UINT64_C(5027783488);
-    const uint64_t work_bytes = UINT64_C(1280) * 1024 * 1024;
+    const uint8_t second_model = payload_read(3, 0, sizeof(probe), probe) == 0;
+    if (second_model && !equal_bytes(probe, (const uint8_t *)"GGUF", 4))
+        fail(system, L"Invalid Ministral model payload\r\n", "Invalid Ministral model payload\n");
+    const uint64_t model_bytes = UINT64_C(5027783488) + (second_model ? UINT64_C(2147023008) : 0);
+    const uint64_t work_bytes = UINT64_C(1280) * 1024 * 1024 * (second_model ? 2 : 1);
     uint64_t model = 0, work = 0;
     if (system->boot_services->allocate_pages(EFI_ALLOCATE_ANY_PAGES, EFI_LOADER_DATA,
             (size_t)((model_bytes + PAGE_MASK) / PAGE_SIZE), &model) != EFI_SUCCESS ||
@@ -68,8 +71,11 @@ static void prepare_payloads(EFI_HANDLE image, EFI_SYSTEM_TABLE *system, Infinit
     serial_write("[BOOT] loading native Qwen3-8B payload\n");
     for (uint64_t offset = 0; offset < model_bytes;) {
         size_t count = 1024 * 1024;
-        if (count > model_bytes - offset) count = (size_t)(model_bytes - offset);
-        if (payload_read(2, offset, count, (void *)(uintptr_t)(model + offset)) != 0)
+        uint32_t kind = offset < UINT64_C(5027783488) ? 2 : 3;
+        uint64_t source_offset = kind == 2 ? offset : offset - UINT64_C(5027783488);
+        uint64_t remaining = kind == 2 ? UINT64_C(5027783488) - offset : model_bytes - offset;
+        if (count > remaining) count = (size_t)remaining;
+        if (payload_read(kind, source_offset, count, (void *)(uintptr_t)(model + offset)) != 0)
             fail(system, L"Native model payload is incomplete\r\n", "Native model payload read failed\n");
         offset += count;
     }

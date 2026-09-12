@@ -1,5 +1,9 @@
 # Native Qwen3-8B bring-up
 
+The current installer also packages [Ministral 3 3B](native-ministral.md) for
+comparison. That document describes the additional P3 payload, larger ESP and
+combined RAM reservations; Qwen-only sizes below describe the earlier layout.
+
 ## Performance follow-up
 
 The later [editor/CPU follow-up](editor-pointer-performance.md) removes the

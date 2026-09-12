@@ -591,6 +591,15 @@ fn desktop_chat() {
     assert!(!chat.selected_model_ready());
     assert!(!chat.submit(b"hello"));
     assert_eq!(chat.message_count(), before);
+    assert_eq!(chat.select_next_model(), 4);
+    assert_eq!(chat.selected_model(), runtime::ai::chat::MINISTRAL_MODEL_ID);
+    assert!(!chat.selected_model_ready());
+    assert!(!chat.submit(b"hello"));
+    assert_eq!(chat.message_count(), before);
+    chat.set_ministral_ready(true);
+    assert!(chat.selected_model_ready());
+    // A native model never routes through canned local responses, even when ready.
+    assert!(!chat.submit(b"hello"));
     assert_eq!(chat.select_next_model(), 0);
     assert!(chat.selected_model_ready());
     for _ in 0..CHAT_MESSAGE_CAPACITY {
@@ -619,6 +628,9 @@ fn desktop_chat() {
     let mut restored_chat = runtime::ai::chat::ChatRuntime::new();
     assert!(restored_chat.select_model_index(preferences.chat_model_index as usize));
     assert_eq!(restored_chat.selected_model(), runtime::ai::chat::QWEN_FULL_MODEL_ID);
+    identities.update_ai_chat_preferences(user.id, user.id, true, 4).unwrap();
+    let restored = runtime::identity::IdentitySystem::decode(&identities.encode()).unwrap();
+    assert_eq!(restored.ai_profile(user.id).unwrap().chat_model_index, 4);
     let other = identities
         .create_user(b"other-user", b"Other User", 2)
         .unwrap();

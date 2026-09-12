@@ -9414,7 +9414,7 @@ impl super::DisplayDevice {
         );
         let mut throughput = [0u8; 32];
         let throughput_len = crate::runtime::ai::with_ai_runtime(|runtime| {
-            if chat.selected_model() != crate::runtime::ai::chat::QWEN_FULL_MODEL_ID
+            if !matches!(chat.selected_model(), crate::runtime::ai::chat::QWEN_FULL_MODEL_ID | crate::runtime::ai::chat::MINISTRAL_MODEL_ID)
                 || runtime.qwen_tokens < 2 || runtime.qwen_decode_ns == 0 { return 0; }
             let tenths = runtime.qwen_tokens.saturating_sub(1).saturating_mul(10_000_000_000)
                 / runtime.qwen_decode_ns;

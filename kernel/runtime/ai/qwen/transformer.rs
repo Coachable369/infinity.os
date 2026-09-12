@@ -31,53 +31,99 @@ pub struct Weights<'a> {
     output: Tensor<'a>,
     norm: Tensor<'a>,
     layers: [Layer<'a>; LAYERS],
+    ministral: bool,
+    width: usize,
+    hidden: usize,
+    vocabulary: usize,
+    layer_count: usize,
 }
 impl<'a> Weights<'a> {
     // ------------------------=
     // FUNC: load
-    // DESC: Validates the exact supported Qwen3 geometry and resolves every tensor once.
+    // DESC: Validates the two supported model geometries and resolves every tensor once.
     // ------------------=
     pub fn load(model: Model<'a>) -> Result<Self, Error> {
         let (kind, mut architecture) = model.metadata(b"general.architecture")?;
-        if kind != 8 || architecture.string()? != b"qwen3" {
+        let architecture = architecture.string()?;
+        let ministral = architecture == b"mistral3";
+        if kind != 8 || (!ministral && architecture != b"qwen3") {
             return Err(Error::Unsupported);
         }
+        let (width, hidden, vocabulary, layer_count) = if ministral {
+            (3072, 9216, 131072, 26)
+        } else {
+            (WIDTH, HIDDEN, VOCAB, LAYERS)
+        };
         for (key, expected) in [
-            (b"qwen3.block_count".as_slice(), 36),
-            (b"qwen3.embedding_length", 4096),
-            (b"qwen3.feed_forward_length", 12288),
+            (b"qwen3.block_count".as_slice(), layer_count as u32),
+            (b"qwen3.embedding_length", width as u32),
+            (b"qwen3.feed_forward_length", hidden as u32),
             (b"qwen3.attention.head_count", 32),
             (b"qwen3.attention.head_count_kv", 8),
             (b"qwen3.attention.key_length", 128),
             (b"qwen3.attention.value_length", 128),
         ] {
-            let (kind, mut value) = model.metadata(key)?;
+            let (kind, mut value) = model.metadata(model_key(key, ministral, &mut [0; 80]))?;
             if kind != 4 || value.u32()? != expected {
                 return Err(Error::Unsupported);
             }
         }
         for (key, expected) in [
             (b"qwen3.rope.freq_base".as_slice(), 1_000_000f32),
-            (b"qwen3.attention.layer_norm_rms_epsilon", 1e-6),
+            (
+                b"qwen3.attention.layer_norm_rms_epsilon",
+                if ministral { 1e-5 } else { 1e-6 },
+            ),
         ] {
-            let (kind, mut value) = model.metadata(key)?;
+            let (kind, mut value) = model.metadata(model_key(key, ministral, &mut [0; 80]))?;
             if kind != 6 || f32::from_bits(value.u32()?) != expected {
                 return Err(Error::Unsupported);
             }
         }
-        let embedding = checked(model.tensor(b"token_embd.weight")?, WIDTH, VOCAB)?;
-        let output = checked(model.tensor(b"output.weight")?, WIDTH, VOCAB)?;
-        let norm = checked(model.tensor(b"output_norm.weight")?, WIDTH, 1)?;
-        let first = load_layer(model, 0)?;
+        let embedding = checked(model.tensor(b"token_embd.weight")?, width, vocabulary)?;
+        if ministral {
+            for (key, expected) in [
+                (b"mistral3.rope.scaling.factor".as_slice(), 16.0f32),
+                (b"mistral3.rope.scaling.yarn_beta_fast", 32.0),
+                (b"mistral3.rope.scaling.yarn_beta_slow", 1.0),
+                (b"mistral3.attention.temperature_scale", 0.1),
+            ] {
+                let (kind, mut value) = model.metadata(key)?;
+                if kind != 6 || f32::from_bits(value.u32()?) != expected {
+                    return Err(Error::Unsupported);
+                }
+            }
+            let (_, mut original) =
+                model.metadata(b"mistral3.rope.scaling.original_context_length")?;
+            if original.u32()? != 16384 {
+                return Err(Error::Unsupported);
+            }
+        }
+        let output = checked(
+            if ministral {
+                embedding
+            } else {
+                model.tensor(b"output.weight")?
+            },
+            width,
+            vocabulary,
+        )?;
+        let norm = checked(model.tensor(b"output_norm.weight")?, width, 1)?;
+        let first = load_layer(model, 0, ministral, width, hidden)?;
         let mut layers = [first; LAYERS];
-        for (i, layer) in layers.iter_mut().enumerate().skip(1) {
-            *layer = load_layer(model, i)?;
+        for (i, layer) in layers.iter_mut().enumerate().take(layer_count).skip(1) {
+            *layer = load_layer(model, i, ministral, width, hidden)?;
         }
         Ok(Self {
             embedding,
             output,
             norm,
             layers,
+            ministral,
+            width,
+            hidden,
+            vocabulary,
+            layer_count,
         })
     }
 }
@@ -96,7 +142,13 @@ fn checked(t: Tensor<'_>, width: usize, rows: usize) -> Result<Tensor<'_>, Error
 // FUNC: load_layer
 // DESC: Resolves the eleven tensors making up one standard Qwen3 decoder block.
 // ------------------=
-fn load_layer(model: Model<'_>, layer: usize) -> Result<Layer<'_>, Error> {
+fn load_layer(
+    model: Model<'_>,
+    layer: usize,
+    ministral: bool,
+    width: usize,
+    hidden: usize,
+) -> Result<Layer<'_>, Error> {
     let find = |suffix: &[u8], width, rows| {
         let mut name = [0u8; 64];
         name[..4].copy_from_slice(b"blk.");
@@ -113,17 +165,25 @@ fn load_layer(model: Model<'_>, layer: usize) -> Result<Layer<'_>, Error> {
         checked(model.tensor(&name[..n + suffix.len()])?, width, rows)
     };
     Ok(Layer {
-        norm: find(b"attn_norm.weight", WIDTH, 1)?,
-        q: find(b"attn_q.weight", WIDTH, WIDTH)?,
-        k: find(b"attn_k.weight", WIDTH, KV_WIDTH)?,
-        v: find(b"attn_v.weight", WIDTH, KV_WIDTH)?,
-        qnorm: find(b"attn_q_norm.weight", 128, 1)?,
-        knorm: find(b"attn_k_norm.weight", 128, 1)?,
-        attention: find(b"attn_output.weight", WIDTH, WIDTH)?,
-        ffn_norm: find(b"ffn_norm.weight", WIDTH, 1)?,
-        gate: find(b"ffn_gate.weight", WIDTH, HIDDEN)?,
-        up: find(b"ffn_up.weight", WIDTH, HIDDEN)?,
-        down: find(b"ffn_down.weight", HIDDEN, WIDTH)?,
+        norm: find(b"attn_norm.weight", width, 1)?,
+        q: find(b"attn_q.weight", width, WIDTH)?,
+        k: find(b"attn_k.weight", width, KV_WIDTH)?,
+        v: find(b"attn_v.weight", width, KV_WIDTH)?,
+        qnorm: if ministral {
+            find(b"attn_norm.weight", width, 1)?
+        } else {
+            find(b"attn_q_norm.weight", 128, 1)?
+        },
+        knorm: if ministral {
+            find(b"attn_norm.weight", width, 1)?
+        } else {
+            find(b"attn_k_norm.weight", 128, 1)?
+        },
+        attention: find(b"attn_output.weight", WIDTH, width)?,
+        ffn_norm: find(b"ffn_norm.weight", width, 1)?,
+        gate: find(b"ffn_gate.weight", width, hidden)?,
+        up: find(b"ffn_up.weight", width, hidden)?,
+        down: find(b"ffn_down.weight", hidden, width)?,
     })
 }
 
@@ -182,16 +242,17 @@ impl<'a, 'b> Engine<'a, 'b> {
         if kv.len() != KV_FLOATS || work.len() != WORK_FLOATS {
             return Err(Error::Format);
         }
-        let (x, tail) = work.split_at_mut(WIDTH);
-        let (normalized, tail) = tail.split_at_mut(WIDTH);
+        let (x, tail) = work.split_at_mut(weights.width);
+        let (normalized, tail) = tail.split_at_mut(weights.width);
         let (q, tail) = tail.split_at_mut(WIDTH);
         let (attention, tail) = tail.split_at_mut(WIDTH);
         let (k, tail) = tail.split_at_mut(KV_WIDTH);
         let (v, tail) = tail.split_at_mut(KV_WIDTH);
-        let (gate, tail) = tail.split_at_mut(HIDDEN);
-        let (up, tail) = tail.split_at_mut(HIDDEN);
+        let (gate, tail) = tail.split_at_mut(weights.hidden);
+        let (up, tail) = tail.split_at_mut(weights.hidden);
         let (row, tail) = tail.split_at_mut(HIDDEN);
-        let (scores, logits) = tail.split_at_mut(CONTEXT);
+        let (scores, tail) = tail.split_at_mut(CONTEXT);
+        let (logits, _) = tail.split_at_mut(weights.vocabulary);
         Ok(Self {
             weights,
             kv,
@@ -256,7 +317,7 @@ impl<'a, 'b> Engine<'a, 'b> {
     // DESC: Skips vocabulary projection for intermediate prompt tokens while preserving identical KV state.
     // ------------------=
     pub fn begin_with_prediction(&mut self, token: u32, predict: bool) -> Result<Progress, Error> {
-        if self.active || token as usize >= VOCAB {
+        if self.active || token as usize >= self.weights.vocabulary {
             return Err(Error::Format);
         }
         if self.position == CONTEXT {
@@ -266,7 +327,12 @@ impl<'a, 'b> Engine<'a, 'b> {
         // Every layer and Q/K head uses the same angles at this position.
         // Compute 64 pairs once, rather than 92,160 soft-float trig calls.
         for (i, pair) in self.rotary.iter_mut().enumerate() {
-            let angle = self.position as f32 / libm::powf(1_000_000.0, i as f32 / 64.0);
+            let frequency = rotary_frequency(i, self.weights.ministral);
+            let angle = if self.weights.ministral {
+                self.position as f32 * frequency
+            } else {
+                self.position as f32 / libm::powf(1_000_000.0, i as f32 / 64.0)
+            };
             *pair = (libm::sinf(angle), libm::cosf(angle));
         }
         self.layer = 0;
@@ -288,10 +354,15 @@ impl<'a, 'b> Engine<'a, 'b> {
         if !self.active {
             return Ok(Progress::Idle);
         }
-        let layer = self.weights.layers[self.layer.min(LAYERS - 1)];
+        let layer = self.weights.layers[self.layer.min(self.weights.layer_count - 1)];
         match self.phase {
             0 => {
-                rms(self.x, self.normalized, layer.norm)?;
+                rms_epsilon(
+                    self.x,
+                    self.normalized,
+                    layer.norm,
+                    if self.weights.ministral { 1e-5 } else { 1e-6 },
+                )?;
                 self.phase = 1;
             }
             1 => {
@@ -310,8 +381,13 @@ impl<'a, 'b> Engine<'a, 'b> {
                 }
             }
             4 => {
-                norm_rope(self.q, layer.qnorm, &self.rotary)?;
-                norm_rope(self.k, layer.knorm, &self.rotary)?;
+                if self.weights.ministral {
+                    adjacent_rope(self.q, &self.rotary);
+                    adjacent_rope(self.k, &self.rotary);
+                } else {
+                    norm_rope(self.q, layer.qnorm, &self.rotary)?;
+                    norm_rope(self.k, layer.knorm, &self.rotary)?;
+                }
                 let offset = (self.layer * CONTEXT + self.position) * KV_WIDTH * 2;
                 self.kv[offset..offset + KV_WIDTH].copy_from_slice(self.k);
                 self.kv[offset + KV_WIDTH..offset + KV_WIDTH * 2].copy_from_slice(self.v);
@@ -345,10 +421,15 @@ impl<'a, 'b> Engine<'a, 'b> {
                 }
             }
             7 => {
-                for i in 0..WIDTH {
+                for i in 0..self.weights.width {
                     self.x[i] += self.normalized[i];
                 }
-                rms(self.x, self.normalized, layer.ffn_norm)?;
+                rms_epsilon(
+                    self.x,
+                    self.normalized,
+                    layer.ffn_norm,
+                    if self.weights.ministral { 1e-5 } else { 1e-6 },
+                )?;
                 self.phase = 8;
             }
             8 => {
@@ -374,7 +455,7 @@ impl<'a, 'b> Engine<'a, 'b> {
                 }
             }
             10 => {
-                for i in 0..HIDDEN {
+                for i in 0..self.weights.hidden {
                     self.gate[i] = self.up[i] * self.gate[i] / (1.0 + libm::expf(-self.gate[i]));
                 }
                 self.phase = 11;
@@ -391,17 +472,22 @@ impl<'a, 'b> Engine<'a, 'b> {
                 }
             }
             12 => {
-                for i in 0..WIDTH {
+                for i in 0..self.weights.width {
                     self.x[i] += self.normalized[i];
                 }
                 self.layer += 1;
-                if self.layer == LAYERS {
+                if self.layer == self.weights.layer_count {
                     if !self.predict {
                         self.position += 1;
                         self.active = false;
                         return Ok(Progress::Prefilled);
                     }
-                    rms(self.x, self.normalized, self.weights.norm)?;
+                    rms_epsilon(
+                        self.x,
+                        self.normalized,
+                        self.weights.norm,
+                        if self.weights.ministral { 1e-5 } else { 1e-6 },
+                    )?;
                     self.phase = 13;
                 } else {
                     self.phase = 0;
@@ -417,7 +503,7 @@ impl<'a, 'b> Engine<'a, 'b> {
                 )? {
                     // Temperature-zero sampling is deterministic and has no RNG dependency.
                     let mut best = 0;
-                    for i in 0..VOCAB {
+                    for i in 0..self.weights.vocabulary {
                         if !self.logits[i].is_finite() {
                             self.active = false;
                             return Err(Error::Format);
@@ -519,9 +605,21 @@ fn mat_rows(
 // DESC: Applies epsilon-stabilized RMS normalization and learned scale.
 // ------------------=
 fn rms(input: &[f32], output: &mut [f32], weights: Tensor<'_>) -> Result<(), Error> {
+    rms_epsilon(input, output, weights, 1e-6)
+}
+// ------------------------=
+// FUNC: rms_epsilon
+// DESC: Applies the model-specific RMS stability constant.
+// ------------------=
+fn rms_epsilon(
+    input: &[f32],
+    output: &mut [f32],
+    weights: Tensor<'_>,
+    epsilon: f32,
+) -> Result<(), Error> {
     quant::row(weights, 0, output)?;
     let scale =
-        1.0 / libm::sqrtf(input.iter().map(|v| v * v).sum::<f32>() / input.len() as f32 + 1e-6);
+        1.0 / libm::sqrtf(input.iter().map(|v| v * v).sum::<f32>() / input.len() as f32 + epsilon);
     for (value, x) in output.iter_mut().zip(input) {
         *value *= *x * scale;
     }
@@ -582,6 +680,50 @@ fn attend(
         let weight = scores[time] / sum;
         for i in 0..128 {
             out[i] += weight * kv[start + i];
+        }
+    }
+}
+
+// ------------------------=
+// FUNC: model_key
+// DESC: Resolves metadata within the selected supported architecture namespace.
+// ------------------=
+fn model_key<'a>(key: &'a [u8], ministral: bool, buffer: &'a mut [u8; 80]) -> &'a [u8] {
+    if !ministral {
+        return key;
+    }
+    buffer[..8].copy_from_slice(b"mistral3");
+    buffer[8..8 + key.len() - 5].copy_from_slice(&key[5..]);
+    &buffer[..key.len() + 3]
+}
+// ------------------------=
+// FUNC: rotary_frequency
+// DESC: Computes pinned Qwen or Ministral YaRN frequencies; 4K positions need no temperature scaling.
+// ------------------=
+pub fn rotary_frequency(index: usize, ministral: bool) -> f32 {
+    let inverse = 1.0 / libm::powf(1_000_000.0, index as f32 / 64.0);
+    if !ministral {
+        return inverse;
+    }
+    let correction = |rotations: f32| {
+        128.0 * libm::logf(16384.0 / (rotations * 2.0 * core::f32::consts::PI))
+            / (2.0 * libm::logf(1_000_000.0))
+    };
+    let low = libm::floorf(correction(32.0)).max(0.0);
+    let high = libm::ceilf(correction(1.0)).min(127.0);
+    let ramp = ((index as f32 - low) / (high - low)).clamp(0.0, 1.0);
+    inverse * ((1.0 - ramp) + ramp / 16.0)
+}
+// ------------------------=
+// FUNC: adjacent_rope
+// DESC: Rotates adjacent pairs matching the pinned GGUF's permuted Ministral Q/K tensors.
+// ------------------=
+fn adjacent_rope(values: &mut [f32], rotary: &[(f32, f32); 64]) {
+    for head in values.chunks_exact_mut(128) {
+        for (i, &(s, c)) in rotary.iter().enumerate() {
+            let (a, b) = (head[2 * i], head[2 * i + 1]);
+            head[2 * i] = a * c - b * s;
+            head[2 * i + 1] = a * s + b * c;
         }
     }
 }

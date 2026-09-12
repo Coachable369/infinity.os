@@ -10,6 +10,7 @@ pub const CHAT_INPUT_CAPACITY: usize = 4096;
 pub const SYSTEM_ASSISTANT_MODEL_ID: ModelId = DIALOGUE_MODEL_ID;
 pub const INTENT_ASSISTANT_MODEL_ID: ModelId = super::model::LOCAL_INTENT_MODEL_ID;
 pub const QWEN_FULL_MODEL_ID: ModelId = 0x4149_1003;
+pub const MINISTRAL_MODEL_ID: ModelId = 0x4149_1004;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GenerationState {
@@ -67,7 +68,7 @@ pub struct ChatModel {
     pub description: &'static [u8],
 }
 
-pub const CHAT_MODELS: [ChatModel; 4] = [
+pub const CHAT_MODELS: [ChatModel; 5] = [
     ChatModel {
         id: SYSTEM_ASSISTANT_MODEL_ID,
         name: b"Infinity Dialogue v1",
@@ -88,6 +89,11 @@ pub const CHAT_MODELS: [ChatModel; 4] = [
         name: b"Qwen3-8B",
         description: b"Native CPU - Q4_K_M - 4K context",
     },
+    ChatModel {
+        id: MINISTRAL_MODEL_ID,
+        name: b"Ministral 3 3B",
+        description: b"Native CPU - Q4_K_M - 4K context",
+    },
 ];
 
 #[derive(Clone, Copy)]
@@ -96,6 +102,7 @@ pub struct ChatRuntime {
     count: usize,
     selected_model: ModelId,
     qwen_ready: bool,
+    ministral_ready: bool,
     pub generation_state: GenerationState,
     enabled: bool,
     minimized: bool,
@@ -119,6 +126,7 @@ impl ChatRuntime {
             count: 0,
             selected_model: SYSTEM_ASSISTANT_MODEL_ID,
             qwen_ready: false,
+            ministral_ready: false,
             generation_state: GenerationState::Ready,
             enabled: true,
             minimized: false,
@@ -161,7 +169,19 @@ impl ChatRuntime {
     // DESC: Keeps catalog selection distinct from actual local inference availability.
     // ------------------=
     pub const fn selected_model_ready(&self) -> bool {
-        self.selected_model != QWEN_FULL_MODEL_ID || self.qwen_ready
+        match self.selected_model {
+            QWEN_FULL_MODEL_ID => self.qwen_ready,
+            MINISTRAL_MODEL_ID => self.ministral_ready,
+            _ => true,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: set_ministral_ready
+    // DESC: Makes the second model ready only after verified native initialization.
+    // ------------------=
+    pub fn set_ministral_ready(&mut self, ready: bool) {
+        self.ministral_ready = ready;
     }
 
     // ------------------------=
@@ -425,7 +445,9 @@ impl ChatRuntime {
     // DESC: Appends a user turn and a bounded local response produced by the selected model.
     // ------------------=
     pub fn submit(&mut self, input: &[u8]) -> bool {
-        if !self.selected_model_ready() || self.selected_model == QWEN_FULL_MODEL_ID {
+        if !self.selected_model_ready()
+            || matches!(self.selected_model, QWEN_FULL_MODEL_ID | MINISTRAL_MODEL_ID)
+        {
             return false;
         }
         let trimmed = trim_ascii(input);
