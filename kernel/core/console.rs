@@ -269,6 +269,10 @@ enum InstallerStep {
     Help,
 }
 
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[path = "geturl.rs"]
+mod geturl;
+
 struct ConsoleOutput {
     lines: [[u8; LINE_CAPACITY]; OUTPUT_ROWS],
     lengths: [usize; OUTPUT_ROWS],
@@ -10237,6 +10241,8 @@ impl ConsoleRuntime {
     // ------------------=
     fn execute_runtime_command(&mut self, command: &[u8]) -> bool {
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        if geturl::execute(self, command) { return true; }
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if command == b"https" || command.starts_with(b"https ") {
             use crate::drivers::https;
             let owner = crate::runtime::execution::SecurityIdentity(self.current_session.0);
@@ -10247,6 +10253,7 @@ impl ConsoleRuntime {
             let text = core::str::from_utf8(command).unwrap_or("");
             let mut words = text.split_ascii_whitespace(); let _ = words.next();
             match words.next() {
+                Some("authorize") => { let confirmed=words.next()==Some("confirm=true") && words.next().is_none(); geturl::authorize(self,confirmed); }
                 Some("get") => {
                     let parsed = (|| {
                         let host = words.next()?; let path = words.next()?;
@@ -11960,6 +11967,8 @@ static mut RUNTIME: Option<ConsoleRuntime> = None;
 // DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
 // ------------------=
 pub fn poll_native_ai() {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { geturl::poll(runtime); } }
     if crate::runtime::ai::with_ai_runtime(|ai|ai.poll_qwen()) {
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
     }

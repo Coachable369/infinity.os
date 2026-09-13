@@ -3,7 +3,40 @@ pub use infinity_http as http_transport;
 #[path = "../kernel/core/boot_info.rs"]
 mod boot_info;
 #[path = "../kernel/drivers/https.rs"]
-mod https;
+pub(crate) mod https;
+mod drivers {
+    pub(crate) use crate::https;
+}
+#[path = "../kernel/core/geturl.rs"]
+mod geturl_command;
+const LINE_CAPACITY: usize = 128;
+struct ConsoleOutput {
+    lines: Vec<Vec<u8>>,
+}
+impl ConsoleOutput {
+    // ------------------------=
+    // FUNC: write_line
+    // DESC: Captures presentation separately; command acceptance checks typed exit state instead of prose.
+    // ------------------=
+    fn write_line(&mut self, bytes: &[u8]) {
+        self.lines.push(bytes.to_vec());
+    }
+}
+struct ConsoleRuntime {
+    current_user: runtime::identity::StableId,
+    current_session: runtime::identity::StableId,
+    output: ConsoleOutput,
+    redraws: usize,
+}
+impl ConsoleRuntime {
+    // ------------------------=
+    // FUNC: redraw
+    // DESC: Records presentation requests without introducing framebuffer dependencies into command lifecycle tests.
+    // ------------------=
+    fn redraw(&mut self) {
+        self.redraws += 1;
+    }
+}
 #[path = "../kernel/runtime/mod.rs"]
 mod runtime;
 #[path = "../kernel/ui/mod.rs"]
@@ -142,6 +175,59 @@ fn main() {
     boot.firmware_entropy = [23; 32];
     boot.firmware_entropy_valid = 1;
     https::initialize(&boot);
+    let session = runtime::with_runtime(|r| r.identity.session_nth(0).unwrap()).unwrap();
+    let mut command_console = ConsoleRuntime {
+        current_user: session.user,
+        current_session: session.id,
+        output: ConsoleOutput { lines: Vec::new() },
+        redraws: 0,
+    };
+    use core::sync::atomic::Ordering;
+    let count = runtime::with_runtime(|r| r.capabilities.count()).unwrap();
+    geturl_command::authorize(&mut command_console, false);
+    assert_eq!(
+        runtime::with_runtime(|r| r.capabilities.count()).unwrap(),
+        count
+    );
+    command_console.current_user = runtime::identity::StableId([99; 16]);
+    geturl_command::authorize(&mut command_console, true);
+    assert_eq!(
+        runtime::with_runtime(|r| r.capabilities.count()).unwrap(),
+        count
+    );
+    command_console.current_user = session.user;
+    assert!(geturl_command::execute(
+        &mut command_console,
+        b"geturl --location https://example.test/"
+    ));
+    assert_eq!(
+        geturl_command::INFINITY_GETURL_EXIT.load(Ordering::Acquire),
+        2
+    );
+    assert!(geturl_command::execute(
+        &mut command_console,
+        b"geturl --help"
+    ));
+    assert_eq!(
+        geturl_command::INFINITY_GETURL_EXIT.load(Ordering::Acquire),
+        0
+    );
+    assert!(geturl_command::execute(
+        &mut command_console,
+        b"geturl -s https://example.test/"
+    ));
+    assert_eq!(
+        geturl_command::INFINITY_GETURL_EXIT.load(Ordering::Acquire),
+        u32::MAX
+    );
+    assert_eq!(command_console.redraws, 0);
+    https::cancel(owner).unwrap();
+    geturl_command::poll(&mut command_console);
+    assert_eq!(
+        geturl_command::INFINITY_GETURL_EXIT.load(Ordering::Acquire),
+        42
+    );
+    assert_eq!(command_console.redraws, 1);
     assert_eq!(
         https::get(
             owner,
@@ -187,12 +273,30 @@ fn main() {
         ),
         Err(https::Failure::Denied)
     ));
+    runtime::poll_node_transport(0);
+    runtime::with_runtime(|r| {
+        r.start_all(0);
+    });
+    geturl_command::authorize(&mut command_console, true);
     caps[1] = runtime::with_runtime(|r| {
-        r.capabilities
-            .grant(C::NetworkSend, 0, 1, 0, Identity([9; 16]), owner, None, 0)
+        (0..r.capabilities.count())
+            .filter_map(|i| r.capabilities.nth(i))
+            .find(|c| {
+                r.capabilities
+                    .validate(c.id, owner, C::NetworkSend, 0, 1, 0, 0)
+                    .is_ok()
+            })
             .unwrap()
+            .id
     })
     .unwrap();
+    runtime::with_runtime(|r| {
+        assert_eq!(r.capabilities.get(caps[1]).unwrap().expires_at, Some(60));
+        assert!(r
+            .capabilities
+            .validate(caps[1], owner, C::NetworkSend, 0, 1, 0, 60)
+            .is_err());
+    });
     https::get(
         owner,
         caps[0],

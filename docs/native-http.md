@@ -188,6 +188,9 @@ port. On-link DNS does not replace the interface's default Internet gateway.
 The installed and live Console expose `https get HOST /PATH CONNECT_CAP SEND_CAP
 RECEIVE_CAP RESOLVE_CAP`, `https result` and `https cancel`. These are diagnostic
 entry points for an already-authorized session, not a graphical permission flow.
+The subsequent [geturl command adapter](geturl.md) adds automatic selection of
+existing session capabilities and an explicit temporary operator-consent path
+through `https authorize`; it does not auto-grant rights on a transfer request.
 The body is returned only after authenticated completion, up to 8192 bytes.
 There is one request slot. Boot entropy is domain-separated into a dedicated
 ChaCha20 generator; certificate time comes from EFI GetTime with validated

@@ -9,6 +9,7 @@ pub mod client;
 pub mod clock;
 pub mod device;
 pub mod egress;
+pub mod geturl;
 pub mod https;
 pub mod request;
 pub mod response;

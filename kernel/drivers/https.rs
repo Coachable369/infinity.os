@@ -25,6 +25,8 @@ pub enum Failure {
     Unavailable,
     Denied,
     Cancelled,
+    Timeout,
+    Resolution,
     Transport,
 }
 pub struct Response {
@@ -475,7 +477,17 @@ pub(crate) fn get(
                 },
             )
             .await
-            .map_err(|_| Failure::Transport)?;
+            .map_err(|error| match error {
+                http::client::Error::Timeout
+                | http::client::Error::Transport(http::transport::Error::Timeout) => {
+                    Failure::Timeout
+                }
+                http::client::Error::Transport(http::transport::Error::ResolutionFailed) => {
+                    Failure::Resolution
+                }
+                http::client::Error::Denied => Failure::Denied,
+                _ => Failure::Transport,
+            })?;
             Ok(Response {
                 status: result.status,
                 length: result.body_bytes,
