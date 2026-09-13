@@ -4,7 +4,7 @@
 
 `kernel/runtime/http` is a `no_std`, no-allocator library, shared by the
 kernel's live and installed build configurations. It uses smoltcp 0.12.0 with
-only Ethernet, IPv4 and TCP enabled, plus httparse for bounded HTTP headers.
+Ethernet, IPv4, TCP and DNS enabled, plus httparse for bounded HTTP headers.
 Host sockets, libc, general async frameworks and default logging are disabled.
 Upstream: [smoltcp](https://github.com/smoltcp-rs/smoltcp).
 Upstream TCP handles checksums, retransmission, ordering and flow control.
@@ -15,6 +15,16 @@ bounded egress pass. Connect is asynchronous, sends report partial capacity,
 reads distinguish backpressure from EOF, and cancellation makes subsequent IO
 fail. A hard transaction deadline also bounds a peer that keeps sending data.
 Callers supply fresh entropy for sequence randomization and monotonic time.
+
+An optional second caller-owned socket slot and one query slot enable wire DNS
+through `Transport::enable_dns`. `resolve` starts a nonblocking A query;
+`resolved_address` consumes its result. DNS uses the same interface, routes and
+ARP cache as TCP, not a separate packet owner. Queries have hard deadlines,
+cancellation releases their slots, and late results cannot be consumed after
+timeout. There is no DNS cache in this adapter, so no invented TTL or stale
+address reuse. The configured DNS server must be authorized before enabling it;
+the resolved application destination must separately pass policy before connect.
+This API is not yet wired to the desktop NetworkRuntime resolver.
 
 `EthernetQueue` provides four 1514-byte slots per direction. The NIC must retain
 pending output until submission succeeds. The request encoder rejects CR/LF
@@ -33,6 +43,14 @@ state machines over in-memory Ethernet, without host networking:
 - NIC FIFO capacity and retention until transmit acknowledgment.
 - Exact request bytes, injection rejection and output capacity limits.
 - Fragmented response headers, body boundary and ambiguous framing rejection.
+- Real ARP/DNS packet exchange, wrong-server and transaction-ID rejection,
+  one-shot A results, timeout, cancellation and query-slot reuse.
+
+After the DNS transport addition, all ten transport/HTTPS tests pass and the
+bare-metal native HTTPS probe still exits with success (33). The ARM64 installed
+kernel also builds. DNS has packet-level behavioral coverage, but is not yet
+exercised by an installed service or by the HTTPS bare-metal probe, which still
+uses a fixed destination for its controlled TLS server.
 
 The original six tests pass. The ARM64 installed kernel links successfully, and x86_64
 kernel checks pass with and without the installer feature. Plain `cargo check`

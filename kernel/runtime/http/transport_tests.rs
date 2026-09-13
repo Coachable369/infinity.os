@@ -9,6 +9,150 @@ struct Ethernet {
 }
 struct Receive(Vec<u8>);
 struct Transmit<'a>(&'a mut VecDeque<Vec<u8>>);
+
+// ------------------------=
+// FUNC: dns_answer
+// DESC: Builds a checksummed DNS A response from the actual emitted query, optionally with a mismatched transaction ID.
+// ------------------=
+fn dns_answer(query: &[u8], wrong_id: bool, wrong_server: bool) -> Vec<u8> {
+    use smoltcp::wire::{
+        EthernetFrame, EthernetProtocol, IpProtocol, Ipv4Packet, Ipv4Repr, UdpPacket, UdpRepr,
+    };
+    let ethernet = EthernetFrame::new_checked(query).unwrap();
+    let ip = Ipv4Packet::new_checked(ethernet.payload()).unwrap();
+    let udp = UdpPacket::new_checked(ip.payload()).unwrap();
+    let mut answer = udp.payload().to_vec();
+    if wrong_id {
+        answer[0] ^= 1;
+    }
+    answer[2..4].copy_from_slice(&0x8180u16.to_be_bytes());
+    answer[6..8].copy_from_slice(&1u16.to_be_bytes());
+    answer.extend_from_slice(&[0xc0, 0x0c, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 192, 0, 2, 42]);
+    let mut bytes = vec![0; 14 + 20 + 8 + answer.len()];
+    let mut frame = EthernetFrame::new_unchecked(&mut bytes[..]);
+    frame.set_src_addr(ethernet.dst_addr());
+    frame.set_dst_addr(ethernet.src_addr());
+    frame.set_ethertype(EthernetProtocol::Ipv4);
+    let repr = Ipv4Repr {
+        src_addr: if wrong_server {
+            Ipv4Address::new(10, 0, 0, 99)
+        } else {
+            ip.dst_addr()
+        },
+        dst_addr: ip.src_addr(),
+        next_header: IpProtocol::Udp,
+        payload_len: 8 + answer.len(),
+        hop_limit: 64,
+    };
+    let checksums = smoltcp::phy::ChecksumCapabilities::default();
+    let mut packet = Ipv4Packet::new_unchecked(frame.payload_mut());
+    repr.emit(&mut packet, &checksums);
+    let mut response = UdpPacket::new_unchecked(packet.payload_mut());
+    UdpRepr {
+        src_port: 53,
+        dst_port: udp.src_port(),
+    }
+    .emit(
+        &mut response,
+        &repr.src_addr.into(),
+        &repr.dst_addr.into(),
+        answer.len(),
+        |payload| payload.copy_from_slice(&answer),
+        &checksums,
+    );
+    bytes
+}
+
+#[test]
+// ------------------------=
+// FUNC: wire_dns_resolves_and_rejects_wrong_transaction
+// DESC: Exchanges real ARP and DNS frames, rejects a mismatched response, consumes an A answer, then tests timeout and cancellation slot reuse.
+// ------------------=
+fn wire_dns_resolves_and_rejects_wrong_transaction() {
+    let (mut a, mut b) = (Ethernet::default(), Ethernet::default());
+    let (mut ar, mut at, mut br, mut bt) = ([0; 1024], [0; 1024], [0; 1024], [0; 1024]);
+    let mut sa = [SocketStorage::EMPTY, SocketStorage::EMPTY];
+    let mut sb = [SocketStorage::EMPTY];
+    let mut queries = [None];
+    let now = Instant::from_millis(0);
+    let mut client = Transport::new(
+        &mut a,
+        [2, 0, 0, 0, 0, 1],
+        [10, 0, 0, 1],
+        24,
+        None,
+        42,
+        now,
+        &mut sa,
+        &mut ar,
+        &mut at,
+    )
+    .unwrap();
+    let mut peer = Transport::new(
+        &mut b,
+        [2, 0, 0, 0, 0, 2],
+        [10, 0, 0, 2],
+        24,
+        None,
+        43,
+        now,
+        &mut sb,
+        &mut br,
+        &mut bt,
+    )
+    .unwrap();
+    client.enable_dns([10, 0, 0, 2], &mut queries).unwrap();
+    client
+        .resolve("example.test", now, Instant::from_millis(2000))
+        .unwrap();
+    assert_eq!(client.resolved_address(), Err(Error::WouldBlock));
+    assert_eq!(
+        client.resolve("second.test", now, Instant::from_millis(2000)),
+        Err(Error::Busy)
+    );
+    let mut request = None;
+    for tick in 0..100 {
+        let now = Instant::from_millis(tick);
+        client.poll(&mut a, now);
+        while let Some(frame) = a.tx.pop_front() {
+            if frame[12..14] == [8, 0] && frame[23] == 17 {
+                request = Some(frame);
+            } else {
+                b.rx.push_back(frame);
+            }
+        }
+        peer.poll(&mut b, now);
+        a.rx.extend(b.tx.drain(..));
+        if request.is_some() {
+            break;
+        }
+    }
+    let request = request.expect("a DNS datagram must reach the NIC");
+    a.rx.push_back(dns_answer(&request, false, true));
+    client.poll(&mut a, Instant::from_millis(99));
+    assert_eq!(client.resolved_address(), Err(Error::WouldBlock));
+    a.rx.push_back(dns_answer(&request, true, false));
+    client.poll(&mut a, Instant::from_millis(100));
+    assert_eq!(client.resolved_address(), Err(Error::WouldBlock));
+    a.rx.push_back(dns_answer(&request, false, false));
+    client.poll(&mut a, Instant::from_millis(101));
+    assert_eq!(client.resolved_address(), Ok([192, 0, 2, 42]));
+    assert_eq!(client.resolved_address(), Err(Error::Configuration));
+    client
+        .resolve("timeout.test", now, Instant::from_millis(200))
+        .unwrap();
+    client.poll(&mut a, Instant::from_millis(200));
+    assert_eq!(client.resolved_address(), Err(Error::Timeout));
+    client
+        .resolve("cancel.test", now, Instant::from_millis(2000))
+        .unwrap();
+    client.cancel();
+    assert_eq!(client.resolved_address(), Err(Error::Cancelled));
+    assert_eq!(
+        client.resolve("retry.test", now, Instant::from_millis(2000)),
+        Ok(())
+    );
+}
 impl RxToken for Receive {
     // ------------------------=
     // FUNC: consume

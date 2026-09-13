@@ -14,6 +14,7 @@ pub enum Error {
     Timeout,
     Cancelled,
     WouldBlock,
+    ResolutionFailed,
 }
 
 /// One outbound stream, with caller-owned storage and a hard transaction deadline.
@@ -23,6 +24,10 @@ pub struct Transport<'a> {
     handle: SocketHandle,
     deadline: Option<Instant>,
     failure: Option<Error>,
+    capacity: usize,
+    dns: Option<SocketHandle>,
+    query: Option<(smoltcp::socket::dns::QueryHandle, Instant)>,
+    dns_failure: Option<Error>,
 }
 
 #[cfg(test)]
@@ -42,11 +47,12 @@ impl<'a> Transport<'a> {
         gateway: Option<[u8; 4]>,
         random_seed: u64,
         now: Instant,
-        storage: &'a mut [SocketStorage<'a>; 1],
+        storage: &'a mut [SocketStorage<'a>],
         rx: &'a mut [u8],
         tx: &'a mut [u8],
     ) -> Result<Self, Error> {
-        if prefix > 32
+        if storage.is_empty()
+            || prefix > 32
             || address == [0; 4]
             || rx.is_empty()
             || tx.is_empty()
@@ -68,7 +74,8 @@ impl<'a> Transport<'a> {
                 .add_default_ipv4_route(Ipv4Address::from(gateway))
                 .map_err(|_| Error::Configuration)?;
         }
-        let mut sockets = SocketSet::new(&mut storage[..]);
+        let capacity = storage.len();
+        let mut sockets = SocketSet::new(storage);
         let mut socket = Socket::new(SocketBuffer::new(rx), SocketBuffer::new(tx));
         socket.set_timeout(Some(Duration::from_secs(15)));
         socket.set_nagle_enabled(false);
@@ -79,7 +86,103 @@ impl<'a> Transport<'a> {
             handle,
             deadline: None,
             failure: None,
+            capacity,
+            dns: None,
+            query: None,
+            dns_failure: None,
         })
+    }
+
+    // ------------------------=
+    // FUNC: enable_dns
+    // DESC: Adds a bounded IPv4 DNS socket sharing the TCP interface and its ARP cache; callers authorize the server first.
+    // ------------------=
+    pub fn enable_dns(
+        &mut self,
+        server: [u8; 4],
+        queries: &'a mut [Option<smoltcp::socket::dns::DnsQuery>; 1],
+    ) -> Result<(), Error> {
+        if self.dns.is_some() || self.capacity < 2 || server == [0; 4] || server[0] >= 224 {
+            return Err(Error::Configuration);
+        }
+        self.dns = Some(self.sockets.add(smoltcp::socket::dns::Socket::new(
+            &[Ipv4Address::from(server).into()],
+            &mut queries[..],
+        )));
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: resolve
+    // DESC: Starts one deadline-bounded A query without blocking; poll drives ARP, UDP retries and response validation.
+    // ------------------=
+    pub fn resolve(&mut self, host: &str, now: Instant, deadline: Instant) -> Result<(), Error> {
+        if self.query.is_some() {
+            return Err(Error::Busy);
+        }
+        if deadline <= now {
+            return Err(Error::Timeout);
+        }
+        let handle = self.dns.ok_or(Error::Configuration)?;
+        let query = self
+            .sockets
+            .get_mut::<smoltcp::socket::dns::Socket>(handle)
+            .start_query(
+                self.interface.context(),
+                host,
+                smoltcp::wire::DnsQueryType::A,
+            )
+            .map_err(|_| Error::Configuration)?;
+        self.query = Some((query, deadline));
+        self.dns_failure = None;
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: resolved_address
+    // DESC: Consumes a completed wire DNS result once, never inventing addresses on failure or returning stale query data.
+    // ------------------=
+    pub fn resolved_address(&mut self) -> Result<[u8; 4], Error> {
+        if let Some(error) = self.dns_failure {
+            return Err(error);
+        }
+        let (query, _) = self.query.ok_or(Error::Configuration)?;
+        let handle = self.dns.ok_or(Error::Configuration)?;
+        match self
+            .sockets
+            .get_mut::<smoltcp::socket::dns::Socket>(handle)
+            .get_query_result(query)
+        {
+            Ok(addresses) => {
+                self.query = None;
+                addresses
+                    .first()
+                    .map(|address| match address {
+                        smoltcp::wire::IpAddress::Ipv4(address) => address.octets(),
+                    })
+                    .ok_or(Error::ResolutionFailed)
+            }
+            Err(smoltcp::socket::dns::GetQueryResultError::Pending) => Err(Error::WouldBlock),
+            Err(smoltcp::socket::dns::GetQueryResultError::Failed) => {
+                self.query = None;
+                Err(Error::ResolutionFailed)
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: cancel_resolution
+    // DESC: Releases an outstanding resolver slot immediately on deadline, user cancellation or policy revocation.
+    // ------------------=
+    fn cancel_resolution(&mut self, error: Error) {
+        if let Some((query, _)) = self.query.take() {
+            if let Some(handle) = self.dns {
+                self.sockets
+                    .get_mut::<smoltcp::socket::dns::Socket>(handle)
+                    .cancel_query(query);
+            }
+        }
+        self.dns_failure = Some(error);
     }
 
     // ------------------------=
@@ -121,6 +224,9 @@ impl<'a> Transport<'a> {
     // DESC: Processes at most four ingress packets and one bounded socket's egress without blocking desktop input.
     // ------------------=
     pub fn poll(&mut self, device: &mut impl Device, now: Instant) {
+        if self.query.map(|(_, end)| now >= end).unwrap_or(false) {
+            self.cancel_resolution(Error::Timeout);
+        }
         if self.deadline.map(|end| now >= end).unwrap_or(false) {
             self.sockets.get_mut::<Socket>(self.handle).abort();
             self.deadline = None;
@@ -194,6 +300,7 @@ impl<'a> Transport<'a> {
     // DESC: Aborts immediately for user cancellation or capability revocation; subsequent IO fails closed.
     // ------------------=
     pub fn cancel(&mut self) {
+        self.cancel_resolution(Error::Cancelled);
         self.sockets.get_mut::<Socket>(self.handle).abort();
         self.deadline = None;
         self.failure = Some(Error::Cancelled);
