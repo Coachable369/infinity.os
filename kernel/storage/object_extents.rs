@@ -2,14 +2,96 @@
 //! application receives a readable version before a verified atomic seal.
 use super::*;
 pub(super) const MAX_STAGED_CONTENT: usize = 1024 * 1024;
+pub(crate) const MAX_SYSTEM_CONTENT: usize = 128 * 1024 * 1024;
 
 impl<D: BlockDevice> ObjectStore<D> {
+    // ------------------------=
+    // FUNC: create_system_extent
+    // DESC: Reserves one unpublished large system-component extent without weakening ordinary object size limits.
+    // ------------------=
+    pub(crate) fn create_system_extent(&mut self, name: &[u8], size: u32) -> Result<ObjectId, ObjectError> {
+        if size == 0 || size as usize > MAX_SYSTEM_CONTENT { return Err(ObjectError::InsufficientCapacity); }
+        let before = self.begin()?;
+        let result = (|| {
+            let id = self.create_record(name, ObjectType::SystemComponent, Space::System)?;
+            let slot = self.state.versions.iter().position(|version| !version.used)
+                .ok_or(ObjectError::InsufficientCapacity)?;
+            let blocks = (size as usize + 4095) / 4096;
+            if blocks > u16::MAX as usize { return Err(ObjectError::InsufficientCapacity); }
+            let extent = self.allocate(Space::System, blocks as u16)?;
+            self.state.versions[slot] = VersionRecord { used: true, storage_role: 5, object: id,
+                number: 0, extent, blocks: blocks as u16, size, content_crc: 0, parent: 0,
+                generation: self.state.generation + 1 };
+            Ok(id)
+        })();
+        self.finish(before, result)
+    }
+
+    // ------------------------=
+    // FUNC: seal_system_extent
+    // DESC: Verifies complete streamed bytes and atomically publishes a large system component at its native namespace path.
+    // ------------------=
+    pub(crate) fn seal_system_extent(&mut self, id: ObjectId, path: &[u8], expected_crc: u32) -> Result<(), ObjectError> {
+        validate_path(path)?;
+        let version = self.state.versions.iter().find(|version| version.used && version.object == id
+            && version.storage_role == 5).copied().ok_or(ObjectError::InvalidVersion)?;
+        let mut crc = 0xffff_ffffu32;
+        let mut offset = 0u64;
+        let mut buffer = [0u8; 1024];
+        while offset < version.size as u64 {
+            let count = (version.size as u64 - offset).min(buffer.len() as u64) as usize;
+            self.read_extent_range(id, offset, &mut buffer[..count])?;
+            for byte in &buffer[..count] {
+                crc ^= *byte as u32;
+                for _ in 0..8 { crc = (crc >> 1) ^ (0xedb88320 & 0u32.wrapping_sub(crc & 1)); }
+            }
+            offset += count as u64;
+        }
+        if !crc != expected_crc { return Err(ObjectError::CorruptContent); }
+        let before = self.begin()?;
+        let result = (|| {
+            if self.state.entries.iter().any(|entry| entry.used && entry.path() == path) {
+                return Err(ObjectError::NameConflict);
+            }
+            let slot = self.state.versions.iter().position(|candidate| candidate.used
+                && candidate.object == id && candidate.storage_role == 5)
+                .ok_or(ObjectError::InvalidVersion)?;
+            self.state.versions[slot].storage_role = 4;
+            self.state.versions[slot].number = 1;
+            self.state.versions[slot].content_crc = expected_crc;
+            let object = self.object_index(id)?;
+            self.state.objects[object].current_version = 1;
+            self.state.objects[object].modified = self.state.generation + 1;
+            self.attach_record(path, id)
+        })();
+        self.finish(before, result)
+    }
+
+    // ------------------------=
+    // FUNC: read_system_extent
+    // DESC: Reads a bounded range from a sealed large system component without allocating its full logical size.
+    // ------------------=
+    pub(crate) fn read_system_extent(&mut self, id: ObjectId, offset: u64, out: &mut [u8]) -> Result<(), ObjectError> {
+        let version = self.state.versions.iter().find(|version| version.used && version.object == id
+            && version.storage_role == 4).copied().ok_or(ObjectError::InvalidObject)?;
+        if out.len() > 64 * 1024 || offset.checked_add(out.len() as u64).is_none_or(|end| end > version.size as u64) {
+            return Err(ObjectError::InvalidVersion);
+        }
+        let mut read = 0usize;
+        while read < out.len() {
+            let count = (out.len() - read).min(1024);
+            self.read_extent_range(id, offset + read as u64, &mut out[read..read + count])?;
+            read += count;
+        }
+        Ok(())
+    }
+
     // ------------------------=
     // FUNC: staging_reserved_bytes
     // DESC: Reports actual committed unpublished extent reservations; these blocks are already excluded from free allocation capacity.
     // ------------------=
     pub(crate) fn staging_reserved_bytes(&self) -> u64 {
-        self.state.versions.iter().filter(|v| v.used && v.storage_role == 1)
+        self.state.versions.iter().filter(|v| v.used && matches!(v.storage_role, 1 | 5))
             .map(|v| v.blocks as u64 * 4096).sum()
     }
     // ------------------------=
@@ -83,7 +165,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         let version = self.state.versions.iter().find(|v| v.used && v.object == id
             && v.storage_role != 0).copied().ok_or(ObjectError::InvalidObject)?;
         if size > 1024 || offset.checked_add(size as u64).is_none_or(|end| end > version.size as u64)
-            || (writing && version.storage_role != 1) { return Err(ObjectError::InvalidVersion); }
+            || (writing && !matches!(version.storage_role, 1 | 5)) { return Err(ObjectError::InvalidVersion); }
         Ok(version)
     }
 

@@ -46,8 +46,15 @@ pub const DOCUMENTS_PATH: &[u8] = b"/home/default/documents";
 pub const LEGACY_DOCUMENTS_PATH: &[u8] = b"/personal/documents";
 const MAX_COMPONENT: usize = 63;
 pub const MAX_CONTENT: usize = 16 * 1024;
-const ALLOCATION_BYTES: usize = 1968;
-pub const FORMAT_VERSION: u32 = 5;
+const LEGACY_ALLOCATION_BYTES: usize = 1968;
+const ALLOCATION_BYTES: usize = 64 * 1024;
+const ALLOCATION_SECTOR_BYTES: usize = 492;
+const INLINE_ALLOCATION_SECTORS: usize = 4;
+const ALLOCATION_SECTORS: usize = (ALLOCATION_BYTES + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
+const LEGACY_ALLOCATION_BLOCKS: usize = LEGACY_ALLOCATION_BYTES * 8;
+const ALLOCATION_EXTENSION_A: u64 = CONTENT + LEGACY_ALLOCATION_BLOCKS as u64 * ALLOCATION_BLOCK_SECTORS;
+const ALLOCATION_EXTENSION_B: u64 = ALLOCATION_EXTENSION_A + (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS) as u64;
+pub const FORMAT_VERSION: u32 = 6;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Debug)]
 pub struct ObjectId(pub [u8; 16]);
@@ -479,10 +486,12 @@ impl<D: BlockDevice> ObjectStore<D> {
             .checked_sub(STORE_RELATIVE_LBA + CONTENT)
             .ok_or(ObjectError::InsufficientCapacity)?
             / ALLOCATION_BLOCK_SECTORS;
+        let mut state = State::empty(available.min((ALLOCATION_BYTES * 8) as u64) as u32);
+        reserve_allocator_metadata(&mut state)?;
         let mut store = Self {
             device,
             store_lba: container_lba.checked_add(STORE_RELATIVE_LBA).ok_or(ObjectError::InsufficientCapacity)?,
-            state: State::empty(available.min((ALLOCATION_BYTES * 8) as u64) as u32),
+            state,
             mounted_root: 0,
             in_transaction: false,
             protected_allocation: [0; ALLOCATION_BYTES],
@@ -1272,7 +1281,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             return Err(ObjectError::InsufficientCapacity);
         }
         let object = self.object_index(id)?;
-        if self.state.versions.iter().any(|v| v.used && v.object == id && matches!(v.storage_role, 1 | 2)) {
+        if self.state.versions.iter().any(|v| v.used && v.object == id && matches!(v.storage_role, 1 | 2 | 4 | 5)) {
             return Err(ObjectError::Unauthorized);
         }
         if self.state.objects[object].tombstone {
@@ -1321,7 +1330,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         out: &mut [u8],
     ) -> Result<usize, ObjectError> {
         let oi = self.object_index(id)?;
-        if self.state.versions.iter().any(|v| v.used && v.object == id && v.storage_role == 1) {
+        if self.state.versions.iter().any(|v| v.used && v.object == id && matches!(v.storage_role, 1 | 5)) {
             return Err(ObjectError::Busy);
         }
         if self.state.objects[oi].tombstone {
@@ -1335,6 +1344,7 @@ impl<D: BlockDevice> ObjectStore<D> {
             .find(|v| v.used && v.object == id && v.number == number)
             .copied()
             .ok_or(ObjectError::InvalidVersion)?;
+        if v.storage_role == 4 { return Err(ObjectError::InsufficientCapacity); }
         if v.size as usize > out.len() {
             return Err(ObjectError::InsufficientCapacity);
         }
@@ -2092,6 +2102,11 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the commit operation.
     // ------------------=
     fn commit(&mut self) -> Result<(), ObjectError> {
+        let available = self.device.block_count().saturating_sub(self.store_lba + CONTENT)
+            / ALLOCATION_BLOCK_SECTORS;
+        self.state.total_blocks = self.state.total_blocks.max(
+            available.min((ALLOCATION_BYTES * 8) as u64) as u32);
+        reserve_allocator_metadata(&mut self.state)?;
         let generation = self.state.generation + 1;
         let bank = if self.mounted_root == 0 {
             BANK_B
@@ -2449,6 +2464,29 @@ fn relationship_from_u16(value: u16) -> Result<RelationshipType, ObjectError> {
 fn bit(map: &[u8; ALLOCATION_BYTES], index: usize) -> bool {
     map[index / 8] & (1 << (index % 8)) != 0
 }
+
+// ------------------------=
+// FUNC: reserve_allocator_metadata
+// DESC: Prevents scalable allocation-map sectors from ever being issued as object content while preserving every v5 extent coordinate.
+// ------------------=
+fn reserve_allocator_metadata(state: &mut State) -> Result<(), ObjectError> {
+    let first = ((ALLOCATION_EXTENSION_A - CONTENT) / ALLOCATION_BLOCK_SECTORS) as usize;
+    let extension_sectors = 2 * (ALLOCATION_SECTORS - INLINE_ALLOCATION_SECTORS);
+    let blocks = (extension_sectors + ALLOCATION_BLOCK_SECTORS as usize - 1)
+        / ALLOCATION_BLOCK_SECTORS as usize;
+    if first.checked_add(blocks).is_none_or(|end| end > state.total_blocks as usize) {
+        state.total_blocks = state.total_blocks.min(LEGACY_ALLOCATION_BLOCKS as u32);
+        return Ok(());
+    }
+    for block in first..first + blocks { set_bit(&mut state.allocation, block, true); }
+    Ok(())
+}
+
+// ------------------------=
+// FUNC: supported_format
+// DESC: Keeps v4 and v5 metadata readable while all new commits use the scalable v6 allocator.
+// ------------------=
+const fn supported_format(version: u32) -> bool { matches!(version, 4 | 5 | FORMAT_VERSION) }
 // ------------------------=
 // FUNC: set_bit
 // DESC: Writes or updates set bit data.
@@ -2500,7 +2538,7 @@ fn read_root<D: BlockDevice>(
     {
         return Ok(None);
     }
-    if !matches!(get32(&s, 8), 4 | FORMAT_VERSION) {
+    if !supported_format(get32(&s, 8)) {
         return Err(ObjectError::UnsupportedFormat);
     }
     let bank = get64(&s, 24);
@@ -2536,18 +2574,31 @@ fn write_bank<D: BlockDevice>(
     put64(&mut h, 16, state.generation);
     put64(&mut h, 24, state.next_identity);
     put32(&mut h, 32, state.total_blocks);
-    put32(&mut h, 36, ALLOCATION_BYTES as u32);
+    let allocation_bytes = if state.total_blocks as usize > LEGACY_ALLOCATION_BLOCKS {
+        ALLOCATION_BYTES
+    } else {
+        LEGACY_ALLOCATION_BYTES
+    };
+    put32(&mut h, 36, allocation_bytes as u32);
     finish_sector(&mut h);
     write(d, base, &h)?;
-    for sector in 0..4 {
+    let allocation_sectors = (allocation_bytes + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
+    for sector in 0..allocation_sectors {
         let mut s = [0u8; 512];
         s[..8].copy_from_slice(b"INFOALC2");
         put32(&mut s, 8, FORMAT_VERSION);
-        let start = sector * 492;
-        let end = (start + 492).min(ALLOCATION_BYTES);
+        let start = sector * ALLOCATION_SECTOR_BYTES;
+        let end = (start + ALLOCATION_SECTOR_BYTES).min(allocation_bytes);
         s[16..16 + end - start].copy_from_slice(&state.allocation[start..end]);
         finish_sector(&mut s);
-        write(d, base + 1 + sector as u64, &s)?;
+        let location = if sector < INLINE_ALLOCATION_SECTORS {
+            base + 1 + sector as u64
+        } else if bank == BANK_A {
+            c + ALLOCATION_EXTENSION_A + (sector - INLINE_ALLOCATION_SECTORS) as u64
+        } else {
+            c + ALLOCATION_EXTENSION_B + (sector - INLINE_ALLOCATION_SECTORS) as u64
+        };
+        write(d, location, &s)?;
     }
     for sector in 0..OBJECT_TABLE_SECTORS {
         let mut s = [0u8; 512];
@@ -2611,24 +2662,35 @@ fn read_bank<D: BlockDevice>(d: &mut D, c: u64, bank: u64, g: u64) -> Result<Sta
     let base = c + bank;
     let h = read(d, base)?;
     if &h[..8] != b"INFOSTAT"
-        || !matches!(get32(&h, 8), 4 | FORMAT_VERSION)
+        || !supported_format(get32(&h, 8))
         || get64(&h, 16) != g
         || !valid_sector(&h)
     {
         return Err(ObjectError::CorruptMetadata);
     }
+    let format = get32(&h, 8);
+    let allocation_bytes = get32(&h, 36) as usize;
     let total = get32(&h, 32);
-    if total as usize > ALLOCATION_BYTES * 8 || get32(&h, 36) != ALLOCATION_BYTES as u32 {
+    if !matches!(allocation_bytes, LEGACY_ALLOCATION_BYTES | ALLOCATION_BYTES)
+        || total as usize > allocation_bytes * 8 {
         return Err(ObjectError::CorruptMetadata);
     }
     let mut state = State::empty(total);
     state.generation = g;
     state.next_identity = get64(&h, 24);
-    for sector in 0..4 {
-        let s = read(d, base + 1 + sector as u64)?;
+    let allocation_sectors = (allocation_bytes + ALLOCATION_SECTOR_BYTES - 1) / ALLOCATION_SECTOR_BYTES;
+    for sector in 0..allocation_sectors {
+        let location = if sector < INLINE_ALLOCATION_SECTORS {
+            base + 1 + sector as u64
+        } else if bank == BANK_A {
+            c + ALLOCATION_EXTENSION_A + (sector - INLINE_ALLOCATION_SECTORS) as u64
+        } else {
+            c + ALLOCATION_EXTENSION_B + (sector - INLINE_ALLOCATION_SECTORS) as u64
+        };
+        let s = read(d, location)?;
         check(&s, b"INFOALC2")?;
-        let start = sector * 492;
-        let end = (start + 492).min(ALLOCATION_BYTES);
+        let start = sector * ALLOCATION_SECTOR_BYTES;
+        let end = (start + ALLOCATION_SECTOR_BYTES).min(allocation_bytes);
         state.allocation[start..end].copy_from_slice(&s[16..16 + end - start]);
     }
     for sector in 0..OBJECT_TABLE_SECTORS {
@@ -2757,8 +2819,10 @@ fn decode_version(s: &[u8], o: usize) -> Result<VersionRecord, ObjectError> {
     id.copy_from_slice(&s[o + 4..o + 20]);
     let blocks = get16(s, o + 28);
     let role = s[o + 1];
-    let limit = if matches!(role, 0 | 3) { MAX_CONTENT } else { extents::MAX_STAGED_CONTENT };
-    if role > 3 || blocks as usize > (limit / 4096) || get32(s, o + 32) as usize > limit {
+    let limit = if matches!(role, 0 | 3) { MAX_CONTENT }
+        else if matches!(role, 4 | 5) { extents::MAX_SYSTEM_CONTENT }
+        else { extents::MAX_STAGED_CONTENT };
+    if role > 5 || blocks as usize > (limit / 4096) || get32(s, o + 32) as usize > limit {
         return Err(ObjectError::CorruptMetadata);
     }
     Ok(VersionRecord {
@@ -2985,7 +3049,7 @@ fn read<D: BlockDevice>(d: &mut D, l: u64) -> Result<[u8; 512], ObjectError> {
 // DESC: Implements the check operation.
 // ------------------=
 fn check(s: &[u8; 512], magic: &[u8; 8]) -> Result<(), ObjectError> {
-    if &s[..8] == magic && matches!(get32(s, 8), 4 | FORMAT_VERSION) && valid_sector(s) {
+    if &s[..8] == magic && supported_format(get32(s, 8)) && valid_sector(s) {
         Ok(())
     } else {
         Err(ObjectError::CorruptMetadata)

@@ -102,7 +102,12 @@ milestone-9-correlation-test:
 	@CARGO_TARGET_DIR=build/milestone9-harness cargo test --quiet --manifest-path tools/milestone9-harness/Cargo.toml
 
 .PHONY: network-wire-test
-.PHONY: native-tls-test
+.PHONY: native-tls-test native-c-storage-test
+native-c-storage-test:
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -A warnings tools/native-c-storage-test.rs -o build/behavior-tests/native-c-storage-test
+	@build/behavior-tests/native-c-storage-test
+
 .PHONY: native-https-test
 native-https-test: $(BUILD)/x86_64/BOOTX64.EFI
 	@python3 tools/native-https-probe/run.py

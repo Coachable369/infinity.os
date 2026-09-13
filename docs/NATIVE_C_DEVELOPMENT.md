@@ -709,3 +709,24 @@ cannot truthfully store even the 99 MiB Clang image. Expanding that metadata
 format requires a versioned on-disk layout and migration, not a relaxed size
 constant. No unisolated compiler execution or out-of-band host filesystem
 fallback is introduced.
+
+## Scalable system-object storage checkpoint
+
+ObjectStore format v6 expands allocation coverage from 1,968 to 65,536 bytes
+of bitmap state, addressing up to 2 GiB while retaining every existing content
+extent coordinate. The additional alternating-bank bitmap sectors live beyond
+the complete v5 allocation range and are permanently reserved from content.
+Compact devices retain the inline map. Versions 4 and 5 remain readable; the
+next successful mutation on a sufficiently large v5 store publishes v6 metadata
+and exposes the additional capacity without moving existing content.
+
+Trusted installation code can reserve, stream, integrity-check, atomically seal
+and range-read system components up to 128 MiB. Large staging and sealed roles
+are distinct from Pool transfers and ordinary 16-KiB objects; incomplete bytes
+remain unresolvable, and ordinary reads/writes cannot bypass the streaming API.
+
+TESTED: the full ObjectStore behavioral suite passes. A sparse-disk acceptance
+test verifies at least 128 MiB of addressable storage, a 100 MiB compiler-image
+reservation, a fully streamed and CRC-sealed multi-megabyte component, bounded
+range reads, ordinary-API rejection, remount persistence, and a compact v5 to
+scalable v6 mutation preserving namespace identity.
