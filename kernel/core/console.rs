@@ -1253,19 +1253,29 @@ impl ConsoleRuntime {
         // Global chat access is handled before application-specific shortcuts.
         if matches!(key, ConsoleKey::Shortcut(b'j')) && matches!(self.mode,
             ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher) {
-            self.enter_desktop();
+            // Chat takes keyboard focus, not ownership of the desktop app.
+            // Keep its window state, editor buffers and Settings section intact.
+            if matches!(self.mode, ConsoleMode::SystemMenu | ConsoleMode::AppLauncher) {
+                if self.mode == ConsoleMode::AppLauncher {
+                    crate::ui::app_launcher::launcher_begin_close();
+                }
+                self.mode = ConsoleMode::Desktop;
+                self.shell_menu = 0;
+            }
             self.set_ai_chat_enabled(true);
             crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.set_minimized(false));
             self.ai_chat_focus = 2;
             self.redraw();
             return;
         }
-        if self.input_window_assistant(key) {self.redraw();return;}
-        if self.mode == ConsoleMode::Desktop {
+        if matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings) {
             if self.ai_chat_focus != 0 && self.input_ai_chat(key) {
                 self.redraw();
                 return;
             }
+        }
+        if self.input_window_assistant(key) {self.redraw();return;}
+        if self.mode == ConsoleMode::Desktop {
             if self.desktop_app == DesktopAppKind::CommandWindow {
                 self.input_console(key);
                 self.redraw();
@@ -2249,9 +2259,15 @@ impl ConsoleRuntime {
     // DESC: Enables or disables the desktop AI surface and persists the authenticated preference.
     // ------------------=
     fn set_ai_chat_enabled(&mut self, enabled: bool) {
-        crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.set_enabled(enabled));
+        let changed = crate::runtime::ai::with_ai_runtime(|runtime| {
+            let changed = runtime.chat.enabled() != enabled;
+            runtime.chat.set_enabled(enabled);
+            changed
+        });
         self.ai_chat_focus = 0;
-        self.persist_ai_chat_preferences();
+        if changed {
+            self.persist_ai_chat_preferences();
+        }
     }
 
     // ------------------------=

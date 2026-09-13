@@ -9934,6 +9934,8 @@ pub fn system_ui_present(
             console.display.fast_motion_frame = fast_motion_frame;
             console.system_ui_active = true;
             console.restore_cursor();
+            let chat_content = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.state_hash());
+            let chat_changed = console.last_chat_content != chat_content;
             let content = system_content_hash(
                 input,
                 masked,
@@ -10129,7 +10131,7 @@ pub fn system_ui_present(
                 && !settings_geometry_changed
                 && !app_window_geometry_changed;
             let bounded_scene_geometry_change = !structural_change_without_window
-                && (!content_changed || matches!(screen, 8 | 9 | 10))
+                && (!content_changed || matches!(screen, 8 | 9 | 10) || (screen == 4 && chat_changed))
                 && console.last_system_screen == screen
                 && (navigator_surface_changed
                     || network_settings_changed
@@ -10139,6 +10141,7 @@ pub fn system_ui_present(
                     || window_resized
                     || settings_geometry_changed
                     || app_window_geometry_changed
+                    || (chat_changed && screen == 4)
                     || (content_changed && matches!(screen, 8 | 9 | 10)));
             let mut full_surface_redrawn = false;
             if bounded_menu_change
@@ -10447,7 +10450,12 @@ pub fn system_ui_present(
                 } else {
                     1
                 };
-                for damage in damages.iter().take(damage_count) {
+                // A window repaint does not cover the independently owned chat
+                // column. Keep that damage separate instead of inflating the
+                // window's bounds or repainting the entire desktop.
+                let chat_damage = crate::ui::redraw::chat_requires_independent_widget_damage(screen, chat_changed)
+                    .then(|| layout.desktop_foreground_geometry().widgets);
+                for damage in damages.iter().take(damage_count).chain(chat_damage.iter()) {
                     console.display.set_render_clip(
                         damage.x.max(0) as usize,
                         damage.y.max(0) as usize,
@@ -10722,6 +10730,7 @@ pub fn system_ui_present(
             console.last_background_opacity = background_opacity;
             console.last_background_blur = background_blur;
             console.last_system_content = content;
+            console.last_chat_content = chat_content;
             console.last_system_static_content = static_content;
             console.last_launcher_state = launcher_state;
             console.last_launcher_interaction_state = launcher_interaction_state;

@@ -125,6 +125,14 @@ pub const fn authentication_controls_require_repaint(
 }
 
 // ------------------------=
+// FUNC: chat_requires_independent_widget_damage
+// DESC: Keeps chat updates visible beside active apps without expanding their window damage to the whole screen.
+// ------------------=
+pub const fn chat_requires_independent_widget_damage(screen: u8, changed: bool) -> bool {
+    changed && matches!(screen, 4 | 8 | 9 | 10)
+}
+
+// ------------------------=
 // FUNC: desktop_menu_change_requires_bounded_redraw
 // DESC: Selects saved-region composition for desktop menu open, hover, switch, and close transitions.
 // ------------------=

@@ -108,6 +108,27 @@ Cancellation was also observed. Command/launcher focus and repaint behavior
 was inconsistent during diagnostics, so overall desktop responsiveness is not
 accepted yet. HTTPS work remains deferred until that requirement passes.
 
+### Chat focus and independent widget damage follow-up
+
+Ctrl+J now transfers keyboard focus to chat without invoking desktop entry,
+which previously discarded the active application identity. Chat input takes
+priority over application assistant shortcuts while focused, including in
+Settings. Re-focusing an already enabled chat no longer writes unchanged
+identity preferences to storage. Chat content changes also invalidate the
+separate widget region when an application or Settings owns the active screen;
+they do not expand the application's damage rectangle across the desktop.
+
+The executable redraw-policy harness passes for changed and unchanged chat
+state across screen IDs 0 through 10. This verifies the damage routing policy,
+not installed GUI interaction. The ARM64 installed kernel builds; installed-VM
+focus and repaint acceptance and a refreshed installer ISO remain pending.
+
+HTTPS investigation found that the native wire layer currently accepts IPv4
+UDP, not TCP. HTTPS therefore requires a bounded, cancellable TCP transport,
+TLS with certificate-chain and hostname validation, trusted time and entropy,
+and installer-packaged trust anchors. No TLS dependency or certificate bypass
+has been enabled. HTTPS requests and weather fetching are not implemented yet.
+
 The native host harness completed a real instruction with a one-token `Hello`
 answer and EOS in approximately 16.8 seconds, including prompt processing.
 This is neither guest throughput nor installed-system acceptance. Qwen's

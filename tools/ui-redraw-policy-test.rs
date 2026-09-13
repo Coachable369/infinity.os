@@ -121,6 +121,11 @@ fn desktop_click_focus_reconstructs_only_window_layers() {
 // DESC: Runs behavioral redraw-policy scenarios through the same functions used by the kernel presenter.
 // ------------------=
 fn main() {
+    for screen in 0..=10 {
+        assert!(!redraw::chat_requires_independent_widget_damage(screen, false));
+        assert_eq!(redraw::chat_requires_independent_widget_damage(screen, true),
+            matches!(screen, 4 | 8 | 9 | 10));
+    }
     onboarding_pointer_focus_is_bounded();
     non_pointer_focus_remains_structural();
     visible_clock_updates_are_damage_limited();
