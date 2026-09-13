@@ -18,6 +18,8 @@
 #define PAGE_SIZE 4096u
 #define PAGE_MASK (PAGE_SIZE - 1u)
 #define KERNEL_STACK_PAGES 256u
+#define NATIVE_RUNTIME_POOL_PAGES 65536u
+#define IDENTITY_MAP_GIB 8u
 #define PT_LOAD 1u
 #if defined(INFINITY_AARCH64)
 #define INFINITY_ELF_MACHINE 183u
@@ -377,6 +379,18 @@ typedef struct {
     uint64_t memsz;
     uint64_t align;
 } Elf64ProgramHeader;
+
+typedef struct {
+    uint64_t entry;
+    uint64_t low;
+    uint64_t high;
+    uint64_t text_low;
+    uint64_t text_high;
+    uint64_t rodata_low;
+    uint64_t rodata_high;
+    uint64_t data_low;
+    uint64_t data_high;
+} InfinityLoadedKernel;
 
 static const EFI_GUID loaded_image_guid = {0x5b1b31a1, 0x9562, 0x11d2,
     {0x8e, 0x3f, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b}};
@@ -818,7 +832,7 @@ static uint8_t boot_media_has_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 // FUNC: load_elf
 // DESC: Reads load elf from firmware or device state.
 // ------------------=
-static uint64_t load_elf(EFI_SYSTEM_TABLE *system, const void *image, size_t image_size) {
+static InfinityLoadedKernel load_elf(EFI_SYSTEM_TABLE *system, const void *image, size_t image_size) {
     EFI_BOOT_SERVICES *boot = system->boot_services;
     const Elf64Header *header = image;
     if (header->ident[0] != 0x7f || header->ident[1] != 'E' || header->ident[2] != 'L' ||
@@ -829,6 +843,8 @@ static uint64_t load_elf(EFI_SYSTEM_TABLE *system, const void *image, size_t ima
 
     const Elf64ProgramHeader *segments = (const void *)((const uint8_t *)image + header->phoff);
     uint64_t low = UINT64_MAX, high = 0;
+    InfinityLoadedKernel loaded = {0, UINT64_MAX, 0, UINT64_MAX, 0,
+        UINT64_MAX, 0, UINT64_MAX, 0};
     for (uint16_t i = 0; i < header->phnum; ++i) {
         if (segments[i].type != PT_LOAD) continue;
         if (segments[i].filesz > segments[i].memsz || segments[i].offset + segments[i].filesz > image_size)
@@ -837,6 +853,12 @@ static uint64_t load_elf(EFI_SYSTEM_TABLE *system, const void *image, size_t ima
         uint64_t end = (segments[i].paddr + segments[i].memsz + PAGE_MASK) & ~(uint64_t)PAGE_MASK;
         if (start < low) low = start;
         if (end > high) high = end;
+        uint64_t *kind_low = segments[i].flags & 1 ? &loaded.text_low :
+            (segments[i].flags & 2 ? &loaded.data_low : &loaded.rodata_low);
+        uint64_t *kind_high = segments[i].flags & 1 ? &loaded.text_high :
+            (segments[i].flags & 2 ? &loaded.data_high : &loaded.rodata_high);
+        if (start < *kind_low) *kind_low = start;
+        if (end > *kind_high) *kind_high = end;
     }
     if (low == UINT64_MAX || high <= low || header->entry < low || header->entry >= high)
         fail(system, L"ERROR: kernel has no loadable entry\r\n", "ERROR: kernel has no loadable entry\n");
@@ -849,7 +871,31 @@ static uint64_t load_elf(EFI_SYSTEM_TABLE *system, const void *image, size_t ima
             memcpy((void *)(uintptr_t)segments[i].paddr, (const uint8_t *)image + segments[i].offset,
                    (size_t)segments[i].filesz);
     }
-    return header->entry;
+    loaded.entry = header->entry;
+    loaded.low = low;
+    loaded.high = high;
+    if (loaded.text_low == UINT64_MAX) loaded.text_low = 0;
+    if (loaded.rodata_low == UINT64_MAX) loaded.rodata_low = 0;
+    if (loaded.data_low == UINT64_MAX) loaded.data_low = 0;
+    return loaded;
+}
+
+// ------------------------=
+// FUNC: reserve_native_runtime_pool
+// DESC: Reserves a contiguous identity-mapped frame arena for isolated native process images, heaps, stacks, and page tables.
+// ------------------=
+static uint64_t reserve_native_runtime_pool(EFI_SYSTEM_TABLE *system) {
+#if defined(INFINITY_AARCH64)
+    (void)system;
+    return 0;
+#else
+    uint64_t base = UINT32_MAX;
+    if (system->boot_services->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA,
+            NATIVE_RUNTIME_POOL_PAGES, &base) != EFI_SUCCESS)
+        fail(system, L"ERROR: native runtime pool allocation failed\r\n",
+            "ERROR: native runtime pool allocation failed\n");
+    return base;
+#endif
 }
 
 // ------------------------=
@@ -863,13 +909,14 @@ static uint64_t prepare_identity_map(EFI_SYSTEM_TABLE *system) {
     return 0;
 #else
     uint64_t base = UINT32_MAX;
-    if (system->boot_services->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA, 6, &base) != EFI_SUCCESS)
+    if (system->boot_services->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA,
+            2 + IDENTITY_MAP_GIB, &base) != EFI_SUCCESS)
         fail(system, L"ERROR: page-table allocation failed\r\n", "ERROR: page-table allocation failed\n");
-    memset((void *)(uintptr_t)base, 0, 6 * PAGE_SIZE);
+    memset((void *)(uintptr_t)base, 0, (2 + IDENTITY_MAP_GIB) * PAGE_SIZE);
     uint64_t *pml4 = (void *)(uintptr_t)base;
     uint64_t *pdpt = (void *)(uintptr_t)(base + PAGE_SIZE);
     pml4[0] = (base + PAGE_SIZE) | 3;
-    for (uint64_t group = 0; group < 4; ++group) {
+    for (uint64_t group = 0; group < IDENTITY_MAP_GIB; ++group) {
         uint64_t pd_address = base + (2 + group) * PAGE_SIZE;
         pdpt[group] = pd_address | 3;
         uint64_t *pd = (void *)(uintptr_t)pd_address;
@@ -1277,7 +1324,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     uint8_t booted_installed_generation = kernel_image != NULL;
     if (!kernel_image) kernel_image = load_kernel_file(image, system, &image_size);
     serial_write("[BOOT] kernel located\n");
-    uint64_t kernel_entry = load_elf(system, kernel_image, image_size);
+    InfinityLoadedKernel kernel = load_elf(system, kernel_image, image_size);
     system->boot_services->free_pool(kernel_image);
     serial_write("[BOOT] kernel loaded\n");
 
@@ -1289,6 +1336,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     if (system->boot_services->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA, KERNEL_STACK_PAGES, &stack_base) != EFI_SUCCESS)
         fail(system, L"ERROR: stack allocation failed\r\n", "ERROR: stack allocation failed\n");
     uint64_t page_tables = prepare_identity_map(system);
+    uint64_t native_pool = reserve_native_runtime_pool(system);
     InfinityBootInfo *info = NULL;
     if (system->boot_services->allocate_pool(EFI_LOADER_DATA, sizeof(*info), (void **)&info) != EFI_SUCCESS)
         fail(system, L"ERROR: BootInfo allocation failed\r\n", "ERROR: BootInfo allocation failed\n");
@@ -1329,6 +1377,19 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     info->model_bytes = 0;
     info->model_work_address = 0;
     info->model_work_bytes = 0;
+    info->native_pool_address = native_pool;
+    info->native_pool_bytes = native_pool ? (uint64_t)NATIVE_RUNTIME_POOL_PAGES * PAGE_SIZE : 0;
+    info->kernel_address = kernel.low;
+    info->kernel_bytes = kernel.high - kernel.low;
+    info->kernel_text_address = kernel.text_low;
+    info->kernel_text_bytes = kernel.text_high - kernel.text_low;
+    info->kernel_rodata_address = kernel.rodata_low;
+    info->kernel_rodata_bytes = kernel.rodata_high - kernel.rodata_low;
+    info->kernel_data_address = kernel.data_low;
+    info->kernel_data_bytes = kernel.data_high - kernel.data_low;
+    info->kernel_page_table = page_tables;
+    info->kernel_stack_address = stack_base;
+    info->kernel_stack_bytes = (uint64_t)KERNEL_STACK_PAGES * PAGE_SIZE;
     prepare_payloads(image, system, info, booted_installed_generation);
     gather_firmware_entropy(system, info);
     gather_framebuffer(system, info);
@@ -1382,7 +1443,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         fail(system, L"ERROR: final memory map failed\r\n", "ERROR: final memory map failed\n");
     info->memory_map_size = current_size;
     info->memory_descriptor_size = descriptor_size;
-    infinity_handoff(info, kernel_entry, stack_base + KERNEL_STACK_PAGES * PAGE_SIZE, page_tables);
+    infinity_handoff(info, kernel.entry, stack_base + KERNEL_STACK_PAGES * PAGE_SIZE, page_tables);
 #else
     for (unsigned attempt = 0; attempt < 2; ++attempt) {
         size_t current_size = map_size;
@@ -1392,7 +1453,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
         info->memory_map_size = current_size;
         info->memory_descriptor_size = descriptor_size;
         if (system->boot_services->exit_boot_services(image, map_key) == EFI_SUCCESS)
-            infinity_handoff(info, kernel_entry, stack_base + KERNEL_STACK_PAGES * PAGE_SIZE, page_tables);
+            infinity_handoff(info, kernel.entry, stack_base + KERNEL_STACK_PAGES * PAGE_SIZE, page_tables);
     }
 #endif
     fail(system, L"ERROR: unable to exit boot services\r\n", "ERROR: unable to exit boot services\n");

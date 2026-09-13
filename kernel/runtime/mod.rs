@@ -4,6 +4,7 @@ pub mod console_language;
 pub mod event;
 pub mod execution;
 pub mod native_c_image;
+pub mod native_memory;
 pub mod font;
 pub mod fabric;
 pub mod storage_client;

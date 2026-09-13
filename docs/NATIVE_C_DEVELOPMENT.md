@@ -730,3 +730,33 @@ test verifies at least 128 MiB of addressable storage, a 100 MiB compiler-image
 reservation, a fully streamed and CRC-sealed multi-megabyte component, bounded
 range reads, ordinary-API rejection, remount persistence, and a compact v5 to
 scalable v6 mutation preserving namespace identity.
+
+## Native process memory checkpoint
+
+BootInfo v9 now transfers a loader-reserved 256 MiB physical frame arena, exact
+kernel RX, R/NX and RW/NX segment bounds, the kernel stack, and the boot CR3.
+The loader reserves the arena before the final UEFI memory map and expands the
+temporary identity map to 8 GiB so firmware may place the UEFI handoff above
+4 GiB on a 4 GiB guest.
+
+The kernel frame allocator uses fixed bounded metadata, exact owner-bearing
+allocation tokens, zero-on-allocation, and rejects forged or partial releases.
+The x86-64 mapper constructs independent four-level roots from those frames. A
+compiler address space maps ELF text RX, read-only data R/NX, mutable data and
+heap RW/NX, transitions GNU RELRO to R/NX, leaves both stack guard pages absent,
+keeps kernel code/data/stack supervisor-only, and maps only an explicit user RX
+gateway for future kernel requests. CR3 activation enables CR0.WP and EFER.NXE.
+Execution Contexts now bind the resulting 64-bit page-table root only after the
+mapping transaction succeeds.
+
+TESTED: `make native-memory-test` walks the produced page tables in memory and
+verifies translations and effective permissions, independent roots, exact frame
+ownership, forged-release rejection, guard faults by absence, and complete
+reclamation. Both UEFI loaders compile, both installed and live x86-64 kernels
+link, and a 4 GiB QEMU boot reaches the Rust kernel after reserving the arena.
+
+This does not yet execute Clang. Secure execution still requires x86-64 ring-3
+entry, a TSS/privileged kernel stack, a trap or syscall dispatcher behind the
+gateway ABI, saved-register context switching, page-fault termination, and then
+fresh installed ISO-detached `cc hello.c -o hello` execution. Until those are
+complete, the production scheduler must not activate an untrusted compiler CR3.

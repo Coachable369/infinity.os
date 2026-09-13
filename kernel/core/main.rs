@@ -125,6 +125,9 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     crash::set_phase(crash::CrashPhase::Drivers);
     let devices = drivers::initialize(info);
     crash::set_phase(crash::CrashPhase::Runtime);
+    if info.native_pool_address != 0 {
+        let _ = runtime::native_memory::initialize(info.native_pool_address, info.native_pool_bytes);
+    }
     runtime::initialize(cfg!(target_arch = "x86") || info.boot_flags & 32 == 0);
     storage::initialize_installation_identity(
         &info.firmware_entropy,

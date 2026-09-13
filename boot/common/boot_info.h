@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define INFINITY_BOOT_MAGIC UINT64_C(0x494e46424f4f5430)
-#define INFINITY_BOOT_VERSION 8u
+#define INFINITY_BOOT_VERSION 9u
 #define INFINITY_ARCH_X86_64 2u
 #define INFINITY_ARCH_AARCH64 3u
 /* network_reserved discriminator: firmware_network is an ECAM function address.
@@ -46,8 +46,21 @@ typedef struct {
     uint64_t model_work_address;
     uint64_t model_work_bytes;
     uint64_t worker_bridge;
+    uint64_t native_pool_address;
+    uint64_t native_pool_bytes;
+    uint64_t kernel_address;
+    uint64_t kernel_bytes;
+    uint64_t kernel_text_address;
+    uint64_t kernel_text_bytes;
+    uint64_t kernel_rodata_address;
+    uint64_t kernel_rodata_bytes;
+    uint64_t kernel_data_address;
+    uint64_t kernel_data_bytes;
+    uint64_t kernel_page_table;
+    uint64_t kernel_stack_address;
+    uint64_t kernel_stack_bytes;
 } InfinityBootInfo;
 
-_Static_assert(sizeof(InfinityBootInfo) == 264, "BootInfo ABI changed");
+_Static_assert(sizeof(InfinityBootInfo) == 368, "BootInfo ABI changed");
 
 #endif

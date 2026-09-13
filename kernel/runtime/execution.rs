@@ -1,7 +1,6 @@
-//! Architecture-neutral execution-context identities and practical isolation.
-//! The current kernel does not yet expose page tables, so memory regions are
-//! validated as non-overlapping ownership ranges. `AddressSpaceToken` is the
-//! narrow architecture seam that will gain MMU switching later.
+//! Architecture-neutral execution-context identities and MMU ownership.
+//! Native contexts bind to a CR3-compatible root only after the architecture
+//! mapper has completed every required mapping and protection transition.
 
 pub const MAX_CONTEXTS: usize = 48;
 
@@ -12,7 +11,7 @@ pub struct SecurityIdentity(pub [u8; 16]);
 pub struct ContextHandle(pub u16);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct AddressSpaceToken(pub u32);
+pub struct AddressSpaceToken(pub u64);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ContextState {
@@ -76,6 +75,7 @@ pub enum ExecutionError {
     RegionOverlap,
     UnknownContext,
     BudgetExceeded,
+    InvalidAddressSpace,
 }
 
 pub struct ExecutionManager {
@@ -138,7 +138,7 @@ impl ExecutionManager {
             security_identity: SecurityIdentity(identity),
             service_identity,
             image_identity,
-            address_space: AddressSpaceToken(handle.0 as u32),
+            address_space: AddressSpaceToken(0),
             memory,
             endpoint,
             priority,
@@ -235,6 +235,17 @@ impl ExecutionManager {
     pub fn account_cpu_tick(&mut self, handle: ContextHandle) -> Result<(), ExecutionError> {
         let context = self.get_mut(handle).ok_or(ExecutionError::UnknownContext)?;
         context.usage.cpu_ticks = context.usage.cpu_ticks.saturating_add(1);
+        Ok(())
+    }
+
+    // ------------------------=
+    // FUNC: bind_address_space
+    // DESC: Binds a context to a nonzero page-aligned architecture root after mapping validation succeeds.
+    // ------------------=
+    pub fn bind_address_space(&mut self, handle: ContextHandle, root: u64) -> Result<(), ExecutionError> {
+        if root == 0 || root & 0xfff != 0 { return Err(ExecutionError::InvalidAddressSpace); }
+        self.get_mut(handle).ok_or(ExecutionError::UnknownContext)?
+            .address_space = AddressSpaceToken(root);
         Ok(())
     }
     // ------------------------=

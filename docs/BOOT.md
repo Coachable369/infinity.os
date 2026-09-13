@@ -1,6 +1,7 @@
 # InfinityOS boot contract through Milestone 6
 
-The x86_64 live installer profile requires at least 512 MiB of RAM. The live
+The current x86_64 live installer profile requires 4 GiB of RAM because it
+carries the installed System Generation and retained compositor buffers. The live
 kernel carries the verified installed System Generation so installation can
 complete without a network or host dependency. Installed-disk boot remains
 valid in the 256 MiB compatibility profile. The reference AI workstation
@@ -26,9 +27,12 @@ Build with `make x86_64`; boot-test with `make test-x86_64`. The resulting
    low-memory space for the generated high-resolution boot assets and firmware allocations.
 5. The loader allocates a 256 KiB initial stack, sized for bounded native-object
    generation verification, and creates InfinityOS-owned
-   four-level page tables. Two-megabyte pages identity-map physical addresses
-   `0x00000000` through `0xffffffff`; no virtual-memory policy is implied.
-6. The final UEFI memory map is captured in `BootInfo`. No allocation occurs
+   four-level page tables. Two-megabyte pages identity-map the first 8 GiB so a
+   UEFI image placed above 4 GiB can finish the handoff. This boot map implies no
+   process virtual-memory policy. The loader also reserves a contiguous 256 MiB
+   frame arena below 4 GiB for native images, heaps, stacks, and page tables.
+6. BootInfo v9 records the reserved arena, kernel RX/R/NX/RW/NX segment bounds,
+   kernel stack bounds, and boot CR3. The final UEFI memory map is then captured. No allocation occurs
    between that capture and `ExitBootServices` (a stale map key is retried once).
 7. The architecture handoff disables maskable interrupts, installs a minimal
    flat GDT, reloads data selectors and `CS`, installs `CR3`, selects the new
@@ -50,11 +54,11 @@ Node menu exists only in the live recovery/installer profile.
 ### x86_64 kernel-entry state
 
 - Execution mode: 64-bit long mode, ring 0.
-- Paging: enabled; InfinityOS-owned 4 GiB identity map using 2 MiB pages.
+- Paging: enabled; InfinityOS-owned 8 GiB boot identity map using 2 MiB pages.
 - Interrupt state: `IF=0`; no IDT is promised or used.
 - Direction flag: inherited from compliant UEFI application state (clear).
 - Floating point/SIMD: unused; the Rust target disables SIMD and red-zone use.
-- Stack: 64 KiB, downward-growing, 16-byte aligned before the handoff call.
+- Stack: 1 MiB, downward-growing, 16-byte aligned before the handoff call.
 - Register contract: `RDI = BootInfo*`; all other general registers unspecified.
 - Return contract: kernel entry is divergent and must never return.
 
