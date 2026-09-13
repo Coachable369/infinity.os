@@ -1138,6 +1138,10 @@ static uint8_t discover_acpi_network(EFI_SYSTEM_TABLE *system, InfinityBootInfo 
                         info->network_capabilities = 0u;
                         info->network_mac_length = 0u;
                         info->network_reserved = 3u;
+                        if (identity == UINT32_C(0x100e8086)) {
+                            info->firmware_network = (uint64_t)function;
+                            info->network_reserved = INFINITY_NETWORK_ECAM;
+                        }
                         serial_write("[BOOT] ACPI PCI network adapter discovered\n");
                         return 1;
                     }
@@ -1167,6 +1171,11 @@ static void gather_firmware_network(EFI_SYSTEM_TABLE *system, InfinityBootInfo *
         }
     }
 
+#if defined(INFINITY_AARCH64)
+    /* Controller connection above assigns BARs before native ownership. */
+    if (discover_acpi_network(system, info) &&
+            info->network_reserved == INFINITY_NETWORK_ECAM) return;
+#endif
     EFI_HANDLE *handles = NULL;
     size_t handle_count = 0;
     EFI_GUID guid = simple_network_guid;

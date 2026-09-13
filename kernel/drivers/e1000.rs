@@ -9,113 +9,302 @@ pub const MAX_FRAME: usize = 1514;
 
 #[derive(Clone, Copy)]
 #[repr(C)]
-struct Rx { address: u64, length: u16, checksum: u16, status: u8, errors: u8, special: u16 }
+struct Rx {
+    address: u64,
+    length: u16,
+    checksum: u16,
+    status: u8,
+    errors: u8,
+    special: u16,
+}
 #[derive(Clone, Copy)]
 #[repr(C)]
-struct Tx { address: u64, length: u16, offset: u8, command: u8, status: u8, start: u8, special: u16 }
+struct Tx {
+    address: u64,
+    length: u16,
+    offset: u8,
+    command: u8,
+    status: u8,
+    start: u8,
+    special: u16,
+}
 #[repr(C, align(128))]
 struct Dma {
-    rx: [Rx; COUNT], tx: [Tx; COUNT],
-    receive: [[u8; BUFFER]; COUNT], send: [[u8; BUFFER]; COUNT],
+    rx: [Rx; COUNT],
+    tx: [Tx; COUNT],
+    receive: [[u8; BUFFER]; COUNT],
+    send: [[u8; BUFFER]; COUNT],
 }
 static mut DMA: Dma = Dma {
-    rx: [Rx { address: 0, length: 0, checksum: 0, status: 0, errors: 0, special: 0 }; COUNT],
-    tx: [Tx { address: 0, length: 0, offset: 0, command: 0, status: 1, start: 0, special: 0 }; COUNT],
-    receive: [[0; BUFFER]; COUNT], send: [[0; BUFFER]; COUNT],
+    rx: [Rx {
+        address: 0,
+        length: 0,
+        checksum: 0,
+        status: 0,
+        errors: 0,
+        special: 0,
+    }; COUNT],
+    tx: [Tx {
+        address: 0,
+        length: 0,
+        offset: 0,
+        command: 0,
+        status: 1,
+        start: 0,
+        special: 0,
+    }; COUNT],
+    receive: [[0; BUFFER]; COUNT],
+    send: [[0; BUFFER]; COUNT],
 };
 
-pub struct E1000 { base: usize, rx: usize, tx: usize, tx_reap: usize, tx_pending: usize, rx_packets: u64, tx_packets: u64, clock_period: u32, pub mac: [u8; 6], pub drops: u64 }
+pub struct E1000 {
+    base: usize,
+    rx: usize,
+    tx: usize,
+    tx_reap: usize,
+    tx_pending: usize,
+    rx_packets: u64,
+    tx_packets: u64,
+    clock_period: u32,
+    pub mac: [u8; 6],
+    pub drops: u64,
+}
 
 // ------------------------=
 // FUNC: out
 // DESC: Writes a PCI configuration port in the x86 reference backend.
 // ------------------=
-unsafe fn out(port: u16, value: u32) { core::arch::asm!("out dx, eax", in("dx") port, in("eax") value, options(nostack)); }
+#[cfg(target_arch = "x86_64")]
+unsafe fn out(port: u16, value: u32) {
+    core::arch::asm!("out dx, eax", in("dx") port, in("eax") value, options(nostack));
+}
 // ------------------------=
 // FUNC: input
 // DESC: Reads a PCI configuration port in the x86 reference backend.
 // ------------------=
-unsafe fn input(port: u16) -> u32 { let value; core::arch::asm!("in eax, dx", in("dx") port, out("eax") value, options(nostack)); value }
+#[cfg(target_arch = "x86_64")]
+unsafe fn input(port: u16) -> u32 {
+    let value;
+    core::arch::asm!("in eax, dx", in("dx") port, out("eax") value, options(nostack));
+    value
+}
 // ------------------------=
 // FUNC: pci
 // DESC: Reads one aligned configuration dword on the root PCI bus.
 // ------------------=
-unsafe fn pci(device: u32, offset: u32) -> u32 { out(0xcf8, 0x80000000 | device | offset); input(0xcfc) }
+#[cfg(target_arch = "x86_64")]
+unsafe fn pci(device: u32, offset: u32) -> u32 {
+    out(0xcf8, 0x80000000 | device | offset);
+    input(0xcfc)
+}
 
 impl E1000 {
     // ------------------------=
     // FUNC: read
     // DESC: Reads a register from the validated identity-mapped BAR.
     // ------------------=
-    unsafe fn read(&self, offset: usize) -> u32 { read_volatile((self.base + offset) as *const u32) }
+    unsafe fn read(&self, offset: usize) -> u32 {
+        read_volatile((self.base + offset) as *const u32)
+    }
     // ------------------------=
     // FUNC: write
     // DESC: Writes a register and flushes posted writes with a status read.
     // ------------------=
-    unsafe fn write(&self, offset: usize, value: u32) { write_volatile((self.base + offset) as *mut u32, value); let _ = self.read(8); }
+    unsafe fn write(&self, offset: usize, value: u32) {
+        write_volatile((self.base + offset) as *mut u32, value);
+        let _ = self.read(8);
+    }
     // ------------------------=
     // FUNC: initialize
     // DESC: Takes ownership of one QEMU root-bus 82540EM using fixed resident DMA buffers; caller guarantees unique ownership.
     // ------------------=
+    #[cfg(target_arch = "x86_64")]
     pub unsafe fn initialize() -> Option<Self> {
         for function in 0..256u32 {
             let address = function << 8;
-            if pci(address, 0) != 0x100e8086 { continue; }
+            if pci(address, 0) != 0x100e8086 {
+                continue;
+            }
             let bar = pci(address, 0x10);
-            if bar & 1 != 0 || bar & 6 == 4 && pci(address, 0x14) != 0 { continue; }
+            if bar & 1 != 0 || bar & 6 == 4 && pci(address, 0x14) != 0 {
+                continue;
+            }
             let base = (bar & !15) as usize;
-            if base < 0x100000 || base.checked_add(0x20000)? > 0x1_0000_0000 { continue; }
+            if base < 0x100000 || base.checked_add(0x20000)? > 0x1_0000_0000 {
+                continue;
+            }
             let command = pci(address, 4) & 0xffff;
-            out(0xcf8, 0x80000000 | address | 4); out(0xcfc, command | 6);
-            let mut nic = Self { base, rx: 0, tx: 0, tx_reap: 0, tx_pending: 0, rx_packets: 0, tx_packets: 0, clock_period: 0, mac: [0; 6], drops: 0 };
+            out(0xcf8, 0x80000000 | address | 4);
+            out(0xcfc, command | 6);
+            let mut nic = Self::initialize_mmio(base)?;
             // QEMU PC HPET, needed when TCG does not expose CPUID TSC calibration.
             let capabilities = read_volatile(0xfed00000 as *const u64);
             let period = (capabilities >> 32) as u32;
-            if capabilities & 0xff != 0 && capabilities & (1 << 13) != 0 && (1..=100_000_000).contains(&period) {
+            if capabilities & 0xff != 0
+                && capabilities & (1 << 13) != 0
+                && (1..=100_000_000).contains(&period)
+            {
                 nic.clock_period = period;
                 let configuration = read_volatile(0xfed00010 as *const u64);
                 write_volatile(0xfed00010 as *mut u64, configuration | 1);
             }
-            nic.write(0xd8, u32::MAX); // No interrupt-driven work until supported.
-            nic.write(0x100, 0); nic.write(0x400, 0);
-            let low = nic.read(0x5400).to_le_bytes();
-            let high = nic.read(0x5404);
-            if high & (1 << 31) == 0 { return None; }
-            nic.mac = [low[0], low[1], low[2], low[3], high as u8, (high >> 8) as u8];
-            if nic.mac == [0; 6] || nic.mac[0] & 1 != 0 { return None; }
-            let dma = addr_of_mut!(DMA);
-            for i in 0..COUNT {
-                write_volatile(addr_of_mut!((*dma).rx[i]), Rx { address: addr_of_mut!((*dma).receive[i]) as u64, length: 0, checksum: 0, status: 0, errors: 0, special: 0 });
-                write_volatile(addr_of_mut!((*dma).tx[i]), Tx { address: addr_of_mut!((*dma).send[i]) as u64, length: 0, offset: 0, command: 0, status: 1, start: 0, special: 0 });
-            }
-            let rx = addr_of_mut!((*dma).rx) as u64;
-            let tx = addr_of_mut!((*dma).tx) as u64;
-            fence(Ordering::SeqCst);
-            nic.write(0x2800, rx as u32); nic.write(0x2804, (rx >> 32) as u32);
-            nic.write(0x2808, (COUNT * 16) as u32); nic.write(0x2810, 0); nic.write(0x2818, (COUNT - 1) as u32);
-            nic.write(0x3800, tx as u32); nic.write(0x3804, (tx >> 32) as u32);
-            nic.write(0x3808, (COUNT * 16) as u32); nic.write(0x3810, 0); nic.write(0x3818, 0);
-            nic.write(0, nic.read(0) | (1 << 6));
-            nic.write(0x410, 10 | (8 << 10) | (6 << 20));
-            nic.write(0x400, 2 | 8 | (15 << 4) | (64 << 12));
-            nic.write(0x100, 2 | (1 << 15) | (1 << 26)); // 2KiB, broadcast, strip CRC.
             return Some(nic);
         }
         None
+    }
+
+    // ------------------------=
+    // FUNC: initialize_ecam
+    // DESC: Claims the bootloader-discovered 82540EM on a coherent identity-mapped ARM VM; caller owns the validated ECAM mapping exclusively.
+    // ------------------=
+    #[cfg(target_arch = "aarch64")]
+    pub unsafe fn initialize_ecam(function: u64) -> Option<Self> {
+        if function < 0x100000 || function & 0xfff != 0 || function.checked_add(4096).is_none() {
+            return None;
+        }
+        let config = function as *mut u32;
+        if read_volatile(config) != 0x100e8086 {
+            return None;
+        }
+        let bar = read_volatile(config.add(4));
+        if bar & 1 != 0 || bar & 6 != 0 && bar & 6 != 4 {
+            return None;
+        }
+        let upper = if bar & 6 == 4 {
+            u64::from(read_volatile(config.add(5))) << 32
+        } else {
+            0
+        };
+        let base = upper | u64::from(bar & !15);
+        if base < 0x100000 || base.checked_add(0x20000).is_none() {
+            return None;
+        }
+        // Use a 16-bit command write to avoid clearing PCI status W1C bits.
+        let command = (function + 4) as *mut u16;
+        write_volatile(command, read_volatile(command) | 6);
+        core::arch::asm!("dsb sy", options(nostack));
+        Self::initialize_mmio(base as usize)
+    }
+
+    // ------------------------=
+    // FUNC: initialize_mmio
+    // DESC: Configures shared MMIO registers and fixed coherent DMA rings after architecture-specific PCI ownership.
+    // ------------------=
+    unsafe fn initialize_mmio(base: usize) -> Option<Self> {
+        let mut nic = Self {
+            base,
+            rx: 0,
+            tx: 0,
+            tx_reap: 0,
+            tx_pending: 0,
+            rx_packets: 0,
+            tx_packets: 0,
+            clock_period: 0,
+            mac: [0; 6],
+            drops: 0,
+        };
+        nic.write(0xd8, u32::MAX); // No interrupt-driven work until supported.
+        nic.write(0x100, 0);
+        nic.write(0x400, 0);
+        let low = nic.read(0x5400).to_le_bytes();
+        let high = nic.read(0x5404);
+        if high & (1 << 31) == 0 {
+            return None;
+        }
+        nic.mac = [
+            low[0],
+            low[1],
+            low[2],
+            low[3],
+            high as u8,
+            (high >> 8) as u8,
+        ];
+        if nic.mac == [0; 6] || nic.mac[0] & 1 != 0 {
+            return None;
+        }
+        let dma = addr_of_mut!(DMA);
+        for i in 0..COUNT {
+            write_volatile(
+                addr_of_mut!((*dma).rx[i]),
+                Rx {
+                    address: addr_of_mut!((*dma).receive[i]) as u64,
+                    length: 0,
+                    checksum: 0,
+                    status: 0,
+                    errors: 0,
+                    special: 0,
+                },
+            );
+            write_volatile(
+                addr_of_mut!((*dma).tx[i]),
+                Tx {
+                    address: addr_of_mut!((*dma).send[i]) as u64,
+                    length: 0,
+                    offset: 0,
+                    command: 0,
+                    status: 1,
+                    start: 0,
+                    special: 0,
+                },
+            );
+        }
+        let rx = addr_of_mut!((*dma).rx) as u64;
+        let tx = addr_of_mut!((*dma).tx) as u64;
+        fence(Ordering::SeqCst);
+        nic.write(0x2800, rx as u32);
+        nic.write(0x2804, (rx >> 32) as u32);
+        nic.write(0x2808, (COUNT * 16) as u32);
+        nic.write(0x2810, 0);
+        nic.write(0x2818, (COUNT - 1) as u32);
+        nic.write(0x3800, tx as u32);
+        nic.write(0x3804, (tx >> 32) as u32);
+        nic.write(0x3808, (COUNT * 16) as u32);
+        nic.write(0x3810, 0);
+        nic.write(0x3818, 0);
+        nic.write(0, nic.read(0) | (1 << 6));
+        nic.write(0x410, 10 | (8 << 10) | (6 << 20));
+        nic.write(0x400, 2 | 8 | (15 << 4) | (64 << 12));
+        nic.write(0x100, 2 | (1 << 15) | (1 << 26)); // 2KiB, broadcast, strip CRC.
+        Some(nic)
     }
     // ------------------------=
     // FUNC: link_up
     // DESC: Reads the actual link-up status bit rather than inferring connectivity.
     // ------------------=
-    pub fn link_up(&self) -> bool { unsafe { self.read(8) & 2 != 0 } }
+    pub fn link_up(&self) -> bool {
+        unsafe { self.read(8) & 2 != 0 }
+    }
     // ------------------------=
     // FUNC: reference_clock_ns
     // DESC: Reads the validated QEMU PC 64-bit HPET counter using its reported femtosecond period.
     // ------------------=
     pub fn reference_clock_ns(&self) -> Option<u64> {
-        if self.clock_period == 0 { return None; }
-        let ticks = unsafe { read_volatile(0xfed000f0 as *const u64) };
-        Some(((u128::from(ticks) * u128::from(self.clock_period)) / 1_000_000).min(u128::from(u64::MAX)) as u64)
+        #[cfg(target_arch = "aarch64")]
+        {
+            let ticks: u64;
+            let frequency: u64;
+            unsafe {
+                core::arch::asm!("mrs {0}, cntvct_el0", "mrs {1}, cntfrq_el0", out(reg) ticks, out(reg) frequency, options(nostack));
+            }
+            if frequency == 0 {
+                return None;
+            }
+            return Some(
+                ((u128::from(ticks) * 1_000_000_000) / u128::from(frequency))
+                    .min(u128::from(u64::MAX)) as u64,
+            );
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            if self.clock_period == 0 {
+                return None;
+            }
+            let ticks = unsafe { read_volatile(0xfed000f0 as *const u64) };
+            Some(
+                ((u128::from(ticks) * u128::from(self.clock_period)) / 1_000_000)
+                    .min(u128::from(u64::MAX)) as u64,
+            )
+        }
     }
     // ------------------------=
     // FUNC: receive
@@ -126,20 +315,33 @@ impl E1000 {
             let dma = addr_of_mut!(DMA);
             let pointer = addr_of_mut!((*dma).rx[self.rx]);
             let descriptor = read_volatile(pointer);
-            if descriptor.status & 1 == 0 { return None; }
+            if descriptor.status & 1 == 0 {
+                return None;
+            }
             fence(Ordering::Acquire);
             let length = descriptor.length as usize;
-            let valid = descriptor.status & 2 != 0 && descriptor.errors == 0 && (14..=MAX_FRAME).contains(&length);
+            let valid = descriptor.status & 2 != 0
+                && descriptor.errors == 0
+                && (14..=MAX_FRAME).contains(&length);
             if valid {
-                core::ptr::copy_nonoverlapping(addr_of_mut!((*dma).receive[self.rx]) as *const u8, out.as_mut_ptr(), length);
+                core::ptr::copy_nonoverlapping(
+                    addr_of_mut!((*dma).receive[self.rx]) as *const u8,
+                    out.as_mut_ptr(),
+                    length,
+                );
                 self.rx_packets = self.rx_packets.saturating_add(1);
+            } else {
+                self.drops = self.drops.saturating_add(1);
             }
-            else { self.drops = self.drops.saturating_add(1); }
             write_volatile(addr_of_mut!((*pointer).status), 0);
             fence(Ordering::Release);
             self.write(0x2818, self.rx as u32);
             self.rx = (self.rx + 1) % COUNT;
-            if valid { Some(length) } else { Some(0) }
+            if valid {
+                Some(length)
+            } else {
+                Some(0)
+            }
         }
     }
     // ------------------------=
@@ -147,15 +349,25 @@ impl E1000 {
     // DESC: Submits one frame only to a completed descriptor; false is bounded backpressure or invalid input.
     // ------------------=
     pub fn transmit(&mut self, frame: &[u8]) -> bool {
-        if !(14..=MAX_FRAME).contains(&frame.len()) || !self.link_up() { return false; }
+        if !(14..=MAX_FRAME).contains(&frame.len()) || !self.link_up() {
+            return false;
+        }
         self.statistics();
-        if self.tx_pending == COUNT { return false; }
+        if self.tx_pending == COUNT {
+            return false;
+        }
         unsafe {
             let dma = addr_of_mut!(DMA);
             let pointer = addr_of_mut!((*dma).tx[self.tx]);
-            if read_volatile(addr_of_mut!((*pointer).status)) & 1 == 0 { return false; }
+            if read_volatile(addr_of_mut!((*pointer).status)) & 1 == 0 {
+                return false;
+            }
             fence(Ordering::Acquire);
-            core::ptr::copy_nonoverlapping(frame.as_ptr(), addr_of_mut!((*dma).send[self.tx]) as *mut u8, frame.len());
+            core::ptr::copy_nonoverlapping(
+                frame.as_ptr(),
+                addr_of_mut!((*dma).send[self.tx]) as *mut u8,
+                frame.len(),
+            );
             write_volatile(addr_of_mut!((*pointer).length), frame.len() as u16);
             write_volatile(addr_of_mut!((*pointer).command), 1 | 2 | 8); // EOP, IFCS, RS.
             write_volatile(addr_of_mut!((*pointer).status), 0);
@@ -172,9 +384,15 @@ impl E1000 {
     // ------------------=
     pub fn statistics(&mut self) -> (u64, u64, u64) {
         for _ in 0..4 {
-            if self.tx_pending == 0 { break; }
-            let status = unsafe { read_volatile(addr_of_mut!((*addr_of_mut!(DMA)).tx[self.tx_reap].status)) };
-            if status & 1 == 0 { break; }
+            if self.tx_pending == 0 {
+                break;
+            }
+            let status = unsafe {
+                read_volatile(addr_of_mut!((*addr_of_mut!(DMA)).tx[self.tx_reap].status))
+            };
+            if status & 1 == 0 {
+                break;
+            }
             fence(Ordering::Acquire);
             self.tx_reap = (self.tx_reap + 1) % COUNT;
             self.tx_pending -= 1;

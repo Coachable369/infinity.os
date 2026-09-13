@@ -109,10 +109,29 @@ Verification added:
   guest's TLS, certificate verification or HTTP processing. Guest exit: 33.
   Test entropy and temporary test certificates are confined to the probe.
 
-The native probe is included in `build.sh`. This is mechanism proof, not a
-System Generation install test. The installed ARM VirtualBox VM has an 82540EM,
-while current native e1000 initialization uses x86 PCI ports and is gated to
-x86_64. The ARM driver and production HTTPS service wiring are still absent.
-Neither the current desktop nor weather fetching is claimed functional over
-HTTPS. The installed trust-store/service packaging and parity check remain
-release requirements, not satisfied by the probe's temporary root.
+The native probes are included in `build.sh`. These are mechanism proofs, not
+System Generation install tests. `make native-https-arm-test` boots the production
+ARM UEFI loader and runs the same authenticated request through the ARM e1000
+driver. It passes with guest exit 0 and the exact expected decrypted body; the
+x86_64 regression probe passes with guest exit 33.
+
+## ARM PCI network handoff
+
+The loader retains the supported 82540EM's ACPI/MCFG ECAM function address in
+`firmware_network`, discriminated by `network_reserved = 4`. BootInfo remains
+version 8 and 264 bytes; older descriptor kinds are not interpreted as pointers.
+On ARM the driver validates the PCI identity and memory BAR, enables bus mastering,
+then uses the same MMIO/DMA ring implementation as x86. The ARM generic counter
+supplies monotonic deadlines instead of x86 HPET. The production network pump
+now also builds and runs on ARM, retaining its bounded RX/TX budgets.
+
+This initial backend targets coherent, identity-mapped ARM virtual machines.
+Noncoherent physical hardware, IOMMU/DMA translation and other NIC models are
+not supported by this change. The installed kernel and shared UEFI loader both
+build with the implementation; an existing installed VM needs **both** updated
+loader and kernel, not a kernel-only patch, to obtain the new descriptor.
+
+Production HTTPS service wiring is still absent. Neither the current desktop
+nor weather fetching is claimed functional over HTTPS. Installed-system packet
+verification, trust-store/service packaging and parity remain release
+requirements, not satisfied by the probe's temporary root.

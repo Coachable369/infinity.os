@@ -1,5 +1,7 @@
 //! Bare-metal HTTPS mechanism proof, not installed-system acceptance.
 #![no_std]
+#[path = "../../kernel/core/boot_info.rs"]
+mod boot_info;
 #[path = "../../kernel/drivers/e1000.rs"]
 mod e1000;
 #[path = "../../kernel/core/memory.rs"]
@@ -27,8 +29,14 @@ static mut RESPONSE: [u8; 4096] = [0; 4096];
 // DESC: Reports structured guest success or failure without a log-string oracle.
 // ------------------=
 fn exit(code: u32) -> ! {
+    #[cfg(target_arch = "x86_64")]
     unsafe {
         core::arch::asm!("out dx, eax", in("dx") 0xf4u16, in("eax") code);
+    }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let status = [0x20026u64, if code == 0x10 { 0 } else { code as u64 }];
+        core::arch::asm!("hlt #0xf000", in("x0") 0x20u64, in("x1") status.as_ptr(), options(nostack));
     }
     loop {
         core::hint::spin_loop();
@@ -141,8 +149,17 @@ fn pump(nic: &mut e1000::E1000, queue: &mut EthernetQueue) {
 // FUNC: infinity_kernel_entry
 // DESC: Performs an authenticated HTTPS request using only guest TCP, TLS, crypto and native NIC code.
 // ------------------=
-pub extern "C" fn infinity_kernel_entry(_: *const u8) -> ! {
+pub extern "C" fn infinity_kernel_entry(_info: *const u8) -> ! {
+    #[cfg(target_arch = "x86_64")]
     let mut nic = unsafe { e1000::E1000::initialize() }.unwrap();
+    #[cfg(target_arch = "aarch64")]
+    let mut nic = unsafe {
+        let info = &*(_info as *const boot_info::BootInfo);
+        assert_eq!(info.magic, boot_info::BOOT_MAGIC);
+        assert_eq!(info.version, boot_info::BOOT_VERSION);
+        assert_eq!(info.network_reserved, 4);
+        e1000::E1000::initialize_ecam(info.firmware_network).unwrap()
+    };
     let start = nic.reference_clock_ns().unwrap();
     let mut queue = EthernetQueue::new();
     let mut storage = [SocketStorage::EMPTY];

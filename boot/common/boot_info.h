@@ -7,6 +7,9 @@
 #define INFINITY_BOOT_VERSION 8u
 #define INFINITY_ARCH_X86_64 2u
 #define INFINITY_ARCH_AARCH64 3u
+/* network_reserved discriminator: firmware_network is an ECAM function address.
+   Older kinds retain their original meanings; the handoff layout is unchanged. */
+#define INFINITY_NETWORK_ECAM 4u
 
 typedef struct {
     uint64_t magic;

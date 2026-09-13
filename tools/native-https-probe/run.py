@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import argparse
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # FUNC: run
 # DESC: Builds a test-only trust fixture, boots the native HTTPS client and asserts its binary guest outcome.
 # ------------------=
-def run():
+def run(arch="x86_64"):
     with tempfile.TemporaryDirectory(prefix="infinity-https-") as temporary:
         work = Path(temporary)
         key, cert, der = (work / name for name in ("key.pem", "cert.pem", "root.der"))
@@ -27,10 +28,12 @@ def run():
         listener = socket.socket(); listener.bind(("127.0.0.1", 0)); listener.listen(1); listener.settimeout(60)
         environment = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(ROOT / "build/native-https/cargo"),
             HTTPS_TEST_PORT=str(listener.getsockname()[1]), HTTPS_TEST_ROOT=str(der), HTTPS_TEST_TIME=str(int(time.time())))
-        subprocess.run(["cargo", "build", "--release", "-Z", "build-std=core", "--target", "x86_64-unknown-none",
+        target = "aarch64-unknown-none" if arch == "aarch64" else "x86_64-unknown-none"
+        linker = "linker/aarch64-qemu.ld" if arch == "aarch64" else "linker/x86_64.ld"
+        subprocess.run(["cargo", "build", "--release", "-Z", "build-std=core", "--target", target,
             "--manifest-path", "tools/native-https-probe/Cargo.toml"], cwd=ROOT, env=environment, check=True)
-        subprocess.run(["/opt/homebrew/opt/lld/bin/ld.lld", "-nostdlib", "-static", "-T", "linker/x86_64.ld",
-            "-o", "build/native-https/probe.elf", "build/native-https/cargo/x86_64-unknown-none/release/libinfinity_native_https_probe.a"], cwd=ROOT, check=True)
+        subprocess.run(["/opt/homebrew/opt/lld/bin/ld.lld", "-nostdlib", "-static", "-T", linker,
+            "-o", "build/native-https/probe.elf", f"build/native-https/cargo/{target}/release/libinfinity_native_https_probe.a"], cwd=ROOT, check=True)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); context.minimum_version = ssl.TLSVersion.TLSv1_3
         context.load_cert_chain(cert, key); context.set_alpn_protocols(["http/1.1"])
         outcomes = []
@@ -54,18 +57,22 @@ def run():
                 outcomes.append(error)
         thread = threading.Thread(target=serve, daemon=True); thread.start()
         volume = work / "volume"; (volume / "EFI/BOOT").mkdir(parents=True); (volume / "EFI/INFINITY").mkdir(parents=True)
-        shutil.copyfile(ROOT / "build/x86_64/BOOTX64.EFI", volume / "EFI/BOOT/BOOTX64.EFI")
+        boot = "BOOTAA64.EFI" if arch == "aarch64" else "BOOTX64.EFI"
+        shutil.copyfile(ROOT / f"build/{arch}/{boot}", volume / f"EFI/BOOT/{boot}")
         shutil.copyfile(ROOT / "build/native-https/probe.elf", volume / "EFI/INFINITY/KERNEL.ELF")
         with (work / "qemu.log").open("wb") as log:
-            result = subprocess.run(["qemu-system-x86_64", "-machine", "pc", "-m", "512M",
-                "-drive", "if=pflash,format=raw,readonly=on,file=/opt/homebrew/share/qemu/edk2-x86_64-code.fd",
+            machine = (["qemu-system-aarch64", "-machine", "virt", "-cpu", "cortex-a72", "-bios", "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", "-semihosting-config", "enable=on,target=native"]
+                if arch == "aarch64" else ["qemu-system-x86_64", "-machine", "pc", "-drive", "if=pflash,format=raw,readonly=on,file=/opt/homebrew/share/qemu/edk2-x86_64-code.fd", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04"])
+            result = subprocess.run(machine + ["-m", "512M",
                 "-drive", f"format=raw,file=fat:rw:{volume}", "-boot", "order=c", "-netdev", "user,id=net",
-                "-device", "e1000,netdev=net", "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+                "-device", "e1000,netdev=net",
                 "-display", "none", "-serial", "stdio", "-no-reboot"], stdout=log, stderr=subprocess.STDOUT, timeout=55)
         thread.join(timeout=2); listener.close()
-        assert result.returncode == 33, (result.returncode, outcomes, (work / "qemu.log").read_text(errors="replace")[-1000:])
+        assert result.returncode == (0 if arch == "aarch64" else 33), (result.returncode, outcomes, (work / "qemu.log").read_text(errors="replace")[-1000:])
         assert outcomes == [True], outcomes
-        print({"native_https_guest_exit": result.returncode, "installed_acceptance": False})
+        print({"architecture": arch, "native_https_guest_exit": result.returncode, "installed_acceptance": False})
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--arch", choices=["x86_64", "aarch64"], default="x86_64")
+    run(parser.parse_args().arch)

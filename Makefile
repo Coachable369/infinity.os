@@ -107,6 +107,10 @@ milestone-9-correlation-test:
 native-https-test: $(BUILD)/x86_64/BOOTX64.EFI
 	@python3 tools/native-https-probe/run.py
 
+.PHONY: native-https-arm-test
+native-https-arm-test: $(BUILD)/aarch64/BOOTAA64.EFI
+	@python3 tools/native-https-probe/run.py --arch aarch64
+
 native-tls-test:
 	@sh tools/native-tls-probe/test.sh
 .PHONY: http-transport-test

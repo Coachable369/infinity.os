@@ -32,6 +32,8 @@ pub struct BootInfo {
     pub network_mtu: u32,
     pub network_capabilities: u32,
     pub network_mac_length: u32,
+    /// Kind 4: firmware_network is an identity-mapped PCI ECAM function address.
+    /// Older loaders retain kinds 1-3; they do not enable native ARM PCI ownership.
     pub network_reserved: u32,
     pub network_mac: [u8; 32],
     pub firmware_entropy: [u8; 32],

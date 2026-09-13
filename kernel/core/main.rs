@@ -171,7 +171,7 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     crash::set_phase(crash::CrashPhase::Storage);
     storage::initialize_object_store();
     runtime::storage_initialized();
-    drivers::network::initialize();
+    drivers::network::initialize(info);
     crash::set_phase(crash::CrashPhase::Services);
     runtime::announce_services();
     crash::set_phase(crash::CrashPhase::UserInterface);
