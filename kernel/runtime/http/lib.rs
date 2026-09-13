@@ -5,6 +5,7 @@
 
 pub mod async_stream;
 pub mod body;
+pub mod client;
 pub mod device;
 pub mod https;
 pub mod request;

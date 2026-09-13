@@ -135,3 +135,30 @@ Production HTTPS service wiring is still absent. Neither the current desktop
 nor weather fetching is claimed functional over HTTPS. Installed-system packet
 verification, trust-store/service packaging and parity remain release
 requirements, not satisfied by the probe's temporary root.
+
+## Cooperative request orchestration
+
+`client::get` now owns the DNS, TCP connection and TLS request lifecycle in one
+allocation-free future. It accepts a NIC-queue `Link` adapter, a hard monotonic
+deadline, genuine cryptographic RNG, trusted wall time and a trust store. DNS
+authorization and resolved-destination authorization are separate. Every packet
+pump rechecks authority before ingress/egress; revocation or deadline expiry
+aborts the request without transmitting queued packets. Residual DNS frames are
+discarded before switching to application-endpoint authority.
+
+Pending work registers a network/timer wake with the adapter instead of
+self-waking continuously. Each pump is limited to four frames per direction.
+The owner must poll outside paint/input handlers and provide timer wakes even
+when no packets arrive, so deadlines remain enforceable. This does not make
+cryptographic computations preemptible within one future poll.
+
+The x86 and ARM probes now use this shared client rather than implementing their
+own connection/pumping loops. Three additional behavioral tests cover initial
+denial, mid-request revocation and deadline expiry for both DNS and direct-IP
+requests, including suppression of previously queued frames.
+
+This is still not the installed application service. The production adapter
+must bind `Link::allowed` to the requesting identity's capabilities and current
+policy/configuration, demultiplex NIC queues without disrupting existing UDP
+users, and register the task with the OS scheduler. Probe adapters restrict
+traffic to their controlled test server; they are not production authorization.

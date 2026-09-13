@@ -11,15 +11,11 @@ use core::{
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
 };
 use infinity_http::{
-    async_stream::Session,
-    device::EthernetQueue,
-    https::{self, Buffers},
-    smoltcp::{iface::SocketStorage, socket::tcp::State, time::Instant},
-    transport::Transport,
+    client::{self, Configuration, Destination, Link},
+    https::Buffers,
+    smoltcp::time::Instant,
 };
 use rand_core::SeedableRng;
-static mut RX: [u8; 16384] = [0; 16384];
-static mut TX: [u8; 16384] = [0; 16384];
 static mut READ: [u8; 16640] = [0; 16640];
 static mut WRITE: [u8; 4096] = [0; 4096];
 static mut REQUEST: [u8; 512] = [0; 512];
@@ -120,28 +116,39 @@ unsafe fn clone_waker(_: *const ()) -> RawWaker {
     RawWaker::new(core::ptr::null(), &VTABLE)
 }
 static VTABLE: RawWakerVTable = RawWakerVTable::new(clone_waker, noop, noop, noop);
-// ------------------------=
-// FUNC: pump
-// DESC: Moves at most four frames in each direction through the actual native e1000 driver.
-// ------------------=
-fn pump(nic: &mut e1000::E1000, queue: &mut EthernetQueue) {
-    let mut frame = [0; e1000::MAX_FRAME];
-    for _ in 0..4 {
-        let Some(n) = nic.receive(&mut frame) else {
-            break;
-        };
-        if n > 0 {
-            let _ = queue.ingest(&frame[..n]);
-        }
+impl Link for e1000::E1000 {
+    // ------------------------=
+    // FUNC: register_waker
+    // DESC: Uses the explicit bare-metal probe poller; production adapters must arrange timer and NIC wakes.
+    // ------------------=
+    fn register_waker(&mut self, _: &Waker) {}
+    // ------------------------=
+    // FUNC: now
+    // DESC: Reads the native adapter clock for the shared client operation.
+    // ------------------=
+    fn now(&self) -> Instant {
+        Instant::from_millis((self.reference_clock_ns().unwrap() / 1_000_000) as i64)
     }
-    for _ in 0..4 {
-        let Some(frame) = queue.pending() else {
-            break;
-        };
-        if !nic.transmit(frame) {
-            break;
-        }
-        queue.transmitted();
+    // ------------------------=
+    // FUNC: allowed
+    // DESC: Confines this test-only adapter to the controlled remote server.
+    // ------------------=
+    fn allowed(&mut self, destination: [u8; 4], port: u16) -> bool {
+        destination == [10, 0, 2, 2] && port == env!("HTTPS_TEST_PORT").parse::<u16>().unwrap()
+    }
+    // ------------------------=
+    // FUNC: receive
+    // DESC: Receives one actual NIC frame for the shared client.
+    // ------------------=
+    fn receive(&mut self, frame: &mut [u8; 1514]) -> Option<usize> {
+        e1000::E1000::receive(self, frame)
+    }
+    // ------------------------=
+    // FUNC: transmit
+    // DESC: Preserves actual descriptor backpressure in the shared client.
+    // ------------------=
+    fn transmit(&mut self, frame: &[u8]) -> bool {
+        e1000::E1000::transmit(self, frame)
     }
 }
 #[no_mangle]
@@ -151,64 +158,40 @@ fn pump(nic: &mut e1000::E1000, queue: &mut EthernetQueue) {
 // ------------------=
 pub extern "C" fn infinity_kernel_entry(_info: *const u8) -> ! {
     #[cfg(target_arch = "x86_64")]
-    let mut nic = unsafe { e1000::E1000::initialize() }.unwrap();
+    let nic = unsafe { e1000::E1000::initialize() }.unwrap();
     #[cfg(target_arch = "aarch64")]
-    let mut nic = unsafe {
+    let nic = unsafe {
         let info = &*(_info as *const boot_info::BootInfo);
         assert_eq!(info.magic, boot_info::BOOT_MAGIC);
         assert_eq!(info.version, boot_info::BOOT_VERSION);
         assert_eq!(info.network_reserved, 4);
         e1000::E1000::initialize_ecam(info.firmware_network).unwrap()
     };
-    let start = nic.reference_clock_ns().unwrap();
-    let mut queue = EthernetQueue::new();
-    let mut storage = [SocketStorage::EMPTY];
-    let mut transport = Transport::new(
-        &mut queue,
-        nic.mac,
-        [10, 0, 2, 15],
-        24,
-        Some([10, 0, 2, 2]),
-        1337,
-        Instant::from_millis(0),
-        &mut storage,
-        unsafe { &mut *(&raw mut RX) },
-        unsafe { &mut *(&raw mut TX) },
-    )
-    .unwrap();
+    let config = Configuration {
+        mac: nic.mac,
+        address: [10, 0, 2, 15],
+        prefix: 24,
+        gateway: Some([10, 0, 2, 2]),
+        dns_server: [10, 0, 2, 3],
+        local_port: 49153,
+        deadline: nic.now() + infinity_http::smoltcp::time::Duration::from_secs(30),
+    };
     let port = env!("HTTPS_TEST_PORT").parse::<u16>().unwrap();
-    transport
-        .connect(
-            [10, 0, 2, 2],
-            port,
-            49153,
-            Instant::from_millis(0),
-            Instant::from_millis(30000),
-        )
-        .unwrap();
-    while transport.state() != State::Established {
-        let ms = (nic.reference_clock_ns().unwrap() - start) / 1_000_000;
-        if ms > 10000 {
-            exit(0x13);
-        }
-        pump(&mut nic, &mut queue);
-        transport.poll(&mut queue, Instant::from_millis(ms as i64));
-    }
-    let mut session = Session::new(transport);
-    let stream = session.stream();
-    let handle = stream.session();
     let root =
         rustls_pki_types::CertificateDer::from(include_bytes!(env!("HTTPS_TEST_ROOT")).as_slice());
     let roots = [webpki::anchor_from_trusted_cert(&root).unwrap()];
     let now = env!("HTTPS_TEST_TIME").parse::<u64>().unwrap();
     let result = {
         // Deterministic entropy is confined to this test kernel, never used by installed services.
-        let mut future = core::pin::pin!(https::get(
-            stream,
+        let mut future = core::pin::pin!(client::get(
+            nic,
+            config,
+            Destination::Address([10, 0, 2, 2]),
             rand_chacha::ChaCha20Rng::from_seed([19; 32]),
             &roots,
             now,
             "localhost",
+            port,
             "/",
             Buffers {
                 read_record: unsafe { &mut *(&raw mut READ) },
@@ -220,12 +203,6 @@ pub extern "C" fn infinity_kernel_entry(_info: *const u8) -> ! {
         let waker = unsafe { Waker::from_raw(clone_waker(core::ptr::null())) };
         let mut context = Context::from_waker(&waker);
         loop {
-            let ms = (nic.reference_clock_ns().unwrap() - start) / 1_000_000;
-            if ms > 30000 {
-                exit(0x14);
-            }
-            pump(&mut nic, &mut queue);
-            handle.poll(&mut queue, Instant::from_millis(ms as i64));
             if let Poll::Ready(result) = future.as_mut().poll(&mut context) {
                 break result.unwrap();
             }
