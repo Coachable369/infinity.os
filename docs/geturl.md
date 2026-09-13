@@ -1,5 +1,34 @@
 # Native geturl status
 
+## Beta decision — 2026-09-13
+
+The user accepted the current implementation as sufficient **for a limited beta**
+and requested that remaining work be recorded for a future return. Full curl
+compatibility work is deferred, not completed; the earlier 1:1 feature-test
+requirement remains the future full-release target.
+
+The beta baseline is the installed, ISO-detached native HTTPS GET verified below
+against `https://example.com/`: HTTP 200, 559 bytes, and a SHA-256 matching curl.
+It requires manual network configuration and policy/session permission setup.
+It is limited to an 8 KiB response and a thirty-second native deadline, with
+Console presentation rather than binary stdout or file downloads.
+
+### Resume checklist
+
+1. Fix automatic fresh-install network readiness and integrate Ask-policy consent.
+2. Add binary-safe stdout/file output, pipelines and real command exit status.
+3. Implement methods, headers/bodies, redirects, authentication, cookies,
+   uploads, retries, resume and configurable timeouts.
+4. Inventory the target curl version's protocols/options and build a behavioral
+   comparison matrix against real endpoints; one matching GET is not full parity.
+5. Reinstall the final corrected ISO and verify the installed system without media.
+6. Complete application/IOP/weather integration as tracked in `native-http.md`.
+
+Resume from the verified GET baseline and inspect failed or missing acceptance
+items; do not repeat passing work unless subsequent changes affect it.
+
+## Current interface
+
 Initial Console built-in, **not a complete curl clone or standalone executable**.
 Compatibility target: [upstream curl](https://curl.se/docs/manpage.html).
 
