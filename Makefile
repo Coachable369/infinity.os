@@ -102,6 +102,9 @@ milestone-9-correlation-test:
 	@CARGO_TARGET_DIR=build/milestone9-harness cargo test --quiet --manifest-path tools/milestone9-harness/Cargo.toml
 
 .PHONY: network-wire-test
+.PHONY: native-tls-test
+native-tls-test:
+	@sh tools/native-tls-probe/test.sh
 .PHONY: http-transport-test
 http-transport-test:
 	@CARGO_TARGET_DIR=$(BUILD)/http-test cargo test --manifest-path kernel/runtime/http/Cargo.toml

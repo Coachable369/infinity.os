@@ -2,6 +2,8 @@
 //! Parsing never executes code. Execution/isolation is owned by the caller.
 pub const MAX_SEGMENTS: usize = 8;
 pub const MAX_IMAGE: usize = 256 * 1024;
+#[path = "native_tls.rs"]
+pub mod tls;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ImageError { Header, Architecture, Unsupported, Bounds, Overlap, Permissions, Entry }
@@ -21,6 +23,7 @@ pub struct Image {
     pub memory_size: usize,
     pub segments: [Segment; MAX_SEGMENTS],
     pub segment_count: usize,
+    pub tls: Option<tls::Template>,
 }
 
 // ------------------------=
@@ -79,13 +82,26 @@ impl Image {
             }
         } else if sections != 0 { return Err(ImageError::Unsupported); }
         let mut image = Self { entry: index(bytes, 24)?, memory_size: 0,
-            segments: [Segment::default(); MAX_SEGMENTS], segment_count: 0 };
+            segments: [Segment::default(); MAX_SEGMENTS], segment_count: 0, tls: None };
+        let mut tls_seen = false;
         for number in 0..count {
             let p = table + number * 56;
             match integer(bytes, p, 4)? {
                 0 | 6 => continue,
                 1 => (),
-                // PT_DYNAMIC, PT_INTERP, TLS and unknown records require later ABI revisions.
+                7 => {
+                    if tls_seen { return Err(ImageError::Unsupported); }
+                    tls_seen = true;
+                    let template = tls::Template { source: index(bytes, p + 8)?,
+                        address: index(bytes, p + 16)?, file_size: index(bytes, p + 32)?,
+                        memory_size: index(bytes, p + 40)?, alignment: index(bytes, p + 48)?.max(1) };
+                    template.validate(bytes)?;
+                    if integer(bytes, p + 4, 4)? & !6 != 0 { return Err(ImageError::Permissions); }
+                    if template.memory_size == 0 { continue; }
+                    image.tls = Some(template);
+                    continue;
+                }
+                // PT_DYNAMIC, PT_INTERP and unknown records require later ABI revisions.
                 _ => return Err(ImageError::Unsupported),
             }
             let segment = Segment { source: index(bytes, p + 8)?, address: index(bytes, p + 16)?,
@@ -112,6 +128,13 @@ impl Image {
             image.memory_size = image.memory_size.max(memory_end);
             image.segments[image.segment_count] = segment;
             image.segment_count += 1;
+        }
+        if let Some(tls) = image.tls {
+            if !image.segments[..image.segment_count].iter().any(|s|
+                tls.address >= s.address && tls.address + tls.file_size <= s.address + s.file_size
+                && tls.source >= s.source && tls.source - s.source == tls.address - s.address) {
+                return Err(ImageError::Bounds);
+            }
         }
         if !image.segments[..image.segment_count].iter().any(|s| s.flags & 1 != 0
             && image.entry >= s.address && image.entry < s.address + s.file_size) {

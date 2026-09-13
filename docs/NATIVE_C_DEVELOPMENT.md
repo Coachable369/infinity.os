@@ -620,3 +620,40 @@ target sysroot. The ignored Newlib/LLVM build directory was absent at this
 checkpoint, so target compilation and the full Clang link were not rerun. A
 linked compiler, production provider binding, compiler-sized execution,
 packaging and detached-install acceptance remain outstanding.
+
+## Static hardware Thread-Local Storage
+
+The native ELF loader now accepts one validated `PT_TLS` template. It rejects
+duplicate templates, truncation, oversized allocations, invalid alignment and
+templates whose initialized bytes are not backed by a load segment. Empty TLS
+records emitted for non-TLS programs are harmless. The application linker script
+now emits `.tdata` and `.tbss` with an explicit TLS program header.
+
+`kernel/runtime/native_tls.rs` initializes unique caller-owned blocks: `.tdata`
+is copied and `.tbss` is zeroed for each context. Static TLS is capped at 64 KiB,
+with power-of-two alignment up to 4096 bytes; templates must start aligned.
+x86-64 uses variant II data before the thread pointer and a self pointer at
+FS:0. AArch64 uses a 16-byte TCB followed by aligned data, addressed through
+TPIDR_EL0. These follow the [ELF TLS layout](https://www.uclibc.org/docs/tls.pdf)
+and [AArch64 ABI](https://github.com/ARM-software/abi-aa/blob/main/sysvabi64/sysvabi64.rst).
+
+The privileged `replace_thread_pointer` seam saves/installs IA32_FS_BASE or
+TPIDR_EL0 and returns the previous pointer. Its caller must keep storage alive,
+pin execution to the CPU, prevent conflicting context switches and restore the
+previous pointer. It does not provide address-space isolation, pthread creation
+or scheduling. Initial-exec/local-exec static images are the scope; dynamic TLS
+modules, TLS relocations and dynamic loading remain rejected.
+
+TESTED: real Clang-generated TLS ELF templates for x86-64 and AArch64;
+initialization, zero fill, alignment, separate allocation and malformed bounds.
+Existing non-TLS image-loader tests pass. `make native-tls-test` boots an isolated
+x86-64 QEMU probe, executes actual `_Thread_local` accesses over 128 alternating
+activations of two blocks, verifies independent values and restores the previous
+FS base. Guest exit is 33. This target is included in `build.sh` and requires no
+Newlib sysroot. The broader native C probe currently cannot rebuild because its
+Newlib `errno.h` is missing; that is separate from the passing TLS-only probe.
+
+The loader module is included in both live and installed kernel configurations.
+Production native-app launch/scheduler integration, AArch64 hardware execution,
+full Clang execution and ISO-detached installed acceptance are still pending.
+The trusted probe is not evidence that the installed compiler is complete.

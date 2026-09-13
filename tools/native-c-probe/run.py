@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--locale", action="store_true", help="Run the linked Newlib/libc++ locale probe")
+    parser.add_argument("--tls", action="store_true", help="Run the independent hardware TLS probe")
     options = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="infinity-native-c-") as temporary:
         work = Path(temporary)
@@ -22,7 +23,7 @@ def main():
         (volume / "EFI/BOOT").mkdir(parents=True)
         (volume / "EFI/INFINITY").mkdir(parents=True)
         shutil.copyfile(ROOT / "build/x86_64/BOOTX64.EFI", volume / "EFI/BOOT/BOOTX64.EFI")
-        kernel = "locale-probe.elf" if options.locale else "probe.elf"
+        kernel = "tls-probe.elf" if options.tls else ("locale-probe.elf" if options.locale else "probe.elf")
         shutil.copyfile(ROOT / "build/native-c" / kernel, volume / "EFI/INFINITY/KERNEL.ELF")
         with (work / "qemu.log").open("wb") as log:
             process = subprocess.Popen([
@@ -46,7 +47,12 @@ def main():
             proof = {"guest_exit_code": result, "native_newlib_ctype": result == 33,
                      "native_libcxx_regex_classes": result == 33,
                      "on_device_compiler": False, "installed_acceptance": False}
-        report = "locale-proof.json" if options.locale else "proof.json"
+        if options.tls:
+            proof = {"guest_exit_code": result, "hardware_tls_x86_64": result == 33,
+                     "independent_contexts": 2 if result == 33 else 0,
+                     "switches_verified": 128 if result == 33 else 0,
+                     "installed_acceptance": False}
+        report = "tls-proof.json" if options.tls else ("locale-proof.json" if options.locale else "proof.json")
         (ROOT / "build/native-c" / report).write_text(json.dumps(proof, indent=2) + "\n")
         if result != 33:
             print((work / "qemu.log").read_text(errors="replace")[-3000:])

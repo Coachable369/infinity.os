@@ -3,6 +3,9 @@
 set -eu
 cd "$(dirname "$0")/../.."
 sh tools/native-c-probe/build-hello.sh
+sh tools/native-c-probe/build-tls.sh
+rustc --edition=2021 -A warnings tools/native-c-probe/tls-test.rs -o build/native-c/tls-test
+build/native-c/tls-test
 sh tools/native-c-probe/build-sync.sh
 rustc --edition=2021 tools/native-c-probe/image-test.rs -o build/native-c/image-test
 build/native-c/image-test

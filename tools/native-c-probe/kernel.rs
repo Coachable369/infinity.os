@@ -12,6 +12,8 @@ static mut DISK: [[u8; 512]; SECTORS] = [[0; 512]; SECTORS];
 struct Arena([u8; image::MAX_IMAGE]);
 static mut ARENA: Arena = Arena([0; image::MAX_IMAGE]);
 static mut OBJECT_BYTES: [u8; 16384] = [0; 16384];
+static mut TLS_A: [u8; 1024] = [0; 1024];
+static mut TLS_B: [u8; 1024] = [0; 1024];
 static mut IO: object_io::ObjectIo<'static, 2> = object_io::ObjectIo::<2>::documents();
 struct ObjectDisk;
 
@@ -245,5 +247,25 @@ pub extern "C" fn infinity_kernel_entry(_: *const u8) -> ! {
     let loaded = image::Image::load(sync_program, 62, arena).unwrap();
     let entry: extern "C" fn(*const AppApi) -> i32 = unsafe { core::mem::transmute(arena.as_ptr().add(loaded.entry)) };
     assert_eq!(entry(&api), 0);
+    let program = include_bytes!("../../build/native-c/tls-x86_64.elf");
+    let loaded = image::Image::load(program, 62, arena).unwrap();
+    let template = loaded.tls.unwrap();
+    let first = template.initialize(program, 62, unsafe { &mut *(&raw mut TLS_A) }).unwrap();
+    let second = template.initialize(program, 62, unsafe { &mut *(&raw mut TLS_B) }).unwrap();
+    let entry: extern "C" fn(u32) -> i32 = unsafe { core::mem::transmute(arena.as_ptr().add(loaded.entry)) };
+    unsafe {
+        // This probe has no scheduler or enabled interrupts; restore the original
+        // CPU thread pointer before returning to any other execution context.
+        let previous = image::tls::replace_thread_pointer(first.thread_pointer());
+        let a0 = entry(0);
+        image::tls::replace_thread_pointer(second.thread_pointer());
+        let b0 = entry(0);
+        image::tls::replace_thread_pointer(first.thread_pointer());
+        let a1 = entry(1);
+        image::tls::replace_thread_pointer(second.thread_pointer());
+        let b1 = entry(1);
+        image::tls::replace_thread_pointer(previous);
+        assert_eq!((a0, b0, a1, b1), (0, 0, 0, 0));
+    }
     finish(0x10)
 }
