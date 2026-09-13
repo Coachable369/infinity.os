@@ -15,7 +15,7 @@ QEMU_X64 := qemu-system-x86_64
 QEMU_AARCH64 := qemu-system-aarch64
 OVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-x86_64-code.fd /opt/homebrew/share/qemu/edk2-x86_64-code.fd))
 AAVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-aarch64-code.fd))
-KERNEL_SOURCES := $(shell find kernel -type f) $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern) sdk/c/examples/hello.c
+KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern) sdk/c/examples/hello.c
 FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt)
 ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
@@ -102,6 +102,10 @@ milestone-9-correlation-test:
 	@CARGO_TARGET_DIR=build/milestone9-harness cargo test --quiet --manifest-path tools/milestone9-harness/Cargo.toml
 
 .PHONY: network-wire-test
+.PHONY: http-transport-test
+http-transport-test:
+	@CARGO_TARGET_DIR=$(BUILD)/http-test cargo test --manifest-path kernel/runtime/http/Cargo.toml
+
 network-wire-test:
 	@mkdir -p build/tools
 	@rustc --edition 2021 tools/network-wire-test.rs -o build/tools/network-wire-test

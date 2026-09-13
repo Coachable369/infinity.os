@@ -1,6 +1,9 @@
 #![no_std]
 #![no_main]
 
+// Shared no-allocator TCP/HTTP mechanisms for the native service adapter.
+pub use infinity_http as http_transport;
+
 mod boot_info;
 mod bootstrap;
 mod console;

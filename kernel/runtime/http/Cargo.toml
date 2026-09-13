@@ -1,0 +1,11 @@
+[package]
+name = "infinity-http"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+smoltcp = { version = "=0.12.0", default-features = false, features = ["medium-ethernet", "proto-ipv4", "socket-tcp"] }
+httparse = { version = "1.10", default-features = false }
+
+[lib]
+path = "lib.rs"

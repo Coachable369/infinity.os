@@ -45,6 +45,7 @@ make object-test
 make fabric-test
 make network-test
 make network-wire-test
+make http-transport-test
 make milestone-9-test
 make milestone-9-service-test
 make performance-test
