@@ -7,7 +7,8 @@ mod execution;
 
 use native_c_image::{Image, Region, Segment, MAX_SEGMENTS};
 use native_memory::{CompilerAddressSpace, CompilerVirtualLayout, FrameAllocation,
-    KernelAccessMap, MappedRange, MemoryError, NativeMemory, PagePermissions, PAGE_SIZE};
+    KernelAccessMap, MappedRange, MemoryError, NativeMemory, PagePermissions,
+    X86AddressSpace, PAGE_SIZE};
 use std::alloc::{alloc_zeroed, dealloc, Layout};
 use execution::{AddressSpaceToken, ExecutionError, ExecutionManager, MemoryRegion,
     PriorityClass, ResourceBudget};
@@ -143,6 +144,13 @@ fn main() {
     executions.bind_address_space(handle, process.page_tables.root_physical_address()).unwrap();
     assert_eq!(executions.get(handle).unwrap().address_space,
         AddressSpaceToken(process.page_tables.root_physical_address()));
+
+    let mut large_map = X86AddressSpace::new(&mut memory, 43).unwrap();
+    large_map.map_range(&mut memory, 0x0000_0004_0000_0000, 0x0800_0000,
+        768 * 1024 * 1024, PagePermissions::KERNEL_R).unwrap();
+    assert_eq!(large_map.mapping(0x0000_0004_2fff_f000).unwrap().physical_address,
+        0x0800_0000 + 0x2fff_f000);
+    large_map.release(&mut memory).unwrap();
     second_process.release(&mut memory).unwrap();
     process.release(&mut memory).unwrap();
     assert_eq!(memory.available_pages(), initial_pages);

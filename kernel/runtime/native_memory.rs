@@ -5,8 +5,8 @@
 pub const PAGE_SIZE: u64 = 4096;
 const MAX_POOL_PAGES: usize = 65_536;
 const BITMAP_WORDS: usize = MAX_POOL_PAGES / 64;
-const MAX_ALLOCATIONS: usize = 512;
-const MAX_PAGE_TABLES: usize = 192;
+const MAX_ALLOCATIONS: usize = 1_024;
+const MAX_PAGE_TABLES: usize = 768;
 const ENTRY_COUNT: usize = 512;
 const ADDRESS_MASK: u64 = 0x000f_ffff_ffff_f000;
 const PRESENT: u64 = 1 << 0;
