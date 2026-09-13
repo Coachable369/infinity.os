@@ -6,6 +6,9 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 #[no_mangle]
 pub static INFINITY_GETURL_EXIT: AtomicU32 = AtomicU32::new(0);
+// Read-only debugger evidence; sampled while the guest is stopped, never used to authorize requests.
+#[no_mangle]
+pub static mut INFINITY_GETURL_RESPONSE: [u64; 6] = [0; 6];
 static mut PENDING: Option<(SecurityIdentity, bool, bool, bool)> = None;
 
 // ------------------------=
@@ -193,6 +196,9 @@ pub(super) fn execute(console: &mut ConsoleRuntime, command: &[u8]) -> bool {
     ) {
         Ok(()) => {
             unsafe {
+                INFINITY_GETURL_RESPONSE = [0; 6];
+            }
+            unsafe {
                 PENDING = Some((owner, options.fail, options.silent, options.show_error));
             }
             INFINITY_GETURL_EXIT.store(u32::MAX, Ordering::Release);
@@ -251,6 +257,18 @@ pub(super) fn poll(console: &mut ConsoleRuntime) {
         PENDING = None;
     }
     let mut code = 0;
+    if let Ok(response) = &result {
+        use sha2::{Digest, Sha256};
+        let hash = Sha256::digest(&response.bytes[..response.length]);
+        unsafe {
+            INFINITY_GETURL_RESPONSE[0] = response.status as u64;
+            INFINITY_GETURL_RESPONSE[1] = response.length as u64;
+            for i in 0..4 {
+                INFINITY_GETURL_RESPONSE[i + 2] =
+                    u64::from_le_bytes(hash[i * 8..i * 8 + 8].try_into().unwrap());
+            }
+        }
+    }
     match result {
         Ok(response) if !fail_http || response.status < 400 => {
             for line in response.bytes[..response.length].split(|b| *b == b'\n') {

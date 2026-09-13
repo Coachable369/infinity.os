@@ -304,6 +304,7 @@ pub fn run() -> ! {
         let status = pending_status();
         if status & 1 == 0 {
             crate::bootstrap::animation_tick();
+            crate::console::poll_native_ai();
             core::hint::spin_loop();
             continue;
         }
@@ -337,6 +338,7 @@ pub fn run() -> ! {
         // Service queued controller bytes before spending time on the
         // high-resolution bootstrap effects pass.
         crate::bootstrap::animation_tick();
+        crate::console::poll_native_ai();
     }
 }
 

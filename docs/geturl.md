@@ -44,10 +44,51 @@ successful privileged consent with an enforced sixty-second lease expiry.
 Its NIC is a fixture, not successful-download or installed-system evidence.
 Code is included in the installed kernel, not just the live ISO.
 ARM and x86_64 installed kernels link; byte-for-byte installer kernel and loader
-artifact parity passes on both architectures. No installed download is claimed.
+artifact parity passes on both architectures.
 
-Still required: ISO-detached fresh-install command execution, real HTTPS output,
-application/IOP/weather integration, and full curl protocol/option parity.
+### Installed public-URL result (2026-09-13)
+
+The isolated QEMU test completed a fresh installation, onboarding and an
+ISO-detached cold boot. Initial networking was LinkOnly; static IPv4, gateway
+and DNS were configured through Settings. Standard policy's Ask action also
+required explicit approval in Settings, separately from the session capability
+lease. These remain default-setup/usability gaps, not automatic HTTPS readiness.
+
+Real traffic exposed a missing completion poll in the PS/2 desktop loop: the
+network actor ran but Console never collected its result. Both idle and active
+PS/2 paths now service background completion, matching the UEFI input path.
+The rebuilt kernel was applied to the stopped disposable installed disk after
+backup, with CRC/reference checks and unchanged-byte verification. The saved
+VirtualBox VM was not modified. This final test used an updated installation;
+it is not a claim that the corrected ISO was freshly installed again.
+
+The subsequent installed request to `https://example.com/` passed:
+
+| Value | curl reference | Native installed geturl |
+| --- | --- | --- |
+| Exit | 0 | 0 (diagnostic completion status) |
+| HTTP status | 200 | 200 |
+| Body bytes | 559 | 559 |
+| SHA-256 | `ff67a9d764d6a2367a187734e697f6a53217db9a21c101d410a113ca871a299d` | identical |
+
+The native client performed DNS/TCP/TLS/HTTP inside the guest using system
+certificate roots, firmware time and boot entropy. Host curl is only the
+independent reference. Body comparison observes the downloaded bytes, **not
+binary stdout equivalence**. Evidence from this run is retained at
+`/tmp/geturl-real-20260913-a/result-1789286874315566000.json` and the adjacent
+packet captures; temporary evidence is not a durable repository artifact.
+
+`tools/geturl-installed-test.py --output NEW_DIRECTORY` recreates the initial
+fresh-install test. `--configure-nat` explicitly sets this harness's QEMU NAT
+address/gateway/DNS and changes a fresh Standard profile from Ask to Allow via
+Settings; do not repeat that policy-toggle setup on an already configured
+guest. `--reuse-installed` reuses only the harness disk and matching ELF files.
+The test compares structured status/length/digest, preserves failure receipts,
+captures packets/screenshots, and never counts console wording as acceptance.
+It deliberately reports `full_curl_parity: false` even when GET passes.
+
+Still required: automatic fresh-install network readiness, integrated Ask-policy
+consent, application/IOP/weather integration, and full curl protocol/option parity.
 Missing areas include request methods/bodies/headers, redirects, authentication,
 cookies, proxies, uploads/downloads, resume/retry, adjustable timeouts, binary
 streams/files, quoting, pipelines and shell process exit status. Do not present

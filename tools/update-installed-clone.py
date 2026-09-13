@@ -46,7 +46,7 @@ def main():
     args = parser.parse_args()
     with open(args.kernel, 'rb') as stream:
         kernel = stream.read()
-    assert kernel[:6] == b'\x7fELF\x02\x01' and integer(kernel, 18, 2) == 183
+    assert kernel[:6] == b'\x7fELF\x02\x01' and integer(kernel, 18, 2) in (62, 183)
     with open(args.clone, 'r+b' if args.apply else 'rb') as disk:
         # ------------------------=
         # FUNC: read
@@ -98,7 +98,10 @@ def main():
         relative, old_size, old_crc = integer(manifest, 40), integer(manifest, 48), integer(manifest, 56, 4)
         assert relative == integer(header, 48) == 2048
         assert old_size == integer(header, 56) and 0 < old_size <= (kernel_limit - relative) * 512
-        assert zlib.crc32(read(first + relative, old_size)) == old_crc
+        old_kernel = read(first + relative, old_size)
+        assert zlib.crc32(old_kernel) == old_crc
+        assert old_kernel[:6] == kernel[:6]
+        assert integer(old_kernel, 18, 2) == integer(kernel, 18, 2), 'Kernel architecture mismatch'
         components_lba = first + integer(manifest, 64)
         components = read(components_lba, 1024)
         record_crc(components)
