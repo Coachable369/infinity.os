@@ -2,6 +2,9 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+#[path = "../kernel/runtime/native_c_image.rs"]
+mod native_c_image;
+
 // ------------------------=
 // FUNC: read_u16
 // DESC: Reads one little-endian ELF half word from a validated byte range.
@@ -91,6 +94,42 @@ fn verify_artifact(path: &Path) {
     }
     assert!(symbol_table_found, "{}: missing static symbol table", path.display());
     assert_eq!(unresolved_strong, 0, "{}: unresolved strong symbols", path.display());
+
+    let metadata = native_c_image::Image::parse_compiler(&bytes, 62)
+        .unwrap_or_else(|error| panic!("{}: production loader rejected image: {error:?}", path.display()));
+    assert_eq!(
+        native_c_image::Image::parse(&bytes, 62),
+        Err(native_c_image::ImageError::Header),
+        "{}: ordinary application policy accepted a compiler executable",
+        path.display()
+    );
+    assert_eq!(
+        native_c_image::Image::load_compiler(&bytes, 62, &mut []),
+        Err(native_c_image::ImageError::Bounds),
+        "{}: compiler load ignored destination capacity",
+        path.display()
+    );
+    assert!(metadata.virtual_base > 0, "{}: fixed image was not normalized", path.display());
+    assert!(metadata.entry < metadata.memory_size, "{}: normalized entry is out of range", path.display());
+    let mut memory = vec![0xa5; metadata.memory_size];
+    let loaded = native_c_image::Image::load_compiler(&bytes, 62, &mut memory)
+        .unwrap_or_else(|error| panic!("{}: production loader failed: {error:?}", path.display()));
+    assert_eq!(loaded, metadata, "{}: parse/load metadata mismatch", path.display());
+    for segment in &loaded.segments[..loaded.segment_count] {
+        assert_eq!(
+            &memory[segment.address..segment.address + segment.file_size],
+            &bytes[segment.source..segment.source + segment.file_size],
+            "{}: loaded segment differs from file",
+            path.display()
+        );
+        assert!(
+            memory[segment.address + segment.file_size..segment.address + segment.memory_size]
+                .iter()
+                .all(|byte| *byte == 0),
+            "{}: uninitialized segment tail was not zeroed",
+            path.display()
+        );
+    }
 }
 
 // ------------------------=

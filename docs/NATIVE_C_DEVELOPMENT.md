@@ -682,3 +682,30 @@ are approximately 99 MiB for Clang and 56 MiB for LLD, beyond the existing
 provider wiring, shell integration, installed payload parity and fresh
 ISO-detached `cc hello.c -o hello` execution remain separate work. No installed
 compiler acceptance is claimed here.
+
+## Compiler image loading checkpoint
+
+The production native ELF parser now has a separate compiler policy. Ordinary
+applications retain the existing 256 KiB `ET_DYN` boundary. Compiler images may
+be x86-64 `ET_EXEC` files up to 128 MiB, with fixed virtual addresses normalized
+to isolated destination offsets. The parser retains executable/data segment
+permissions, static TLS and GNU RELRO ranges, rejects executable GNU stacks,
+and continues to reject dynamic loaders, dynamic relocations, overlapping
+segments and insufficient destination memory.
+
+TESTED: the ordinary x86-64 and AArch64 image suite still passes. The production
+parser and copier load the exact linked 99 MiB Clang and 56 MiB LLD artifacts,
+compare every initialized segment with its source, verify every BSS tail is
+zeroed, and reject both undersized destinations and attempts to admit those
+executables through the ordinary-app policy. The installed x86-64 kernel build
+also succeeds.
+
+Execution is now blocked at a larger architecture boundary rather than ELF
+parsing. The kernel has no runtime page allocator or per-context page-table
+mapper; `ExecutionManager` records ownership ranges but cannot map or protect
+them. The current ObjectStore allocation bitmap addresses only 1,968 4-KiB
+blocks (about 61.5 MiB total), and its largest streamed extent is 1 MiB, so it
+cannot truthfully store even the 99 MiB Clang image. Expanding that metadata
+format requires a versioned on-disk layout and migration, not a relaxed size
+constant. No unisolated compiler execution or out-of-band host filesystem
+fallback is introduced.
