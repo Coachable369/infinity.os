@@ -613,8 +613,41 @@ fn discovered_resource_observes_capacity_reservations_and_reboot_ordering() {
 #[test]
 fn oversized_extent_cannot_allocate_beyond_native_capacity() {
     use crate::storage::object::ObjectError;
+    #[derive(Clone)]
+    struct LimitedDisk(Disk);
+    impl BlockDevice for LimitedDisk {
+        // ------------------------=
+        // FUNC: block_count
+        // DESC: Advertises the actual small device boundary so allocator growth cannot turn this fixture into a larger pool.
+        // ------------------=
+        fn block_count(&self) -> u64 { STORE_RELATIVE_LBA + 80 + 100 * 8 }
+        // ------------------------=
+        // FUNC: read_sector
+        // DESC: Rejects reads outside the advertised device while preserving sparse persisted sectors.
+        // ------------------=
+        fn read_sector(&mut self, lba: u64, out: &mut [u8; 512]) -> bool {
+            lba < self.block_count() && self.0.read_sector(lba, out)
+        }
+        // ------------------------=
+        // FUNC: write_sector
+        // DESC: Rejects out-of-range writes before touching the backing disk or its write counter.
+        // ------------------=
+        fn write_sector(&mut self, lba: u64, bytes: &[u8; 512]) -> bool {
+            lba < self.block_count() && self.0.write_sector(lba, bytes)
+        }
+        // ------------------------=
+        // FUNC: flush
+        // DESC: Preserves the backing fixture's synchronous persistence behavior.
+        // ------------------=
+        fn flush(&mut self) -> bool { self.0.flush() }
+    }
     let disk = Disk::default();
-    let mut store = ObjectStore::format(disk.clone(), 0, STORE_RELATIVE_LBA + 80 + 100 * 8, [8; 16]).unwrap();
+    let mut limited = LimitedDisk(disk.clone());
+    let capacity = limited.block_count();
+    assert!(!limited.write_sector(capacity, &[0; 512]));
+    assert!(!limited.read_sector(capacity, &mut [0; 512]));
+    assert_eq!(disk.0.borrow().writes, 0);
+    let mut store = ObjectStore::format(limited.clone(), 0, capacity, [8; 16]).unwrap();
     assert_eq!(store.total_blocks(), 100);
     let used = store.usage_blocks();
     let writes = disk.0.borrow().writes;
@@ -622,9 +655,12 @@ fn oversized_extent_cannot_allocate_beyond_native_capacity() {
     assert_eq!(store.usage_blocks(), used);
     assert_eq!(disk.0.borrow().writes, writes);
     drop(store);
-    let restored = ObjectStore::mount(disk, 0).unwrap();
+    let mut restored = ObjectStore::mount(limited, 0).unwrap();
     assert_eq!(restored.total_blocks(), 100);
     assert_eq!(restored.usage_blocks(), used);
+    assert_eq!(restored.create_staging_extent(1024 * 1024), Err(ObjectError::InsufficientCapacity));
+    assert_eq!(restored.usage_blocks(), used);
+    assert_eq!(disk.0.borrow().writes, writes);
 }
 
 // ------------------------=
