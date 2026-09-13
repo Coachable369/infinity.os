@@ -657,3 +657,28 @@ The loader module is included in both live and installed kernel configurations.
 Production native-app launch/scheduler integration, AArch64 hardware execution,
 full Clang execution and ISO-detached installed acceptance are still pending.
 The trusted probe is not evidence that the installed compiler is complete.
+
+## Native Clang and LLD link checkpoint
+
+`tools/build-native-c-toolchain.sh` now provides a reproducible development
+build for the x86-64 compiler stack. It downloads SHA-256-pinned LLVM and
+Newlib sources, applies the InfinityOS patch series, builds the Newlib sysroot,
+compiler-rt builtins, libc++, libc++abi and the runtime bridge, then links
+Clang and ELF LLD as native static executables. The basic compiler build omits
+Clang's optional static analyzer. InfinityOS also leaves LLVM's Unix alarm
+watchdog disabled because native crash and termination ownership belongs to the
+containing Execution Context. ELF LLD uses initial-exec TLS to match the native
+static-image TLS contract.
+
+TESTED: the complete build script succeeds from the pinned inputs. The produced
+Clang and LLD files are x86-64 `ET_EXEC` ELF images with nonzero entry points,
+executable load segments, nonempty static TLS segments and no unresolved strong
+symbols, as verified from their binary ELF structures by
+`tools/native-c-toolchain-test.rs`.
+
+This checkpoint does not package or execute either tool. The current artifacts
+are approximately 99 MiB for Clang and 56 MiB for LLD, beyond the existing
+256 KiB native image boundary. Compiler-sized ObjectStore loading, production
+provider wiring, shell integration, installed payload parity and fresh
+ISO-detached `cc hello.c -o hello` execution remain separate work. No installed
+compiler acceptance is claimed here.

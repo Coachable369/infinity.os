@@ -147,3 +147,23 @@
 +#if defined(__INFINITY__)
 +  return false;
 +#elif defined(_WIN32)
+--- a/llvm/lib/Support/Unix/Watchdog.inc
++++ b/llvm/lib/Support/Unix/Watchdog.inc
+@@ -19,13 +19,15 @@
+ namespace llvm {
+ namespace sys {
+ Watchdog::Watchdog(unsigned int seconds) {
+-#ifdef HAVE_UNISTD_H
++#if defined(HAVE_UNISTD_H) && !defined(__INFINITY__)
+   alarm(seconds);
++#else
++  (void)seconds;
+ #endif
+ }
+
+ Watchdog::~Watchdog() {
+-#ifdef HAVE_UNISTD_H
++#if defined(HAVE_UNISTD_H) && !defined(__INFINITY__)
+   alarm(0);
+ #endif
+ }
