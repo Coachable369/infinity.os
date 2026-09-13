@@ -103,6 +103,10 @@ milestone-9-correlation-test:
 
 .PHONY: network-wire-test
 .PHONY: native-tls-test
+.PHONY: native-https-test
+native-https-test: $(BUILD)/x86_64/BOOTX64.EFI
+	@python3 tools/native-https-probe/run.py
+
 native-tls-test:
 	@sh tools/native-tls-probe/test.sh
 .PHONY: http-transport-test

@@ -6,6 +6,21 @@ edition = "2021"
 [dependencies]
 smoltcp = { version = "=0.12.0", default-features = false, features = ["medium-ethernet", "proto-ipv4", "socket-tcp"] }
 httparse = { version = "1.10", default-features = false }
+embedded-tls = { version = "=0.19.0", default-features = false }
+embedded-io-async = { version = "0.7", default-features = false }
+rustls-webpki = { version = "0.103", default-features = false }
+rustls-pki-types = { version = "1", default-features = false }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+p384 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+sha2 = { version = "0.10", default-features = false }
+rand_core = { version = "0.6", default-features = false }
+heapless = { version = "0.8", default-features = false }
+webpki-roots = { version = "1", default-features = false }
 
 [lib]
 path = "lib.rs"
+
+[dev-dependencies]
+rcgen = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["std", "ring"] }
+rand_chacha = { version = "0.3", default-features = false }

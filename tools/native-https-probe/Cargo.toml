@@ -1,0 +1,17 @@
+[package]
+name = "infinity-native-https-probe"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+infinity-http = { path = "../../kernel/runtime/http" }
+rustls-webpki = { version = "0.103", default-features = false }
+rustls-pki-types = { version = "1", default-features = false }
+rand_chacha = { version = "0.3", default-features = false }
+rand_core = { version = "0.6", default-features = false }
+[lib]
+path = "kernel.rs"
+crate-type = ["staticlib"]
+[profile.release]
+panic = "abort"
+opt-level = 2
+lto = true

@@ -46,6 +46,7 @@ make fabric-test
 make network-test
 make network-wire-test
 make http-transport-test
+make native-https-test
 make native-tls-test
 make milestone-9-test
 make milestone-9-service-test
