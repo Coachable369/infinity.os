@@ -10236,6 +10236,44 @@ impl ConsoleRuntime {
     // DESC: Implements the execute runtime command operation.
     // ------------------=
     fn execute_runtime_command(&mut self, command: &[u8]) -> bool {
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        if command == b"https" || command.starts_with(b"https ") {
+            use crate::drivers::https;
+            let owner = crate::runtime::execution::SecurityIdentity(self.current_session.0);
+            let active = crate::runtime::with_runtime(|runtime| {
+                (0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i| runtime.identity.session_nth(i)).any(|s| s.id == self.current_session && s.user == self.current_user && s.state == crate::runtime::identity::SessionState::Active)
+            }).unwrap_or(false);
+            if !active { self.output.write_line(b"HTTPS requires an active authenticated session."); return true; }
+            let text = core::str::from_utf8(command).unwrap_or("");
+            let mut words = text.split_ascii_whitespace(); let _ = words.next();
+            match words.next() {
+                Some("get") => {
+                    let parsed = (|| {
+                        let host = words.next()?; let path = words.next()?;
+                        let connect = words.next()?.parse::<u64>().ok()?;
+                        let send = words.next()?.parse::<u64>().ok()?;
+                        let receive = words.next()?.parse::<u64>().ok()?;
+                        let resolve = words.next()?.parse::<u64>().ok()?;
+                        if words.next().is_some() { return None; }
+                        Some(https::get(owner,connect,send,receive,resolve,host,path))
+                    })();
+                    match parsed {
+                        Some(Ok(())) => self.output.write_line(b"HTTPS request queued. Use https result or https cancel."),
+                        Some(Err(_)) => self.output.write_line(b"HTTPS rejected: check session capabilities, policy, route, DNS and UTC clock."),
+                        None => self.output.write_line(b"https get HOST /PATH CONNECT_CAP SEND_CAP RECEIVE_CAP RESOLVE_CAP"),
+                    }
+                }
+                Some("result") => match https::take(owner) {
+                    Ok(Some(Ok(response))) => { self.output.write_number(b"HTTP status: ",response.status as u64); self.output.write_number(b"Body bytes: ",response.length as u64); self.output.write_hex(b"Body: ",&response.bytes[..response.length]); }
+                    Ok(Some(Err(_))) => self.output.write_line(b"HTTPS request failed or was cancelled."),
+                    Ok(None) => self.output.write_line(b"HTTPS request is pending."),
+                    Err(_) => self.output.write_line(b"No accessible HTTPS result."),
+                },
+                Some("cancel") => { let _ = https::cancel(owner); self.output.write_line(b"HTTPS cancellation requested for this session."); }
+                _ => self.output.write_line(b"https get HOST /PATH CONNECT_CAP SEND_CAP RECEIVE_CAP RESOLVE_CAP | result | cancel"),
+            }
+            return true;
+        }
         if command == b"task" || command == b"help task" {
             self.output
                 .write_line(b"task - monitor and control live execution contexts");
@@ -12261,6 +12299,18 @@ fn firmware_date_time(firmware_runtime_services: u64) -> DateTimeConfiguration {
     } else {
         DateTimeConfiguration::utc_default()
     }
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
+// FUNC: certificate_time
+// DESC: Reads certificate-validation time from firmware and fails closed instead of using installer fallback dates.
+// ------------------=
+pub(crate) fn certificate_time(services: u64) -> Option<u64> {
+    if services == 0 { return None; }
+    let mut time = EfiTime::zero();
+    if unsafe { ((*(services as *const EfiRuntimeServices)).get_time)(&mut time, core::ptr::null_mut()) } != 0 { return None; }
+    crate::http_transport::clock::unix_seconds(time.year,time.month,time.day,time.hour,time.minute,time.second,time.time_zone)
 }
 
 // ------------------------=

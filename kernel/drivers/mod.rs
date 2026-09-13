@@ -4,6 +4,8 @@ pub mod input;
 pub mod svga;
 pub mod network;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(crate) mod https;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod e1000;
 
 use crate::{boot_info::BootInfo, bootstrap};

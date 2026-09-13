@@ -111,9 +111,18 @@ native-https-test: $(BUILD)/x86_64/BOOTX64.EFI
 native-https-arm-test: $(BUILD)/aarch64/BOOTAA64.EFI
 	@python3 tools/native-https-probe/run.py --arch aarch64
 
+.PHONY: native-https-rsa-test
+native-https-rsa-test: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/aarch64/BOOTAA64.EFI
+	@python3 tools/native-https-probe/run.py --rsa
+	@python3 tools/native-https-probe/run.py --arch aarch64 --rsa
+
 native-tls-test:
 	@sh tools/native-tls-probe/test.sh
 .PHONY: http-transport-test
+.PHONY: https-service-test
+https-service-test:
+	@CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --manifest-path tools/behavior-harness/Cargo.toml --bin https-service-test
+
 http-transport-test:
 	@CARGO_TARGET_DIR=$(BUILD)/http-test cargo test --manifest-path kernel/runtime/http/Cargo.toml
 

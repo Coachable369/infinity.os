@@ -64,7 +64,16 @@ impl SignatureVerificationAlgorithm for Ecdsa {
 }
 static P256: Ecdsa = Ecdsa(false);
 static P384: Ecdsa = Ecdsa(true);
-static ALGORITHMS: [&'static dyn SignatureVerificationAlgorithm; 2] = [&P256, &P384];
+static ALGORITHMS: [&'static dyn SignatureVerificationAlgorithm; 8] = [
+    &P256,
+    &P384,
+    &crate::rsa::PKCS256,
+    &crate::rsa::PKCS384,
+    &crate::rsa::PKCS512,
+    &crate::rsa::PSS256,
+    &crate::rsa::PSS384,
+    &crate::rsa::PSS512,
+];
 
 // ------------------------=
 // FUNC: system_roots
@@ -194,6 +203,9 @@ impl TlsVerifier<Aes128GcmSha256> for CertificateVerifier<'_> {
             match signature.signature_scheme.as_u16() {
                 0x0403 => &P256,
                 0x0503 => &P384,
+                0x0804 => &crate::rsa::PSS256,
+                0x0805 => &crate::rsa::PSS384,
+                0x0806 => &crate::rsa::PSS512,
                 _ => return Err(TlsError::InvalidSignatureScheme),
             };
         let der = CertificateDer::from(self.leaf.as_slice());

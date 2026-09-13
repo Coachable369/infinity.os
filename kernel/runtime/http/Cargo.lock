@@ -441,12 +441,14 @@ checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 name = "infinity-http"
 version = "0.1.0"
 dependencies = [
+ "crypto-bigint",
  "embedded-io-async",
  "embedded-tls",
  "heapless 0.8.0",
  "httparse",
  "p256",
  "p384",
+ "pkcs1",
  "rand_chacha",
  "rand_core",
  "rcgen",
@@ -594,6 +596,16 @@ checksum = "d354a98a3d1251555de99e8fdd8afda05573c31b82f59063a7b0a29b5527f120"
 dependencies = [
  "base64",
  "serde_core",
+]
+
+[[package]]
+name = "pkcs1"
+version = "0.7.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8ffb9f10fa047879315e6625af03c164b16962a5368d724ed16323b68ace47f"
+dependencies = [
+ "der",
+ "spki",
 ]
 
 [[package]]
@@ -834,6 +846,15 @@ dependencies = [
  "cfg-if",
  "heapless 0.8.0",
  "managed",
+]
+
+[[package]]
+name = "spki"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
+dependencies = [
+ "der",
 ]
 
 [[package]]

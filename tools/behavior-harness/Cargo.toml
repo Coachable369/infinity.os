@@ -7,6 +7,7 @@ edition = "2021"
 cc = "1"
 
 [dependencies]
+infinity-http = { path = "../../kernel/runtime/http" }
 libm = { version = "0.2", default-features = false }
 chacha20poly1305 = { version = "0.11.0", default-features = false }
 ed25519-dalek = { version = "3.0.0", default-features = false, features = ["zeroize"] }
@@ -14,6 +15,10 @@ hkdf = { version = "0.13.0", default-features = false }
 sha2 = { version = "0.11.0", default-features = false }
 x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets", "zeroize"] }
 zeroize = { version = "1.8.1", default-features = false }
+
+[[bin]]
+name = "https-service-test"
+path = "../https-service-test.rs"
 
 [[bin]]
 name = "qwen-native-test"

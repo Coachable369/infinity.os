@@ -58,7 +58,7 @@ initially failed because this host does not have prebuilt bare-metal `core`;
 the repository's `-Z build-std=core` build path succeeds. Existing kernel
 warnings remain. These checks are not installed-network acceptance.
 
-## Integration still required
+## Original integration boundary (superseded by actor section below)
 
 The library is available to both kernel configurations, but it is not yet
 connected to the production NIC pump or exposed as an application service.
@@ -85,8 +85,11 @@ requires an explicit hostname, nonzero trusted wall clock and root set. No
 `NoVerify`, plaintext fallback, host proxy or dynamically downloaded trust is
 used. Versioned Mozilla anchors are available through `tls::system_roots`.
 
-Initial support is AES-128-GCM/SHA-256 with ECDSA P256/SHA256 or P384/SHA384
-certificates. RSA, Ed25519 and other certificate algorithms fail closed. This
+Support is AES-128-GCM/SHA-256 with ECDSA P256/SHA256 or P384/SHA384
+certificates, plus RSA 2048-4096 bit ordinary rsaEncryption keys. RSA certificate
+signatures support PKCS1 v1.5 and PSS with SHA256/384/512; TLS CertificateVerify
+accepts RSA-PSS-RSAE only. PSS requires the exact digest-length salt and matching
+MGF1 hash. Ed25519, SHA1 and restricted RSA-PSS key types fail closed. This
 is not universal public-web compatibility. CRL/OCSP revocation retrieval,
 TLS 1.2, redirects, HTTP/2, compression and mutual TLS are not implemented.
 
@@ -162,3 +165,59 @@ must bind `Link::allowed` to the requesting identity's capabilities and current
 policy/configuration, demultiplex NIC queues without disrupting existing UDP
 users, and register the task with the OS scheduler. Probe adapters restrict
 traffic to their controlled test server; they are not production authorization.
+
+## Production actor and RSA integration — September 13
+
+The production `kernel/drivers/https.rs` actor now runs cooperatively from the
+native network pump on the bootstrap processor, **after** the existing Runtime
+borrow ends. Runtime is not safe for concurrent mutable access; dispatching the
+actor onto a second CPU would be unsound. Fixed pinned future storage is reused
+without a heap, with four retained Ethernet frames per direction. Existing UDP
+ingress remains connected. The timer polls pending work even without RX traffic.
+
+Requests are bound to an active authenticated session and that session's
+NetworkConnect, NetworkSend, NetworkReceive and NetworkResolve capabilities.
+Current inbound/outbound policy, DNS, source address/prefix/MAC, route, link and
+profile generation are rechecked before traffic submission. Revocation,
+configuration changes and session locking discard queued traffic. Another
+session cannot collect or cancel the request. No permissions are auto-granted.
+An egress filter confines automatic stack output to the authorized DNS/TCP
+endpoint and its next-hop ARP; policy is checked against the actual UDP source
+port. On-link DNS does not replace the interface's default Internet gateway.
+
+The installed and live Console expose `https get HOST /PATH CONNECT_CAP SEND_CAP
+RECEIVE_CAP RESOLVE_CAP`, `https result` and `https cancel`. These are diagnostic
+entry points for an already-authorized session, not a graphical permission flow.
+The body is returned only after authenticated completion, up to 8192 bytes.
+There is one request slot. Boot entropy is domain-separated into a dedicated
+ChaCha20 generator; certificate time comes from EFI GetTime with validated
+Gregorian fields and timezone. Unspecified EFI timezone follows the existing
+UTC RTC convention. Missing entropy or time fails closed, with no fake fallback.
+
+RSA uses allocation-free RustCrypto crypto-bigint public exponentiation and
+pkcs1 DER parsing. The local verifier implements the strict RFC 8017 padding
+checks from [RFC 8017](https://www.rfc-editor.org/rfc/rfc8017.html); it is new cryptographic integration, not an independently audited
+cryptographic module. Tests verify all six SHA2/padding combinations against
+OpenSSL at three key sizes, reject altered messages/signatures and bad lengths,
+trailing key data, out-of-range representatives and nonstandard PSS salt lengths.
+`make native-https-rsa-test` exercises both bare-metal CPU architectures.
+
+`make https-service-test` uses the actual Runtime and actor to verify traffic
+submission, owner isolation, capability revocation, DNS changes, cancellation
+and session locking. Its NIC is a packet-counting fixture; it is not an
+installed end-to-end HTTPS test. All tests are included in build.sh.
+
+Remaining acceptance: ISO-detached installed request proof, application/IOP
+and weather client integration, and a user-facing scoped permission workflow.
+The new actor and Mozilla root store are linked into the installed kernel,
+but a successful installed-kernel build alone does not prove installation or
+live networking. Individual crypto operations still run within one cooperative
+poll and have no preemptive latency guarantee. TLS1.2, IPv6, proxies, HTTP2,
+redirects, compression, mutual TLS and online CRL/OCSP remain unsupported.
+
+Verification of this revision: 18 HTTP library tests, actor lifecycle checks,
+both architecture RSA probes and both installed-kernel links pass. Regenerating
+the build images corrected a stale ARM loader; the artifact parity test now
+verifies byte-identical installed kernels inside both installers and matching
+bootloaders in their ESP/build images. This remains artifact parity, not a
+fresh installation followed by an ISO-detached HTTPS request.

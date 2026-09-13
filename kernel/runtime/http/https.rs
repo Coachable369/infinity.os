@@ -54,6 +54,7 @@ pub async fn get<S: Read + Write, R: rand_core::CryptoRngCore>(
     let length = request::get(host, path, buffers.request).map_err(Error::Request)?;
     let verifier = CertificateVerifier::new(roots, host, unix_seconds).map_err(Error::Tls)?;
     let config = TlsConfig::new()
+        .enable_rsa_signatures()
         .with_server_name(host)
         .with_alpn(&[b"http/1.1"]);
     let mut connection =

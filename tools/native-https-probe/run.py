@@ -16,11 +16,12 @@ ROOT = Path(__file__).resolve().parents[2]
 # FUNC: run
 # DESC: Builds a test-only trust fixture, boots the native HTTPS client and asserts its binary guest outcome.
 # ------------------=
-def run(arch="x86_64"):
+def run(arch="x86_64", rsa=False):
     with tempfile.TemporaryDirectory(prefix="infinity-https-") as temporary:
         work = Path(temporary)
         key, cert, der = (work / name for name in ("key.pem", "cert.pem", "root.der"))
-        subprocess.run(["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
+        key_args = ["rsa:2048"] if rsa else ["ec", "-pkeyopt", "ec_paramgen_curve:prime256v1"]
+        subprocess.run(["openssl", "req", "-x509", "-newkey"] + key_args + [
             "-nodes", "-keyout", str(key), "-out", str(cert), "-days", "1", "-subj", "/CN=localhost",
             "-addext", "subjectAltName=DNS:localhost", "-addext", "basicConstraints=critical,CA:FALSE",
             "-addext", "extendedKeyUsage=serverAuth"], check=True, capture_output=True)
@@ -75,4 +76,6 @@ def run(arch="x86_64"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--arch", choices=["x86_64", "aarch64"], default="x86_64")
-    run(parser.parse_args().arch)
+    parser.add_argument("--rsa", action="store_true")
+    args = parser.parse_args()
+    run(args.arch, args.rsa)
