@@ -84,7 +84,7 @@ void infinity_qwen_dot(uint32_t kind,const uint8_t *data,const float *input,size
 void infinity_qwen_dot_rows(uint32_t kind,const uint8_t *data,const float *input,size_t width,size_t rows,float *output) {
     size_t stride=width/256*(kind==12?144:210),row=0;
 #if defined(__aarch64__) && !defined(QWEN_SCALAR)
-    for(;kind==12 && row+4<=rows;row+=4) {
+    for(;(kind==12 || kind==14) && row+4<=rows;row+=4) {
         float32x4_t accum[4]={vdupq_n_f32(0),vdupq_n_f32(0),vdupq_n_f32(0),vdupq_n_f32(0)};
         for(size_t block=0;block<width/256;block++) {
             const uint8_t *p[4]; float d[4],m[4];
@@ -117,6 +117,37 @@ void infinity_qwen_dot_rows(uint32_t kind,const uint8_t *data,const float *input
                             accum[r]=vaddq_f32(accum[r],vmulq_f32(weight,activation));
                             accum[r]=vaddq_f32(accum[r],vmulq_f32(weight_hi,activation_hi));
                         }
+                    }
+                }
+            } else {
+                // Each Q6 scale covers sixteen weights. Decode that group once
+                // per row and share its activations across all four rows.
+                // Keep four separate adds in original order (no FMA/reduction
+                // reassociation), so batched and single-row outputs stay exact.
+                for(unsigned part=0;part<2;part++)for(unsigned g=0;g<4;g++)for(unsigned lane=0;lane<32;lane+=16) {
+                    float32x4_t activation=vld1q_f32(x+part*128+g*32+lane);
+                    float32x4_t activation_hi=vld1q_f32(x+part*128+g*32+lane+4);
+                    float32x4_t activation_2=vld1q_f32(x+part*128+g*32+lane+8);
+                    float32x4_t activation_3=vld1q_f32(x+part*128+g*32+lane+12);
+                    #pragma clang loop unroll(full)
+                    for(unsigned r=0;r<4;r++) {
+                        const uint8_t *lo=p[r]+part*64+(g%2)*32+lane;
+                        const uint8_t *hi=p[r]+128+part*32+lane;
+                        uint8x16_t low=vld1q_u8(lo),high=vld1q_u8(hi);
+                        low=g<2?vandq_u8(low,vdupq_n_u8(15)):vshrq_n_u8(low,4);
+                        high=vandq_u8(vshlq_u8(high,vdupq_n_s8(-(int)(g*2))),vdupq_n_u8(3));
+                        uint8x16_t packed=vorrq_u8(low,vshlq_n_u8(high,4));
+                        int16x8_t q=vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(packed))),vdupq_n_s16(32));
+                        int16x8_t q_hi=vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(vget_high_u8(packed))),vdupq_n_s16(32));
+                        float ds=d[r]*(float)(int8_t)p[r][192+part*8+g*2+lane/16];
+                        float32x4_t weight=vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(q))),ds);
+                        float32x4_t weight_hi=vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(q))),ds);
+                        accum[r]=vaddq_f32(accum[r],vmulq_f32(weight,activation));
+                        accum[r]=vaddq_f32(accum[r],vmulq_f32(weight_hi,activation_hi));
+                        weight=vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(q_hi))),ds);
+                        weight_hi=vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(q_hi))),ds);
+                        accum[r]=vaddq_f32(accum[r],vmulq_f32(weight,activation_2));
+                        accum[r]=vaddq_f32(accum[r],vmulq_f32(weight_hi,activation_3));
                     }
                 }
             }
