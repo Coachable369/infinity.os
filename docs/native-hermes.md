@@ -34,7 +34,11 @@ The upstream card labels its license `llama3` while naming Llama 3.2 as its base
 the base-model agreement is included. Review upstream terms before redistribution.
 
 All three resident models reserve 9,194,180,384 model bytes plus three 1,280 MiB
-arenas, before the rest of the OS. Use a 16 GiB VM for this all-model image.
+arenas, before the rest of the OS. Use a 20 GiB VM for this all-model image.
+The installed VirtualBox ARM64 boot failed its contiguous model/arena allocation
+at 16,288 MiB and reached onboarding at 20,480 MiB. The allocation sum alone
+does not establish the minimum bootable VM size. Smaller configurations remain
+unverified; the standard Qwen image is unchanged.
 Hermes's model plus arena reservation is 3,361,551,168 bytes; this is a fixed
 reservation, **not a measured peak-RAM result**. The initial context remains 4K.
 
@@ -70,9 +74,41 @@ The Qwen artifact/parser/tokenizer regression and AI behavioral suite passed.
 cancellation test, two geometry/RoPE unit tests, ARM64 kernel/loader builds and
 the x86_64 kernel compile check passed. The optional ISO build completed, and
 extracted EFI/model/license parity assertions passed for all three models.
-Installed-OS testing is a separate, still-pending acceptance level.
+## Installed guest verification — 2026-09-21
 
-Outstanding acceptance: ISO-detached Hermes/Qwen inference, no-reboot switching,
-desktop responsiveness, and comparative TTFT, steady-state tokens/sec, total
-response time and measured peak RAM. Do not report host timings as guest results.
-The running user VM has not been shut down or modified for this work.
+Fresh installation to the separate `infinityos-hermes-qa` 64 GiB VDI completed.
+The DVD was detached before installed boot and first-run setup. Both native
+models loaded; `model inspect hermes` reported the expected artifact length,
+local CPU state and 4K context. `model test qwen`, then `model test hermes`,
+completed on the same boot, exercising selection and real native inference.
+Both chat results visibly ended in "can I assist you today?"; the command
+window obscured the beginning of the bubbles, so no full-response transcript
+is claimed here.
+
+Environment: Apple M2 Max host, VirtualBox ARM64 native execution, 7 vCPUs,
+20,480 MiB guest RAM, Q4_K_M artifacts, 4K context, first `hello` request for
+each model. One sample each, not a statistical benchmark. Counters are from
+the guest's `ai timing` command; throughput is the rounded desktop display.
+
+| Metric | Qwen3-8B | Hermes 3 Llama 3.2 3B |
+|---|---:|---:|
+| First token | 11.420 s | 4.622 s |
+| Decode interval | 9.479 s | 3.791 s |
+| Displayed decode throughput | 1.0 tokens/s | 2.1 tokens/s |
+| Total response including EOS | 21.918 s | 8.898 s |
+| BSP prefill work | 2.528 s | 0.861 s |
+| BSP decode work | 3.155 s | 1.168 s |
+| Maximum AI pump | 3.782 ms | 3.335 ms |
+
+Hermes total latency was 59.4% lower in this short-prompt sample. Do not
+generalize it to long prompts, sustained throughput or tool-call accuracy.
+The console clips the first line of the seven-line timing report, so exact
+output token counts were not captured. Both model metadata and live timing
+were inspected in the installed guest, not inferred from host smoke tests.
+
+Outstanding acceptance: measured per-model peak RAM and a controlled pointer/
+drag responsiveness test during inference. Fixed arena reservations are not
+peak measurements. Native desktop keyboard commands worked; host-driven mouse
+automation did not reliably move the guest pointer, so no pointer-latency claim
+is made. The original `infinityos-4` disk was not attached to the QA VM or
+modified; its session was saved while the isolated test ran.
