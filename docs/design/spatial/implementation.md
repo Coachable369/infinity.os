@@ -96,6 +96,9 @@ detached, this clone booted to first-run configuration.
 The follow-up also restores a world's saved foreground surface after loading its
 saved editor file, so document loading cannot steal focus from Settings or the
 workspace. ARM compilation and the input regression suite pass.
+The subsequent full `sh build.sh` completed successfully, regenerated both
+release ISOs and checksums, and refreshed the provisioning model ISO. Build log:
+`/tmp/infinity-spatial-followup-build.log` (temporary local evidence).
 
 Account setup is still needed before interaction tests. Updated installed
 interaction, screenshot comparison and frame-time measurements have **not**
