@@ -89,3 +89,11 @@ not be verified reliably. Ctrl+Shift+K also failed to open Spatial Desktop throu
 the available VM control path. Further speculative input rewrites stopped at the
 six-loop correction limit. These are remaining acceptance failures, not requests
 for another password or manual setup.
+
+Release build: `sh build.sh` completed with exit status 0 on September 22 at
+17:44 America/Chicago. It regenerated `builds/InfinityOS-aarch64.iso` (8.0 GiB),
+`builds/InfinityOS-x86_64.iso` (1.7 GiB), the provisioning model ISO, and
+`builds/SHA256SUMS`. The build's ARM-copy binary equality and boot-payload
+extraction checks passed. Temporary build evidence:
+`/tmp/spatial-motion-final-build.log`. This successful build does not close the
+installed interaction/performance failures listed above.
