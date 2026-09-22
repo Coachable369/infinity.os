@@ -1219,6 +1219,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the write operation.
     // ------------------=
     pub fn write(&mut self, id: ObjectId, content: &[u8]) -> Result<u32, ObjectError> {
+        self.allow_public_spatial_access(id)?;
         let before = self.begin()?;
         let result = self.write_record(id, content);
         self.finish(before, result)
@@ -1329,6 +1330,36 @@ impl<D: BlockDevice> ObjectStore<D> {
         version: Option<u32>,
         out: &mut [u8],
     ) -> Result<usize, ObjectError> {
+        self.allow_public_spatial_access(id)?;
+        self.read_internal(id,version,out)
+    }
+
+    // ------------------------=
+    // FUNC: allow_public_spatial_access
+    // DESC: Keeps private shell checkpoints out of generic object operations, including aliases.
+    // ------------------=
+    fn allow_public_spatial_access(&self,id:ObjectId)->Result<(),ObjectError> {
+        let record=&self.state.objects[self.object_index(id)?];
+        if record.space==Space::System as u8 && &record.name[..record.name_len as usize]==b"@spatial-state" {
+            Err(ObjectError::Unauthorized)
+        }else{Ok(())}
+    }
+
+    // ------------------------=
+    // FUNC: read_spatial_state
+    // DESC: Reads a private shell checkpoint only after its caller validates the active owner session.
+    // ------------------=
+    pub(crate) fn read_spatial_state(&mut self,id:ObjectId,out:&mut [u8])->Result<usize,ObjectError> {
+        let record=&self.state.objects[self.object_index(id)?];
+        if record.space!=Space::System as u8 || &record.name[..record.name_len as usize]!=b"@spatial-state" {return Err(ObjectError::Unauthorized);}
+        self.read_internal(id,None,out)
+    }
+
+    // ------------------------=
+    // FUNC: read_internal
+    // DESC: Validates and copies immutable object bytes for an already-admitted native read.
+    // ------------------=
+    fn read_internal(&mut self,id:ObjectId,version:Option<u32>,out:&mut [u8])->Result<usize,ObjectError> {
         let oi = self.object_index(id)?;
         if self.state.versions.iter().any(|v| v.used && v.object == id && matches!(v.storage_role, 1 | 5)) {
             return Err(ObjectError::Busy);
@@ -1551,6 +1582,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     // DESC: Implements the remove operation.
     // ------------------=
     pub fn remove(&mut self, id: ObjectId) -> Result<(), ObjectError> {
+        self.allow_public_spatial_access(id)?;
         let before = self.begin()?;
         let result = (|| {
             if self.state.entries.iter().any(|x| x.used && x.target == id) {
@@ -1600,6 +1632,7 @@ impl<D: BlockDevice> ObjectStore<D> {
         &mut self,
         request: ObjectMetadataUpdateRequest<'_>,
     ) -> Result<(), ObjectError> {
+        self.allow_public_spatial_access(request.object.id)?;
         let before = self.begin()?;
         let result = (|| {
             if request.tags.len() > 8 || core::str::from_utf8(request.tags).is_err() {

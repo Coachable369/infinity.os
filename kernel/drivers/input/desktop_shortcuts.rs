@@ -23,7 +23,7 @@ pub fn shortcut_code(letter: u8, shift: bool) -> u8 {
     if shift
         && matches!(
             letter,
-            b'n' | b'e' | b't' | b'p' | b'l' | b'h' | b'b' | b'g' | b'w' | b'u' | b'i'
+            b'n' | b'e' | b't' | b'p' | b'l' | b'h' | b'b' | b'g' | b'w' | b'u' | b'i' | b'k'
         )
     {
         letter.to_ascii_uppercase()

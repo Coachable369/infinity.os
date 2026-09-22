@@ -86,6 +86,40 @@ pub(super) fn over(source: u32, destination: u32) -> u32 {
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: spatial_preview
+    // DESC: Samples a real retained window with bilinear premultiplied filtering without calling its renderer.
+    // ------------------=
+    pub(super) fn spatial_preview(&mut self, slot:usize, bounds:(usize,usize,usize,usize)) {
+        if slot>=SLOTS {return;}
+        let (left,top,width,height)=bounds;
+        if width==0 || height==0 {return;}
+        unsafe {
+            let cache=&(*(&raw const WINDOWS))[slot];
+            if !cache.valid || cache.width==0 || cache.height==0 {return;}
+            // Preserve aspect ratio; no stretched fonts in overview thumbnails.
+            let factor=(width*65536/cache.width).min(height*65536/cache.height);
+            let w=(cache.width*factor/65536).max(1);let h=(cache.height*factor/65536).max(1);
+            let left=left+(width-w)/2;let top=top+(height-h)/2;
+            let Some(region)=self.clipped_render_region(left,top,w,h) else {return;};
+            for y in region.top..region.bottom {
+                let sy=((y-top)*256*cache.height/h).min((cache.height-1)*256);
+                for x in region.left..region.right {
+                    let sx=((x-left)*256*cache.width/w).min((cache.width-1)*256);
+                    let (x0,y0)=(sx/256,sy/256);let (fx,fy)=(sx%256,sy%256);
+                    let (x1,y1)=((x0+1).min(cache.width-1),(y0+1).min(cache.height-1));
+                    let mut sum=[0usize;4];
+                    for (px,py,weight) in [(x0,y0,(256-fx)*(256-fy)),(x1,y0,fx*(256-fy)),(x0,y1,(256-fx)*fy),(x1,y1,fx*fy)] {
+                        let pixel=cache.pixels[py*cache.width+px];
+                        for (i,value) in sum.iter_mut().enumerate() {*value+=((pixel>>(8*i))&255) as usize*weight;}
+                    }
+                    let mut pixel=0u32;for (i,value) in sum.iter().enumerate() {pixel|=((value/65536) as u32)<<(8*i);}
+                    let out=self.buffer.add(y*self.stride+x);*out=over(pixel,*out);
+                }
+            }
+            self.mark_dirty_rect(region.left,region.top,region.right-region.left,region.bottom-region.top);
+        }
+    }
+    // ------------------------=
     // FUNC: retained_window
     // DESC: Rasterizes a changed window once into a private surface, then clips and composites cached pixels.
     // ------------------=

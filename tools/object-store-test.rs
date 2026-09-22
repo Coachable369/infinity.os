@@ -233,6 +233,7 @@ impl ObjectCapabilityPolicy for Deny {
 // ------------------=
 fn main() {
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
+    private_spatial_checkpoint(test_sectors);
     legacy_store_mount(test_sectors);
     checkpoint_replacement(test_sectors);
     editor_documents_recovery(test_sectors);
@@ -652,6 +653,32 @@ fn main() {
     );
 
     println!("PASS: native IDs, typed metadata/query, persistent date/time settings, persistent relationships, multi-extent COW, per-Space accounting, conservative GC, namespace identity, reboot/restore, five crash boundaries, format rejection, root/allocation/object/namespace/relationship/content corruption detection");
+}
+
+// ------------------------=
+// FUNC: private_spatial_checkpoint
+// DESC: Exercises fresh-store spatial persistence, alias/copy isolation, replacement and cold remount.
+// ------------------=
+fn private_spatial_checkpoint(sectors:usize) {
+    let disk=MemoryDisk::new(sectors);
+    let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x94;16]).unwrap();
+    let path=b"/system/spatial/11111111111111111111111111111111";
+    let id=store.create_attached(b"@spatial-state",ObjectType::Metadata,Space::System,&[7;8192],path).unwrap();
+    let mut bytes=[0;8192];
+    assert_eq!(store.read(id,None,&mut bytes),Err(ObjectError::Unauthorized));
+    assert_eq!(store.write(id,b"replace"),Err(ObjectError::Unauthorized));
+    assert_eq!(store.remove(id),Err(ObjectError::Unauthorized));
+    assert_eq!(store.copy_attached(id,b"/home/default/leaked"),Err(ObjectError::Unauthorized));
+    store.attach(b"/home/default/alias",id).unwrap();
+    assert_eq!(store.read(store.resolve(b"/home/default/alias").unwrap(),None,&mut bytes),Err(ObjectError::Unauthorized));
+    assert_eq!(store.read_spatial_state(id,&mut bytes),Ok(8192));assert_eq!(bytes,[7;8192]);
+    for byte in 8..12 {store.replace_state(id,&[byte;8192]).unwrap();}
+    assert_eq!(store.history_count(id),1);
+    drop(store);
+    let mut mounted=ObjectStore::mount(disk,0).unwrap();
+    assert_eq!(mounted.resolve(path),Ok(id));
+    assert_eq!(mounted.read_spatial_state(id,&mut bytes),Ok(8192));assert_eq!(bytes,[11;8192]);
+    assert_eq!(mounted.read(id,None,&mut bytes),Err(ObjectError::Unauthorized));
 }
 
 // ------------------------=

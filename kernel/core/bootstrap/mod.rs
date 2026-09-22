@@ -5,6 +5,8 @@ use crate::boot_info::BootInfo;
 mod bootstrap;
 mod crash;
 mod desktop;
+mod spatial_view;
+pub use self::spatial_view::{present as spatial_present, close as spatial_close};
 mod editor_view;
 mod assistant_view;
 mod app_style;

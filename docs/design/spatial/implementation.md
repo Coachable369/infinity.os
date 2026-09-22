@@ -1,7 +1,59 @@
 # Spatial desktop implementation checklist
 
-Status: design, motion and retained-transform foundations only; not a delivered
-desktop feature set.
+Status: native workflows are wired into the installed shell. This remains an
+incomplete milestone until the interaction/visual gates below are satisfied.
+
+## September 22 native integration
+
+- Open with **Ctrl+Shift+K**, or top-bar Search → Spatial desktop.
+- Holographic view samples the real retained surfaces for the five built-in app
+  classes, with aspect-preserving bilinear zoom (wheel or +/-). No generated
+  desktop screenshots are used. These are captured previews, not continuously
+  refreshed live applications, and separate File Navigator instances are not yet
+  independently represented.
+- Four named Worldshift environments retain window layouts, navigator location,
+  and saved editor paths. In-session editor buffers, cursor, selection and undo
+  history are kept separately. Unsaved buffers are **not** saved across reboot.
+- Gravity Well collects references to the current File Navigator selection.
+  Dragging changes reference placement; dropping over one of four collection
+  buttons changes membership. Source files are not moved or deleted.
+- Matter Shelf accepts explicit editor selections or manually entered clippings,
+  and inserts them into the existing editor without clearing its document.
+- Constellations supports reference positioning, symmetric link/unlink, opening
+  existing references, and safe unlinking when a reference is removed. A moved
+  source is reported as stale rather than resolving to another file by accident.
+- Metadata is bounded to 16 references, four environments, 96-byte paths,
+  32-byte item labels and 192-byte printable-ASCII clippings. An 8 KiB versioned
+  checkpoint is bound to the active authenticated owner. Generic object reads,
+  copies and writes cannot expose or alter its contents through an alias.
+- Opening/closing fades and lifts the panel using elapsed time; overview zoom is
+  eased. Reduced motion is persisted per user. Ordinary pointer movement paints
+  only the cursor; dragging clips to old/new bounds (or the connected graph area).
+  Idle ticks do not repaint the overlay; caret ticks repaint the text-field area.
+
+## Current verification and remaining work
+
+Passed: four state/geometry tests; exact native backdrop pixel test; native object
+store persistence/remount/alias tests; InfinityUI and launcher regression suites;
+12 HTTP/TCP library tests; ARM64 and x86_64 installed kernel builds. The rebuilt
+Hermes/Ministral ISO passes model and byte-identical installed-kernel payload
+parity. The updated `infinityos-4` disk boots to sign-in with the ISO detached.
+
+Installed visual/input acceptance is blocked at sign-in: synthetic input did not
+work in the previous verification attempt; an unlocked desktop was requested.
+No measured frame-time or polished-screen acceptance is claimed.
+
+Still required for the original complete feature scope: live invalidation and
+independent multi-window overview; the reversible world-switch transition;
+collection settling/preview confirmation; a compact Matter Shelf ribbon and
+cross-application drag/drop; final screenshot comparison, keyboard/pointer QA,
+and measured installed frame times. The current panel is not a substitute for
+those remaining workflows.
+
+Current ISO: `build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso` (legacy filename,
+contains Hermes + Ministral, not Qwen). Staging: `build/hermes/payload.7ZdQm4`.
+VM disk: `infinityos-4-spatial-20260922.vdi`; the previous `infinityos-4-updated.vdi`
+is retained for rollback. Only the temporary RAW conversion was deleted.
 
 ## Authoritative interaction scope
 
@@ -36,14 +88,14 @@ Use midnight glass, restrained cyan edges, 8-unit spacing, 16-unit internal padd
   old/new effects bounds. No idle animation loop or full-frame pointer repaint.
 - Never delay input until effects finish; Escape cancels transient interactions.
 
-## Remaining delivery gates
+## Original delivery gates
 
 Native controls, permission-checked object operations, persistence, actual compositor
 integration, keyboard/drag behavior, pixel review, frame-time measurements, builds,
-fresh-install parity and ISO-detached installed testing remain required for all five.
+fresh-install parity and ISO-detached installed testing are required for all five.
 The motion module alone does not satisfy any complete-feature acceptance claim.
 
-## Implemented foundation evidence
+## Prior foundation evidence (before native integration)
 
 - `ui::app_launcher::motion` provides elapsed-time fixed-point interpolation,
   continuous retargeting, reduced-motion settling and exact endpoints. Two tests

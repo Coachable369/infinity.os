@@ -54,3 +54,40 @@ pub(super) fn restore(display: &mut DisplayDevice) -> bool {
     }
     true
 }
+
+// ------------------------=
+// FUNC: fade
+// DESC: Blends only the active damaged overlay against its retained desktop for interruption-safe reveal and dismissal.
+// ------------------=
+pub(super) fn fade(display: &mut DisplayDevice, opacity: u8) {
+    if opacity == 255 {
+        return;
+    }
+    unsafe {
+        if SIZE != (display.width, display.height, display.stride) {
+            return;
+        }
+        let Some(region) = display.clipped_render_region(0, 0, display.width, display.height)
+        else {
+            return;
+        };
+        let a = u32::from(opacity);
+        let b = 255 - a;
+        for y in region.top..region.bottom {
+            for x in region.left..region.right {
+                let offset = y * display.stride + x;
+                let pixel = display.buffer.add(offset);
+                let behind = (*(&raw const BACKDROP))[offset];
+                let foreground = *pixel;
+                let mut color = foreground & 0xff000000;
+                for shift in [0, 8, 16] {
+                    color |=
+                        ((((foreground >> shift) & 255) * a + ((behind >> shift) & 255) * b + 127)
+                            / 255)
+                            << shift;
+                }
+                *pixel = color;
+            }
+        }
+    }
+}

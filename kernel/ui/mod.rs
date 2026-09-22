@@ -34,6 +34,7 @@ pub mod present_damage;
 pub mod redraw;
 pub mod scene;
 pub mod session_state;
+pub mod spatial;
 pub mod skin;
 pub mod status_menu;
 pub mod surface;

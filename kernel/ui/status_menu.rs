@@ -7,6 +7,7 @@ pub enum Action {
     Settings(usize),
     Devices(usize),
     Launcher,
+    Spatial,
     Files,
     Lock,
     Restart,
@@ -60,6 +61,7 @@ pub fn items(menu: usize) -> &'static [(&'static [u8], Action)] {
             (b"Decrease window size", Action::ShrinkWindow),
         ],
         13 => &[
+            (b"Spatial desktop", Action::Spatial),
             (b"Search apps", Action::Launcher),
             (b"Browse files", Action::Files),
         ],

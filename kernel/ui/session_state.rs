@@ -260,7 +260,7 @@ impl SessionIdleState {
 // FUNC: write_layout
 // DESC: Writes one bounded desktop layout into a fixed durable record.
 // ------------------=
-fn write_layout(out: &mut [u8], at: usize, layout: DesktopSessionLayout) {
+pub(crate) fn write_layout(out: &mut [u8], at: usize, layout: DesktopSessionLayout) {
     for (index, placement) in [layout.home, layout.settings, layout.editor, layout.command]
         .iter()
         .enumerate()
@@ -297,7 +297,7 @@ fn write_layout(out: &mut [u8], at: usize, layout: DesktopSessionLayout) {
 // FUNC: read_layout
 // DESC: Restores one validated desktop layout from a fixed durable record.
 // ------------------=
-fn read_layout(input: &[u8], at: usize) -> Option<DesktopSessionLayout> {
+pub(crate) fn read_layout(input: &[u8], at: usize) -> Option<DesktopSessionLayout> {
     let home = read_placement(input, at)?;
     let settings = read_placement(input, at + 17)?;
     let editor = read_placement(input, at + 34)?;

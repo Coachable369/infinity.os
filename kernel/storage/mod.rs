@@ -14,6 +14,7 @@ pub(crate) mod fabric_pool_metadata;
 pub(crate) mod fabric_pool_metadata_service;
 pub(crate) mod fabric_pool_repair;
 pub mod organization;
+pub(crate) mod spatial_state;
 #[cfg(target_arch = "aarch64")]
 mod uefi;
 
