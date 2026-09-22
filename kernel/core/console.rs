@@ -10701,6 +10701,40 @@ impl ConsoleRuntime {
     // ------------------=
     fn execute_ai_command(&mut self, command: &[u8]) -> bool {
         use crate::runtime::ai::{model::LOCAL_INTENT_MODEL_ID, types::DataLocality};
+        for (alias, id) in [
+            (b"qwen".as_slice(), crate::runtime::ai::chat::QWEN_FULL_MODEL_ID),
+            (b"hermes".as_slice(), crate::runtime::ai::chat::HERMES_MODEL_ID),
+            (b"ministral".as_slice(), crate::runtime::ai::chat::MINISTRAL_MODEL_ID),
+        ] {
+            for prefix in [b"model inspect ".as_slice(), b"model select ", b"model test "] {
+                if command.strip_prefix(prefix) != Some(alias) { continue; }
+                crate::runtime::ai::with_ai_runtime(|ai| {
+                    let entry = crate::runtime::ai::chat::CHAT_MODELS.iter().position(|m| m.id == id).unwrap();
+                    let metadata = crate::runtime::ai::chat::CHAT_MODELS[entry];
+                    self.output.write_line(metadata.name);
+                    self.output.write_line(metadata.description);
+                    self.output.write_line(if ai.native_ready(id) { b"Loaded: local CPU" } else { b"Unloaded / not installed" });
+                    if prefix == b"model inspect " {
+                        if let Some(model) = ai.models.inspect(id) {
+                            self.output.write_number(b"Model bytes: ", model.size);
+                            self.output.write_number(b"Reserved bytes: ", model.requirements.memory_bytes);
+                            self.output.write_number(b"Capability mask: ", model.capabilities as u64);
+                        }
+                    } else if ai.chat.generation_state != crate::runtime::ai::chat::GenerationState::Running && ai.native_ready(id) {
+                        if prefix == b"model test " && !ai.chat.input().is_empty() {
+                            self.output.write_line(b"Composer is not empty; test not started.");
+                        } else {
+                            ai.chat.select_model_index(entry);
+                            if prefix == b"model test " {
+                                for byte in b"hello" { ai.chat.push_input(*byte); }
+                                self.output.write_line(if ai.submit_chat() { b"Native test queued: hello" } else { b"Native test unavailable" });
+                            }
+                        }
+                    }
+                });
+                return true;
+            }
+        }
         if command == b"ai workers" {
             let (compute, idle) = crate::runtime::ai::qwen::workers::profile_ms();
             self.output.write_number(b"Online workers: ", crate::runtime::ai::qwen::workers::online() as u64);
@@ -10717,6 +10751,7 @@ impl ConsoleRuntime {
                 self.output.write_number(b"BSP prefill milliseconds: ", ai.qwen_metrics.prefill_work_ns / 1_000_000);
                 self.output.write_number(b"BSP decode milliseconds: ", ai.qwen_metrics.decode_work_ns / 1_000_000);
                 self.output.write_number(b"Maximum pump microseconds: ", ai.qwen_metrics.max_pump_ns / 1_000);
+                self.output.write_number(b"Total response milliseconds: ", ai.qwen_metrics.total_response_ns / 1_000_000);
             });
             return true;
         }
@@ -10760,7 +10795,8 @@ impl ConsoleRuntime {
                 for index in 0..ai.models.count() {
                     if let Some(model) = ai.models.nth(index) {
                         self.output.write_segments(&[
-                            b"local-intent-v1  provider=local  state=",
+                            crate::runtime::ai::chat::CHAT_MODELS.iter().find(|entry| entry.id == model.id).map_or(b"Local model".as_slice(), |entry| entry.name),
+                            b"  provider=local  state=",
                             if model.install_state
                                 == crate::runtime::ai::types::InstallState::Loaded
                             {

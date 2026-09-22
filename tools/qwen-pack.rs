@@ -60,7 +60,12 @@ fn split(source: &str, directory: &str, slot: u32) -> (u64, u32, [u8; 32]) {
 // ------------------=
 fn main() {
     let args: Vec<_> = std::env::args().collect();
-    if args[1] == "ministral" {
+    if args[1] == "hermes" {
+        let (length, _, digest) = split(&args[2], &args[3], 4);
+        assert_eq!(length, 2_019_373_888);
+        assert_eq!(digest, [0x91,0x77,0x6f,0xe0,0xf6,0xcd,0x74,0x83,0xd9,0xd5,0xe0,0x61,0x62,0xfd,0xd1,0xf8,
+            0xf0,0x26,0x2c,0x15,0xce,0xd2,0x69,0x79,0x1b,0x4d,0x96,0xa6,0x55,0xe8,0xa5,0xa2]);
+    } else if args[1] == "ministral" {
         let (length, _, digest) = split(&args[2], &args[3], 3);
         assert_eq!(length, 2_147_023_008);
         assert_eq!(

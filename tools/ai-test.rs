@@ -606,6 +606,13 @@ fn desktop_chat() {
     assert!(chat.selected_model_ready());
     // A native model never routes through canned local responses, even when ready.
     assert!(!chat.submit(b"hello"));
+    assert_eq!(chat.select_next_model(), 5);
+    assert_eq!(chat.selected_model(), runtime::ai::chat::HERMES_MODEL_ID);
+    assert!(!chat.selected_model_ready());
+    assert!(!chat.submit(b"hello"));
+    chat.set_hermes_ready(true);
+    assert!(chat.selected_model_ready());
+    assert!(!chat.submit(b"hello"));
     assert_eq!(chat.select_next_model(), 0);
     assert!(chat.selected_model_ready());
     for _ in 0..CHAT_MESSAGE_CAPACITY {

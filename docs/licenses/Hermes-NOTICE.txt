@@ -1,0 +1,10 @@
+Hermes 3 Llama 3.2 3B by Nous Research.
+Built with Llama.
+Llama 3.2 is licensed under the Llama 3.2 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.
+
+Model: https://huggingface.co/NousResearch/Hermes-3-Llama-3.2-3B
+GGUF revision: 3cd927095d8cbab12c743f932aa63b6f7bbfa141
+Artifact: Hermes-3-Llama-3.2-3B.Q4_K_M.gguf
+SHA256: 91776fe0f6cd7483d9d5e06162fdd1f8f0262c15ced269791b4d96a655e8a5a2
+Upstream model-card license tag is llama3; the base model is Llama 3.2.
+Review the accompanying base-model license and upstream terms before redistribution.

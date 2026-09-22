@@ -3,6 +3,7 @@
 pub struct Metrics {
     pub load_ns: u64,
     pub first_token_ns: u64,
+    pub total_response_ns: u64,
     pub prefill_work_ns: u64,
     pub decode_work_ns: u64,
     pub max_slice_ns: u64,
@@ -21,6 +22,7 @@ impl Metrics {
         Self {
             load_ns: 0,
             first_token_ns: 0,
+            total_response_ns: 0,
             prefill_work_ns: 0,
             decode_work_ns: 0,
             max_slice_ns: 0,
@@ -43,6 +45,13 @@ impl Metrics {
             prefill_tokens: prefill,
             ..Self::new()
         };
+    }
+    // ------------------------=
+    // FUNC: finish
+    // DESC: Records end-to-end request time including final stop-token evaluation.
+    // ------------------=
+    pub fn finish(&mut self, now: Option<u64>) {
+        self.total_response_ns = self.start_ns.zip(now).map_or(0, |(a, b)| b.saturating_sub(a));
     }
     // ------------------------=
     // FUNC: slice
@@ -92,8 +101,11 @@ mod tests {
             (70, 30, 5, 20)
         );
         assert_eq!((m.reused_tokens, m.prefill_tokens), (12, 3));
+        m.finish(Some(220));
+        assert_eq!(m.total_response_ns, 120);
         m.begin(None, 0, 8);
         m.slice(None, None, true);
         assert_eq!((m.load_ns, m.first_token_ns, m.max_slice_ns), (40, 0, 0));
+        assert_eq!(m.total_response_ns, 0);
     }
 }

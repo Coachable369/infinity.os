@@ -6,6 +6,14 @@ edition = "2021"
 [build-dependencies]
 cc = "1"
 
+[[bin]]
+name = "hermes-native-test"
+path = "../hermes-native-test.rs"
+
+[[bin]]
+name = "hermes-install-parity"
+path = "../hermes-install-parity.rs"
+
 [dependencies]
 infinity-http = { path = "../../kernel/runtime/http" }
 libm = { version = "0.2", default-features = false }

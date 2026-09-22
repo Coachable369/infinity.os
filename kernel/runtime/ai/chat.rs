@@ -11,6 +11,7 @@ pub const SYSTEM_ASSISTANT_MODEL_ID: ModelId = DIALOGUE_MODEL_ID;
 pub const INTENT_ASSISTANT_MODEL_ID: ModelId = super::model::LOCAL_INTENT_MODEL_ID;
 pub const QWEN_FULL_MODEL_ID: ModelId = 0x4149_1003;
 pub const MINISTRAL_MODEL_ID: ModelId = 0x4149_1004;
+pub const HERMES_MODEL_ID: ModelId = 0x4149_1005;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GenerationState {
@@ -68,7 +69,7 @@ pub struct ChatModel {
     pub description: &'static [u8],
 }
 
-pub const CHAT_MODELS: [ChatModel; 5] = [
+pub const CHAT_MODELS: [ChatModel; 6] = [
     ChatModel {
         id: SYSTEM_ASSISTANT_MODEL_ID,
         name: b"Infinity Dialogue v1",
@@ -87,12 +88,17 @@ pub const CHAT_MODELS: [ChatModel; 5] = [
     ChatModel {
         id: QWEN_FULL_MODEL_ID,
         name: b"Qwen3-8B",
-        description: b"Native CPU - Q4_K_M - 4K context",
+        description: b"Heavy reasoning - Q4_K_M - 4K context",
     },
     ChatModel {
         id: MINISTRAL_MODEL_ID,
         name: b"Ministral 3 3B",
         description: b"Lightweight local CPU - Q4_K_M - 4K context",
+    },
+    ChatModel {
+        id: HERMES_MODEL_ID,
+        name: b"Hermes 3 Llama 3.2 3B",
+        description: b"Local intent/tools - Q4_K_M - 4K context",
     },
 ];
 
@@ -103,6 +109,7 @@ pub struct ChatRuntime {
     selected_model: ModelId,
     qwen_ready: bool,
     ministral_ready: bool,
+    hermes_ready: bool,
     pub generation_state: GenerationState,
     enabled: bool,
     minimized: bool,
@@ -127,6 +134,7 @@ impl ChatRuntime {
             selected_model: SYSTEM_ASSISTANT_MODEL_ID,
             qwen_ready: false,
             ministral_ready: false,
+            hermes_ready: false,
             generation_state: GenerationState::Ready,
             enabled: true,
             minimized: false,
@@ -172,6 +180,7 @@ impl ChatRuntime {
         match self.selected_model {
             QWEN_FULL_MODEL_ID => self.qwen_ready,
             MINISTRAL_MODEL_ID => self.ministral_ready,
+            HERMES_MODEL_ID => self.hermes_ready,
             _ => true,
         }
     }
@@ -182,6 +191,13 @@ impl ChatRuntime {
     // ------------------=
     pub fn set_ministral_ready(&mut self, ready: bool) {
         self.ministral_ready = ready;
+    }
+    // ------------------------=
+    // FUNC: set_hermes_ready
+    // DESC: Exposes Hermes availability only after pinned native initialization.
+    // ------------------=
+    pub fn set_hermes_ready(&mut self, ready: bool) {
+        self.hermes_ready = ready;
     }
 
     // ------------------------=
@@ -462,7 +478,7 @@ impl ChatRuntime {
     // ------------------=
     pub fn submit(&mut self, input: &[u8]) -> bool {
         if !self.selected_model_ready()
-            || matches!(self.selected_model, QWEN_FULL_MODEL_ID | MINISTRAL_MODEL_ID)
+            || matches!(self.selected_model, QWEN_FULL_MODEL_ID | MINISTRAL_MODEL_ID | HERMES_MODEL_ID)
         {
             return false;
         }

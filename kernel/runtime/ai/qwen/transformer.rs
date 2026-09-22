@@ -3,6 +3,7 @@ use super::{
     gguf::{Error, Model, Tensor},
     quant,
 };
+mod hermes;
 pub const CONTEXT: usize = 4096;
 pub const WIDTH: usize = 4096;
 pub const HIDDEN: usize = 12288;
@@ -32,6 +33,8 @@ pub struct Weights<'a> {
     norm: Tensor<'a>,
     layers: [Layer<'a>; LAYERS],
     ministral: bool,
+    hermes: bool,
+    heads: usize,
     width: usize,
     hidden: usize,
     vocabulary: usize,
@@ -120,6 +123,8 @@ impl<'a> Weights<'a> {
             norm,
             layers,
             ministral,
+            hermes: false,
+            heads: 32,
             width,
             hidden,
             vocabulary,
@@ -244,8 +249,8 @@ impl<'a, 'b> Engine<'a, 'b> {
         }
         let (x, tail) = work.split_at_mut(weights.width);
         let (normalized, tail) = tail.split_at_mut(weights.width);
-        let (q, tail) = tail.split_at_mut(WIDTH);
-        let (attention, tail) = tail.split_at_mut(WIDTH);
+        let (q, tail) = tail.split_at_mut(weights.heads * 128);
+        let (attention, tail) = tail.split_at_mut(weights.heads * 128);
         let (k, tail) = tail.split_at_mut(KV_WIDTH);
         let (v, tail) = tail.split_at_mut(KV_WIDTH);
         let (gate, tail) = tail.split_at_mut(weights.hidden);
@@ -328,7 +333,9 @@ impl<'a, 'b> Engine<'a, 'b> {
         // Compute 64 pairs once, rather than 92,160 soft-float trig calls.
         for (i, pair) in self.rotary.iter_mut().enumerate() {
             let frequency = rotary_frequency(i, self.weights.ministral);
-            let angle = if self.weights.ministral {
+            let angle = if self.weights.hermes {
+                self.position as f32 * hermes::rotary_frequency(i)
+            } else if self.weights.ministral {
                 self.position as f32 * frequency
             } else {
                 self.position as f32 / libm::powf(1_000_000.0, i as f32 / 64.0)
@@ -361,7 +368,11 @@ impl<'a, 'b> Engine<'a, 'b> {
                     self.x,
                     self.normalized,
                     layer.norm,
-                    if self.weights.ministral { 1e-5 } else { 1e-6 },
+                    if self.weights.ministral || self.weights.hermes {
+                        1e-5
+                    } else {
+                        1e-6
+                    },
                 )?;
                 self.phase = 1;
             }
@@ -381,7 +392,7 @@ impl<'a, 'b> Engine<'a, 'b> {
                 }
             }
             4 => {
-                if self.weights.ministral {
+                if self.weights.ministral || self.weights.hermes {
                     adjacent_rope(self.q, &self.rotary);
                     adjacent_rope(self.k, &self.rotary);
                 } else {
@@ -404,7 +415,7 @@ impl<'a, 'b> Engine<'a, 'b> {
                     self.cursor,
                 );
                 self.cursor += 1;
-                if self.cursor == 32 {
+                if self.cursor == self.weights.heads {
                     self.cursor = 0;
                     self.phase = 6;
                 }
@@ -428,7 +439,11 @@ impl<'a, 'b> Engine<'a, 'b> {
                     self.x,
                     self.normalized,
                     layer.ffn_norm,
-                    if self.weights.ministral { 1e-5 } else { 1e-6 },
+                    if self.weights.ministral || self.weights.hermes {
+                        1e-5
+                    } else {
+                        1e-6
+                    },
                 )?;
                 self.phase = 8;
             }
@@ -486,7 +501,11 @@ impl<'a, 'b> Engine<'a, 'b> {
                         self.x,
                         self.normalized,
                         self.weights.norm,
-                        if self.weights.ministral { 1e-5 } else { 1e-6 },
+                        if self.weights.ministral || self.weights.hermes {
+                            1e-5
+                        } else {
+                            1e-6
+                        },
                     )?;
                     self.phase = 13;
                 } else {
@@ -655,7 +674,7 @@ fn attend(
     head: usize,
 ) {
     let q = &query[head * 128..head * 128 + 128];
-    let kv_head = head / 4;
+    let kv_head = head / (query.len() / KV_WIDTH);
     let base = layer * CONTEXT * KV_WIDTH * 2 + kv_head * 128;
     let mut max = f32::NEG_INFINITY;
     for time in 0..=position {

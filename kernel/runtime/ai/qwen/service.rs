@@ -6,6 +6,7 @@ use super::{
 };
 pub struct Service {
     ministral: bool,
+    hermes: bool,
     engine: Engine<'static, 'static>,
     tokenizer: Tokenizer<'static, 'static>,
     prompt: [u32; CONTEXT],
@@ -24,6 +25,24 @@ impl Service {
     // DESC: Verifies the pinned artifact before binding an exclusively owned boot-reserved arena.
     // ------------------=
     pub fn load(bytes: &'static [u8], arena: &'static mut [u8]) -> Result<Self, Error> {
+        Self::load_checked(bytes, arena, false)
+    }
+    // ------------------------=
+    // FUNC: load_hermes
+    // DESC: Loads Hermes through a separate pinned-artifact entry point, never weakening Qwen validation.
+    // ------------------=
+    pub fn load_hermes(bytes: &'static [u8], arena: &'static mut [u8]) -> Result<Self, Error> {
+        Self::load_checked(bytes, arena, true)
+    }
+    // ------------------------=
+    // FUNC: load_checked
+    // DESC: Binds isolated persistent model memory after exact artifact validation.
+    // ------------------=
+    fn load_checked(
+        bytes: &'static [u8],
+        arena: &'static mut [u8],
+        hermes: bool,
+    ) -> Result<Self, Error> {
         use sha2::{Digest, Sha256};
         const HASH: [u8; 32] = [
             0xd9, 0x8c, 0xdc, 0xbd, 0x03, 0xe1, 0x7c, 0xe4, 0x76, 0x81, 0x43, 0x5b, 0x51, 0x50,
@@ -31,7 +50,13 @@ impl Service {
             0xc5, 0x74, 0x57, 0x85,
         ];
         let ministral = bytes.len() == 2_147_023_008;
-        let expected = if ministral {
+        let expected = if hermes {
+            [
+                0x91, 0x77, 0x6f, 0xe0, 0xf6, 0xcd, 0x74, 0x83, 0xd9, 0xd5, 0xe0, 0x61, 0x62, 0xfd,
+                0xd1, 0xf8, 0xf0, 0x26, 0x2c, 0x15, 0xce, 0xd2, 0x69, 0x79, 0x1b, 0x4d, 0x96, 0xa6,
+                0x55, 0xe8, 0xa5, 0xa2,
+            ]
+        } else if ministral {
             [
                 0x9e, 0xd1, 0x50, 0xd4, 0x36, 0x7e, 0x68, 0xdf, 0x0a, 0xc8, 0xe1, 0x54, 0x0f, 0x6d,
                 0xdc, 0x65, 0xb4, 0x2d, 0x0e, 0xe2, 0x63, 0x78, 0x32, 0x9d, 0x1e, 0xcb, 0xca, 0x60,
@@ -40,13 +65,18 @@ impl Service {
         } else {
             HASH
         };
-        if (!ministral && bytes.len() != 5_027_783_488)
+        if (hermes && bytes.len() != 2_019_373_888)
+            || (!hermes && !ministral && bytes.len() != 5_027_783_488)
             || Sha256::digest(bytes).as_slice() != expected
         {
             return Err(Error::Format);
         }
         let model = Model::parse(bytes)?;
-        let weights = Weights::load(model)?;
+        let weights = if hermes {
+            Weights::load_hermes(model)?
+        } else {
+            Weights::load(model)?
+        };
         let count = |key| -> Result<usize, Error> {
             let (kind, mut values) = model.metadata(key)?;
             if kind != 9 || values.u32()? != 8 {
@@ -85,6 +115,7 @@ impl Service {
         let engine = Engine::new(weights, kv, work)?;
         Ok(Self {
             ministral,
+            hermes,
             engine,
             tokenizer,
             prompt: [0; CONTEXT],
@@ -159,6 +190,13 @@ impl Service {
         self.text("\n")?;
         self.control(b"<|im_start|>")?;
         self.text("assistant\n")?;
+        if self.hermes {
+            return if self.prompt_count < CONTEXT - 1 {
+                Ok(())
+            } else {
+                Err(Error::Overflow)
+            };
+        }
         self.control(b"<think>")?;
         self.text("\n\n")?;
         self.control(b"</think>")?;
@@ -251,7 +289,8 @@ impl Service {
             return Ok(false);
         }
         if (self.ministral && next == 2)
-            || (!self.ministral && (next == 151645 || next == 151643))
+            || (self.hermes && next == 128039)
+            || (!self.hermes && !self.ministral && (next == 151645 || next == 151643))
             || self.prompt_count >= CONTEXT
         {
             self.busy = false;

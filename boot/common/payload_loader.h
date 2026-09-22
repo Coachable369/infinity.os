@@ -10,7 +10,7 @@ static uint32_t payload_kind = UINT32_MAX, payload_part = UINT32_MAX;
 // DESC: Reads a bounded logical payload range across independently seekable shards.
 // ------------------=
 static uint64_t EFIAPI payload_read(uint32_t kind, uint64_t offset, size_t length, void *destination) {
-    if (!payload_root || kind > 3 || length > 1024 * 1024) return 1;
+    if (!payload_root || kind > 4 || length > 1024 * 1024) return 1;
     uint8_t *out = destination;
     while (length) {
         uint64_t part64 = offset / UINT64_C(536870912);
@@ -60,8 +60,12 @@ static void prepare_payloads(EFI_HANDLE image, EFI_SYSTEM_TABLE *system, Infinit
     const uint8_t second_model = payload_read(3, 0, sizeof(probe), probe) == 0;
     if (second_model && !equal_bytes(probe, (const uint8_t *)"GGUF", 4))
         fail(system, L"Invalid Ministral model payload\r\n", "Invalid Ministral model payload\n");
-    const uint64_t model_bytes = UINT64_C(5027783488) + (second_model ? UINT64_C(2147023008) : 0);
-    const uint64_t work_bytes = UINT64_C(1280) * 1024 * 1024 * (second_model ? 2 : 1);
+    const uint8_t hermes_model = payload_read(4, 0, sizeof(probe), probe) == 0;
+    if (hermes_model && !equal_bytes(probe, (const uint8_t *)"GGUF", 4))
+        fail(system, L"Invalid Hermes model payload\r\n", "Invalid Hermes model payload\n");
+    const uint64_t prior_bytes = UINT64_C(5027783488) + (second_model ? UINT64_C(2147023008) : 0);
+    const uint64_t model_bytes = prior_bytes + (hermes_model ? UINT64_C(2019373888) : 0);
+    const uint64_t work_bytes = UINT64_C(1280) * 1024 * 1024 * (1 + second_model + hermes_model);
     uint64_t model = 0, work = 0;
     if (system->boot_services->allocate_pages(EFI_ALLOCATE_ANY_PAGES, EFI_LOADER_DATA,
             (size_t)((model_bytes + PAGE_MASK) / PAGE_SIZE), &model) != EFI_SUCCESS ||
@@ -74,6 +78,9 @@ static void prepare_payloads(EFI_HANDLE image, EFI_SYSTEM_TABLE *system, Infinit
         uint32_t kind = offset < UINT64_C(5027783488) ? 2 : 3;
         uint64_t source_offset = kind == 2 ? offset : offset - UINT64_C(5027783488);
         uint64_t remaining = kind == 2 ? UINT64_C(5027783488) - offset : model_bytes - offset;
+        if (hermes_model && offset >= prior_bytes) {
+            kind = 4; source_offset = offset - prior_bytes; remaining = model_bytes - offset;
+        } else if (kind == 3) { remaining = prior_bytes - offset; }
         if (count > remaining) count = (size_t)remaining;
         if (payload_read(kind, source_offset, count, (void *)(uintptr_t)(model + offset)) != 0)
             fail(system, L"Native model payload is incomplete\r\n", "Native model payload read failed\n");

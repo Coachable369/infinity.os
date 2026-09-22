@@ -11,6 +11,7 @@ pub struct Tokenizer<'a, 'b> {
     vocabulary: &'b [Entry<'a>],
     merges: &'b [Entry<'a>],
     tekken: bool,
+    llama: bool,
 }
 impl<'a, 'b> Tokenizer<'a, 'b> {
     // ------------------------=
@@ -44,13 +45,14 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
         }
         let (_, mut pre) = model.metadata(b"tokenizer.ggml.pre")?;
         let pre = pre.string()?;
-        if pre != b"qwen2" && pre != b"tekken" {
+        if pre != b"qwen2" && pre != b"tekken" && pre != b"llama-bpe" {
             return Err(Error::Unsupported);
         }
         Ok(Self {
             vocabulary,
             merges,
             tekken: pre == b"tekken",
+            llama: pre == b"llama-bpe",
         })
     }
     // ------------------------=
@@ -80,6 +82,13 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
         while !remaining.is_empty() {
             let length = if self.tekken {
                 tekken_piece_length(remaining)?
+            } else if self.llama && remaining.chars().next().is_some_and(char::is_numeric) {
+                remaining
+                    .chars()
+                    .take_while(|c| c.is_numeric())
+                    .take(3)
+                    .map(char::len_utf8)
+                    .sum()
             } else {
                 piece_length(remaining)
             };
