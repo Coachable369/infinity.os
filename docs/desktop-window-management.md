@@ -53,6 +53,9 @@ These are behavioral model tests, not installed GUI evidence.
 The common installed kernel includes the new module and both input transports;
 there is no live-only feature or new packaged asset. ARM64 and x86_64 installed
 kernel builds passed. The ARM64 streamed installer rebuild and binary payload
-parity checks are run before publication. Installed gesture/screenshot validation
+parity checks passed; its P1 kernel shard is byte-identical to the newly built
+installed ELF. The published `builds/InfinityOS-aarch64.iso` is byte-identical to
+the rebuilt provisioning ISO. The x86_64 ISO was not republished in this pass.
+Installed gesture/screenshot validation
 remains pending: the existing VM is at login and automated guest input remains
 unreliable. Do not report full desktop interaction acceptance from compilation.
