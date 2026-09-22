@@ -20,6 +20,16 @@ pub fn card(index: usize) -> (usize, usize, usize, usize) {
     (80 + (index % 4) * 210, 230 + (index / 4) * 130, 190, 110)
 }
 // ------------------------=
+// FUNC: shelf_card
+// DESC: Keeps four shelf slots visible per keyboard-selected page without overlapping app content.
+// ------------------=
+pub fn shelf_card(index: usize, focus: usize) -> Option<(usize, usize, usize, usize)> {
+    if index >= ITEM_COUNT || index / 4 != focus / 4 {
+        return None;
+    }
+    Some((80 + index % 4 * 210, 690, 190, 100))
+}
+// ------------------------=
 // FUNC: overview_card
 // DESC: Interpolates a retained window island into an aspect-preserving inspection stage.
 // ------------------=

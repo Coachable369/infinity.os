@@ -19,6 +19,11 @@ incomplete milestone until the interaction/visual gates below are satisfied.
   buttons changes membership. Source files are not moved or deleted.
 - Matter Shelf accepts explicit editor selections or manually entered clippings,
   and inserts them into the existing editor without clearing its document.
+  It now occupies a compact bottom ribbon, with four slots per page (arrows or
+  wheel), and a bounded pointer-following preview. Text may be dropped into the
+  exposed content of the active editor; other destinations do not mutate data.
+  Enter remains the keyboard insertion alternative. File-reference dropping
+  into other applications is not yet implemented.
 - Constellations supports reference positioning, symmetric link/unlink, opening
   existing references, and safe unlinking when a reference is removed. A moved
   source is reported as stale rather than resolving to another file by accident.
@@ -30,10 +35,14 @@ incomplete milestone until the interaction/visual gates below are satisfied.
   eased. Reduced motion is persisted per user. Ordinary pointer movement paints
   only the cursor; dragging clips to old/new bounds (or the connected graph area).
   Idle ticks do not repaint the overlay; caret ticks repaint the text-field area.
+- World and overview activation now defer mutations until a 280 ms close
+  transition completes. Any key or click cancels a pending switch from its
+  current pose; the destination is delivered exactly once. This animates departure,
+  not a live crossfade between two rendered worlds.
 
 ## Current verification and remaining work
 
-Passed: four state/geometry tests; exact native backdrop pixel test; native object
+Passed: five state/geometry tests; three motion/deferred-selection tests; exact native backdrop pixel test; native object
 store persistence/remount/alias tests; InfinityUI and launcher regression suites;
 12 HTTP/TCP library tests; ARM64 and x86_64 installed kernel builds. The rebuilt
 Hermes/Ministral ISO passes model and byte-identical installed-kernel payload
@@ -44,16 +53,21 @@ work in the previous verification attempt; an unlocked desktop was requested.
 No measured frame-time or polished-screen acceptance is claimed.
 
 Still required for the original complete feature scope: live invalidation and
-independent multi-window overview; the reversible world-switch transition;
-collection settling/preview confirmation; a compact Matter Shelf ribbon and
-cross-application drag/drop; final screenshot comparison, keyboard/pointer QA,
+independent multi-window overview; world-to-world arrival effects;
+collection settling/preview confirmation; file-reference cross-application drops;
+final screenshot comparison, keyboard/pointer QA,
 and measured installed frame times. The current panel is not a substitute for
 those remaining workflows.
 
+The ribbon and deferred-switch changes still require installed interaction and
+visual verification. Their unit tests are not guest UI evidence.
+
 Current ISO: `build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso` (legacy filename,
-contains Hermes + Ministral, not Qwen). Staging: `build/hermes/payload.7ZdQm4`.
+contains Hermes + Ministral, not Qwen). Latest build staging: `build/hermes/payload.NtCAHw`.
 VM disk: `infinityos-4-spatial-20260922.vdi`; the previous `infinityos-4-updated.vdi`
 is retained for rollback. Only the temporary RAW conversion was deleted.
+The running VM still contains the earlier integration, not the subsequent ribbon
+and deferred-switch changes; updating the ISO does not update that disk.
 
 ## Authoritative interaction scope
 
@@ -79,7 +93,7 @@ Use midnight glass, restrained cyan edges, 8-unit spacing, 16-unit internal padd
 
 ## Motion acceptance
 
-- Overview zoom: 240 ms; environment transition: 320 ms; collection settle: 180 ms;
+- Overview zoom: 240 ms; departure transition: 280 ms; collection settle: 180 ms;
   shelf expansion: 160 ms; connection emphasis: 120 ms.
 - Motion samples elapsed monotonic time, not frame count. Delayed frames skip
   forward rather than extending duration. Interruption starts at the displayed pose.

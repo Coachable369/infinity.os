@@ -3,6 +3,28 @@ mod session_state;
 #[path = "../kernel/ui/spatial.rs"]
 mod spatial;
 use spatial::*;
+#[test]
+// ------------------------=
+// FUNC: shelf_pages_keep_gutters_and_hidden_items_noninteractive
+// DESC: Checks shared rendering and hit-test geometry for every shelf page and boundary.
+// ------------------=
+fn shelf_pages_keep_gutters_and_hidden_items_noninteractive() {
+    for focus in 0..16 {
+        let mut visible = 0;
+        for index in 0..16 {
+            if let Some(rect) = shelf_card(index, focus) {
+                visible += 1;
+                assert_eq!(index / 4, focus / 4);
+                assert!(contains(rect, rect.0 as i32, 690));
+                assert!(!contains(rect, (rect.0 + rect.2) as i32, 690));
+                assert!(!contains(rect, rect.0 as i32, 790));
+                assert!(rect.1 >= 690 && rect.1 + rect.3 < 805);
+            }
+        }
+        assert_eq!(visible, 4);
+    }
+    assert_eq!(shelf_card(16, 16), None);
+}
 // ------------------------=
 // FUNC: clipping
 // DESC: Builds a deliberately collected text clipping for behavioral tests.
@@ -130,7 +152,9 @@ fn world_layout_survives_roundtrip() {
     state.worlds[2].layout = Some(layout);
     state.worlds[2].name.set(b"Research");
     state.worlds[2].location.set(b"/home/default/documents");
-    state.worlds[2].editor.set(b"/home/default/documents/research.txt");
+    state.worlds[2]
+        .editor
+        .set(b"/home/default/documents/research.txt");
     state.active_world = 2;
     state.reduced_motion = true;
     let bytes = state.encode([3; 16]).unwrap();

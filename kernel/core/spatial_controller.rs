@@ -1,6 +1,6 @@
 //! Native spatial workflows, using the existing shell and object boundaries.
 use super::*;
-use crate::ui::app_launcher::motion::Motion;
+use crate::ui::app_launcher::motion::{DeferredSelection, Motion};
 use crate::ui::spatial::{Item, Label, SpatialState};
 
 struct EditorSnapshot {
@@ -46,6 +46,8 @@ pub(super) struct Controller {
     zoom_target: i32,
     last_zoom: i32,
     last_caret_phase: u64,
+    selection: DeferredSelection,
+    ghost: Option<(i32, i32)>,
 }
 impl Controller {
     // ------------------------=
@@ -75,6 +77,8 @@ impl Controller {
             zoom_target: 0,
             last_zoom: -1,
             last_caret_phase: 0,
+            selection: DeferredSelection::new(),
+            ghost: None,
         }
     }
 }
@@ -149,6 +153,8 @@ impl ConsoleRuntime {
             self.spatial.state = old;
         }
         self.spatial.open = false;
+        self.spatial.selection.cancel();
+        self.spatial.ghost = None;
         self.spatial.closing = false;
         self.spatial.editing = 0;
         self.spatial.text.fill(0);
@@ -187,6 +193,7 @@ impl ConsoleRuntime {
             },
             self.spatial.damage,
             self.spatial.zoom.value(now()).clamp(0, 255) as u8,
+            self.spatial.ghost.and(self.spatial.drag.map(|d| d.0)),
         );
     }
     // ------------------------=
@@ -196,6 +203,21 @@ impl ConsoleRuntime {
     pub(super) fn spatial_tick(&mut self) -> bool {
         let progress = self.spatial.motion.value(now());
         if self.spatial.closing && progress == 0 {
+            if let Some((tab, focus)) = self.spatial.selection.finish(progress) {
+                self.spatial.closing = false;
+                self.spatial.tab = tab;
+                self.spatial.focus = focus;
+                self.spatial_execute_action(0);
+                if self.spatial.open {
+                    self.spatial.motion.retarget(
+                        255,
+                        now(),
+                        220,
+                        self.spatial.state.reduced_motion,
+                    );
+                }
+                return true;
+            }
             self.spatial_close();
             return true;
         }
@@ -241,9 +263,19 @@ impl ConsoleRuntime {
     // DESC: Provides keyboard navigation, explicit reference removal, and normal bounded text editing.
     // ------------------=
     pub(super) fn spatial_input(&mut self, key: ConsoleKey) {
+        if self.spatial.closing && self.spatial.selection.cancel() {
+            self.spatial.closing = false;
+            self.spatial
+                .motion
+                .retarget(255, now(), 180, self.spatial.state.reduced_motion);
+            self.spatial.notice = b"Switch cancelled. Your workspace is unchanged.";
+            self.spatial_present();
+            return;
+        }
         if let Some((_, _, _, old)) = self.spatial.drag.take() {
             self.spatial.state = old;
         }
+        self.spatial.ghost = None;
         if self.spatial.editing != 0 {
             if matches!(key, ConsoleKey::Escape) {
                 self.spatial.editing = 0;
@@ -337,6 +369,14 @@ impl ConsoleRuntime {
     // DESC: Routes explicit clicks while keeping ordinary pointer motion cursor-only.
     // ------------------=
     pub(super) fn spatial_pointer(&mut self, clicked: bool, released: bool) {
+        if self.spatial.closing {
+            if clicked {
+                self.spatial_input(ConsoleKey::Escape);
+            } else {
+                crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
+            }
+            return;
+        }
         crate::ui::text_input::set_pointer_shape(
             if self.spatial.editing != 0
                 && (100..900).contains(&self.pointer_x)
@@ -349,6 +389,56 @@ impl ConsoleRuntime {
         );
         if let Some((index, x, y, old)) = self.spatial.drag {
             let moved = (self.pointer_x - x).abs() + (self.pointer_y - y).abs() > 6;
+            if self.spatial.tab == 3 {
+                if released {
+                    self.spatial.drag = None;
+                    self.spatial.ghost = None;
+                    if moved
+                        && self.pointer_y < 570
+                        && self.desktop_app == DesktopAppKind::TextEditor
+                    {
+                        let (editor, _, _) = self.desktop_app_windows();
+                        let layout = SystemLayout::new(
+                            self.system.framebuffer_width,
+                            self.system.framebuffer_height,
+                        );
+                        let content = layout
+                            .desktop_app_window_geometry(
+                                editor.x,
+                                editor.y,
+                                editor.width,
+                                editor.height,
+                                editor.maximized,
+                            )
+                            .content;
+                        let point = crate::ui::geometry::Point {
+                            x: self.pointer_x * self.system.framebuffer_width as i32 / 1000,
+                            y: self.pointer_y * self.system.framebuffer_height as i32 / 1000,
+                        };
+                        if editor.visible && content.contains(point) {
+                            self.spatial_action(3);
+                            return;
+                        }
+                    }
+                    self.spatial_present();
+                } else if moved && self.pointer_pressed {
+                    let next = (self.pointer_x.clamp(45, 745), self.pointer_y.clamp(80, 760));
+                    let previous = self.spatial.ghost.unwrap_or(next);
+                    self.spatial.ghost = Some(next);
+                    let left = previous.0.min(next.0).saturating_sub(8) as usize;
+                    let top = previous.1.min(next.1).saturating_sub(8) as usize;
+                    self.spatial.damage = Some((
+                        left,
+                        top,
+                        (previous.0 - next.0).unsigned_abs() as usize + 206,
+                        (previous.1 - next.1).unsigned_abs() as usize + 86,
+                    ));
+                    self.spatial_present();
+                    self.spatial.damage = None;
+                }
+                crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
+                return;
+            }
             if released {
                 self.spatial.drag = None;
                 if self.spatial.state != old {
@@ -400,14 +490,17 @@ impl ConsoleRuntime {
             self.pointer_x,
             self.pointer_y - (255 - self.spatial.motion.value(now()).clamp(0, 255)) * 35 / 255,
         );
-        if (897..941).contains(&x) && (95..133).contains(&y) {
+        let shelf = self.spatial.tab == 3;
+        let close_top = if shelf { 585 } else { 95 };
+        if (897..941).contains(&x) && (close_top..close_top + 38).contains(&y) {
             self.spatial_input(ConsoleKey::Escape);
             return;
         }
         if self.spatial.editing != 0 {
             return;
         }
-        if (150..195).contains(&y) {
+        let tabs_top = if shelf { 635 } else { 150 };
+        if (tabs_top..tabs_top + 45).contains(&y) {
             for i in 0..5 {
                 if (70 + i * 176..234 + i * 176).contains(&x) {
                     self.spatial.tab = i as usize;
@@ -416,7 +509,14 @@ impl ConsoleRuntime {
                 }
             }
         }
-        let hit = if self.spatial.tab >= 2 {
+        let hit = if self.spatial.tab == 3 {
+            (0..16).find(|i| {
+                self.spatial.state.items[*i].is_some()
+                    && crate::ui::spatial::shelf_card(*i, self.spatial.focus)
+                        .map(|r| crate::ui::spatial::contains(r, x, y))
+                        .unwrap_or(false)
+            })
+        } else if self.spatial.tab >= 2 {
             crate::ui::spatial::hit_item(&self.spatial.state, x, y)
         } else if self.spatial.tab == 1 {
             (0..4).find(|i| crate::ui::spatial::contains(crate::ui::spatial::world_card(*i), x, y))
@@ -571,6 +671,28 @@ impl ConsoleRuntime {
     // DESC: Executes user-selected workspace actions through existing shell services.
     // ------------------=
     fn spatial_action(&mut self, action: usize) {
+        if self.spatial.tab < 2 && action == 0 {
+            self.spatial
+                .selection
+                .request(self.spatial.tab, self.spatial.focus);
+            self.spatial.closing = true;
+            self.spatial.notice = b"Switching workspace. Press any key to cancel.";
+            self.spatial.motion.retarget(
+                0,
+                now(),
+                280,
+                self.spatial.state.reduced_motion
+                    || crate::ui::performance::monotonic_ns().is_none(),
+            );
+            return;
+        }
+        self.spatial_execute_action(action);
+    }
+    // ------------------------=
+    // FUNC: spatial_execute_action
+    // DESC: Applies a selected action after its cancellable transition reaches the endpoint.
+    // ------------------=
+    fn spatial_execute_action(&mut self, action: usize) {
         let tab = self.spatial.tab;
         let index = self.spatial.focus;
         if tab < 2 && action == 3 {

@@ -4,6 +4,8 @@ use crate::ui::spatial::{item_card, overview_card, world_card, SpatialState, TAB
 
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 static mut OPEN: bool = false;
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+static mut LAST_TAB: usize = usize::MAX;
 
 // ------------------------=
 // FUNC: close
@@ -42,6 +44,7 @@ pub fn present(
     editing: Option<(&[u8], usize)>,
     damage: Option<(usize, usize, usize, usize)>,
     zoom: u8,
+    dragging: Option<usize>,
 ) {
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     unsafe {
@@ -53,6 +56,8 @@ pub fn present(
                 OPEN = true;
             }
             let d = &mut c.display;
+            let changed_tab = LAST_TAB != tab;
+            LAST_TAB = tab;
             if let Some((a, b, w, h)) = damage.filter(|_| progress == 255) {
                 d.set_render_clip(
                     a * d.width / 1000,
@@ -69,6 +74,22 @@ pub fn present(
                 );
             }
             launcher_backdrop::restore(d);
+            if let Some((a, b, w, h)) = damage {
+                d.mark_dirty_rect(
+                    a * d.width / 1000,
+                    b * d.height / 1000,
+                    w * d.width / 1000 + 2,
+                    h * d.height / 1000 + 2,
+                );
+            }
+            if changed_tab || damage.is_none() {
+                d.mark_dirty_rect(
+                    d.width * 4 / 100,
+                    d.height * 7 / 100,
+                    d.width * 92 / 100,
+                    d.height * 89 / 100,
+                );
+            }
             let lift = (255 - usize::from(progress)) * 35 / 255;
             let (dw, dh) = (d.width, d.height);
             let rect = |a: usize, b: usize, w: usize, h: usize| {
@@ -79,18 +100,25 @@ pub fn present(
                     h * dh / 1000,
                 )
             };
-            let panel = rect(45, 80, 910, 830);
+            let shelf = tab == 3;
+            let panel = if shelf {
+                rect(45, 570, 910, 340)
+            } else {
+                rect(45, 80, 910, 830)
+            };
             d.glass_panel(panel.0, panel.1, panel.2, panel.3, true);
-            let p = rect(70, 98, 0, 0);
+            let p = rect(70, if shelf { 588 } else { 98 }, 0, 0);
             d.ui_text_strong(p.0, p.1, b"SPATIAL DESKTOP", 200, 236, 255, 1);
-            let p = rect(897, 95, 44, 38);
+            let p = rect(897, if shelf { 585 } else { 95 }, 44, 38);
             d.window_control(p.0 + (p.2.saturating_sub(p.3)) / 2, p.1, p.3, 2, false);
             for (i, label) in TABS.iter().enumerate() {
-                let p = rect(70 + i * 176, 150, 164, 45);
+                let p = rect(70 + i * 176, if shelf { 635 } else { 150 }, 164, 45);
                 d.polished_button(p.0, p.1, p.2, p.3, label, tab == i, false);
             }
-            let p = rect(80, 205, 0, 0);
-            d.ui_text(p.0, p.1, notice, 155, 190, 209, 1);
+            if !shelf {
+                let p = rect(80, 205, 0, 0);
+                d.ui_text(p.0, p.1, notice, 155, 190, 209, 1);
+            }
             if tab == 0 {
                 let labels = [
                     b"Files".as_slice(),
@@ -214,7 +242,14 @@ pub fn present(
                 }
                 for (i, item) in state.items.iter().enumerate() {
                     if let Some(item) = item {
-                        let (a, b, w, h) = item_card(i, item);
+                        let (a, b, w, h) = if shelf {
+                            let Some(bounds) = crate::ui::spatial::shelf_card(i, focus) else {
+                                continue;
+                            };
+                            bounds
+                        } else {
+                            item_card(i, item)
+                        };
                         let p = rect(a, b, w, h);
                         d.glass_panel(p.0, p.1, p.2, p.3, false);
                         d.desktop_app_icon(
@@ -251,7 +286,7 @@ pub fn present(
                     }
                 }
                 if state.items.iter().all(Option::is_none) {
-                    let p = rect(240, 410, 0, 0);
+                    let p = rect(240, if shelf { 710 } else { 410 }, 0, 0);
                     d.ui_text_strong(
                         p.0,
                         p.1,
@@ -261,7 +296,7 @@ pub fn present(
                         248,
                         1,
                     );
-                    let p = rect(180, 460, 0, 0);
+                    let p = rect(180, if shelf { 755 } else { 460 }, 0, 0);
                     d.ui_text(
                         p.0,
                         p.1,
@@ -318,7 +353,7 @@ pub fn present(
                     0=>b"Tab: views   Arrows: focus   Wheel / +/-: zoom   Enter: open   M: motion   Esc: close".as_slice(),
                     1=>b"Tab: views   Arrows: focus   Enter: switch   S: save   R: rename   M: motion   Esc: close",
                     2=>b"C: collect   Drag: arrange / drop into a collection   G: next collection   Del: remove",
-                    3=>b"C: collect selection   T: add text   Enter: insert into editor   Del: remove   Esc: close",
+                    3=>notice,
                     _=>b"C: collect   Drag: arrange   L: link / unlink   Enter: open   Del: remove   Esc: close",
                 },
                 143,
@@ -326,6 +361,26 @@ pub fn present(
                 208,
                 1,
             );
+            if shelf {
+                if let Some(item) = dragging.and_then(|i| state.items.get(i)).and_then(|i| *i) {
+                    let p = rect(
+                        x.clamp(45, 745) as usize,
+                        y.clamp(80, 760) as usize,
+                        190,
+                        70,
+                    );
+                    d.glass_panel(p.0, p.1, p.2, p.3, true);
+                    d.ui_text_elided_strong(
+                        p.0 + 12,
+                        p.1 + 20,
+                        p.2.saturating_sub(24),
+                        item.name.get(),
+                        220,
+                        242,
+                        255,
+                    );
+                }
+            }
             if let Some((text, caret)) = editing {
                 let p = rect(100, 390, 800, 150);
                 d.glass_panel(p.0, p.1, p.2, p.3, true);
@@ -372,6 +427,6 @@ pub fn present(
     }
     #[cfg(target_arch = "x86")]
     let _ = (
-        state, tab, focus, visible, notice, progress, x, y, editing, damage, zoom,
+        state, tab, focus, visible, notice, progress, x, y, editing, damage, zoom, dragging,
     );
 }

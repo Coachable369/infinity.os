@@ -18,6 +18,45 @@ pub struct Motion {
     duration: u32,
 }
 
+#[derive(Clone, Copy)]
+pub struct DeferredSelection {
+    pending: Option<(usize, usize)>,
+}
+impl DeferredSelection {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Starts without any delayed workspace mutation.
+    // ------------------=
+    pub const fn new() -> Self {
+        Self { pending: None }
+    }
+    // ------------------------=
+    // FUNC: request
+    // DESC: Replaces the pending destination without executing it during animation.
+    // ------------------=
+    pub fn request(&mut self, tab: usize, index: usize) {
+        self.pending = Some((tab, index));
+    }
+    // ------------------------=
+    // FUNC: cancel
+    // DESC: Discards a pending mutation and reports whether cancellation occurred.
+    // ------------------=
+    pub fn cancel(&mut self) -> bool {
+        self.pending.take().is_some()
+    }
+    // ------------------------=
+    // FUNC: finish
+    // DESC: Delivers the destination exactly once, only at the closed endpoint.
+    // ------------------=
+    pub fn finish(&mut self, progress: i32) -> Option<(usize, usize)> {
+        if progress == 0 {
+            self.pending.take()
+        } else {
+            None
+        }
+    }
+}
+
 impl Motion {
     // ------------------------=
     // FUNC: settled
@@ -77,6 +116,23 @@ impl Motion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    // ------------------------=
+    // FUNC: deferred_selection_is_cancellable_and_exactly_once
+    // DESC: Verifies no early mutation, interruption, replacement and single delivery.
+    // ------------------=
+    fn deferred_selection_is_cancellable_and_exactly_once() {
+        let mut selection = DeferredSelection::new();
+        selection.request(1, 2);
+        assert_eq!(selection.finish(128), None);
+        assert!(selection.cancel());
+        assert_eq!(selection.finish(0), None);
+        selection.request(1, 2);
+        selection.request(1, 3);
+        assert_eq!(selection.finish(1), None);
+        assert_eq!(selection.finish(0), Some((1, 3)));
+        assert_eq!(selection.finish(0), None);
+    }
     #[test]
     // ------------------------=
     // FUNC: elapsed_motion_is_frame_rate_independent
