@@ -6,15 +6,26 @@ pub enum DesktopAction {
     Command,
     Tasks,
     Lock,
+    SnapLeft,
+    SnapRight,
+    Center,
+    Cycle,
+    Grow,
+    Shrink,
 }
 
 // ------------------------=
 // FUNC: shortcut_code
-// DESC: Keeps existing application commands while reserving five shifted desktop chords.
+// DESC: Keeps unshifted application commands while reserving shifted desktop workflow chords.
 // ------------------=
 pub fn shortcut_code(letter: u8, shift: bool) -> u8 {
     let letter = letter.to_ascii_lowercase();
-    if shift && matches!(letter, b'n' | b'e' | b't' | b'p' | b'l') {
+    if shift
+        && matches!(
+            letter,
+            b'n' | b'e' | b't' | b'p' | b'l' | b'h' | b'b' | b'g' | b'w' | b'u' | b'i'
+        )
+    {
         letter.to_ascii_uppercase()
     } else if shift && letter == b'z' {
         b'y'
@@ -37,6 +48,12 @@ pub fn desktop_action(code: u8, authenticated: bool, desktop: bool) -> Option<De
         b'T' => DesktopAction::Command,
         b'P' => DesktopAction::Tasks,
         b'L' => DesktopAction::Lock,
+        b'H' => DesktopAction::SnapLeft,
+        b'B' => DesktopAction::SnapRight,
+        b'G' => DesktopAction::Center,
+        b'W' => DesktopAction::Cycle,
+        b'U' => DesktopAction::Grow,
+        b'I' => DesktopAction::Shrink,
         _ => return None,
     })
 }
@@ -56,6 +73,12 @@ mod tests {
             (b't', DesktopAction::Command),
             (b'p', DesktopAction::Tasks),
             (b'l', DesktopAction::Lock),
+            (b'h', DesktopAction::SnapLeft),
+            (b'b', DesktopAction::SnapRight),
+            (b'g', DesktopAction::Center),
+            (b'w', DesktopAction::Cycle),
+            (b'u', DesktopAction::Grow),
+            (b'i', DesktopAction::Shrink),
         ] {
             let code = shortcut_code(key, true);
             assert_eq!(desktop_action(code, true, true), Some(action));

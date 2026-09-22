@@ -1929,9 +1929,14 @@ impl SystemLayout {
     pub fn system_menu_geometry(self, menu_kind: usize) -> (usize, usize, usize, usize, usize) {
         if menu_kind >= 8 {
             let width = (310 * self.scale).min(self.width.saturating_sub(16 * self.scale));
-            let x = self.width.saturating_sub(width + 8 * self.scale);
+            let status_left = self.width.saturating_sub((7 * 32 + 104 + 10) * self.scale);
+            let anchor = status_left + (menu_kind.saturating_sub(8).min(7) * 32 + 16) * self.scale;
+            let x = anchor
+                .saturating_sub(width / 2)
+                .min(self.width.saturating_sub(width + 8 * self.scale));
             let count = super::status_menu::items(menu_kind).len();
-            let height = (22 + count * 34 + if menu_kind >= 15 { 238 } else { 0 }) * self.scale;
+            let height =
+                (22 + count * 34 + if matches!(menu_kind, 15 | 16) { 232 } else { 0 }) * self.scale;
             return (
                 x,
                 self.top_bar_height() + 6 * self.scale,

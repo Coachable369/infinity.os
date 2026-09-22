@@ -14,6 +14,15 @@ pub enum Action {
     PreviousMonth,
     Today,
     NextMonth,
+    ConfirmRestart,
+    ConfirmShutdown,
+    Cancel,
+    SnapLeft,
+    SnapRight,
+    CenterWindow,
+    NextWindow,
+    GrowWindow,
+    ShrinkWindow,
 }
 // ------------------------=
 // FUNC: items
@@ -43,6 +52,12 @@ pub fn items(menu: usize) -> &'static [(&'static [u8], Action)] {
             (b"System settings", Action::Settings(0)),
             (b"Input settings", Action::Settings(10)),
             (b"Themes & skins", Action::Settings(1)),
+            (b"Tile window left", Action::SnapLeft),
+            (b"Tile window right", Action::SnapRight),
+            (b"Center window", Action::CenterWindow),
+            (b"Next open app", Action::NextWindow),
+            (b"Increase window size", Action::GrowWindow),
+            (b"Decrease window size", Action::ShrinkWindow),
         ],
         13 => &[
             (b"Search apps", Action::Launcher),
@@ -57,9 +72,28 @@ pub fn items(menu: usize) -> &'static [(&'static [u8], Action)] {
             (b"Previous month", Action::PreviousMonth),
             (b"Today", Action::Today),
             (b"Next month", Action::NextMonth),
+            (b"System settings", Action::Settings(0)),
+        ],
+        17 => &[
+            (b"Cancel", Action::Cancel),
+            (b"Restart now (save work first)", Action::ConfirmRestart),
+        ],
+        18 => &[
+            (b"Cancel", Action::Cancel),
+            (b"Shut down now (save work first)", Action::ConfirmShutdown),
         ],
         _ => &[],
     }
+}
+// ------------------------=
+// FUNC: adjacent
+// DESC: Traverses only visible top-bar menus, wrapping at either edge and folding the calendar refresh identity.
+// ------------------=
+pub fn adjacent(menu: usize, forward: bool) -> usize {
+    let order = [0, 5, 8, 9, 10, 11, 12, 13, 14, 15];
+    let menu = if menu == 16 { 15 } else { menu };
+    let index = order.iter().position(|value| *value == menu).unwrap_or(0);
+    order[(index + if forward { 1 } else { order.len() - 1 }) % order.len()]
 }
 // ------------------------=
 // FUNC: set_today

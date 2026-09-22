@@ -83,13 +83,29 @@ fn main() {
     assert_eq!(status_menu::month(), (2027, 1, 0));
     status_menu::navigate(-1);
     assert_eq!(status_menu::month(), (2026, 12, 31));
-    for menu in 8..=16 {
+    for menu in 8..=18 {
         assert!(!status_menu::items(menu).is_empty());
     }
+    assert_eq!(status_menu::adjacent(0, false), 15);
+    assert_eq!(status_menu::adjacent(16, true), 0);
+    assert_eq!(status_menu::adjacent(5, true), 8);
+    assert_eq!(status_menu::adjacent(8, false), 5);
+    assert_eq!(status_menu::items(17)[0].1, status_menu::Action::Cancel);
+    assert_eq!(
+        status_menu::items(17)[1].1,
+        status_menu::Action::ConfirmRestart
+    );
+    assert_eq!(
+        status_menu::items(18)[1].1,
+        status_menu::Action::ConfirmShutdown
+    );
+    assert!(status_menu::items(15)
+        .iter()
+        .any(|(_, action)| *action == status_menu::Action::Settings(0)));
     for (width, height) in [(1024, 768), (1920, 1080), (2560, 1600)] {
         use ui::system_layout::{SystemLayout, SystemMenuTarget};
         let layout = SystemLayout::new(width, height);
-        for menu in 8..=16 {
+        for menu in 8..=18 {
             let (x, y, w, h, count) = layout.system_menu_geometry(menu);
             assert!(x + w <= width && y + h <= height);
             let (_, _, saved_width, saved_height) = layout.system_menu_damage_geometry(menu);

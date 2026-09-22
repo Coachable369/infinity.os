@@ -435,6 +435,8 @@ input-regression-test:
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 --test kernel/drivers/input/desktop_shortcuts.rs -o build/behavior-tests/desktop-shortcuts-test
 	@build/behavior-tests/desktop-shortcuts-test
+	@rustc --edition=2021 --test tools/window-workflows-test.rs -o build/behavior-tests/window-workflows-test
+	@build/behavior-tests/window-workflows-test
 	@tools/input-regression-test.sh
 
 task-manager-test:

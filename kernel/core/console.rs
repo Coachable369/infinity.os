@@ -1,3 +1,5 @@
+#[path = "window_workflows.rs"]
+mod window_workflows;
 use crate::intent::{
     ConsoleMode, IntentContext, IntentRuntime, KnownOperationPolicy, OperationPolicy,
     ResolutionSource, SystemOperation,
@@ -459,6 +461,9 @@ struct ConsoleRuntime {
     node_policy_offset: usize,
     settings_window: SettingsWindowState,
     settings_open: bool,
+    title_clicks: window_workflows::TitleClicks,
+    shell_return_mode: ConsoleMode,
+    shell_return_focus: usize,
     pool_view_revision: u64,
     settings_window_dragging: bool,
     settings_window_resizing: Option<usize>,
@@ -607,6 +612,9 @@ impl ConsoleRuntime {
             node_policy_offset: 0,
             pool_view_revision: 0,
             settings_open: false,
+            title_clicks: window_workflows::TitleClicks::new(),
+            shell_return_mode: ConsoleMode::Desktop,
+            shell_return_focus: 0,
             settings_window: SettingsWindowState {
                 x: 160,
                 y: 210,
@@ -1252,6 +1260,7 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        self.title_clicks.cancel();
         self.session_idle.note_activity();
         self.caret_visible = true;
         if let ConsoleKey::Shortcut(code) = key {
@@ -1260,6 +1269,7 @@ impl ConsoleRuntime {
                 | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher);
             if let Some(action) = desktop_action(code, !self.current_session.is_zero(), desktop) {
                 if self.mode == ConsoleMode::AppLauncher { self.close_app_launcher(); }
+                if self.mode == ConsoleMode::SystemMenu {self.close_shell_menu();}
                 self.ai_chat_focus = 0;
                 match action {
                     DesktopAction::Notes => self.open_text_editor(),
@@ -1267,6 +1277,7 @@ impl ConsoleRuntime {
                     DesktopAction::Command => self.open_command_window(),
                     DesktopAction::Tasks => self.open_task_manager(),
                     DesktopAction::Lock => { self.lock_session_preserving_desktop(false); }
+                    action => self.window_workflow(action),
                 }
                 self.redraw();
                 return;
@@ -2563,6 +2574,85 @@ impl ConsoleRuntime {
     }
 
     // ------------------------=
+    // FUNC: window_workflow
+    // DESC: Arranges or cycles existing windows without reopening applications or changing their buffers.
+    // ------------------=
+    fn window_workflow(&mut self, action: crate::drivers::input::desktop_shortcuts::DesktopAction) {
+        use crate::drivers::input::desktop_shortcuts::DesktopAction as A;
+        use window_workflows::{Arrange, Bounds};
+        if self.settings_editing || self.editor_dialog != EditorDialog::None { return; }
+        self.store_active_app_window();
+        let active=if self.mode==ConsoleMode::Settings {4} else {match self.desktop_app {
+            DesktopAppKind::CommandWindow=>1, DesktopAppKind::TextEditor=>2,
+            DesktopAppKind::TaskManager=>3, DesktopAppKind::None=>0}};
+        if action==A::Cycle {
+            let visible=[self.home_window_visible,self.command_window.visible,self.editor_window.visible,
+                self.task_manager_window.visible,self.settings_open];
+            if let Some(id)=window_workflows::next_window(visible,active) {
+                if id==4 {self.mode=ConsoleMode::Settings;self.system_focus=crate::ui::desktop_stack::current().settings_section;}
+                else {self.mode=ConsoleMode::Desktop;self.desktop_app=match id {1=>DesktopAppKind::CommandWindow,
+                    2=>DesktopAppKind::TextEditor,3=>DesktopAppKind::TaskManager,_=>DesktopAppKind::None};
+                    self.load_active_app_window();}
+                self.ai_chat_focus=0;self.shell_menu=0;
+            }
+        } else {
+            if active==0 && !self.home_window_visible {return;}
+            let op=match action {A::SnapLeft=>Arrange::Left,A::SnapRight=>Arrange::Right,
+                A::Center=>Arrange::Center,A::Grow=>Arrange::Grow,A::Shrink=>Arrange::Shrink,_=>return};
+            let layout=SystemLayout::new(self.system.framebuffer_width,self.system.framebuffer_height);
+            let (b,min)=if active==4 {(Bounds{x:self.settings_window.x,y:self.settings_window.y,width:self.settings_window.width,height:self.settings_window.height},(600,420))}
+                else if active==0 {(Bounds{x:self.home_window_x,y:self.home_window_y,width:self.home_window_width,height:self.home_window_height},(300,260))}
+                else {(Bounds{x:self.app_window_x,y:self.app_window_y,width:self.app_window_width,height:self.app_window_height},(420,layout.desktop_app_minimum_height()))};
+            let height=self.system.framebuffer_height.max(1);
+            let top=((layout.top_bar_height()+10*layout.scale())*1000/height).max(50) as i32;
+            let bottom=(height.saturating_sub(92*layout.scale())*1000/height) as i32;
+            let n=window_workflows::arrange(b,op,min,top,bottom);
+            if active==4 {self.settings_window.x=n.x;self.settings_window.y=n.y;self.settings_window.width=n.width;self.settings_window.height=n.height;self.settings_window.maximized=false;}
+            else if active==0 {self.home_window_x=n.x;self.home_window_y=n.y;self.home_window_width=n.width;self.home_window_height=n.height;self.home_window_maximized=false;self.checkpoint_active_file_navigator();}
+            else {self.app_window_x=n.x;self.app_window_y=n.y;self.app_window_width=n.width;self.app_window_height=n.height;self.app_window_maximized=false;self.store_active_app_window();}
+        }
+        self.app_window_dragging=false;self.home_window_dragging=false;self.settings_window_dragging=false;
+        let _=self.checkpoint_desktop_layout();
+    }
+
+    // ------------------------=
+    // FUNC: title_double_click
+    // DESC: Shares time and distance thresholds across all native window title bars.
+    // ------------------=
+    fn title_double_click(&mut self,id:usize)->bool {
+        self.title_clicks.click(id,crate::ui::performance::monotonic_ns(),self.pointer_x,self.pointer_y)
+    }
+
+    // ------------------------=
+    // FUNC: toggle_window_maximized
+    // DESC: Uses the same reversible geometry for title gestures and window control buttons.
+    // ------------------=
+    fn toggle_window_maximized(&mut self,id:usize) {
+        if id==4 {self.settings_window.maximized=!self.settings_window.maximized;self.settings_window_dragging=false;}
+        else if id==0 {
+            if self.home_window_maximized {
+                self.home_window_x=self.home_window_restore_x;self.home_window_y=self.home_window_restore_y;
+                self.home_window_width=self.home_window_restore_width;self.home_window_height=self.home_window_restore_height;
+            } else {
+                self.home_window_restore_x=self.home_window_x;self.home_window_restore_y=self.home_window_y;
+                self.home_window_restore_width=self.home_window_width;self.home_window_restore_height=self.home_window_height;
+            }
+            self.home_window_maximized=!self.home_window_maximized;self.home_window_dragging=false;
+            self.checkpoint_active_file_navigator();
+        } else {
+            if self.app_window_maximized {
+                self.app_window_x=self.app_window_restore_x;self.app_window_y=self.app_window_restore_y;
+                self.app_window_width=self.app_window_restore_width;self.app_window_height=self.app_window_restore_height;
+            } else {
+                self.app_window_restore_x=self.app_window_x;self.app_window_restore_y=self.app_window_y;
+                self.app_window_restore_width=self.app_window_width;self.app_window_restore_height=self.app_window_height;
+            }
+            self.app_window_maximized=!self.app_window_maximized;self.app_window_dragging=false;
+        }
+        let _=self.checkpoint_desktop_layout();
+    }
+
+    // ------------------------=
     // FUNC: store_active_app_window
     // DESC: Saves the focused application geometry without disturbing other open windows.
     // ------------------=
@@ -2945,6 +3035,7 @@ impl ConsoleRuntime {
         if navigator.is_some() {home=crate::ui::geometry::Rect{x:point.x,y:point.y,width:1,height:1};}
         let Some(id)=stack.hit([home,app_rect(c),app_rect(e),app_rect(t),layout.settings_window_geometry(self.settings_window).window],point) else{return false;};
         if id==stack.active && !(id==0 && navigator.is_some()) {return false;}
+        self.title_clicks.cancel();
         if self.mode==ConsoleMode::Settings && self.settings_editing {return false;}
         self.store_active_app_window();
         if id==4 {self.mode=ConsoleMode::Settings;self.system_focus=stack.settings_section;}
@@ -4376,9 +4467,24 @@ impl ConsoleRuntime {
     // DESC: Opens one native top-bar menu and selects its first actionable row.
     // ------------------=
     fn open_shell_menu(&mut self, menu: usize) {
+        if self.mode != ConsoleMode::SystemMenu {
+            self.shell_return_mode=self.mode;
+            self.shell_return_focus=self.system_focus;
+            self.store_active_app_window();
+        }
         self.mode = ConsoleMode::SystemMenu;
-        self.shell_menu = menu.min(16);
+        self.shell_menu = menu.min(18);
         self.system_focus = 0;
+    }
+
+    // ------------------------=
+    // FUNC: close_shell_menu
+    // DESC: Dismisses the menu without dropping app focus, resetting input or discarding Settings edits.
+    // ------------------=
+    fn close_shell_menu(&mut self) {
+        self.mode=if self.shell_return_mode==ConsoleMode::Settings {ConsoleMode::Settings} else {ConsoleMode::Desktop};
+        self.system_focus=self.shell_return_focus;
+        self.shell_menu=0;
     }
 
     // ------------------------=
@@ -4492,7 +4598,7 @@ impl ConsoleRuntime {
     // DESC: Opens Infinity Console with a visible explanation for a context-sensitive menu action.
     // ------------------=
     fn show_shell_notice(&mut self, notice: &[u8]) {
-        self.enter_console();
+        self.open_command_window();
         self.output.write_line(notice);
     }
 
@@ -4507,6 +4613,12 @@ impl ConsoleRuntime {
                 crate::ui::status_menu::items(self.shell_menu).get(self.system_focus)
             {
                 match *action {
+                    Action::SnapLeft | Action::SnapRight | Action::CenterWindow | Action::NextWindow | Action::GrowWindow | Action::ShrinkWindow => {
+                        use crate::drivers::input::desktop_shortcuts::DesktopAction as A;
+                        let command=match *action {Action::SnapLeft=>A::SnapLeft,Action::SnapRight=>A::SnapRight,
+                            Action::CenterWindow=>A::Center,Action::NextWindow=>A::Cycle,Action::GrowWindow=>A::Grow,_=>A::Shrink};
+                        self.close_shell_menu();self.window_workflow(command);
+                    }
                     Action::Settings(section) => self.open_settings(section),
                     Action::Devices(row) => {
                         self.open_settings(5);
@@ -4520,10 +4632,12 @@ impl ConsoleRuntime {
                     Action::Lock => {
                         let _ = self.lock_session_preserving_desktop(false);
                     }
-                    Action::Restart | Action::Shutdown => {
-                        self.shell_menu = 0;
-                        self.system_focus = if *action == Action::Restart { 8 } else { 9 };
-                        self.activate_shell_menu_item();
+                    Action::Restart | Action::Shutdown => self.open_shell_menu(if *action==Action::Restart {17} else {18}),
+                    Action::Cancel => self.close_shell_menu(),
+                    Action::ConfirmRestart | Action::ConfirmShutdown => {
+                        let _=self.persist_desktop_layout();
+                        if *action==Action::ConfirmRestart {reboot(self.system.firmware_runtime_services);}
+                        else {shutdown(self.system.firmware_runtime_services);}
                     }
                     Action::PreviousMonth | Action::Today | Action::NextMonth => {
                         crate::ui::status_menu::navigate(match action {
@@ -4538,7 +4652,7 @@ impl ConsoleRuntime {
             return;
         }
         match (self.shell_menu, self.system_focus) {
-            (0, 0) => self.open_settings(8),
+            (0, 0) => self.open_settings(9),
             (0, 1) => self.open_settings(0),
             (0, 2) => self.open_settings(2),
             (0, 3) => self.open_settings(3),
@@ -4562,14 +4676,10 @@ impl ConsoleRuntime {
                 crate::output_text(b"[session] signed out; authentication surface ready\n");
             }
             (0, 8) => {
-                let _ = self.persist_desktop_layout();
-                crate::output_text(b"[shell] restart requested\n");
-                reboot(self.system.firmware_runtime_services);
+                self.open_shell_menu(17);
             }
             (0, 9) => {
-                let _ = self.persist_desktop_layout();
-                crate::output_text(b"[shell] shutdown requested\n");
-                shutdown(self.system.firmware_runtime_services);
+                self.open_shell_menu(18);
             }
             (1, 0) => self.enter_console(),
             (1, 1) => {
@@ -4659,12 +4769,12 @@ impl ConsoleRuntime {
                 self.enter_desktop();
             }
             (4, 3) => self.open_settings(0),
-            (5, 0 | 3) => self.open_settings(8),
+            (5, 0 | 3) => self.open_settings(9),
             (5, 1) => self.show_shell_notice(
-                b"Keyboard: Tab and arrows move focus. Enter selects. Escape closes.",
+                b"Ctrl+Shift: N notes, E files, T console, P tasks, L lock; H/B tile left/right, G center, W next app, U/I resize. Double-click titles to maximize.",
             ),
             (5, 2) => {
-                self.enter_console();
+                self.open_command_window();
                 self.system_status();
             }
             _ => self.enter_desktop(),
@@ -4683,7 +4793,7 @@ impl ConsoleRuntime {
         if self.mode == ConsoleMode::SystemMenu
             && (self.shell_menu == menu || item == 7 && self.shell_menu == 16)
         {
-            self.enter_desktop();
+            self.close_shell_menu();
         } else {
             self.open_shell_menu(menu);
         }
@@ -5416,6 +5526,17 @@ impl ConsoleRuntime {
                 _ => {}
             }
             return;
+        }
+        if self.mode==ConsoleMode::SystemMenu {
+            match key {
+                ConsoleKey::Escape=>{self.close_shell_menu();return;}
+                ConsoleKey::Left | ConsoleKey::Right=>{
+                    self.open_shell_menu(crate::ui::status_menu::adjacent(self.shell_menu,matches!(key,ConsoleKey::Right)));return;
+                }
+                ConsoleKey::Home=>{self.system_focus=0;return;}
+                ConsoleKey::End=>{self.system_focus=self.shell_menu_item_count().saturating_sub(1);return;}
+                _=>{}
+            }
         }
         if matches!(key, ConsoleKey::Escape) {
             self.enter_desktop();
@@ -6715,6 +6836,9 @@ impl ConsoleRuntime {
         let forward_clicked = buttons & crate::drivers::input::pointer::BUTTON_FORWARD != 0
             && self.pointer_buttons & crate::drivers::input::pointer::BUTTON_FORWARD == 0;
         let released = !left_button && self.pointer_pressed;
+        if (left_button && !clicked && (self.app_window_dragging || self.home_window_dragging || self.settings_window_dragging)) || right_clicked {
+            self.title_clicks.cancel();
+        }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
         let layout = SystemLayout::new(
@@ -7153,14 +7277,19 @@ impl ConsoleRuntime {
                         self.app_window_maximized,
                         self.desktop_app == DesktopAppKind::TextEditor,
                     );
+                    if app_target != DesktopAppWindowTarget::Title {self.title_clicks.cancel();}
                     match app_target {
                         DesktopAppWindowTarget::Resize(corner) if !self.app_window_maximized => {
                             self.app_window_resizing = Some(corner);
                         }
-                        DesktopAppWindowTarget::Title if !self.app_window_maximized => {
-                            self.app_window_dragging = true;
-                            self.app_window_drag_offset_x = self.pointer_x - self.app_window_x;
-                            self.app_window_drag_offset_y = self.pointer_y - self.app_window_y;
+                        DesktopAppWindowTarget::Title => {
+                            let id=match self.desktop_app {DesktopAppKind::CommandWindow=>1,DesktopAppKind::TextEditor=>2,_=>3};
+                            if self.title_double_click(id) {self.toggle_window_maximized(id);}
+                            else if !self.app_window_maximized {
+                                self.app_window_dragging = true;
+                                self.app_window_drag_offset_x = self.pointer_x - self.app_window_x;
+                                self.app_window_drag_offset_y = self.pointer_y - self.app_window_y;
+                            }
                         }
                         DesktopAppWindowTarget::Minimize => {
                             self.minimize_desktop_app();
@@ -7398,6 +7527,7 @@ impl ConsoleRuntime {
                 return;
             } else if clicked {
                 let target = self.desktop_target(layout);
+                if target != Some(DesktopTarget::HomeTitle) {self.title_clicks.cancel();}
                 if !matches!(
                     target,
                     Some(DesktopTarget::HomeMenu(_))
@@ -7417,7 +7547,8 @@ impl ConsoleRuntime {
                         self.home_window_resizing = Some(corner);
                     }
                     Some(DesktopTarget::HomeTitle) => {
-                        if !self.home_window_maximized {
+                        if self.title_double_click(0) {self.toggle_window_maximized(0);}
+                        else if !self.home_window_maximized {
                             self.home_window_dragging = true;
                             self.home_window_drag_offset_x = self.pointer_x - self.home_window_x;
                             self.home_window_drag_offset_y = self.pointer_y - self.home_window_y;
@@ -7795,15 +7926,24 @@ impl ConsoleRuntime {
                 | AppLauncherTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::SystemMenu {
+            if !clicked && self.shell_menu<17 {
+                let hovered=match self.desktop_target(layout) {
+                    Some(DesktopTarget::InfinityMenu)=>Some(0),
+                    Some(DesktopTarget::TopMenu(menu))=>Some(menu),
+                    Some(DesktopTarget::Status(item))=>Some(8+item.min(7)),_=>None};
+                if let Some(menu)=hovered {
+                    if menu!=self.shell_menu && !(menu==15 && self.shell_menu==16) {self.open_shell_menu(menu);self.redraw();return;}
+                }
+            }
             if clicked {
                 match self.desktop_target(layout) {
                     Some(DesktopTarget::InfinityMenu) => {
-                        self.open_shell_menu(0);
+                        if self.shell_menu==0 {self.close_shell_menu();} else {self.open_shell_menu(0);}
                         self.redraw();
                         return;
                     }
                     Some(DesktopTarget::TopMenu(menu)) => {
-                        self.open_shell_menu(menu);
+                        if self.shell_menu==menu {self.close_shell_menu();} else {self.open_shell_menu(menu);}
                         self.redraw();
                         return;
                     }
@@ -7822,7 +7962,7 @@ impl ConsoleRuntime {
                         self.input_shell(ConsoleKey::Enter);
                     }
                 }
-                SystemMenuTarget::Dismiss if clicked => self.enter_desktop(),
+                SystemMenuTarget::Dismiss if clicked => self.close_shell_menu(),
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
@@ -8102,12 +8242,13 @@ impl ConsoleRuntime {
                             pointer_y.saturating_sub(geometry.scrollbar_thumb.y);
                         self.settings_scroll_dragging = true;
                     }
-                    SettingsTarget::Title if clicked && !self.settings_window.maximized => {
-                        self.settings_window_dragging = true;
-                        self.settings_window_drag_offset_x =
-                            self.pointer_x - self.settings_window.x;
-                        self.settings_window_drag_offset_y =
-                            self.pointer_y - self.settings_window.y;
+                    SettingsTarget::Title if clicked => {
+                        if self.title_double_click(4) {self.toggle_window_maximized(4);}
+                        else if !self.settings_window.maximized {
+                            self.settings_window_dragging = true;
+                            self.settings_window_drag_offset_x = self.pointer_x - self.settings_window.x;
+                            self.settings_window_drag_offset_y = self.pointer_y - self.settings_window.y;
+                        }
                     }
                     SettingsTarget::Resize(corner)
                         if clicked && !self.settings_window.maximized =>

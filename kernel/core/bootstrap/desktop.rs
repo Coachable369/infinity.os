@@ -3341,7 +3341,7 @@ impl super::DisplayDevice {
             }
             self.ui_text(x + 18 * scale, top + 5 * scale, label, 220, 237, 248, 1);
         }
-        if menu < 15 {
+        if !matches!(menu,15|16) {
             return;
         }
         let (year, month, today) = crate::ui::status_menu::month();
