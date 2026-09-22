@@ -68,14 +68,15 @@ Replacement revalidates stored type, ownership and checksum.
 - Native checkpoint-key test: derives the namespace length and round-trips every
   owner-byte value. Object-store persistence uses this same production encoder,
   rather than a manually constructed test key.
-- Seven state tests: ownership, checksums, persistence, capacity, relationships,
-  shelf paging, ten-window geometry/zoom and non-mutating drop proposals.
+- Eight state tests: ownership, checksums, persistence, capacity, relationships,
+  shelf paging, ten-window geometry/zoom, non-mutating drop proposals and
+  coalesced drag-release placement.
 - Native retained-cache test: independent pixels, no painter call on translation,
   last-committed previews during invalidation, selective refresh, clipped damage.
 - Native backdrop pixel test: fade endpoints, intermediate colors, clipping,
   persistent capture and invalidation.
-- Three motion tests: elapsed-time endpoints, reversal, reduced motion and
-  cancellable/exactly-once deferred activation.
+- Four motion tests: elapsed-time endpoints, reversal, reduced motion,
+  cancellable/exactly-once deferred activation and bounded spring settling.
 - Existing object-store tests cover private checkpoint remount and alias denial.
 
 These spatial/motion tests are part of `make input-regression-test`, run by

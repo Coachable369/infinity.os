@@ -5,6 +5,32 @@ mod spatial;
 use spatial::*;
 #[test]
 // ------------------------=
+// FUNC: coalesced_drag_release_preserves_final_placement
+// DESC: Verifies final position is identical with zero or many held samples and remains inside the interactive stage.
+// ------------------=
+fn coalesced_drag_release_preserves_final_placement() {
+    let origin = (290, 230);
+    let press = (385, 270);
+    let release = (600, 520);
+    let direct = drag_position(origin, press, release);
+    assert_eq!(direct, (505, 480));
+    for steps in 1..32 {
+        for step in 0..steps {
+            let _ = drag_position(
+                origin,
+                press,
+                (385 + 215 * step / steps, 270 + 250 * step / steps),
+            );
+        }
+        assert_eq!(drag_position(origin, press, release), direct);
+    }
+    assert_eq!(
+        drag_position(origin, press, (i32::MIN, i32::MAX)),
+        (80, 620)
+    );
+}
+#[test]
+// ------------------------=
 // FUNC: independent_overview_fits_every_window_and_keeps_zoom_bounded
 // DESC: Verifies ten independent identities fit above actions and focused zoom preserves surrounding cards.
 // ------------------=
@@ -22,7 +48,7 @@ fn independent_overview_fits_every_window_and_keeps_zoom_bounded() {
             }
             assert_eq!(
                 overview_bounds(index, index, 255, count),
-                (110, 230, 780, 480)
+                (130, 230, 740, 445)
             );
             if index != 0 {
                 assert_eq!(overview_bounds(index, 0, 255, count), r);

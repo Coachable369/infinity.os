@@ -318,6 +318,7 @@ impl ConsoleRuntime {
         self.spatial_previews();
         self.redraw();
         self.spatial.open = true;
+        self.spatial.notice = b"Choose a window. Inspect its live surface, then return to work.";
         self.spatial.closing = false;
         self.spatial.last_progress = -1;
         self.spatial.motion = Motion::settled(0);
@@ -357,9 +358,19 @@ impl ConsoleRuntime {
         let mut painted = self.spatial.state;
         if let Some((index, x, y)) = self.spatial.settling {
             if let Some(item) = painted.items[index].as_mut() {
-                let t = self.spatial.settle.value(now()).clamp(0, 255) as usize;
-                item.x = ((x * (255 - t) + usize::from(item.x) * t) / 255) as u16;
-                item.y = ((y * (255 - t) + usize::from(item.y) * t) / 255) as u16;
+                let t = self.spatial.settle.value(now()).clamp(0, 255) as u8;
+                item.x = crate::ui::app_launcher::motion::settle_position(
+                    x as i32,
+                    i32::from(item.x),
+                    t,
+                )
+                .clamp(80, 710) as u16;
+                item.y = crate::ui::app_launcher::motion::settle_position(
+                    y as i32,
+                    i32::from(item.y),
+                    t,
+                )
+                .clamp(230, 620) as u16;
             }
         }
         crate::bootstrap::spatial_present(
@@ -577,8 +588,10 @@ impl ConsoleRuntime {
                     }
                     _ => {}
                 }
+                self.spatial.damage = Some((95, 385, 810, 160));
             }
             self.spatial_present();
+            self.spatial.damage = None;
             return;
         }
         let count = if self.spatial.tab == 0 {
@@ -616,6 +629,7 @@ impl ConsoleRuntime {
                 self.spatial.tab = (self.spatial.tab + if back { 4 } else { 1 }) % 5;
                 self.spatial.focus = 0;
                 self.spatial.link = None;
+                self.spatial_reveal();
             }
             ConsoleKey::Left => self.spatial.focus = (self.spatial.focus + count - 1) % count,
             ConsoleKey::Right => self.spatial.focus = (self.spatial.focus + 1) % count,
@@ -788,6 +802,20 @@ impl ConsoleRuntime {
             }
             if released {
                 self.spatial.drag = None;
+                // Coalesced input may omit every intermediate held-motion frame.
+                // The release coordinate still owns the final placement.
+                if moved {
+                    let original = old.items[index].unwrap();
+                    let (a, b, _, _) = crate::ui::spatial::item_card(index, &original);
+                    let next = crate::ui::spatial::drag_position(
+                        (a, b),
+                        (x, y),
+                        (self.pointer_x, self.pointer_y),
+                    );
+                    if let Some(item) = self.spatial.state.items[index].as_mut() {
+                        (item.x, item.y) = next;
+                    }
+                }
                 if self.spatial.state != old {
                     if self.spatial.tab == 2 && (750..785).contains(&self.pointer_y) {
                         for group in 0..4 {
@@ -812,8 +840,11 @@ impl ConsoleRuntime {
                 let previous =
                     crate::ui::spatial::item_card(index, &self.spatial.state.items[index].unwrap());
                 if let Some(item) = self.spatial.state.items[index].as_mut() {
-                    item.x = (a as i32 + self.pointer_x - x).clamp(80, 710) as u16;
-                    item.y = (b as i32 + self.pointer_y - y).clamp(230, 620) as u16;
+                    (item.x, item.y) = crate::ui::spatial::drag_position(
+                        (a, b),
+                        (x, y),
+                        (self.pointer_x, self.pointer_y),
+                    );
                 }
                 let next =
                     crate::ui::spatial::item_card(index, &self.spatial.state.items[index].unwrap());
@@ -858,6 +889,7 @@ impl ConsoleRuntime {
                     self.spatial.tab = i as usize;
                     self.spatial.focus = 0;
                     self.spatial.link = None;
+                    self.spatial_reveal();
                 }
             }
         }
@@ -906,6 +938,27 @@ impl ConsoleRuntime {
         if self.spatial.open {
             self.spatial_present();
         }
+    }
+    // ------------------------=
+    // FUNC: spatial_reveal
+    // DESC: Starts one bounded scene reveal, clears stale notices, and honors reduced motion.
+    // ------------------=
+    fn spatial_reveal(&mut self) {
+        self.spatial.notice = [
+            b"Choose a window. Inspect its live surface, then return to work.".as_slice(),
+            b"Your environments. Save this scene, or travel to another.",
+            b"Gather references. Drag into a collection to organize without moving originals.",
+            b"Lift a clipping into your work. T adds text; Enter inserts it in the editor.",
+            b"Connect your work. Select a node, press L, then select its partner.",
+        ][self.spatial.tab];
+        self.spatial.motion = Motion::settled(0);
+        self.spatial.motion.retarget(
+            255,
+            now(),
+            240,
+            self.spatial.state.reduced_motion || crate::ui::performance::monotonic_ns().is_none(),
+        );
+        self.spatial.last_progress = -1;
     }
     // ------------------------=
     // FUNC: spatial_collect

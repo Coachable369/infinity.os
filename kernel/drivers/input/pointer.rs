@@ -40,6 +40,7 @@ const MAX_BUTTON_SOURCES: usize = 8;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PointerButtonArbiter {
     firmware_absolute: u8,
+    absolute_mirrored_by_usb: bool,
     firmware_relative: u8,
     asynchronous_usb: u8,
     usb: [u8; MAX_BUTTON_SOURCES],
@@ -53,6 +54,7 @@ impl PointerButtonArbiter {
     pub const fn new() -> Self {
         Self {
             firmware_absolute: 0,
+            absolute_mirrored_by_usb: false,
             firmware_relative: 0,
             asynchronous_usb: 0,
             usb: [0; MAX_BUTTON_SOURCES],
@@ -64,7 +66,22 @@ impl PointerButtonArbiter {
     // DESC: Records the latest explicit button state from the firmware absolute pointer.
     // ------------------=
     pub fn set_firmware_absolute(&mut self, buttons: u8) {
-        self.firmware_absolute = buttons;
+        if !self.absolute_mirrored_by_usb {
+            self.firmware_absolute = buttons;
+        }
+    }
+
+    // ------------------------=
+    // FUNC: set_usb_absolute
+    // DESC: Gives a reporting raw tablet ownership of its firmware mirror, preventing a missed mirrored release from latching a button.
+    // ------------------=
+    pub fn set_usb_absolute(&mut self, source: usize, buttons: u8) {
+        if source >= MAX_BUTTON_SOURCES {
+            return;
+        }
+        self.absolute_mirrored_by_usb = true;
+        self.firmware_absolute = 0;
+        self.set_usb(source, buttons);
     }
 
     // ------------------------=

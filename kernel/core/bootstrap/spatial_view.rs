@@ -107,6 +107,7 @@ pub fn refresh_end() {
             c.restore_cursor();
             c.display.clear_render_clip();
             launcher_backdrop::capture(&c.display);
+            launcher_backdrop::capture_stage(&c.display);
         }
     }
     REFRESHING.store(false, core::sync::atomic::Ordering::Relaxed);
@@ -116,6 +117,97 @@ pub fn refresh_end() {
 static mut OPEN: bool = false;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 static mut LAST_TAB: usize = usize::MAX;
+
+impl DisplayDevice {
+    // ------------------------=
+    // FUNC: spatial_orbit
+    // DESC: Draws a bounded luminous ellipse with a travelling reveal particle using integer geometry.
+    // ------------------=
+    fn spatial_orbit(
+        &mut self,
+        cx: usize,
+        cy: usize,
+        rx: usize,
+        ry: usize,
+        phase: u8,
+        bright: bool,
+    ) {
+        const Q: [i32; 17] = [
+            0, 100, 200, 297, 392, 483, 569, 650, 724, 792, 851, 903, 946, 980, 1004, 1019, 1024,
+        ];
+        let point = |step: usize| {
+            let sine = |s: usize| {
+                let s = s % 64;
+                let v = if s % 32 <= 16 {
+                    Q[s % 16 + if s % 32 == 16 { 16 } else { 0 }]
+                } else {
+                    Q[16 - s % 16]
+                };
+                if s >= 32 {
+                    -v
+                } else {
+                    v
+                }
+            };
+            (
+                cx as i32 + sine(step + 16) * rx as i32 / 1024,
+                cy as i32 + sine(step) * ry as i32 / 1024,
+            )
+        };
+        for step in 0..64 {
+            let (x, y) = point(step);
+            let (a, b) = point(step + 1);
+            self.line(x, y, a, b, 18, 62, 89);
+            if bright {
+                self.line(x, y - 1, a, b - 1, 38, 106, 143);
+            }
+        }
+        let (x, y) = point(usize::from(phase) * 64 / 256);
+        self.spatial_light(x, y, if bright { 9 } else { 5 });
+    }
+    // ------------------------=
+    // FUNC: spatial_light
+    // DESC: Blends a compact radial glow rather than blurring or repainting the entire framebuffer.
+    // ------------------=
+    fn spatial_light(&mut self, x: i32, y: i32, radius: i32) {
+        let r2 = radius * radius;
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                let d = dx * dx + dy * dy;
+                if d <= r2 {
+                    self.blend_color(
+                        x + dx,
+                        y + dy,
+                        85,
+                        211,
+                        255,
+                        ((r2 - d) * 180 / r2.max(1)) as u8,
+                    );
+                }
+            }
+        }
+        self.blend_color(x, y, 231, 253, 255, 255);
+    }
+    // ------------------------=
+    // FUNC: spatial_connection
+    // DESC: Draws an arced graph edge with a reveal pulse; connection geometry remains tied to actual nodes.
+    // ------------------=
+    fn spatial_connection(&mut self, from: (usize, usize), to: (usize, usize), phase: u8) {
+        let point = |t: i32| {
+            let x = from.0 as i32 + (to.0 as i32 - from.0 as i32) * t / 64;
+            let y = from.1 as i32 + (to.1 as i32 - from.1 as i32) * t / 64 - t * (64 - t) / 64;
+            (x, y)
+        };
+        for t in 0..64 {
+            let (x, y) = point(t);
+            let (a, b) = point(t + 1);
+            self.line(x, y + 1, a, b + 1, 17, 64, 94);
+            self.line(x, y, a, b, 70, 157, 197);
+        }
+        let (x, y) = point(i32::from(phase) * 64 / 255);
+        self.spatial_light(x, y, 7);
+    }
+}
 
 // ------------------------=
 // FUNC: close
@@ -164,6 +256,7 @@ pub fn present(
             c.display.clear_render_clip();
             if !OPEN {
                 launcher_backdrop::capture(&c.display);
+                launcher_backdrop::capture_stage(&c.display);
                 OPEN = true;
             }
             let d = &mut c.display;
@@ -185,6 +278,9 @@ pub fn present(
                 );
             }
             launcher_backdrop::restore(d);
+            if tab != 3 {
+                launcher_backdrop::restore_stage(d);
+            }
             if let Some((a, b, w, h)) = damage {
                 d.mark_dirty_rect(
                     a * d.width / 1000,
@@ -217,7 +313,16 @@ pub fn present(
             } else {
                 rect(45, 80, 910, 830)
             };
-            d.glass_panel(panel.0, panel.1, panel.2, panel.3, true);
+            // The desktop itself is the spatial stage, not a giant modal card.
+            // Only the compact shelf retains a physical glass base.
+            if shelf {
+                d.glass_panel(panel.0, panel.1, panel.2, panel.3, false);
+            } else {
+                let header = rect(45, 80, 910, 125);
+                d.glass_panel(header.0, header.1, header.2, header.3, false);
+                let footer = rect(65, 790, 870, 110);
+                d.glass_panel(footer.0, footer.1, footer.2, footer.3, false);
+            }
             let p = rect(70, if shelf { 588 } else { 98 }, 0, 0);
             d.ui_text_strong(p.0, p.1, b"SPATIAL DESKTOP", 200, 236, 255, 1);
             let p = rect(897, if shelf { 585 } else { 95 }, 44, 38);
@@ -231,6 +336,8 @@ pub fn present(
                 d.ui_text(p.0, p.1, notice, 155, 190, 209, 1);
             }
             if tab == 0 {
+                let p = rect(500, 677, 0, 0);
+                d.spatial_orbit(p.0, p.1, dw * 36 / 100, dh * 3 / 100, progress, true);
                 for i in (0..previews.len())
                     .filter(|i| *i != focus)
                     .chain(core::iter::once(
@@ -254,7 +361,13 @@ pub fn present(
                         d.spatial_preview(preview.slot, thumb);
                     } else {
                         let role = [4, 25, 49, 19, 26][preview.app.min(4) as usize];
-                        let _ = d.themed_icon(p.0 + p.2 / 2, p.1 + 28, role, 32);
+                        let size = (p.3.saturating_sub(42)).min(p.2 / 2).min(160).max(24);
+                        let _ = d.launcher_icon(
+                            p.0 + p.2 / 2,
+                            p.1 + p.3.saturating_sub(30) / 2,
+                            role,
+                            size,
+                        );
                     }
                     d.ui_text_elided_strong(
                         p.0 + 12,
@@ -270,6 +383,13 @@ pub fn present(
                     }
                 }
             } else if tab == 1 {
+                for i in 0..3 {
+                    let (a, b, w, h) = world_card(i);
+                    let p = rect(a + w / 2, b + h / 2, 0, 0);
+                    let (a, b, w, h) = world_card(i + 1);
+                    let q = rect(a + w / 2, b + h / 2, 0, 0);
+                    d.spatial_connection((p.0, p.1), (q.0, q.1), progress);
+                }
                 for (i, world) in state.worlds.iter().enumerate() {
                     let (a, b, w, h) = world_card(i);
                     let p = rect(a, b, w, h);
@@ -278,19 +398,60 @@ pub fn present(
                     } else {
                         world.name.get()
                     };
-                    d.glass_panel(p.0, p.1, p.2, p.3, focus == i);
+                    d.glass_panel(p.0, p.1, p.2, p.3, false);
                     let radius = (p.2 / 4).max(12);
                     let cx = p.0 + p.2 / 2;
                     let cy = p.1 + p.3 / 4;
                     d.icon_circle(cx as i32, cy as i32, radius as i32, (56, 143, 194), 32);
                     d.icon_circle(cx as i32, cy as i32, (radius + 8) as i32, (23, 77, 113), 32);
+                    let size = (p.2 / 3).min(128).max(32);
                     d.desktop_app_icon(
-                        cx - 24,
-                        cy - 24,
-                        48,
+                        cx - size / 2,
+                        cy - size / 2,
+                        size,
                         [0, 2, 1, 4][i],
                         state.active_world as usize == i,
                     );
+                    if let Some(layout) = world.layout {
+                        // A miniature of persisted geometry, never invented app content.
+                        let map = (p.0 + 12, p.1 + 14, p.2.saturating_sub(24), p.3 / 2 - 24);
+                        d.fill_rounded_rect_alpha(map.0, map.1, map.2, map.3, 10, 2, 12, 23, 248);
+                        d.outline_rounded_rect(map.0, map.1, map.2, map.3, 10, 50, 129, 176);
+                        for (slot, placement) in [
+                            layout.home,
+                            layout.settings,
+                            layout.editor,
+                            layout.command,
+                            layout.task_manager,
+                        ]
+                        .iter()
+                        .enumerate()
+                        {
+                            if !placement.visible {
+                                continue;
+                            }
+                            let a = placement.x.clamp(0, 950) as usize;
+                            let b = placement.y.clamp(0, 950) as usize;
+                            let w = (placement.width.clamp(50, 1000) as usize).min(1000 - a);
+                            let h = (placement.height.clamp(50, 1000) as usize).min(1000 - b);
+                            let r = (
+                                map.0 + a * map.2 / 1000,
+                                map.1 + b * map.3 / 1000,
+                                (w * map.2 / 1000).max(3),
+                                (h * map.3 / 1000).max(3),
+                            );
+                            d.fill_rounded_rect_alpha(r.0, r.1, r.2, r.3, 3, 14, 52, 76, 245);
+                            if state.active_world as usize == i {
+                                let app = [0, 4, 2, 1, 3][slot];
+                                if let Some(preview) =
+                                    previews.iter().find(|p| p.app == app && p.visible)
+                                {
+                                    d.spatial_preview(preview.slot, r);
+                                }
+                            }
+                            d.outline_rounded_rect(r.0, r.1, r.2, r.3, 3, 102, 197, 234);
+                        }
+                    }
                     d.ui_text_elided_strong(
                         p.0 + 16,
                         p.1 + p.3 / 2,
@@ -332,15 +493,24 @@ pub fn present(
             } else {
                 if tab == 2 {
                     let center = rect(500, 475, 0, 0);
-                    for radius in [105, 175, 240] {
-                        d.icon_circle(
-                            center.0 as i32,
-                            center.1 as i32,
-                            (radius * dh / 1000) as i32,
-                            (20, 76, 108),
-                            64,
+                    for (i, radius) in [140, 260, 380].iter().enumerate() {
+                        d.spatial_orbit(
+                            center.0,
+                            center.1,
+                            radius * dw / 1000,
+                            (radius / 2) * dh / 1000,
+                            progress.wrapping_add(i as u8 * 75),
+                            true,
                         );
                     }
+                    d.spatial_light(center.0 as i32, center.1 as i32, (dh / 24).max(8) as i32);
+                    d.icon_circle(
+                        center.0 as i32,
+                        center.1 as i32,
+                        (dh / 18) as i32,
+                        (90, 206, 248),
+                        32,
+                    );
                 }
                 if tab == 4 {
                     for (i, item) in state.items.iter().enumerate() {
@@ -352,10 +522,7 @@ pub fn present(
                                     if let Some(target) = state.items[j] {
                                         let (a, b, w, h) = item_card(j, &target);
                                         let q = rect(a + w / 2, b + h / 2, 0, 0);
-                                        d.line(
-                                            p.0 as i32, p.1 as i32, q.0 as i32, q.1 as i32, 58,
-                                            157, 204,
-                                        );
+                                        d.spatial_connection((p.0, p.1), (q.0, q.1), progress);
                                     }
                                 }
                             }
@@ -373,16 +540,38 @@ pub fn present(
                             item_card(i, item)
                         };
                         let p = rect(a, b, w, h);
-                        d.glass_panel(p.0, p.1, p.2, p.3, false);
-                        let _ = d.themed_icon(
-                            p.0 + 28,
-                            p.1 + 28,
+                        let size = (p.3 * 3 / 5).min(112).max(24);
+                        let cx = p.0 + p.2 / 2;
+                        let cy = p.1 + size / 2 + 4;
+                        if shelf {
+                            d.glass_panel(p.0, p.1, p.2, p.3, false);
+                        } else {
+                            d.icon_circle(
+                                cx as i32,
+                                cy as i32,
+                                (size / 2 + 8) as i32,
+                                (36, 100, 143),
+                                32,
+                            );
+                            if focus == i {
+                                d.icon_circle(
+                                    cx as i32,
+                                    cy as i32,
+                                    (size / 2 + 12) as i32,
+                                    (96, 214, 250),
+                                    32,
+                                );
+                            }
+                        }
+                        let _ = d.launcher_icon(
+                            cx,
+                            cy,
                             if item.object == [0; 16] { 49 } else { 4 },
-                            32,
+                            size,
                         );
                         d.ui_text_elided_strong(
                             p.0 + 12,
-                            p.1 + 52,
+                            p.1 + size + 12,
                             p.2.saturating_sub(24),
                             item.name.get(),
                             218,
@@ -392,7 +581,7 @@ pub fn present(
                         if tab == 2 {
                             d.ui_text(
                                 p.0 + 12,
-                                p.1 + 76,
+                                p.1 + size + 36,
                                 [b"Home".as_slice(), b"Create", b"Research", b"Explore"]
                                     [item.collection as usize],
                                 120,
@@ -401,7 +590,7 @@ pub fn present(
                                 1,
                             );
                         }
-                        if focus == i {
+                        if focus == i && shelf {
                             d.outline_rounded_rect(p.0, p.1, p.2, p.3, 12, 110, 214, 255);
                         }
                     }

@@ -191,6 +191,18 @@ fn synchronous_usb_buttons(index: usize, buttons: u8) -> u8 {
 }
 
 // ------------------------=
+// FUNC: raw_absolute_buttons
+// DESC: Claims firmware-mirror button ownership only after a valid raw tablet report has actually arrived.
+// ------------------=
+fn raw_absolute_buttons(index: usize, buttons: u8) -> u8 {
+    unsafe {
+        let state = &raw mut POINTER_BUTTONS;
+        (*state).set_usb_absolute(index, buttons);
+        (*state).combined()
+    }
+}
+
+// ------------------------=
 // FUNC: block_io
 // DESC: Implements the block io operation.
 // ------------------=
@@ -633,7 +645,7 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
                 USB_MOUSE_BUTTONS[index] = event.buttons;
             }
             buttons = event.buttons;
-            event.buttons = synchronous_usb_buttons(index, event.buttons);
+            event.buttons = raw_absolute_buttons(index, event.buttons);
             for edge in absolute_batch.push(event).into_iter().flatten() {
                 // Button coordinates belong to the edge, not the latest
                 // firmware motion. Losing a down/up pair here drops clicks

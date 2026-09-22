@@ -51,6 +51,7 @@ fn frozen_backdrop_fade_respects_damage_and_endpoints() {
         render_clip: None,
     };
     backdrop::capture(&display);
+    backdrop::capture_stage(&display);
     pixels.fill(0xff90a0b0);
     display.render_clip = Some((2, 3, 3, 2));
     backdrop::fade(&mut display, 0);
@@ -75,6 +76,14 @@ fn frozen_backdrop_fade_respects_damage_and_endpoints() {
     assert_eq!(pixels, [0xff90a0b0; 80]);
     assert!(backdrop::restore(&mut display));
     assert_eq!(pixels[32], 0xff102030);
+    pixels.fill(0xff90a0b0);
+    assert!(backdrop::restore_stage(&mut display));
+    assert_eq!(pixels[32], 0xff030609);
+    assert_eq!(pixels[31], 0xff90a0b0);
+    assert_eq!(pixels[39], 0xff90a0b0);
+    assert!(backdrop::restore(&mut display));
+    assert_eq!(pixels[32], 0xff102030);
     backdrop::invalidate();
     assert!(!backdrop::restore(&mut display));
+    assert!(!backdrop::restore_stage(&mut display));
 }

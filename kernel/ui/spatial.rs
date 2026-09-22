@@ -1,6 +1,17 @@
 //! Bounded, user-owned spatial metadata. References never convey object authority.
 use super::session_state::{self, DesktopSessionLayout};
 
+// ------------------------=
+// FUNC: drag_position
+// DESC: Resolves final placement from press and current coordinates independently of intermediate event delivery.
+// ------------------=
+pub fn drag_position(origin: (usize, usize), press: (i32, i32), current: (i32, i32)) -> (u16, u16) {
+    (
+        (origin.0 as i64 + i64::from(current.0) - i64::from(press.0)).clamp(80, 710) as u16,
+        (origin.1 as i64 + i64::from(current.1) - i64::from(press.1)).clamp(230, 620) as u16,
+    )
+}
+
 pub const STATE_BYTES: usize = 8192;
 pub const ITEM_COUNT: usize = 16;
 pub const WORLD_COUNT: usize = 4;
@@ -105,28 +116,39 @@ pub fn overview_bounds(
     zoom: u8,
     count: usize,
 ) -> (usize, usize, usize, usize) {
-    if count <= 5 {
-        return overview_card(index, focus, zoom);
-    }
-    let normal = (80 + index % 4 * 210, 230 + index / 4 * 175, 195, 160);
+    // A large live foreground surface and a reachable filmstrip replace the
+    // equal-weight application grid. Even ten independent windows stay visible.
     if index != focus {
-        return normal;
+        let rank = if index < focus {
+            index
+        } else {
+            index.saturating_sub(1)
+        };
+        let slots = count.saturating_sub(1).max(1);
+        let width = (820 / slots).min(175);
+        let total = slots * width;
+        return (
+            90 + (820 - total) / 2 + rank * width,
+            695,
+            width.saturating_sub(10),
+            90,
+        );
     }
     let t = usize::from(zoom);
     let mix = |a: usize, b: usize| (a * (255 - t) + b * t) / 255;
-    (
-        mix(normal.0, 110),
-        mix(normal.1, 230),
-        mix(normal.2, 780),
-        mix(normal.3, 480),
-    )
+    (mix(180, 130), 230, mix(640, 740), mix(425, 445))
 }
 // ------------------------=
 // FUNC: world_card
 // DESC: Shares tall environment-card geometry with input dispatch.
 // ------------------=
 pub fn world_card(index: usize) -> (usize, usize, usize, usize) {
-    (80 + index * 210, 245, 190, 450)
+    (
+        80 + index * 210,
+        [300, 245, 270, 335][index.min(3)],
+        190,
+        350,
+    )
 }
 // ------------------------=
 // FUNC: contains

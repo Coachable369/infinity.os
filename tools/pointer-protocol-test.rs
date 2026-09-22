@@ -84,6 +84,22 @@ fn composite_button_capture() {
     buttons.set_usb(0, 0);
     assert_eq!(buttons.combined(), 0);
 
+    // The absolute protocol and a reporting USB tablet mirror one device.
+    // Firmware may miss a release or replay an old press after the raw edge.
+    buttons.set_firmware_absolute(BUTTON_LEFT);
+    buttons.set_usb_absolute(0, BUTTON_LEFT);
+    buttons.set_usb_absolute(0, 0);
+    assert_eq!(buttons.combined(), 0);
+    buttons.set_firmware_absolute(BUTTON_LEFT);
+    assert_eq!(buttons.combined(), 0);
+    buttons.set_usb_absolute(0, BUTTON_RIGHT);
+    assert_eq!(buttons.combined(), BUTTON_RIGHT);
+    buttons.set_usb(1, BUTTON_LEFT);
+    buttons.set_usb_absolute(0, 0);
+    assert_eq!(buttons.combined(), BUTTON_LEFT);
+    buttons.set_usb(1, 0);
+    assert_eq!(buttons.combined(), 0);
+
     // Releasing one of two held sources must not release the composite device.
     buttons.set_firmware_relative(BUTTON_LEFT);
     buttons.set_asynchronous_usb(BUTTON_LEFT);

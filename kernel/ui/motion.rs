@@ -10,6 +10,29 @@ pub fn ease_byte(progress: u8) -> u8 {
     (t * t * (3 * 255 - 2 * t) / (255 * 255)) as u8
 }
 
+// ------------------------=
+// FUNC: settle_position
+// DESC: Samples a finite damped-spring keyframe track with one small overshoot and exact rest, independent of frame rate.
+// ------------------=
+pub fn settle_position(from: i32, to: i32, progress: u8) -> i32 {
+    const KEYS: [(i64, i64); 6] = [
+        (0, 0),
+        (100, 218),
+        (160, 273),
+        (205, 250),
+        (235, 257),
+        (255, 255),
+    ];
+    let t = i64::from(progress);
+    let pair = KEYS.windows(2).find(|pair| t <= pair[1].0).unwrap();
+    let (a, b) = (pair[0], pair[1]);
+    let q = (t - a.0) * 65536 / (b.0 - a.0);
+    let eased = q * q * (3 * 65536 - 2 * q) / (65536 * 65536);
+    let weight = a.1 + (b.1 - a.1) * eased / 65536;
+    (i64::from(from) + (i64::from(to) - i64::from(from)) * weight / 255)
+        .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Motion {
     from: i32,
@@ -116,6 +139,21 @@ impl Motion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    // ------------------------=
+    // FUNC: spring_track_settles_exactly_without_unbounded_motion
+    // DESC: Verifies bounded overshoot, reverse travel, endpoint rest, and integer overflow safety.
+    // ------------------=
+    fn spring_track_settles_exactly_without_unbounded_motion() {
+        assert_eq!(settle_position(100, 500, 0), 100);
+        assert_eq!(settle_position(100, 500, 255), 500);
+        assert!(settle_position(100, 500, 160) > 500);
+        for t in 0..=255 {
+            assert!((100..=529).contains(&settle_position(100, 500, t)));
+            assert!((71..=500).contains(&settle_position(500, 100, t)));
+            let _ = settle_position(i32::MIN, i32::MAX, t);
+        }
+    }
     #[test]
     // ------------------------=
     // FUNC: deferred_selection_is_cancellable_and_exactly_once

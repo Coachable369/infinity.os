@@ -49,4 +49,43 @@ compact drag-out ribbon and relationship graph. Include hover/focus/drag/
 confirmation/reduced-motion states and anticipation-transition-settle storyboard.
 Avoid ordinary form panels, decorative HUD clutter and fabricated runtime content.
 
-This document defines additional acceptance, not a completed renderer redesign.
+## September 22 native motion pass
+
+Implemented depth-staged retained previews with a filmstrip, staggered Worldshift
+cards with real saved-layout miniatures, orbital Gravity rails, circular
+Constellation nodes with curved links, and a compact Matter Shelf. Large icons
+use the installed high-resolution launcher atlas and correct center coordinates.
+The desktop stage is captured, dimmed and defocused once per scene refresh;
+damaged rows reuse this cache. The additional stage reserves 31.6 MiB of BSS.
+
+Scene reveals use finite 240 ms elapsed-time tracks. Collection drops use a
+180 ms damped-spring keyframe track with bounded overshoot and exact rest.
+Reduced motion bypasses transitions. No perpetual orbital repaint is scheduled.
+Text editing damages its input region instead of repainting the whole stage.
+
+Behavioral tests cover spring endpoints/overshoot/reversal, clipped stage pixels,
+retained previews, state serialization and final drag coordinates when held
+motion samples are coalesced away. The controller now applies release coordinates
+before committing a graph placement.
+
+Installed disk-only observations on the motion-depth QA clones: login, opening
+all five views, retained File Navigator preview, saving a world, creating text
+clippings, inserting a clipping into Text Editor, and connecting two real nodes.
+The `Orbit` clipping survived a power-off/reboot and installed-kernel update.
+An earlier host diagnostic command aborted VirtualBox; that run is not valid
+evidence of a native persistence defect.
+
+Remaining acceptance must not be inferred from these observations: reliable
+pointer dragging after the release-coordinate fix, complete Worldshift unsaved
+document round-trip, confirmed/cancelled cross-app drops, and measured installed
+animation frame times. Pointer clicks were intermittently missed during GUI QA;
+the raw-tablet mirror arbitration regression passes on the host, but complete
+installed input acceptance remains open. This document is not a completion claim.
+
+The sixth motion-depth test disk booted and signed in with the provisioning
+default xHCI USB mouse/keyboard profile and no optical media. The final graph
+release-coordinate fix is compiled and host-tested, but installed dragging could
+not be verified reliably. Ctrl+Shift+K also failed to open Spatial Desktop through
+the available VM control path. Further speculative input rewrites stopped at the
+six-loop correction limit. These are remaining acceptance failures, not requests
+for another password or manual setup.
