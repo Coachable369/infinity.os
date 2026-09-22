@@ -93,6 +93,33 @@ impl SoftwareCompositor {
         layers: &[SurfaceFrame<'_>],
         damage: &DamageTracker,
     ) -> Result<(), CompositorError> {
+        self.compose_layers(back_buffer, layers, damage, false)
+    }
+
+    // ------------------------=
+    // FUNC: compose_transformed
+    // DESC: Scales persistent surfaces into animated destination bounds without rerendering applications.
+    // ------------------=
+    pub fn compose_transformed(
+        &mut self,
+        back_buffer: &mut [u32],
+        layers: &[SurfaceFrame<'_>],
+        damage: &DamageTracker,
+    ) -> Result<(), CompositorError> {
+        self.compose_layers(back_buffer, layers, damage, true)
+    }
+
+    // ------------------------=
+    // FUNC: compose_layers
+    // DESC: Validates and stages only damaged regions while preserving identical authorization for animated layers.
+    // ------------------=
+    fn compose_layers(
+        &mut self,
+        back_buffer: &mut [u32],
+        layers: &[SurfaceFrame<'_>],
+        damage: &DamageTracker,
+        transformed: bool,
+    ) -> Result<(), CompositorError> {
         self.frame_ready = false;
         let required = self.required_pixels()?;
         if back_buffer.len() < required {
@@ -130,7 +157,14 @@ impl SoftwareCompositor {
                     if !layer.visible || layer.z_class as u8 != z {
                         continue;
                     }
-                    self.blend_layer(back_buffer, layer, clipped);
+                    if transformed
+                        && (layer.bounds.width != layer.descriptor.size.width
+                            || layer.bounds.height != layer.descriptor.size.height)
+                    {
+                        self.blend_transformed(back_buffer, layer, clipped);
+                    } else {
+                        self.blend_layer(back_buffer, layer, clipped);
+                    }
                 }
             }
         }
@@ -321,6 +355,72 @@ impl SoftwareCompositor {
                     }
                 };
                 back_buffer[target_index] = blend(source, back_buffer[target_index], alpha);
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: blend_transformed
+    // DESC: Bilinearly samples retained pixels with premultiplied-alpha interpolation and bounded damage.
+    // ------------------=
+    fn blend_transformed(&self, back: &mut [u32], layer: &SurfaceFrame<'_>, damage: Rect) {
+        let target = layer.bounds.intersection(damage);
+        let size = layer.descriptor.size;
+        if size.width == 0
+            || size.height == 0
+            || layer.bounds.width == 0
+            || layer.bounds.height == 0
+        {
+            return;
+        }
+        for y in target.y.max(0)..target.bottom().max(0) {
+            let sy = (((i64::from(y) - i64::from(layer.bounds.y)) * 2 + 1)
+                * i64::from(size.height)
+                * 128
+                / i64::from(layer.bounds.height)
+                - 128)
+                .clamp(0, i64::from(size.height - 1) * 256);
+            for x in target.x.max(0)..target.right().max(0) {
+                let sx = (((i64::from(x) - i64::from(layer.bounds.x)) * 2 + 1)
+                    * i64::from(size.width)
+                    * 128
+                    / i64::from(layer.bounds.width)
+                    - 128)
+                    .clamp(0, i64::from(size.width - 1) * 256);
+                let x0 = (sx / 256) as usize;
+                let y0 = (sy / 256) as usize;
+                let x1 = (x0 + 1).min(size.width as usize - 1);
+                let y1 = (y0 + 1).min(size.height as usize - 1);
+                let fx = (sx % 256) as u64;
+                let fy = (sy % 256) as u64;
+                let mut alpha = 0u64;
+                let mut channels = [0u64; 3];
+                for (px, py, weight) in [
+                    (x0, y0, (256 - fx) * (256 - fy)),
+                    (x1, y0, fx * (256 - fy)),
+                    (x0, y1, (256 - fx) * fy),
+                    (x1, y1, fx * fy),
+                ] {
+                    let pixel = layer.pixels[py * layer.descriptor.stride_pixels as usize + px];
+                    let a = if layer.descriptor.format == PixelFormat::Xrgb8888 {
+                        255
+                    } else {
+                        u64::from(pixel >> 24)
+                    };
+                    alpha += a * weight;
+                    for (index, channel) in channels.iter_mut().enumerate() {
+                        *channel += u64::from((pixel >> (index * 8)) & 255) * a * weight;
+                    }
+                }
+                if alpha != 0 {
+                    let mut pixel = 0u32;
+                    for (index, channel) in channels.iter().enumerate() {
+                        pixel |= ((channel / alpha) as u32) << (index * 8);
+                    }
+                    let opacity = (alpha * u64::from(layer.opacity) / (65536 * 255)) as u8;
+                    let destination = y as usize * self.stride_pixels + x as usize;
+                    back[destination] = blend(pixel, back[destination], opacity);
+                }
             }
         }
     }

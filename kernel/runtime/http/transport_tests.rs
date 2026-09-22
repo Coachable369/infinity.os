@@ -223,7 +223,7 @@ impl Device for Ethernet {
 // ------------------=
 fn reliable_stream_survives_loss_and_backpressure() {
     let (mut a, mut b) = (Ethernet::default(), Ethernet::default());
-    let (mut ar, mut at, mut br, mut bt) = ([0; 1024], [0; 1024], [0; 1024], [0; 1024]);
+    let (mut ar, mut at, mut br, mut bt) = ([0; 4096], [0; 4096], [0; 4096], [0; 4096]);
     let (mut sa, mut sb) = ([SocketStorage::EMPTY], [SocketStorage::EMPTY]);
     let mut client = Transport::new(
         &mut a,
@@ -271,6 +271,9 @@ fn reliable_stream_survives_loss_and_backpressure() {
     let mut lost_syn = false;
     let mut corrupted = false;
     let mut backpressure = false;
+    let mut held: Option<Vec<u8>> = None;
+    let mut reordered = false;
+    let mut duplicated = false;
     for tick in 0..1500 {
         let now = Instant::from_millis(tick * 20);
         client.poll(&mut a, now);
@@ -286,6 +289,18 @@ fn reliable_stream_survives_loss_and_backpressure() {
                 if end > header && !corrupted {
                     frame[header] ^= 1;
                     corrupted = true;
+                } else if end > header && !reordered {
+                    if let Some(delayed) = held.take() {
+                        assert_ne!(&delayed[38..42], &frame[38..42]);
+                        b.rx.push_back(frame.clone());
+                        b.rx.push_back(frame);
+                        b.rx.push_back(delayed);
+                        reordered = true;
+                        duplicated = true;
+                        continue;
+                    }
+                    held = Some(frame);
+                    continue;
                 }
             }
             b.rx.push_back(frame);
@@ -310,7 +325,7 @@ fn reliable_stream_survives_loss_and_backpressure() {
             break;
         }
     }
-    assert!(lost_syn && corrupted && backpressure);
+    assert!(lost_syn && corrupted && backpressure && reordered && duplicated);
     assert_eq!(received, payload);
     client.cancel();
     assert_eq!(client.send(b"forbidden"), Err(Error::Cancelled));
@@ -352,4 +367,96 @@ fn unreachable_peer_hits_hard_deadline() {
     stream.poll(&mut nic, Instant::from_millis(100));
     assert_eq!(stream.state(), State::Closed);
     assert_eq!(stream.send(b"x"), Err(Error::Timeout));
+}
+
+#[test]
+// ------------------------=
+// FUNC: handshake_reset_and_half_close_are_distinct
+// DESC: Exchanges actual TCP frames to distinguish pending, refused, reset and clean half-close outcomes.
+// ------------------=
+fn handshake_reset_and_half_close_are_distinct() {
+    for outcome in 0..3 {
+        let reset = outcome == 1;
+        let (mut a, mut b) = (Ethernet::default(), Ethernet::default());
+        let (mut ar, mut at, mut br, mut bt) = ([0; 1024], [0; 1024], [0; 1024], [0; 1024]);
+        let (mut sa, mut sb) = ([SocketStorage::EMPTY], [SocketStorage::EMPTY]);
+        let zero = Instant::from_millis(0);
+        let mut client = Transport::new(
+            &mut a,
+            [2, 0, 0, 0, 0, 1],
+            [10, 0, 0, 1],
+            24,
+            None,
+            1,
+            zero,
+            &mut sa,
+            &mut ar,
+            &mut at,
+        )
+        .unwrap();
+        let mut server = Transport::new(
+            &mut b,
+            [2, 0, 0, 0, 0, 2],
+            [10, 0, 0, 2],
+            24,
+            None,
+            2,
+            zero,
+            &mut sb,
+            &mut br,
+            &mut bt,
+        )
+        .unwrap();
+        assert_eq!(client.receive(&mut [0; 1]), Err(Error::Disconnected));
+        if outcome != 2 {
+            server
+                .sockets
+                .get_mut::<Socket>(server.handle)
+                .listen(80)
+                .unwrap();
+        }
+        client
+            .connect([10, 0, 0, 2], 80, 49152, zero, Instant::from_millis(5000))
+            .unwrap();
+        assert_eq!(client.receive(&mut [0; 1]), Err(Error::WouldBlock));
+        assert_eq!(client.send(b"early"), Err(Error::WouldBlock));
+        for tick in 0..100 {
+            let now = Instant::from_millis(tick);
+            client.poll(&mut a, now);
+            b.rx.extend(a.tx.drain(..));
+            server.poll(&mut b, now);
+            a.rx.extend(b.tx.drain(..));
+        }
+        if outcome == 2 {
+            assert_eq!(client.state(), State::Closed);
+            assert_eq!(client.receive(&mut [0; 1]), Err(Error::Disconnected));
+            continue;
+        }
+        assert_eq!(client.state(), State::Established);
+        assert_eq!(server.state(), State::Established);
+        if reset {
+            server.cancel();
+        } else {
+            assert_eq!(server.send(&[4, 0, 255, 7]), Ok(4));
+            server.close();
+        }
+        for tick in 100..300 {
+            let now = Instant::from_millis(tick);
+            server.poll(&mut b, now);
+            a.rx.extend(b.tx.drain(..));
+            client.poll(&mut a, now);
+            b.rx.extend(a.tx.drain(..));
+        }
+        let mut bytes = [0; 16];
+        if reset {
+            assert_eq!(client.receive(&mut bytes), Err(Error::Disconnected));
+            assert_eq!(client.send(b"no"), Err(Error::Disconnected));
+        } else {
+            assert_eq!(client.receive(&mut bytes), Ok(4));
+            assert_eq!(&bytes[..4], &[4, 0, 255, 7]);
+            assert_eq!(client.receive(&mut bytes), Ok(0));
+            // A peer's FIN shuts down only its sending direction.
+            assert_eq!(client.send(b"reply"), Ok(5));
+        }
+    }
 }

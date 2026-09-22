@@ -17,6 +17,8 @@ fn main() {
     app_launcher::launcher_open();
     let opening = app_launcher::launcher_presentation();
     assert!(opening.transition < 255);
+    app_launcher::launcher_animation_advance(240, 0);
+    assert_eq!(app_launcher::launcher_presentation().transition, opening.transition);
     assert_eq!(
         app_launcher::launcher_interaction_state_hash(),
         settled_interaction

@@ -433,6 +433,8 @@ ui-install-parity-test: x86 x86_64 aarch64
 
 input-regression-test:
 	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 --test kernel/ui/motion.rs -o build/behavior-tests/motion-test
+	@build/behavior-tests/motion-test
 	@rustc --edition=2021 --test kernel/drivers/input/desktop_shortcuts.rs -o build/behavior-tests/desktop-shortcuts-test
 	@build/behavior-tests/desktop-shortcuts-test
 	@rustc --edition=2021 --test tools/window-workflows-test.rs -o build/behavior-tests/window-workflows-test

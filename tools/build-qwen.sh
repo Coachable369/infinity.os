@@ -32,6 +32,9 @@ mkfile -n "$esp_size" ${payload_build}/installed-esp.img
 mformat -F -i ${payload_build}/installed-esp.img -v INFINITYEFI ::
 mcopy -i ${payload_build}/installed-esp.img -s ${payload_build}/installed/EFI ::
 build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.img build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/PAYLOAD build/qwen/payload-manifest.rs
+# Behavioral fresh-install parity: the reassembled kernel payload must be byte
+# identical to the installed kernel, including native UI and transport changes.
+cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - build/aarch64/installed-kernel.elf
 RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target aarch64-unknown-none-softfloat --features streamed-payload
 /opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/aarch64.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a build/aarch64/qwen-math.o
 cp build/aarch64/BOOTAA64.EFI ${payload_build}/live/EFI/BOOT/

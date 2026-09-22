@@ -1002,6 +1002,28 @@ fn surface_and_compositor_test() {
     assert_eq!(front[0], 0x1122_3344);
     assert_eq!(compositor.metrics().presented_pixels, 4);
 
+    // Transform a persistent two-pixel surface, preserving transparent edges
+    // without bleeding the hidden red RGB into the visible blue midpoint.
+    let mut transformed_descriptor = descriptor;
+    transformed_descriptor.size = Size { width: 2, height: 1 };
+    transformed_descriptor.stride_pixels = 2;
+    transformed_descriptor.byte_length = 8;
+    transformed_descriptor.format = PixelFormat::Argb8888;
+    let source = [0x00ff0000, 0xff0000ff];
+    let transformed = SurfaceFrame { descriptor: transformed_descriptor, pixels: &source,
+        bounds: Rect { x: 1, y: 0, width: 3, height: 1 }, ..layer };
+    let mut transform_damage = DamageTracker::new();
+    transform_damage.add(transformed.bounds);
+    let mut transformed_back = [0x12345678; 32];
+    compositor.compose_transformed(&mut transformed_back, &[transformed], &transform_damage).unwrap();
+    assert_eq!(transformed_back[0], 0x12345678);
+    assert_eq!(transformed_back[1], 0xff000000);
+    assert_eq!(transformed_back[2], 0xff00007f);
+    assert_eq!(transformed_back[3], 0xff0000ff);
+    assert_eq!(transformed_back[4], 0x12345678);
+    assert_eq!(source, [0x00ff0000, 0xff0000ff]);
+    assert_eq!(compositor.metrics().composed_pixels, 7);
+
     let mut priority_damage = DamageTracker::new();
     priority_damage.add_semantic(
         Rect {
@@ -1073,6 +1095,12 @@ fn surface_and_compositor_test() {
         compositor.compose(&mut back, &[spoofed], &damage),
         Err(CompositorError::PrivilegedZOrderDenied)
     );
+    let before_rejection = back;
+    assert_eq!(
+        compositor.compose_transformed(&mut back, &[spoofed], &damage),
+        Err(CompositorError::PrivilegedZOrderDenied)
+    );
+    assert_eq!(back, before_rejection);
     assert_eq!(
         surfaces.destroy(ContextId(8), surface),
         Err(SurfaceError::AccessDenied)

@@ -28,6 +28,7 @@ pub struct Transport<'a> {
     dns: Option<SocketHandle>,
     query: Option<(smoltcp::socket::dns::QueryHandle, Instant)>,
     dns_failure: Option<Error>,
+    received_fin: bool,
 }
 
 #[cfg(test)]
@@ -90,6 +91,7 @@ impl<'a> Transport<'a> {
             dns: None,
             query: None,
             dns_failure: None,
+            received_fin: false,
         })
     }
 
@@ -216,6 +218,7 @@ impl<'a> Transport<'a> {
             .map_err(|_| Error::Configuration)?;
         self.deadline = Some(deadline);
         self.failure = None;
+        self.received_fin = false;
         Ok(())
     }
 
@@ -237,6 +240,21 @@ impl<'a> Transport<'a> {
                 .poll_ingress_single(now, device, &mut self.sockets);
         }
         self.interface.poll_egress(now, device, &mut self.sockets);
+        let state = self.state();
+        if matches!(
+            state,
+            State::CloseWait | State::Closing | State::LastAck | State::TimeWait
+        ) {
+            self.received_fin = true;
+        }
+        // A reset or refused connection is not successful end-of-stream. Preserve
+        // deadline/cancellation failures, and permit clean FIN data to drain.
+        if state == State::Closed && self.deadline.is_some() && self.failure.is_none() {
+            self.deadline = None;
+            if !self.received_fin {
+                self.failure = Some(Error::Disconnected);
+            }
+        }
     }
 
     // ------------------------=
@@ -257,7 +275,13 @@ impl<'a> Transport<'a> {
         }
         let socket = self.sockets.get_mut::<Socket>(self.handle);
         if !socket.may_send() {
-            return Err(Error::Disconnected);
+            return Err(
+                if matches!(socket.state(), State::SynSent | State::SynReceived) {
+                    Error::WouldBlock
+                } else {
+                    Error::Disconnected
+                },
+            );
         }
         if !socket.can_send() {
             return Err(Error::WouldBlock);
@@ -280,10 +304,12 @@ impl<'a> Transport<'a> {
         if socket.can_recv() {
             return socket.recv_slice(bytes).map_err(|_| Error::Disconnected);
         }
-        if socket.may_recv() {
+        if socket.may_recv() || matches!(socket.state(), State::SynSent | State::SynReceived) {
             Err(Error::WouldBlock)
-        } else {
+        } else if self.received_fin {
             Ok(0)
+        } else {
+            Err(Error::Disconnected)
         }
     }
 

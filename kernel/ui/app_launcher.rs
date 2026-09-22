@@ -6,6 +6,9 @@ pub const LAUNCHER_COLUMNS: usize = 6;
 pub const LAUNCHER_VISIBLE_ROWS: usize = 2;
 pub const LAUNCHER_NO_ITEM: usize = usize::MAX;
 const LAUNCHER_TRANSITION_STEP: usize = 32;
+
+#[path = "motion.rs"]
+pub mod motion;
 const LAUNCHER_DRAG_THRESHOLD: i32 = 8;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -425,7 +428,7 @@ pub fn launcher_animation_tick(maximum_scroll: usize) -> LauncherTick {
 // DESC: Advances transitions by elapsed milliseconds so slow frames cannot stretch the animation duration.
 // ------------------=
 pub fn launcher_animation_advance(maximum_scroll: usize, elapsed_ms: usize) -> LauncherTick {
-    let step = (255 * elapsed_ms.min(160) / 160).max(1);
+    let step = if elapsed_ms == 0 { 0 } else { (255 * elapsed_ms.min(160) / 160).max(1) };
     let closing = LAUNCHER_CLOSING.load(Ordering::Relaxed);
     let progress = LAUNCHER_TRANSITION.load(Ordering::Relaxed);
     let next_progress = if closing {
@@ -464,7 +467,7 @@ pub fn launcher_presentation() -> LauncherPresentation {
     LauncherPresentation {
         order: decoded_launcher_order(),
         scroll: LAUNCHER_SCROLL.load(Ordering::Relaxed).max(0) as usize,
-        transition: LAUNCHER_TRANSITION.load(Ordering::Relaxed).min(255) as u8,
+        transition: motion::ease_byte(LAUNCHER_TRANSITION.load(Ordering::Relaxed).min(255) as u8),
         closing: LAUNCHER_CLOSING.load(Ordering::Relaxed),
         drag_source: (drag_source != LAUNCHER_NO_ITEM).then_some(drag_source),
         drag_target: (drag_target != LAUNCHER_NO_ITEM).then_some(drag_target),
