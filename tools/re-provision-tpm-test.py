@@ -33,6 +33,7 @@ def main():
             env=environment, capture_output=True, timeout=20)
         assert result.returncode == 0, result.stderr.decode(errors="replace")
         assert int((state / "tpm-version").read_text()) == 200
+        assert int((state / "memory").read_text()) == 20480
         assert (state / "--boot1").read_text().strip() == "disk"
         assert (state / "--boot2").read_text().strip() == "dvd"
         assert (vm / "infinityos-4.vdi").is_file()

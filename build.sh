@@ -63,7 +63,7 @@ tools/ui-install-parity-test.sh \
     build/aarch64/installed-esp.img
 make input-regression-test
 make app-launcher-interaction-test
-sh tools/build-qwen.sh
+sh tools/build-hermes.sh
 
 mkdir -p "$output_dir"
 find "$output_dir" -maxdepth 1 -type f -name 'InfinityOS-*.iso' -delete
@@ -72,9 +72,9 @@ if [ "$legacy_x86_built" = true ]; then
     cp build/infinity-x86.iso "$output_dir/InfinityOS-x86.iso"
 fi
 cp build/infinity-x86_64.iso "$output_dir/InfinityOS-x86_64.iso"
-cp build/qwen/InfinityOS-Qwen3-8B-aarch64.iso "$output_dir/InfinityOS-aarch64.iso"
+cp build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso "$output_dir/InfinityOS-aarch64.iso"
 # Assert binary parity: never publish the legacy ARM image under the release name.
-cmp build/qwen/InfinityOS-Qwen3-8B-aarch64.iso "$output_dir/InfinityOS-aarch64.iso"
+cmp build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso "$output_dir/InfinityOS-aarch64.iso"
 cp tools/configure-virtualbox-arm64.sh "$output_dir/configure-virtualbox-arm64.sh"
 cp tools/start-virtualbox-arm64.sh "$output_dir/start-virtualbox-arm64.sh"
 chmod +x "$output_dir/configure-virtualbox-arm64.sh" "$output_dir/start-virtualbox-arm64.sh"
