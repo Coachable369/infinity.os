@@ -28,5 +28,7 @@ The firmware test exercises actual modified UEFI key packets. This is decoder
 and routing-policy coverage, not installed GUI acceptance.
 
 The code is compiled into the common live and installed kernels; no live-only
-asset or service payload is introduced. Full installed, ISO-detached interaction
-verification and the rebuilt ISO parity check remain required before completion.
+asset or service payload is introduced. On September 22, `sh build.sh` passed,
+including the input tests and binary installed-payload parity checks. The updated
+existing VM booted to login with no ISO attached. Authenticated interaction checks
+remain pending because automated guest keyboard input is not being delivered.

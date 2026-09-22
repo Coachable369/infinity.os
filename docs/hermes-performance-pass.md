@@ -30,9 +30,10 @@ peak RAM. Worker utilization is summed Q4/Q6 compute divided by request wall tim
 and online worker count. This excludes firmware/OS CPU usage and initial loading.
 Steady-state rate is `(output_tokens - 1) / decode_seconds`.
 
-The baseline ISO is preserved as `build/hermes/baseline-three-models-aarch64.iso`.
-No performance improvement has been established yet. The instrumented baseline
-must be run before removing Qwen or optimizing the native compute path.
+No controlled performance improvement has been established yet. The former
+baseline ISO under `build/` was removed by the full clean build on September 22;
+do not rely on that path as a retained baseline artifact. Historical observations
+below are not a replacement for a matched before/after benchmark.
 
 ## Installed observation, 2026-09-21
 
@@ -53,3 +54,41 @@ enter the benchmark command, including the VirtualBox soft keyboard. No
 controlled TTFT, request-local worker profile, or improvement claim is available
 from this session yet. Preserve this installed account and disk; routine
 profiling updates must not recreate the VM or repeat credential setup.
+
+## Rebuild and installed update, 2026-09-22
+
+`sh build.sh` completed successfully with the desktop productivity shortcuts and
+two-model packaging. `builds/InfinityOS-aarch64.iso` is the published 8 GiB ISO;
+the historical provisioning filename under `build/hermes/` remains compatible.
+Binary extraction verified the exact bootloader, pinned Hermes and Ministral
+hashes/licenses, and absence of all ten Qwen payload shards.
+
+The existing `infinityos-4` was updated without recreating its VM, TPM, or account.
+The kernel updater validated GPT, boot manifests and component records, then
+verified all bytes outside its kernel/record changes were unchanged. Its ESP
+received the matching bootloader; only Qwen shards and their license were removed.
+The patched disk passed both model parity executables. It booted to the existing
+login screen with the optical drive empty, at 7 vCPUs and 20,480 MiB RAM.
+
+Authenticated shortcut checks and guest Hermes timings remain pending: automated
+typing, individual key events and VirtualBox soft-keyboard input did not populate
+the guest password field. No password was changed and authentication was not
+bypassed. Neither successful compilation nor removal of the Qwen reservation
+constitutes measured Hermes latency improvement.
+
+### Host-only fallback check (not guest performance acceptance)
+
+The release `hermes-native-test --forward` executable passed loading,
+cancellation and real forward generation for `hello`, producing nine tokens:
+"Hello! How can I assist you today?". First emitted token was 13.397361 s;
+the ninth token was emitted at 27.093604 s, giving 0.584 tokens/s over the
+eight-token decode interval. Whole-process time including initialization and EOS
+was 32.57 s; user/system CPU was 29.17/0.87 s; peak physical footprint was
+2,972,125,584 bytes. This host harness does not exercise the guest AP workers,
+desktop scheduling, or installed boot path. The running VM also competed for
+host resources. These numbers are diagnostic only, not a before/after comparison
+or evidence of improved guest performance.
+
+`ministral-native-test --forward` also passed loading, cancellation and generation,
+returning "Hello" for its existing one-word test prompt. Because that prompt is
+different, its 21.077 s generation time is not a Hermes comparison.
