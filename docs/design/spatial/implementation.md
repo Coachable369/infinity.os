@@ -108,6 +108,9 @@ the 16-byte `/system/spatial/` prefix was copied into a 15-byte destination.
 Key length and offsets now derive from the prefix itself (48 bytes including
 the hexadecimal owner ID). Prior state/pixel tests did not exercise this glue
 code; the new encoder test and updated object-store test cover it.
+The corrected release completed `sh build.sh` successfully; both `builds/` ISOs,
+the provisioning ISO and checksums were regenerated. The local build log is
+`/tmp/spatial-panic-release-build.log`.
 
 The corrected installed kernel booted the user's preserved installation clone
 `infinityos-4-spatial-fixed.vdi` to sign-in with no ISO attached. The original
