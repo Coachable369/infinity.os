@@ -24,6 +24,8 @@ Open with **Ctrl+Shift+K**, or top-bar **Search → Spatial desktop**.
   a collision-safe copy to its folder. Text-file drops into the editor require
   confirmation and cannot replace an unsaved document. Confirmation rechecks
   source identity. Capacity/copy errors leave sources intact.
+  Pointer drops require the desktop app to be foreground; Settings cannot pass
+  a drop through to an obscured Editor or File Navigator.
 - **Constellations:** positioned nodes, symmetric user-authored links, explicit
   unlinking and opening. Removing a reference clears links, never the source.
   Moved/replaced paths are reported as stale instead of silently opening another file.
@@ -84,8 +86,18 @@ Provisioning model image: `build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso`
 (legacy filename: Hermes + Ministral, not Qwen). The build checks equality of those
 ARM copies.
 
-The existing VM disk `infinityos-4-spatial-20260922.vdi` boots with no ISO, but
-contains the earlier integration and remains at sign-in. A new ISO does not update
-that disk. Updated installed interaction, screenshot comparison and frame-time
-measurements have **not** passed; host tests/builds are not substitutes.
-Full installed visual/performance acceptance remains open.
+On September 22, the recreated `infinityos-4` completed installation. Its fresh
+disk was preserved as `infinityos-4.vdi`; a private clone,
+`infinityos-4-qa-20260922.vdi`, received the updated installed kernel. The updater
+validated eleven kernel references, byte-checked all writes and verified that
+all bytes outside the kernel/manifest extents remained unchanged. With the ISO
+detached, this clone booted to first-run configuration.
+
+The follow-up also restores a world's saved foreground surface after loading its
+saved editor file, so document loading cannot steal focus from Settings or the
+workspace. ARM compilation and the input regression suite pass.
+
+Account setup is still needed before interaction tests. Updated installed
+interaction, screenshot comparison and frame-time measurements have **not**
+passed; host tests/builds are not substitutes. Full installed visual/performance
+acceptance remains open.

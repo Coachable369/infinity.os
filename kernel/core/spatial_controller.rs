@@ -691,6 +691,7 @@ impl ConsoleRuntime {
                     self.spatial.ghost = None;
                     if moved
                         && self.pointer_y < 570
+                        && self.mode == ConsoleMode::Desktop
                         && self.desktop_app == DesktopAppKind::TextEditor
                     {
                         let (editor, _, _) = self.desktop_app_windows();
@@ -728,6 +729,7 @@ impl ConsoleRuntime {
                     }
                     if moved
                         && self.pointer_y < 570
+                        && self.mode == ConsoleMode::Desktop
                         && self.desktop_app == DesktopAppKind::None
                         && self.home_window_visible
                     {
@@ -1145,8 +1147,8 @@ impl ConsoleRuntime {
                             r.file_navigator = current;
                         });
                     }
-                    if let Some(layout) = target {
-                        self.restore_desktop_layout(layout);
+                    let destination_layout = if let Some(layout) = target {
+                        layout
                     } else {
                         let mut empty = layout;
                         empty.home.visible = false;
@@ -1155,8 +1157,9 @@ impl ConsoleRuntime {
                         empty.task_manager.visible = false;
                         empty.settings.visible = false;
                         empty.focused_surface = DesktopResumeSurface::Workspace;
-                        self.restore_desktop_layout(empty);
-                    }
+                        empty
+                    };
+                    self.restore_desktop_layout(destination_layout);
                     if active != index {
                         let restored = unsafe {
                             let snapshot = &(*(&raw const WORLD_EDITORS))[index];
@@ -1198,6 +1201,9 @@ impl ConsoleRuntime {
                         });
                         self.checkpoint_active_file_navigator();
                     }
+                    // Loading a saved document may focus Editor; the world's
+                    // saved foreground surface remains authoritative.
+                    self.restore_desktop_layout(destination_layout);
                     self.redraw();
                 }
             }
