@@ -223,6 +223,7 @@ pub struct Engine<'a, 'b> {
     active: bool,
     predict: bool,
     rotary: [(f32, f32); 64],
+    pub profile: super::metrics::Profile,
 }
 impl Drop for Engine<'_, '_> {
     // ------------------------=
@@ -280,6 +281,7 @@ impl<'a, 'b> Engine<'a, 'b> {
             active: false,
             predict: true,
             rotary: [(0.0, 1.0); 64],
+            profile: super::metrics::Profile::new(),
         })
     }
     // ------------------------=
@@ -354,6 +356,17 @@ impl<'a, 'b> Engine<'a, 'b> {
     // DESC: Executes at most eight matrix rows or one attention head and yields to the service pump.
     // ------------------=
     pub fn step(&mut self) -> Result<Progress, Error> {
+        let phase = self.phase as usize;
+        let started = super::workers::clock_ns();
+        let result = self.step_inner();
+        self.profile.record(phase, super::workers::clock_ns().saturating_sub(started));
+        result
+    }
+    // ------------------------=
+    // FUNC: step_inner
+    // DESC: Executes the existing bounded phase without changing numerical work or scheduling.
+    // ------------------=
+    fn step_inner(&mut self) -> Result<Progress, Error> {
         if self.cancelled {
             self.active = false;
             return Ok(Progress::Cancelled);

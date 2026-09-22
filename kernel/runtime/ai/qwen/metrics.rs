@@ -1,4 +1,28 @@
 //! Observable inference timings; no logging or allocation in the worker path.
+#[derive(Clone, Copy, Debug)]
+pub struct Profile {
+    pub phase_ns: [u64; 16],
+    pub phase_calls: [u64; 16],
+}
+impl Profile {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Initializes fixed-size per-operation counters without allocating.
+    // ------------------=
+    pub const fn new() -> Self {
+        Self { phase_ns: [0; 16], phase_calls: [0; 16] }
+    }
+    // ------------------------=
+    // FUNC: record
+    // DESC: Accumulates BSP execution time for one bounded transformer phase.
+    // ------------------=
+    pub fn record(&mut self, phase: usize, elapsed: u64) {
+        if phase < 16 {
+            self.phase_ns[phase] = self.phase_ns[phase].saturating_add(elapsed);
+            self.phase_calls[phase] = self.phase_calls[phase].saturating_add(1);
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Metrics {
     pub load_ns: u64,
@@ -79,6 +103,22 @@ impl Metrics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: profile_is_bounded_and_resets
+    // DESC: Verifies phase accumulation, bounds rejection and independent per-request reset.
+    // ------------------=
+    #[test]
+    fn profile_is_bounded_and_resets() {
+        let mut p = Profile::new();
+        p.record(5, 10);
+        p.record(5, 20);
+        p.record(16, 999);
+        assert_eq!((p.phase_ns[5], p.phase_calls[5]), (30, 2));
+        assert_eq!(p.phase_ns.iter().sum::<u64>(), 30);
+        p = Profile::new();
+        assert_eq!(p.phase_ns, [0; 16]);
+        assert_eq!(p.phase_calls, [0; 16]);
+    }
     // ------------------------=
     // FUNC: separates_compute_and_wait
     // DESC: Checks timing phases, reused-token reporting, restart, and unavailable clocks.

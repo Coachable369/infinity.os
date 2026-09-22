@@ -10706,7 +10706,7 @@ impl ConsoleRuntime {
             (b"hermes".as_slice(), crate::runtime::ai::chat::HERMES_MODEL_ID),
             (b"ministral".as_slice(), crate::runtime::ai::chat::MINISTRAL_MODEL_ID),
         ] {
-            for prefix in [b"model inspect ".as_slice(), b"model select ", b"model test "] {
+            for prefix in [b"model inspect ".as_slice(), b"model select ", b"model test ", b"model bench "] {
                 if command.strip_prefix(prefix) != Some(alias) { continue; }
                 crate::runtime::ai::with_ai_runtime(|ai| {
                     let entry = crate::runtime::ai::chat::CHAT_MODELS.iter().position(|m| m.id == id).unwrap();
@@ -10721,11 +10721,12 @@ impl ConsoleRuntime {
                             self.output.write_number(b"Capability mask: ", model.capabilities as u64);
                         }
                     } else if ai.chat.generation_state != crate::runtime::ai::chat::GenerationState::Running && ai.native_ready(id) {
-                        if prefix == b"model test " && !ai.chat.input().is_empty() {
+                        if (prefix == b"model test " || prefix == b"model bench ") && !ai.chat.input().is_empty() {
                             self.output.write_line(b"Composer is not empty; test not started.");
                         } else {
+                            if prefix == b"model bench " && !ai.reset_native_benchmark() { return; }
                             ai.chat.select_model_index(entry);
-                            if prefix == b"model test " {
+                            if prefix == b"model test " || prefix == b"model bench " {
                                 for byte in b"hello" { ai.chat.push_input(*byte); }
                                 self.output.write_line(if ai.submit_chat() { b"Native test queued: hello" } else { b"Native test unavailable" });
                             }
@@ -10734,6 +10735,51 @@ impl ConsoleRuntime {
                 });
                 return true;
             }
+        }
+        if command == b"ai compute" {
+            crate::runtime::ai::with_ai_runtime(|ai| {
+                if let Some((_, workers, bytes)) = ai.native_profile() {
+                    self.output.write_number(b"Request Q4 worker us: ", workers[0] / 1000);
+                    self.output.write_number(b"Request Q6 worker us: ", workers[1] / 1000);
+                    self.output.write_number(b"Request completed-job wait us: ", workers[2] / 1000);
+                    self.output.write_number(b"Inference allocated bytes (fixed high-water): ", bytes as u64);
+                    self.output.write_number(b"Online workers: ", crate::runtime::ai::qwen::workers::online() as u64);
+                }
+            });
+            return true;
+        }
+        if command == b"ai profile" {
+            crate::runtime::ai::with_ai_runtime(|ai| {
+                if let Some((profile, _, _)) = ai.native_profile() {
+                    let mut times = profile.phase_ns;
+                    for _ in 0..5 {
+                        let mut largest = 0;
+                        for i in 1..times.len() { if times[i] > times[largest] { largest = i; } }
+                        self.output.write_number(match largest {
+                            0 => b"RMSNorm us: ", 1 => b"Q projection/poll us: ",
+                            2 => b"K projection/poll us: ", 3 => b"V projection/poll us: ",
+                            4 => b"RoPE/KV write us: ", 5 => b"Attention us: ",
+                            6 => b"Attention output/poll us: ", 7 => b"Residual/RMS us: ",
+                            8 => b"MLP gate/poll us: ", 9 => b"MLP up/poll us: ",
+                            10 => b"SiLU us: ", 11 => b"MLP down/poll us: ",
+                            12 => b"Residual/final RMS us: ", 13 => b"Vocabulary/poll/sample us: ",
+                            _ => b"Other phase us: ",
+                        }, times[largest] / 1000);
+                        times[largest] = 0;
+                    }
+                }
+            });
+            return true;
+        }
+        if command == b"ai bench timing" {
+            crate::runtime::ai::with_ai_runtime(|ai| {
+                self.output.write_number(b"Output tokens: ", ai.qwen_tokens);
+                self.output.write_number(b"Decode us: ", ai.qwen_decode_ns / 1000);
+                self.output.write_number(b"TTFT us: ", ai.qwen_metrics.first_token_ns / 1000);
+                self.output.write_number(b"Total us: ", ai.qwen_metrics.total_response_ns / 1000);
+                self.output.write_number(b"BSP compute us: ", (ai.qwen_metrics.prefill_work_ns + ai.qwen_metrics.decode_work_ns) / 1000);
+            });
+            return true;
         }
         if command == b"ai workers" {
             let (compute, idle) = crate::runtime::ai::qwen::workers::profile_ms();

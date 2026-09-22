@@ -48,6 +48,29 @@ pub struct AiRuntime {
 
 impl AiRuntime {
     // ------------------------=
+    // FUNC: native_profile
+    // DESC: Exposes active native measurements without exposing model memory or bypassing inference authority.
+    // ------------------=
+    pub fn native_profile(&self) -> Option<(qwen::metrics::Profile, [u64; 3], usize)> {
+        self.qwen.as_ref().map(|service| {
+            let (profile, workers) = service.profile();
+            (profile, workers, service.allocated_bytes)
+        })
+    }
+    // ------------------------=
+    // FUNC: reset_native_benchmark
+    // DESC: Clears idle native conversation caches for an explicitly requested repeatable benchmark.
+    // ------------------=
+    pub fn reset_native_benchmark(&mut self) -> bool {
+        if self.qwen.as_ref().is_some_and(|service| service.busy()) || !self.chat.input().is_empty() {
+            return false;
+        }
+        for slot in [&mut self.qwen, &mut self.other_native, &mut self.hermes_native] {
+            if let Some(service) = slot.as_mut() { service.clear_conversation(); }
+        }
+        true
+    }
+    // ------------------------=
     // FUNC: native_ready
     // DESC: Resolves model availability across isolated active and parked native services.
     // ------------------=

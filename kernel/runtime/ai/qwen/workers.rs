@@ -48,6 +48,40 @@ static READY: AtomicUsize = AtomicUsize::new(0);
 static COMPLETED: AtomicUsize = AtomicUsize::new(0);
 static COMPUTE_TICKS: AtomicU64 = AtomicU64::new(0);
 static IDLE_TICKS: AtomicU64 = AtomicU64::new(0);
+static Q4_TICKS: AtomicU64 = AtomicU64::new(0);
+static Q6_TICKS: AtomicU64 = AtomicU64::new(0);
+
+// ------------------------=
+// FUNC: clock_ns
+// DESC: Reads the native monotonic clock for bounded profiling without service calls.
+// ------------------=
+pub fn clock_ns() -> u64 {
+    ticks_ns(counter())
+}
+// ------------------------=
+// FUNC: ticks_ns
+// DESC: Converts native counter ticks to nanoseconds; host harnesses return zero.
+// ------------------=
+fn ticks_ns(ticks: u64) -> u64 {
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    unsafe {
+        let frequency: u64;
+        core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) frequency, options(nomem, nostack));
+        if frequency != 0 {
+            return ticks / frequency * 1_000_000_000 + ticks % frequency * 1_000_000_000 / frequency;
+        }
+    }
+    let _ = ticks;
+    0
+}
+// ------------------------=
+// FUNC: kernel_profile_ns
+// DESC: Reads summed AP compute time by quantization and completed-job wait time.
+// ------------------=
+pub fn kernel_profile_ns() -> [u64; 3] {
+    [ticks_ns(Q4_TICKS.load(Ordering::Relaxed)), ticks_ns(Q6_TICKS.load(Ordering::Relaxed)),
+        ticks_ns(IDLE_TICKS.load(Ordering::Relaxed))]
+}
 
 // ------------------------=
 // FUNC: counter
@@ -230,6 +264,11 @@ pub unsafe fn rows(
                 }
                 let job = &*slot.job.get();
                 COMPUTE_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
+                if job.kind == 12 {
+                    Q4_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
+                } else if job.kind == 14 {
+                    Q6_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
+                }
                 IDLE_TICKS.fetch_add(counter().saturating_sub(job.finished), Ordering::Relaxed);
                 if !discarded {
                     output[at..at + job.rows].copy_from_slice(&job.output[..job.rows]);

@@ -18,6 +18,8 @@ pub struct Service {
     busy: bool,
     pub reused_tokens: usize,
     pub prefill_tokens: usize,
+    pub allocated_bytes: usize,
+    worker_start: [u64; 3],
 }
 impl Service {
     // ------------------------=
@@ -127,6 +129,8 @@ impl Service {
             busy: false,
             reused_tokens: 0,
             prefill_tokens: 0,
+            allocated_bytes: bytes.len() + arena.len() + core::mem::size_of::<Self>(),
+            worker_start: [0; 3],
         })
     }
     // ------------------------=
@@ -138,6 +142,8 @@ impl Service {
             return Err(Error::Unsupported);
         }
         let text = core::str::from_utf8(text).map_err(|_| Error::Format)?;
+        self.engine.profile = super::metrics::Profile::new();
+        self.worker_start = super::workers::kernel_profile_ns();
         let previous = self.prompt_count;
         let result = self.append_turn(text);
         if let Err(error) = result {
@@ -159,6 +165,14 @@ impl Service {
         self.consumed += 1;
         self.busy = true;
         Ok(())
+    }
+    // ------------------------=
+    // FUNC: profile
+    // DESC: Returns request-local BSP phase and AP kernel timings without allocation.
+    // ------------------=
+    pub fn profile(&self) -> (super::metrics::Profile, [u64; 3]) {
+        let now = super::workers::kernel_profile_ns();
+        (self.engine.profile, core::array::from_fn(|i| now[i].saturating_sub(self.worker_start[i])))
     }
     // ------------------------=
     // FUNC: append_turn
