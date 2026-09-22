@@ -1,129 +1,91 @@
-# Spatial desktop implementation checklist
+# Spatial desktop implementation and verification
 
-Status: native workflows are wired into the installed shell. This remains an
-incomplete milestone until the interaction/visual gates below are satisfied.
+## Native workflows
 
-## September 22 native integration
+Open with **Ctrl+Shift+K**, or top-bar **Search → Spatial desktop**.
 
-- Open with **Ctrl+Shift+K**, or top-bar Search → Spatial desktop.
-- Holographic view samples the real retained surfaces for the five built-in app
-  classes, with aspect-preserving bilinear zoom (wheel or +/-). No generated
-  desktop screenshots are used. These are captured previews, not continuously
-  refreshed live applications, and separate File Navigator instances are not yet
-  independently represented.
-- Four named Worldshift environments retain window layouts, navigator location,
-  and saved editor paths. In-session editor buffers, cursor, selection and undo
-  history are kept separately. Unsaved buffers are **not** saved across reboot.
-- Gravity Well collects references to the current File Navigator selection.
-  Dragging changes reference placement; dropping over one of four collection
-  buttons changes membership. Source files are not moved or deleted.
-- Matter Shelf accepts explicit editor selections or manually entered clippings,
-  and inserts them into the existing editor without clearing its document.
-  It now occupies a compact bottom ribbon, with four slots per page (arrows or
-  wheel), and a bounded pointer-following preview. Text may be dropped into the
-  exposed content of the active editor; other destinations do not mutate data.
-  Enter remains the keyboard insertion alternative. File-reference dropping
-  into other applications is not yet implemented.
-- Constellations supports reference positioning, symmetric link/unlink, opening
-  existing references, and safe unlinking when a reference is removed. A moved
-  source is reported as stale rather than resolving to another file by accident.
-- Metadata is bounded to 16 references, four environments, 96-byte paths,
-  32-byte item labels and 192-byte printable-ASCII clippings. An 8 KiB versioned
-  checkpoint is bound to the active authenticated owner. Generic object reads,
-  copies and writes cannot expose or alter its contents through an alias.
-- Opening/closing fades and lifts the panel using elapsed time; overview zoom is
-  eased. Reduced motion is persisted per user. Ordinary pointer movement paints
-  only the cursor; dragging clips to old/new bounds (or the connected graph area).
-  Idle ticks do not repaint the overlay; caret ticks repaint the text-field area.
-- World and overview activation now defer mutations until a 280 ms close
-  transition completes. Any key or click cancels a pending switch from its
-  current pose; the destination is delivered exactly once. This animates departure,
-  not a live crossfade between two rendered worlds.
+- **Holographic Workspace:** independent retained surfaces for six File Navigator
+  instances plus Command, Editor, Task Manager and Settings. Selection raises the
+  exact instance. Wheel or +/- zooms real content with aspect-preserving bilinear
+  filtering. Background state changes refresh the retained scene at a bounded
+  rate; scanout waits until the overlay is recomposed. Invalidated surfaces retain
+  their last committed pixels until refreshed, rather than showing blank previews.
+- **Worldshift:** four named environments with durable layouts, navigator location
+  and saved editor path. Editor buffers, cursor/selection/undo history and complete
+  navigator workspaces are retained per world in-session. Switching has a
+  cancellable 280 ms departure and a 180 ms retained-frame arrival crossfade.
+  Input immediately ends arrival. Failed checkpoint writes roll back the switch.
+- **Gravity Well:** explicit references, pointer placement, collection-drop preview,
+  confirmation/cancellation and 180 ms settling. Originals never move or disappear
+  because their reference changes collection.
+- **Matter Shelf:** compact bottom ribbon, four slots per page, keyboard/wheel
+  paging and pointer-following drag previews. Text drops into the active editor;
+  Enter is the keyboard alternative. File drops into the active navigator propose
+  a collision-safe copy to its folder. Text-file drops into the editor require
+  confirmation and cannot replace an unsaved document. Confirmation rechecks
+  source identity. Capacity/copy errors leave sources intact.
+- **Constellations:** positioned nodes, symmetric user-authored links, explicit
+  unlinking and opening. Removing a reference clears links, never the source.
+  Moved/replaced paths are reported as stale instead of silently opening another file.
 
-## Current verification and remaining work
+## Rendering and privacy
 
-Passed: five state/geometry tests; three motion/deferred-selection tests; exact native backdrop pixel test; native object
-store persistence/remount/alias tests; InfinityUI and launcher regression suites;
-12 HTTP/TCP library tests; ARM64 and x86_64 installed kernel builds. The rebuilt
-Hermes/Ministral ISO passes model and byte-identical installed-kernel payload
-parity. The updated `infinityos-4` disk boots to sign-in with the ISO detached.
+The generated `idesign-kit.png` supplies the visual recipe: midnight glass, cyan
+edges, installed InfinityOS fonts, selected icon pack, native controls, 8-unit
+spacing, 16-unit padding and 24-unit gutters. Its incidental Apple/Finder marks,
+invented font name and traffic lights are not runtime assets.
 
-Installed visual/input acceptance is blocked at sign-in: synthetic input did not
-work in the previous verification attempt; an unlocked desktop was requested.
-No measured frame-time or polished-screen acceptance is claimed.
+Application painters write desktop-owned retained surfaces, not scanout. Ordinary
+pointer motion remains cursor-only. Drag damage covers old/new preview bounds;
+linked-node motion covers the bounded graph. Animations use elapsed time, skip
+delayed frames and stop at their endpoint. Arrival reuses one destination frame
+without rerunning application painters. Reduced motion settles immediately.
 
-Still required for the original complete feature scope: live invalidation and
-independent multi-window overview; world-to-world arrival effects;
-collection settling/preview confirmation; file-reference cross-application drops;
-final screenshot comparison, keyboard/pointer QA,
-and measured installed frame times. The current panel is not a substitute for
-those remaining workflows.
+There are twelve bounded 2560×1600 retained slots and one 3840×2160 arrival buffer.
+Their zero-initialized BSS does not inflate embedded image data or allocate per
+frame. Additional static reservation is about 126 MiB over the earlier six-slot
+cache; this is not a measured resident-memory or performance result.
 
-The ribbon and deferred-switch changes still require installed interaction and
-visual verification. Their unit tests are not guest UI evidence.
+Metadata is bounded to sixteen references, four worlds, 96-byte paths, 32-byte
+labels and 192-byte printable-ASCII clippings. The 8 KiB checkpoint is authenticated
+to its owner. Generic reads/copies/writes cannot expose it through aliases.
+Replacement revalidates stored type, ownership and checksum.
 
-Current ISO: `build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso` (legacy filename,
-contains Hermes + Ministral, not Qwen). Latest build staging: `build/hermes/payload.NtCAHw`.
-VM disk: `infinityos-4-spatial-20260922.vdi`; the previous `infinityos-4-updated.vdi`
-is retained for rollback. Only the temporary RAW conversion was deleted.
-The running VM still contains the earlier integration, not the subsequent ribbon
-and deferred-switch changes; updating the ISO does not update that disk.
+## Defined limitations
 
-## Authoritative interaction scope
+- Unsaved buffers and complete navigator histories survive in-session switching,
+  not reboot. Durable worlds restore the primary navigator location and saved
+  editor file, not every navigator instance/history.
+- Drop targets are native Editor and File Navigator, not arbitrary applications.
+  Unsupported content and storage copy errors are reported; recursive folder
+  copying is not added.
+- No GPU renderer, distributed workspace or ambient clipboard capture is introduced.
 
-1. Holographic Workspace: live retained-window overview, activity islands, direct
-   selection and continuous zoom. No screenshots posing as interactive windows.
-2. Worldshift: named environments with app/document/layout identity, safe switching
-   without losing dirty buffers, durable per-user state, and a reversible transition.
-3. Gravity Well: explicit gathering of references to existing files, animated
-   preview and drop confirmation. Never relocate or delete originals implicitly.
-4. Matter Shelf: explicitly collected text/file references, accessible ribbon,
-   drag/drop and keyboard alternatives. No ambient capture of passwords or clipboard.
-5. Constellations: user-authored durable relationships between real objects,
-   navigable nodes and edges; stale/deleted references handled explicitly.
+## Behavioral verification
 
-## Visual recipe
+- Seven state tests: ownership, checksums, persistence, capacity, relationships,
+  shelf paging, ten-window geometry/zoom and non-mutating drop proposals.
+- Native retained-cache test: independent pixels, no painter call on translation,
+  last-committed previews during invalidation, selective refresh, clipped damage.
+- Native backdrop pixel test: fade endpoints, intermediate colors, clipping,
+  persistent capture and invalidation.
+- Three motion tests: elapsed-time endpoints, reversal, reduced motion and
+  cancellable/exactly-once deferred activation.
+- Existing object-store tests cover private checkpoint remount and alias denial.
 
-`idesign-kit.png` is an AI-generated design reference, not runtime or proof.
-Retain InfinityOS's installed typefaces and selected icon pack. Do not copy the
-generated board's incidental Apple/Finder marks, invented font name, extra slogans,
-or traffic-light window controls. Retain the native accessible window controls.
-Use midnight glass, restrained cyan edges, 8-unit spacing, 16-unit internal padding,
-24-unit group gutters, strong text contrast and a distinct keyboard-focus outline.
+These spatial/motion tests are part of `make input-regression-test`, run by
+`build.sh`. Full build validation also includes TCP/HTTP, both UEFI architectures,
+model packaging and byte-identical installed-kernel payload parity.
 
-## Motion acceptance
+## Release and installed acceptance
 
-- Overview zoom: 240 ms; departure transition: 280 ms; collection settle: 180 ms;
-  shelf expansion: 160 ms; connection emphasis: 120 ms.
-- Motion samples elapsed monotonic time, not frame count. Delayed frames skip
-  forward rather than extending duration. Interruption starts at the displayed pose.
-- Reduced motion settles immediately. Drag tracking itself has no artificial lag.
-- Reuse persistent surfaces; no app re-render solely for transforms. Damage covers
-  old/new effects bounds. No idle animation loop or full-frame pointer repaint.
-- Never delay input until effects finish; Escape cancels transient interactions.
+Build command: **`sh build.sh`**. ARM release: `builds/InfinityOS-aarch64.iso`.
+Provisioning model image: `build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso`
+(legacy filename: Hermes + Ministral, not Qwen). The build checks equality of those
+ARM copies.
 
-## Original delivery gates
-
-Native controls, permission-checked object operations, persistence, actual compositor
-integration, keyboard/drag behavior, pixel review, frame-time measurements, builds,
-fresh-install parity and ISO-detached installed testing are required for all five.
-The motion module alone does not satisfy any complete-feature acceptance claim.
-
-## Prior foundation evidence (before native integration)
-
-- `ui::app_launcher::motion` provides elapsed-time fixed-point interpolation,
-  continuous retargeting, reduced-motion settling and exact endpoints. Two tests
-  cover skipped frames, interruption, full-range coordinates and completion.
-- Existing launcher presentation now eases its transition; a zero elapsed-time
-  tick cannot advance it. Existing scrolling/drag behavior is preserved.
-- `SoftwareCompositor::compose_transformed` samples retained surfaces into
-  destination bounds with premultiplied-alpha bilinear filtering. Ordinary
-  composition retains its previous unscaled path. No temporary pixel buffers
-  or application calls are introduced.
-- Pixel tests verify transparent-edge color, untouched pixels outside damage,
-  unchanged source content, bounded composition counts and trusted-layer rejection.
-- The five experiences are not wired into the desktop yet. No installed frame-time
-  result or polished-screen acceptance is claimed by these foundation tests.
-- The default ARM64 reprovision ISO was rebuilt successfully on September 22.
-  Both architecture installed kernels link; byte-identical ARM64 installer kernel
-  payload parity passes. The running VM was inspected at login and was not updated.
+The existing VM disk `infinityos-4-spatial-20260922.vdi` boots with no ISO, but
+contains the earlier integration and remains at sign-in. A new ISO does not update
+that disk. Updated installed interaction, screenshot comparison and frame-time
+measurements have **not** passed; host tests/builds are not substitutes.
+Full installed visual/performance acceptance remains open.

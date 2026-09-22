@@ -1,6 +1,116 @@
 //! Native spatial panel. Decorative assets never substitute for interactive state.
 use super::*;
-use crate::ui::spatial::{item_card, overview_card, world_card, SpatialState, TABS};
+use crate::ui::spatial::{item_card, overview_bounds, world_card, Preview, SpatialState, TABS};
+static REFRESHING: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+static mut ARRIVAL: [u32; 3840 * 2160] = [0; 3840 * 2160];
+static mut ARRIVAL_SIZE: usize = 0;
+
+// ------------------------=
+// FUNC: arrival_begin
+// DESC: Makes world restoration atomic while preserving the source-world backdrop for blending.
+// ------------------=
+pub fn arrival_begin() {
+    REFRESHING.store(true, core::sync::atomic::Ordering::Relaxed);
+}
+// ------------------------=
+// FUNC: arrival_cancel
+// DESC: Releases presentation suppression when a workspace operation fails before switching.
+// ------------------=
+pub fn arrival_cancel() {
+    REFRESHING.store(false, core::sync::atomic::Ordering::Relaxed);
+}
+// ------------------------=
+// FUNC: arrival_capture
+// DESC: Retains the fully composed destination once; no allocation or app paint is needed per animation frame.
+// ------------------=
+pub fn arrival_capture() {
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    unsafe {
+        ARRIVAL_SIZE = 0;
+        if let Some(c) = (*(&raw mut CONSOLE)).as_mut() {
+            c.restore_cursor();
+            let size = c.display.stride * c.display.height;
+            if size <= 3840 * 2160 {
+                core::ptr::copy_nonoverlapping(
+                    c.display.buffer,
+                    (&raw mut ARRIVAL).cast::<u32>(),
+                    size,
+                );
+                ARRIVAL_SIZE = size;
+            }
+        }
+    }
+    arrival_cancel();
+}
+// ------------------------=
+// FUNC: arrival_present
+// DESC: Crossfades retained world frames and presents the new scene without rebuilding application contents.
+// ------------------=
+pub fn arrival_present(opacity: u8, x: i32, y: i32) {
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    unsafe {
+        if let Some(c) = (*(&raw mut CONSOLE)).as_mut() {
+            c.restore_cursor();
+            c.display.clear_render_clip();
+            if ARRIVAL_SIZE == c.display.stride * c.display.height && ARRIVAL_SIZE != 0 {
+                core::ptr::copy_nonoverlapping(
+                    (&raw const ARRIVAL).cast::<u32>(),
+                    c.display.buffer,
+                    ARRIVAL_SIZE,
+                );
+                launcher_backdrop::fade(&mut c.display, opacity);
+            }
+            c.display
+                .mark_dirty_rect(0, 0, c.display.width, c.display.height);
+            c.save_and_draw_cursor(x, y);
+            c.display.present_damage();
+            if opacity == 255 {
+                ARRIVAL_SIZE = 0;
+            }
+        }
+    }
+    #[cfg(target_arch = "x86")]
+    let _ = (opacity, x, y);
+}
+
+// ------------------------=
+// FUNC: refreshing
+// DESC: Prevents an intermediate desktop frame from reaching scanout beneath an open overlay.
+// ------------------=
+pub(super) fn refreshing() -> bool {
+    REFRESHING.load(core::sync::atomic::Ordering::Relaxed)
+}
+// ------------------------=
+// FUNC: refresh_begin
+// DESC: Restores the clean desktop in the persistent back buffer and starts an atomic background refresh.
+// ------------------=
+pub fn refresh_begin() {
+    REFRESHING.store(true, core::sync::atomic::Ordering::Relaxed);
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    unsafe {
+        if let Some(c) = (*(&raw mut CONSOLE)).as_mut() {
+            c.restore_cursor();
+            c.display.clear_render_clip();
+            launcher_backdrop::restore(&mut c.display);
+        }
+    }
+}
+// ------------------------=
+// FUNC: refresh_end
+// DESC: Captures updated surfaces without the cursor before the spatial overlay is recomposed and presented.
+// ------------------=
+pub fn refresh_end() {
+    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+    unsafe {
+        if let Some(c) = (*(&raw mut CONSOLE)).as_mut() {
+            c.restore_cursor();
+            c.display.clear_render_clip();
+            launcher_backdrop::capture(&c.display);
+        }
+    }
+    REFRESHING.store(false, core::sync::atomic::Ordering::Relaxed);
+}
 
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 static mut OPEN: bool = false;
@@ -36,7 +146,7 @@ pub fn present(
     state: &SpatialState,
     tab: usize,
     focus: usize,
-    visible: [bool; 5],
+    previews: &[Preview],
     notice: &[u8],
     progress: u8,
     x: i32,
@@ -45,6 +155,7 @@ pub fn present(
     damage: Option<(usize, usize, usize, usize)>,
     zoom: u8,
     dragging: Option<usize>,
+    pending_drop: Option<crate::ui::spatial::DropRequest>,
 ) {
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     unsafe {
@@ -120,19 +231,17 @@ pub fn present(
                 d.ui_text(p.0, p.1, notice, 155, 190, 209, 1);
             }
             if tab == 0 {
-                let labels = [
-                    b"Files".as_slice(),
-                    b"Command",
-                    b"Text Editor",
-                    b"Task Manager",
-                    b"Settings",
-                ];
-                for i in (0..5)
+                for i in (0..previews.len())
                     .filter(|i| *i != focus)
-                    .chain(core::iter::once(focus.min(4)))
+                    .chain(core::iter::once(
+                        focus.min(previews.len().saturating_sub(1)),
+                    ))
                 {
-                    let label = labels[i];
-                    let (a, b, w, h) = overview_card(i, focus, zoom);
+                    let Some(preview) = previews.get(i) else {
+                        continue;
+                    };
+                    let label = preview.label.get();
+                    let (a, b, w, h) = overview_bounds(i, focus, zoom, previews.len());
                     let p = rect(a, b, w, h);
                     d.glass_panel(p.0, p.1, p.2, p.3, false);
                     let thumb = (
@@ -141,19 +250,20 @@ pub fn present(
                         p.2.saturating_sub(16),
                         p.3.saturating_sub(36),
                     );
-                    if visible[i] {
-                        d.spatial_preview(i, thumb);
+                    if preview.visible {
+                        d.spatial_preview(preview.slot, thumb);
                     } else {
-                        d.desktop_app_icon(p.0 + p.2 / 2 - 16, p.1 + 12, 32, i, false);
+                        let role = [4, 25, 49, 19, 26][preview.app.min(4) as usize];
+                        let _ = d.themed_icon(p.0 + p.2 / 2, p.1 + 28, role, 32);
                     }
-                    d.ui_text(
+                    d.ui_text_elided_strong(
                         p.0 + 12,
                         p.1 + p.3.saturating_sub(24),
+                        p.2.saturating_sub(24),
                         label,
                         220,
                         237,
                         247,
-                        1,
                     );
                     if focus == i {
                         d.outline_rounded_rect(p.0, p.1, p.2, p.3, 12, 110, 214, 255);
@@ -220,6 +330,18 @@ pub fn present(
                     }
                 }
             } else {
+                if tab == 2 {
+                    let center = rect(500, 475, 0, 0);
+                    for radius in [105, 175, 240] {
+                        d.icon_circle(
+                            center.0 as i32,
+                            center.1 as i32,
+                            (radius * dh / 1000) as i32,
+                            (20, 76, 108),
+                            64,
+                        );
+                    }
+                }
                 if tab == 4 {
                     for (i, item) in state.items.iter().enumerate() {
                         if let Some(item) = item {
@@ -252,12 +374,11 @@ pub fn present(
                         };
                         let p = rect(a, b, w, h);
                         d.glass_panel(p.0, p.1, p.2, p.3, false);
-                        d.desktop_app_icon(
-                            p.0 + 12,
-                            p.1 + 12,
+                        let _ = d.themed_icon(
+                            p.0 + 28,
+                            p.1 + 28,
+                            if item.object == [0; 16] { 49 } else { 4 },
                             32,
-                            if item.object == [0; 16] { 2 } else { 1 },
-                            false,
                         );
                         d.ui_text_elided_strong(
                             p.0 + 12,
@@ -419,6 +540,47 @@ pub fn present(
                     );
                 }
             }
+            if let Some(request) = pending_drop {
+                use crate::ui::spatial::DropTarget;
+                let p = rect(140, 350, 720, 260);
+                d.glass_panel(p.0, p.1, p.2, p.3, true);
+                let title: &[u8] = match request.target {
+                    DropTarget::Collection(_) => b"Gather this reference?",
+                    DropTarget::Editor => b"Open this file in Text Editor?",
+                    DropTarget::Folder(_) => b"Copy this file to the selected folder?",
+                };
+                let p = rect(170, 380, 660, 0);
+                d.ui_text_elided_strong(p.0, p.1, p.2, title, 225, 244, 255);
+                if let Some(item) = state.items[request.index] {
+                    let p = rect(170, 430, 660, 0);
+                    d.ui_text_elided_strong(p.0, p.1, p.2, item.name.get(), 136, 213, 250);
+                }
+                let destination: &[u8] = match &request.target {
+                    DropTarget::Collection(group) => {
+                        [b"Home".as_slice(), b"Create", b"Research", b"Explore"][*group as usize]
+                    }
+                    DropTarget::Editor => b"Existing unsaved text will not be replaced.",
+                    DropTarget::Folder(path) => path.get(),
+                };
+                let p = rect(170, 470, 660, 0);
+                d.ui_text_elided_strong(p.0, p.1, p.2, destination, 174, 204, 222);
+                let p = rect(170, 505, 660, 0);
+                d.ui_text(
+                    p.0,
+                    p.1,
+                    b"Original files stay in place. Enter confirms; Esc cancels.",
+                    145,
+                    188,
+                    210,
+                    1,
+                );
+                for (x, label, primary) in
+                    [(170, b"Cancel".as_slice(), false), (540, b"Confirm", true)]
+                {
+                    let p = rect(x, 540, 290, 48);
+                    d.polished_button(p.0, p.1, p.2, p.3, label, primary, false);
+                }
+            }
             launcher_backdrop::fade(d, progress);
             d.clear_render_clip();
             c.save_and_draw_cursor(x, y);
@@ -427,6 +589,18 @@ pub fn present(
     }
     #[cfg(target_arch = "x86")]
     let _ = (
-        state, tab, focus, visible, notice, progress, x, y, editing, damage, zoom, dragging,
+        state,
+        tab,
+        focus,
+        previews,
+        notice,
+        progress,
+        x,
+        y,
+        editing,
+        damage,
+        zoom,
+        dragging,
+        pending_drop,
     );
 }

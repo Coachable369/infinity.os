@@ -1,7 +1,9 @@
 //! Native spatial workflows, using the existing shell and object boundaries.
 use super::*;
 use crate::ui::app_launcher::motion::{DeferredSelection, Motion};
-use crate::ui::spatial::{Item, Label, SpatialState};
+use crate::ui::spatial::{
+    DropRequest, DropTarget, Item, Label, Preview, SpatialState, OVERVIEW_COUNT,
+};
 
 struct EditorSnapshot {
     document: TextDocument,
@@ -23,6 +25,11 @@ const EMPTY_EDITOR: EditorSnapshot = EditorSnapshot {
 };
 // BSP shell-owned storage, never copied or allocated in a paint/input-motion path.
 static mut WORLD_EDITORS: [EditorSnapshot; 4] = [const { EMPTY_EDITOR }; 4];
+type NavigatorSnapshot = (
+    crate::runtime::object_navigation::FileNavigatorWorkspace,
+    Option<crate::runtime::object_navigation::FileNavigatorState>,
+);
+static mut WORLD_NAVIGATORS: [Option<NavigatorSnapshot>; 4] = [None; 4];
 
 pub(super) struct Controller {
     pub open: bool,
@@ -48,6 +55,15 @@ pub(super) struct Controller {
     last_caret_phase: u64,
     selection: DeferredSelection,
     ghost: Option<(i32, i32)>,
+    pub refresh: core::cell::Cell<bool>,
+    previews: [Preview; OVERVIEW_COUNT],
+    preview_count: usize,
+    refreshed_at: u64,
+    pub arriving: bool,
+    arrival: Motion,
+    pending_drop: Option<DropRequest>,
+    settling: Option<(usize, usize, usize)>,
+    settle: Motion,
 }
 impl Controller {
     // ------------------------=
@@ -79,6 +95,15 @@ impl Controller {
             last_caret_phase: 0,
             selection: DeferredSelection::new(),
             ghost: None,
+            refresh: core::cell::Cell::new(false),
+            previews: [Preview::EMPTY; OVERVIEW_COUNT],
+            preview_count: 0,
+            refreshed_at: 0,
+            arriving: false,
+            arrival: Motion::settled(255),
+            pending_drop: None,
+            settling: None,
+            settle: Motion::settled(255),
         }
     }
 }
@@ -91,6 +116,163 @@ fn now() -> u64 {
 }
 
 impl ConsoleRuntime {
+    // ------------------------=
+    // FUNC: spatial_confirm_drop
+    // DESC: Applies an explicit drop only after confirmation, revalidating source identity and never moving originals.
+    // ------------------=
+    fn spatial_confirm_drop(&mut self) {
+        let Some(request) = self.spatial.pending_drop.take() else {
+            return;
+        };
+        let Some(item) = self.spatial.state.items[request.index] else {
+            return;
+        };
+        self.spatial.focus = request.index;
+        match request.target {
+            DropTarget::Collection(group) => {
+                let old = self.spatial.state;
+                let (x, y, _, _) = crate::ui::spatial::item_card(request.index, &item);
+                let target_x = (80 + usize::from(group) * 210).min(710) as u16;
+                let target_y = (230 + request.index / 4 * 130) as u16;
+                if self
+                    .spatial
+                    .state
+                    .place(
+                        self.current_user.0,
+                        request.index,
+                        group,
+                        target_x,
+                        target_y,
+                    )
+                    .is_ok()
+                    && self.spatial_commit(old)
+                {
+                    self.spatial.settling = Some((request.index, x, y));
+                    self.spatial.settle = Motion::settled(0);
+                    self.spatial.settle.retarget(
+                        255,
+                        now(),
+                        180,
+                        self.spatial.state.reduced_motion
+                            || crate::ui::performance::monotonic_ns().is_none(),
+                    );
+                }
+            }
+            DropTarget::Editor | DropTarget::Folder(_) => {
+                if crate::storage::namespace_resolve(item.path.get())
+                    .ok()
+                    .map(|id| id.0)
+                    != Some(item.object)
+                {
+                    self.spatial.notice =
+                        b"Source moved or unavailable. Recollect it before dropping.";
+                    return;
+                }
+                if matches!(request.target, DropTarget::Editor) {
+                    if !self.editor_document.is_saved() {
+                        self.spatial.notice =
+                            b"Save the modified editor document before opening a file.";
+                        return;
+                    }
+                    if !crate::storage::object_inspect_path(item.path.get()).is_ok_and(|(m, _)| {
+                        m.content_type == crate::storage::object::ContentType::Utf8Text
+                    }) {
+                        self.spatial.notice =
+                            b"The editor accepts text files. Source files are unchanged.";
+                        return;
+                    }
+                    self.spatial_close();
+                    self.open_text_editor_path(item.path.get());
+                    self.redraw();
+                    return;
+                }
+                let DropTarget::Folder(parent) = request.target else {
+                    return;
+                };
+                let leaf = crate::runtime::object_navigation::namespace_basename(item.path.get());
+                for suffix in 0..100usize {
+                    let mut name = [0u8; 64];
+                    if leaf.len() > 48 {
+                        break;
+                    }
+                    name[..leaf.len()].copy_from_slice(leaf);
+                    let mut length = leaf.len();
+                    if suffix != 0 {
+                        name[length..length + 6].copy_from_slice(b" copy ");
+                        length += 6;
+                        length += write_decimal(&mut name[length..], suffix);
+                    }
+                    let Ok(destination) = crate::runtime::object_navigation::namespace_child_path(
+                        parent.get(),
+                        &name[..length],
+                    ) else {
+                        break;
+                    };
+                    match crate::storage::object_copy_path(item.path.get(), destination.as_bytes())
+                    {
+                        Ok(_) => {
+                            self.spatial.notice =
+                                b"Copy created in File Navigator. Original file unchanged.";
+                            self.spatial.refresh.set(true);
+                            return;
+                        }
+                        Err(crate::storage::object::ObjectError::NameConflict) => continue,
+                        Err(_) => break,
+                    }
+                }
+                self.spatial.notice = b"Copy failed or unsupported. No source file was moved.";
+            }
+        }
+    }
+    // ------------------------=
+    // FUNC: spatial_previews
+    // DESC: Projects independent navigator identities and application visibility outside the paint path.
+    // ------------------=
+    fn spatial_previews(&mut self) {
+        let mut entries = [Preview::EMPTY; OVERVIEW_COUNT];
+        let mut count = 0;
+        crate::runtime::with_runtime(|r| {
+            for index in 0..crate::runtime::object_navigation::MAX_FILE_NAVIGATOR_INSTANCES {
+                if let Some(window) = r.file_navigators.window(index) {
+                    if !window.visible {
+                        continue;
+                    }
+                    let mut p = Preview::EMPTY;
+                    p.slot = 6 + index;
+                    p.navigator = Some(index);
+                    p.visible = true;
+                    p.label.set(window.state.active_namespace_ref.as_bytes());
+                    entries[count] = p;
+                    count += 1;
+                }
+            }
+        });
+        if count == 0 {
+            entries[0].label.set(b"Files");
+            entries[0].visible = self.home_window_visible;
+            count = 1;
+        }
+        let (editor, command, tasks) = self.desktop_app_windows();
+        for (app, visible, label) in [
+            (1, command.visible, b"Command".as_slice()),
+            (2, editor.visible, b"Text Editor"),
+            (3, tasks.visible, b"Task Manager"),
+            (4, self.settings_open, b"Settings"),
+        ] {
+            let mut p = Preview::EMPTY;
+            p.app = app;
+            p.slot = app as usize;
+            p.visible = visible;
+            p.label.set(label);
+            entries[count] = p;
+            count += 1;
+        }
+        self.spatial.previews = entries;
+        self.spatial.preview_count = count;
+        if self.spatial.tab == 0 {
+            self.spatial.focus = self.spatial.focus.min(count - 1);
+        }
+    }
     // ------------------------=
     // FUNC: spatial_open
     // DESC: Opens the native overlay after loading only this authenticated user's checkpoint.
@@ -110,6 +292,7 @@ impl ConsoleRuntime {
                 for snapshot in &mut *(&raw mut WORLD_EDITORS) {
                     *snapshot = EMPTY_EDITOR;
                 }
+                *(&raw mut WORLD_NAVIGATORS) = [None; 4];
             }
             self.spatial = Controller::new();
             self.spatial.owner = self.current_user.0;
@@ -131,6 +314,8 @@ impl ConsoleRuntime {
                 }
             }
         }
+        self.checkpoint_active_file_navigator();
+        self.spatial_previews();
         self.redraw();
         self.spatial.open = true;
         self.spatial.closing = false;
@@ -155,6 +340,8 @@ impl ConsoleRuntime {
         self.spatial.open = false;
         self.spatial.selection.cancel();
         self.spatial.ghost = None;
+        self.spatial.pending_drop = None;
+        self.spatial.settling = None;
         self.spatial.closing = false;
         self.spatial.editing = 0;
         self.spatial.text.fill(0);
@@ -167,18 +354,19 @@ impl ConsoleRuntime {
     // DESC: Renders retained previews; no application query or layout work is performed in painting.
     // ------------------=
     pub(super) fn spatial_present(&self) {
-        let (editor, command, tasks) = self.desktop_app_windows();
+        let mut painted = self.spatial.state;
+        if let Some((index, x, y)) = self.spatial.settling {
+            if let Some(item) = painted.items[index].as_mut() {
+                let t = self.spatial.settle.value(now()).clamp(0, 255) as usize;
+                item.x = ((x * (255 - t) + usize::from(item.x) * t) / 255) as u16;
+                item.y = ((y * (255 - t) + usize::from(item.y) * t) / 255) as u16;
+            }
+        }
         crate::bootstrap::spatial_present(
-            &self.spatial.state,
+            &painted,
             self.spatial.tab,
             self.spatial.focus,
-            [
-                self.home_window_visible,
-                command.visible,
-                editor.visible,
-                tasks.visible,
-                self.settings_open,
-            ],
+            &self.spatial.previews[..self.spatial.preview_count],
             self.spatial.notice,
             self.spatial.motion.value(now()).clamp(0, 255) as u8,
             self.pointer_x,
@@ -194,6 +382,7 @@ impl ConsoleRuntime {
             self.spatial.damage,
             self.spatial.zoom.value(now()).clamp(0, 255) as u8,
             self.spatial.ghost.and(self.spatial.drag.map(|d| d.0)),
+            self.spatial.pending_drop,
         );
     }
     // ------------------------=
@@ -201,13 +390,52 @@ impl ConsoleRuntime {
     // DESC: Schedules only changing animation frames and settles without idle repaints.
     // ------------------=
     pub(super) fn spatial_tick(&mut self) -> bool {
+        if self.spatial.settling.is_some() {
+            if !self.spatial.settle.active(now()) {
+                self.spatial.settling = None;
+            }
+            self.spatial.damage = Some((70, 220, 850, 530));
+            self.spatial_present();
+            self.spatial.damage = None;
+            return true;
+        }
+        if self.spatial.refresh.get() && now().saturating_sub(self.spatial.refreshed_at) >= 100 {
+            self.spatial.refresh.set(false);
+            self.spatial.refreshed_at = now();
+            crate::bootstrap::spatial_refresh_begin();
+            self.redraw_scene();
+            crate::bootstrap::spatial_refresh_end();
+            self.spatial_previews();
+            self.spatial_present();
+            return true;
+        }
         let progress = self.spatial.motion.value(now());
         if self.spatial.closing && progress == 0 {
             if let Some((tab, focus)) = self.spatial.selection.finish(progress) {
                 self.spatial.closing = false;
                 self.spatial.tab = tab;
                 self.spatial.focus = focus;
+                if tab == 1 {
+                    crate::bootstrap::spatial_arrival_begin();
+                }
                 self.spatial_execute_action(0);
+                if tab == 1 {
+                    if self.spatial.open {
+                        crate::bootstrap::spatial_arrival_cancel();
+                    } else {
+                        crate::bootstrap::spatial_arrival_capture();
+                        self.spatial.arriving = true;
+                        self.spatial.arrival = Motion::settled(0);
+                        self.spatial.arrival.retarget(
+                            255,
+                            now(),
+                            180,
+                            self.spatial.state.reduced_motion
+                                || crate::ui::performance::monotonic_ns().is_none(),
+                        );
+                        self.spatial_arrival_tick();
+                    }
+                }
                 if self.spatial.open {
                     self.spatial.motion.retarget(
                         255,
@@ -239,6 +467,28 @@ impl ConsoleRuntime {
         true
     }
     // ------------------------=
+    // FUNC: spatial_arrival_tick
+    // DESC: Presents the committed destination from a retained frame without rerunning app painters.
+    // ------------------=
+    pub(super) fn spatial_arrival_tick(&mut self) -> bool {
+        let value = self.spatial.arrival.value(now()).clamp(0, 255) as u8;
+        crate::bootstrap::spatial_arrival_present(value, self.pointer_x, self.pointer_y);
+        if value == 255 {
+            self.spatial.arriving = false;
+        }
+        true
+    }
+    // ------------------------=
+    // FUNC: spatial_finish_arrival
+    // DESC: Finishes presentation immediately before accepting new user input.
+    // ------------------=
+    pub(super) fn spatial_finish_arrival(&mut self) {
+        if self.spatial.arriving {
+            crate::bootstrap::spatial_arrival_present(255, self.pointer_x, self.pointer_y);
+            self.spatial.arriving = false;
+        }
+    }
+    // ------------------------=
     // FUNC: spatial_commit
     // DESC: Persists a complete checkpoint, rolling back visible metadata on storage failure.
     // ------------------=
@@ -263,6 +513,21 @@ impl ConsoleRuntime {
     // DESC: Provides keyboard navigation, explicit reference removal, and normal bounded text editing.
     // ------------------=
     pub(super) fn spatial_input(&mut self, key: ConsoleKey) {
+        if self.spatial.pending_drop.is_some() {
+            match key {
+                ConsoleKey::Enter => self.spatial_confirm_drop(),
+                ConsoleKey::Escape => {
+                    self.spatial.pending_drop = None;
+                    self.spatial.notice = b"Drop cancelled. Source files are unchanged.";
+                }
+                _ => {}
+            }
+            if self.spatial.open {
+                self.spatial_present();
+            }
+            return;
+        }
+        self.spatial.settling = None;
         if self.spatial.closing && self.spatial.selection.cancel() {
             self.spatial.closing = false;
             self.spatial
@@ -317,7 +582,7 @@ impl ConsoleRuntime {
             return;
         }
         let count = if self.spatial.tab == 0 {
-            5
+            self.spatial.preview_count.max(1)
         } else if self.spatial.tab == 1 {
             4
         } else {
@@ -354,8 +619,25 @@ impl ConsoleRuntime {
             }
             ConsoleKey::Left => self.spatial.focus = (self.spatial.focus + count - 1) % count,
             ConsoleKey::Right => self.spatial.focus = (self.spatial.focus + 1) % count,
-            ConsoleKey::Up => self.spatial.focus = self.spatial.focus.saturating_sub(4),
-            ConsoleKey::Down => self.spatial.focus = (self.spatial.focus + 4).min(count - 1),
+            ConsoleKey::Up => {
+                self.spatial.focus =
+                    self.spatial
+                        .focus
+                        .saturating_sub(if self.spatial.tab == 0 && count <= 5 {
+                            3
+                        } else {
+                            4
+                        })
+            }
+            ConsoleKey::Down => {
+                self.spatial.focus = (self.spatial.focus
+                    + if self.spatial.tab == 0 && count <= 5 {
+                        3
+                    } else {
+                        4
+                    })
+                .min(count - 1)
+            }
             ConsoleKey::Enter => self.spatial_action(if self.spatial.tab < 2 { 0 } else { 3 }),
             ConsoleKey::Delete if self.spatial.tab >= 2 => self.spatial_action(2),
             _ => {}
@@ -369,6 +651,20 @@ impl ConsoleRuntime {
     // DESC: Routes explicit clicks while keeping ordinary pointer motion cursor-only.
     // ------------------=
     pub(super) fn spatial_pointer(&mut self, clicked: bool, released: bool) {
+        if self.spatial.pending_drop.is_some() {
+            if clicked && (540..588).contains(&self.pointer_y) {
+                if (540..830).contains(&self.pointer_x) {
+                    self.spatial_input(ConsoleKey::Enter);
+                } else if (170..460).contains(&self.pointer_x) {
+                    self.spatial_input(ConsoleKey::Escape);
+                }
+            }
+            crate::bootstrap::system_ui_cursor(self.pointer_x, self.pointer_y);
+            return;
+        }
+        if clicked {
+            self.spatial.settling = None;
+        }
         if self.spatial.closing {
             if clicked {
                 self.spatial_input(ConsoleKey::Escape);
@@ -416,8 +712,57 @@ impl ConsoleRuntime {
                             y: self.pointer_y * self.system.framebuffer_height as i32 / 1000,
                         };
                         if editor.visible && content.contains(point) {
-                            self.spatial_action(3);
+                            if self.spatial.state.items[index].is_some_and(|i| i.object != [0; 16])
+                            {
+                                self.spatial.pending_drop = DropRequest::new(
+                                    &self.spatial.state,
+                                    index,
+                                    DropTarget::Editor,
+                                );
+                                self.spatial_present();
+                            } else {
+                                self.spatial_action(3);
+                            }
                             return;
+                        }
+                    }
+                    if moved
+                        && self.pointer_y < 570
+                        && self.desktop_app == DesktopAppKind::None
+                        && self.home_window_visible
+                    {
+                        let layout = SystemLayout::new(
+                            self.system.framebuffer_width,
+                            self.system.framebuffer_height,
+                        );
+                        let (x, y, w, h) = layout.home_window_geometry_sized(
+                            self.home_window_x,
+                            self.home_window_y,
+                            self.home_window_width,
+                            self.home_window_height,
+                            self.home_window_maximized,
+                        );
+                        let px = self.pointer_x * self.system.framebuffer_width as i32 / 1000;
+                        let py = self.pointer_y * self.system.framebuffer_height as i32 / 1000;
+                        if px >= x as i32
+                            && px < (x + w) as i32
+                            && py >= (y + 100 * layout.scale()) as i32
+                            && py < (y + h) as i32
+                        {
+                            if let Some(path) = crate::runtime::with_runtime(|r| {
+                                r.file_navigator.map(|n| n.active_namespace_ref)
+                            })
+                            .flatten()
+                            {
+                                let mut target = Label::empty();
+                                if target.set(path.as_bytes()) {
+                                    self.spatial.pending_drop = DropRequest::new(
+                                        &self.spatial.state,
+                                        index,
+                                        DropTarget::Folder(target),
+                                    );
+                                }
+                            }
                         }
                     }
                     self.spatial_present();
@@ -445,9 +790,14 @@ impl ConsoleRuntime {
                     if self.spatial.tab == 2 && (750..785).contains(&self.pointer_y) {
                         for group in 0..4 {
                             if (80 + group * 210..270 + group * 210).contains(&self.pointer_x) {
-                                if let Some(item) = self.spatial.state.items[index].as_mut() {
-                                    item.collection = group as u8;
-                                }
+                                self.spatial.state = old;
+                                self.spatial.pending_drop = DropRequest::new(
+                                    &old,
+                                    index,
+                                    DropTarget::Collection(group as u8),
+                                );
+                                self.spatial_present();
+                                return;
                             }
                         }
                     }
@@ -523,13 +873,14 @@ impl ConsoleRuntime {
         } else {
             let focus = self.spatial.focus;
             core::iter::once(focus)
-                .chain((0..5).filter(|i| *i != focus))
+                .chain((0..self.spatial.preview_count).filter(|i| *i != focus))
                 .find(|i| {
                     crate::ui::spatial::contains(
-                        crate::ui::spatial::overview_card(
+                        crate::ui::spatial::overview_bounds(
                             *i,
                             focus,
                             self.spatial.zoom.value(now()).clamp(0, 255) as u8,
+                            self.spatial.preview_count,
                         ),
                         x,
                         y,
@@ -702,11 +1053,16 @@ impl ConsoleRuntime {
             return;
         }
         if tab == 0 && action == 0 {
+            let Some(preview) = self.spatial.previews.get(index).copied() else {
+                return;
+            };
             self.spatial_close();
             self.mode = ConsoleMode::Desktop;
-            match index {
+            match preview.app {
                 0 => {
-                    if !self.home_window_visible {
+                    if let Some(navigator) = preview.navigator {
+                        self.load_file_navigator_window(navigator);
+                    } else if !self.home_window_visible {
                         self.open_file_navigator_window(b"/home/default");
                     } else {
                         self.focus_desktop_app(DesktopAppKind::None);
@@ -728,6 +1084,7 @@ impl ConsoleRuntime {
                 self.spatial.notice = b"World name (24 characters). Enter saves; Esc cancels.";
                 return;
             }
+            self.checkpoint_active_file_navigator();
             let old = self.spatial.state;
             let layout = self.capture_desktop_layout();
             let location =
@@ -759,7 +1116,10 @@ impl ConsoleRuntime {
                 self.spatial.state.active_world = index as u8;
                 if self.spatial_commit(old) {
                     if active != index {
+                        let previous =
+                            crate::runtime::with_runtime(|r| (r.file_navigators, r.file_navigator));
                         unsafe {
+                            (*(&raw mut WORLD_NAVIGATORS))[active] = previous;
                             let snapshot = &mut (*(&raw mut WORLD_EDITORS))[active];
                             snapshot.document = self.editor_document;
                             snapshot.path = self.editor_document_path;
@@ -774,6 +1134,17 @@ impl ConsoleRuntime {
                     let location = self.spatial.state.worlds[index].location;
                     self.spatial_close();
                     self.mode = ConsoleMode::Desktop;
+                    if active != index {
+                        let destination = unsafe { (*(&raw const WORLD_NAVIGATORS))[index] };
+                        crate::runtime::with_runtime(|r| {
+                            let (windows, current) = destination.unwrap_or((
+                                crate::runtime::object_navigation::FileNavigatorWorkspace::new(),
+                                None,
+                            ));
+                            r.file_navigators = windows;
+                            r.file_navigator = current;
+                        });
+                    }
                     if let Some(layout) = target {
                         self.restore_desktop_layout(layout);
                     } else {
@@ -814,10 +1185,18 @@ impl ConsoleRuntime {
                     }
                     if !location.get().is_empty() {
                         let _ = crate::runtime::with_runtime(|r| {
+                            if r.file_navigator.is_none() {
+                                r.file_navigator =
+                                    crate::runtime::object_navigation::FileNavigatorState::new(
+                                        location.get(),
+                                    )
+                                    .ok();
+                            }
                             r.file_navigator
                                 .as_mut()
                                 .map(|n| n.navigate(location.get()))
                         });
+                        self.checkpoint_active_file_navigator();
                     }
                     self.redraw();
                 }
@@ -845,14 +1224,11 @@ impl ConsoleRuntime {
         let old = self.spatial.state;
         match action {
             1 if tab == 2 => {
-                let _ = self.spatial.state.place(
-                    self.current_user.0,
+                self.spatial.pending_drop = DropRequest::new(
+                    &self.spatial.state,
                     index,
-                    (item.collection + 1) % 4,
-                    item.x,
-                    item.y,
+                    DropTarget::Collection((item.collection + 1) % 4),
                 );
-                self.spatial_commit(old);
             }
             1 if tab == 4 => {
                 if let Some(source) = self.spatial.link.take() {
@@ -878,12 +1254,17 @@ impl ConsoleRuntime {
             }
             3 if tab == 3 => {
                 if item.text.get().is_empty() {
-                    self.spatial.notice = b"Choose a text clipping to insert into the editor.";
+                    self.spatial.pending_drop =
+                        DropRequest::new(&self.spatial.state, index, DropTarget::Editor);
+                    return;
+                }
+                if !self.editor_document.replace_selection(item.text.get()) {
+                    self.spatial.notice =
+                        b"The editor has no space for this clipping. Nothing was replaced.";
                     return;
                 }
                 self.spatial_close();
                 self.open_text_editor();
-                self.editor_document.replace_selection(item.text.get());
                 self.redraw();
             }
             3 => {

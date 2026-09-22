@@ -433,6 +433,8 @@ ui-install-parity-test: x86 x86_64 aarch64
 
 input-regression-test:
 	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -A warnings --test tools/spatial-retained-test.rs -o build/behavior-tests/spatial-retained-test
+	@build/behavior-tests/spatial-retained-test
 	@rustc --edition=2021 -A warnings --test tools/spatial-state-test.rs -o build/behavior-tests/spatial-state-test
 	@build/behavior-tests/spatial-state-test
 	@rustc --edition=2021 -A warnings --test tools/spatial-backdrop-test.rs -o build/behavior-tests/spatial-backdrop-test

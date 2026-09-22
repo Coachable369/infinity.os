@@ -5,6 +5,56 @@ mod spatial;
 use spatial::*;
 #[test]
 // ------------------------=
+// FUNC: independent_overview_fits_every_window_and_keeps_zoom_bounded
+// DESC: Verifies ten independent identities fit above actions and focused zoom preserves surrounding cards.
+// ------------------=
+fn independent_overview_fits_every_window_and_keeps_zoom_bounded() {
+    for count in 6..=OVERVIEW_COUNT {
+        for index in 0..count {
+            let r = overview_bounds(index, 0, 0, count);
+            assert!(r.0 >= 80 && r.0 + r.2 <= 920);
+            assert!(r.1 >= 230 && r.1 + r.3 < 805);
+            for other in index + 1..count {
+                let s = overview_bounds(other, 0, 0, count);
+                assert!(
+                    r.0 + r.2 <= s.0 || s.0 + s.2 <= r.0 || r.1 + r.3 <= s.1 || s.1 + s.3 <= r.1
+                );
+            }
+            assert_eq!(
+                overview_bounds(index, index, 255, count),
+                (110, 230, 780, 480)
+            );
+            if index != 0 {
+                assert_eq!(overview_bounds(index, 0, 255, count), r);
+            }
+        }
+    }
+}
+#[test]
+// ------------------------=
+// FUNC: drop_proposals_are_non_mutating_and_reject_invalid_destinations
+// DESC: Exercises confirmation staging without modifying references or source identities.
+// ------------------=
+fn drop_proposals_are_non_mutating_and_reject_invalid_destinations() {
+    let mut state = SpatialState::new([1; 16]);
+    let index = state.gather([1; 16], clipping()).unwrap();
+    let before = state;
+    let request = DropRequest::new(&state, index, DropTarget::Collection(3)).unwrap();
+    assert_eq!(request.index, index);
+    assert_eq!(state, before);
+    assert!(DropRequest::new(&state, index, DropTarget::Collection(4)).is_none());
+    assert!(DropRequest::new(&state, 16, DropTarget::Editor).is_none());
+    assert!(DropRequest::new(&state, 1, DropTarget::Editor).is_none());
+    let mut folder = Label::empty();
+    folder.set(b"/home/default");
+    assert!(DropRequest::new(&state, index, DropTarget::Folder(folder)).is_none());
+    state.items[index].as_mut().unwrap().object = [7; 16];
+    assert!(DropRequest::new(&state, index, DropTarget::Folder(folder)).is_some());
+    folder.set(b"relative");
+    assert!(DropRequest::new(&state, index, DropTarget::Folder(folder)).is_none());
+}
+#[test]
+// ------------------------=
 // FUNC: shelf_pages_keep_gutters_and_hidden_items_noninteractive
 // DESC: Checks shared rendering and hit-test geometry for every shelf page and boundary.
 // ------------------=

@@ -1112,7 +1112,15 @@ impl ConsoleRuntime {
     // DESC: Implements the redraw operation.
     // ------------------=
     fn redraw(&self) {
-        if self.spatial.open { return; }
+        if self.spatial.open || self.spatial.arriving { self.spatial.refresh.set(true); return; }
+        self.redraw_scene();
+    }
+
+    // ------------------------=
+    // FUNC: redraw_scene
+    // DESC: Composes a committed scene; spatial refresh suppresses physical presentation until its overlay is complete.
+    // ------------------=
+    fn redraw_scene(&self) {
         let mut editor_view = self.editor_tools;
         editor_view.selection = self.editor_document.selection(); editor_view.cursor = self.editor_document.cursor();
         editor_view.filename_len = self.editor_document_name_length.min(editor_view.filename.len());
@@ -1265,6 +1273,7 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        self.spatial_finish_arrival();
         self.title_clicks.cancel();
         self.session_idle.note_activity();
         self.caret_visible = true;
@@ -2952,6 +2961,7 @@ impl ConsoleRuntime {
     // DESC: Locks the active identity session only after retaining its complete desktop layout.
     // ------------------=
     fn lock_session_preserving_desktop(&mut self, inactive: bool) -> bool {
+        self.spatial_finish_arrival();
         if self.spatial.open { self.spatial_close(); }
         if self.current_session.is_zero() {
             return false;
@@ -6376,6 +6386,7 @@ impl ConsoleRuntime {
     // DESC: Consumes wheel motion inside Settings as content scrolling instead of changing the selected navigation section.
     // ------------------=
     fn pointer_scroll(&mut self, vertical: i8) -> bool {
+        self.spatial_finish_arrival();
         if self.spatial.open {return self.spatial_scroll(vertical);}
         if vertical == 0 {
             return false;
@@ -6854,6 +6865,7 @@ impl ConsoleRuntime {
         }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
+        self.spatial_finish_arrival();
         if self.spatial.open { self.spatial_pointer(clicked, released); return; }
         let layout = SystemLayout::new(
             self.system.framebuffer_width,
@@ -12357,6 +12369,7 @@ pub fn ui_animation_tick() -> bool {
             return false;
         };
         let motion_frame = runtime.continuous_motion_frames.take_for_tick();
+        if runtime.spatial.arriving { return runtime.spatial_arrival_tick(); }
         if runtime.spatial.open { return runtime.spatial_tick(); }
         let thinking_changed = crate::bootstrap::thinking_animation_tick(runtime.mode == ConsoleMode::Desktop);
         if thinking_changed && !motion_frame {
@@ -12476,6 +12489,7 @@ pub fn clock_tick() {
             }
             let next = firmware_date_time(runtime.system.firmware_runtime_services);
             if runtime.mode == ConsoleMode::Desktop
+                && !runtime.spatial.open && !runtime.spatial.arriving
                 && runtime.desktop_app == DesktopAppKind::TextEditor
                 && runtime.editor_dialog == EditorDialog::None
                 && runtime.editor_tools.field == crate::ui::editor_tools::Field::None

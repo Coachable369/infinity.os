@@ -4,6 +4,54 @@ use super::session_state::{self, DesktopSessionLayout};
 pub const STATE_BYTES: usize = 8192;
 pub const ITEM_COUNT: usize = 16;
 pub const WORLD_COUNT: usize = 4;
+pub const OVERVIEW_COUNT: usize = 10;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DropTarget {
+    Collection(u8),
+    Editor,
+    Folder(Label<96>),
+}
+#[derive(Clone, Copy)]
+pub struct DropRequest {
+    pub index: usize,
+    pub target: DropTarget,
+}
+impl DropRequest {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Rejects nonexistent references and malformed destinations before showing a drop proposal.
+    // ------------------=
+    pub fn new(state: &SpatialState, index: usize, target: DropTarget) -> Option<Self> {
+        let item = state.items.get(index)?.as_ref()?;
+        match target {
+            DropTarget::Collection(group) if group >= WORLD_COUNT as u8 => return None,
+            DropTarget::Folder(path)
+                if item.object == [0; 16] || path.get().first() != Some(&b'/') =>
+            {
+                return None
+            }
+            _ => {}
+        }
+        Some(Self { index, target })
+    }
+}
+#[derive(Clone, Copy)]
+pub struct Preview {
+    pub slot: usize,
+    pub app: u8,
+    pub navigator: Option<usize>,
+    pub visible: bool,
+    pub label: Label<96>,
+}
+impl Preview {
+    pub const EMPTY: Self = Self {
+        slot: 0,
+        app: 0,
+        navigator: None,
+        visible: false,
+        label: Label::empty(),
+    };
+}
 pub const TABS: [&[u8]; 5] = [
     b"Holographic",
     b"Worldshift",
@@ -35,6 +83,32 @@ pub fn shelf_card(index: usize, focus: usize) -> Option<(usize, usize, usize, us
 // ------------------=
 pub fn overview_card(index: usize, focus: usize, zoom: u8) -> (usize, usize, usize, usize) {
     let normal = (80 + (index % 3) * 280, 230 + (index / 3) * 255, 260, 225);
+    if index != focus {
+        return normal;
+    }
+    let t = usize::from(zoom);
+    let mix = |a: usize, b: usize| (a * (255 - t) + b * t) / 255;
+    (
+        mix(normal.0, 110),
+        mix(normal.1, 230),
+        mix(normal.2, 780),
+        mix(normal.3, 480),
+    )
+}
+// ------------------------=
+// FUNC: overview_bounds
+// DESC: Fits all independent windows without allowing an extra row to overlap the action strip.
+// ------------------=
+pub fn overview_bounds(
+    index: usize,
+    focus: usize,
+    zoom: u8,
+    count: usize,
+) -> (usize, usize, usize, usize) {
+    if count <= 5 {
+        return overview_card(index, focus, zoom);
+    }
+    let normal = (80 + index % 4 * 210, 230 + index / 4 * 175, 195, 160);
     if index != focus {
         return normal;
     }

@@ -65,7 +65,13 @@ pub(crate) fn commit(
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     {
         with_store(|store| match store.resolve(&path) {
-            Ok(id) => store.replace_state(id, &bytes).map(|_| ()),
+            Ok(id) => {
+                let mut previous = [0u8; crate::ui::spatial::STATE_BYTES];
+                let length = store.read_spatial_state(id, &mut previous)?;
+                crate::ui::spatial::SpatialState::decode(owner, &previous[..length])
+                    .map_err(|_| object::ObjectError::CorruptContent)?;
+                store.replace_state(id, &bytes).map(|_| ())
+            }
             Err(object::ObjectError::NotFound | object::ObjectError::NamespaceNotFound) => store
                 .create_attached(
                     b"@spatial-state",

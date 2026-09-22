@@ -4207,7 +4207,7 @@ impl super::DisplayDevice {
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if screen != 7 {
-            super::launcher_backdrop::invalidate();
+            if !super::spatial_view::refreshing() { super::launcher_backdrop::invalidate(); }
         }
         if matches!(screen, 5 | 6) {
             self.paint_authentication_background();
@@ -8209,39 +8209,11 @@ impl super::DisplayDevice {
                         navigator.height,
                         navigator.maximized,
                     );
-            self.glass_panel(left, top, width, height, false);
-            let (header_r, header_g, header_b) =
-                self.active_accent_surface(crate::ui::skin::AccentSurface::Header);
-            self.fill_rect_alpha(
-                left,
-                top,
-                width,
-                34 * scale,
-                header_r,
-                header_g,
-                header_b,
-                215,
-            );
-            self.small_infinity_mark(left + 20 * scale, top + 17 * scale, 24 * scale);
-            self.ui_text_strong(
-                left + 38 * scale,
-                top + 10 * scale,
-                b"File Navigator",
-                226,
-                237,
-                245,
-                1,
-            );
-            self.ui_text(
-                left + 24 * scale,
-                top + 58 * scale,
-                navigator.state.active_namespace_ref.as_bytes(),
-                185,
-                215,
-                236,
-                1,
-            );
-            self.outline_rounded_rect(left, top, width, height, 10 * scale, 94, 184, 239);
+            self.retained_window(6 + index, (left, top, width, height), |target| {
+                target.paint_navigator_window(scale, navigator.x, navigator.y,
+                    navigator.width, navigator.height, navigator.maximized,
+                    home_location, None, Some(navigator.state));
+            });
             self.window_assistant(5+index,crate::ui::geometry::Rect{x:left as i32,y:top as i32,width:width as u32,height:height as u32},scale);
             if !navigator.maximized {
                 let outline =
@@ -8258,7 +8230,8 @@ impl super::DisplayDevice {
                     window_height,
                     window_maximized,
                 );
-            self.retained_window(0, bounds, |target| {
+            let navigator_state = crate::runtime::with_runtime(|r| r.file_navigator).flatten();
+            self.retained_window(active_navigator.map(|i| 6 + i).unwrap_or(0), bounds, |target| {
                 target.paint_navigator_window(
                     scale,
                     window_x,
@@ -8268,6 +8241,7 @@ impl super::DisplayDevice {
                     window_maximized,
                     home_location,
                     dragging_item,
+                    navigator_state,
                 )
             });
             self.window_assistant(5+active_navigator.unwrap_or(0),crate::ui::geometry::Rect{x:bounds.0 as i32,y:bounds.1 as i32,width:bounds.2 as u32,height:bounds.3 as u32},scale);
@@ -8288,9 +8262,8 @@ impl super::DisplayDevice {
         window_maximized: bool,
         home_location: usize,
         dragging_item: Option<usize>,
+        navigator_state: Option<crate::runtime::object_navigation::FileNavigatorState>,
     ) {
-        let navigator_state =
-            crate::runtime::with_runtime(|runtime| runtime.file_navigator).flatten();
         let navigator_list_view = navigator_state
             .map(|state| state.view_mode == crate::runtime::object_navigation::ViewMode::List)
             .unwrap_or(true);

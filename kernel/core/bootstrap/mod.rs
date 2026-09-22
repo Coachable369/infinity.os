@@ -7,6 +7,9 @@ mod crash;
 mod desktop;
 mod spatial_view;
 pub use self::spatial_view::{present as spatial_present, close as spatial_close};
+pub use self::spatial_view::{refresh_begin as spatial_refresh_begin, refresh_end as spatial_refresh_end};
+pub use self::spatial_view::{arrival_begin as spatial_arrival_begin, arrival_capture as spatial_arrival_capture,
+    arrival_present as spatial_arrival_present, arrival_cancel as spatial_arrival_cancel};
 mod editor_view;
 mod assistant_view;
 mod app_style;
@@ -248,6 +251,7 @@ impl DisplayDevice {
     // DESC: Atomically exposes the completed dirty union from software back buffer to physical framebuffer.
     // ------------------=
     fn present_damage(&mut self) -> u64 {
+        if spatial_view::refreshing() { return 0; }
         if self.dirty_count == 0 {
             return 0;
         }
