@@ -1,4 +1,6 @@
 mod storage;
+#[path = "../kernel/storage/spatial_path.rs"]
+mod spatial_path;
 
 use std::{
     cell::{Cell, RefCell},
@@ -662,7 +664,8 @@ fn main() {
 fn private_spatial_checkpoint(sectors:usize) {
     let disk=MemoryDisk::new(sectors);
     let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x94;16]).unwrap();
-    let path=b"/system/spatial/11111111111111111111111111111111";
+    let checkpoint_path = spatial_path::owner_path([0x11; 16]);
+    let path = checkpoint_path.as_slice();
     let id=store.create_attached(b"@spatial-state",ObjectType::Metadata,Space::System,&[7;8192],path).unwrap();
     let mut bytes=[0;8192];
     assert_eq!(store.read(id,None,&mut bytes),Err(ObjectError::Unauthorized));

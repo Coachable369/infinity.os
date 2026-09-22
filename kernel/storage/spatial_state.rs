@@ -1,11 +1,16 @@
 //! Private, session-bound spatial checkpoints in the installed native object store.
 use super::*;
+#[path = "spatial_path.rs"]
+mod checkpoint_path;
 
 // ------------------------=
 // FUNC: path
 // DESC: Validates the exact active session and derives its owner's private checkpoint namespace.
 // ------------------=
-fn path(owner: [u8; 16], session: [u8; 16]) -> Result<[u8; 47], object::ObjectError> {
+fn path(
+    owner: [u8; 16],
+    session: [u8; 16],
+) -> Result<[u8; checkpoint_path::PATH_BYTES], object::ObjectError> {
     let allowed = crate::runtime::with_runtime(|runtime| {
         (0..crate::runtime::identity::MAX_SESSIONS)
             .filter_map(|i| runtime.identity.session_nth(i))
@@ -19,13 +24,7 @@ fn path(owner: [u8; 16], session: [u8; 16]) -> Result<[u8; 47], object::ObjectEr
     if !allowed || owner == [0; 16] {
         return Err(object::ObjectError::Unauthorized);
     }
-    let mut path = [0; 47];
-    path[..15].copy_from_slice(b"/system/spatial/");
-    for (i, b) in owner.iter().enumerate() {
-        path[15 + 2 * i] = b"0123456789abcdef"[(b >> 4) as usize];
-        path[16 + 2 * i] = b"0123456789abcdef"[(b & 15) as usize];
-    }
-    Ok(path)
+    Ok(checkpoint_path::owner_path(owner))
 }
 
 // ------------------------=

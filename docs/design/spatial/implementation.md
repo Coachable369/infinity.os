@@ -65,6 +65,9 @@ Replacement revalidates stored type, ownership and checksum.
 
 ## Behavioral verification
 
+- Native checkpoint-key test: derives the namespace length and round-trips every
+  owner-byte value. Object-store persistence uses this same production encoder,
+  rather than a manually constructed test key.
 - Seven state tests: ownership, checksums, persistence, capacity, relationships,
   shelf paging, ten-window geometry/zoom and non-mutating drop proposals.
 - Native retained-cache test: independent pixels, no painter call on translation,
@@ -100,7 +103,15 @@ The subsequent full `sh build.sh` completed successfully, regenerated both
 release ISOs and checksums, and refreshed the provisioning model ISO. Build log:
 `/tmp/infinity-spatial-followup-build.log` (temporary local evidence).
 
-Account setup is still needed before interaction tests. Updated installed
+The September 22 fresh-install report exposed a panic in the checkpoint key:
+the 16-byte `/system/spatial/` prefix was copied into a 15-byte destination.
+Key length and offsets now derive from the prefix itself (48 bytes including
+the hexadecimal owner ID). Prior state/pixel tests did not exercise this glue
+code; the new encoder test and updated object-store test cover it.
+
+The corrected installed kernel booted the user's preserved installation clone
+`infinityos-4-spatial-fixed.vdi` to sign-in with no ISO attached. The original
+disk remains available. Sign-in is still needed before interaction tests. Updated installed
 interaction, screenshot comparison and frame-time measurements have **not**
 passed; host tests/builds are not substitutes. Full installed visual/performance
 acceptance remains open.
