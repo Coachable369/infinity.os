@@ -549,7 +549,9 @@ fn desktop_chat() {
     let mut chat = ChatRuntime::new();
     assert!(chat.enabled());
     assert!(!chat.minimized());
-    assert_eq!(chat.selected_model_index(), 0);
+    assert_eq!(chat.selected_model_index(), 3);
+    assert_eq!(chat.selected_model(), runtime::ai::chat::HERMES_MODEL_ID);
+    assert!(chat.select_model_index(0));
     assert!(chat.push_input(b'h'));
     assert!(chat.push_input(b'i'));
     assert!(chat.submit_input());
@@ -593,7 +595,7 @@ fn desktop_chat() {
     assert!(!chat.select_model_index(CHAT_MODELS.len()));
     let before = chat.message_count();
     assert!(chat.select_model_index(3));
-    assert_eq!(chat.selected_model(), runtime::ai::chat::QWEN_FULL_MODEL_ID);
+    assert_eq!(chat.selected_model(), runtime::ai::chat::HERMES_MODEL_ID);
     assert!(!chat.selected_model_ready());
     assert!(!chat.submit(b"hello"));
     assert_eq!(chat.message_count(), before);
@@ -606,14 +608,15 @@ fn desktop_chat() {
     assert!(chat.selected_model_ready());
     // A native model never routes through canned local responses, even when ready.
     assert!(!chat.submit(b"hello"));
-    assert_eq!(chat.select_next_model(), 5);
+    assert_eq!(chat.select_next_model(), 0);
+    assert!(chat.select_model_index(3));
     assert_eq!(chat.selected_model(), runtime::ai::chat::HERMES_MODEL_ID);
     assert!(!chat.selected_model_ready());
     assert!(!chat.submit(b"hello"));
     chat.set_hermes_ready(true);
     assert!(chat.selected_model_ready());
     assert!(!chat.submit(b"hello"));
-    assert_eq!(chat.select_next_model(), 0);
+    assert!(chat.select_model_index(0));
     assert!(chat.selected_model_ready());
     for _ in 0..CHAT_MESSAGE_CAPACITY {
         assert!(chat.submit(b"system status"));
@@ -640,7 +643,7 @@ fn desktop_chat() {
     assert_eq!(preferences.chat_model_index, 3);
     let mut restored_chat = runtime::ai::chat::ChatRuntime::new();
     assert!(restored_chat.select_model_index(preferences.chat_model_index as usize));
-    assert_eq!(restored_chat.selected_model(), runtime::ai::chat::QWEN_FULL_MODEL_ID);
+    assert_eq!(restored_chat.selected_model(), runtime::ai::chat::HERMES_MODEL_ID);
     identities.update_ai_chat_preferences(user.id, user.id, true, 4).unwrap();
     let restored = runtime::identity::IdentitySystem::decode(&identities.encode()).unwrap();
     assert_eq!(restored.ai_profile(user.id).unwrap().chat_model_index, 4);
@@ -672,6 +675,7 @@ fn desktop_chat() {
         Some(b"my favorite color is violet".as_slice())
     );
     let mut resumed_chat = ChatRuntime::new();
+    assert!(resumed_chat.select_model_index(0));
     resumed_chat.set_memory(durable_memory);
     assert!(resumed_chat.submit(b"what is your name?"));
     assert_eq!(

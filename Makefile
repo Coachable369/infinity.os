@@ -432,6 +432,9 @@ ui-install-parity-test: x86 x86_64 aarch64
 	@tools/ui-install-parity-test.sh
 
 input-regression-test:
+	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 --test kernel/drivers/input/desktop_shortcuts.rs -o build/behavior-tests/desktop-shortcuts-test
+	@build/behavior-tests/desktop-shortcuts-test
 	@tools/input-regression-test.sh
 
 task-manager-test:

@@ -32,7 +32,6 @@ pub struct AiRuntime {
     cpu: LocalCpuBackend,
     qwen: Option<qwen::service::Service>,
     other_native: Option<qwen::service::Service>,
-    hermes_native: Option<qwen::service::Service>,
     active_native: ModelId,
     chat_owner: [u8; 16],
     pub qwen_tokens: u64,
@@ -65,7 +64,7 @@ impl AiRuntime {
         if self.qwen.as_ref().is_some_and(|service| service.busy()) || !self.chat.input().is_empty() {
             return false;
         }
-        for slot in [&mut self.qwen, &mut self.other_native, &mut self.hermes_native] {
+        for slot in [&mut self.qwen, &mut self.other_native] {
             if let Some(service) = slot.as_mut() { service.clear_conversation(); }
         }
         true
@@ -77,11 +76,7 @@ impl AiRuntime {
     pub fn native_ready(&self, id: ModelId) -> bool {
         if id == self.active_native { return self.qwen.is_some(); }
         match id {
-            chat::HERMES_MODEL_ID => self.hermes_native.is_some(),
-            chat::MINISTRAL_MODEL_ID => self.other_native.is_some(),
-            chat::QWEN_FULL_MODEL_ID => if self.active_native == chat::HERMES_MODEL_ID {
-                self.hermes_native.is_some()
-            } else { self.other_native.is_some() },
+            chat::HERMES_MODEL_ID | chat::MINISTRAL_MODEL_ID => self.other_native.is_some(),
             _ => false,
         }
     }
@@ -90,7 +85,8 @@ impl AiRuntime {
     // DESC: Registers optional pinned Hermes with independent KV memory behind the existing local boundary.
     // ------------------=
     pub fn load_hermes(&mut self, bytes: &'static [u8], arena: &'static mut [u8]) -> bool {
-        if self.hermes_native.is_some() || self.active_native != chat::QWEN_FULL_MODEL_ID { return false; }
+        if self.qwen.is_some() || self.active_native != chat::HERMES_MODEL_ID { return false; }
+        let started = crate::ui::performance::monotonic_ns();
         let memory_bytes = bytes.len() as u64 + arena.len() as u64;
         let Ok(service) = qwen::service::Service::load_hermes(bytes, arena) else { return false; };
         let descriptor = ModelDescriptor {
@@ -105,7 +101,9 @@ impl AiRuntime {
             checksum: 0xe06f7791, private_data_eligible: true,
         };
         if self.models.register(descriptor).is_err() { return false; }
-        self.hermes_native = Some(service);
+        self.qwen_metrics.load_ns = started.zip(crate::ui::performance::monotonic_ns())
+            .map_or(0, |(a,b)| b.saturating_sub(a));
+        self.qwen = Some(service);
         self.chat.set_hermes_ready(true);
         true
     }
@@ -119,12 +117,9 @@ impl AiRuntime {
                 service.clear_conversation();
             }
             if let Some(service) = self.other_native.as_mut() { service.clear_conversation(); }
-            if let Some(service) = self.hermes_native.as_mut() { service.clear_conversation(); }
-            let ready = self.native_ready(chat::QWEN_FULL_MODEL_ID);
             let ministral_ready = self.native_ready(chat::MINISTRAL_MODEL_ID);
             let hermes_ready = self.native_ready(chat::HERMES_MODEL_ID);
             self.chat = ChatRuntime::new();
-            self.chat.set_qwen_ready(ready);
             self.chat.set_ministral_ready(ministral_ready);
             self.chat.set_hermes_ready(hermes_ready);
             self.chat_owner = owner;
@@ -146,53 +141,11 @@ impl AiRuntime {
         active
     }
     // ------------------------=
-    // FUNC: load_qwen
-    // DESC: Installs the verified native backend into the existing local AI service.
-    // ------------------=
-    pub fn load_qwen(&mut self, bytes: &'static [u8], arena: &'static mut [u8]) -> bool {
-        let started = crate::ui::performance::monotonic_ns();
-        match qwen::service::Service::load(bytes, arena) {
-            Ok(service) => {
-                self.qwen_metrics.load_ns = started.zip(crate::ui::performance::monotonic_ns())
-                    .map_or(0, |(a,b)| b.saturating_sub(a));
-                let descriptor = ModelDescriptor {
-                    id: chat::QWEN_FULL_MODEL_ID,
-                    version: 1,
-                    provider: model::LOCAL_PROVIDER_ID,
-                    adapter: RuntimeAdapter::InfinityNative,
-                    capabilities: CAP_REASONING,
-                    size: 5_027_783_488,
-                    requirements: ModelRequirements {
-                        memory_bytes: 6_369_960_768,
-                        backend: BackendClass::Cpu,
-                        minimum_backend_version: 1,
-                    },
-                    trust: TrustState::SystemVerified,
-                    object_ref: [0; 16],
-                    install_state: InstallState::Loaded,
-                    install_class: InstallClass::SystemOptional,
-                    checksum: 0xbdcd98d9,
-                    private_data_eligible: true,
-                };
-                if self.models.register(descriptor).is_err() {
-                    return false;
-                }
-                self.qwen = Some(service);
-                self.chat.set_qwen_ready(true);
-                true
-            }
-            Err(_) => {
-                self.chat.set_qwen_ready(false);
-                false
-            }
-        }
-    }
-    // ------------------------=
     // FUNC: load_ministral
-    // DESC: Registers verified Ministral weights alongside Qwen without sharing mutable caches.
+    // DESC: Registers verified secondary Ministral weights without sharing mutable caches.
     // ------------------=
     pub fn load_ministral(&mut self, bytes: &'static [u8], arena: &'static mut [u8]) -> bool {
-        if self.other_native.is_some() || self.active_native != chat::QWEN_FULL_MODEL_ID { return false; }
+        if self.other_native.is_some() || self.active_native != chat::HERMES_MODEL_ID { return false; }
         let Ok(service) = qwen::service::Service::load(bytes, arena) else { return false; };
         if bytes.len() != 2_147_023_008 { return false; }
         let descriptor = ModelDescriptor {
@@ -210,25 +163,16 @@ impl AiRuntime {
     }
     // ------------------------=
     // FUNC: submit_chat
-    // DESC: Routes Qwen to bounded local inference; legacy models retain their existing behavior.
+    // DESC: Routes selected native models to bounded local inference; legacy helpers retain their behavior.
     // ------------------=
     pub fn submit_chat(&mut self) -> bool {
-        if !matches!(self.chat.selected_model(), chat::QWEN_FULL_MODEL_ID | chat::MINISTRAL_MODEL_ID | chat::HERMES_MODEL_ID) {
+        if !matches!(self.chat.selected_model(), chat::MINISTRAL_MODEL_ID | chat::HERMES_MODEL_ID) {
             return self.chat.submit_input();
         }
         if self.chat.selected_model() != self.active_native {
             if !self.native_ready(self.chat.selected_model()) { return false; }
             self.cancel_chat();
-            if self.active_native == chat::MINISTRAL_MODEL_ID {
-                core::mem::swap(&mut self.qwen, &mut self.other_native);
-            } else if self.active_native == chat::HERMES_MODEL_ID {
-                core::mem::swap(&mut self.qwen, &mut self.hermes_native);
-            }
-            if self.chat.selected_model() == chat::MINISTRAL_MODEL_ID {
-                core::mem::swap(&mut self.qwen, &mut self.other_native);
-            } else if self.chat.selected_model() == chat::HERMES_MODEL_ID {
-                core::mem::swap(&mut self.qwen, &mut self.hermes_native);
-            }
+            core::mem::swap(&mut self.qwen, &mut self.other_native);
             self.active_native = self.chat.selected_model();
         }
         let Some(service) = self.qwen.as_mut() else {
@@ -343,8 +287,7 @@ impl AiRuntime {
             cpu: LocalCpuBackend::new(4),
             qwen: None,
             other_native: None,
-            hermes_native: None,
-            active_native: chat::QWEN_FULL_MODEL_ID,
+            active_native: chat::HERMES_MODEL_ID,
             chat_owner: [0; 16],
             qwen_tokens: 0,
             qwen_decode_ns: 0,

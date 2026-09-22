@@ -522,7 +522,7 @@ impl IdentitySystem {
             provider_policy: AiProviderPolicy::LocalOnly,
             remote_processing: false,
             chat_enabled: true,
-            chat_model_index: 0,
+            chat_model_index: 3,
         });
         self.ai_memories[slot] = AiMemory::new();
         self.voice_profiles[slot] = Some(VoiceProfile {
@@ -1881,13 +1881,12 @@ fn read_user(
         remote_processing: ai_preferences & 1 != 0,
         chat_enabled: !ai_preferences_versioned || ai_preferences & 2 != 0,
         chat_model_index: if ai_preferences_versioned {
-            ((ai_preferences >> 2) & 0x0f).min(
-                crate::runtime::ai::chat::CHAT_MODELS
-                    .len()
-                    .saturating_sub(1) as u8,
-            )
+            match (ai_preferences >> 2) & 0x0f {
+                0..=4 => (ai_preferences >> 2) & 0x0f,
+                _ => 3, // Former Hermes index 5 and unknown selections use Hermes.
+            }
         } else {
-            0
+            3
         },
     };
     let voice = VoiceProfile {

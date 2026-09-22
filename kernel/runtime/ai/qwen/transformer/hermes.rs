@@ -81,8 +81,6 @@ fn layer(model: Model<'_>, index: usize) -> Result<Layer<'_>, Error> {
         q: find(b"attn_q.weight", 3072, 3072)?,
         k: find(b"attn_k.weight", 3072, 1024)?,
         v: find(b"attn_v.weight", 3072, 1024)?,
-        qnorm: norm,
-        knorm: norm,
         attention: find(b"attn_output.weight", 3072, 3072)?,
         ffn_norm: find(b"ffn_norm.weight", 3072, 1)?,
         gate: find(b"ffn_gate.weight", 3072, 8192)?,

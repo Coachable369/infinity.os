@@ -31,7 +31,7 @@ impl Service {
     }
     // ------------------------=
     // FUNC: load_hermes
-    // DESC: Loads Hermes through a separate pinned-artifact entry point, never weakening Qwen validation.
+    // DESC: Loads Hermes through its dedicated pinned-artifact entry point.
     // ------------------=
     pub fn load_hermes(bytes: &'static [u8], arena: &'static mut [u8]) -> Result<Self, Error> {
         Self::load_checked(bytes, arena, true)
@@ -46,11 +46,6 @@ impl Service {
         hermes: bool,
     ) -> Result<Self, Error> {
         use sha2::{Digest, Sha256};
-        const HASH: [u8; 32] = [
-            0xd9, 0x8c, 0xdc, 0xbd, 0x03, 0xe1, 0x7c, 0xe4, 0x76, 0x81, 0x43, 0x5b, 0x51, 0x50,
-            0xe3, 0x4c, 0x14, 0x17, 0xf5, 0x0b, 0x5c, 0x00, 0x19, 0xdd, 0x56, 0x0e, 0x48, 0x82,
-            0xc5, 0x74, 0x57, 0x85,
-        ];
         let ministral = bytes.len() == 2_147_023_008;
         let expected = if hermes {
             [
@@ -65,10 +60,10 @@ impl Service {
                 0xf9, 0x3f, 0xc5, 0xf8,
             ]
         } else {
-            HASH
+            return Err(Error::Unsupported);
         };
         if (hermes && bytes.len() != 2_019_373_888)
-            || (!hermes && !ministral && bytes.len() != 5_027_783_488)
+            || (!hermes && !ministral)
             || Sha256::digest(bytes).as_slice() != expected
         {
             return Err(Error::Format);
@@ -204,17 +199,6 @@ impl Service {
         self.text("\n")?;
         self.control(b"<|im_start|>")?;
         self.text("assistant\n")?;
-        if self.hermes {
-            return if self.prompt_count < CONTEXT - 1 {
-                Ok(())
-            } else {
-                Err(Error::Overflow)
-            };
-        }
-        self.control(b"<think>")?;
-        self.text("\n\n")?;
-        self.control(b"</think>")?;
-        self.text("\n\n")?;
         if self.prompt_count >= CONTEXT - 1 {
             return Err(Error::Overflow);
         }
@@ -304,7 +288,6 @@ impl Service {
         }
         if (self.ministral && next == 2)
             || (self.hermes && next == 128039)
-            || (!self.hermes && !self.ministral && (next == 151645 || next == 151643))
             || self.prompt_count >= CONTEXT
         {
             self.busy = false;

@@ -1,4 +1,5 @@
 pub mod pointer;
+pub(crate) mod desktop_shortcuts;
 mod buffer;
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod ps2;
@@ -210,7 +211,7 @@ pub fn report_pointer_discovery(capabilities: PointerCapabilities) {
 pub fn modified_console_key(code:u16, modifiers:u8)->Option<crate::console::ConsoleKey> {
     use crate::console::ConsoleKey;
     let key=console_key(code,modifiers&1!=0)?;
-    if modifiers&2!=0 {if let ConsoleKey::Character(c)=key {return Some(ConsoleKey::Shortcut(if modifiers&1!=0 && c.eq_ignore_ascii_case(&b'z'){b'y'}else{c.to_ascii_lowercase()}));}}
+    if modifiers&2!=0 {if let ConsoleKey::Character(c)=key {return Some(ConsoleKey::Shortcut(desktop_shortcuts::shortcut_code(c, modifiers&1!=0)));}}
     if modifiers&1!=0 {let direction=match key {ConsoleKey::Left=>-1,ConsoleKey::Right=>1,ConsoleKey::Up=>-2,ConsoleKey::Down=>2,ConsoleKey::Home=>-3,ConsoleKey::End=>3,_=>0};if direction!=0{return Some(ConsoleKey::SelectMove(direction));}}
     Some(key)
 }

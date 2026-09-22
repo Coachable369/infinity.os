@@ -1,5 +1,5 @@
 #!/bin/sh
-# Opt-in Hermes payload, retaining Qwen and Ministral.
+# Primary Hermes payload with Ministral as the secondary installed local model.
 set -eu
 cd "$(dirname "$0")/.."
 export INFINITY_HERMES_MODEL=model-cache/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf

@@ -1,4 +1,4 @@
-//! Qwen3-8B CPU forward pass, cooperatively advanced in bounded row batches.
+//! Shared native CPU forward pass, cooperatively advanced in bounded row batches.
 use super::{
     gguf::{Error, Model, Tensor},
     quant,
@@ -6,10 +6,10 @@ use super::{
 mod hermes;
 pub const CONTEXT: usize = 4096;
 pub const WIDTH: usize = 4096;
-pub const HIDDEN: usize = 12288;
+pub const HIDDEN: usize = 9216;
 pub const KV_WIDTH: usize = 1024;
-pub const LAYERS: usize = 36;
-pub const VOCAB: usize = 151936;
+pub const LAYERS: usize = 28;
+pub const VOCAB: usize = 131072;
 pub const KV_FLOATS: usize = LAYERS * CONTEXT * KV_WIDTH * 2;
 pub const WORK_FLOATS: usize = WIDTH * 4 + KV_WIDTH * 2 + HIDDEN * 3 + CONTEXT + VOCAB;
 
@@ -19,8 +19,6 @@ struct Layer<'a> {
     q: Tensor<'a>,
     k: Tensor<'a>,
     v: Tensor<'a>,
-    qnorm: Tensor<'a>,
-    knorm: Tensor<'a>,
     attention: Tensor<'a>,
     ffn_norm: Tensor<'a>,
     gate: Tensor<'a>,
@@ -49,36 +47,32 @@ impl<'a> Weights<'a> {
         let (kind, mut architecture) = model.metadata(b"general.architecture")?;
         let architecture = architecture.string()?;
         let ministral = architecture == b"mistral3";
-        if kind != 8 || (!ministral && architecture != b"qwen3") {
+        if kind != 8 || !ministral {
             return Err(Error::Unsupported);
         }
-        let (width, hidden, vocabulary, layer_count) = if ministral {
-            (3072, 9216, 131072, 26)
-        } else {
-            (WIDTH, HIDDEN, VOCAB, LAYERS)
-        };
+        let (width, hidden, vocabulary, layer_count) = (3072, 9216, 131072, 26);
         for (key, expected) in [
-            (b"qwen3.block_count".as_slice(), layer_count as u32),
-            (b"qwen3.embedding_length", width as u32),
-            (b"qwen3.feed_forward_length", hidden as u32),
-            (b"qwen3.attention.head_count", 32),
-            (b"qwen3.attention.head_count_kv", 8),
-            (b"qwen3.attention.key_length", 128),
-            (b"qwen3.attention.value_length", 128),
+            (b"mistral3.block_count".as_slice(), layer_count as u32),
+            (b"mistral3.embedding_length", width as u32),
+            (b"mistral3.feed_forward_length", hidden as u32),
+            (b"mistral3.attention.head_count", 32),
+            (b"mistral3.attention.head_count_kv", 8),
+            (b"mistral3.attention.key_length", 128),
+            (b"mistral3.attention.value_length", 128),
         ] {
-            let (kind, mut value) = model.metadata(model_key(key, ministral, &mut [0; 80]))?;
+            let (kind, mut value) = model.metadata(key)?;
             if kind != 4 || value.u32()? != expected {
                 return Err(Error::Unsupported);
             }
         }
         for (key, expected) in [
-            (b"qwen3.rope.freq_base".as_slice(), 1_000_000f32),
+            (b"mistral3.rope.freq_base".as_slice(), 1_000_000f32),
             (
-                b"qwen3.attention.layer_norm_rms_epsilon",
-                if ministral { 1e-5 } else { 1e-6 },
+                b"mistral3.attention.layer_norm_rms_epsilon",
+                1e-5,
             ),
         ] {
-            let (kind, mut value) = model.metadata(model_key(key, ministral, &mut [0; 80]))?;
+            let (kind, mut value) = model.metadata(key)?;
             if kind != 6 || f32::from_bits(value.u32()?) != expected {
                 return Err(Error::Unsupported);
             }
@@ -103,11 +97,7 @@ impl<'a> Weights<'a> {
             }
         }
         let output = checked(
-            if ministral {
-                embedding
-            } else {
-                model.tensor(b"output.weight")?
-            },
+            embedding,
             width,
             vocabulary,
         )?;
@@ -145,7 +135,7 @@ fn checked(t: Tensor<'_>, width: usize, rows: usize) -> Result<Tensor<'_>, Error
 }
 // ------------------------=
 // FUNC: load_layer
-// DESC: Resolves the eleven tensors making up one standard Qwen3 decoder block.
+// DESC: Resolves the pinned Ministral decoder block tensors.
 // ------------------=
 fn load_layer(
     model: Model<'_>,
@@ -174,16 +164,6 @@ fn load_layer(
         q: find(b"attn_q.weight", width, WIDTH)?,
         k: find(b"attn_k.weight", width, KV_WIDTH)?,
         v: find(b"attn_v.weight", width, KV_WIDTH)?,
-        qnorm: if ministral {
-            find(b"attn_norm.weight", width, 1)?
-        } else {
-            find(b"attn_q_norm.weight", 128, 1)?
-        },
-        knorm: if ministral {
-            find(b"attn_norm.weight", width, 1)?
-        } else {
-            find(b"attn_k_norm.weight", 128, 1)?
-        },
         attention: find(b"attn_output.weight", WIDTH, width)?,
         ffn_norm: find(b"ffn_norm.weight", width, 1)?,
         gate: find(b"ffn_gate.weight", width, hidden)?,
@@ -408,9 +388,6 @@ impl<'a, 'b> Engine<'a, 'b> {
                 if self.weights.ministral || self.weights.hermes {
                     adjacent_rope(self.q, &self.rotary);
                     adjacent_rope(self.k, &self.rotary);
-                } else {
-                    norm_rope(self.q, layer.qnorm, &self.rotary)?;
-                    norm_rope(self.k, layer.knorm, &self.rotary)?;
                 }
                 let offset = (self.layer * CONTEXT + self.position) * KV_WIDTH * 2;
                 self.kv[offset..offset + KV_WIDTH].copy_from_slice(self.k);
@@ -658,22 +635,6 @@ fn rms_epsilon(
     Ok(())
 }
 // ------------------------=
-// FUNC: norm_rope
-// DESC: Applies Qwen3 per-head Q/K RMSNorm and split-half rotary position embeddings.
-// ------------------=
-fn norm_rope(values: &mut [f32], norm: Tensor<'_>, rotary: &[(f32, f32); 64]) -> Result<(), Error> {
-    let mut normalized = [0f32; 128];
-    for head in values.chunks_exact_mut(128) {
-        rms(head, &mut normalized, norm)?;
-        for i in 0..64 {
-            let (s, c) = rotary[i];
-            head[i] = normalized[i] * c - normalized[i + 64] * s;
-            head[i + 64] = normalized[i] * s + normalized[i + 64] * c;
-        }
-    }
-    Ok(())
-}
-// ------------------------=
 // FUNC: attend
 // DESC: Computes one causal grouped-query attention head against initialized KV positions only.
 // ------------------=
@@ -716,18 +677,6 @@ fn attend(
     }
 }
 
-// ------------------------=
-// FUNC: model_key
-// DESC: Resolves metadata within the selected supported architecture namespace.
-// ------------------=
-fn model_key<'a>(key: &'a [u8], ministral: bool, buffer: &'a mut [u8; 80]) -> &'a [u8] {
-    if !ministral {
-        return key;
-    }
-    buffer[..8].copy_from_slice(b"mistral3");
-    buffer[8..8 + key.len() - 5].copy_from_slice(&key[5..]);
-    &buffer[..key.len() + 3]
-}
 // ------------------------=
 // FUNC: rotary_frequency
 // DESC: Computes pinned Qwen or Ministral YaRN frequencies; 4K positions need no temperature scaling.

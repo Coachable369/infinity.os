@@ -9,7 +9,6 @@ pub const CHAT_TEXT_CAPACITY: usize = 16384;
 pub const CHAT_INPUT_CAPACITY: usize = 4096;
 pub const SYSTEM_ASSISTANT_MODEL_ID: ModelId = DIALOGUE_MODEL_ID;
 pub const INTENT_ASSISTANT_MODEL_ID: ModelId = super::model::LOCAL_INTENT_MODEL_ID;
-pub const QWEN_FULL_MODEL_ID: ModelId = 0x4149_1003;
 pub const MINISTRAL_MODEL_ID: ModelId = 0x4149_1004;
 pub const HERMES_MODEL_ID: ModelId = 0x4149_1005;
 
@@ -69,7 +68,7 @@ pub struct ChatModel {
     pub description: &'static [u8],
 }
 
-pub const CHAT_MODELS: [ChatModel; 6] = [
+pub const CHAT_MODELS: [ChatModel; 5] = [
     ChatModel {
         id: SYSTEM_ASSISTANT_MODEL_ID,
         name: b"Infinity Dialogue v1",
@@ -86,19 +85,14 @@ pub const CHAT_MODELS: [ChatModel; 6] = [
         description: b"Typed operation classification",
     },
     ChatModel {
-        id: QWEN_FULL_MODEL_ID,
-        name: b"Qwen3-8B",
-        description: b"Heavy reasoning - Q4_K_M - 4K context",
+        id: HERMES_MODEL_ID,
+        name: b"Hermes 3 Llama 3.2 3B",
+        description: b"Primary local intent/tools - Q4_K_M - 4K context",
     },
     ChatModel {
         id: MINISTRAL_MODEL_ID,
         name: b"Ministral 3 3B",
         description: b"Lightweight local CPU - Q4_K_M - 4K context",
-    },
-    ChatModel {
-        id: HERMES_MODEL_ID,
-        name: b"Hermes 3 Llama 3.2 3B",
-        description: b"Local intent/tools - Q4_K_M - 4K context",
     },
 ];
 
@@ -107,7 +101,6 @@ pub struct ChatRuntime {
     messages: [Option<ChatMessage>; CHAT_MESSAGE_CAPACITY],
     count: usize,
     selected_model: ModelId,
-    qwen_ready: bool,
     ministral_ready: bool,
     hermes_ready: bool,
     pub generation_state: GenerationState,
@@ -131,8 +124,7 @@ impl ChatRuntime {
         Self {
             messages: [None; CHAT_MESSAGE_CAPACITY],
             count: 0,
-            selected_model: SYSTEM_ASSISTANT_MODEL_ID,
-            qwen_ready: false,
+            selected_model: HERMES_MODEL_ID,
             ministral_ready: false,
             hermes_ready: false,
             generation_state: GenerationState::Ready,
@@ -178,7 +170,6 @@ impl ChatRuntime {
     // ------------------=
     pub const fn selected_model_ready(&self) -> bool {
         match self.selected_model {
-            QWEN_FULL_MODEL_ID => self.qwen_ready,
             MINISTRAL_MODEL_ID => self.ministral_ready,
             HERMES_MODEL_ID => self.hermes_ready,
             _ => true,
@@ -200,13 +191,6 @@ impl ChatRuntime {
         self.hermes_ready = ready;
     }
 
-    // ------------------------=
-    // FUNC: set_qwen_ready
-    // DESC: Publishes verified native backend readiness.
-    // ------------------=
-    pub fn set_qwen_ready(&mut self, ready: bool) {
-        self.qwen_ready = ready;
-    }
     // ------------------------=
     // FUNC: begin_native_turn
     // DESC: Records an accepted asynchronous turn without a canned response.
@@ -478,7 +462,7 @@ impl ChatRuntime {
     // ------------------=
     pub fn submit(&mut self, input: &[u8]) -> bool {
         if !self.selected_model_ready()
-            || matches!(self.selected_model, QWEN_FULL_MODEL_ID | MINISTRAL_MODEL_ID | HERMES_MODEL_ID)
+            || matches!(self.selected_model, MINISTRAL_MODEL_ID | HERMES_MODEL_ID)
         {
             return false;
         }

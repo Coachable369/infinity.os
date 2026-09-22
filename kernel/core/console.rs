@@ -1254,6 +1254,24 @@ impl ConsoleRuntime {
     fn input(&mut self, key: ConsoleKey) {
         self.session_idle.note_activity();
         self.caret_visible = true;
+        if let ConsoleKey::Shortcut(code) = key {
+            use crate::drivers::input::desktop_shortcuts::{desktop_action, DesktopAction};
+            let desktop = matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings
+                | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher);
+            if let Some(action) = desktop_action(code, !self.current_session.is_zero(), desktop) {
+                if self.mode == ConsoleMode::AppLauncher { self.close_app_launcher(); }
+                self.ai_chat_focus = 0;
+                match action {
+                    DesktopAction::Notes => self.open_text_editor(),
+                    DesktopAction::Home => { let _ = self.open_file_navigator_window(b"/home/default"); }
+                    DesktopAction::Command => self.open_command_window(),
+                    DesktopAction::Tasks => self.open_task_manager(),
+                    DesktopAction::Lock => { self.lock_session_preserving_desktop(false); }
+                }
+                self.redraw();
+                return;
+            }
+        }
         // Global chat access is handled before application-specific shortcuts.
         if matches!(key, ConsoleKey::Shortcut(b'j')) && matches!(self.mode,
             ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher) {
@@ -10702,7 +10720,6 @@ impl ConsoleRuntime {
     fn execute_ai_command(&mut self, command: &[u8]) -> bool {
         use crate::runtime::ai::{model::LOCAL_INTENT_MODEL_ID, types::DataLocality};
         for (alias, id) in [
-            (b"qwen".as_slice(), crate::runtime::ai::chat::QWEN_FULL_MODEL_ID),
             (b"hermes".as_slice(), crate::runtime::ai::chat::HERMES_MODEL_ID),
             (b"ministral".as_slice(), crate::runtime::ai::chat::MINISTRAL_MODEL_ID),
         ] {

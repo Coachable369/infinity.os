@@ -54,33 +54,27 @@ static void prepare_payloads(EFI_HANDLE image, EFI_SYSTEM_TABLE *system, Infinit
         filesystem->open_volume(filesystem, &payload_root) != EFI_SUCCESS) return;
     info->payload_bridge = (uint64_t)(uintptr_t)payload_read;
     uint8_t probe[4];
-    if (!installed || payload_read(2, 0, sizeof(probe), probe) != 0) return;
+    if (!installed || payload_read(4, 0, sizeof(probe), probe) != 0) return;
     if (!equal_bytes(probe, (const uint8_t *)"GGUF", 4))
         fail(system, L"Invalid native model payload\r\n", "Invalid native model payload\n");
     const uint8_t second_model = payload_read(3, 0, sizeof(probe), probe) == 0;
     if (second_model && !equal_bytes(probe, (const uint8_t *)"GGUF", 4))
         fail(system, L"Invalid Ministral model payload\r\n", "Invalid Ministral model payload\n");
-    const uint8_t hermes_model = payload_read(4, 0, sizeof(probe), probe) == 0;
-    if (hermes_model && !equal_bytes(probe, (const uint8_t *)"GGUF", 4))
-        fail(system, L"Invalid Hermes model payload\r\n", "Invalid Hermes model payload\n");
-    const uint64_t prior_bytes = UINT64_C(5027783488) + (second_model ? UINT64_C(2147023008) : 0);
-    const uint64_t model_bytes = prior_bytes + (hermes_model ? UINT64_C(2019373888) : 0);
-    const uint64_t work_bytes = UINT64_C(1280) * 1024 * 1024 * (1 + second_model + hermes_model);
+    const uint64_t primary_bytes = UINT64_C(2019373888);
+    const uint64_t model_bytes = primary_bytes + (second_model ? UINT64_C(2147023008) : 0);
+    const uint64_t work_bytes = UINT64_C(1280) * 1024 * 1024 * (1 + second_model);
     uint64_t model = 0, work = 0;
     if (system->boot_services->allocate_pages(EFI_ALLOCATE_ANY_PAGES, EFI_LOADER_DATA,
             (size_t)((model_bytes + PAGE_MASK) / PAGE_SIZE), &model) != EFI_SUCCESS ||
         system->boot_services->allocate_pages(EFI_ALLOCATE_ANY_PAGES, EFI_LOADER_DATA,
             (size_t)(work_bytes / PAGE_SIZE), &work) != EFI_SUCCESS)
-        fail(system, L"Native Qwen requires more available RAM\r\n", "Native Qwen model arena allocation failed\n");
-    serial_write("[BOOT] loading native Qwen3-8B payload\n");
+        fail(system, L"Native models require more available RAM\r\n", "Native model arena allocation failed\n");
+    serial_write("[BOOT] loading native Hermes and optional Ministral payloads\n");
     for (uint64_t offset = 0; offset < model_bytes;) {
         size_t count = 1024 * 1024;
-        uint32_t kind = offset < UINT64_C(5027783488) ? 2 : 3;
-        uint64_t source_offset = kind == 2 ? offset : offset - UINT64_C(5027783488);
-        uint64_t remaining = kind == 2 ? UINT64_C(5027783488) - offset : model_bytes - offset;
-        if (hermes_model && offset >= prior_bytes) {
-            kind = 4; source_offset = offset - prior_bytes; remaining = model_bytes - offset;
-        } else if (kind == 3) { remaining = prior_bytes - offset; }
+        uint32_t kind = offset < primary_bytes ? 4 : 3;
+        uint64_t source_offset = kind == 4 ? offset : offset - primary_bytes;
+        uint64_t remaining = kind == 4 ? primary_bytes - offset : model_bytes - offset;
         if (count > remaining) count = (size_t)remaining;
         if (payload_read(kind, source_offset, count, (void *)(uintptr_t)(model + offset)) != 0)
             fail(system, L"Native model payload is incomplete\r\n", "Native model payload read failed\n");

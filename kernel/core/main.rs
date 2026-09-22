@@ -179,9 +179,9 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     runtime::announce_services();
     crash::set_phase(crash::CrashPhase::UserInterface);
     if info.model_address != 0
-        && matches!(info.model_bytes, 5_027_783_488 | 7_174_806_496 | 7_047_157_376 | 9_194_180_384)
+        && matches!(info.model_bytes, 2_019_373_888 | 4_166_396_896)
         && info.model_work_address != 0
-        && info.model_work_bytes >= 1280 * 1024 * 1024
+        && info.model_work_bytes >= if info.model_bytes == 4_166_396_896 { 2560 * 1024 * 1024 } else { 1280 * 1024 * 1024 }
     {
         // SAFETY: the boot ABI owns these dedicated non-overlapping allocations;
         // firmware reserves them and they are handed to the AI service once.
@@ -195,16 +195,11 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
             )
         };
         let ready = runtime::ai::with_ai_runtime(|ai| {
-            let (qwen, second) = model.split_at(5_027_783_488);
-            let (qwen_arena, second_arena) = arena.split_at_mut(1280 * 1024 * 1024);
-            let ready = ai.load_qwen(qwen, qwen_arena);
-            if second.len() >= 2_147_023_008 && second_arena.len() >= 1280 * 1024 * 1024 {
-                let (ministral, hermes) = second.split_at(2_147_023_008);
-                let (ministral_arena, hermes_arena) = second_arena.split_at_mut(1280 * 1024 * 1024);
-                ai.load_ministral(ministral, ministral_arena);
-                if !hermes.is_empty() { ai.load_hermes(hermes, hermes_arena); }
-            } else if second.len() == 2_019_373_888 {
-                ai.load_hermes(second, second_arena);
+            let (hermes, second) = model.split_at(2_019_373_888);
+            let (hermes_arena, second_arena) = arena.split_at_mut(1280 * 1024 * 1024);
+            let ready = ai.load_hermes(hermes, hermes_arena);
+            if second.len() == 2_147_023_008 {
+                ai.load_ministral(second, second_arena);
             }
             ready
         });

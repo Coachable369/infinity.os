@@ -16,11 +16,9 @@ pub fn decode(scan: u16, character: u16, shift_state: u32) -> Option<ConsoleKey>
             _ => 0,
         };
         if letter != 0 {
-            return Some(ConsoleKey::Shortcut(if shift && letter == b'z' {
-                b'y'
-            } else {
-                letter
-            }));
+            return Some(ConsoleKey::Shortcut(
+                super::desktop_shortcuts::shortcut_code(letter, shift),
+            ));
         }
     }
     if shift {

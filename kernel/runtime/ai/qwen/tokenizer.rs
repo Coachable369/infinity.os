@@ -45,7 +45,7 @@ impl<'a, 'b> Tokenizer<'a, 'b> {
         }
         let (_, mut pre) = model.metadata(b"tokenizer.ggml.pre")?;
         let pre = pre.string()?;
-        if pre != b"qwen2" && pre != b"tekken" && pre != b"llama-bpe" {
+        if pre != b"tekken" && pre != b"llama-bpe" {
             return Err(Error::Unsupported);
         }
         Ok(Self {

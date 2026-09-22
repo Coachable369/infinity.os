@@ -18,6 +18,8 @@ mod console {
         Help,
     }
 }
+#[path = "../kernel/drivers/input/desktop_shortcuts.rs"]
+mod desktop_shortcuts;
 #[path = "../kernel/drivers/input/firmware_key.rs"]
 mod firmware_key;
 
@@ -28,6 +30,12 @@ mod firmware_key;
 fn main() {
     use console::ConsoleKey::*;
     use firmware_key::decode;
+    for letter in [b'n', b'e', b't', b'p', b'l'] {
+        assert_eq!(
+            decode(0, letter as u16, 0x8000_0005),
+            Some(Shortcut(letter.to_ascii_uppercase()))
+        );
+    }
     for ctrl in [4, 8] {
         for value in [10, b'j' as u16, b'J' as u16] {
             assert_eq!(decode(0, value, 0x8000_0000 | ctrl), Some(Shortcut(b'j')));
