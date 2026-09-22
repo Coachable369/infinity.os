@@ -33,3 +33,23 @@ Steady-state rate is `(output_tokens - 1) / decode_seconds`.
 The baseline ISO is preserved as `build/hermes/baseline-three-models-aarch64.iso`.
 No performance improvement has been established yet. The instrumented baseline
 must be run before removing Qwen or optimizing the native compute path.
+
+## Installed observation, 2026-09-21
+
+The logged-in ARM64 desktop displayed a completed Hermes response to
+`how are you?` at 1.3 tokens/sec. This is not the fixed `hello` benchmark,
+so it cannot serve as the controlled before/after comparison.
+
+A five-second macOS process sample of the running VirtualBox VM reported a
+33.1 GiB physical footprint (33.2 GiB peak). The host has 32 GiB physical RAM;
+host-wide swap usage was 6,277.75 MiB, and a process CPU snapshot was 701.1%.
+All six AP threads appeared in Hypervisor execution while chat showed its
+completed response. These are host/process observations, not inference-owned
+RAM or guest kernel hotspots. They motivate checking memory pressure and idle
+worker behavior, but do not establish either as the dominant inference cost.
+
+Automated pointer/keyboard attempts failed to reliably open Command Window or
+enter the benchmark command, including the VirtualBox soft keyboard. No
+controlled TTFT, request-local worker profile, or improvement claim is available
+from this session yet. Preserve this installed account and disk; routine
+profiling updates must not recreate the VM or repeat credential setup.
