@@ -97,3 +97,40 @@ Release build: `sh build.sh` completed with exit status 0 on September 22 at
 extraction checks passed. Temporary build evidence:
 `/tmp/spatial-motion-final-build.log`. This successful build does not close the
 installed interaction/performance failures listed above.
+
+## Connection polish follow-up
+
+The connection recipe is now a narrow ice-cyan core, smoothly falling blue halo,
+shallow orientation-aware curvature and small illuminated ports. Links terminate
+outside the visible node rings instead of running through icon centers. Node
+labels are centered. Orbital rails use brighter foreground and subdued rear
+arcs. Light travel remains finite during reveals, not an idle repaint loop.
+Subpixel coverage lives in the shared primitives layer; spatial geometry remains
+in the spatial renderer. The stroke is allocation-free and bounded to a narrow
+band around each segment. Host coverage tests check fractional coverage,
+direction invariance and seam-free adjacent segment ownership.
+
+Keyboard continuation: Left/Right now traverse populated references only,
+including sparse collections after removals; opening a collection chooses an
+existing reference. Nine spatial state tests and the complete
+`make input-regression-test` target passed. The new stroke coverage test passes.
+Rustfmt checks passed for the changed spatial files and new rasterizer.
+
+Installed review on September 22: the disk-only ARM VM booted and signed in.
+Holographic rails and Constellations were inspected. Dragging Orbit from the
+first row to the center moved the node and its live curved connection, clearing
+the old position. Evidence: `connection-polish-installed.png`. A subsequent drag
+of Nebula was missed, so this is not a claim of reliable pointer delivery.
+The successful drag used the temporary USB-tablet QA profile; the standard USB
+mouse shortcut issue remains open. No speculative input changes were made in
+this polish pass.
+
+The moved Orbit position and its Nebula connection subsequently survived a full
+power-off and disk-only reboot. This closes placement persistence for that
+observed operation, not the broader cross-app drop or Worldshift acceptance.
+
+`sh build.sh` completed successfully. An additional `make x86_64` completed after
+the final keyboard edit, and that image replaced `builds/InfinityOS-x86_64.iso`.
+The ARM release retains the model-enabled installer payload. The refreshed x86
+image passed boot-payload extraction and byte equality with its build artifact;
+release checksums were regenerated. Existing compiler warnings remain.

@@ -157,10 +157,13 @@ impl DisplayDevice {
         for step in 0..64 {
             let (x, y) = point(step);
             let (a, b) = point(step + 1);
-            self.line(x, y, a, b, 18, 62, 89);
-            if bright {
-                self.line(x, y - 1, a, b - 1, 38, 106, 143);
-            }
+            let depth = if y >= cy as i32 { 110 } else { 42 };
+            self.soft_stroke(
+                (x * 256, y * 256),
+                (a * 256, b * 256),
+                1,
+                if bright { depth } else { depth / 2 },
+            );
         }
         let (x, y) = point(usize::from(phase) * 64 / 256);
         self.spatial_light(x, y, if bright { 9 } else { 5 });
@@ -192,20 +195,42 @@ impl DisplayDevice {
     // FUNC: spatial_connection
     // DESC: Draws an arced graph edge with a reveal pulse; connection geometry remains tied to actual nodes.
     // ------------------=
-    fn spatial_connection(&mut self, from: (usize, usize), to: (usize, usize), phase: u8) {
+    fn spatial_connection(
+        &mut self,
+        from: (usize, usize),
+        to: (usize, usize),
+        phase: u8,
+        port_radius: usize,
+    ) {
+        let scale = (self.height / 900).clamp(1, 3) as i32;
+        let dx = to.0 as i32 - from.0 as i32;
+        let dy = to.1 as i32 - from.1 as i32;
+        // A consistent, shallow normal offset preserves vertical as well as
+        // horizontal links; short links do not become large decorative arcs.
+        let extent = dx.abs().max(dy.abs()).max(1);
+        let bend = (extent / 9).clamp(12 * scale, 50 * scale);
         let point = |t: i32| {
-            let x = from.0 as i32 + (to.0 as i32 - from.0 as i32) * t / 64;
-            let y = from.1 as i32 + (to.1 as i32 - from.1 as i32) * t / 64 - t * (64 - t) / 64;
+            let arc = i64::from(4 * t * (256 - t) * bend);
+            let x = from.0 as i32 * 256 + dx * t
+                - (arc * i64::from(dy) / i64::from(extent * 256)) as i32;
+            let y = from.1 as i32 * 256
+                + dy * t
+                + (arc * i64::from(dx) / i64::from(extent * 256)) as i32;
             (x, y)
         };
-        for t in 0..64 {
-            let (x, y) = point(t);
-            let (a, b) = point(t + 1);
-            self.line(x, y + 1, a, b + 1, 17, 64, 94);
-            self.line(x, y, a, b, 70, 157, 197);
+        // Trim both ports away from the icon centers; rings remain unobscured.
+        let trim = (port_radius as i32 * 256 / extent).clamp(4, 96);
+        for t in (trim..256 - trim).step_by(2) {
+            self.soft_stroke(point(t), point((t + 2).min(256 - trim)), scale, 210);
         }
-        let (x, y) = point(i32::from(phase) * 64 / 255);
-        self.spatial_light(x, y, 7);
+        for t in [trim, 256 - trim] {
+            let (x, y) = point(t);
+            self.spatial_light(x / 256, y / 256, 3 * scale);
+        }
+        if phase < 255 {
+            let (x, y) = point(trim + i32::from(phase) * (256 - trim * 2) / 255);
+            self.spatial_light(x / 256, y / 256, 5 * scale);
+        }
     }
 }
 
@@ -388,7 +413,7 @@ pub fn present(
                     let p = rect(a + w / 2, b + h / 2, 0, 0);
                     let (a, b, w, h) = world_card(i + 1);
                     let q = rect(a + w / 2, b + h / 2, 0, 0);
-                    d.spatial_connection((p.0, p.1), (q.0, q.1), progress);
+                    d.spatial_connection((p.0, p.1), (q.0, q.1), progress, 0);
                 }
                 for (i, world) in state.worlds.iter().enumerate() {
                     let (a, b, w, h) = world_card(i);
@@ -516,13 +541,20 @@ pub fn present(
                     for (i, item) in state.items.iter().enumerate() {
                         if let Some(item) = item {
                             let (a, b, w, h) = item_card(i, item);
-                            let p = rect(a + w / 2, b + h / 2, 0, 0);
+                            let mut p = rect(a + w / 2, b, 0, 0);
+                            p.1 += (h * dh / 1000 * 3 / 5).clamp(24, 112) / 2 + 4;
                             for j in i + 1..16 {
                                 if item.links & (1 << j) != 0 {
                                     if let Some(target) = state.items[j] {
                                         let (a, b, w, h) = item_card(j, &target);
-                                        let q = rect(a + w / 2, b + h / 2, 0, 0);
-                                        d.spatial_connection((p.0, p.1), (q.0, q.1), progress);
+                                        let mut q = rect(a + w / 2, b, 0, 0);
+                                        q.1 += (h * dh / 1000 * 3 / 5).clamp(24, 112) / 2 + 4;
+                                        d.spatial_connection(
+                                            (p.0, p.1),
+                                            (q.0, q.1),
+                                            progress,
+                                            (h * dh / 1000 * 3 / 5).clamp(24, 112) / 2 + 12,
+                                        );
                                     }
                                 }
                             }
@@ -569,8 +601,11 @@ pub fn present(
                             if item.object == [0; 16] { 49 } else { 4 },
                             size,
                         );
+                        let label_width = d
+                            .ui_text_width(item.name.get(), 1)
+                            .min(p.2.saturating_sub(24));
                         d.ui_text_elided_strong(
-                            p.0 + 12,
+                            p.0 + (p.2 - label_width) / 2,
                             p.1 + size + 12,
                             p.2.saturating_sub(24),
                             item.name.get(),

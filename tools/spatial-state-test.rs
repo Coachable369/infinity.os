@@ -5,6 +5,23 @@ mod spatial;
 use spatial::*;
 #[test]
 // ------------------------=
+// FUNC: keyboard_navigation_skips_removed_references
+// DESC: Exercises sparse collections, reverse traversal, wrapping and the empty state.
+// ------------------=
+fn keyboard_navigation_skips_removed_references() {
+    let mut state = SpatialState::new([1; 16]);
+    assert_eq!(next_reference(&state, 15, false), 0);
+    state.items[3] = Some(clipping());
+    state.items[11] = Some(clipping());
+    assert_eq!(next_reference(&state, 0, false), 3);
+    assert_eq!(next_reference(&state, 3, false), 11);
+    assert_eq!(next_reference(&state, 11, false), 3);
+    assert_eq!(next_reference(&state, 3, true), 11);
+    state.items[3] = None;
+    assert_eq!(next_reference(&state, 11, false), 11);
+}
+#[test]
+// ------------------------=
 // FUNC: coalesced_drag_release_preserves_final_placement
 // DESC: Verifies final position is identical with zero or many held samples and remains inside the interactive stage.
 // ------------------=

@@ -16,6 +16,21 @@ pub const STATE_BYTES: usize = 8192;
 pub const ITEM_COUNT: usize = 16;
 pub const WORLD_COUNT: usize = 4;
 pub const OVERVIEW_COUNT: usize = 10;
+
+// ------------------------=
+// FUNC: next_reference
+// DESC: Traverses only real references, preserving keyboard navigation after removals leave empty slots.
+// ------------------=
+pub fn next_reference(state: &SpatialState, current: usize, reverse: bool) -> usize {
+    for step in 1..=ITEM_COUNT {
+        let index = (current.min(ITEM_COUNT - 1) + if reverse { ITEM_COUNT - step } else { step })
+            % ITEM_COUNT;
+        if state.items[index].is_some() {
+            return index;
+        }
+    }
+    0
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum DropTarget {
     Collection(u8),

@@ -631,6 +631,13 @@ impl ConsoleRuntime {
                 self.spatial.link = None;
                 self.spatial_reveal();
             }
+            ConsoleKey::Left | ConsoleKey::Right if self.spatial.tab >= 2 => {
+                self.spatial.focus = crate::ui::spatial::next_reference(
+                    &self.spatial.state,
+                    self.spatial.focus,
+                    matches!(key, ConsoleKey::Left),
+                );
+            }
             ConsoleKey::Left => self.spatial.focus = (self.spatial.focus + count - 1) % count,
             ConsoleKey::Right => self.spatial.focus = (self.spatial.focus + 1) % count,
             ConsoleKey::Up => {
@@ -944,6 +951,9 @@ impl ConsoleRuntime {
     // DESC: Starts one bounded scene reveal, clears stale notices, and honors reduced motion.
     // ------------------=
     fn spatial_reveal(&mut self) {
+        if self.spatial.tab >= 2 && self.spatial.state.items[self.spatial.focus].is_none() {
+            self.spatial.focus = crate::ui::spatial::next_reference(&self.spatial.state, 15, false);
+        }
         self.spatial.notice = [
             b"Choose a window. Inspect its live surface, then return to work.".as_slice(),
             b"Your environments. Save this scene, or travel to another.",

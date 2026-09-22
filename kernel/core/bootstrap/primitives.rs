@@ -2,6 +2,9 @@
 
 use core::ptr::{read_volatile, write_volatile};
 
+#[path = "soft_stroke.rs"]
+mod soft_stroke;
+
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const UI_FONT_ATLAS: &[u8] =
     include_bytes!("../../../assets/fonts/InfinityUI-Regular-24.atlas");
@@ -209,6 +212,23 @@ impl FontSize {
 }
 
 impl super::DisplayDevice {
+    // ------------------------=
+    // FUNC: soft_stroke
+    // DESC: Blends a subpixel luminous stroke without allocating or touching pixels outside its bounded support.
+    // ------------------=
+    pub(super) fn soft_stroke(&mut self, from: (i32, i32), to: (i32, i32), scale: i32, intensity: u8) {
+        soft_stroke::segment(from, to, scale, |x, y, alpha| {
+            let core = u16::from(alpha.saturating_sub(120));
+            self.blend_color(
+                x,
+                y,
+                (38 + core) as u8,
+                (153 + core * 3 / 4) as u8,
+                255,
+                (u16::from(alpha) * u16::from(intensity) / 255) as u8,
+            );
+        });
+    }
     // ------------------------=
     // FUNC: framebuffer_pixel
     // DESC: Reads one already-bounded raw framebuffer pixel for damage restoration.
