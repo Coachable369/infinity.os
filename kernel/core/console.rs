@@ -1295,13 +1295,13 @@ impl ConsoleRuntime {
         self.title_clicks.cancel();
         self.session_idle.note_activity();
         self.caret_visible = true;
-        if let ConsoleKey::Shortcut(code @ (0x80 | 0x81)) = key {
-            if !self.current_session.is_zero()
-                && matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings
-                    | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher)
-            {
-                self.spatial_cycle(code == crate::drivers::input::desktop_shortcuts::SPATIAL_PREVIOUS);
-            }
+        if let Some(reverse) = crate::drivers::input::desktop_shortcuts::switcher_request(
+            matches!(key,ConsoleKey::Tab(true)),
+            if let ConsoleKey::Shortcut(code)=key {Some(code)} else {None},
+            !self.current_session.is_zero(),
+            matches!(self.mode,ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher),
+        ) {
+            self.spatial_cycle(reverse);
             return;
         }
         if self.spatial.open { self.spatial_input(key); return; }

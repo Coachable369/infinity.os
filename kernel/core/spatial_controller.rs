@@ -33,6 +33,7 @@ static mut WORLD_NAVIGATORS: [Option<NavigatorSnapshot>; 4] = [None; 4];
 
 pub(super) struct Controller {
     pub open: bool,
+    switcher: bool,
     state: SpatialState,
     owner: [u8; 16],
     tab: usize,
@@ -76,6 +77,7 @@ impl Controller {
     pub const fn new() -> Self {
         Self {
             open: false,
+            switcher: false,
             state: SpatialState::new([0; 16]),
             owner: [0; 16],
             tab: 0,
@@ -401,6 +403,13 @@ impl ConsoleRuntime {
     // DESC: Opens the native overlay after loading only this authenticated user's checkpoint.
     // ------------------=
     pub(super) fn spatial_open(&mut self) {
+        self.spatial_open_surface(false);
+    }
+    // ------------------------=
+    // FUNC: spatial_open_surface
+    // DESC: Opens either the independent app switcher or the configuration workspace.
+    // ------------------=
+    fn spatial_open_surface(&mut self, switcher: bool) {
         if self.current_session.is_zero() {
             return;
         }
@@ -438,10 +447,16 @@ impl ConsoleRuntime {
             }
         }
         self.checkpoint_active_file_navigator();
+        self.spatial.switcher = switcher;
+        if switcher { self.spatial.tab = 0; self.spatial.focus = 0; }
         self.spatial_previews();
         self.redraw();
         self.spatial.open = true;
-        self.spatial.notice = b"Choose a window. Inspect its live surface, then return to work.";
+        self.spatial.notice = if switcher {
+            b"Choose a window. Inspect its live surface, then return to work."
+        } else {
+            b"Configure your spatial workspace. Command + Tab opens app switching."
+        };
         self.spatial.closing = false;
         self.spatial.carousel_from = None;
         self.spatial.last_progress = -1;
@@ -508,6 +523,7 @@ impl ConsoleRuntime {
         }
         crate::bootstrap::spatial_present(
             &painted,
+            self.spatial.switcher,
             self.spatial.tab,
             self.spatial.focus,
             &self.spatial.previews[..self.spatial.preview_count],
@@ -691,14 +707,9 @@ impl ConsoleRuntime {
         if self.spatial.pending_drop.is_some() || self.spatial.editing != 0 {
             return;
         }
-        if !self.spatial.open || self.spatial.tab != 0 {
-            self.spatial.tab = 0;
-            if !self.spatial.open {
-                self.spatial_open();
-            } else {
-                self.spatial.focus = 0;
-                self.spatial_reveal();
-            }
+        if !self.spatial.open || !self.spatial.switcher {
+            if self.spatial.open { self.spatial_close(); }
+            self.spatial_open_surface(true);
             self.spatial.motion = Motion::settled(255);
             self.spatial_present();
         }
@@ -839,6 +850,7 @@ impl ConsoleRuntime {
                 );
             }
             ConsoleKey::Tab(back) => {
+                if self.spatial.switcher { self.spatial_cycle(back); return; }
                 self.spatial.tab = (self.spatial.tab + if back { 4 } else { 1 }) % 5;
                 self.spatial.focus = 0;
                 self.spatial.link = None;
@@ -891,7 +903,7 @@ impl ConsoleRuntime {
             ConsoleKey::Delete if self.spatial.tab >= 2 => self.spatial_action(2),
             _ => {}
         }
-        if previous_tab == 0 && self.spatial.tab == 0 && self.spatial.focus != previous_focus {
+        if self.spatial.switcher && previous_tab == 0 && self.spatial.tab == 0 && self.spatial.focus != previous_focus {
             self.spatial_start_carousel(previous_focus);
         }
         if self.spatial.open {
@@ -1147,7 +1159,7 @@ impl ConsoleRuntime {
                 return;
             }
         }
-        if (tabs_top..tabs_top + 45).contains(&y) {
+        if !self.spatial.switcher && (tabs_top..tabs_top + 45).contains(&y) {
             for i in 0..5 {
                 if (70 + i * 176..234 + i * 176).contains(&x) {
                     self.spatial.tab = i as usize;
@@ -1157,7 +1169,9 @@ impl ConsoleRuntime {
                 }
             }
         }
-        let hit = if self.spatial.tab == 3 {
+        let hit = if self.spatial.tab == 0 && !self.spatial.switcher {
+            None
+        } else if self.spatial.tab == 3 {
             (0..16).find(|i| {
                 self.spatial.state.items[*i].is_some()
                     && crate::ui::spatial::shelf_card(*i, self.spatial.focus)
@@ -1450,6 +1464,8 @@ impl ConsoleRuntime {
     // DESC: Executes user-selected workspace actions through existing shell services.
     // ------------------=
     fn spatial_action(&mut self, action: usize) {
+        if self.spatial.tab == 0
+            && action != if self.spatial.switcher { 0 } else { 3 } { return; }
         if self.spatial.tab < 2 && action == 0 {
             self.spatial.carousel_from = None;
             self.spatial

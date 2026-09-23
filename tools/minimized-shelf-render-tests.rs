@@ -1,5 +1,31 @@
 //! Runs the production shelf, glass recipe, bitmap and font rasterizers against a host-owned framebuffer.
 use super::*;
+use crate::primitives::UI_FONT_CELL_HEIGHT;
+#[path = "../kernel/core/bootstrap/holographic_card.rs"]
+mod holographic_card;
+
+#[test]
+// ------------------------=
+// FUNC: holographic_glass_cards_render_on_isolated_stage
+// DESC: Exercises production card pixels and writes a native visual proof without mock application contents.
+// ------------------=
+fn holographic_glass_cards_render_on_isolated_stage() {
+    let (width,height)=(1440,900);
+    let mut pixels=vec![0u32;width*height];
+    let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    d.paint_bitmap_cover_rect(include_bytes!("../assets/desktop/spatial-world-2.bmp"),0,0,width,height);
+    let before=pixels.clone();
+    for (app,p,selected) in [(0,(150,280,330,290),false),(4,(960,280,330,290),false),(2,(470,235,500,395),true)] {
+        let mut preview=crate::ui::spatial::Preview::EMPTY; preview.app=app;
+        holographic_card::paint_card(&mut d,&preview,p,selected);
+    }
+    assert_ne!(pixels,before);
+    assert_eq!(&pixels[..width*200],&before[..width*200]);
+    use std::io::Write;
+    let mut file=std::io::BufWriter::new(std::fs::File::create("build/holographic-glass-proof.ppm").unwrap());
+    write!(file,"P6\n{width} {height}\n255\n").unwrap();
+    for pixel in pixels { file.write_all(&[(pixel&255)as u8,((pixel>>8)&255)as u8,((pixel>>16)&255)as u8]).unwrap(); }
+}
 use crate::ui::app_launcher::minimized_shelf::{self as shelf, Geometry, State};
 #[path = "../kernel/core/bootstrap/glass.rs"]
 mod glass;

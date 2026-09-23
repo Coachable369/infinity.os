@@ -32,7 +32,7 @@ impl DisplayDevice {
     // FUNC: glass_panel_with_palette
     // DESC: Draws the shared layered glass recipe using one caller-selected surface and edge palette.
     // ------------------=
-    pub(super) fn glass_panel_with_palette(
+    pub(in super::super) fn glass_panel_with_palette(
         &mut self,
         left: usize,
         top: usize,

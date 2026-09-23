@@ -3,6 +3,28 @@ pub const SPATIAL_NEXT: u8 = 0x80;
 pub const SPATIAL_PREVIOUS: u8 = 0x81;
 
 // ------------------------=
+// FUNC: switcher_request
+// DESC: Reserves Shift-Tab and Command-Tab only within an authenticated desktop session.
+// ------------------=
+pub fn switcher_request(
+    shift_tab: bool,
+    shortcut: Option<u8>,
+    authenticated: bool,
+    desktop: bool,
+) -> Option<bool> {
+    if !authenticated || !desktop {
+        return None;
+    }
+    if shift_tab || shortcut == Some(SPATIAL_PREVIOUS) {
+        Some(true)
+    } else if shortcut == Some(SPATIAL_NEXT) {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+// ------------------------=
 // FUNC: hid_modifiers
 // DESC: Preserves Shift, Control and either Command/Super key from USB HID reports.
 // ------------------=
@@ -85,6 +107,35 @@ pub fn desktop_action(code: u8, authenticated: bool, desktop: bool) -> Option<De
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    // ------------------------=
+    // FUNC: switcher_keys_preserve_login_and_plain_tab
+    // DESC: Verifies both shortcut directions and the authenticated desktop boundary.
+    // ------------------=
+    fn switcher_keys_preserve_login_and_plain_tab() {
+        for authenticated in [false, true] {
+            for desktop in [false, true] {
+                let enabled = authenticated && desktop;
+                assert_eq!(
+                    switcher_request(true, None, authenticated, desktop),
+                    enabled.then_some(true)
+                );
+                assert_eq!(
+                    switcher_request(false, Some(SPATIAL_NEXT), authenticated, desktop),
+                    enabled.then_some(false)
+                );
+                assert_eq!(
+                    switcher_request(false, Some(SPATIAL_PREVIOUS), authenticated, desktop),
+                    enabled.then_some(true)
+                );
+                assert_eq!(switcher_request(false, None, authenticated, desktop), None);
+                assert_eq!(
+                    switcher_request(false, Some(b'c'), authenticated, desktop),
+                    None
+                );
+            }
+        }
+    }
     // ------------------------=
     // FUNC: desktop_chords_preserve_app_commands_and_security_boundaries
     // DESC: Tests all workflows, unshifted collisions, locked surfaces, and redo compatibility.

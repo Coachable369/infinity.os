@@ -17,9 +17,12 @@ pub(super) fn compose_spatial(
     scene: &[u32],
     lift: usize,
     opacity: u8,
+    isolated: bool,
 ) -> bool {
     unsafe {
-        if SIZE != (display.width, display.height, display.stride) {
+        if SIZE != (display.width, display.height, display.stride)
+            || (isolated && STAGE_SIZE != SIZE)
+        {
             return false;
         }
         let Some(region) = display.clipped_render_region(0, 0, display.width, display.height)
@@ -28,7 +31,11 @@ pub(super) fn compose_spatial(
         };
         spatial_surface::compose(
             scene,
-            &*(&raw const BACKDROP),
+            if isolated {
+                &*(&raw const STAGE)
+            } else {
+                &*(&raw const BACKDROP)
+            },
             core::slice::from_raw_parts_mut(display.buffer, display.stride * display.height),
             display.stride,
             (region.left, region.top, region.right, region.bottom),
@@ -56,6 +63,20 @@ fn column_sum(source: *const u32, stride: usize, x: usize, rows: [usize; 3]) -> 
 // DESC: Caches a defocused, dimmed spatial stage once per desktop change, preserving the original for dismissal.
 // ------------------=
 pub(super) fn capture_stage(display: &DisplayDevice) {
+    capture_stage_pixels(display, false);
+}
+// ------------------------=
+// FUNC: capture_clean_stage
+// DESC: Retains wallpaper-only pixels while preserving the desktop snapshot for closing.
+// ------------------=
+pub(super) fn capture_clean_stage(display: &DisplayDevice) {
+    capture_stage_pixels(display, true);
+}
+// ------------------------=
+// FUNC: capture_stage_pixels
+// DESC: Builds the bounded soft stage from either the original desktop or the isolated wallpaper.
+// ------------------=
+fn capture_stage_pixels(display: &DisplayDevice, clean: bool) {
     unsafe {
         STAGE_SIZE = (0, 0, 0);
         if SIZE != (display.width, display.height, display.stride)
@@ -64,7 +85,11 @@ pub(super) fn capture_stage(display: &DisplayDevice) {
         {
             return;
         }
-        let source = (&raw const BACKDROP).cast::<u32>();
+        let source = if clean {
+            display.buffer as *const u32
+        } else {
+            (&raw const BACKDROP).cast::<u32>()
+        };
         for y in 0..display.height {
             let rows = [y.saturating_sub(8), y, (y + 8).min(display.height - 1)];
             // The next pixel reuses sixteen columns. Only one new three-tap
@@ -80,7 +105,7 @@ pub(super) fn capture_stage(display: &DisplayDevice) {
                 }
                 let sums =
                     columns[x.saturating_sub(8) % 17] + columns[x % 17] + columns[right % 17];
-                let original = (*(&raw const BACKDROP))[y * display.stride + x];
+                let original = *source.add(y * display.stride + x);
                 let edge = if display.width >= 256 {
                     x.saturating_sub(display.width * 4 / 100)
                         .min((display.width * 96 / 100).saturating_sub(x))

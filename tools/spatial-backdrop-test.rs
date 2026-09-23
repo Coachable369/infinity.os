@@ -85,16 +85,44 @@ fn frozen_backdrop_fade_respects_damage_and_endpoints() {
     assert_eq!(pixels[32], 0xff102030);
     let scene = [0xff90a0b0; 80];
     pixels.fill(0xff334455);
-    assert!(backdrop::compose_spatial(&mut display, &scene, 1, 128));
+    assert!(backdrop::compose_spatial(
+        &mut display,
+        &scene,
+        1,
+        128,
+        false
+    ));
     assert_eq!(pixels[32], 0xff102030);
     assert_eq!(pixels[42], 0xff506070);
     assert_eq!(pixels[41], 0xff334455);
     assert_eq!(pixels[49], 0xff334455);
+    // Isolated overlays use wallpaper pixels even at the first reveal frame,
+    // while closing can still recover every original desktop pixel.
+    display.render_clip = None;
+    pixels.fill(0xff80a0c0);
+    backdrop::capture_clean_stage(&display);
+    assert!(backdrop::restore_stage(&mut display));
+    let clean = pixels;
+    pixels.fill(0xffef0101);
+    assert!(backdrop::compose_spatial(&mut display, &scene, 0, 0, true));
+    for y in 0..8 {
+        for x in 0..8 {
+            assert_eq!(pixels[y * 10 + x], clean[y * 10 + x]);
+        }
+    }
+    assert!(backdrop::restore(&mut display));
+    assert_eq!(pixels[0], 0xff102030);
     backdrop::invalidate();
     assert!(!backdrop::restore(&mut display));
     assert!(!backdrop::restore_stage(&mut display));
     let unchanged = pixels;
-    assert!(!backdrop::compose_spatial(&mut display, &scene, 0, 128));
+    assert!(!backdrop::compose_spatial(
+        &mut display,
+        &scene,
+        0,
+        128,
+        false
+    ));
     assert_eq!(pixels, unchanged);
     reference_equivalence();
 }

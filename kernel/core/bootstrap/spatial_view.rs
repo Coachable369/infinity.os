@@ -99,6 +99,7 @@ pub fn arrival_present(opacity: u8, x: i32, y: i32) {
                     &*(&raw const ARRIVAL),
                     0,
                     opacity,
+                    false,
                 ) {
                     // A resized/invalidated backdrop must still expose the new
                     // workspace, matching the previous copy-then-fade fallback.
@@ -157,7 +158,8 @@ pub fn refresh_end() {
             c.restore_cursor();
             c.display.clear_render_clip();
             launcher_backdrop::capture(&c.display);
-            launcher_backdrop::capture_stage(&c.display);
+            c.display.paint_desktop_background();
+            launcher_backdrop::capture_clean_stage(&c.display);
         }
     }
     REFRESHING.store(false, core::sync::atomic::Ordering::Relaxed);
@@ -307,44 +309,11 @@ pub fn close() {
     }
 }
 
-// ------------------------=
-// FUNC: paint_card
-// DESC: Renders one kit-styled preview card for both settled scenes and reusable carousel sprites.
-// ------------------=
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-fn paint_card(
-    d: &mut DisplayDevice,
-    preview: &Preview,
-    p: (usize, usize, usize, usize),
-    selected: bool,
-) {
-    d.glass_panel(p.0, p.1, p.2, p.3, false);
-    let thumb = (
-        p.0 + 8,
-        p.1 + 16 + UI_FONT_CELL_HEIGHT * d.ui_scale(),
-        p.2.saturating_sub(16),
-        p.3.saturating_sub(24 + UI_FONT_CELL_HEIGHT * d.ui_scale()),
-    );
-    if preview.visible {
-        d.spatial_preview(preview.slot, thumb);
-    } else {
-        let role = [4, 25, 49, 19, 26][preview.app.min(4) as usize];
-        let size = p.3.saturating_sub(42).min(p.2 / 2).min(160).max(24);
-        let _ = d.launcher_icon(p.0 + p.2 / 2, p.1 + p.3.saturating_sub(30) / 2, role, size);
-    }
-    d.ui_text_elided_strong(
-        p.0 + 12,
-        p.1 + 8,
-        p.2.saturating_sub(24),
-        preview.label.get(),
-        220,
-        237,
-        247,
-    );
-    if selected {
-        d.outline_rounded_rect(p.0, p.1, p.2, p.3, 12, 110, 214, 255);
-    }
-}
+#[path = "holographic_card.rs"]
+mod holographic_card;
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+use holographic_card::paint_card;
 
 // ------------------------=
 // FUNC: present
@@ -352,6 +321,7 @@ fn paint_card(
 // ------------------=
 pub fn present(
     state: &SpatialState,
+    switcher: bool,
     tab: usize,
     focus: usize,
     previews: &[Preview],
@@ -377,13 +347,15 @@ pub fn present(
             c.display.clear_render_clip();
             if !OPEN {
                 launcher_backdrop::capture(&c.display);
-                launcher_backdrop::capture_stage(&c.display);
+                c.display.paint_desktop_background();
+                launcher_backdrop::capture_clean_stage(&c.display);
+                c.display.mark_dirty_rect(0, 0, c.display.width, c.display.height);
                 OPEN = true;
             }
             let started = c.display.frame_started_ns;
             let captured = crate::ui::performance::monotonic_ns();
             let d = &mut c.display;
-            if let Some((from, phase)) = carousel_frame.filter(|_| tab == 0) {
+            if let Some((from, phase)) = carousel_frame.filter(|_| tab == 0 && switcher) {
                 d.set_render_clip(
                     d.width * 6 / 100,
                     d.height * 22 / 100,
@@ -439,6 +411,7 @@ pub fn present(
                     &*(&raw const ARRIVAL),
                     (255 - usize::from(transition_progress)) * 35 * d.height / 255 / 1000,
                     transition_progress,
+                    true,
                 );
                 let blended = crate::ui::performance::monotonic_ns();
                 d.mark_dirty_rect(
@@ -482,9 +455,7 @@ pub fn present(
                     d.height * 89 / 100,
                 );
             }
-            if tab == 3 || !launcher_backdrop::restore_stage(d) {
-                launcher_backdrop::restore(d);
-            }
+            launcher_backdrop::restore_stage(d);
             if let Some((a, b, w, h)) = damage {
                 d.mark_dirty_rect(
                     a * d.width / 1000,
@@ -526,10 +497,11 @@ pub fn present(
                 d.glass_panel(footer.0, footer.1, footer.2, footer.3, false);
             }
             let p = rect(70, if shelf { 588 } else { 98 }, 0, 0);
-            d.ui_text_strong(p.0, p.1, b"SPATIAL DESKTOP", 200, 236, 255, 1);
+            d.ui_text_strong(p.0, p.1, if switcher { b"HOLOGRAPHIC DESKTOP" } else { b"SPATIAL DESKTOP" }, 200, 236, 255, 1);
             let p = rect(897, if shelf { 585 } else { 95 }, 44, 38);
             d.window_control(p.0 + (p.2.saturating_sub(p.3)) / 2, p.1, p.3, 2, false);
             for (i, label) in TABS.iter().enumerate() {
+                if switcher { break; }
                 let p = rect(70 + i * 176, if shelf { 635 } else { 150 }, 164, 45);
                 d.polished_button(p.0, p.1, p.2, p.3, label, tab == i, false);
             }
@@ -537,7 +509,14 @@ pub fn present(
                 let p = rect(80, 212, 840, 30);
                 d.ui_text_elided_strong(p.0, p.1, p.2, notice, 155, 190, 209);
             }
-            if tab == 0 {
+            if tab == 0 && !switcher {
+                let p = rect(180, 310, 640, 350);
+                d.glass_panel(p.0,p.1,p.2,p.3,false);
+                d.ui_text_strong(p.0+24,p.1+24,b"Holographic app switching",220,240,255,1);
+                d.ui_text_elided_strong(p.0+24,p.1+80,p.2-48,b"Command + Tab or Shift + Tab opens the independent carousel.",161,203,227);
+                d.ui_text_elided_strong(p.0+24,p.1+125,p.2-48,b"Click a side panel to rotate. Click the front panel to open.",161,203,227);
+                d.ui_text_elided_strong(p.0+24,p.1+170,p.2-48,if state.reduced_motion { b"Motion: reduced" } else { b"Motion: animated glass carousel" },201,230,246);
+            } else if tab == 0 {
                 let p = rect(500, 677, 0, 0);
                 d.spatial_orbit(p.0, p.1, dw * 36 / 100, dh * 3 / 100, progress, true);
                 let frame =
@@ -841,7 +820,8 @@ pub fn present(
                 }
             }
             let labels: [&[u8]; 4] = match tab {
-                0 => [b"Open / focus", b"", b"", b"Reduced motion"],
+                0 if switcher => [b"Open / focus", b"", b"", b""],
+                0 => [b"", b"", b"", b"Reduced motion"],
                 1 => [b"Switch", b"Save layout", b"Rename", b"Reduced motion"],
                 2 => [
                     b"Add idea",
@@ -886,7 +866,8 @@ pub fn present(
                 p.0,
                 p.1,
                 match tab {
-                    0=>b"Tab: views   Arrows: focus   Wheel / +/-: zoom   Enter: open   M: motion   Esc: close".as_slice(),
+                    0 if switcher=>b"Tab / Arrows: rotate   Enter: open   Esc: return".as_slice(),
+                    0=>b"Tab: configuration views   M: reduced motion   Esc: close".as_slice(),
                     1=>b"Tab: views   Arrows: focus   Enter: switch   S: save   R: rename   M: motion   Esc: close",
                     2=>b"1-4: ring   Wheel / +/-: zoom   T: idea   N: category   Drag idea: assign category",
                     3=>notice,
@@ -1015,9 +996,10 @@ pub fn present(
                     &*(&raw const ARRIVAL),
                     (255 - usize::from(transition_progress)) * 35 * d.height / 255 / 1000,
                     transition_progress,
+                    true,
                 );
             } else {
-                launcher_backdrop::fade(d, transition_progress);
+                // Settled spatial scenes never blend desktop windows back into the stage.
             }
             let blended = crate::ui::performance::monotonic_ns();
             d.clear_render_clip();
@@ -1038,6 +1020,7 @@ pub fn present(
     #[cfg(target_arch = "x86")]
     let _ = (
         state,
+        switcher,
         tab,
         focus,
         previews,
