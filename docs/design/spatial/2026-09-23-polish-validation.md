@@ -29,5 +29,26 @@ Its controller, storage commit and installed guest interaction still need an
 end-to-end reproduction. Do not treat state serialization tests as proof that
 clicking a world changes the installed desktop.
 
-Installed-guest interaction and fresh-install verification remain pending.
-These changes do not, by themselves, update published installer ISOs.
+## Installer publication — September 23
+
+Rebuilt the ARM64 model-enabled installer with `sh tools/build-hermes.sh` and
+the x86_64 installer with `make x86_64`. Published both to `builds/` and verified
+byte identity against their build outputs. `builds/SHA256SUMS` identifies these
+artifacts. The default re-provision path also uses the newly rebuilt ARM64 ISO
+under `build/hermes/`.
+
+The ARM64 build passed installed-kernel payload byte parity and both Hermes and
+Ministral installed-payload harnesses. The first packaging attempt exhausted disk
+space; the incomplete image and disposable packaging intermediates were removed
+before a successful retry. No source, model-cache files or VM disks were removed.
+
+Repeated behavioral checks: active painter 15 passed, spatial state 18 passed,
+drawer interactions 5 passed, launcher interactions passed. Drawer tests now
+explicitly assert left-anchored initial geometry and inward menu placement, while
+still exercising deliberate right anchoring. Inspected the freshly rendered
+shortcut-drag frame: one moving icon and a centered, elided label.
+
+Installed-guest interaction and fresh-install GUI verification remain pending;
+replacing an ISO does not update an already installed guest. Existing saved
+drawer placement is deliberately preserved. No Hermes latency improvement is
+claimed by this desktop packaging change.

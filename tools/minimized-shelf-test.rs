@@ -36,8 +36,12 @@ fn drop_interior_floats_and_edges_anchor() {
 fn drawer_anchors_and_tracks_drag_without_losing_apps() {
     for (w, h) in [(800, 600), (1920, 1080), (3840, 2160)] {
         let mut state = State::new();
+        assert!(state.left);
+        assert_eq!(state.floating, [0, 0]);
+        assert_eq!(Geometry::new(w, h, state).rail.x, (w / 100) as i32);
         state.set(EDITOR, true);
         state.menu = Some(EDITOR);
+        state.left = false;
         let right = Geometry::new(w, h, state);
         assert!(right.menu.right() < right.rail.x);
         state.left = true;
@@ -117,7 +121,7 @@ fn shelf_overflow_geometry_and_menu_actions_are_reachable() {
             }
             state.menu = state.item(state.offset);
             let menu = Geometry::new(width, height, state);
-            assert!(menu.menu.right() < g.rail.x);
+            assert!(menu.menu.x > g.rail.right());
             assert!(menu.menu.bottom() <= height as i32);
             for action in 0..3 {
                 assert_eq!(
