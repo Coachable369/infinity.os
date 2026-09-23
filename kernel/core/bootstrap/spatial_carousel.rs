@@ -5,7 +5,14 @@ const CAPACITY: usize = 12 * 1024 * 1024;
 static mut PIXELS: [u32; CAPACITY] = [0; CAPACITY];
 static mut SCRATCH: [u32; 3840 * 2160] = [0; 3840 * 2160];
 static mut SPRITES: [(usize, usize, usize); OVERVIEW_COUNT] = [(0, 0, 0); OVERVIEW_COUNT];
-static mut KEY: Option<(usize, usize, usize, usize, u8)> = None;
+static mut KEY: Option<(
+    usize,
+    usize,
+    usize,
+    usize,
+    u8,
+    [OverviewBounds; OVERVIEW_COUNT],
+)> = None;
 
 // ------------------------=
 // FUNC: invalidate
@@ -29,7 +36,7 @@ pub(super) fn paint(
     zoom: u8,
     progress: u8,
 ) -> bool {
-    let key = (d.width, d.height, previews.len(), focus, zoom);
+    let key = (d.width, d.height, previews.len(), focus, zoom, *from);
     if d.stride * d.height > 3840 * 2160 || previews.len() > OVERVIEW_COUNT {
         return false;
     }

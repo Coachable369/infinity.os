@@ -12,18 +12,21 @@ pub(super) fn paint_card(
     selected: bool,
 ) {
     d.glass_panel_with_palette(p.0, p.1, p.2, p.3, false, (14, 40, 62), (97, 178, 224));
-    // Kit chrome: layered cool-blue glass, soft top reflection and an inset rim.
-    d.fill_rounded_rect_alpha(
-        p.0 + 2,
-        p.1 + 2,
-        p.2.saturating_sub(4),
-        p.3 / 3,
-        12,
-        159,
-        218,
-        255,
-        24,
-    );
+    // Continuous reflection falloff avoids a hard, opaque-looking cap.
+    let reflection = (p.3 / 3).max(1);
+    for row in 0..reflection {
+        let inset = if row < 10 { 12 - row } else { 3 };
+        d.fill_rect_alpha(
+            p.0 + inset,
+            p.1 + 3 + row,
+            p.2.saturating_sub(inset * 2),
+            1,
+            159,
+            218,
+            255,
+            (30 * (reflection - row) / reflection) as u8,
+        );
+    }
     d.outline_rounded_rect(
         p.0 + 3,
         p.1 + 3,
@@ -60,6 +63,16 @@ pub(super) fn paint_card(
     let pill_y = p.1 + p.3 - pill_h - 10;
     d.fill_rounded_rect_alpha(pill_x, pill_y, pill_w, pill_h, pill_h / 2, 8, 27, 43, 225);
     d.outline_rounded_rect(pill_x, pill_y, pill_w, pill_h, pill_h / 2, 91, 163, 207);
+    d.fill_rect_alpha(
+        pill_x + pill_h / 2,
+        pill_y + 2,
+        pill_w.saturating_sub(pill_h),
+        1,
+        199,
+        234,
+        255,
+        90,
+    );
     d.ui_text_elided_strong(
         pill_x + 16,
         pill_y + 7,
@@ -71,5 +84,19 @@ pub(super) fn paint_card(
     );
     if selected {
         d.outline_rounded_rect(p.0, p.1, p.2, p.3, 12, 110, 214, 255);
+        for (width, alpha) in [(80, 24), (56, 55), (32, 150)] {
+            let width = width.min(p.2 / 2);
+            d.fill_rounded_rect_alpha(
+                p.0 + (p.2 - width) / 2,
+                p.1 + p.3 - 5,
+                width,
+                3,
+                1,
+                122,
+                222,
+                255,
+                alpha,
+            );
+        }
     }
 }

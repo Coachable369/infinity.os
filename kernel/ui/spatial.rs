@@ -357,14 +357,15 @@ pub fn overview_bounds(
                 480 + 20 * t / 255,
             );
         }
-        let rank = if index < focus {
-            index
-        } else {
-            index.saturating_sub(1)
-        };
-        let rear = rank / 2;
+        // Keep neighbours on their physical side of a circular selection.
+        // Removing the focused index from a fixed list reshuffled both sides
+        // on every click instead of rotating the carousel.
+        let clockwise = (index + count - focus) % count.max(1);
+        let right = clockwise <= count / 2;
+        let distance = if right { clockwise } else { count - clockwise };
+        let rear = distance.saturating_sub(1);
         return (
-            if rank % 2 == 0 {
+            if !right {
                 90 + rear * 20
             } else {
                 680 - rear * 20

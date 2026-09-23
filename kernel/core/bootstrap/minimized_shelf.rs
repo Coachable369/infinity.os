@@ -17,6 +17,29 @@ impl DisplayDevice {
         let w = r.width as usize;
         let h = r.height as usize;
         self.glass_panel(x, y, w, h, true);
+        let snap = state.drag.and_then(|(px, _, _, _)| {
+            if px <= 35 {
+                Some(true)
+            } else if px + (w * 1000 / self.width) as i32 >= 965 {
+                Some(false)
+            } else {
+                None
+            }
+        });
+        if let Some(left) = snap {
+            let edge = if left { x + 3 } else { x + w - 6 };
+            self.fill_rounded_rect_alpha(
+                edge,
+                y + 12,
+                3,
+                h.saturating_sub(24),
+                1,
+                117,
+                223,
+                255,
+                220,
+            );
+        }
         self.fill_rounded_rect_alpha(
             x + 2,
             y + 2,
@@ -32,7 +55,9 @@ impl DisplayDevice {
             x,
             w,
             y + w / 10,
-            if state.drag.is_some() {
+            if snap.is_some() {
+                b"SNAP"
+            } else if state.drag.is_some() {
                 b"MOVE"
             } else {
                 b"DRAG"

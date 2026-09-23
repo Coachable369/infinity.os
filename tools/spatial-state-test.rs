@@ -482,7 +482,7 @@ fn geometry_matches_hits_and_clamps_placement() {
 // DESC: Verifies per-world app visibility, placement, identity label and navigation state survive serialization.
 // ------------------=
 fn world_layout_survives_roundtrip() {
-    use session_state::{DesktopResumeSurface, DesktopSessionLayout, WindowPlacement};
+use session_state::{DesktopResumeSurface, DesktopSessionLayout, WindowPlacement};
     let mut state = SpatialState::new([3; 16]);
     let placement = WindowPlacement::new(100, 120, 600, 500, false, true);
     let layout = DesktopSessionLayout {
@@ -513,4 +513,21 @@ fn world_layout_survives_roundtrip() {
     assert_eq!(SpatialState::decode([3; 16], &bytes), Ok(state));
     state.active_world = 4;
     assert_eq!(state.encode([3; 16]), Err(Error::Invalid));
+}
+
+#[test]
+// ------------------------=
+// FUNC: carousel_preserves_circular_neighbours
+// DESC: Every selection places its next app to the right and previous app to the left, including wraparound.
+// ------------------=
+fn carousel_preserves_circular_neighbours() {
+    for count in 3..=5 {
+        for focus in 0..count {
+            let center = spatial::overview_bounds(focus, focus, 0, count);
+            let next = spatial::overview_bounds((focus + 1) % count, focus, 0, count);
+            let previous = spatial::overview_bounds((focus + count - 1) % count, focus, 0, count);
+            assert!(previous.0 < center.0);
+            assert!(next.0 > center.0);
+        }
+    }
 }

@@ -8074,7 +8074,7 @@ impl super::DisplayDevice {
     fn desktop_base(&mut self,scale:usize,desktop_items:u8,desktop_item_positions:&[[i32;2];7],launcher_open:bool) {
         self.desktop_widgets(scale);
         let shortcuts=crate::ui::app_launcher::shortcuts::current();
-        for (id,position) in shortcuts.positions.iter().enumerate() {
+        for (id,position) in shortcuts.stationary_positions().iter().enumerate() {
             if let Some((x,y,_,_))=crate::ui::app_launcher::shortcuts::icon_rect(*position,self.width,self.height) {
                 self.desktop_app_shortcut(id,x,y,false);
             }
@@ -10644,7 +10644,7 @@ pub fn system_ui_present(
                 if let Some((id,_,_,true))=shortcuts.drag {
                     console.display.desktop_app_shortcut(id,
                         console.display.width*shortcuts.pointer[0].clamp(0,1000) as usize/1000,
-                        console.display.height*shortcuts.pointer[1].clamp(0,1000) as usize/1000,true);
+                        console.display.height*shortcuts.pointer[1].clamp(0,1000) as usize/1000,shortcuts.positions[id]==[0,0]);
                 }
             }
             console.cursor_x = cursor_x;

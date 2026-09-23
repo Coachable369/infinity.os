@@ -3,6 +3,48 @@ use super::*;
 use crate::primitives::UI_FONT_CELL_HEIGHT;
 #[path = "../kernel/core/bootstrap/holographic_card.rs"]
 mod holographic_card;
+use holographic_card::paint_card;
+use crate::ui::spatial::{overview_bounds, Preview};
+#[path = "../kernel/core/bootstrap/spatial_carousel.rs"]
+mod carousel_renderer;
+
+impl DisplayDevice {
+    // ------------------------=
+    // FUNC: set_render_clip
+    // DESC: Supplies the host framebuffer clipping boundary used by the production sprite renderer.
+    // ------------------=
+    fn set_render_clip(&mut self, x: usize, y: usize, width: usize, height: usize) {
+        self.render_clip = Some(Region {left:x.min(self.width), top:y.min(self.height),
+            right:x.saturating_add(width).min(self.width), bottom:y.saturating_add(height).min(self.height)});
+    }
+}
+
+#[test]
+// ------------------------=
+// FUNC: interrupted_carousel_cache_matches_fresh_frame
+// DESC: Changing the origin geometry with the same destination must match a freshly prepared carousel.
+// ------------------=
+fn interrupted_carousel_cache_matches_fresh_frame() {
+    use crate::ui::spatial::OVERVIEW_COUNT;
+    let (width, height) = (960, 640);
+    let background = vec![0x102336u32; width * height];
+    let mut pixels = background.clone();
+    let mut d = DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    let mut previews = [Preview::EMPTY; 3];
+    for (i, p) in previews.iter_mut().enumerate() { p.app = i as u8; }
+    let mut origin = [(0,0,0,0); OVERVIEW_COUNT];
+    for i in 0..3 { origin[i] = overview_bounds(i, 0, 0, 3); }
+    carousel_renderer::invalidate();
+    assert!(carousel_renderer::paint(&mut d, &previews, &origin, 1, 0, 120));
+    for i in 0..3 { origin[i] = overview_bounds(i, 2, 255, 3); }
+    pixels.copy_from_slice(&background);
+    assert!(carousel_renderer::paint(&mut d, &previews, &origin, 1, 0, 120));
+    let reused = pixels.clone();
+    carousel_renderer::invalidate();
+    pixels.copy_from_slice(&background);
+    assert!(carousel_renderer::paint(&mut d, &previews, &origin, 1, 0, 120));
+    assert_eq!(pixels, reused);
+}
 
 #[test]
 // ------------------------=
@@ -60,12 +102,13 @@ fn shortcut_drag_partial_pixels_match_full_composition() {
         let clip=Region{left:x,top:y,right:x+w,bottom:y+h};
         for row in y..y+h { let range=row*width+x..row*width+x+w;pixels[range.clone()].copy_from_slice(&background[range]); }
         display.render_clip=Some(clip);
-        let p=state.positions[11];display.desktop_app_shortcut(11,width*p[0] as usize/1000,height*p[1] as usize/1000,false);
-        if state.drag.is_some() {display.desktop_app_shortcut(11,width*state.pointer[0] as usize/1000,height*state.pointer[1] as usize/1000,true);}
+        let p=state.stationary_positions()[11];
+        if p != [0,0] {display.desktop_app_shortcut(11,width*p[0] as usize/1000,height*p[1] as usize/1000,false);}
+        if state.drag.is_some() {display.desktop_app_shortcut(11,width*state.pointer[0] as usize/1000,height*state.pointer[1] as usize/1000,false);}
         display.render_clip=None;
         let mut expected=background.clone();let mut reference=display;reference.buffer=expected.as_mut_ptr();
-        reference.desktop_app_shortcut(11,width*p[0] as usize/1000,height*p[1] as usize/1000,false);
-        if state.drag.is_some() {reference.desktop_app_shortcut(11,width*state.pointer[0] as usize/1000,height*state.pointer[1] as usize/1000,true);}
+        if p != [0,0] {reference.desktop_app_shortcut(11,width*p[0] as usize/1000,height*p[1] as usize/1000,false);}
+        if state.drag.is_some() {reference.desktop_app_shortcut(11,width*state.pointer[0] as usize/1000,height*state.pointer[1] as usize/1000,false);}
         let mismatch=pixels.iter().zip(&expected).position(|(a,b)|a!=b);
         assert!(mismatch.is_none(),"shortcut damage mismatch in frame {frame}: {:?}, clip {:?}",mismatch.map(|i|(i%width,i/width)),(x,y,w,h));
         if frame==2 {

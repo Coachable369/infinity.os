@@ -24,6 +24,17 @@ pub struct State {
 }
 impl State {
     // ------------------------=
+    // FUNC: stationary_positions
+    // DESC: Omits the captured shortcut while its single moving presentation is visible.
+    // ------------------=
+    pub fn stationary_positions(self) -> [[u16; 2]; 15] {
+        let mut positions = self.positions;
+        if let Some((id, _, _, true)) = self.drag {
+            positions[id] = [0, 0];
+        }
+        positions
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Creates an empty shortcut collection without duplicating the app catalog.
     // ------------------=

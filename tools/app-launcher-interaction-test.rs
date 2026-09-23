@@ -155,6 +155,11 @@ fn shortcut_drag_and_persistence() {
     let _ = shortcuts::take_damage(1920, 1080);
     s.begin(6, 400, 500, true);
     s.motion(410, 510);
+    assert_eq!(s.stationary_positions()[6], [0, 0]);
+    assert_eq!(s.positions[6], [400, 500]);
+    let mut cancelled = s;
+    cancelled.drag = None;
+    assert_eq!(cancelled.stationary_positions()[6], [400, 500]);
     shortcuts::publish(s);
     let (_, _, w, h) = shortcuts::take_damage(1920, 1080).unwrap();
     assert!(w * h < 1920 * 1080 / 8);
