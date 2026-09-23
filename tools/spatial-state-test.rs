@@ -5,6 +5,65 @@ mod spatial;
 use spatial::*;
 #[test]
 // ------------------------=
+// FUNC: categories_rings_and_world_appearance_roundtrip
+// DESC: Verifies idea assignment, unique rings, zoom geometry, and durable world appearance without external services.
+// ------------------=
+fn categories_rings_and_world_appearance_roundtrip() {
+    let owner = [1; 16];
+    let mut s = SpatialState::new(owner);
+    for name in [b"Ideas".as_slice(), b"Projects", b"Research", b"Personal"] {
+        let group = s.add_category(owner, name).unwrap();
+        let mut idea = clipping();
+        idea.collection = group as u8;
+        let id = s.gather(owner, idea).unwrap();
+        assert_eq!(s.items[id].unwrap().collection, group as u8);
+        assert_eq!(
+            ring_hit(&s, 500 + ring_radius(&s, group) as i32, 475),
+            Some(group as u8)
+        );
+    }
+    assert_eq!(s.add_category(owner, b"ideas"), Err(Error::Invalid));
+    assert_eq!(s.add_category(owner, b"More"), Err(Error::Capacity));
+    let before = ring_card(&s, 1);
+    s.ring_zoom[1] = 255;
+    assert_ne!(ring_card(&s, 1), before);
+    s.world_enabled = true;
+    s.active_world = 2;
+    s.world_icons = [0, 1, 2, 3];
+    s.world_accents[2] = 0x123456;
+    s.world_primary[2] = 0x102030;
+    s.world_skin[2] = 1;
+    assert_eq!(
+        SpatialState::decode(owner, &s.encode(owner).unwrap()),
+        Ok(s)
+    );
+}
+#[test]
+// ------------------------=
+// FUNC: legacy_spatial_record_migrates_without_losing_ideas
+// DESC: Reconstructs the previous zero-extension wire format and verifies bounded migration.
+// ------------------=
+fn legacy_spatial_record_migrates_without_losing_ideas() {
+    let owner = [1; 16];
+    let mut s = SpatialState::new(owner);
+    s.gather(owner, clipping()).unwrap();
+    let mut bytes = s.encode(owner).unwrap();
+    bytes[26..29].fill(0);
+    bytes[7264..7408].fill(0);
+    let sum = bytes[..STATE_BYTES - 4].iter().fold(2166136261u32, |v, b| {
+        (v ^ u32::from(*b)).wrapping_mul(16777619)
+    });
+    bytes[STATE_BYTES - 4..].copy_from_slice(&sum.to_le_bytes());
+    let restored = SpatialState::decode(owner, &bytes).unwrap();
+    assert_eq!(restored.items, s.items);
+    assert!(!restored.categories[0].get().is_empty());
+    assert_eq!(
+        SpatialState::decode(owner, &restored.encode(owner).unwrap()),
+        Ok(restored)
+    );
+}
+#[test]
+// ------------------------=
 // FUNC: collection_controls_share_drop_geometry_and_preserve_sources
 // DESC: Tests destination boundaries, non-mutating previews, and confirmed metadata-only organization.
 // ------------------=
@@ -268,7 +327,57 @@ fn clipping() -> Item {
         x: 300,
         y: 400,
         links: 0,
+        parent: None,
+        expanded: false,
     }
+}
+#[test]
+// ------------------------=
+// FUNC: idea_tree_visibility_persistence_and_removal
+// DESC: Exercises nested ideas, collapse, editing, owner enforcement, durable state and branch removal.
+// ------------------=
+fn idea_tree_visibility_persistence_and_removal() {
+    let owner = [1; 16];
+    let mut state = SpatialState::new(owner);
+    let root = state.gather(owner, clipping()).unwrap();
+    let mut child = clipping();
+    child.parent = Some(root as u8);
+    let child_index = state.gather(owner, child).unwrap();
+    child.parent = Some(child_index as u8);
+    let leaf = state.gather(owner, child).unwrap();
+    assert!(!state.visible(child_index));
+    state.items[root].as_mut().unwrap().expanded = true;
+    assert!(state.visible(child_index));
+    assert!(!state.visible(leaf));
+    state.items[child_index].as_mut().unwrap().expanded = true;
+    assert!(state.visible(leaf));
+    assert!(state.items[leaf]
+        .as_mut()
+        .unwrap()
+        .text
+        .set(b"Updated idea"));
+    let encoded = state.encode(owner).unwrap();
+    assert_eq!(SpatialState::decode(owner, &encoded).unwrap(), state);
+    assert_eq!(state.remove([2; 16], root), Err(Error::Owner));
+    assert_eq!(state.branch(root).count_ones(), 3);
+    state.place(owner, root, 1, 100, 200).unwrap();
+    assert_eq!(state.items[leaf].unwrap().collection, 1);
+    assert_eq!(state.items[leaf].unwrap().parent, Some(child_index as u8));
+    state.remove(owner, child_index).unwrap();
+    assert!(state.items[root].is_some());
+    assert!(state.items[leaf].is_none());
+    assert!(state.items[child_index].is_none());
+    assert_eq!(
+        SpatialState::decode(owner, &state.encode(owner).unwrap()).unwrap(),
+        state
+    );
+    child.parent = Some(15);
+    assert_eq!(state.gather(owner, child), Err(Error::Invalid));
+    state.items[root].as_mut().unwrap().parent = Some(root as u8);
+    assert_eq!(
+        SpatialState::decode(owner, &state.encode(owner).unwrap()),
+        Err(Error::Corrupt)
+    );
 }
 #[test]
 // ------------------------=
@@ -374,6 +483,7 @@ fn world_layout_survives_roundtrip() {
         settings_scroll_offset: 0,
         input_preferences: [0; 8],
         app_drawer_left: false,
+        app_drawer_floating: [301, 201],
     };
     state.worlds[2].layout = Some(layout);
     state.worlds[2].name.set(b"Research");

@@ -23,6 +23,101 @@ pub fn drag_position(origin: (usize, usize), press: (i32, i32), current: (i32, i
 pub const STATE_BYTES: usize = 8192;
 pub const ITEM_COUNT: usize = 16;
 pub const WORLD_COUNT: usize = 4;
+static DESKTOP_WORLD: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(255);
+static WORLD_DIRTY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+// ------------------------=
+// FUNC: publish_world
+// DESC: Publishes a wallpaper identity and invalidates the retained desktop only when it changes.
+// ------------------=
+pub fn publish_world(world: u8) {
+    use core::sync::atomic::Ordering;
+    if DESKTOP_WORLD.swap(world, Ordering::Relaxed) != world {
+        WORLD_DIRTY.store(true, Ordering::Relaxed);
+    }
+}
+// ------------------------=
+// FUNC: desktop_world
+// DESC: Reads the selected packaged world wallpaper without a storage query.
+// ------------------=
+pub fn desktop_world() -> u8 {
+    DESKTOP_WORLD.load(core::sync::atomic::Ordering::Relaxed)
+}
+// ------------------------=
+// FUNC: take_world_damage
+// DESC: Consumes one structural repaint for an explicit world change.
+// ------------------=
+pub fn take_world_damage() -> bool {
+    WORLD_DIRTY.swap(false, core::sync::atomic::Ordering::Relaxed)
+}
+// ------------------------=
+// FUNC: ring_radius
+// DESC: Scales each category orbit independently while keeping it inside the spatial stage.
+// ------------------=
+pub fn ring_radius(state: &SpatialState, group: usize) -> usize {
+    ((100 + group * 85) * (192 + state.ring_zoom[group] as usize) / 320).min(390)
+}
+// ------------------------=
+// FUNC: ring_card
+// DESC: Places category ideas on the same ellipse drawn by the native renderer.
+// ------------------=
+pub fn ring_card(state: &SpatialState, index: usize) -> (usize, usize, usize, usize) {
+    let group = state.items[index]
+        .map(|i| i.collection as usize)
+        .unwrap_or(0);
+    let count = (0..ITEM_COUNT)
+        .filter(|&i| {
+            state.visible(i) && state.items[i].is_some_and(|v| v.collection as usize == group)
+        })
+        .count()
+        .max(1);
+    let ordinal = (0..index)
+        .filter(|&i| {
+            state.visible(i) && state.items[i].is_some_and(|v| v.collection as usize == group)
+        })
+        .count();
+    const POINTS: [(i32, i32); 16] = [
+        (1000, 0),
+        (924, 383),
+        (707, 707),
+        (383, 924),
+        (0, 1000),
+        (-383, 924),
+        (-707, 707),
+        (-924, 383),
+        (-1000, 0),
+        (-924, -383),
+        (-707, -707),
+        (-383, -924),
+        (0, -1000),
+        (383, -924),
+        (707, -707),
+        (924, -383),
+    ];
+    let (x, y) = POINTS[(ordinal * 16 / count).min(15)];
+    let radius = ring_radius(state, group).min(390) as i32;
+    (
+        (500 + x * radius / 1000 - 70).max(65) as usize,
+        (475 + y * radius / 2200 - 40).max(250) as usize,
+        140,
+        90,
+    )
+}
+// ------------------------=
+// FUNC: ring_hit
+// DESC: Selects the closest category ellipse within a generous pointer tolerance.
+// ------------------=
+pub fn ring_hit(state: &SpatialState, x: i32, y: i32) -> Option<u8> {
+    let dx = i64::from(x - 500);
+    let dy = i64::from((y - 475) * 2);
+    (0..4)
+        .filter(|&i| !state.categories[i].get().is_empty())
+        .min_by_key(|&i| (dx * dx + dy * dy - (ring_radius(state, i) as i64).pow(2)).abs())
+        .filter(|&i| {
+            (dx * dx + dy * dy - (ring_radius(state, i) as i64).pow(2)).abs()
+                < ring_radius(state, i) as i64 * 28
+        })
+        .map(|i| i as u8)
+}
 // ------------------------=
 // FUNC: collection_card
 // DESC: Shares collection geometry between painting, clicks, and drops.
@@ -44,13 +139,13 @@ pub fn collection_hit(x: i32, y: i32) -> Option<u8> {
 // DESC: Uses saved collection names consistently across controls and confirmations.
 // ------------------=
 pub fn collection_name(state: &SpatialState, group: usize) -> &[u8] {
-    let Some(world) = state.worlds.get(group) else {
+    let Some(name) = state.categories.get(group) else {
         return b"";
     };
-    if world.name.get().is_empty() {
-        [b"Home".as_slice(), b"Create", b"Research", b"Explore"][group]
+    if name.get().is_empty() {
+        b"+ Category"
     } else {
-        world.name.get()
+        name.get()
     }
 }
 pub const OVERVIEW_COUNT: usize = 10;
@@ -183,7 +278,7 @@ impl Preview {
 pub const TABS: [&[u8]; 5] = [
     b"Holographic",
     b"Worldshift",
-    b"Gravity Well",
+    b"Gravity Wall",
     b"Matter Shelf",
     b"Constellations",
 ];
@@ -405,6 +500,8 @@ pub struct Item {
     pub x: u16,
     pub y: u16,
     pub links: u16,
+    pub parent: Option<u8>,
+    pub expanded: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -421,8 +518,84 @@ pub struct SpatialState {
     pub items: [Option<Item>; ITEM_COUNT],
     pub active_world: u8,
     pub reduced_motion: bool,
+    pub categories: [Label<24>; 4],
+    pub selected_ring: u8,
+    pub ring_zoom: [u8; 4],
+    pub world_icons: [u8; 4],
+    pub world_accents: [u32; 4],
+    pub world_primary: [u32; 4],
+    pub world_skin: [u8; 4],
+    pub world_enabled: bool,
 }
 impl SpatialState {
+    // ------------------------=
+    // FUNC: branch
+    // DESC: Returns the bounded subtree mask including its root, without allocating.
+    // ------------------=
+    pub fn branch(&self, root: usize) -> u16 {
+        if root >= ITEM_COUNT || self.items[root].is_none() {
+            return 0;
+        }
+        let mut mask = 1u16 << root;
+        for _ in 0..ITEM_COUNT {
+            for (i, item) in self.items.iter().enumerate() {
+                if item
+                    .and_then(|v| v.parent)
+                    .is_some_and(|p| p < 16 && mask & (1 << p) != 0)
+                {
+                    mask |= 1 << i;
+                }
+            }
+        }
+        mask
+    }
+    // ------------------------=
+    // FUNC: visible
+    // DESC: Hides descendants of collapsed ancestors and rejects malformed ancestry.
+    // ------------------=
+    pub fn visible(&self, index: usize) -> bool {
+        let Some(mut item) = self.items.get(index).copied().flatten() else {
+            return false;
+        };
+        for _ in 0..ITEM_COUNT {
+            let Some(parent) = item.parent else {
+                return true;
+            };
+            let Some(ancestor) = self.items.get(parent as usize).copied().flatten() else {
+                return false;
+            };
+            if !ancestor.expanded {
+                return false;
+            }
+            item = ancestor;
+        }
+        false
+    }
+    // ------------------------=
+    // FUNC: add_category
+    // DESC: Allocates a named category and its own selectable ring, rejecting duplicates and capacity overflow.
+    // ------------------=
+    pub fn add_category(&mut self, owner: [u8; 16], name: &[u8]) -> Result<usize, Error> {
+        self.authorize(owner)?;
+        if name.is_empty()
+            || self
+                .categories
+                .iter()
+                .any(|c| c.get().eq_ignore_ascii_case(name))
+        {
+            return Err(Error::Invalid);
+        }
+        let index = self
+            .categories
+            .iter()
+            .position(|c| c.get().is_empty())
+            .ok_or(Error::Capacity)?;
+        if !self.categories[index].set(name) {
+            return Err(Error::Invalid);
+        }
+        self.selected_ring = index as u8;
+        Ok(index)
+    }
     // ------------------------=
     // FUNC: new
     // DESC: Creates an empty per-user workspace without seeded fake documents.
@@ -439,6 +612,14 @@ impl SpatialState {
             items: [None; ITEM_COUNT],
             active_world: 0,
             reduced_motion: false,
+            categories: [Label::empty(); 4],
+            selected_ring: 0,
+            ring_zoom: [128; 4],
+            world_icons: [3, 0, 1, 2],
+            world_accents: [0x69d7ff, 0xffb56b, 0x9baeff, 0x70ead1],
+            world_primary: [0x031422, 0x20130b, 0x101329, 0x06241e],
+            world_skin: [0; 4],
+            world_enabled: false,
         }
     }
     // ------------------------=
@@ -472,6 +653,27 @@ impl SpatialState {
             .position(Option::is_none)
             .ok_or(Error::Capacity)?;
         item.links = 0;
+        if let Some(parent) = item.parent {
+            if !self
+                .items
+                .get(parent as usize)
+                .copied()
+                .flatten()
+                .is_some_and(|p| p.collection == item.collection)
+            {
+                return Err(Error::Invalid);
+            }
+        }
+        if self.categories[item.collection as usize].get().is_empty() {
+            self.categories[item.collection as usize].set(
+                [
+                    b"Ideas".as_slice(),
+                    b"Category 2",
+                    b"Category 3",
+                    b"Category 4",
+                ][item.collection as usize],
+            );
+        }
         self.items[index] = Some(item);
         Ok(index)
     }
@@ -481,13 +683,17 @@ impl SpatialState {
     // ------------------=
     pub fn remove(&mut self, owner: [u8; 16], index: usize) -> Result<(), Error> {
         self.authorize(owner)?;
-        self.items
-            .get_mut(index)
-            .ok_or(Error::Missing)?
-            .take()
-            .ok_or(Error::Missing)?;
+        let mask = self.branch(index);
+        if mask == 0 {
+            return Err(Error::Missing);
+        }
+        for i in 0..ITEM_COUNT {
+            if mask & (1 << i) != 0 {
+                self.items[i] = None;
+            }
+        }
         for item in self.items.iter_mut().flatten() {
-            item.links &= !(1u16 << index);
+            item.links &= !mask;
         }
         Ok(())
     }
@@ -525,12 +731,27 @@ impl SpatialState {
         if group >= 4 || x > 1000 || y > 1000 {
             return Err(Error::Invalid);
         }
+        let branch = self.branch(index);
+        let changed_group = self
+            .items
+            .get(index)
+            .copied()
+            .flatten()
+            .is_some_and(|item| item.collection != group);
+        for i in 0..ITEM_COUNT {
+            if branch & (1 << i) != 0 {
+                self.items[i].as_mut().unwrap().collection = group;
+            }
+        }
         let item = self
             .items
             .get_mut(index)
             .and_then(Option::as_mut)
             .ok_or(Error::Missing)?;
         item.collection = group;
+        if changed_group {
+            item.parent = None;
+        }
         item.x = x;
         item.y = y;
         Ok(())
@@ -549,6 +770,17 @@ impl SpatialState {
         out[8..24].copy_from_slice(&owner);
         out[24] = self.active_world;
         out[25] = u8::from(self.reduced_motion);
+        out[26] = 2;
+        out[27] = self.selected_ring;
+        out[28] = u8::from(self.world_enabled);
+        for i in 0..4 {
+            put_label(&mut out, 7264 + i * 25, &self.categories[i]);
+            out[7364 + i] = self.ring_zoom[i];
+            out[7368 + i] = self.world_icons[i];
+            out[7372 + i * 4..7376 + i * 4].copy_from_slice(&self.world_accents[i].to_le_bytes());
+            out[7388 + i * 4..7392 + i * 4].copy_from_slice(&self.world_primary[i].to_le_bytes());
+            out[7404 + i] = self.world_skin[i];
+        }
         for (i, world) in self.worlds.iter().enumerate() {
             let at = 32 + i * WORLD_BYTES;
             put_label(&mut out, at, &world.name);
@@ -557,6 +789,10 @@ impl SpatialState {
             if let Some(layout) = world.layout {
                 out[at + 122] = 1;
                 session_state::write_layout(&mut out, at + 123, layout);
+                out[at + 282..at + 284]
+                    .copy_from_slice(&layout.app_drawer_floating[0].to_le_bytes());
+                out[at + 284..at + 286]
+                    .copy_from_slice(&layout.app_drawer_floating[1].to_le_bytes());
             }
         }
         for (i, item) in self.items.iter().enumerate() {
@@ -571,6 +807,8 @@ impl SpatialState {
             out[at + 341..at + 343].copy_from_slice(&item.x.to_le_bytes());
             out[at + 343..at + 345].copy_from_slice(&item.y.to_le_bytes());
             out[at + 345..at + 347].copy_from_slice(&item.links.to_le_bytes());
+            out[at + 347] = item.parent.map_or(0, |p| p + 1);
+            out[at + 348] = u8::from(item.expanded);
         }
         let sum = checksum(&out[..STATE_BYTES - 4]);
         out[STATE_BYTES - 4..].copy_from_slice(&sum.to_le_bytes());
@@ -597,6 +835,31 @@ impl SpatialState {
         let mut state = Self::new(owner);
         state.active_world = bytes[24];
         state.reduced_motion = bytes[25] != 0;
+        if bytes[26] == 1 || bytes[26] == 2 {
+            if bytes[27] >= 4 || bytes[28] > 1 {
+                return Err(Error::Corrupt);
+            }
+            state.selected_ring = bytes[27];
+            state.world_enabled = bytes[28] != 0;
+            for i in 0..4 {
+                state.categories[i] = read_label(bytes, 7264 + i * 25)?;
+                state.ring_zoom[i] = bytes[7364 + i];
+                if bytes[7368 + i] >= 4 {
+                    return Err(Error::Corrupt);
+                }
+                state.world_icons[i] = bytes[7368 + i];
+                if bytes[26] == 2 {
+                    state.world_accents[i] =
+                        u32::from_le_bytes(bytes[7372 + i * 4..7376 + i * 4].try_into().unwrap());
+                    state.world_primary[i] =
+                        u32::from_le_bytes(bytes[7388 + i * 4..7392 + i * 4].try_into().unwrap());
+                    if bytes[7404 + i] > 2 {
+                        return Err(Error::Corrupt);
+                    }
+                    state.world_skin[i] = bytes[7404 + i];
+                }
+            }
+        }
         for (i, world) in state.worlds.iter_mut().enumerate() {
             let at = 32 + i * WORLD_BYTES;
             world.name = read_label(bytes, at)?;
@@ -607,6 +870,12 @@ impl SpatialState {
                 1 => Some(session_state::read_layout(bytes, at + 123).ok_or(Error::Corrupt)?),
                 _ => return Err(Error::Corrupt),
             };
+            if let Some(layout) = world.layout.as_mut() {
+                layout.app_drawer_floating = [
+                    u16::from_le_bytes(bytes[at + 282..at + 284].try_into().unwrap()).min(900),
+                    u16::from_le_bytes(bytes[at + 284..at + 286].try_into().unwrap()).min(341),
+                ];
+            }
         }
         for i in 0..ITEM_COUNT {
             let at = 32 + WORLD_COUNT * WORLD_BYTES + i * ITEM_BYTES;
@@ -625,6 +894,8 @@ impl SpatialState {
                 x: u16::from_le_bytes(bytes[at + 341..at + 343].try_into().unwrap()),
                 y: u16::from_le_bytes(bytes[at + 343..at + 345].try_into().unwrap()),
                 links: u16::from_le_bytes(bytes[at + 345..at + 347].try_into().unwrap()),
+                parent: bytes[at + 347].checked_sub(1),
+                expanded: bytes[at + 348] == 1,
             };
             if item.collection >= 4
                 || item.x > 1000
@@ -639,6 +910,19 @@ impl SpatialState {
         }
         for (i, item) in state.items.iter().enumerate() {
             if let Some(item) = item {
+                let mut parent = item.parent;
+                let mut seen = 1u16 << i;
+                while let Some(p) = parent {
+                    if p >= 16 || seen & (1 << p) != 0 {
+                        return Err(Error::Corrupt);
+                    }
+                    seen |= 1 << p;
+                    let ancestor = state.items[p as usize].ok_or(Error::Corrupt)?;
+                    if ancestor.collection != item.collection {
+                        return Err(Error::Corrupt);
+                    }
+                    parent = ancestor.parent;
+                }
                 for j in 0..ITEM_COUNT {
                     if item.links & (1 << j) != 0
                         && !state.items[j].is_some_and(|other| other.links & (1 << i) != 0)
@@ -648,8 +932,31 @@ impl SpatialState {
                 }
             }
         }
-        if state.encode(owner)? != bytes {
+        let mut canonical = state.encode(owner)?;
+        if bytes[26] < 2 {
+            canonical[26] = bytes[26];
+            if bytes[26] == 0 {
+                canonical[27..29].fill(0);
+                canonical[7264..7372].fill(0);
+            }
+            canonical[7372..7408].fill(0);
+            let sum = checksum(&canonical[..STATE_BYTES - 4]);
+            canonical[STATE_BYTES - 4..].copy_from_slice(&sum.to_le_bytes());
+        }
+        if canonical != bytes {
             return Err(Error::Corrupt);
+        }
+        if bytes[26] == 0 {
+            for item in state.items.iter().flatten() {
+                state.categories[item.collection as usize].set(
+                    [
+                        b"Ideas".as_slice(),
+                        b"Category 2",
+                        b"Category 3",
+                        b"Category 4",
+                    ][item.collection as usize],
+                );
+            }
         }
         Ok(state)
     }

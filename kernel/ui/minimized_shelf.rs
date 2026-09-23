@@ -17,7 +17,8 @@ pub enum Action {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
     pub left: bool,
-    pub drag: Option<(i32, i32)>,
+    pub drag: Option<(i32, i32, i32, i32)>,
+    pub floating: [u16; 2],
     pub mask: u16,
     pub offset: usize,
     pub menu: Option<usize>,
@@ -26,6 +27,28 @@ pub struct State {
 }
 impl State {
     // ------------------------=
+    // FUNC: move_drag
+    // DESC: Keeps the drawer floating on interior drops and anchors only inside the edge docking zones.
+    // ------------------=
+    pub fn move_drag(&mut self, pointer_x: i32, pointer_y: i32, held: bool, rail_width: i32) {
+        let Some((_, _, grab_x, grab_y)) = self.drag else {
+            return;
+        };
+        let x = (pointer_x - grab_x).clamp(0, 1000 - rail_width);
+        let y = (pointer_y - grab_y).clamp(60, 340);
+        if held {
+            self.drag = Some((x, y, grab_x, grab_y));
+        } else {
+            self.left = x + rail_width / 2 < 500;
+            self.floating = if x <= 35 || x + rail_width >= 965 {
+                [0; 2]
+            } else {
+                [(x + 1) as u16, (y + 1) as u16]
+            };
+            self.drag = None;
+        }
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Starts with no minimized windows or transient menu.
     // ------------------=
@@ -33,6 +56,7 @@ impl State {
         Self {
             left: false,
             drag: None,
+            floating: [0; 2],
             mask: 0,
             offset: 0,
             menu: None,
@@ -110,15 +134,26 @@ impl Geometry {
         let rail = Rect {
             x: state
                 .drag
-                .map(|(x, _)| x * width as i32 / 1000)
+                .map(|(x, _, _, _)| x * width as i32 / 1000)
                 .unwrap_or_else(|| {
-                    if state.left {
+                    if state.floating[0] > 0 {
+                        (state.floating[0] as i32 - 1) * width as i32 / 1000
+                    } else if state.left {
                         (width / 100) as i32
                     } else {
                         (width * 99 / 100) as i32 - w as i32
                     }
                 }),
-            y: (height * 18 / 100) as i32,
+            y: state
+                .drag
+                .map(|(_, y, _, _)| y * height as i32 / 1000)
+                .unwrap_or_else(|| {
+                    if state.floating[0] > 0 {
+                        (state.floating[1] as i32 - 1).max(0) * height as i32 / 1000
+                    } else {
+                        (height * 18 / 100) as i32
+                    }
+                }),
             width: w,
             height: h,
         };

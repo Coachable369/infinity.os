@@ -37,7 +37,7 @@ static REFRESHING: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBo
 static mut ARRIVAL: [u32; 3840 * 2160] = [0; 3840 * 2160];
 static mut ARRIVAL_SIZE: usize = 0;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-const WORLD_ART: [&[u8]; 4] = [
+pub(super) const WORLD_ART: [&[u8]; 4] = [
     include_bytes!("../../../assets/desktop/spatial-world-0.bmp"),
     include_bytes!("../../../assets/desktop/spatial-world-1.bmp"),
     include_bytes!("../../../assets/desktop/spatial-world-2.bmp"),
@@ -656,14 +656,18 @@ pub fn present(
             } else {
                 if tab == 2 {
                     let center = rect(500, 475, 0, 0);
-                    for (i, radius) in [140, 260, 380].iter().enumerate() {
+                    for i in 0..4 {
+                        if state.categories[i].get().is_empty() {
+                            continue;
+                        }
+                        let radius = crate::ui::spatial::ring_radius(state, i);
                         d.spatial_orbit(
                             center.0,
                             center.1,
                             radius * dw / 1000,
                             (radius / 2) * dh / 1000,
-                            progress.wrapping_add(i as u8 * 75),
-                            true,
+                            progress.wrapping_add((i * 61) as u8),
+                            i == state.selected_ring as usize,
                         );
                     }
                     d.spatial_light(center.0 as i32, center.1 as i32, (dh / 24).max(8) as i32);
@@ -701,11 +705,17 @@ pub fn present(
                 }
                 for (i, item) in state.items.iter().enumerate() {
                     if let Some(item) = item {
+                        if tab == 2 && (item.collection != state.selected_ring || !state.visible(i))
+                        {
+                            continue;
+                        }
                         let (a, b, w, h) = if shelf {
                             let Some(bounds) = crate::ui::spatial::shelf_card(i, focus) else {
                                 continue;
                             };
                             bounds
+                        } else if tab == 2 && dragging != Some(i) {
+                            crate::ui::spatial::ring_card(state, i)
                         } else {
                             item_card(i, item)
                         };
@@ -755,10 +765,20 @@ pub fn present(
                             d.ui_text(
                                 p.0 + 12,
                                 p.1 + size + 12 + UI_FONT_CELL_HEIGHT * d.ui_scale(),
-                                crate::ui::spatial::collection_name(
-                                    state,
-                                    item.collection as usize,
-                                ),
+                                if state.branch(i).count_ones() > 1 {
+                                    if item.expanded {
+                                        b"[-] Expanded"
+                                    } else {
+                                        b"[+] Sub-ideas"
+                                    }
+                                } else if item.parent.is_some() {
+                                    b"Sub-idea"
+                                } else {
+                                    crate::ui::spatial::collection_name(
+                                        state,
+                                        item.collection as usize,
+                                    )
+                                },
                                 120,
                                 191,
                                 226,
@@ -770,13 +790,16 @@ pub fn present(
                         }
                     }
                 }
-                if state.items.iter().all(Option::is_none) {
+                if state.items.iter().all(|v| {
+                    v.is_none()
+                        || (tab == 2 && v.is_some_and(|i| i.collection != state.selected_ring))
+                }) {
                     let p = rect(240, if shelf { 710 } else { 410 }, 0, 0);
                     d.ui_text_strong(
                         p.0,
                         p.1,
                         if tab == 2 {
-                            b"Keep related files and notes together."
+                            b"Your ideas, organized in orbit."
                         } else {
                             b"Your ideas, deliberately connected."
                         },
@@ -789,7 +812,11 @@ pub fn present(
                     d.ui_text(
                         p.0,
                         p.1,
-                        if tab == 2 { b"Select a file in File Navigator, then Add selected file. Or start with Add note." } else { b"Collect a selected file, or add a text clipping in Matter Shelf." },
+                        if tab == 2 {
+                            b"Add an idea or create a category. Each category gets its own ring."
+                        } else {
+                            b"Collect a selected file, or add a text clipping in Matter Shelf."
+                        },
                         151,
                         193,
                         214,
@@ -800,11 +827,7 @@ pub fn present(
                     for i in 0..4 {
                         let (a, b, w, h) = crate::ui::spatial::collection_card(i);
                         let p = rect(a, b, w, h);
-                        let selected = state
-                            .items
-                            .get(focus)
-                            .and_then(|v| *v)
-                            .is_some_and(|item| item.collection as usize == i);
+                        let selected = state.selected_ring as usize == i;
                         d.polished_button(
                             p.0,
                             p.1,
@@ -821,10 +844,10 @@ pub fn present(
                 0 => [b"Open / focus", b"", b"", b"Reduced motion"],
                 1 => [b"Switch", b"Save layout", b"Rename", b"Reduced motion"],
                 2 => [
-                    b"Add selected file",
-                    b"Add note",
-                    b"Remove shortcut",
-                    b"Open selected",
+                    b"Add idea",
+                    b"New category",
+                    b"Remove idea",
+                    b"Read / edit idea",
                 ],
                 3 => [
                     b"Collect selected",
@@ -841,7 +864,20 @@ pub fn present(
             };
             for (i, label) in labels.iter().enumerate() {
                 if !label.is_empty() {
-                    let p = rect(80 + i * 210, 805, 190, 48);
+                    let p = if tab == 2 {
+                        rect(80 + i * 140, 805, 130, 48)
+                    } else {
+                        rect(80 + i * 210, 805, 190, 48)
+                    };
+                    d.polished_button(p.0, p.1, p.2, p.3, label, false, false);
+                }
+            }
+            if tab == 2 {
+                for (i, label) in [b"Sub-idea".as_slice(), b"Expand / fold"]
+                    .iter()
+                    .enumerate()
+                {
+                    let p = rect(80 + (i + 4) * 140, 805, 130, 48);
                     d.polished_button(p.0, p.1, p.2, p.3, label, false, false);
                 }
             }
@@ -852,7 +888,7 @@ pub fn present(
                 match tab {
                     0=>b"Tab: views   Arrows: focus   Wheel / +/-: zoom   Enter: open   M: motion   Esc: close".as_slice(),
                     1=>b"Tab: views   Arrows: focus   Enter: switch   S: save   R: rename   M: motion   Esc: close",
-                    2=>b"Original files stay in place.  1-4: collection   Enter: open   T: note   Esc: close",
+                    2=>b"1-4: ring   Wheel / +/-: zoom   T: idea   N: category   Drag idea: assign category",
                     3=>notice,
                     _=>b"C: collect   Drag: arrange   L: link / unlink   Enter: open   Del: remove   Esc: close",
                 },

@@ -2238,10 +2238,12 @@ impl ConsoleRuntime {
         self.app_window_dragging = false;
         self.app_window_resizing = None;
         self.home_dragging_item = None;
+        self.spatial_preserve_world_appearance();
         self.sync_icon_theme();
         self.sync_accent();
         self.sync_primary();
         self.sync_background_effects();
+        self.spatial_apply_world_appearance();
         self.sync_ai_chat_preferences();
         self.refresh_desktop_items();
         self.reset_input();
@@ -2851,6 +2853,7 @@ impl ConsoleRuntime {
             settings_scroll_offset: self.settings_window.scroll_offset,
             input_preferences: crate::ui::input_preferences::current().encode(),
             app_drawer_left: crate::ui::app_launcher::minimized_shelf::current().left,
+            app_drawer_floating: crate::ui::app_launcher::minimized_shelf::current().floating,
         }
     }
 
@@ -2862,6 +2865,7 @@ impl ConsoleRuntime {
         let _ = crate::runtime::with_runtime(|runtime| runtime.restore_desktop_tasks(layout));
         let mut drawer = crate::ui::app_launcher::minimized_shelf::current();
         drawer.left = layout.app_drawer_left;
+        drawer.floating = layout.app_drawer_floating;
         drawer.drag = None;
         crate::ui::app_launcher::minimized_shelf::publish(drawer);
         crate::ui::input_preferences::apply(crate::ui::input_preferences::Preferences::decode(
@@ -2945,6 +2949,7 @@ impl ConsoleRuntime {
     // DESC: Restores the authenticated user's last durable cross-session desktop layout.
     // ------------------=
     fn restore_persisted_desktop_layout(&mut self) -> bool {
+        self.spatial_restore_world_appearance();
         crate::ui::input_preferences::apply(crate::ui::input_preferences::Preferences::defaults());
         if self.current_user.is_zero() {
             return false;

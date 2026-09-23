@@ -56,6 +56,7 @@ fn layout() -> DesktopSessionLayout {
         settings_scroll_offset: 73,
         input_preferences: [0xa1, 8, 2, 6, 3, 0, 0, 0],
         app_drawer_left: true,
+        app_drawer_floating: [301, 201],
     }
 }
 

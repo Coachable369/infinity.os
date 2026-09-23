@@ -1,5 +1,7 @@
 # Gravity Well interaction refinement
 
+Historical interaction pass; superseded by [Gravity Wall](gravity-wall.md).
+
 Reuse the existing Spatial IDesign Kit, icon pack, orbit stage, glass buttons,
 and settling animation. No new bitmap assets or replacement visual language.
 

@@ -341,6 +341,10 @@ impl super::DisplayDevice {
     // DESC: Paints the high-resolution authenticated-session wallpaper without baked interface elements.
     // ------------------=
     pub(super) fn paint_desktop_background(&mut self) {
+        if let Some(bitmap) = super::spatial_view::WORLD_ART.get(crate::ui::spatial::desktop_world() as usize) {
+            self.paint_bitmap_cover_rect(bitmap, 0, 0, self.width, self.height);
+            return;
+        }
         match self.skin_visual_mode() {
             1 => self.fill_rect(0, 0, self.width, self.height, 232, 237, 243),
             2 => self.fill_rect(0, 0, self.width, self.height, 0, 0, 0),
@@ -392,6 +396,10 @@ impl super::DisplayDevice {
         width: usize,
         height: usize,
     ) {
+        if let Some(bitmap) = super::spatial_view::WORLD_ART.get(crate::ui::spatial::desktop_world() as usize) {
+            self.paint_bitmap_cover_rect(bitmap, left, top, width, height);
+            return;
+        }
         match self.skin_visual_mode() {
             1 => self.fill_rect(left, top, width, height, 232, 237, 243),
             2 => self.fill_rect(left, top, width, height, 0, 0, 0),
@@ -9932,7 +9940,7 @@ pub fn system_ui_present(
             let launcher_state_changed = console.last_launcher_state != launcher_state;
             let launcher_interaction_changed =
                 console.last_launcher_interaction_state != launcher_interaction_state;
-            let structural_change_without_window = (!bounded_menu_change
+            let structural_change_without_window = crate::ui::spatial::take_world_damage() || (!bounded_menu_change
                 && ((console.last_system_screen != screen && !desktop_layer_focus_changed)
                     || (!desktop_layer_focus_changed
                         && crate::ui::redraw::focus_change_requires_structural_redraw(

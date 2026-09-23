@@ -10,6 +10,26 @@ use geometry::Point;
 use shelf::*;
 #[test]
 // ------------------------=
+// FUNC: drop_interior_floats_and_edges_anchor
+// DESC: Exercises the same coalesced drag/release state transition used by native pointer routing.
+// ------------------=
+fn drop_interior_floats_and_edges_anchor() {
+    let mut s = State::new();
+    s.drag = Some((900, 180, 10, 10));
+    s.move_drag(410, 250, true, 60);
+    assert_eq!(s.drag, Some((400, 240, 10, 10)));
+    s.move_drag(420, 270, false, 60);
+    assert_eq!(s.floating, [411, 261]);
+    assert_eq!(s.drag, None);
+    for (x, left) in [(20, true), (990, false)] {
+        s.drag = Some((410, 260, 10, 10));
+        s.move_drag(x, 250, false, 60);
+        assert_eq!(s.floating, [0, 0]);
+        assert_eq!(s.left, left);
+    }
+}
+#[test]
+// ------------------------=
 // FUNC: drawer_anchors_and_tracks_drag_without_losing_apps
 // DESC: Verifies both edges, inward menus, and live drag geometry at different display sizes.
 // ------------------=
@@ -24,7 +44,7 @@ fn drawer_anchors_and_tracks_drag_without_losing_apps() {
         let left = Geometry::new(w, h, state);
         assert!(left.menu.x > left.rail.right());
         assert_eq!(left.rail.x, (w / 100) as i32);
-        state.drag = Some((400, 10));
+        state.drag = Some((400, 180, 10, 10));
         let moving = Geometry::new(w, h, state);
         assert_eq!(moving.rail.x, (w * 400 / 1000) as i32);
         assert_eq!(state.item(0), Some(EDITOR));

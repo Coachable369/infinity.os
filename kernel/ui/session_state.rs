@@ -61,6 +61,7 @@ pub struct DesktopSessionLayout {
     pub settings_scroll_offset: usize,
     pub input_preferences: [u8; 8],
     pub app_drawer_left: bool,
+    pub app_drawer_floating: [u16; 2],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,6 +137,10 @@ impl PersistentDesktopLayoutStore {
                 out[at] = 1;
                 out[at + 2..at + 18].copy_from_slice(user);
                 write_layout(&mut out, at + 18, *layout);
+                let extra =
+                    16 + MAX_PERSISTED_DESKTOP_LAYOUTS * DESKTOP_LAYOUT_RECORD_BYTES + index * 4;
+                put_u16(&mut out, extra, layout.app_drawer_floating[0]);
+                put_u16(&mut out, extra + 2, layout.app_drawer_floating[1]);
             }
         }
         let checksum = session_checksum(&out[..DESKTOP_LAYOUT_STATE_BYTES - 4]);
@@ -165,7 +170,13 @@ impl PersistentDesktopLayoutStore {
             }
             let mut user = [0u8; 16];
             user.copy_from_slice(&input[at + 2..at + 18]);
-            let layout = read_layout(input, at + 18)?;
+            let mut layout = read_layout(input, at + 18)?;
+            let extra =
+                16 + MAX_PERSISTED_DESKTOP_LAYOUTS * DESKTOP_LAYOUT_RECORD_BYTES + index * 4;
+            layout.app_drawer_floating = [
+                get_u16(input, extra).min(900),
+                get_u16(input, extra + 2).min(341),
+            ];
             if !store.save(user, layout) {
                 return None;
             }
@@ -332,6 +343,7 @@ pub(crate) fn read_layout(input: &[u8], at: usize) -> Option<DesktopSessionLayou
         settings_scroll_offset: get_u32(input, at + 128) as usize,
         input_preferences: input[at + 150..at + 158].try_into().ok()?,
         app_drawer_left: input[at + 158] == 1,
+        app_drawer_floating: [0; 2],
     })
 }
 

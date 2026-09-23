@@ -82,7 +82,7 @@ fn shelf_partial_frames_match_complete_frames() {
         shelf::publish(State::new());
         let _ = shelf::take_damage(width, height);
         display.minimized_app_shelf();
-        for step in 0..8 {
+        for step in 0..11 {
             let mut state = State::new();
             for id in [1, shelf::COMMAND, shelf::EDITOR, shelf::SETTINGS] {
                 state.set(id, true);
@@ -103,6 +103,16 @@ fn shelf_partial_frames_match_complete_frames() {
             }
             if step == 7 {
                 state = State::new();
+            }
+            if step == 8 {
+                state.left = true;
+                state.menu = Some(shelf::COMMAND);
+            }
+            if step == 9 {
+                state.floating = [401, 221];
+            }
+            if step == 10 {
+                state.drag = Some((600, 300, 10, 10));
             }
             shelf::publish(state);
             if let Some(damage) = shelf::take_damage(width, height) {
@@ -128,10 +138,15 @@ fn shelf_partial_frames_match_complete_frames() {
                 pixels == expected,
                 "incremental pixels differ at {width}x{height} step {step}"
             );
-            if width == 1440 && step == 2 {
+            if width == 1440 && matches!(step, 2 | 8 | 9) {
                 use std::io::Write;
                 let mut file = std::io::BufWriter::new(
-                    std::fs::File::create("build/minimized-shelf-render.ppm").unwrap(),
+                    std::fs::File::create(match step {
+                        8 => "build/minimized-shelf-left.ppm",
+                        9 => "build/minimized-shelf-floating.ppm",
+                        _ => "build/minimized-shelf-render.ppm",
+                    })
+                    .unwrap(),
                 );
                 write!(file, "P6\n{width} {height}\n255\n").unwrap();
                 for pixel in &pixels {

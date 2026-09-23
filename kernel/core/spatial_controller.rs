@@ -123,24 +123,113 @@ fn now() -> u64 {
 
 impl ConsoleRuntime {
     // ------------------------=
+    // FUNC: spatial_preserve_world_appearance
+    // DESC: Keeps appearance edits in the active world when returning from Settings to the desktop.
+    // ------------------=
+    pub(super) fn spatial_preserve_world_appearance(&mut self) {
+        if self.spatial.owner == self.current_user.0 && self.spatial.state.world_enabled {
+            self.spatial_capture_appearance(self.spatial.state.active_world as usize);
+        }
+    }
+    // ------------------------=
+    // FUNC: spatial_capture_appearance
+    // DESC: Saves the real current theme and palette alongside a world's window layout.
+    // ------------------=
+    fn spatial_capture_appearance(&mut self, index: usize) {
+        if let Some((icon, accent, primary, skin)) = crate::runtime::with_runtime(|r| {
+            let id = r.ui.skins.active().id;
+            let skin = if id == crate::ui::skin::SkinId::from_bytes(b"infinity.diagnostic.light") {
+                1
+            } else if id == crate::ui::skin::SkinId::from_bytes(b"infinity.safe") {
+                2
+            } else {
+                0
+            };
+            (
+                r.ui.icons.active() as u8,
+                r.ui.skins.accent_rgb(),
+                r.ui.skins.primary_rgb(),
+                skin,
+            )
+        }) {
+            self.spatial.state.world_icons[index] = icon;
+            self.spatial.state.world_accents[index] = accent;
+            self.spatial.state.world_primary[index] = primary;
+            self.spatial.state.world_skin[index] = skin;
+        }
+    }
+    // ------------------------=
+    // FUNC: spatial_apply_world_appearance
+    // DESC: Applies the selected world wallpaper, icon family and accent through existing native appearance services.
+    // ------------------=
+    pub(super) fn spatial_apply_world_appearance(&mut self) {
+        let state = self.spatial.state;
+        if self.spatial.owner != self.current_user.0 || !state.world_enabled {
+            crate::ui::spatial::publish_world(255);
+            return;
+        }
+        let world = state.active_world as usize;
+        crate::ui::spatial::publish_world(world as u8);
+        self.select_icon_theme(state.world_icons[world]);
+        crate::runtime::with_runtime(|r| {
+            let _ = r.ui.skins.activate(
+                crate::ui::skin::SkinId::from_bytes(
+                    [
+                        b"infinity.default.dark".as_slice(),
+                        b"infinity.diagnostic.light",
+                        b"infinity.safe",
+                    ][state.world_skin[world] as usize],
+                ),
+                crate::ui::skin::AppearanceScope::User,
+            );
+            let _ = r.ui.skins.set_accent(
+                state.world_accents[world],
+                crate::ui::skin::AppearanceScope::User,
+            );
+            let _ = r.ui.skins.set_primary(
+                state.world_primary[world],
+                crate::ui::skin::AppearanceScope::User,
+            );
+        });
+    }
+    // ------------------------=
+    // FUNC: spatial_restore_world_appearance
+    // DESC: Loads authenticated world metadata on installed login without opening the spatial overlay.
+    // ------------------=
+    pub(super) fn spatial_restore_world_appearance(&mut self) {
+        crate::ui::spatial::publish_world(255);
+        if let Ok(state) =
+            crate::storage::spatial_state::load(self.current_user.0, self.current_session.0)
+        {
+            self.spatial.state = state;
+            self.spatial.owner = self.current_user.0;
+            self.spatial.writable = true;
+            self.spatial_apply_world_appearance();
+        }
+    }
+    // ------------------------=
     // FUNC: spatial_choose_collection
     // DESC: Previews a named destination without changing source files or empty selections.
     // ------------------=
     fn spatial_choose_collection(&mut self, group: u8) {
-        let Some(item) = self.spatial.state.items[self.spatial.focus] else {
-            self.spatial.notice =
-                b"Add a selected file or a note, then choose its collection below.";
-            return;
-        };
-        if item.collection == group {
-            self.spatial.notice = b"This shortcut is already in that collection.";
+        if self.spatial.state.categories[group as usize]
+            .get()
+            .is_empty()
+        {
+            self.spatial_action(1);
             return;
         }
-        self.spatial.pending_drop = DropRequest::new(
-            &self.spatial.state,
-            self.spatial.focus,
-            DropTarget::Collection(group),
-        );
+        let old = self.spatial.state;
+        self.spatial.state.selected_ring = group;
+        self.spatial.focus = self
+            .spatial
+            .state
+            .items
+            .iter()
+            .position(|v| v.is_some_and(|i| i.collection == group))
+            .unwrap_or(0);
+        self.spatial_commit(old);
+        self.spatial.notice = b"Selected ring. Wheel or +/- zooms. Add idea attaches here; drag ideas to another category.";
     }
     // ------------------------=
     // FUNC: spatial_confirm_drop
@@ -157,6 +246,14 @@ impl ConsoleRuntime {
         match request.target {
             DropTarget::Collection(group) => {
                 let old = self.spatial.state;
+                if self.spatial.state.categories[group as usize]
+                    .get()
+                    .is_empty()
+                {
+                    self.spatial.notice = b"Create that category first with New category.";
+                    return;
+                }
+                self.spatial.state.selected_ring = group;
                 let (x, y, _, _) = crate::ui::spatial::item_card(request.index, &item);
                 let target_x = (80 + usize::from(group) * 210).min(710) as u16;
                 let target_y = (230 + request.index / 4 * 130) as u16;
@@ -428,7 +525,11 @@ impl ConsoleRuntime {
             },
             self.spatial.damage,
             self.spatial.zoom.value(now()).clamp(0, 255) as u8,
-            self.spatial.ghost.and(self.spatial.drag.map(|d| d.0)),
+            if self.spatial.tab == 2 {
+                self.spatial.drag.map(|d| d.0)
+            } else {
+                self.spatial.ghost.and(self.spatial.drag.map(|d| d.0))
+            },
             self.spatial.pending_drop,
             if self.spatial.tab == 0 {
                 self.spatial
@@ -652,7 +753,7 @@ impl ConsoleRuntime {
                 self.spatial.editing = 0;
             } else if matches!(key, ConsoleKey::Enter) {
                 self.spatial_accept_text();
-            } else {
+            } else if self.spatial.editing != 6 {
                 let s = &mut self.spatial;
                 match key {
                     ConsoleKey::Character(c) => {
@@ -707,7 +808,16 @@ impl ConsoleRuntime {
             ConsoleKey::Character(value @ b'1'..=b'4') if self.spatial.tab == 2 => {
                 self.spatial_choose_collection(value - b'1')
             }
-            ConsoleKey::Character(b't') if self.spatial.tab == 2 => self.spatial_action(1),
+            ConsoleKey::Character(b't') if self.spatial.tab == 2 => self.spatial_action(0),
+            ConsoleKey::Character(b'n') if self.spatial.tab == 2 => self.spatial_action(1),
+            ConsoleKey::Character(b'i') if self.spatial.tab == 2 => self.spatial_action(4),
+            ConsoleKey::Character(b' ') if self.spatial.tab == 2 => self.spatial_action(5),
+            ConsoleKey::Character(b'+' | b'=') if self.spatial.tab == 2 => {
+                self.spatial_scroll(1);
+            }
+            ConsoleKey::Character(b'-') if self.spatial.tab == 2 => {
+                self.spatial_scroll(-1);
+            }
             ConsoleKey::Character(b'm') if self.spatial.tab < 2 => self.spatial_action(3),
             ConsoleKey::Character(b'+' | b'=') if self.spatial.tab == 0 => {
                 self.spatial_scroll(1);
@@ -739,6 +849,21 @@ impl ConsoleRuntime {
                     self.spatial.focus,
                     matches!(key, ConsoleKey::Left),
                 );
+                if self.spatial.tab == 2 {
+                    for _ in 0..16 {
+                        if self.spatial.state.items[self.spatial.focus]
+                            .is_some_and(|i| i.collection == self.spatial.state.selected_ring)
+                            && self.spatial.state.visible(self.spatial.focus)
+                        {
+                            break;
+                        }
+                        self.spatial.focus = crate::ui::spatial::next_reference(
+                            &self.spatial.state,
+                            self.spatial.focus,
+                            matches!(key, ConsoleKey::Left),
+                        );
+                    }
+                }
             }
             ConsoleKey::Left => self.spatial.focus = (self.spatial.focus + count - 1) % count,
             ConsoleKey::Right => self.spatial.focus = (self.spatial.focus + 1) % count,
@@ -921,7 +1046,11 @@ impl ConsoleRuntime {
                 // The release coordinate still owns the final placement.
                 if moved {
                     let original = old.items[index].unwrap();
-                    let (a, b, _, _) = crate::ui::spatial::item_card(index, &original);
+                    let (a, b, _, _) = if self.spatial.tab == 2 {
+                        crate::ui::spatial::ring_card(&old, index)
+                    } else {
+                        crate::ui::spatial::item_card(index, &original)
+                    };
                     let next = crate::ui::spatial::drag_position(
                         (a, b),
                         (x, y),
@@ -948,7 +1077,11 @@ impl ConsoleRuntime {
                 }
             } else if moved && self.pointer_pressed {
                 let original = old.items[index].unwrap();
-                let (a, b, _, _) = crate::ui::spatial::item_card(index, &original);
+                let (a, b, _, _) = if self.spatial.tab == 2 {
+                    crate::ui::spatial::ring_card(&old, index)
+                } else {
+                    crate::ui::spatial::item_card(index, &original)
+                };
                 let previous =
                     crate::ui::spatial::item_card(index, &self.spatial.state.items[index].unwrap());
                 if let Some(item) = self.spatial.state.items[index].as_mut() {
@@ -962,16 +1095,18 @@ impl ConsoleRuntime {
                     crate::ui::spatial::item_card(index, &self.spatial.state.items[index].unwrap());
                 let left = previous.0.min(next.0).saturating_sub(8);
                 let top = previous.1.min(next.1).saturating_sub(8);
-                self.spatial.damage = Some(if self.spatial.tab == 4 && original.links != 0 {
-                    (70, 220, 850, 530)
-                } else {
-                    (
-                        left,
-                        top,
-                        previous.0.max(next.0) + 198 - left,
-                        previous.1.max(next.1) + 118 - top,
-                    )
-                });
+                self.spatial.damage = Some(
+                    if self.spatial.tab == 2 || (self.spatial.tab == 4 && original.links != 0) {
+                        (70, 220, 850, 530)
+                    } else {
+                        (
+                            left,
+                            top,
+                            previous.0.max(next.0) + 198 - left,
+                            previous.1.max(next.1) + 118 - top,
+                        )
+                    },
+                );
                 self.spatial_present();
                 self.spatial.damage = None;
                 return;
@@ -1019,6 +1154,17 @@ impl ConsoleRuntime {
                         .map(|r| crate::ui::spatial::contains(r, x, y))
                         .unwrap_or(false)
             })
+        } else if self.spatial.tab == 2 {
+            (0..16).rev().find(|&i| {
+                self.spatial.state.items[i]
+                    .is_some_and(|item| item.collection == self.spatial.state.selected_ring)
+                    && self.spatial.state.visible(i)
+                    && crate::ui::spatial::contains(
+                        crate::ui::spatial::ring_card(&self.spatial.state, i),
+                        x,
+                        y,
+                    )
+            })
         } else if self.spatial.tab >= 2 {
             crate::ui::spatial::hit_item(&self.spatial.state, x, y)
         } else if self.spatial.tab == 1 {
@@ -1027,6 +1173,11 @@ impl ConsoleRuntime {
             self.spatial_overview_frame(self.spatial.focus).hit(x, y)
         };
         if let Some(i) = hit {
+            if self.spatial.tab == 1 {
+                self.spatial.focus = i;
+                self.spatial_action(0);
+                return;
+            }
             if self.spatial.tab == 0
                 && crate::ui::spatial::overview_activates(
                     i,
@@ -1045,10 +1196,19 @@ impl ConsoleRuntime {
             if self.spatial.tab >= 2 {
                 self.spatial.drag = Some((i, x, y, self.spatial.state));
             }
+        } else if self.spatial.tab == 2 {
+            if let Some(group) = crate::ui::spatial::ring_hit(&self.spatial.state, x, y) {
+                self.spatial_choose_collection(group);
+            }
         }
         if (805..853).contains(&y) {
-            for i in 0..4 {
-                if (80 + i * 210..270 + i * 210).contains(&x) {
+            let (count, pitch, width) = if self.spatial.tab == 2 {
+                (6, 140, 130)
+            } else {
+                (4, 210, 190)
+            };
+            for i in 0..count {
+                if (80 + i * pitch..80 + i * pitch + width).contains(&x) {
                     self.spatial_action(i as usize);
                     break;
                 }
@@ -1103,7 +1263,7 @@ impl ConsoleRuntime {
         self.spatial.notice = [
             b"Choose a window. Inspect its live surface, then return to work.".as_slice(),
             b"Your environments. Save this scene, or travel to another.",
-            b"Select a shortcut, then click a collection below or drag it there. Originals stay in place.",
+            b"Each category has a ring. Select a ring, add ideas, and use the wheel or +/- to zoom.",
             b"Lift a clipping into your work. T adds text; Enter inserts it in the editor.",
             b"Connect your work. Select a node, press L, then select its partner.",
         ][self.spatial.tab];
@@ -1133,6 +1293,8 @@ impl ConsoleRuntime {
                     x: 0,
                     y: 0,
                     links: 0,
+                    parent: None,
+                    expanded: false,
                 };
                 if !item.text.set(text) || !item.name.set(&text[..text.len().min(32)]) {
                     self.spatial.notice =
@@ -1172,6 +1334,8 @@ impl ConsoleRuntime {
             x: 0,
             y: 0,
             links: 0,
+            parent: None,
+            expanded: false,
         };
         if !item.path.set(path) || !item.name.set(name) {
             self.spatial.notice = b"This reference exceeds the supported name or path length.";
@@ -1193,6 +1357,13 @@ impl ConsoleRuntime {
     fn spatial_accept_text(&mut self) {
         let old = self.spatial.state;
         let s = &mut self.spatial;
+        if s.editing == 6 {
+            let _ = s.state.remove(self.current_user.0, s.focus);
+            s.editing = 0;
+            s.length = 0;
+            self.spatial_commit(old);
+            return;
+        }
         if s.length == 0 {
             s.notice = b"Enter a name or text before saving.";
             return;
@@ -1202,21 +1373,59 @@ impl ConsoleRuntime {
                 s.notice = b"World names may contain up to 24 characters.";
                 return;
             }
+        } else if s.editing == 4 {
+            if let Some(item) = s.state.items[s.focus].as_mut() {
+                item.text.set(&s.text[..s.length]);
+                item.name.set(&s.text[..s.length.min(32)]);
+            }
+        } else if s.editing == 3 {
+            match s
+                .state
+                .add_category(self.current_user.0, &s.text[..s.length])
+            {
+                Ok(_) => {}
+                Err(_) => {
+                    s.notice = b"Use a unique category name (24 characters). Maximum four rings.";
+                    return;
+                }
+            }
         } else {
+            if s.tab == 2
+                && s.state.categories[s.state.selected_ring as usize]
+                    .get()
+                    .is_empty()
+            {
+                s.state.categories[s.state.selected_ring as usize].set(b"Ideas");
+            }
             let mut item = Item {
                 object: [0; 16],
                 path: Label::empty(),
                 name: Label::empty(),
                 text: Label::empty(),
-                collection: s.state.active_world,
+                collection: if s.tab == 2 {
+                    s.state.selected_ring
+                } else {
+                    s.state.active_world
+                },
                 x: 0,
                 y: 0,
                 links: 0,
+                parent: if s.editing == 5 {
+                    Some(s.focus as u8)
+                } else {
+                    None
+                },
+                expanded: false,
             };
             item.text.set(&s.text[..s.length]);
             item.name.set(&s.text[..s.length.min(32)]);
             match s.state.gather(self.current_user.0, item) {
-                Ok(i) => s.focus = i,
+                Ok(i) => {
+                    if let Some(parent) = item.parent {
+                        s.state.items[parent as usize].as_mut().unwrap().expanded = true;
+                    }
+                    s.focus = i;
+                }
                 Err(_) => {
                     s.notice = b"Shelf is full.";
                     return;
@@ -1310,6 +1519,7 @@ impl ConsoleRuntime {
                 crate::runtime::with_runtime(|r| r.file_navigator.map(|n| n.active_namespace_ref))
                     .flatten();
             if action == 1 {
+                self.spatial_capture_appearance(index);
                 self.spatial.state.worlds[index].layout = Some(layout);
                 self.spatial.state.worlds[index]
                     .editor
@@ -1323,6 +1533,8 @@ impl ConsoleRuntime {
             }
             if action == 0 {
                 let active = self.spatial.state.active_world as usize;
+                self.spatial_capture_appearance(active);
+                self.spatial.state.world_enabled = true;
                 self.spatial.state.worlds[active].layout = Some(layout);
                 self.spatial.state.worlds[active]
                     .editor
@@ -1421,12 +1633,24 @@ impl ConsoleRuntime {
                     // Loading a saved document may focus Editor; the world's
                     // saved foreground surface remains authoritative.
                     self.restore_desktop_layout(destination_layout);
+                    self.spatial_apply_world_appearance();
                     self.redraw();
                 }
             }
             return;
         }
         if tab < 2 {
+            return;
+        }
+        if tab == 2 && action <= 1 {
+            self.spatial.editing = if action == 0 { 2 } else { 3 };
+            self.spatial.length = 0;
+            self.spatial.caret = 0;
+            self.spatial.notice = if action == 0 {
+                b"Write an idea (192 characters). Enter adds it to the selected ring."
+            } else {
+                b"Name a new category (24 characters). Enter creates its ring."
+            };
             return;
         }
         if action == 0 {
@@ -1444,6 +1668,44 @@ impl ConsoleRuntime {
             self.spatial.notice = b"Select a collected reference first.";
             return;
         };
+        if tab == 2
+            && (item.collection != self.spatial.state.selected_ring
+                || !self.spatial.state.visible(index))
+        {
+            self.spatial.notice = b"Select an idea on this ring first.";
+            return;
+        }
+        if tab == 2 && action == 3 && item.object == [0; 16] {
+            self.spatial.editing = 4;
+            self.spatial.length = item.text.get().len();
+            self.spatial.text[..self.spatial.length].copy_from_slice(item.text.get());
+            self.spatial.caret = self.spatial.length;
+            self.spatial.notice = b"Edit idea. Enter saves; Escape leaves it unchanged.";
+            return;
+        }
+        if tab == 2 && action == 4 {
+            self.spatial.editing = 5;
+            self.spatial.length = 0;
+            self.spatial.caret = 0;
+            self.spatial.notice =
+                b"New sub-idea. Enter saves under the selected idea; Escape cancels.";
+            return;
+        }
+        if tab == 2 && action == 5 {
+            let old = self.spatial.state;
+            self.spatial.state.items[index].as_mut().unwrap().expanded = !item.expanded;
+            self.spatial_commit(old);
+            return;
+        }
+        if tab == 2 && action == 2 {
+            self.spatial.editing = 6;
+            let message = b"Remove this idea AND all sub-ideas? ENTER confirms; ESC cancels.";
+            self.spatial.text[..message.len()].copy_from_slice(message);
+            self.spatial.length = message.len();
+            self.spatial.caret = 0;
+            self.spatial.notice = b"Removal affects Gravity Wall only, never source files.";
+            return;
+        }
         let old = self.spatial.state;
         match action {
             1 if tab == 4 => {
@@ -1521,6 +1783,17 @@ impl ConsoleRuntime {
     pub(super) fn spatial_scroll(&mut self, vertical: i8) -> bool {
         if vertical == 0 {
             return false;
+        }
+        if self.spatial.tab == 2 {
+            let old = self.spatial.state;
+            let ring = self.spatial.state.selected_ring as usize;
+            self.spatial.state.ring_zoom[ring] = (i32::from(self.spatial.state.ring_zoom[ring])
+                + i32::from(vertical) * 24)
+                .clamp(0, 255) as u8;
+            self.spatial_commit(old);
+            crate::bootstrap::spatial_invalidate_transition();
+            self.spatial_present();
+            return true;
         }
         if self.spatial.tab == 0 {
             self.spatial.zoom_target =
