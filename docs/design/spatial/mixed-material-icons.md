@@ -50,3 +50,16 @@ Rebuild only this family with `sh tools/build-icon-themes.sh crystal-blue-glass`
 Run `make icon-theme-test` for registry transitions and artifact dimensions,
 coverage and alpha. Installed-payload byte parity is separately checked by
 `ui-install-parity-test`; asset checks alone are not installed-VM proof.
+
+## Verification — 2026-09-23
+
+- `make icon-theme-test`: registry transitions and 1,680 PNG assets passed.
+- Artifact checks found all twelve current runtime icon bitmaps byte-identical
+  inside both ARM64 and x86_64 installed kernels.
+- Installed ARM64 disk boot with no ISO attached visibly displayed the new pack
+  in sign-in, the desktop dock and top bar. This was an updated installed test
+  disk, not a newly performed installation.
+- `sh build.sh` exited successfully and published both architecture ISOs plus
+  `builds/SHA256SUMS`. Its installed-asset/model parity checks passed.
+- Spatial animation performance is a separate, still-open acceptance item;
+  see `retained-scene-pass-20260923.md` for measured numbers.
