@@ -441,7 +441,29 @@ fn app_launcher_behavior_test() {
     assert_eq!(DESKTOP_DOCK_ENTRIES.len(), 8);
     assert_eq!(DESKTOP_DOCK_ENTRIES[0].action, DockAction::Launcher);
     assert_eq!(DESKTOP_DOCK_ENTRIES[1].action, DockAction::Files);
+    assert_eq!(DESKTOP_DOCK_ENTRIES[6].action, DockAction::SpatialDesktop);
+    assert_eq!(DESKTOP_DOCK_ENTRIES[6].icon_kind, 8);
+    assert!(LAUNCHER_APPS
+        .iter()
+        .any(|entry| entry.action == LauncherAction::Settings(6)));
     assert_eq!(DESKTOP_DOCK_ENTRIES[7].action, DockAction::Trash);
+    for (width, height) in [(1280, 720), (1920, 1080), (2560, 1440)] {
+        let layout = SystemLayout::new(width, height);
+        let dock = layout.desktop_foreground_geometry().dock;
+        let x = dock.x + (dock.width / 8 * 6 + dock.width / 16) as i32;
+        let y = dock.y + dock.height as i32 / 2;
+        let Some(DesktopTarget::Dock(index)) = layout.desktop_target(
+            x * 1000 / width as i32,
+            y * 1000 / height as i32,
+            0,
+            0,
+            false,
+            false,
+        ) else {
+            panic!("spatial dock center must be actionable");
+        };
+        assert_eq!(DESKTOP_DOCK_ENTRIES[index].action, DockAction::SpatialDesktop);
+    }
     assert_eq!(
         LAUNCHER_APPS
             .iter()

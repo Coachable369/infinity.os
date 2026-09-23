@@ -1,5 +1,15 @@
 # Holographic carousel interaction
 
+App-bar entry: replace the former Network slot (seventh item) with Spatial
+Desktop, retaining the existing dock spacing and selected-pack desktop/monitor
+artwork (role 19). Its action opens the native spatial overlay, not Settings.
+Network remains available in Settings, the launcher and the top status bar.
+
+The app-bar route calls `spatial_open` and returns immediately, preventing the
+ordinary desktop click repaint from covering the new overlay. UI regression
+checks exercise the seventh slot's hit target and SpatialDesktop action at
+1280×720, 1920×1080 and 2560×1440, and retain the Network launcher action.
+
 Use the existing Spatial IDesign Kit's layered glass window cards and live
 application surfaces. No new raster artwork is needed for this motion change.
 

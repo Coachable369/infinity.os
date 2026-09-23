@@ -86,7 +86,7 @@ pub enum DockAction {
     About,
     AiVoice,
     Appearance,
-    Network,
+    SpatialDesktop,
     Trash,
 }
 
@@ -122,8 +122,8 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
         action: DockAction::Appearance,
     },
     DockEntry {
-        icon_kind: 6,
-        action: DockAction::Network,
+        icon_kind: 8,
+        action: DockAction::SpatialDesktop,
     },
     DockEntry {
         icon_kind: 7,

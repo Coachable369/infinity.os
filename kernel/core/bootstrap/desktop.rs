@@ -7317,7 +7317,7 @@ impl super::DisplayDevice {
         kind: usize,
         active: bool,
     ) {
-        let role = [25usize, 2, 26, 28, 23, 27, 17, 10]
+        let role = [25usize, 2, 26, 28, 23, 27, 17, 10, 19]
             .get(kind)
             .copied()
             .unwrap_or(2);
@@ -7525,6 +7525,31 @@ impl super::DisplayDevice {
                 );
             }
             5 => self.authentication_icon(center_x, center_y, 8, size / 2, true),
+            8 => {
+                for inset in [size / 5, size / 3] {
+                    self.fill_rounded_rect_alpha(
+                        left + inset,
+                        top + inset,
+                        size / 2,
+                        size / 3,
+                        (size / 16).max(2),
+                        20,
+                        68,
+                        100,
+                        230,
+                    );
+                    self.outline_rounded_rect(
+                        left + inset,
+                        top + inset,
+                        size / 2,
+                        size / 3,
+                        (size / 16).max(2),
+                        160,
+                        226,
+                        255,
+                    );
+                }
+            }
             6 => {
                 self.authentication_icon(center_x, center_y, 8, size / 2, true);
                 self.icon_line(

@@ -7775,7 +7775,10 @@ impl ConsoleRuntime {
                             Some(DockAction::About) => self.open_settings(8),
                             Some(DockAction::AiVoice) => self.open_settings(3),
                             Some(DockAction::Appearance) => self.open_settings(1),
-                            Some(DockAction::Network) => self.open_settings(6),
+                            Some(DockAction::SpatialDesktop) => {
+                                self.spatial_open();
+                                return;
+                            }
                             Some(DockAction::Trash) => {
                                 self.home_window_visible = true;
                                 self.home_location = 8;
