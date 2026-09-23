@@ -74,6 +74,26 @@ opacity/offset test uses varying alpha as well as RGB channels. Moving the
 helper under the backdrop module resolves standalone harness compilation
 without adding a fake display implementation to production.
 
+### Release verification
+
+The full `sh build.sh` run passed its compile and regression stages, but its
+first ARM ISO write failed for insufficient temporary disk space. Removed only
+the disposable first-candidate VDI and intermediate RAW conversion file; the
+original and tested VM disks remain. Refreshed `make x86_64` after the final
+fallback safety edit, then resumed `sh tools/build-hermes.sh` successfully.
+Both final images were copied into `builds/`; the ARM copy was compared byte
+for byte with the packaged image. Extracted both EFI boot loaders from the
+published ISOs and compared them against the build outputs.
+
+Final `installed-kernel-parity-test.py`, `ui-install-parity-test.sh`, and the
+VirtualBox ARM input-profile guard passed. Hermes and Ministral payload parity
+also passed as part of the successful packaging command. This is a resumed
+successful release, not a claim that the initial `build.sh` invocation exited 0.
+The no-ISO installed VM measurements above cover the rendering implementation;
+the final helper relocation and invalid-backdrop fallback were compiled and
+regression-tested afterward, rather than re-benchmarked as a new performance
+candidate. The VM is left powered off with the tested candidate attached.
+
 ## Implementation
 
 - Release builds optimize for throughput (`opt-level=3`).
