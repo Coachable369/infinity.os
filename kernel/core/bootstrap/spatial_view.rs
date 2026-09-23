@@ -1,16 +1,54 @@
 //! Native spatial panel. Decorative assets never substitute for interactive state.
 use super::*;
 use crate::ui::spatial::{item_card, overview_bounds, world_card, Preview, SpatialState, TABS};
+#[path = "spatial_surface.rs"]
+mod surface;
+#[path = "spatial_timing.rs"]
+mod timing;
+static mut TIMINGS: timing::Timings = timing::Timings::new();
+static mut TRANSITION_KEY: Option<(usize, usize, usize, usize, usize, u8)> = None;
+static mut TRANSITION_ACTIVE: bool = false;
+// ------------------------=
+// FUNC: invalidate_transition
+// DESC: Invalidates only the retained transition after real scene changes, never on ordinary cursor movement.
+// ------------------=
+pub fn invalidate_transition() {
+    unsafe {
+        TRANSITION_KEY = None;
+    }
+}
+// ------------------------=
+// FUNC: animation_timings
+// DESC: Inspects or resets BSP-owned animation measurements only on explicit console request.
+// ------------------=
+pub fn animation_timings(reset: bool) -> [u64; 8] {
+    unsafe {
+        let t = &mut *(&raw mut TIMINGS);
+        let result = t.summary();
+        if reset {
+            *t = timing::Timings::new();
+        }
+        result
+    }
+}
 static REFRESHING: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 static mut ARRIVAL: [u32; 3840 * 2160] = [0; 3840 * 2160];
 static mut ARRIVAL_SIZE: usize = 0;
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+const WORLD_ART: [&[u8]; 4] = [
+    include_bytes!("../../../assets/desktop/spatial-world-0.bmp"),
+    include_bytes!("../../../assets/desktop/spatial-world-1.bmp"),
+    include_bytes!("../../../assets/desktop/spatial-world-2.bmp"),
+    include_bytes!("../../../assets/desktop/spatial-world-3.bmp"),
+];
 
 // ------------------------=
 // FUNC: arrival_begin
 // DESC: Makes world restoration atomic while preserving the source-world backdrop for blending.
 // ------------------=
 pub fn arrival_begin() {
+    invalidate_transition();
     REFRESHING.store(true, core::sync::atomic::Ordering::Relaxed);
 }
 // ------------------------=
@@ -102,6 +140,7 @@ pub fn refresh_begin() {
 // DESC: Captures updated surfaces without the cursor before the spatial overlay is recomposed and presented.
 // ------------------=
 pub fn refresh_end() {
+    invalidate_transition();
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     unsafe {
         if let Some(c) = (*(&raw mut CONSOLE)).as_mut() {
@@ -240,6 +279,7 @@ impl DisplayDevice {
 // DESC: Restores the captured desktop and forces the next ordinary scene to synchronize.
 // ------------------=
 pub fn close() {
+    invalidate_transition();
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     unsafe {
         if let Some(c) = (*(&raw mut CONSOLE)).as_mut() {
@@ -286,7 +326,55 @@ pub fn present(
                 launcher_backdrop::capture_stage(&c.display);
                 OPEN = true;
             }
+            let started = c.display.frame_started_ns;
+            let captured = crate::ui::performance::monotonic_ns();
             let d = &mut c.display;
+            let transition_progress = progress;
+            let key = (d.width, d.height, d.stride, tab, focus, zoom);
+            let reusable = TRANSITION_KEY == Some(key);
+            if reusable && damage.is_none() {
+                d.set_render_clip(
+                    d.width * 4 / 100,
+                    d.height * 7 / 100,
+                    d.width * 92 / 100,
+                    d.height * 89 / 100,
+                );
+                launcher_backdrop::restore(d);
+                let region = d.clipped_render_region(0, 0, d.width, d.height).unwrap();
+                surface::translate(
+                    &*(&raw const ARRIVAL),
+                    core::slice::from_raw_parts_mut(d.buffer, d.stride * d.height),
+                    d.stride,
+                    (region.left, region.top, region.right, region.bottom),
+                    (255 - usize::from(transition_progress)) * 35 * d.height / 255 / 1000,
+                );
+                let painted = crate::ui::performance::monotonic_ns();
+                launcher_backdrop::fade(d, transition_progress);
+                let blended = crate::ui::performance::monotonic_ns();
+                d.mark_dirty_rect(
+                    region.left,
+                    region.top,
+                    region.right - region.left,
+                    region.bottom - region.top,
+                );
+                d.clear_render_clip();
+                c.save_and_draw_cursor(x, y);
+                c.display.present_damage();
+                if transition_progress != 255 || TRANSITION_ACTIVE {
+                    (*(&raw mut TIMINGS)).record([
+                        started,
+                        captured,
+                        painted,
+                        blended,
+                        crate::ui::performance::monotonic_ns(),
+                    ]);
+                }
+                TRANSITION_ACTIVE = transition_progress != 255;
+                return;
+            }
+            // Paint the settled scene once. The transition transforms its retained
+            // pixels rather than rerunning glass, glyph and thumbnail painters.
+            let progress = 255u8;
             let changed_tab = LAST_TAB != tab;
             LAST_TAB = tab;
             if let Some((a, b, w, h)) = damage.filter(|_| progress == 255) {
@@ -344,8 +432,6 @@ pub fn present(
             if shelf {
                 d.glass_panel(panel.0, panel.1, panel.2, panel.3, false);
             } else {
-                let header = rect(45, 80, 910, 125);
-                d.glass_panel(header.0, header.1, header.2, header.3, false);
                 let footer = rect(65, 790, 870, 110);
                 d.glass_panel(footer.0, footer.1, footer.2, footer.3, false);
             }
@@ -358,13 +444,14 @@ pub fn present(
                 d.polished_button(p.0, p.1, p.2, p.3, label, tab == i, false);
             }
             if !shelf {
-                let p = rect(80, 205, 0, 0);
-                d.ui_text(p.0, p.1, notice, 155, 190, 209, 1);
+                let p = rect(80, 212, 840, 30);
+                d.ui_text_elided_strong(p.0, p.1, p.2, notice, 155, 190, 209);
             }
             if tab == 0 {
                 let p = rect(500, 677, 0, 0);
                 d.spatial_orbit(p.0, p.1, dw * 36 / 100, dh * 3 / 100, progress, true);
                 for i in (0..previews.len())
+                    .rev()
                     .filter(|i| *i != focus)
                     .chain(core::iter::once(
                         focus.min(previews.len().saturating_sub(1)),
@@ -379,9 +466,9 @@ pub fn present(
                     d.glass_panel(p.0, p.1, p.2, p.3, false);
                     let thumb = (
                         p.0 + 8,
-                        p.1 + 8,
+                        p.1 + 16 + UI_FONT_CELL_HEIGHT * d.ui_scale(),
                         p.2.saturating_sub(16),
-                        p.3.saturating_sub(36),
+                        p.3.saturating_sub(24 + UI_FONT_CELL_HEIGHT * d.ui_scale()),
                     );
                     if preview.visible {
                         d.spatial_preview(preview.slot, thumb);
@@ -397,7 +484,7 @@ pub fn present(
                     }
                     d.ui_text_elided_strong(
                         p.0 + 12,
-                        p.1 + p.3.saturating_sub(24),
+                        p.1 + 8,
                         p.2.saturating_sub(24),
                         label,
                         220,
@@ -425,23 +512,17 @@ pub fn present(
                         world.name.get()
                     };
                     d.glass_panel(p.0, p.1, p.2, p.3, false);
-                    let radius = (p.2 / 4).max(12);
-                    let cx = p.0 + p.2 / 2;
-                    let cy = p.1 + p.3 / 4;
-                    d.icon_circle(cx as i32, cy as i32, radius as i32, (56, 143, 194), 32);
-                    d.icon_circle(cx as i32, cy as i32, (radius + 8) as i32, (23, 77, 113), 32);
-                    let size = (p.2 / 3).min(128).max(32);
-                    d.desktop_app_icon(
-                        cx - size / 2,
-                        cy - size / 2,
-                        size,
-                        [0, 2, 1, 4][i],
-                        state.active_world as usize == i,
+                    d.paint_bitmap_cover_box(
+                        WORLD_ART[i],
+                        p.0 + 12,
+                        p.1 + 12,
+                        p.2.saturating_sub(24),
+                        p.3 / 2 - 24,
                     );
                     if let Some(layout) = world.layout {
                         // A miniature of persisted geometry, never invented app content.
-                        let map = (p.0 + 12, p.1 + 14, p.2.saturating_sub(24), p.3 / 2 - 24);
-                        d.fill_rounded_rect_alpha(map.0, map.1, map.2, map.3, 10, 2, 12, 23, 248);
+                        let map = (p.0 + p.2 / 2, p.1 + p.3 / 3, p.2 / 2 - 16, p.3 / 6 - 16);
+                        d.fill_rounded_rect_alpha(map.0, map.1, map.2, map.3, 10, 2, 12, 23, 180);
                         d.outline_rounded_rect(map.0, map.1, map.2, map.3, 10, 50, 129, 176);
                         for (slot, placement) in [
                             layout.home,
@@ -478,6 +559,7 @@ pub fn present(
                             d.outline_rounded_rect(r.0, r.1, r.2, r.3, 3, 102, 197, 234);
                         }
                     }
+                    let line_height = UI_FONT_CELL_HEIGHT * d.ui_scale() + 12;
                     d.ui_text_elided_strong(
                         p.0 + 16,
                         p.1 + p.3 / 2,
@@ -496,7 +578,7 @@ pub fn present(
                     };
                     d.ui_text_elided_strong(
                         p.0 + 16,
-                        p.1 + p.3 / 2 + 36,
+                        p.1 + p.3 / 2 + line_height,
                         p.2.saturating_sub(32),
                         caption,
                         126,
@@ -505,7 +587,7 @@ pub fn present(
                     );
                     d.ui_text_elided_strong(
                         p.0 + 16,
-                        p.1 + p.3 / 2 + 74,
+                        p.1 + p.3 / 2 + line_height * 2,
                         p.2.saturating_sub(32),
                         world.location.get(),
                         136,
@@ -617,7 +699,7 @@ pub fn present(
                         if tab == 2 {
                             d.ui_text(
                                 p.0 + 12,
-                                p.1 + size + 36,
+                                p.1 + size + 12 + UI_FONT_CELL_HEIGHT * d.ui_scale(),
                                 [b"Home".as_slice(), b"Create", b"Research", b"Explore"]
                                     [item.collection as usize],
                                 120,
@@ -806,10 +888,38 @@ pub fn present(
                     d.polished_button(p.0, p.1, p.2, p.3, label, primary, false);
                 }
             }
-            launcher_backdrop::fade(d, progress);
+            let size = d.stride * d.height;
+            if size <= 3840 * 2160 {
+                core::ptr::copy_nonoverlapping(d.buffer, (&raw mut ARRIVAL).cast::<u32>(), size);
+                TRANSITION_KEY = Some(key);
+            }
+            if transition_progress != 255 && TRANSITION_KEY == Some(key) {
+                launcher_backdrop::restore(d);
+                let region = d.clipped_render_region(0, 0, d.width, d.height).unwrap();
+                surface::translate(
+                    &*(&raw const ARRIVAL),
+                    core::slice::from_raw_parts_mut(d.buffer, size),
+                    d.stride,
+                    (region.left, region.top, region.right, region.bottom),
+                    (255 - usize::from(transition_progress)) * 35 * d.height / 255 / 1000,
+                );
+            }
+            let painted = crate::ui::performance::monotonic_ns();
+            launcher_backdrop::fade(d, transition_progress);
+            let blended = crate::ui::performance::monotonic_ns();
             d.clear_render_clip();
             c.save_and_draw_cursor(x, y);
             c.display.present_damage();
+            if transition_progress != 255 {
+                (*(&raw mut TIMINGS)).record([
+                    started,
+                    captured,
+                    painted,
+                    blended,
+                    crate::ui::performance::monotonic_ns(),
+                ]);
+            }
+            TRANSITION_ACTIVE = transition_progress != 255;
         }
     }
     #[cfg(target_arch = "x86")]

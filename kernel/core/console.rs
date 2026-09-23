@@ -8375,6 +8375,28 @@ impl ConsoleRuntime {
         let length = self.command_length;
         self.output
             .write_segments(&[self.prompt(), &command[..length]]);
+        if &command[..length] == b"spatial" {
+            self.reset_input();
+            crate::bootstrap::spatial_animation_timings(true);
+            self.spatial_open();
+            return;
+        }
+        if &command[..length] == b"spatialperf" {
+            let values = crate::bootstrap::spatial_animation_timings(false);
+            for (label, indices) in [(b"Frames / mean us: ".as_slice(), (0,1)),
+                (b"P95 / worst us: ", (2,3)), (b"Capture / paint us: ",(4,5)),
+                (b"Fade / scanout us: ",(6,7))] {
+                let mut line=[0u8;96];
+                line[..label.len()].copy_from_slice(label);
+                let mut n=label.len();
+                n+=write_decimal(&mut line[n..],values[indices.0] as usize);
+                line[n..n+3].copy_from_slice(b" / "); n+=3;
+                n+=write_decimal(&mut line[n..],values[indices.1] as usize);
+                self.output.write_line(&line[..n]);
+            }
+            self.reset_input();
+            return;
+        }
         if &command[..length] == b"inputdiag" {
             self.output
                 .write_number(b"Shell buttons: ", u64::from(self.pointer_buttons));

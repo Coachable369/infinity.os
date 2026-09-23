@@ -5,6 +5,51 @@ mod spatial;
 use spatial::*;
 #[test]
 // ------------------------=
+// FUNC: queued_refresh_waits_for_transition_then_runs
+// DESC: Verifies moving and closing scenes retain their pixels without discarding pending refresh work.
+// ------------------=
+fn queued_refresh_waits_for_transition_then_runs() {
+    for elapsed in [0, 99, 100, 220, 1000] {
+        assert!(!refresh_due(true, elapsed, true, false));
+        assert!(!refresh_due(true, elapsed, false, true));
+        assert!(!refresh_due(false, elapsed, false, false));
+        assert_eq!(refresh_due(true, elapsed, false, false), elapsed >= 100);
+    }
+}
+#[test]
+// ------------------------=
+// FUNC: depth_staged_overview_keeps_every_window_reachable
+// DESC: Checks containment and exposed hit areas for all small-session stack orders and zoom levels.
+// ------------------=
+fn depth_staged_overview_keeps_every_window_reachable() {
+    for count in 1..=5 {
+        for focus in 0..count {
+            for zoom in [0, 128, 255] {
+                let mut exposed = [false; 5];
+                for y in (230..780).step_by(5) {
+                    for x in (80..920).step_by(5) {
+                        let contains = |index| {
+                            let (a, b, w, h) = overview_bounds(index, focus, zoom, count);
+                            assert!(a >= 80 && a + w <= 920 && b >= 230 && b + h < 790);
+                            x >= a && x < a + w && y >= b && y < b + h
+                        };
+                        let hit = if contains(focus) {
+                            Some(focus)
+                        } else {
+                            (0..count).find(|&index| contains(index))
+                        };
+                        if let Some(index) = hit {
+                            exposed[index] = true;
+                        }
+                    }
+                }
+                assert!(exposed[..count].iter().all(|&visible| visible));
+            }
+        }
+    }
+}
+#[test]
+// ------------------------=
 // FUNC: keyboard_navigation_skips_removed_references
 // DESC: Exercises sparse collections, reverse traversal, wrapping and the empty state.
 // ------------------=

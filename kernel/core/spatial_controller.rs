@@ -329,6 +329,15 @@ impl ConsoleRuntime {
             self.spatial.state.reduced_motion || crate::ui::performance::monotonic_ns().is_none(),
         );
         self.spatial_present();
+        // Preparation is not animation time: retain the full visual scene before
+        // starting the finite reveal so slow cold capture cannot skip its frames.
+        self.spatial.motion = Motion::settled(0);
+        self.spatial.motion.retarget(
+            255,
+            now(),
+            220,
+            self.spatial.state.reduced_motion || crate::ui::performance::monotonic_ns().is_none(),
+        );
     }
     // ------------------------=
     // FUNC: spatial_close
@@ -410,7 +419,12 @@ impl ConsoleRuntime {
             self.spatial.damage = None;
             return true;
         }
-        if self.spatial.refresh.get() && now().saturating_sub(self.spatial.refreshed_at) >= 100 {
+        if crate::ui::spatial::refresh_due(
+            self.spatial.refresh.get(),
+            now().saturating_sub(self.spatial.refreshed_at),
+            self.spatial.motion.active(now()) || self.spatial.zoom.active(now()),
+            self.spatial.closing,
+        ) {
             self.spatial.refresh.set(false);
             self.spatial.refreshed_at = now();
             crate::bootstrap::spatial_refresh_begin();
@@ -524,6 +538,14 @@ impl ConsoleRuntime {
     // DESC: Provides keyboard navigation, explicit reference removal, and normal bounded text editing.
     // ------------------=
     pub(super) fn spatial_input(&mut self, key: ConsoleKey) {
+        if !matches!(key, ConsoleKey::Escape)
+            || self.spatial.pending_drop.is_some()
+            || self.spatial.editing != 0
+            || self.spatial.drag.is_some()
+            || self.spatial.closing
+        {
+            crate::bootstrap::spatial_invalidate_transition();
+        }
         if self.spatial.pending_drop.is_some() {
             match key {
                 ConsoleKey::Enter => self.spatial_confirm_drop(),
@@ -672,6 +694,9 @@ impl ConsoleRuntime {
     // DESC: Routes explicit clicks while keeping ordinary pointer motion cursor-only.
     // ------------------=
     pub(super) fn spatial_pointer(&mut self, clicked: bool, released: bool) {
+        if clicked || released || self.spatial.drag.is_some() {
+            crate::bootstrap::spatial_invalidate_transition();
+        }
         if self.spatial.pending_drop.is_some() {
             if clicked && (540..588).contains(&self.pointer_y) {
                 if (540..830).contains(&self.pointer_x) {

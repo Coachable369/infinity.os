@@ -2,6 +2,14 @@
 use super::session_state::{self, DesktopSessionLayout};
 
 // ------------------------=
+// FUNC: refresh_due
+// DESC: Defers queued application refreshes until a finite retained-scene transition has settled.
+// ------------------=
+pub fn refresh_due(requested: bool, elapsed_ms: u64, moving: bool, closing: bool) -> bool {
+    requested && elapsed_ms >= 100 && !moving && !closing
+}
+
+// ------------------------=
 // FUNC: drag_position
 // DESC: Resolves final placement from press and current coordinates independently of intermediate event delivery.
 // ------------------=
@@ -123,7 +131,7 @@ pub fn overview_card(index: usize, focus: usize, zoom: u8) -> (usize, usize, usi
 }
 // ------------------------=
 // FUNC: overview_bounds
-// DESC: Fits all independent windows without allowing an extra row to overlap the action strip.
+// DESC: Depth-stages small sessions and uses an accessible filmstrip for larger sessions above the action strip.
 // ------------------=
 pub fn overview_bounds(
     index: usize,
@@ -131,6 +139,35 @@ pub fn overview_bounds(
     zoom: u8,
     count: usize,
 ) -> (usize, usize, usize, usize) {
+    // The normal five-window desktop uses the kit's depth-staged composition.
+    // Larger sessions retain a bounded accessible filmstrip, never offscreen cards.
+    if count <= 5 {
+        if index == focus {
+            let t = usize::from(zoom);
+            return (
+                240usize.saturating_sub(60 * t / 255),
+                250 - 20 * t / 255,
+                520 + 120 * t / 255,
+                480 + 20 * t / 255,
+            );
+        }
+        let rank = if index < focus {
+            index
+        } else {
+            index.saturating_sub(1)
+        };
+        let rear = rank / 2;
+        return (
+            if rank % 2 == 0 {
+                90 + rear * 20
+            } else {
+                680 - rear * 20
+            },
+            315usize.saturating_sub(rear * 65),
+            230,
+            360usize.saturating_sub(rear * 35),
+        );
+    }
     // A large live foreground surface and a reachable filmstrip replace the
     // equal-weight application grid. Even ten independent windows stay visible.
     if index != focus {

@@ -13,6 +13,9 @@ def main():
         installed = (root / 'build' / architecture / 'installed-kernel.elf').read_bytes()
         assert installed[:6] == b'\x7fELF\x02\x01'
         assert int.from_bytes(installed[18:20], 'little') == machine
+        for scene in range(4):
+            artwork = (root / 'assets' / 'desktop' / f'spatial-world-{scene}.bmp').read_bytes()
+            assert installed.find(artwork) >= 0, (architecture, scene, 'missing installed world artwork')
         with (root / 'build' / architecture / 'kernel.elf').open('rb') as stream:
             with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as live:
                 assert live.find(installed) >= 0, architecture

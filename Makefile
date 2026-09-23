@@ -15,7 +15,7 @@ QEMU_X64 := qemu-system-x86_64
 QEMU_AARCH64 := qemu-system-aarch64
 OVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-x86_64-code.fd /opt/homebrew/share/qemu/edk2-x86_64-code.fd))
 AAVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-aarch64-code.fd))
-KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern) sdk/c/examples/hello.c
+KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern assets/desktop/spatial-world-*.bmp) sdk/c/examples/hello.c
 FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt)
 ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
@@ -287,7 +287,10 @@ $(BUILD)/x86_64/installed-esp.img: $(BUILD)/x86_64/BOOTX64.EFI $(FONT_ASSETS) $(
 	cp $(CRASH_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Mesh/
 	cp $(APPLICATION_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/Applications/
-	dd if=/dev/zero of=$@ bs=1M count=256 status=none
+	@payload_kib=$$(du -sk $(BUILD)/installed-fat | awk '{print $$1}'); \
+	capacity_mib=$$(( (payload_kib + 65535) / 65536 * 64 + 64 )); \
+	test $$capacity_mib -ge 256 || capacity_mib=256; \
+	dd if=/dev/zero of=$@ bs=1M count=$$capacity_mib status=none
 	mformat -i $@ -v INFINITYEFI ::
 	mcopy -i $@ -s $(BUILD)/installed-fat/EFI ::
 
@@ -433,6 +436,10 @@ ui-install-parity-test: x86 x86_64 aarch64
 
 input-regression-test:
 	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 --test kernel/core/bootstrap/spatial_timing.rs -o build/behavior-tests/spatial-timing-test
+	@build/behavior-tests/spatial-timing-test
+	@rustc --edition=2021 --test kernel/core/bootstrap/spatial_surface.rs -o build/behavior-tests/spatial-surface-test
+	@build/behavior-tests/spatial-surface-test
 	@rustc --edition=2021 -A warnings --test tools/active-painter-test.rs -o build/behavior-tests/active-painter-unit-test
 	@build/behavior-tests/active-painter-unit-test
 	@rustc --edition=2021 --test tools/soft-stroke-test.rs -o build/behavior-tests/soft-stroke-test
@@ -579,7 +586,10 @@ $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS)
 	cp $(CRASH_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Mesh/
 	cp $(APPLICATION_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Applications/
-	dd if=/dev/zero of=$@ bs=1M count=256 status=none
+	@payload_kib=$$(du -sk $(BUILD)/installed-fat-aarch64 | awk '{print $$1}'); \
+	capacity_mib=$$(( (payload_kib + 65535) / 65536 * 64 + 64 )); \
+	test $$capacity_mib -ge 256 || capacity_mib=256; \
+	dd if=/dev/zero of=$@ bs=1M count=$$capacity_mib status=none
 	mformat -i $@ -v INFINITYEFI ::
 	mcopy -i $@ -s $(BUILD)/installed-fat-aarch64/EFI ::
 
