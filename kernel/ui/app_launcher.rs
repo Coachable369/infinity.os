@@ -11,6 +11,9 @@ const LAUNCHER_TRANSITION_STEP: usize = 32;
 pub mod motion;
 #[path = "minimized_shelf.rs"]
 pub mod minimized_shelf;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[path = "app_shortcuts.rs"]
+pub mod shortcuts;
 const LAUNCHER_DRAG_THRESHOLD: i32 = 8;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -275,7 +278,7 @@ fn decoded_launcher_order() -> [u8; LAUNCHER_APPS.len()] {
 // FUNC: encode_launcher_order
 // DESC: Packs and publishes a complete application order after a native drag operation.
 // ------------------=
-fn encode_launcher_order(order: &[u8; LAUNCHER_APPS.len()]) {
+pub(crate) fn encode_launcher_order(order: &[u8; LAUNCHER_APPS.len()]) {
     let mut bits = 0u64;
     let mut index = 0usize;
     while index < order.len() {
@@ -531,7 +534,7 @@ pub fn launcher_display_slot(visible_index: usize, presentation: LauncherPresent
 // FUNC: launcher_visible_app_id
 // DESC: Resolves a filtered visible slot into its stable application catalog identifier.
 // ------------------=
-fn launcher_visible_app_id(query: &[u8], visible_index: usize) -> Option<u8> {
+pub(crate) fn launcher_visible_app_id(query: &[u8], visible_index: usize) -> Option<u8> {
     decoded_launcher_order()
         .iter()
         .copied()

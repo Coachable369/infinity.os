@@ -359,7 +359,7 @@ pub fn present(
     progress: u8,
     x: i32,
     y: i32,
-    editing: Option<(&[u8], usize)>,
+    editing: Option<(&[u8], usize, u8)>,
     damage: Option<(usize, usize, usize, usize)>,
     zoom: u8,
     dragging: Option<usize>,
@@ -917,13 +917,13 @@ pub fn present(
                     );
                 }
             }
-            if let Some((text, caret)) = editing {
-                let p = rect(100, 390, 800, 150);
+            if let Some((text, caret, kind)) = editing {
+                let p = rect(100, 370, 800, 220);
                 d.glass_panel(p.0, p.1, p.2, p.3, true);
                 d.ui_text(
                     p.0 + 20,
                     p.1 + 20,
-                    b"Enter to save / Escape to cancel",
+                    match kind {2|5=>b"New idea".as_slice(),4=>b"Edit idea",3=>b"New category",6=>b"Confirm removal",_=>b"Edit name"},
                     140,
                     207,
                     243,
@@ -954,6 +954,13 @@ pub fn present(
                         255,
                     );
                 }
+                for (i,(x,y,w,h)) in crate::ui::spatial::EDITOR_BUTTONS.iter().copied().enumerate() {
+                    if i==2 && !(tab==2 && matches!(kind,2|4|5)) {continue;}
+                    let button=rect(x,y,w,h);
+                    let label:&[u8]=match i {0=>b"Cancel",1 if kind==6=>b"Remove",1=>b"Save",_=>b"Save & add another"};
+                    d.polished_button(button.0,button.1,button.2,button.3,label,i==1,false);
+                }
+                d.ui_text_elided_strong(p.0+20,p.1+p.3/2,p.2.saturating_sub(40),notice,151,193,214);
             }
             if let Some(request) = pending_drop {
                 use crate::ui::spatial::DropTarget;

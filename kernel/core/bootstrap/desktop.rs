@@ -7907,7 +7907,7 @@ impl super::DisplayDevice {
                 242,
             );
         }
-        if presentation.drag_moved {
+        if presentation.drag_moved && crate::ui::app_launcher::shortcuts::current().drag.is_none() {
             if let Some(source) = presentation.drag_source {
                 if let Some(entry) = crate::ui::app_launcher::launcher_visible_entry(query, source)
                 {
@@ -8073,6 +8073,12 @@ impl super::DisplayDevice {
     // ------------------=
     fn desktop_base(&mut self,scale:usize,desktop_items:u8,desktop_item_positions:&[[i32;2];7],launcher_open:bool) {
         self.desktop_widgets(scale);
+        let shortcuts=crate::ui::app_launcher::shortcuts::current();
+        for (id,position) in shortcuts.positions.iter().enumerate() {
+            if let Some((x,y,_,_))=crate::ui::app_launcher::shortcuts::icon_rect(*position,self.width,self.height) {
+                self.desktop_app_shortcut(id,x,y,false);
+            }
+        }
         for (index, (name, kind)) in [
             (b"Documents".as_slice(), 0),
             (b"Downloads", 1),
@@ -8095,7 +8101,6 @@ impl super::DisplayDevice {
         }
         self.desktop_dock(scale, launcher_open);
     }
-
     // ------------------------=
     // FUNC: desktop_navigator_windows
     // DESC: Paints only navigator layers without repainting desktop widgets over other applications.
@@ -10616,9 +10621,10 @@ pub fn system_ui_present(
             {
                 console.display.system_top_bar_clock(clock);
             }
-            if matches!(screen, 2 | 4 | 8 | 9 | 10) {
+            if matches!(screen, 2 | 4 | 7 | 8 | 9 | 10) {
                 for damage in [crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
-                    crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale())].into_iter().flatten() {
+                    crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),
+                    crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
                     if !full_surface_redrawn {
                         console.display.set_render_clip(damage.x.max(0) as usize, damage.y.max(0) as usize, damage.width as usize, damage.height as usize);
                         console.display.system_ui_frame(screen, step, input, masked, focus, validation_error,
@@ -10631,6 +10637,14 @@ pub fn system_ui_present(
                             editor_dialog_input, editor_dialog_focus);
                         console.display.clear_render_clip();
                     }
+                }
+            }
+            if matches!(screen,2|4|7|8|9|10) {
+                let shortcuts=crate::ui::app_launcher::shortcuts::current();
+                if let Some((id,_,_,true))=shortcuts.drag {
+                    console.display.desktop_app_shortcut(id,
+                        console.display.width*shortcuts.pointer[0].clamp(0,1000) as usize/1000,
+                        console.display.height*shortcuts.pointer[1].clamp(0,1000) as usize/1000,true);
                 }
             }
             console.cursor_x = cursor_x;

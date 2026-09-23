@@ -5,6 +5,8 @@ use crate::boot_info::BootInfo;
 mod bootstrap;
 mod crash;
 mod desktop;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+mod app_shortcuts;
 mod spatial_view;
 pub use self::spatial_view::{present as spatial_present, close as spatial_close};
 pub use self::spatial_view::animation_timings as spatial_animation_timings;

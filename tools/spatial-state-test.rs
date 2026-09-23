@@ -5,6 +5,21 @@ mod spatial;
 use spatial::*;
 #[test]
 // ------------------------=
+// FUNC: editor_save_buttons_are_explicit_and_safe
+// DESC: Exercises shared button geometry and excludes add-another for category and delete confirmations.
+// ------------------=
+fn editor_save_buttons_are_explicit_and_safe() {
+    for mode in [2,4,5] {
+        for (i,(x,y,w,h)) in EDITOR_BUTTONS.iter().copied().enumerate() {
+            assert_eq!(editor_action(mode,2,(x+w/2) as i32,(y+h/2) as i32),Some([EditorAction::Cancel,EditorAction::Save,EditorAction::SaveAndAdd][i]));
+        }
+    }
+    for mode in [1,3,6] {assert_eq!(editor_action(mode,2,700,540),None);}
+    assert_eq!(editor_action(2,2,110,400),None);
+    assert_eq!(editor_action(2,3,700,540),None);
+}
+#[test]
+// ------------------------=
 // FUNC: categories_rings_and_world_appearance_roundtrip
 // DESC: Verifies idea assignment, unique rings, zoom geometry, and durable world appearance without external services.
 // ------------------=

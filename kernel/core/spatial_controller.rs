@@ -519,6 +519,7 @@ impl ConsoleRuntime {
                 Some((
                     &self.spatial.text[..self.spatial.length],
                     self.spatial.caret,
+                    self.spatial.editing,
                 ))
             } else {
                 None
@@ -930,7 +931,7 @@ impl ConsoleRuntime {
         crate::ui::text_input::set_pointer_shape(
             if self.spatial.editing != 0
                 && (100..900).contains(&self.pointer_x)
-                && (390..540).contains(&self.pointer_y)
+                && (415..500).contains(&self.pointer_y)
             {
                 crate::ui::text_input::PointerShape::Text
             } else {
@@ -1127,6 +1128,15 @@ impl ConsoleRuntime {
             return;
         }
         if self.spatial.editing != 0 {
+            match crate::ui::spatial::editor_action(self.spatial.editing,self.spatial.tab,x,y) {
+                Some(crate::ui::spatial::EditorAction::Cancel)=>self.spatial_input(ConsoleKey::Escape),
+                Some(action)=>{
+                    self.spatial_accept_text();
+                    if self.spatial.editing==0 && action==crate::ui::spatial::EditorAction::SaveAndAdd {self.spatial_action(0);}
+                    self.spatial_present();
+                }
+                None=>{},
+            }
             return;
         }
         let tabs_top = if shelf { 635 } else { 150 };
@@ -1356,12 +1366,11 @@ impl ConsoleRuntime {
     // ------------------=
     fn spatial_accept_text(&mut self) {
         let old = self.spatial.state;
+        let old_focus=self.spatial.focus;
         let s = &mut self.spatial;
         if s.editing == 6 {
             let _ = s.state.remove(self.current_user.0, s.focus);
-            s.editing = 0;
-            s.length = 0;
-            self.spatial_commit(old);
+            if self.spatial_commit(old) {self.spatial.editing=0;self.spatial.length=0;}
             return;
         }
         if s.length == 0 {
@@ -1432,10 +1441,9 @@ impl ConsoleRuntime {
                 }
             }
         }
-        s.editing = 0;
-        s.text.fill(0);
-        s.length = 0;
-        self.spatial_commit(old);
+        if self.spatial_commit(old) {
+            self.spatial.editing=0;self.spatial.text.fill(0);self.spatial.length=0;self.spatial.caret=0;
+        } else { self.spatial.focus=old_focus; }
     }
     // ------------------------=
     // FUNC: spatial_action

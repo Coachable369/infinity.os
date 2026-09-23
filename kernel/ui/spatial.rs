@@ -1,6 +1,23 @@
 //! Bounded, user-owned spatial metadata. References never convey object authority.
 use super::session_state::{self, DesktopSessionLayout};
 
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum EditorAction { Cancel, Save, SaveAndAdd }
+pub const EDITOR_BUTTONS: [(usize,usize,usize,usize);3] = [(130,520,180,48),(340,520,200,48),(570,520,300,48)];
+// ------------------------=
+// FUNC: editor_action
+// DESC: Shares visible editor button hit regions with pointer dispatch; removal cannot trigger add-another.
+// ------------------=
+pub fn editor_action(kind:u8,tab:usize,x:i32,y:i32)->Option<EditorAction> {
+    for (i,(a,b,w,h)) in EDITOR_BUTTONS.iter().copied().enumerate() {
+        if i==2 && !(tab==2 && matches!(kind,2|4|5)) {continue;}
+        if x>=a as i32 && x<(a+w) as i32 && y>=b as i32 && y<(b+h) as i32 {
+            return Some([EditorAction::Cancel,EditorAction::Save,EditorAction::SaveAndAdd][i]);
+        }
+    }
+    None
+}
+
 // ------------------------=
 // FUNC: refresh_due
 // DESC: Defers queued application refreshes until a finite retained-scene transition has settled.

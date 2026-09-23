@@ -6,6 +6,9 @@ mod spatial_controller;
 mod minimized_shelf_controller;
 #[path = "desktop_widgets_controller.rs"]
 mod desktop_widgets_controller;
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+#[path = "app_shortcuts_controller.rs"]
+mod app_shortcuts_controller;
 use crate::intent::{
     ConsoleMode, IntentContext, IntentRuntime, KnownOperationPolicy, OperationPolicy,
     ResolutionSource, SystemOperation,
@@ -1278,6 +1281,12 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        if matches!(key,ConsoleKey::Escape) && crate::ui::app_launcher::shortcuts::current().drag.is_some() {
+            let mut state=crate::ui::app_launcher::shortcuts::current();state.drag=None;
+            crate::ui::app_launcher::shortcuts::publish(state);
+            crate::ui::app_launcher::shortcuts::cancel_launcher_drag();self.redraw();return;
+        }
         if matches!(key,ConsoleKey::Escape) && crate::ui::desktop_widgets::current().menu.is_some() {
             let mut widgets=crate::ui::desktop_widgets::current(); widgets.menu=None;
             crate::ui::desktop_widgets::publish(widgets); self.redraw(); return;
@@ -2962,6 +2971,8 @@ impl ConsoleRuntime {
     // DESC: Restores the authenticated user's last durable cross-session desktop layout.
     // ------------------=
     fn restore_persisted_desktop_layout(&mut self) -> bool {
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        self.restore_app_shortcuts();
         crate::ui::desktop_widgets::publish(crate::ui::desktop_widgets::State::new());
         self.spatial_restore_world_appearance();
         crate::ui::input_preferences::apply(crate::ui::input_preferences::Preferences::defaults());
@@ -6920,6 +6931,8 @@ impl ConsoleRuntime {
         self.pointer_buttons = buttons;
         self.spatial_finish_arrival();
         if self.spatial.open { self.spatial_pointer(clicked, released); return; }
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        if self.app_shortcuts_pointer(clicked, released) {return;}
         if (crate::ui::desktop_widgets::current().menu.is_some() || crate::ui::desktop_widgets::current().drag.is_some())
             && self.desktop_widgets_pointer(clicked, right_clicked) { return; }
         if self.minimized_shelf_pointer(clicked, right_clicked) { return; }
@@ -7876,6 +7889,25 @@ impl ConsoleRuntime {
             let target = layout.app_launcher_target(self.pointer_x, self.pointer_y, visible);
             let presentation = crate::ui::app_launcher::launcher_presentation();
             if let Some(source) = presentation.drag_source {
+                if left_button || released {
+                    crate::ui::app_launcher::launcher_update_drag(match target {
+                        AppLauncherTarget::App(index)=>Some(index), _=>None,
+                    },self.pointer_x,self.pointer_y);
+                }
+                let presentation=crate::ui::app_launcher::launcher_presentation();
+                #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+                if (left_button || released) && presentation.drag_moved && target==AppLauncherTarget::Dismiss {
+                    if let Some(id)=crate::ui::app_launcher::launcher_visible_app_id(&self.command[..self.command_length],source) {
+                        let mut shortcuts=crate::ui::app_launcher::shortcuts::current();
+                        shortcuts.begin(id as usize,self.pointer_x,self.pointer_y,true);
+                        crate::ui::app_launcher::shortcuts::publish(shortcuts);
+                        crate::ui::app_launcher::shortcuts::cancel_launcher_drag();
+                        self.mode=ConsoleMode::Desktop;
+                        self.reset_input();
+                        if released {self.app_shortcuts_pointer(false,true);}
+                        self.redraw();return;
+                    }
+                }
                 if left_button {
                     let pointer_y = self.system.framebuffer_height as i32 * self.pointer_y / 1000;
                     let edge = (28 * layout.scale()) as i32;
@@ -7910,6 +7942,8 @@ impl ConsoleRuntime {
                         }
                         crate::ui::app_launcher::LauncherRelease::Reordered => {
                             self.system_focus = source.min(visible.saturating_sub(1)) + 1;
+                            #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+                            self.save_app_shortcuts();
                         }
                         crate::ui::app_launcher::LauncherRelease::None => {}
                     }

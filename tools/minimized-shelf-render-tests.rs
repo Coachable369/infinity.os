@@ -7,6 +7,50 @@ mod glass;
 mod shelf_renderer;
 #[path = "../kernel/core/bootstrap/desktop_widget_menu.rs"]
 mod widget_menu_renderer;
+#[path = "../kernel/core/bootstrap/app_shortcuts.rs"]
+mod app_shortcuts_renderer;
+
+#[test]
+// ------------------------=
+// FUNC: shortcut_drag_partial_pixels_match_full_composition
+// DESC: Pixel-compares production themed shortcut drags, release and cancellation with full reference frames.
+// ------------------=
+fn shortcut_drag_partial_pixels_match_full_composition() {
+    use crate::ui::app_launcher::shortcuts::{self,State};
+    let (width,height)=(1200,800);
+    let background=vec![0x102336u32;width*height];
+    let mut pixels=background.clone();
+    let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    shortcuts::publish(State::new());let _=shortcuts::take_changed();
+    let mut state=State::new();state.place(11,100,150);
+    for frame in 0..5 {
+        if frame==1 {state.begin(11,100,150,true);state.motion(200,250);}
+        if frame==2 {state.motion(400,350);}
+        if frame==3 {state.drag=None;}
+        if frame==4 {state.place(11,450,400);}
+        shortcuts::publish(state);
+        let (x,y,w,h)=shortcuts::take_damage(width,height).unwrap();
+        assert!(w*h<width*height);
+        let clip=Region{left:x,top:y,right:x+w,bottom:y+h};
+        for row in y..y+h { let range=row*width+x..row*width+x+w;pixels[range.clone()].copy_from_slice(&background[range]); }
+        display.render_clip=Some(clip);
+        let p=state.positions[11];display.desktop_app_shortcut(11,width*p[0] as usize/1000,height*p[1] as usize/1000,false);
+        if state.drag.is_some() {display.desktop_app_shortcut(11,width*state.pointer[0] as usize/1000,height*state.pointer[1] as usize/1000,true);}
+        display.render_clip=None;
+        let mut expected=background.clone();let mut reference=display;reference.buffer=expected.as_mut_ptr();
+        reference.desktop_app_shortcut(11,width*p[0] as usize/1000,height*p[1] as usize/1000,false);
+        if state.drag.is_some() {reference.desktop_app_shortcut(11,width*state.pointer[0] as usize/1000,height*state.pointer[1] as usize/1000,true);}
+        let mismatch=pixels.iter().zip(&expected).position(|(a,b)|a!=b);
+        assert!(mismatch.is_none(),"shortcut damage mismatch in frame {frame}: {:?}, clip {:?}",mismatch.map(|i|(i%width,i/width)),(x,y,w,h));
+        if frame==2 {
+            use std::io::Write;
+            let mut file=std::io::BufWriter::new(std::fs::File::create("build/shortcut-drag-proof.ppm").unwrap());
+            write!(file,"P6\n{width} {height}\n255\n").unwrap();
+            for pixel in &pixels {file.write_all(&[(*pixel&255) as u8,((*pixel>>8)&255) as u8,((*pixel>>16)&255) as u8]).unwrap();}
+        }
+    }
+    shortcuts::publish(State::new());let _=shortcuts::take_changed();
+}
 
 #[test]
 // ------------------------=
