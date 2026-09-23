@@ -68,7 +68,6 @@ impl DisplayDevice {
             1,
         );
         if state.count() == 0 {
-            self.launcher_icon(x + w / 2, y + h / 2 - 20, 19, w * 3 / 5);
             self.ui_text_centered(x, w, y + h / 2 + w / 3, b"None", 143, 174, 195, 1);
         }
         for index in 0..g.capacity {

@@ -238,6 +238,34 @@ impl DisplayDevice {
 
 #[test]
 // ------------------------=
+// FUNC: empty_shelf_has_no_icon
+// DESC: Verifies that the empty shelf icon area contains only the underlying glass pixels.
+// ------------------=
+fn empty_shelf_has_no_icon() {
+    let (width, height) = (1440, 900);
+    let mut pixels = vec![0x102336u32; width * height];
+    let mut display = DisplayDevice {
+        buffer: pixels.as_mut_ptr(), width, height, stride: width, format: 0,
+        render_clip: None, fast_motion_frame: false, submissions: 0,
+        recording_surface: false,
+    };
+    let state = State::new();
+    let rail = Geometry::new(width, height, state).rail;
+    let (x, y, w, h) = (rail.x as usize, rail.y as usize, rail.width as usize, rail.height as usize);
+    display.glass_panel(x, y, w, h, true);
+    let glass = pixels.clone();
+    pixels.fill(0x102336u32);
+    shelf::publish(state);
+    display.minimized_app_shelf();
+    let size = w * 3 / 5;
+    for row in y + h / 2 - 20 - size / 2..y + h / 2 - 20 + size / 2 {
+        let start = row * width + x + w / 2 - size / 2;
+        assert_eq!(&pixels[start..start + size], &glass[start..start + size]);
+    }
+}
+
+#[test]
+// ------------------------=
 // FUNC: shelf_partial_frames_match_complete_frames
 // DESC: Pixel-compares every overlay transition with full composition, including menu dismissal and overflow.
 // ------------------=
