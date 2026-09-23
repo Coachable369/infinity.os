@@ -6909,7 +6909,10 @@ impl ConsoleRuntime {
             && self.editor_dialog==EditorDialog::None && !self.app_window_dragging
             && self.app_window_resizing.is_none() && !self.settings_window_dragging
             && self.settings_window_resizing.is_none() && self.activate_clicked_window(layout) {
-            self.redraw(); return;
+            // Activation loads the hit window's geometry and application state.
+            // Keep dispatching this press to that window: consuming it here made
+            // close/minimize (and title dragging) require a second click.
+            self.redraw();
         }
         if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings) && !self.app_window_dragging && self.app_window_resizing.is_none()
             && !self.settings_window_dragging && self.settings_window_resizing.is_none() && self.pointer_window_assistant(clicked) {
