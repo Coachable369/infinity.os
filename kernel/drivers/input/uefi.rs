@@ -191,6 +191,18 @@ fn synchronous_usb_buttons(index: usize, buttons: u8) -> u8 {
 }
 
 // ------------------------=
+// FUNC: raw_relative_buttons
+// DESC: Claims relative firmware-mirror ownership only for an actual raw USB report.
+// ------------------=
+fn raw_relative_buttons(index: usize, buttons: u8) -> u8 {
+    unsafe {
+        let state = &raw mut POINTER_BUTTONS;
+        (*state).set_usb_relative(index, buttons);
+        (*state).combined()
+    }
+}
+
+// ------------------------=
 // FUNC: raw_absolute_buttons
 // DESC: Claims firmware-mirror button ownership only after a valid raw tablet report has actually arrived.
 // ------------------=
@@ -200,6 +212,14 @@ fn raw_absolute_buttons(index: usize, buttons: u8) -> u8 {
         (*state).set_usb_absolute(index, buttons);
         (*state).combined()
     }
+}
+
+// ------------------------=
+// FUNC: button_sources
+// DESC: Snapshots held-button sources for explicit console diagnostics without per-event logging.
+// ------------------=
+pub fn button_sources() -> [u8; 11] {
+    unsafe { (*(&raw const POINTER_BUTTONS)).sources() }
 }
 
 // ------------------------=
@@ -381,13 +401,17 @@ pub fn run() -> ! {
                     // boot mouse and a protocol-zero absolute tablet. The
                     // relative endpoint uses the shared asynchronous report,
                     // but the absolute endpoint must still be polled
-                    // synchronously only when the firmware protocol did not
-                    // produce a current state. Polling both live paths on each
-                    // gesture queued redundant xHCI work behind the bootstrap
-                    // effects renderer and made the cursor trail the host.
+                    // when firmware has no fresh state OR raw HID already owns
+                    // its buttons. Otherwise fresh firmware motion starves the
+                    // only accepted button source, dropping subsequent clicks.
+                    // Raw axis samples remain coalesced below.
                     for index in 0..(pointers.usb_mouse_count as usize).min(MAX_POINTER_PROTOCOLS) {
                         if pointers.usb_mouse_absolute[index] != 0
-                            && !unsafe { USE_ABSOLUTE_MOVEMENT && ABSOLUTE_UPDATED_THIS_POLL }
+                            && unsafe {
+                                (*(&raw const POINTER_BUTTONS)).poll_absolute_usb(
+                                    USE_ABSOLUTE_MOVEMENT && ABSOLUTE_UPDATED_THIS_POLL,
+                                )
+                            }
                         {
                             poll_usb_mouse(
                                 index,
@@ -463,7 +487,7 @@ fn poll_async_usb_mouse(pointers: &mut FirmwarePointers) {
             unsafe {
                 core::ptr::write_volatile(&raw mut pointers.usb_mouse_async, 0);
             }
-            asynchronous_usb_buttons(0);
+            unsafe { (*(&raw mut POINTER_BUTTONS)).clear_asynchronous_usb() };
         }
         return;
     }
@@ -657,6 +681,7 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
         let Some(mut event) = pointer::decode_usb_boot_mouse(&report[..length]) else {
             continue;
         };
+        raw_relative_buttons(index, event.buttons);
         total_x += event.delta_x as i32;
         total_y += event.delta_y as i32;
         total_wheel_x += event.wheel_x as i16;
@@ -678,7 +703,7 @@ fn poll_usb_mouse(index: usize, usb: *mut UsbIo, endpoint: u8, absolute: bool) {
             event.wheel_x = total_wheel_x.clamp(i8::MIN as i16, i8::MAX as i16) as i8;
             event.wheel_y = total_wheel_y.clamp(i8::MIN as i16, i8::MAX as i16) as i8;
             let source_buttons = event.buttons;
-            event.buttons = synchronous_usb_buttons(index, source_buttons);
+            event.buttons = raw_relative_buttons(index, source_buttons);
             dispatch_pointer(event);
             total_x = 0;
             total_y = 0;

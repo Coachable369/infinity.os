@@ -42,6 +42,7 @@ pub struct PointerButtonArbiter {
     firmware_absolute: u8,
     absolute_mirrored_by_usb: bool,
     firmware_relative: u8,
+    relative_mirrored_by_usb: bool,
     asynchronous_usb: u8,
     usb: [u8; MAX_BUTTON_SOURCES],
 }
@@ -56,6 +57,7 @@ impl PointerButtonArbiter {
             firmware_absolute: 0,
             absolute_mirrored_by_usb: false,
             firmware_relative: 0,
+            relative_mirrored_by_usb: false,
             asynchronous_usb: 0,
             usb: [0; MAX_BUTTON_SOURCES],
         }
@@ -85,11 +87,21 @@ impl PointerButtonArbiter {
     }
 
     // ------------------------=
+    // FUNC: poll_absolute_usb
+    // DESC: Keeps the authoritative raw button transport serviced even when its firmware mirror supplies fresh motion.
+    // ------------------=
+    pub const fn poll_absolute_usb(&self, firmware_motion: bool) -> bool {
+        self.absolute_mirrored_by_usb || !firmware_motion
+    }
+
+    // ------------------------=
     // FUNC: set_firmware_relative
     // DESC: Records the latest explicit button state from the firmware relative pointer.
     // ------------------=
     pub fn set_firmware_relative(&mut self, buttons: u8) {
-        self.firmware_relative = buttons;
+        if !self.relative_mirrored_by_usb {
+            self.firmware_relative = buttons;
+        }
     }
 
     // ------------------------=
@@ -97,7 +109,29 @@ impl PointerButtonArbiter {
     // DESC: Records the latest explicit button state from the asynchronous USB HID path.
     // ------------------=
     pub fn set_asynchronous_usb(&mut self, buttons: u8) {
+        self.relative_mirrored_by_usb = true;
+        self.firmware_relative = 0;
         self.asynchronous_usb = buttons;
+    }
+
+    // ------------------------=
+    // FUNC: clear_asynchronous_usb
+    // DESC: Releases a cancelled endpoint without claiming ownership from a device that never reported.
+    // ------------------=
+    pub fn clear_asynchronous_usb(&mut self) {
+        self.asynchronous_usb = 0;
+    }
+
+    // ------------------------=
+    // FUNC: set_usb_relative
+    // DESC: Gives a reporting raw relative mouse ownership of its firmware mirror without releasing independent USB devices.
+    // ------------------=
+    pub fn set_usb_relative(&mut self, source: usize, buttons: u8) {
+        if source < MAX_BUTTON_SOURCES {
+            self.relative_mirrored_by_usb = true;
+            self.firmware_relative = 0;
+            self.set_usb(source, buttons);
+        }
     }
 
     // ------------------------=
@@ -119,6 +153,19 @@ impl PointerButtonArbiter {
             self.firmware_absolute | self.firmware_relative | self.asynchronous_usb,
             |buttons, source| buttons | *source,
         )
+    }
+
+    // ------------------------=
+    // FUNC: sources
+    // DESC: Returns a read-only snapshot of firmware, asynchronous and synchronous held-button masks.
+    // ------------------=
+    pub fn sources(&self) -> [u8; 11] {
+        let mut out = [0; 11];
+        out[0] = self.firmware_absolute;
+        out[1] = self.firmware_relative;
+        out[2] = self.asynchronous_usb;
+        out[3..].copy_from_slice(&self.usb);
+        out
     }
 }
 

@@ -8375,6 +8375,49 @@ impl ConsoleRuntime {
         let length = self.command_length;
         self.output
             .write_segments(&[self.prompt(), &command[..length]]);
+        if &command[..length] == b"inputdiag" {
+            self.output
+                .write_number(b"Shell buttons: ", u64::from(self.pointer_buttons));
+            #[cfg(target_arch = "aarch64")]
+            {
+                let sources = crate::drivers::input::uefi::button_sources();
+                let mut line = [b' '; 64];
+                let prefix = b"FW abs/rel, async, USB0-7: ";
+                line[..prefix.len()].copy_from_slice(prefix);
+                let mut length = prefix.len();
+                for value in sources {
+                    length += write_decimal(&mut line[length..], value as usize);
+                    line[length] = b' ';
+                    length += 1;
+                }
+                self.output.write_line(&line[..length]);
+            }
+            self.reset_input();
+            return;
+        }
+        if &command[..length] == b"uiperf" {
+            if let Some(summary) = crate::ui::performance::snapshot() {
+                self.output
+                    .write_number(b"Timed frames: ", summary.timed_samples as u64);
+                for (label, value) in [
+                    (b"Average us: ".as_slice(), summary.average_ns),
+                    (b"P95 us: ", summary.p95_ns),
+                    (b"Worst us: ", summary.worst_ns),
+                ] {
+                    if let Some(value) = value {
+                        self.output.write_number(label, value / 1000);
+                    }
+                }
+                self.output
+                    .write_number(b"Latest damaged pixels: ", summary.latest.damaged_pixels);
+                self.output
+                    .write_number(b"Screen pixels: ", summary.latest.screen_pixels);
+            } else {
+                self.output.write_line(b"Renderer measurements unavailable.");
+            }
+            self.reset_input();
+            return;
+        }
         let resolved_alias = crate::runtime::with_runtime(|runtime| {
             runtime
                 .shell_profiles

@@ -285,6 +285,7 @@ pub fn present(
                 OPEN = true;
             }
             let d = &mut c.display;
+            d.frame_started_ns = crate::ui::performance::monotonic_ns();
             let changed_tab = LAST_TAB != tab;
             LAST_TAB = tab;
             if let Some((a, b, w, h)) = damage.filter(|_| progress == 255) {

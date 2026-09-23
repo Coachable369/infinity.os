@@ -9,6 +9,9 @@ test -f "$hermes"
 mkdir -p model-cache build/qwen build/hermes
 # A fresh staging tree cannot inherit removed model shards from an older build.
 payload_build=$(mktemp -d build/hermes/payload.XXXXXX)
+# This private staging tree is disposable; keep published ISOs and model-cache
+# files, but do not retain tens of GiB after every successful or failed build.
+trap 'test ! -d "$payload_build" || rm -r -- "$payload_build"' EXIT
 esp_size=7g
 iso_size=8g
 if ! test -f "$ministral"; then

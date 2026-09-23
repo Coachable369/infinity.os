@@ -68,6 +68,8 @@ fn tablet_edges_survive_burst() {
 // ------------------=
 fn composite_button_capture() {
     let mut buttons = PointerButtonArbiter::new();
+    assert!(!buttons.poll_absolute_usb(true));
+    assert!(buttons.poll_absolute_usb(false));
 
     buttons.set_usb(0, BUTTON_LEFT);
     assert_eq!(buttons.combined(), BUTTON_LEFT);
@@ -88,6 +90,14 @@ fn composite_button_capture() {
     // Firmware may miss a release or replay an old press after the raw edge.
     buttons.set_firmware_absolute(BUTTON_LEFT);
     buttons.set_usb_absolute(0, BUTTON_LEFT);
+    // Firmware motion must not starve the now-authoritative raw button stream.
+    for held in [0, BUTTON_LEFT, 0, BUTTON_LEFT, 0] {
+        buttons.set_firmware_absolute(0);
+        if buttons.poll_absolute_usb(true) {
+            buttons.set_usb_absolute(0, held);
+        }
+        assert_eq!(buttons.combined(), held);
+    }
     buttons.set_usb_absolute(0, 0);
     assert_eq!(buttons.combined(), 0);
     buttons.set_firmware_absolute(BUTTON_LEFT);
@@ -107,6 +117,25 @@ fn composite_button_capture() {
     assert_eq!(buttons.combined(), BUTTON_LEFT);
     buttons.set_asynchronous_usb(0);
     assert_eq!(buttons.combined(), 0);
+    buttons.set_firmware_relative(BUTTON_LEFT);
+    assert_eq!(buttons.combined(), 0);
+
+    let mut relative = PointerButtonArbiter::new();
+    relative.clear_asynchronous_usb();
+    relative.set_firmware_relative(BUTTON_LEFT);
+    assert_eq!(relative.combined(), BUTTON_LEFT);
+    relative.set_usb_relative(0, BUTTON_LEFT);
+    relative.set_usb_relative(0, 0);
+    relative.set_firmware_relative(BUTTON_LEFT);
+    assert_eq!(relative.combined(), 0);
+    relative.set_usb_relative(1, BUTTON_RIGHT);
+    relative.set_usb_relative(0, BUTTON_LEFT);
+    relative.set_usb_relative(0, 0);
+    assert_eq!(relative.combined(), BUTTON_RIGHT);
+    assert_eq!(
+        relative.sources(),
+        [0, 0, 0, 0, BUTTON_RIGHT, 0, 0, 0, 0, 0, 0]
+    );
 }
 
 // ------------------------=
