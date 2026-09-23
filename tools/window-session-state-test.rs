@@ -33,6 +33,7 @@ fn example_layout() -> DesktopSessionLayout {
         input_preferences: [0xa1, 7, 8, 3, 2, 3, 0, 0],
         app_drawer_left: true,
         app_drawer_floating: [301, 201],
+        widgets: 0x8000_0100_0123_4567,
     }
 }
 

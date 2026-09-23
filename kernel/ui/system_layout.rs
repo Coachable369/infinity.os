@@ -591,21 +591,8 @@ impl SystemLayout {
     // DESC: Returns the shared responsive geometry for the right-side desktop AI chat surface.
     // ------------------=
     pub fn ai_chat_geometry(self, minimized: bool) -> AiChatGeometry {
-        let foreground = self.desktop_foreground_geometry();
-        let overview_height = (330 * self.scale).min(self.height * 30 / 100);
-        let left = foreground.widgets.x.max(0) as usize;
-        let width = foreground.widgets.width as usize;
-        let top = foreground.widgets.y.max(0) as usize + overview_height + 20 * self.scale;
-        let available_height = foreground
-            .widgets
-            .bottom()
-            .saturating_sub(top as i32)
-            .max(0) as usize;
-        let height = if minimized {
-            50 * self.scale
-        } else {
-            available_height
-        };
+        let panel = crate::ui::desktop_widgets::current().rect(1,self.width,self.height,self.scale,minimized);
+        let (left,top,width,height) = (panel.x.max(0) as usize,panel.y.max(0) as usize,panel.width as usize,panel.height as usize);
         let header_height = 46 * self.scale;
         let model_top = top + header_height + 8 * self.scale;
         let model_height = 42 * self.scale;
@@ -666,6 +653,7 @@ impl SystemLayout {
     ) -> Option<AiChatTarget> {
         let point = self.point(normalized_x, normalized_y);
         let geometry = self.ai_chat_geometry(minimized);
+        if crate::ui::desktop_widgets::current().visible & 2 == 0 { return None; }
         if geometry.close.contains(point) {
             return Some(AiChatTarget::Close);
         }
@@ -735,7 +723,8 @@ impl SystemLayout {
     pub(crate) fn desktop_foreground_layers_for_rect(self, damage: Rect) -> u8 {
         let geometry = self.desktop_foreground_geometry();
         let mut layers = 0;
-        if geometry.widgets.intersects(damage) {
+        let widgets = crate::ui::desktop_widgets::current();
+        if (0..2).any(|id| widgets.visible & (1<<id) != 0 && widgets.rect(id,self.width,self.height,self.scale,false).intersects(damage)) {
             layers |= DESKTOP_FOREGROUND_WIDGETS;
         }
         if geometry.dock.intersects(damage) {

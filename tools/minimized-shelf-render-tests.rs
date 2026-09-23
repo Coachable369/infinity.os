@@ -5,6 +5,46 @@ use crate::ui::app_launcher::minimized_shelf::{self as shelf, Geometry, State};
 mod glass;
 #[path = "../kernel/core/bootstrap/minimized_shelf.rs"]
 mod shelf_renderer;
+#[path = "../kernel/core/bootstrap/desktop_widget_menu.rs"]
+mod widget_menu_renderer;
+
+#[test]
+// ------------------------=
+// FUNC: widget_chooser_partial_pixels_match_full_composition
+// DESC: Exercises actual menu rasterization and opening/dismissal damage without stale checkmarks.
+// ------------------=
+fn widget_chooser_partial_pixels_match_full_composition() {
+    use crate::ui::desktop_widgets::{self as widgets,State};
+    let (width,height)=(800,600);
+    let background=vec![0x102336u32;width*height];
+    let mut pixels=background.clone();
+    let mut display=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    widgets::publish(State::new()); let _=widgets::take_damage(width,height,1);
+    for position in [Some(crate::ui::geometry::Point{x:200,y:180}),Some(crate::ui::geometry::Point{x:780,y:590}),None] {
+        let mut state=State::new(); state.menu=position; widgets::publish(state);
+        let damage=widgets::take_damage(width,height,1).unwrap();
+        let clip=Region{left:damage.x.max(0) as usize,top:damage.y.max(0) as usize,right:(damage.right() as usize).min(width),bottom:(damage.bottom() as usize).min(height)};
+        for y in clip.top..clip.bottom { let range=y*width+clip.left..y*width+clip.right; pixels[range.clone()].copy_from_slice(&background[range]); }
+        display.render_clip=Some(clip); display.desktop_widget_menu(1); display.render_clip=None;
+        let mut expected=background.clone(); let mut reference=display; reference.buffer=expected.as_mut_ptr(); reference.desktop_widget_menu(1);
+        assert!(pixels==expected,"chooser partial composition differs at {position:?}");
+        if position.is_some_and(|p|p.x==200) {
+            use std::io::Write;
+            let mut file=std::io::BufWriter::new(std::fs::File::create("build/widget-menu-proof.ppm").unwrap());
+            write!(file,"P6\n{width} {height}\n255\n").unwrap();
+            for pixel in &pixels { file.write_all(&[(*pixel&255) as u8,((*pixel>>8)&255) as u8,((*pixel>>16)&255) as u8]).unwrap(); }
+        }
+    }
+    let mut state=State::new(); state.positions[1]=[201,201]; widgets::publish(state);
+    let layout=crate::ui::system_layout::SystemLayout::new(width,height);
+    let chat=layout.ai_chat_geometry(false);
+    let x=(chat.composer.x+chat.composer.width as i32/2)*1000/width as i32;
+    let y=(chat.composer.y+chat.composer.height as i32/2)*1000/height as i32;
+    assert!(layout.ai_chat_target(x,y,false).is_some());
+    state.visible &= !2; widgets::publish(state);
+    assert!(layout.ai_chat_target(x,y,false).is_none());
+    widgets::publish(State::new()); let _=widgets::take_damage(width,height,1);
+}
 
 impl DisplayDevice {
     // ------------------------=

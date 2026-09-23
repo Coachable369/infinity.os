@@ -3,6 +3,8 @@
 use super::*;
 #[path = "minimized_shelf.rs"]
 mod minimized_shelf;
+#[path = "desktop_widget_menu.rs"]
+mod desktop_widget_menu;
 #[path = "glass.rs"]
 mod glass;
 
@@ -4313,7 +4315,7 @@ impl super::DisplayDevice {
             }
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-        if matches!(screen,2|4|8|9|10) { self.minimized_app_shelf(); }
+        if matches!(screen,2|4|8|9|10) { self.minimized_app_shelf(); self.desktop_widget_menu(scale); }
         if screen==4 {return;}
         if matches!(screen, 1 | 5 | 6) {
             let panel_top = if matches!(screen, 5 | 6) {
@@ -9204,14 +9206,22 @@ impl super::DisplayDevice {
     // DESC: Renders the persistent right-side system overview and AI status foreground layer.
     // ------------------=
     fn desktop_widgets(&mut self, scale: usize) {
+        if crate::ui::desktop_widgets::current().visible & 1 != 0 { self.desktop_overview_widget(scale); }
+        self.desktop_ai_chat(scale);
+    }
+
+    // ------------------------=
+    // FUNC: desktop_overview_widget
+    // DESC: Paints the system widget at its shared movable geometry.
+    // ------------------=
+    fn desktop_overview_widget(&mut self, scale: usize) {
         let (accent_r, accent_g, accent_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Focus);
-        let geometry = crate::ui::system_layout::SystemLayout::new(self.width, self.height)
-            .desktop_foreground_geometry();
-        let widget_left = geometry.widgets.x.max(0) as usize;
-        let widget_width = geometry.widgets.width as usize;
-        let overview_top = geometry.widgets.y.max(0) as usize;
-        let overview_height = (330 * scale).min(self.height * 30 / 100);
+        let geometry = crate::ui::desktop_widgets::current().rect(0,self.width,self.height,scale,false);
+        let widget_left = geometry.x.max(0) as usize;
+        let widget_width = geometry.width as usize;
+        let overview_top = geometry.y.max(0) as usize;
+        let overview_height = geometry.height as usize;
         self.glass_panel(
             widget_left,
             overview_top,
@@ -9219,6 +9229,7 @@ impl super::DisplayDevice {
             overview_height,
             false,
         );
+        for row in 0..3 { for col in 0..2 { self.fill_rect(widget_left+(5+col*4)*scale,overview_top+(17+row*4)*scale,scale,scale,120,191,226); } }
         self.ui_text(
             widget_left + 18 * scale,
             overview_top + 16 * scale,
@@ -9242,7 +9253,7 @@ impl super::DisplayDevice {
         .iter()
         .enumerate()
         {
-            let row_y = overview_top + (48 + index * 34) * scale;
+            let row_y = overview_top + 48 * scale + index * (overview_height.saturating_sub(48 * scale) / 5).min(34 * scale);
             self.ui_text(widget_left + 18 * scale, row_y, label, 158, 174, 190, 1);
             let value_width = self.ui_text_width(value, 1);
             self.ui_text_strong(
@@ -9268,7 +9279,6 @@ impl super::DisplayDevice {
                 );
             }
         }
-        self.desktop_ai_chat(scale);
     }
 
     // ------------------------=
@@ -9276,6 +9286,7 @@ impl super::DisplayDevice {
     // DESC: Renders the persistent model-selectable AI status and conversation surface.
     // ------------------=
     fn desktop_ai_chat(&mut self, scale: usize) {
+        if crate::ui::desktop_widgets::current().visible & 2 == 0 { return; }
         let chat = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat);
         if !chat.enabled() {
             return;
@@ -9289,6 +9300,7 @@ impl super::DisplayDevice {
         let (accent_r, accent_g, accent_b) =
             self.active_accent_surface(crate::ui::skin::AccentSurface::Focus);
         self.glass_panel(left, top, width, height, false);
+        for row in 0..3 { for col in 0..2 { self.fill_rect(left+(3+col*4)*scale,top+(17+row*4)*scale,scale,scale,120,191,226); } }
         self.ui_text_strong(
             left + 16 * scale,
             top + 15 * scale,
@@ -10341,7 +10353,7 @@ pub fn system_ui_present(
                 // column. Keep that damage separate instead of inflating the
                 // window's bounds or repainting the entire desktop.
                 let chat_damage = crate::ui::redraw::chat_requires_independent_widget_damage(screen, chat_changed)
-                    .then(|| layout.desktop_foreground_geometry().widgets);
+                    .then(|| layout.ai_chat_geometry(false).panel);
                 for damage in damages.iter().take(damage_count).chain(chat_damage.iter()) {
                     console.display.set_render_clip(
                         damage.x.max(0) as usize,
@@ -10495,7 +10507,7 @@ pub fn system_ui_present(
                 screen,
                 content_changed || thinking_header_changed,
             ) {
-                let mut widgets = layout.desktop_foreground_geometry().widgets;
+                let mut widgets = layout.ai_chat_geometry(false).panel;
                 if thinking_header_changed && !content_changed {
                     widgets = layout.ai_chat_geometry(false).panel;
                     widgets.height = (48 * layout.scale()) as u32;
@@ -10605,7 +10617,8 @@ pub fn system_ui_present(
                 console.display.system_top_bar_clock(clock);
             }
             if matches!(screen, 2 | 4 | 8 | 9 | 10) {
-                if let Some(damage) = crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height) {
+                for damage in [crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
+                    crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale())].into_iter().flatten() {
                     if !full_surface_redrawn {
                         console.display.set_render_clip(damage.x.max(0) as usize, damage.y.max(0) as usize, damage.width as usize, damage.height as usize);
                         console.display.system_ui_frame(screen, step, input, masked, focus, validation_error,

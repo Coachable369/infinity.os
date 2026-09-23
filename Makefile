@@ -436,6 +436,8 @@ ui-install-parity-test: x86 x86_64 aarch64
 
 input-regression-test:
 	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 --test tools/desktop-widgets-test.rs -o build/behavior-tests/desktop-widgets-test
+	@build/behavior-tests/desktop-widgets-test
 	@rustc --edition=2021 --test tools/minimized-shelf-test.rs -o build/behavior-tests/minimized-shelf-test
 	@build/behavior-tests/minimized-shelf-test
 	@rustc --edition=2021 --test kernel/core/bootstrap/spatial_timing.rs -o build/behavior-tests/spatial-timing-test

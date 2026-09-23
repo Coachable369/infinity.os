@@ -4,6 +4,8 @@ mod window_workflows;
 mod spatial_controller;
 #[path = "minimized_shelf_controller.rs"]
 mod minimized_shelf_controller;
+#[path = "desktop_widgets_controller.rs"]
+mod desktop_widgets_controller;
 use crate::intent::{
     ConsoleMode, IntentContext, IntentRuntime, KnownOperationPolicy, OperationPolicy,
     ResolutionSource, SystemOperation,
@@ -1276,6 +1278,10 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        if matches!(key,ConsoleKey::Escape) && crate::ui::desktop_widgets::current().menu.is_some() {
+            let mut widgets=crate::ui::desktop_widgets::current(); widgets.menu=None;
+            crate::ui::desktop_widgets::publish(widgets); self.redraw(); return;
+        }
         self.spatial_finish_arrival();
         self.title_clicks.cancel();
         self.session_idle.note_activity();
@@ -2260,6 +2266,7 @@ impl ConsoleRuntime {
             crate::runtime::with_runtime(|runtime| runtime.identity.ai_profile(self.current_user))
                 .flatten();
         if let Some(profile) = preferences {
+            if !profile.chat_enabled { let mut widgets=crate::ui::desktop_widgets::current(); widgets.visible &= !2; crate::ui::desktop_widgets::publish(widgets); }
             let memory = crate::runtime::with_runtime(|runtime| {
                 runtime
                     .identity
@@ -2333,6 +2340,10 @@ impl ConsoleRuntime {
     // DESC: Enables or disables the desktop AI surface and persists the authenticated preference.
     // ------------------=
     fn set_ai_chat_enabled(&mut self, enabled: bool) {
+        let mut widgets=crate::ui::desktop_widgets::current();
+        if enabled { widgets.visible |= 2; } else { widgets.visible &= !2; }
+        crate::ui::desktop_widgets::publish(widgets);
+        let _=self.checkpoint_desktop_layout();
         let changed = crate::runtime::ai::with_ai_runtime(|runtime| {
             let changed = runtime.chat.enabled() != enabled;
             runtime.chat.set_enabled(enabled);
@@ -2854,6 +2865,7 @@ impl ConsoleRuntime {
             input_preferences: crate::ui::input_preferences::current().encode(),
             app_drawer_left: crate::ui::app_launcher::minimized_shelf::current().left,
             app_drawer_floating: crate::ui::app_launcher::minimized_shelf::current().floating,
+            widgets: crate::ui::desktop_widgets::current().encode(),
         }
     }
 
@@ -2866,6 +2878,7 @@ impl ConsoleRuntime {
         let mut drawer = crate::ui::app_launcher::minimized_shelf::current();
         drawer.left = layout.app_drawer_left;
         drawer.floating = layout.app_drawer_floating;
+        crate::ui::desktop_widgets::publish(crate::ui::desktop_widgets::State::decode(layout.widgets));
         drawer.drag = None;
         crate::ui::app_launcher::minimized_shelf::publish(drawer);
         crate::ui::input_preferences::apply(crate::ui::input_preferences::Preferences::decode(
@@ -2949,6 +2962,7 @@ impl ConsoleRuntime {
     // DESC: Restores the authenticated user's last durable cross-session desktop layout.
     // ------------------=
     fn restore_persisted_desktop_layout(&mut self) -> bool {
+        crate::ui::desktop_widgets::publish(crate::ui::desktop_widgets::State::new());
         self.spatial_restore_world_appearance();
         crate::ui::input_preferences::apply(crate::ui::input_preferences::Preferences::defaults());
         if self.current_user.is_zero() {
@@ -6906,7 +6920,10 @@ impl ConsoleRuntime {
         self.pointer_buttons = buttons;
         self.spatial_finish_arrival();
         if self.spatial.open { self.spatial_pointer(clicked, released); return; }
+        if (crate::ui::desktop_widgets::current().menu.is_some() || crate::ui::desktop_widgets::current().drag.is_some())
+            && self.desktop_widgets_pointer(clicked, right_clicked) { return; }
         if self.minimized_shelf_pointer(clicked, right_clicked) { return; }
+        if self.desktop_widgets_pointer(clicked, right_clicked) { return; }
         let layout = SystemLayout::new(
             self.system.framebuffer_width,
             self.system.framebuffer_height,

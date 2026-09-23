@@ -793,6 +793,7 @@ impl SpatialState {
                     .copy_from_slice(&layout.app_drawer_floating[0].to_le_bytes());
                 out[at + 284..at + 286]
                     .copy_from_slice(&layout.app_drawer_floating[1].to_le_bytes());
+                out[at + 286..at + 294].copy_from_slice(&layout.widgets.to_le_bytes());
             }
         }
         for (i, item) in self.items.iter().enumerate() {
@@ -875,6 +876,7 @@ impl SpatialState {
                     u16::from_le_bytes(bytes[at + 282..at + 284].try_into().unwrap()).min(900),
                     u16::from_le_bytes(bytes[at + 284..at + 286].try_into().unwrap()).min(341),
                 ];
+                layout.widgets = u64::from_le_bytes(bytes[at + 286..at + 294].try_into().unwrap());
             }
         }
         for i in 0..ITEM_COUNT {
