@@ -1,8 +1,6 @@
 //! Native spatial panel. Decorative assets never substitute for interactive state.
 use super::*;
 use crate::ui::spatial::{item_card, overview_bounds, world_card, Preview, SpatialState, TABS};
-#[path = "spatial_surface.rs"]
-mod surface;
 #[path = "spatial_timing.rs"]
 mod timing;
 static mut TIMINGS: timing::Timings = timing::Timings::new();
@@ -93,12 +91,20 @@ pub fn arrival_present(opacity: u8, x: i32, y: i32) {
             c.restore_cursor();
             c.display.clear_render_clip();
             if ARRIVAL_SIZE == c.display.stride * c.display.height && ARRIVAL_SIZE != 0 {
-                core::ptr::copy_nonoverlapping(
-                    (&raw const ARRIVAL).cast::<u32>(),
-                    c.display.buffer,
-                    ARRIVAL_SIZE,
-                );
-                launcher_backdrop::fade(&mut c.display, opacity);
+                if !launcher_backdrop::compose_spatial(
+                    &mut c.display,
+                    &*(&raw const ARRIVAL),
+                    0,
+                    opacity,
+                ) {
+                    // A resized/invalidated backdrop must still expose the new
+                    // workspace, matching the previous copy-then-fade fallback.
+                    core::ptr::copy_nonoverlapping(
+                        (&raw const ARRIVAL).cast::<u32>(),
+                        c.display.buffer,
+                        ARRIVAL_SIZE,
+                    );
+                }
             }
             c.display
                 .mark_dirty_rect(0, 0, c.display.width, c.display.height);
@@ -339,17 +345,14 @@ pub fn present(
                     d.width * 92 / 100,
                     d.height * 89 / 100,
                 );
-                launcher_backdrop::restore(d);
                 let region = d.clipped_render_region(0, 0, d.width, d.height).unwrap();
-                surface::translate(
-                    &*(&raw const ARRIVAL),
-                    core::slice::from_raw_parts_mut(d.buffer, d.stride * d.height),
-                    d.stride,
-                    (region.left, region.top, region.right, region.bottom),
-                    (255 - usize::from(transition_progress)) * 35 * d.height / 255 / 1000,
-                );
                 let painted = crate::ui::performance::monotonic_ns();
-                launcher_backdrop::fade(d, transition_progress);
+                launcher_backdrop::compose_spatial(
+                    d,
+                    &*(&raw const ARRIVAL),
+                    (255 - usize::from(transition_progress)) * 35 * d.height / 255 / 1000,
+                    transition_progress,
+                );
                 let blended = crate::ui::performance::monotonic_ns();
                 d.mark_dirty_rect(
                     region.left,
@@ -893,19 +896,17 @@ pub fn present(
                 core::ptr::copy_nonoverlapping(d.buffer, (&raw mut ARRIVAL).cast::<u32>(), size);
                 TRANSITION_KEY = Some(key);
             }
-            if transition_progress != 255 && TRANSITION_KEY == Some(key) {
-                launcher_backdrop::restore(d);
-                let region = d.clipped_render_region(0, 0, d.width, d.height).unwrap();
-                surface::translate(
-                    &*(&raw const ARRIVAL),
-                    core::slice::from_raw_parts_mut(d.buffer, size),
-                    d.stride,
-                    (region.left, region.top, region.right, region.bottom),
-                    (255 - usize::from(transition_progress)) * 35 * d.height / 255 / 1000,
-                );
-            }
             let painted = crate::ui::performance::monotonic_ns();
-            launcher_backdrop::fade(d, transition_progress);
+            if transition_progress != 255 && TRANSITION_KEY == Some(key) {
+                launcher_backdrop::compose_spatial(
+                    d,
+                    &*(&raw const ARRIVAL),
+                    (255 - usize::from(transition_progress)) * 35 * d.height / 255 / 1000,
+                    transition_progress,
+                );
+            } else {
+                launcher_backdrop::fade(d, transition_progress);
+            }
             let blended = crate::ui::performance::monotonic_ns();
             d.clear_render_clip();
             c.save_and_draw_cursor(x, y);

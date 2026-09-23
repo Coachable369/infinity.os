@@ -1,10 +1,42 @@
 //! Frozen desktop backdrop for launcher-only presentation, invalidated on close.
 use super::DisplayDevice;
+#[path = "spatial_surface.rs"]
+mod spatial_surface;
 const PIXELS: usize = 3840 * 2160;
 static mut BACKDROP: [u32; PIXELS] = [0; PIXELS];
 static mut SIZE: (usize, usize, usize) = (0, 0, 0);
 static mut STAGE: [u32; PIXELS] = [0; PIXELS];
 static mut STAGE_SIZE: (usize, usize, usize) = (0, 0, 0);
+
+// ------------------------=
+// FUNC: compose_spatial
+// DESC: Fuses retained-scene translation and desktop fading without intermediate framebuffer passes.
+// ------------------=
+pub(super) fn compose_spatial(
+    display: &mut DisplayDevice,
+    scene: &[u32],
+    lift: usize,
+    opacity: u8,
+) -> bool {
+    unsafe {
+        if SIZE != (display.width, display.height, display.stride) {
+            return false;
+        }
+        let Some(region) = display.clipped_render_region(0, 0, display.width, display.height)
+        else {
+            return false;
+        };
+        spatial_surface::compose(
+            scene,
+            &*(&raw const BACKDROP),
+            core::slice::from_raw_parts_mut(display.buffer, display.stride * display.height),
+            display.stride,
+            (region.left, region.top, region.right, region.bottom),
+            lift,
+            opacity,
+        )
+    }
+}
 
 // ------------------------=
 // FUNC: column_sum

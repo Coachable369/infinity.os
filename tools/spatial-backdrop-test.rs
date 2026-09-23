@@ -83,9 +83,19 @@ fn frozen_backdrop_fade_respects_damage_and_endpoints() {
     assert_eq!(pixels[39], 0xff90a0b0);
     assert!(backdrop::restore(&mut display));
     assert_eq!(pixels[32], 0xff102030);
+    let scene = [0xff90a0b0; 80];
+    pixels.fill(0xff334455);
+    assert!(backdrop::compose_spatial(&mut display, &scene, 1, 128));
+    assert_eq!(pixels[32], 0xff102030);
+    assert_eq!(pixels[42], 0xff506070);
+    assert_eq!(pixels[41], 0xff334455);
+    assert_eq!(pixels[49], 0xff334455);
     backdrop::invalidate();
     assert!(!backdrop::restore(&mut display));
     assert!(!backdrop::restore_stage(&mut display));
+    let unchanged = pixels;
+    assert!(!backdrop::compose_spatial(&mut display, &scene, 0, 128));
+    assert_eq!(pixels, unchanged);
     reference_equivalence();
 }
 
