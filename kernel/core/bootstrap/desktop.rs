@@ -8211,9 +8211,8 @@ impl super::DisplayDevice {
             225,
         );
         let title_center_y = browser_top + title_h / 2;
-        self.small_infinity_mark(browser_left + 20 * scale, title_center_y, 24 * scale);
         self.app_text(
-            browser_left + 38 * scale,
+            browser_left + 14 * scale,
             title_center_y.saturating_sub(12 * scale),
             b"File Navigator",
             (226, 237, 245), true, scale,
