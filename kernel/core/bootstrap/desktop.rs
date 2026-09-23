@@ -7522,7 +7522,7 @@ impl super::DisplayDevice {
             if active { 217 } else { 137 },
             if active { 255 } else { 184 },
         );
-        self.small_infinity_mark(left + size / 2, top + size / 2, size * 3 / 4);
+        self.top_bar_infinity_icon(left + size / 2, top + size / 2, size * 3 / 4);
         if active {
             self.fill_rounded_rect_alpha(
                 left + size / 2 - 5,
