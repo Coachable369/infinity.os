@@ -4,6 +4,37 @@ use crate::primitives::UI_FONT_CELL_HEIGHT;
 #[path = "../kernel/core/bootstrap/holographic_card.rs"]
 mod holographic_card;
 use holographic_card::paint_card;
+
+#[test]
+// ------------------------=
+// FUNC: pill_text_is_centered_and_density_stable
+// DESC: Measures rendered glyph ink and compares exact capsule pixels across display-density boundaries.
+// ------------------=
+fn pill_text_is_centered_and_density_stable() {
+    let mut reference = None;
+    for (width, height) in [(1280,720),(2560,1440),(3840,2160)] {
+        let mut pixels = vec![0x102336u32; width * height];
+        let mut d = DisplayDevice { buffer:pixels.as_mut_ptr(),width,height,stride:width,
+            format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false };
+        d.glass_label_pill(40,40,240,44,b"File Navigator",true);
+        let mut capsule = Vec::new();
+        let (mut x0,mut y0,mut x1,mut y1) = (usize::MAX,usize::MAX,0,0);
+        for y in 40..84 {
+            for x in 40..280 {
+                let p = pixels[y * width + x];
+                capsule.push(p);
+                if p & 255 > 200 && (p >> 8) & 255 > 215 && (p >> 16) & 255 > 225 {
+                    x0=x0.min(x);x1=x1.max(x);y0=y0.min(y);y1=y1.max(y);
+                }
+            }
+        }
+        assert!(x0 < x1 && y0 < y1);
+        assert!(((x0+x1) as isize - 320).abs() <= 6, "horizontal ink: {x0}..{x1}");
+        assert!(((y0+y1) as isize - 124).abs() <= 6, "vertical ink: {y0}..{y1}");
+        if let Some(expected) = &reference { assert_eq!(&capsule,expected); }
+        else { reference=Some(capsule); }
+    }
+}
 use crate::ui::spatial::{overview_bounds, Preview};
 #[path = "../kernel/core/bootstrap/spatial_carousel.rs"]
 mod carousel_renderer;

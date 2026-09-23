@@ -2,6 +2,82 @@
 use super::*;
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: glass_label_pill
+    // DESC: Paints a compact kit capsule with matched semibold metrics and stable selection geometry.
+    // ------------------=
+    pub(in super::super) fn glass_label_pill(
+        &mut self,
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+        label: &[u8],
+        selected: bool,
+    ) {
+        if width < 8 || height < 8 {
+            return;
+        }
+        let radius = (height / 2).min(16);
+        self.fill_rounded_rect_alpha(left, top, width, height, radius, 80, 132, 167, 125);
+        self.fill_rounded_rect_alpha(
+            left + 1,
+            top + 1,
+            width - 2,
+            height - 2,
+            radius - 1,
+            10,
+            29,
+            47,
+            245,
+        );
+        // Layer shallow, fading rounded reflections rather than a hard top cap.
+        for inset in (2..=8).rev() {
+            self.fill_rounded_rect_alpha(
+                left + inset,
+                top + 2,
+                width.saturating_sub(inset * 2),
+                height.saturating_sub(4) / 2,
+                radius.saturating_sub(inset),
+                130,
+                190,
+                229,
+                if selected { 7 } else { 4 },
+            );
+        }
+        if selected {
+            self.outline_rounded_rect(left, top, width, height, radius, 100, 172, 219);
+        }
+        let mut shortened = [0u8; 96];
+        let mut length = label.len().min(shortened.len() - 3);
+        shortened[..length].copy_from_slice(&label[..length]);
+        let available = width.saturating_sub(32);
+        let mut shown = length;
+        if self.ui_text_width_weighted(&shortened[..length], 1, true) > available {
+            loop {
+                shortened[length..length + 3].copy_from_slice(b"...");
+                shown = length + 3;
+                if self.ui_text_width_weighted(&shortened[..shown], 1, true) <= available {
+                    break;
+                }
+                if length == 0 {
+                    return;
+                }
+                length -= 1;
+            }
+        }
+        self.ui_text_centered_strong(
+            left,
+            width,
+            top + height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
+            &shortened[..shown],
+            227,
+            238,
+            247,
+            1,
+        );
+    }
+
+    // ------------------------=
     // FUNC: glass_panel
     // DESC: Builds a layered translucent panel with restrained shadow, highlight, and cyan edge treatment.
     // ------------------=

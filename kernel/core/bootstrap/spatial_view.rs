@@ -494,7 +494,12 @@ pub fn present(
                 d.glass_panel(panel.0, panel.1, panel.2, panel.3, false);
             } else {
                 let footer = rect(65, 790, 870, 110);
-                d.glass_panel(footer.0, footer.1, footer.2, footer.3, false);
+                if switcher {
+                    d.glass_panel_with_palette(footer.0, footer.1, footer.2, footer.3,
+                        false, (14, 40, 62), (97, 178, 224));
+                } else {
+                    d.glass_panel(footer.0, footer.1, footer.2, footer.3, false);
+                }
             }
             let p = rect(70, if shelf { 588 } else { 98 }, 0, 0);
             d.ui_text_strong(p.0, p.1, if switcher { b"HOLOGRAPHIC DESKTOP" } else { b"SPATIAL DESKTOP" }, 200, 236, 255, 1);

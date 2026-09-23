@@ -37,7 +37,9 @@ pub(super) fn paint_card(
         81,
         107,
     );
-    let pill_h = (UI_FONT_CELL_HEIGHT * d.ui_scale() + 14).min(p.3 / 3);
+    // Text is rendered at scale 1. Its container must use those same metrics,
+    // including on 1440p/4K displays where the shell's ui_scale is 2.
+    let pill_h = (UI_FONT_CELL_HEIGHT + 16).min(p.3 / 3);
     let thumb = (
         p.0 + 8,
         p.1 + 12,
@@ -58,30 +60,10 @@ pub(super) fn paint_card(
         3 => b"Task Manager",
         _ => b"Settings",
     };
-    let pill_w = (d.ui_text_width(app_name, 1) + 32).min(p.2.saturating_sub(24));
+    let pill_w = (d.ui_text_width_weighted(app_name, 1, true) + 32).min(p.2.saturating_sub(32));
     let pill_x = p.0 + (p.2 - pill_w) / 2;
-    let pill_y = p.1 + p.3 - pill_h - 10;
-    d.fill_rounded_rect_alpha(pill_x, pill_y, pill_w, pill_h, pill_h / 2, 8, 27, 43, 225);
-    d.outline_rounded_rect(pill_x, pill_y, pill_w, pill_h, pill_h / 2, 91, 163, 207);
-    d.fill_rect_alpha(
-        pill_x + pill_h / 2,
-        pill_y + 2,
-        pill_w.saturating_sub(pill_h),
-        1,
-        199,
-        234,
-        255,
-        90,
-    );
-    d.ui_text_elided_strong(
-        pill_x + 16,
-        pill_y + 7,
-        pill_w.saturating_sub(32),
-        app_name,
-        220,
-        237,
-        247,
-    );
+    let pill_y = p.1 + p.3 - pill_h - 16;
+    d.glass_label_pill(pill_x, pill_y, pill_w, pill_h, app_name, selected);
     if selected {
         d.outline_rounded_rect(p.0, p.1, p.2, p.3, 12, 110, 214, 255);
         for (width, alpha) in [(80, 24), (56, 55), (32, 150)] {

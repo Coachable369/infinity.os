@@ -882,7 +882,7 @@ impl super::DisplayDevice {
         if input.is_empty() {
             self.ui_text(
                 x + height,
-                y + height / 2 - 8,
+                y + height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
                 b"Enter your password",
                 115,
                 126,
@@ -895,7 +895,7 @@ impl super::DisplayDevice {
             masked[..length].fill(b'*');
             self.ui_text(
                 x + height,
-                y + height / 2 - 8,
+                y + height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
                 &masked[..length],
                 238,
                 244,
@@ -1537,7 +1537,7 @@ impl super::DisplayDevice {
         self.small_infinity_mark(35 * scale, height / 2, 48 * scale);
         self.ui_text_strong(
             64 * scale,
-            height / 2 - 10 * scale,
+            height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
             b"INFINITYOS",
             241,
             246,
@@ -1549,7 +1549,7 @@ impl super::DisplayDevice {
         let wifi_center = self.width.saturating_sub(29 * scale);
         self.ui_text(
             wifi_center.saturating_sub(status_width + 36 * scale),
-            height / 2 - 10 * scale,
+            height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
             status,
             211,
             221,
@@ -1929,7 +1929,9 @@ impl super::DisplayDevice {
                 if focused { 236 } else { 91 },
             );
         }
-        self.ui_text_centered_strong(left, width, top + height / 2 - 10, label, 242, 248, 252, 1);
+        self.ui_text_centered_strong(left, width,
+            top + height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
+            label, 242, 248, 252, 1);
         if primary {
             self.authentication_icon(
                 left + width.saturating_sub(height / 2),
@@ -2020,7 +2022,7 @@ impl super::DisplayDevice {
         };
         self.ui_text(
             left + crate::ui::system_layout::UI_GUTTER * self.ui_scale().max(1),
-            top + height / 2 - 10,
+            top + height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
             display,
             color.0,
             color.1,
