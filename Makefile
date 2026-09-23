@@ -433,6 +433,8 @@ ui-install-parity-test: x86 x86_64 aarch64
 
 input-regression-test:
 	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -A warnings --test tools/active-painter-test.rs -o build/behavior-tests/active-painter-unit-test
+	@build/behavior-tests/active-painter-unit-test
 	@rustc --edition=2021 --test tools/soft-stroke-test.rs -o build/behavior-tests/soft-stroke-test
 	@build/behavior-tests/soft-stroke-test
 	@rustc --edition=2021 --test tools/spatial-path-test.rs -o build/behavior-tests/spatial-path-test

@@ -217,9 +217,23 @@ impl super::DisplayDevice {
     // DESC: Blends a subpixel luminous stroke without allocating or touching pixels outside its bounded support.
     // ------------------=
     pub(super) fn soft_stroke(&mut self, from: (i32, i32), to: (i32, i32), scale: i32, intensity: u8) {
+        let mut bounds = (usize::MAX, usize::MAX, 0usize, 0usize);
         soft_stroke::segment(from, to, scale, |x, y, alpha| {
+            if x < 0
+                || y < 0
+                || x as usize >= self.width
+                || y as usize >= self.height
+                || !self.render_point_visible(x as usize, y as usize)
+            {
+                return;
+            }
+            let (x, y) = (x as usize, y as usize);
+            bounds.0 = bounds.0.min(x);
+            bounds.1 = bounds.1.min(y);
+            bounds.2 = bounds.2.max(x + 1);
+            bounds.3 = bounds.3.max(y + 1);
             let core = u16::from(alpha.saturating_sub(120));
-            self.blend_color(
+            self.blend_color_unchecked(
                 x,
                 y,
                 (38 + core) as u8,
@@ -228,6 +242,14 @@ impl super::DisplayDevice {
                 (u16::from(alpha) * u16::from(intensity) / 255) as u8,
             );
         });
+        if bounds.0 < bounds.2 && bounds.1 < bounds.3 {
+            self.mark_dirty_rect(
+                bounds.0,
+                bounds.1,
+                bounds.2 - bounds.0,
+                bounds.3 - bounds.1,
+            );
+        }
     }
     // ------------------------=
     // FUNC: framebuffer_pixel

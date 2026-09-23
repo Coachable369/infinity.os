@@ -8,6 +8,51 @@ mod primitives;
 #[path = "../kernel/ui/mod.rs"]
 mod ui;
 use std::time::Instant;
+#[path = "../kernel/core/bootstrap/soft_stroke.rs"]
+mod stroke_coverage;
+
+#[test]
+// ------------------------=
+// FUNC: luminous_strokes_batch_damage_without_changing_pixels
+// DESC: Compares the native batched stroke against per-pixel composition, including clipping and retained alpha.
+// ------------------=
+fn luminous_strokes_batch_damage_without_changing_pixels() {
+    for recording_surface in [false, true] {
+        for clip in [
+            None,
+            Some(Region { left: 50, top: 30, right: 200, bottom: 110 }),
+        ] {
+            let mut actual = vec![0x7f183050u32; 320 * 160];
+            let mut expected = actual.clone();
+            let mut display = DisplayDevice {
+                buffer: actual.as_mut_ptr(),
+                width: 320,
+                height: 160,
+                stride: 320,
+                format: 0,
+                render_clip: clip,
+                fast_motion_frame: false,
+                submissions: 0,
+                recording_surface,
+            };
+            let mut reference = display;
+            reference.buffer = expected.as_mut_ptr();
+            let from = (-8 * 256, 20 * 256 + 128);
+            let to = (330 * 256, 140 * 256 + 64);
+            stroke_coverage::segment(from, to, 2, |x, y, alpha| {
+                let core = u16::from(alpha.saturating_sub(120));
+                reference.blend_color(
+                    x, y, (38 + core) as u8, (153 + core * 3 / 4) as u8, 255,
+                    (u16::from(alpha) * 110 / 255) as u8,
+                );
+            });
+            display.soft_stroke(from, to, 2, 110);
+            assert_eq!(actual, expected);
+            assert_eq!(display.submissions, 1);
+            assert!(reference.submissions > 1000);
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 struct Region {

@@ -86,4 +86,135 @@ fn frozen_backdrop_fade_respects_damage_and_endpoints() {
     backdrop::invalidate();
     assert!(!backdrop::restore(&mut display));
     assert!(!backdrop::restore_stage(&mut display));
+    reference_equivalence();
+}
+
+// ------------------------=
+// FUNC: reference_equivalence
+// DESC: Compares native optimized pixels with the original scalar equations across padded, narrow and vignetted surfaces and every fade opacity.
+// ------------------=
+fn reference_equivalence() {
+    for width in [1usize, 8, 17, 37, 257, 513] {
+        let height = 31;
+        let stride = width + 3;
+        let source: Vec<u32> = (0..stride * height)
+            .map(|i| (i as u32).wrapping_mul(0x9e3779b9).rotate_left(11))
+            .collect();
+        let mut pixels = source.clone();
+        let mut display = DisplayDevice {
+            buffer: pixels.as_mut_ptr(),
+            width,
+            height,
+            stride,
+            render_clip: None,
+        };
+        backdrop::capture(&display);
+        backdrop::capture_stage(&display);
+        pixels.fill(0xabcddcba);
+        assert!(backdrop::restore_stage(&mut display));
+        for y in 0..height {
+            for x in 0..stride {
+                if x >= width {
+                    assert_eq!(pixels[y * stride + x], 0xabcddcba);
+                    continue;
+                }
+                let original = source[y * stride + x];
+                let mut sums = [0u32; 3];
+                for dy in [-8isize, 0, 8] {
+                    for dx in [-8isize, 0, 8] {
+                        let sx = (x as isize + dx).clamp(0, width as isize - 1) as usize;
+                        let sy = (y as isize + dy).clamp(0, height as isize - 1) as usize;
+                        for i in 0..3 {
+                            sums[i] += (source[sy * stride + sx] >> (i * 8)) & 255;
+                        }
+                    }
+                }
+                let edge = if width >= 256 {
+                    x.saturating_sub(width * 4 / 100)
+                        .min((width * 96 / 100).saturating_sub(x))
+                        .min(y.saturating_sub(height * 7 / 100))
+                        .min((height * 96 / 100).saturating_sub(y))
+                        .saturating_mul(255)
+                        / (width / 24).max(1)
+                } else {
+                    255
+                }
+                .min(255) as u32;
+                let mut expected = original & 0xff000000;
+                for i in 0..3 {
+                    expected |= ((sums[i] / 45 * edge
+                        + ((original >> (i * 8)) & 255) * (255 - edge))
+                        / 255)
+                        << (i * 8);
+                }
+                assert_eq!(pixels[y * stride + x], expected, "stage at {width}:{x},{y}");
+            }
+        }
+        let foreground: Vec<u32> = source
+            .iter()
+            .map(|p| p.rotate_left(9) ^ 0x89abcdef)
+            .collect();
+        display.render_clip = Some((0, 2, width, height - 4));
+        for alpha in 0u32..=255 {
+            pixels.copy_from_slice(&foreground);
+            backdrop::fade(&mut display, alpha as u8);
+            for y in 0..height {
+                for x in 0..stride {
+                    let offset = y * stride + x;
+                    let front = foreground[offset];
+                    let mut expected = front;
+                    if x < width && (2..height - 2).contains(&y) {
+                        expected &= 0xff000000;
+                        for shift in [0, 8, 16] {
+                            expected |= ((((front >> shift) & 255) * alpha
+                                + ((source[offset] >> shift) & 255) * (255 - alpha)
+                                + 127)
+                                / 255)
+                                << shift;
+                        }
+                    }
+                    assert_eq!(pixels[offset], expected, "fade {alpha} at {width}:{x},{y}");
+                }
+            }
+        }
+        backdrop::invalidate();
+    }
+}
+
+#[test]
+#[ignore]
+// ------------------------=
+// FUNC: backdrop_costs_at_desktop_resolution
+// DESC: Measures the actual native backdrop stages separately without including allocation or scanout.
+// ------------------=
+fn backdrop_costs_at_desktop_resolution() {
+    let mut pixels = vec![0xff426891u32; 2560 * 1440];
+    let mut display = DisplayDevice {
+        buffer: pixels.as_mut_ptr(),
+        width: 2560,
+        height: 1440,
+        stride: 2560,
+        render_clip: None,
+    };
+    backdrop::capture(&display);
+    for _ in 0..5 {
+        let start = std::time::Instant::now();
+        backdrop::capture_stage(&display);
+        let capture = start.elapsed();
+        let start = std::time::Instant::now();
+        backdrop::restore(&mut display);
+        backdrop::restore_stage(&mut display);
+        let restore = start.elapsed();
+        let start = std::time::Instant::now();
+        backdrop::fade(&mut display, std::hint::black_box(128));
+        let fade = start.elapsed();
+        std::hint::black_box(&pixels);
+        println!(
+            "capture_us={} restore_us={} fade_us={}",
+            capture.as_micros(),
+            restore.as_micros(),
+            fade.as_micros()
+        );
+    }
+    backdrop::invalidate();
 }

@@ -7,6 +7,19 @@ static mut STAGE: [u32; PIXELS] = [0; PIXELS];
 static mut STAGE_SIZE: (usize, usize, usize) = (0, 0, 0);
 
 // ------------------------=
+// FUNC: column_sum
+// DESC: Sums three vertical taps in independent 16-bit lanes without channel overflow.
+// ------------------=
+fn column_sum(source: *const u32, stride: usize, x: usize, rows: [usize; 3]) -> u64 {
+    let mut sum = 0;
+    for y in rows {
+        let p = unsafe { *source.add(y * stride + x) } as u64;
+        sum += (p & 255) | ((p & 0xff00) << 8) | ((p & 0xff0000) << 16);
+    }
+    sum
+}
+
+// ------------------------=
 // FUNC: capture_stage
 // DESC: Caches a defocused, dimmed spatial stage once per desktop change, preserving the original for dismissal.
 // ------------------=
@@ -19,19 +32,22 @@ pub(super) fn capture_stage(display: &DisplayDevice) {
         {
             return;
         }
+        let source = (&raw const BACKDROP).cast::<u32>();
         for y in 0..display.height {
+            let rows = [y.saturating_sub(8), y, (y + 8).min(display.height - 1)];
+            // The next pixel reuses sixteen columns. Only one new three-tap
+            // column is loaded; the 17-slot ring also handles clamped edges.
+            let mut columns = [0u64; 17];
+            for x in 0..=8.min(display.width - 1) {
+                columns[x] = column_sum(source, display.stride, x, rows);
+            }
             for x in 0..display.width {
-                let mut channels = [0u32; 3];
-                for dy in [-8isize, 0, 8] {
-                    for dx in [-8isize, 0, 8] {
-                        let sx = (x as isize + dx).clamp(0, display.width as isize - 1) as usize;
-                        let sy = (y as isize + dy).clamp(0, display.height as isize - 1) as usize;
-                        let pixel = (*(&raw const BACKDROP))[sy * display.stride + sx];
-                        for (i, sum) in channels.iter_mut().enumerate() {
-                            *sum += (pixel >> (i * 8)) & 255;
-                        }
-                    }
+                let right = (x + 8).min(display.width - 1);
+                if x != 0 {
+                    columns[right % 17] = column_sum(source, display.stride, right, rows);
                 }
+                let sums =
+                    columns[x.saturating_sub(8) % 17] + columns[x % 17] + columns[right % 17];
                 let original = (*(&raw const BACKDROP))[y * display.stride + x];
                 let edge = if display.width >= 256 {
                     x.saturating_sub(display.width * 4 / 100)
@@ -45,7 +61,8 @@ pub(super) fn capture_stage(display: &DisplayDevice) {
                 }
                 .min(255) as u32;
                 let mut pixel = original & 0xff000000;
-                for (i, sum) in channels.iter().enumerate() {
+                for i in 0..3 {
+                    let sum = ((sums >> (i * 16)) & 0xffff) as u32;
                     let source = (original >> (i * 8)) & 255;
                     pixel |= ((sum / 45 * edge + source * (255 - edge)) / 255) << (i * 8);
                 }
@@ -155,14 +172,12 @@ pub(super) fn fade(display: &mut DisplayDevice, opacity: u8) {
                 let pixel = display.buffer.add(offset);
                 let behind = (*(&raw const BACKDROP))[offset];
                 let foreground = *pixel;
-                let mut color = foreground & 0xff000000;
-                for shift in [0, 8, 16] {
-                    color |=
-                        ((((foreground >> shift) & 255) * a + ((behind >> shift) & 255) * b + 127)
-                            / 255)
-                            << shift;
-                }
-                *pixel = color;
+                // Two independent 16-bit lanes; the rounded numerator never
+                // exceeds 65152 so neither multiply nor division carries lanes.
+                let lanes = (foreground & 0x00ff00ff) * a + (behind & 0x00ff00ff) * b + 0x007f007f;
+                let rb = ((lanes + 0x00010001 + ((lanes >> 8) & 0x00ff00ff)) >> 8) & 0x00ff00ff;
+                let green = (((foreground >> 8) & 255) * a + ((behind >> 8) & 255) * b + 127) / 255;
+                *pixel = (foreground & 0xff000000) | rb | (green << 8);
             }
         }
     }

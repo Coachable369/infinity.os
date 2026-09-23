@@ -51,6 +51,7 @@ pub fn arrival_present(opacity: u8, x: i32, y: i32) {
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     unsafe {
         if let Some(c) = (*(&raw mut CONSOLE)).as_mut() {
+            c.display.frame_started_ns = crate::ui::performance::monotonic_ns();
             c.restore_cursor();
             c.display.clear_render_clip();
             if ARRIVAL_SIZE == c.display.stride * c.display.height && ARRIVAL_SIZE != 0 {
@@ -277,6 +278,7 @@ pub fn present(
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     unsafe {
         if let Some(c) = (*(&raw mut CONSOLE)).as_mut() {
+            c.display.frame_started_ns = crate::ui::performance::monotonic_ns();
             c.restore_cursor();
             c.display.clear_render_clip();
             if !OPEN {
@@ -285,7 +287,6 @@ pub fn present(
                 OPEN = true;
             }
             let d = &mut c.display;
-            d.frame_started_ns = crate::ui::performance::monotonic_ns();
             let changed_tab = LAST_TAB != tab;
             LAST_TAB = tab;
             if let Some((a, b, w, h)) = damage.filter(|_| progress == 255) {
@@ -303,9 +304,8 @@ pub fn present(
                     d.height * 89 / 100,
                 );
             }
-            launcher_backdrop::restore(d);
-            if tab != 3 {
-                launcher_backdrop::restore_stage(d);
+            if tab == 3 || !launcher_backdrop::restore_stage(d) {
+                launcher_backdrop::restore(d);
             }
             if let Some((a, b, w, h)) = damage {
                 d.mark_dirty_rect(
