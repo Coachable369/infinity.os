@@ -63,3 +63,9 @@ verification. Keep animation caching and bounded damage behavior intact.
   shortcut did not open requested windows through automation. User was asked to
   leave File Navigator and Settings open. Until those surfaces are visible,
   their complete visual review is pending, not passed.
+- The final VM observation was the locked Welcome Back screen; further installed
+  application review requires unlocking and opening the requested windows.
+- Rebuilt release installers directly in `builds/` using `make x86_64` and
+  `sh tools/build-hermes.sh`. ARM installed-kernel byte parity and both model
+  payload checks passed. These updated ISOs do not alter the currently running
+  installed VM; fresh-install visual verification remains pending.
