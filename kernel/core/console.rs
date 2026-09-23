@@ -2,6 +2,8 @@
 mod window_workflows;
 #[path = "spatial_controller.rs"]
 mod spatial_controller;
+#[path = "minimized_shelf_controller.rs"]
+mod minimized_shelf_controller;
 use crate::intent::{
     ConsoleMode, IntentContext, IntentRuntime, KnownOperationPolicy, OperationPolicy,
     ResolutionSource, SystemOperation,
@@ -1121,6 +1123,7 @@ impl ConsoleRuntime {
     // DESC: Composes a committed scene; spatial refresh suppresses physical presentation until its overlay is complete.
     // ------------------=
     fn redraw_scene(&self) {
+        self.publish_minimized_shelf();
         let mut editor_view = self.editor_tools;
         editor_view.selection = self.editor_document.selection(); editor_view.cursor = self.editor_document.cursor();
         editor_view.filename_len = self.editor_document_name_length.min(editor_view.filename.len());
@@ -1287,6 +1290,7 @@ impl ConsoleRuntime {
             return;
         }
         if self.spatial.open { self.spatial_input(key); return; }
+        if self.minimized_shelf_key(key) { return; }
         if matches!(key, ConsoleKey::Shortcut(b'K')) && !self.current_session.is_zero()
             && matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher) {
             self.spatial_open(); return;
@@ -1524,6 +1528,13 @@ impl ConsoleRuntime {
     // DESC: Removes the GUI surface owned by a successfully ended application context.
     // ------------------=
     fn close_task_surface(&mut self, task: crate::runtime::task_manager::TaskSnapshot) {
+        use crate::ui::app_launcher::minimized_shelf as shelf;
+        match task.image_identity {
+            crate::runtime::task_manager::IMAGE_TEXT_EDITOR => shelf::set(shelf::EDITOR,false),
+            crate::runtime::task_manager::IMAGE_COMMAND_WINDOW => shelf::set(shelf::COMMAND,false),
+            crate::runtime::task_manager::IMAGE_TASK_MANAGER => shelf::set(shelf::TASKS,false),
+            _ => {}
+        }
         match task.image_identity {
             crate::runtime::task_manager::IMAGE_FILE_NAVIGATOR => {
                 let next = crate::runtime::with_runtime(|runtime| {
@@ -2369,6 +2380,7 @@ impl ConsoleRuntime {
     // DESC: Opens the native multiline Text Editor as an authenticated desktop window.
     // ------------------=
     fn open_text_editor(&mut self) {
+        crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::EDITOR, false);
         self.ensure_app_task(crate::runtime::task_manager::IMAGE_TEXT_EDITOR);
         if self.mode != ConsoleMode::Desktop {
             self.enter_desktop();
@@ -2387,6 +2399,7 @@ impl ConsoleRuntime {
     // DESC: Opens the native Infinity Console language inside a desktop command window.
     // ------------------=
     fn open_command_window(&mut self) {
+        crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::COMMAND, false);
         self.ensure_app_task(crate::runtime::task_manager::IMAGE_COMMAND_WINDOW);
         if self.mode != ConsoleMode::Desktop {
             self.enter_desktop();
@@ -2414,6 +2427,7 @@ impl ConsoleRuntime {
     // DESC: Opens the live graphical Task Manager and registers its application context.
     // ------------------=
     fn open_task_manager(&mut self) {
+        crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::TASKS, false);
         self.ensure_app_task(crate::runtime::task_manager::IMAGE_TASK_MANAGER);
         if self.mode != ConsoleMode::Desktop {
             self.enter_desktop();
@@ -2547,6 +2561,7 @@ impl ConsoleRuntime {
     // DESC: Hides a native app without clearing its document, command output, or interaction state.
     // ------------------=
     fn minimize_desktop_app(&mut self) {
+        if let Some(id) = self.shelf_app_id() { crate::ui::app_launcher::minimized_shelf::set(id, true); }
         self.store_active_app_window();
         match self.desktop_app {
             DesktopAppKind::TextEditor => self.editor_window.visible = false,
@@ -2581,6 +2596,7 @@ impl ConsoleRuntime {
     // DESC: Dismisses the active desktop application after its document lifecycle has explicitly authorized closure.
     // ------------------=
     fn close_desktop_app_unchecked(&mut self) {
+        if let Some(id) = self.shelf_app_id() { crate::ui::app_launcher::minimized_shelf::set(id, false); }
         self.store_active_app_window();
         if self.desktop_app == DesktopAppKind::CommandWindow {
             self.command_window_suspended = false;
@@ -3546,6 +3562,7 @@ impl ConsoleRuntime {
     // DESC: Opens one Settings section without accidentally activating its first value.
     // ------------------=
     fn open_settings(&mut self, section: usize) {
+        crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::SETTINGS, false);
         self.settings_open=true;
         self.cancel_node_pairing_input();
         self.store_active_app_window();
@@ -5038,6 +5055,7 @@ impl ConsoleRuntime {
                     return;
                 };
                 self.current_session = session.id;
+                crate::ui::app_launcher::minimized_shelf::publish(crate::ui::app_launcher::minimized_shelf::State::new());
                 for byte in &mut self.onboarding_secret {
                     *byte = 0;
                 }
@@ -5352,6 +5370,7 @@ impl ConsoleRuntime {
         if let Ok(session) = result {
             self.current_user = user.id;
             self.current_session = session.id;
+            crate::ui::app_launcher::minimized_shelf::publish(crate::ui::app_launcher::minimized_shelf::State::new());
             self.enter_desktop();
             let _ = self.restore_persisted_desktop_layout();
         } else {
@@ -6397,6 +6416,7 @@ impl ConsoleRuntime {
     fn pointer_scroll(&mut self, vertical: i8) -> bool {
         self.spatial_finish_arrival();
         if self.spatial.open {return self.spatial_scroll(vertical);}
+        if self.minimized_shelf_scroll(vertical) { return true; }
         if vertical == 0 {
             return false;
         }
@@ -6876,6 +6896,7 @@ impl ConsoleRuntime {
         self.pointer_buttons = buttons;
         self.spatial_finish_arrival();
         if self.spatial.open { self.spatial_pointer(clicked, released); return; }
+        if self.minimized_shelf_pointer(clicked, right_clicked) { return; }
         let layout = SystemLayout::new(
             self.system.framebuffer_width,
             self.system.framebuffer_height,
@@ -8293,7 +8314,8 @@ impl ConsoleRuntime {
                     {
                         self.settings_window_resizing = Some(corner)
                     }
-                    SettingsTarget::WindowControl(0 | 2) if clicked => {
+                    SettingsTarget::WindowControl(control @ (0 | 2)) if clicked => {
+                        crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::SETTINGS, control == 0);
                         self.settings_open=false;
                         self.enter_desktop();
                         let _ = self.checkpoint_desktop_layout();

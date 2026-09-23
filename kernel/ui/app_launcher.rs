@@ -9,6 +9,8 @@ const LAUNCHER_TRANSITION_STEP: usize = 32;
 
 #[path = "motion.rs"]
 pub mod motion;
+#[path = "minimized_shelf.rs"]
+pub mod minimized_shelf;
 const LAUNCHER_DRAG_THRESHOLD: i32 = 8;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

@@ -1,6 +1,10 @@
 //! Authentication, onboarding, desktop shell, menus, settings, windows, and file management.
 
 use super::*;
+#[path = "minimized_shelf.rs"]
+mod minimized_shelf;
+#[path = "glass.rs"]
+mod glass;
 
 static mut THINKING_ANIMATION: crate::ui::thinking::ThinkingAnimation =
     crate::ui::thinking::ThinkingAnimation::new();
@@ -4247,6 +4251,9 @@ impl super::DisplayDevice {
             );
         }
 
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        if matches!(screen, 3 | 7) { self.minimized_app_shelf(); }
+
         if screen == 7 {
             #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
             super::launcher_backdrop::capture(self);
@@ -4297,6 +4304,8 @@ impl super::DisplayDevice {
                 }
             }
         }
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        if matches!(screen,2|4|8|9|10) { self.minimized_app_shelf(); }
         if screen==4 {return;}
         if matches!(screen, 1 | 5 | 6) {
             let panel_top = if matches!(screen, 5 | 6) {
@@ -7001,133 +7010,6 @@ impl super::DisplayDevice {
         self.glass_panel_with_palette(left, top, width, height, true, (2, 12, 24), (34, 83, 112));
     }
 
-    // ------------------------=
-    // FUNC: glass_panel
-    // DESC: Builds a layered translucent panel with restrained shadow, highlight, and cyan edge treatment.
-    // ------------------=
-    pub(super) fn glass_panel(
-        &mut self,
-        left: usize,
-        top: usize,
-        width: usize,
-        height: usize,
-        strong: bool,
-    ) {
-        let (panel_r, panel_g, panel_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::Widget);
-        let (outline_r, outline_g, outline_b) =
-            self.active_accent_surface(crate::ui::skin::AccentSurface::WindowOutline);
-        self.glass_panel_with_palette(
-            left,
-            top,
-            width,
-            height,
-            strong,
-            (panel_r, panel_g, panel_b),
-            (outline_r, outline_g, outline_b),
-        );
-    }
-
-    // ------------------------=
-    // FUNC: glass_panel_with_palette
-    // DESC: Draws the shared layered glass recipe using one caller-selected surface and edge palette.
-    // ------------------=
-    fn glass_panel_with_palette(
-        &mut self,
-        left: usize,
-        top: usize,
-        width: usize,
-        height: usize,
-        strong: bool,
-        panel: (u8, u8, u8),
-        outline: (u8, u8, u8),
-    ) {
-        let radius = (width.min(height) / 12).clamp(8, 18);
-        let (opacity, blur) = self.active_background_effects();
-        if blur >= 2 && opacity < 100 && !self.fast_motion_frame {
-            self.blur_framebuffer_region(left, top, width, height, blur as usize);
-        }
-        if self.skin_visual_mode() == 1 {
-            self.fill_rounded_rect_alpha(
-                left,
-                top,
-                width,
-                height,
-                radius,
-                248,
-                251,
-                255,
-                ((if strong { 244u16 } else { 226u16 }) * u16::from(opacity) / 100) as u8,
-            );
-            self.outline_rounded_rect(left, top, width, height, radius, 122, 145, 166);
-            return;
-        }
-        if self.skin_visual_mode() == 2 {
-            self.fill_rounded_rect_alpha(
-                left,
-                top,
-                width,
-                height,
-                radius,
-                8,
-                8,
-                8,
-                (255u16 * u16::from(opacity) / 100) as u8,
-            );
-            self.outline_rounded_rect(left, top, width, height, radius, 255, 255, 255);
-            return;
-        }
-        for inset in (1..=5usize).rev() {
-            let (shadow_red, shadow_green, shadow_blue, shadow_alpha) = if strong {
-                (5, 29, 42, 12)
-            } else {
-                (0, 4, 10, 18)
-            };
-            self.fill_rounded_rect_alpha(
-                left.saturating_add(inset * 2),
-                top.saturating_add(inset * 2),
-                width,
-                height,
-                radius,
-                shadow_red,
-                shadow_green,
-                shadow_blue,
-                shadow_alpha,
-            );
-        }
-        self.fill_rounded_rect_alpha(
-            left,
-            top,
-            width,
-            height,
-            radius,
-            panel.0,
-            panel.1,
-            panel.2,
-            ((if strong { 232u16 } else { 204u16 }) * u16::from(opacity) / 100) as u8,
-        );
-        self.outline_rounded_rect(
-            left, top, width, height, radius, outline.0, outline.1, outline.2,
-        );
-        if width > 4 && height > 4 {
-            let divisor = if strong { 3 } else { 5 };
-            let inner_edge = (
-                outline.0 / divisor,
-                outline.1 / divisor,
-                outline.2 / divisor,
-            );
-            self.outline_rounded_rect(
-                left + 2,
-                top + 2,
-                width - 4,
-                height - 4,
-                radius.saturating_sub(2),
-                inner_edge.0,
-                inner_edge.1,
-                inner_edge.2,
-            );
-        }
-    }
 
     // ------------------------=
     // FUNC: desktop_icon
@@ -10714,6 +10596,22 @@ pub fn system_ui_present(
                 && crate::ui::redraw::desktop_clock_requires_bounded_redraw(screen, clock_changed)
             {
                 console.display.system_top_bar_clock(clock);
+            }
+            if matches!(screen, 2 | 4 | 8 | 9 | 10) {
+                if let Some(damage) = crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height) {
+                    if !full_surface_redrawn {
+                        console.display.set_render_clip(damage.x.max(0) as usize, damage.y.max(0) as usize, damage.width as usize, damage.height as usize);
+                        console.display.system_ui_frame(screen, step, input, masked, focus, validation_error,
+                            window_x, window_y, window_width, window_height, window_visible, window_maximized,
+                            home_location, selected_item, dragging_item, note_location, desktop_items,
+                            desktop_item_positions, clock, settings_window, menu_kind, output_lines, output_lengths,
+                            output_count, app_window_x, app_window_y, app_window_width, app_window_height,
+                            app_window_maximized, editor_saved, editor_input, command_input, editor_window,
+                            command_window, task_manager_window, editor_scroll_row, editor_dialog,
+                            editor_dialog_input, editor_dialog_focus);
+                        console.display.clear_render_clip();
+                    }
+                }
             }
             console.cursor_x = cursor_x;
             console.cursor_y = cursor_y;

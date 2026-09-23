@@ -1215,6 +1215,15 @@ impl FileNavigatorWorkspace {
     }
 
     // ------------------------=
+    // FUNC: restore
+    // DESC: Restores exactly the selected minimized navigator, preserving its task and navigation state.
+    // ------------------=
+    pub fn restore(&mut self, index: usize) -> Option<FileNavigatorWindow> {
+        self.windows.get_mut(index)?.as_mut()?.visible = true;
+        self.raise(index)
+    }
+
+    // ------------------------=
     // FUNC: minimize_active
     // DESC: Hides the active navigator while retaining its location, selection, history, and task.
     // ------------------=

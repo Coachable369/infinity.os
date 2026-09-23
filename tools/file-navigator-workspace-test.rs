@@ -117,6 +117,16 @@ fn main() {
     assert_eq!(workspace.window(second).unwrap().state.selected_index, 3);
     assert_eq!(workspace.window(second).unwrap().task_handle, 42);
     assert_eq!(workspace.restore_minimized(), None);
+    workspace.minimize_active();
+    workspace.minimize_active();
+    assert_eq!(workspace.active_index(), None);
+    let exact = workspace.restore(second).expect("restore exact minimized slot");
+    assert_eq!(exact.task_handle,42);
+    assert_eq!(exact.state.selected_index,3);
+    assert!(!workspace.window(first).unwrap().visible);
+    assert!(workspace.restore(usize::MAX).is_none());
+    workspace.restore(first).expect("restore other slot");
+    workspace.raise(second);
     assert_eq!(workspace.active_index(), Some(second));
     let raised_first = workspace.raise(first).expect("raise first");
     assert_eq!(

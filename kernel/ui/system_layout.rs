@@ -561,7 +561,7 @@ impl SystemLayout {
     // DESC: Returns the shared right-widget and dock bounds used to preserve desktop chrome during window motion.
     // ------------------=
     pub(crate) fn desktop_foreground_geometry(self) -> DesktopForegroundGeometry {
-        let widget_left = self.width * 76 / 100;
+        let widget_left = self.width * 68 / 100;
         let widget_width = self.width * 22 / 100;
         let overview_top = self.height * 7 / 100;
         let overview_height = (330 * self.scale).min(self.height * 30 / 100);

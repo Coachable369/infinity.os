@@ -8,6 +8,9 @@ mod primitives;
 #[path = "../kernel/ui/mod.rs"]
 mod ui;
 use std::time::Instant;
+#[cfg(test)]
+#[path = "minimized-shelf-render-tests.rs"]
+mod minimized_shelf_fixture;
 #[path = "../kernel/core/bootstrap/soft_stroke.rs"]
 mod stroke_coverage;
 
