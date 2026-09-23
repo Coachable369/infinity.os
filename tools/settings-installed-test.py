@@ -82,7 +82,7 @@ def main():
     work.mkdir(exist_ok=False)
     artifacts = work / "artifacts"
     artifacts.mkdir()
-    for source, name in [("build/infinity-x86_64.iso", "installer.iso"), ("build/x86_64/kernel.elf", "kernel.elf"), ("build/x86_64/installed-kernel.elf", "installed-kernel.elf")]:
+    for source, name in [("builds/InfinityOS-x86_64.iso", "installer.iso"), ("build/x86_64/kernel.elf", "kernel.elf"), ("build/x86_64/installed-kernel.elf", "installed-kernel.elf")]:
         shutil.copyfile(ROOT / source, artifacts / name)
     guest = base.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-x86_64-code.fd")
     try:

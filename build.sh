@@ -8,6 +8,7 @@ cd "$project_root"
 
 # Catch provisioning contract failures before expensive builds or cleanup.
 sh tools/select-install-iso-test.sh
+python3 tools/installer-output-test.py
 python3 tools/re-provision-tpm-test.py
 make install-boot-handoff-test
 
@@ -28,7 +29,7 @@ else
     echo "==> Skipping legacy BIOS x86 (set INFINITY_BUILD_LEGACY_X86=1 to attempt it)"
 fi
 make x86_64
-make aarch64
+make aarch64-bootstrap
 make installer-capacity-test
 make installer-entropy-test
 make editor-window-test
@@ -65,16 +66,7 @@ make input-regression-test
 make app-launcher-interaction-test
 sh tools/build-hermes.sh
 
-mkdir -p "$output_dir"
-find "$output_dir" -maxdepth 1 -type f -name 'InfinityOS-*.iso' -delete
-find "$output_dir" -maxdepth 1 -type f -name 'SHA256SUMS' -delete
-if [ "$legacy_x86_built" = true ]; then
-    cp build/infinity-x86.iso "$output_dir/InfinityOS-x86.iso"
-fi
-cp build/infinity-x86_64.iso "$output_dir/InfinityOS-x86_64.iso"
-cp build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso "$output_dir/InfinityOS-aarch64.iso"
-# Assert binary parity: never publish the legacy ARM image under the release name.
-cmp build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso "$output_dir/InfinityOS-aarch64.iso"
+# Build targets publish directly into builds; there is no second installer copy.
 cp tools/configure-virtualbox-arm64.sh "$output_dir/configure-virtualbox-arm64.sh"
 cp tools/start-virtualbox-arm64.sh "$output_dir/start-virtualbox-arm64.sh"
 chmod +x "$output_dir/configure-virtualbox-arm64.sh" "$output_dir/start-virtualbox-arm64.sh"

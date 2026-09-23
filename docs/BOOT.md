@@ -11,7 +11,7 @@ disk; core boot remains deliberately independent of that larger profile.
 ## x86_64 — implemented and QEMU-tested
 
 Build with `make x86_64`; boot-test with `make test-x86_64`. The resulting
-`build/infinity-x86_64.iso` is also the VMware UEFI installation/boot medium.
+`builds/InfinityOS-x86_64.iso` is also the VMware UEFI installation/boot medium.
 
 1. UEFI discovers `EFI/BOOT/BOOTX64.EFI` in the ISO's El Torito FAT image.
 2. The InfinityOS loader initializes COM1 and scans bounded GPT entries for a
@@ -74,7 +74,12 @@ Build with `make x86`; test with `make test-x86`.
 ## AArch64 — implemented and QEMU-tested
 
 Build with `make aarch64`; boot-test with `make test-aarch64`. The resulting
-`build/infinity-aarch64.iso` is the native VirtualBox/VMware Fusion medium for
+`builds/InfinityOS-aarch64.iso` is the model-enabled release installer. All
+installer output and provisioning input is restricted to `builds/`; `build/`
+contains only intermediate artifacts. The `-bootstrap-test` and `-qemu-test`
+images are test-only variants, never release fallbacks.
+
+`builds/InfinityOS-aarch64-bootstrap-test.iso` is the native boot-test medium for
 Apple Silicon. AArch64 UEFI loads `EFI/BOOT/BOOTAA64.EFI`; the common bounded loader
 then validates and places the AArch64 ELF kernel at `0x10000000`, within
 VirtualBox's ARMv8 RAM window. The automated QEMU profile packages the same

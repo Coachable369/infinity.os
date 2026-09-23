@@ -110,7 +110,7 @@ def main():
     artifacts = work / "artifacts"
     if not resume:
         artifacts.mkdir()
-        for source, name in [("build/infinity-x86_64.iso", "installer.iso"), ("build/x86_64/kernel.elf", "kernel.elf"), ("build/x86_64/installed-kernel.elf", "installed-kernel.elf")]:
+        for source, name in [("builds/InfinityOS-x86_64.iso", "installer.iso"), ("build/x86_64/kernel.elf", "kernel.elf"), ("build/x86_64/installed-kernel.elf", "installed-kernel.elf")]:
             shutil.copyfile(ROOT / source, artifacts / name)
     for arch, machine in (("x86_64", 62), ("aarch64", 183)):
         for kind in ("kernel.elf", "installed-kernel.elf"):

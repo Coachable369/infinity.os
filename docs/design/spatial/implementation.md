@@ -86,7 +86,7 @@ model packaging and byte-identical installed-kernel payload parity.
 ## Release and installed acceptance
 
 Build command: **`sh build.sh`**. ARM release: `builds/InfinityOS-aarch64.iso`.
-Provisioning model image: `build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso`
+Provisioning model image: `builds/InfinityOS-aarch64.iso`
 (legacy filename: Hermes + Ministral, not Qwen). The build checks equality of those
 ARM copies.
 

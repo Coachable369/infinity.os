@@ -12,7 +12,7 @@ import tempfile
 def main():
     root = Path(__file__).resolve().parent.parent
     with tempfile.TemporaryDirectory(prefix="infinity-tpm-provision-") as directory:
-        work = Path(directory)
+        work = Path(directory).resolve()
         binary, state, vm = (work / name for name in ("bin", "state", "vm"))
         for path in (binary, state, vm):
             path.mkdir()
@@ -20,7 +20,12 @@ def main():
             target = binary / name
             shutil.copyfile(root / "tools/test-fixtures/re-provision" / name, target)
             target.chmod(0o700)
-        iso = work / "test.iso"
+        # Execute an isolated repository with media in its canonical builds path.
+        (work / "tools").mkdir()
+        (work / "builds").mkdir()
+        shutil.copyfile(root / "re-provision.sh", work / "re-provision.sh")
+        shutil.copyfile(root / "tools/select-install-iso.sh", work / "tools/select-install-iso.sh")
+        iso = work / "builds/test.iso"
         # The VirtualBox/file fixtures model ISO structure; the real selector
         # still requires a nonempty artifact before any destructive operation.
         iso.write_bytes(b"infinity-test-iso\x00")
@@ -29,7 +34,7 @@ def main():
             TEST_MEDIUM_MODE="orphan", INFINITY_VBOXMANAGE=str(binary / "VBoxManage"))
         for key in ("INFINITY_VM_MEMORY_MB", "INFINITY_VM_CPU_COUNT", "INFINITY_VM_DISK_SIZE_MB"):
             environment.pop(key, None)
-        result = subprocess.run([str(root / "re-provision.sh"), "infinityos-4", str(iso)],
+        result = subprocess.run(["sh", str(work / "re-provision.sh"), "infinityos-4", str(iso)],
             env=environment, capture_output=True, timeout=20)
         assert result.returncode == 0, result.stderr.decode(errors="replace")
         assert int((state / "tpm-version").read_text()) == 200

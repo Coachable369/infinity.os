@@ -6,7 +6,12 @@ ministral=model-cache/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
 hermes=${INFINITY_HERMES_MODEL:-}
 if test -z "$hermes"; then exec sh tools/build-hermes.sh; fi
 test -f "$hermes"
-mkdir -p model-cache build/qwen build/hermes
+mkdir -p model-cache build/qwen build/hermes builds
+installer_output=builds/InfinityOS-aarch64.iso
+if test -n "${QWEN_ISO_OUTPUT:-}" && test "$QWEN_ISO_OUTPUT" != "$installer_output"; then
+    echo 'ERROR: installer output is fixed at builds/InfinityOS-aarch64.iso' >&2
+    exit 1
+fi
 # A fresh staging tree cannot inherit removed model shards from an older build.
 payload_build=$(mktemp -d build/hermes/payload.XXXXXX)
 # This private staging tree is disposable; keep published ISOs and model-cache
@@ -34,6 +39,8 @@ cp docs/licenses/Ministral-Apache-2.0.txt ${payload_build}/installed/EFI/INFINIT
 mkfile -n "$esp_size" ${payload_build}/installed-esp.img
 mformat -F -i ${payload_build}/installed-esp.img -v INFINITYEFI ::
 mcopy -i ${payload_build}/installed-esp.img -s ${payload_build}/installed/EFI ::
+# The packed ESP owns these bytes now; release the disposable duplicate tree.
+rm -r -- "${payload_build}/installed"
 build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.img build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/PAYLOAD build/qwen/payload-manifest.rs
 # Behavioral fresh-install parity: the reassembled kernel payload must be byte
 # identical to the installed kernel, including native UI and transport changes.
@@ -44,8 +51,11 @@ cp build/aarch64/BOOTAA64.EFI ${payload_build}/live/EFI/BOOT/
 mkfile -n "$iso_size" ${payload_build}/iso/efi.img
 mformat -F -i ${payload_build}/iso/efi.img -v INFINITYOS ::
 mcopy -i ${payload_build}/iso/efi.img -s ${payload_build}/live/EFI ::
-xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o "${QWEN_ISO_OUTPUT:-build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso}" ${payload_build}/iso
 CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-install-parity -- ${payload_build}/installed-esp.img --ministral
 if test -n "$hermes"; then
     CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-install-parity -- ${payload_build}/installed-esp.img
 fi
+# Publish only after model and installed-kernel parity have passed. Keep a failed
+# image out of the canonical filename used by provisioning.
+xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o builds/InfinityOS-aarch64.iso.partial ${payload_build}/iso
+mv builds/InfinityOS-aarch64.iso.partial "$installer_output"

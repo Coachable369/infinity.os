@@ -60,7 +60,7 @@ def main():
     else:
         work.mkdir(parents=True,exist_ok=False)
         artifacts.mkdir()
-        for source,name in [("build/infinity-x86_64.iso","installer.iso"),("build/x86_64/kernel.elf","kernel.elf"),("build/x86_64/installed-kernel.elf","installed-kernel.elf")]:
+        for source,name in [("builds/InfinityOS-x86_64.iso","installer.iso"),("build/x86_64/kernel.elf","kernel.elf"),("build/x86_64/installed-kernel.elf","installed-kernel.elf")]:
             shutil.copyfile(ROOT/source, artifacts/name)
     baseline=work/"curl-body.bin"
     reference=subprocess.run(["curl","--http1.1","--ipv4","--noproxy","*","--max-time","30","--silent","--show-error","--output",str(baseline),"--write-out","%{http_code}",args.url],capture_output=True)

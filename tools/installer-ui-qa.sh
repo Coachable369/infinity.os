@@ -43,7 +43,7 @@ capture_frame() {
 }
 
 cd "$project_root"
-test -s build/infinity-x86_64.iso
+test -s builds/InfinityOS-x86_64.iso
 mkdir -p builds
 dd if=/dev/zero of="$disk" bs=1M count=0 seek=16384 status=none
 : > "$log"
@@ -51,7 +51,7 @@ dd if=/dev/zero of="$disk" bs=1M count=0 seek=16384 status=none
 qemu-system-x86_64 -machine pc -m 4096M \
     -drive if=pflash,format=raw,readonly=on,file="$firmware" \
     -drive if=ide,index=0,format=raw,file="$disk" \
-    -drive if=ide,index=2,media=cdrom,readonly=on,file=build/infinity-x86_64.iso \
+    -drive if=ide,index=2,media=cdrom,readonly=on,file=builds/InfinityOS-x86_64.iso \
     -boot order=d -serial file:"$log" -display none -no-reboot \
     -monitor unix:"$monitor",server=on,wait=off &
 qemu_pid=$!

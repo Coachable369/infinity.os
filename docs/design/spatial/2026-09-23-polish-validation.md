@@ -34,8 +34,9 @@ clicking a world changes the installed desktop.
 Rebuilt the ARM64 model-enabled installer with `sh tools/build-hermes.sh` and
 the x86_64 installer with `make x86_64`. Published both to `builds/` and verified
 byte identity against their build outputs. `builds/SHA256SUMS` identifies these
-artifacts. The default re-provision path also uses the newly rebuilt ARM64 ISO
-under `build/hermes/`.
+artifacts. Installer paths were subsequently consolidated: default provisioning
+and builds now use `builds/InfinityOS-aarch64.iso` directly. The old duplicate
+under `build/hermes/` was removed after binary comparison.
 
 The ARM64 build passed installed-kernel payload byte parity and both Hermes and
 Ministral installed-payload harnesses. The first packaging attempt exhausted disk

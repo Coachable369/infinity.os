@@ -32,7 +32,7 @@ September 22 build evidence: the full 12-test HTTP library suite passed, ARM64 a
 x86_64 installed kernels linked, and `sh tools/build-hermes.sh` completed including
 Hermes/Ministral binary payload checks. Reassembling the ARM64 installer kernel
 shards compares byte-for-byte equal to the installed kernel. The default
-reprovision ISO at `build/hermes/InfinityOS-Hermes-Qwen-aarch64.iso` is updated.
+reprovision ISO at `builds/InfinityOS-aarch64.iso` is updated.
 The running VirtualBox guest remains unmodified and at login; no new installed
 network exchange is claimed. The ISO's legacy filename does not change its model set.
 

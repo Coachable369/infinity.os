@@ -89,7 +89,7 @@ trap cleanup EXIT INT TERM
 qemu-system-x86_64 -machine pc -m 4096M \
     -drive if=pflash,format=raw,readonly=on,file="$firmware" \
     -drive if=ide,index=0,format=raw,file="$disk" \
-    -drive if=ide,index=2,media=cdrom,readonly=on,file=build/infinity-x86_64.iso \
+    -drive if=ide,index=2,media=cdrom,readonly=on,file=builds/InfinityOS-x86_64.iso \
     -boot order=d -serial file:"$install_log" -display none -no-reboot \
     -monitor unix:"$monitor",server=on,wait=off &
 qemu_pid=$!
