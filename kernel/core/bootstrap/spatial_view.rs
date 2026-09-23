@@ -502,13 +502,20 @@ pub fn present(
                 }
             }
             let p = rect(70, if shelf { 588 } else { 98 }, 0, 0);
-            d.ui_text_strong(p.0, p.1, if switcher { b"HOLOGRAPHIC DESKTOP" } else { b"SPATIAL DESKTOP" }, 200, 236, 255, 1);
+            let surface_title: &[u8] = if switcher {
+                b"HOLOGRAPHIC DESKTOP"
+            } else if tab == 1 {
+                b"WORLD SHIFT"
+            } else {
+                b"SPATIAL DESKTOP"
+            };
+            d.ui_text_strong(p.0, p.1, surface_title, 200, 236, 255, 1);
             let p = rect(897, if shelf { 585 } else { 95 }, 44, 38);
             d.window_control(p.0 + (p.2.saturating_sub(p.3)) / 2, p.1, p.3, 2, false);
             for (i, label) in TABS.iter().enumerate() {
-                if switcher { break; }
+                if switcher || tab == 1 { break; }
                 let p = rect(70 + i * 176, if shelf { 635 } else { 150 }, 164, 45);
-                d.polished_button(p.0, p.1, p.2, p.3, label, tab == i, false);
+                d.polished_button(p.0, p.1, p.2, p.3, label, tab == i + 2, false);
             }
             if !shelf {
                 let p = rect(80, 212, 840, 30);

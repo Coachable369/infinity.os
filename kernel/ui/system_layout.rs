@@ -28,6 +28,7 @@ pub const SETTINGS_NETWORK_SECTION: usize = 6;
 pub const SETTINGS_NODE_SECTION: usize = 7;
 pub const SETTINGS_DASHBOARD_CONTENT_HEIGHT: usize = 670;
 pub const SETTINGS_NODE_CONTENT_HEIGHT: usize = 1110;
+pub const SETTINGS_WORLD_SHIFT_HERO_HEIGHT: usize = 188;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OnboardingTarget {
@@ -276,6 +277,7 @@ pub enum SystemMenuTarget {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SettingsTarget {
     Section(usize),
+    WorldShiftHero,
     ContentRow(usize),
     ExpandedAction,
     ScrollPage(bool),
@@ -2119,6 +2121,9 @@ impl SystemLayout {
             total_content_height = last_bottom.saturating_sub(viewport_top)
                 .saturating_add(detail).div_ceil(self.scale.max(1));
         }
+        if section == 1 {
+            total_content_height = total_content_height
+                .saturating_add(SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14);
         }
         let visible_logical_height = viewport_height / self.scale.max(1);
         let maximum_scroll = total_content_height.saturating_sub(visible_logical_height);
@@ -2179,6 +2184,22 @@ impl SystemLayout {
     }
 
     // ------------------------=
+    // FUNC: settings_world_shift_hero_geometry
+    // DESC: Places the full-width World Shift gateway at the top of the Themes and Skins scroll content.
+    // ------------------=
+    pub fn settings_world_shift_hero_geometry(self, state: SettingsWindowState) -> Rect {
+        let geometry = self.settings_window_geometry_for_section(state, 1);
+        Rect {
+            x: geometry.viewport.x,
+            y: geometry.viewport.y.saturating_sub(
+                (state.scroll_offset.min(geometry.maximum_scroll) * self.scale) as i32,
+            ),
+            width: geometry.viewport.width,
+            height: (SETTINGS_WORLD_SHIFT_HERO_HEIGHT * self.scale) as u32,
+        }
+    }
+
+    // ------------------------=
     // FUNC: settings_row_geometry
     // DESC: Returns one summary row and its inline detail well after applying the shared scroll offset.
     // ------------------=
@@ -2225,12 +2246,18 @@ impl SystemLayout {
                     .map(|element| element.frame.height as usize * outer.height as usize
                         / console.frame.height.max(1) as usize)
                     .unwrap_or(0);
-                let detail_height = state.expanded_row.map(|expanded|
-                    detail_height.max(settings_detail_height(expanded) * self.scale)
-                ).unwrap_or(0);
-                let prior_detail = usize::from(state.expanded_row.is_some_and(|expanded| expanded < index))
-                    * (detail_height + 8 * self.scale);
-                let summary_top = map_y(row.frame.y) as i32 + prior_detail as i32
+                let detail_height = state
+                    .expanded_row
+                    .map(|expanded| {
+                        detail_height.max(settings_detail_height(expanded) * self.scale)
+                    })
+                    .unwrap_or(0);
+                let prior_detail =
+                    usize::from(state.expanded_row.is_some_and(|expanded| expanded < index))
+                        * (detail_height + 8 * self.scale);
+                let hero_offset = usize::from(section == 1)
+                    * (SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14) * self.scale;
+                let summary_top = map_y(row.frame.y) as i32 + hero_offset as i32 + prior_detail as i32
                     - (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
                 let mut summary = rect(
                     map_x(row.frame.x), summary_top.max(0) as usize,
@@ -2445,6 +2472,9 @@ impl SystemLayout {
         }
         if !geometry.viewport.contains(point) {
             return None;
+        }
+        if section == 1 && self.settings_world_shift_hero_geometry(state).contains(point) {
+            return Some(SettingsTarget::WorldShiftHero);
         }
         for index in 0..state.row_count.clamp(1, 8) {
             let row = self.settings_row_geometry_for_section(state, index, section);

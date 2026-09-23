@@ -4607,6 +4607,8 @@ impl ConsoleRuntime {
             LauncherAction::TextEditor => self.open_text_editor(),
             LauncherAction::CommandWindow => self.open_command_window(),
             LauncherAction::TaskManager => self.open_task_manager(),
+            LauncherAction::HolographicDesktop => self.holographic_open(),
+            LauncherAction::WorldShift => self.worldshift_open(),
         }
     }
 
@@ -8310,6 +8312,10 @@ impl ConsoleRuntime {
                 self.system_focus,
             ) {
                 match target {
+                    SettingsTarget::WorldShiftHero if clicked => {
+                        self.worldshift_open();
+                        return;
+                    }
                     SettingsTarget::Section(index) if clicked => {
                         self.cancel_node_pairing_input();
                         self.system_focus = index;
@@ -8389,6 +8395,7 @@ impl ConsoleRuntime {
                         let _ = self.checkpoint_desktop_layout();
                     }
                     SettingsTarget::Section(_)
+                    | SettingsTarget::WorldShiftHero
                     | SettingsTarget::ContentRow(_)
                     | SettingsTarget::ExpandedAction
                     | SettingsTarget::ScrollPage(_)

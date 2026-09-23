@@ -5,6 +5,14 @@ mod spatial;
 use spatial::*;
 #[test]
 // ------------------------=
+// FUNC: spatial_workspace_excludes_independent_surfaces
+// DESC: Ensures Holographic Desktop and World Shift are not exposed as Spatial Desktop tabs.
+// ------------------=
+fn spatial_workspace_excludes_independent_surfaces() {
+    assert_eq!(TABS, [b"Gravity Wall".as_slice(), b"Matter Shelf", b"Constellations"]);
+}
+#[test]
+// ------------------------=
 // FUNC: editor_save_buttons_are_explicit_and_safe
 // DESC: Exercises shared button geometry and excludes add-another for category and delete confirmations.
 // ------------------=

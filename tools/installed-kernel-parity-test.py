@@ -16,6 +16,8 @@ def main():
         for scene in range(4):
             artwork = (root / 'assets' / 'desktop' / f'spatial-world-{scene}.bmp').read_bytes()
             assert installed.find(artwork) >= 0, (architecture, scene, 'missing installed world artwork')
+        hero = (root / 'assets' / 'desktop' / 'worldshift-hero-v1.bmp').read_bytes()
+        assert installed.find(hero) >= 0, (architecture, 'missing installed World Shift hero')
         with (root / 'build' / architecture / 'kernel.elf').open('rb') as stream:
             with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as live:
                 assert live.find(installed) >= 0, architecture

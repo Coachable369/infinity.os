@@ -403,13 +403,27 @@ impl ConsoleRuntime {
     // DESC: Opens the native overlay after loading only this authenticated user's checkpoint.
     // ------------------=
     pub(super) fn spatial_open(&mut self) {
-        self.spatial_open_surface(false);
+        self.spatial_open_surface(false, 2);
+    }
+    // ------------------------=
+    // FUNC: holographic_open
+    // DESC: Opens Holographic Desktop as an independent app-switching surface.
+    // ------------------=
+    pub(super) fn holographic_open(&mut self) {
+        self.spatial_open_surface(true, 0);
+    }
+    // ------------------------=
+    // FUNC: worldshift_open
+    // DESC: Opens World Shift as an independent environment-selection interface.
+    // ------------------=
+    pub(super) fn worldshift_open(&mut self) {
+        self.spatial_open_surface(false, 1);
     }
     // ------------------------=
     // FUNC: spatial_open_surface
     // DESC: Opens either the independent app switcher or the configuration workspace.
     // ------------------=
-    fn spatial_open_surface(&mut self, switcher: bool) {
+    fn spatial_open_surface(&mut self, switcher: bool, tab: usize) {
         if self.current_session.is_zero() {
             return;
         }
@@ -448,14 +462,17 @@ impl ConsoleRuntime {
         }
         self.checkpoint_active_file_navigator();
         self.spatial.switcher = switcher;
-        if switcher { self.spatial.tab = 0; self.spatial.focus = 0; }
+        self.spatial.tab = tab.min(4);
+        self.spatial.focus = 0;
         self.spatial_previews();
         self.redraw();
         self.spatial.open = true;
         self.spatial.notice = if switcher {
             b"Choose a window. Inspect its live surface, then return to work."
+        } else if tab == 1 {
+            b"Choose a world. Your windows, appearance, and locations travel with you."
         } else {
-            b"Configure your spatial workspace. Command + Tab opens app switching."
+            b"Shape collections, matter, and relationships in your spatial workspace."
         };
         self.spatial.closing = false;
         self.spatial.carousel_from = None;
@@ -709,7 +726,7 @@ impl ConsoleRuntime {
         }
         if !self.spatial.open || !self.spatial.switcher {
             if self.spatial.open { self.spatial_close(); }
-            self.spatial_open_surface(true);
+            self.spatial_open_surface(true, 0);
             self.spatial.motion = Motion::settled(255);
             self.spatial_present();
         }
@@ -851,7 +868,8 @@ impl ConsoleRuntime {
             }
             ConsoleKey::Tab(back) => {
                 if self.spatial.switcher { self.spatial_cycle(back); return; }
-                self.spatial.tab = (self.spatial.tab + if back { 4 } else { 1 }) % 5;
+                if self.spatial.tab == 1 { return; }
+                self.spatial.tab = 2 + (self.spatial.tab - 2 + if back { 2 } else { 1 }) % 3;
                 self.spatial.focus = 0;
                 self.spatial.link = None;
                 self.spatial_reveal();
@@ -1159,10 +1177,10 @@ impl ConsoleRuntime {
                 return;
             }
         }
-        if !self.spatial.switcher && (tabs_top..tabs_top + 45).contains(&y) {
-            for i in 0..5 {
+        if !self.spatial.switcher && self.spatial.tab >= 2 && (tabs_top..tabs_top + 45).contains(&y) {
+            for i in 0..3 {
                 if (70 + i * 176..234 + i * 176).contains(&x) {
-                    self.spatial.tab = i as usize;
+                    self.spatial.tab = i as usize + 2;
                     self.spatial.focus = 0;
                     self.spatial.link = None;
                     self.spatial_reveal();

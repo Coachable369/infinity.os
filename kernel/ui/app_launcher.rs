@@ -17,7 +17,10 @@ pub mod shortcuts;
 const LAUNCHER_DRAG_THRESHOLD: i32 = 8;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-static LAUNCHER_ORDER: AtomicU64 = AtomicU64::new(default_launcher_order());
+static LAUNCHER_ORDER: [AtomicU64; 2] = [
+    AtomicU64::new(default_launcher_order(0)),
+    AtomicU64::new(default_launcher_order(1)),
+];
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 static LAUNCHER_SCROLL: AtomicI32 = AtomicI32::new(0);
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -74,6 +77,8 @@ pub enum LauncherAction {
     TextEditor,
     CommandWindow,
     TaskManager,
+    HolographicDesktop,
+    WorldShift,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -127,7 +132,7 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
         action: DockAction::Appearance,
     },
     DockEntry {
-        icon_kind: 8,
+        icon_kind: 9,
         action: DockAction::SpatialDesktop,
     },
     DockEntry {
@@ -136,7 +141,7 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
     },
 ];
 
-pub const LAUNCHER_APPS: [LauncherEntry; 15] = [
+pub const LAUNCHER_APPS: [LauncherEntry; 17] = [
     LauncherEntry {
         label: b"File Navigator",
         icon_role: 4,
@@ -212,6 +217,16 @@ pub const LAUNCHER_APPS: [LauncherEntry; 15] = [
         icon_role: 32,
         action: LauncherAction::Settings(7),
     },
+    LauncherEntry {
+        label: b"Holographic Desktop",
+        icon_role: 58,
+        action: LauncherAction::HolographicDesktop,
+    },
+    LauncherEntry {
+        label: b"World Shift",
+        icon_role: 59,
+        action: LauncherAction::WorldShift,
+    },
 ];
 
 pub const LAUNCHER_CATEGORIES: [LauncherEntry; 5] = [
@@ -245,14 +260,18 @@ pub const LAUNCHER_CATEGORIES: [LauncherEntry; 5] = [
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 // ------------------------=
 // FUNC: default_launcher_order
-// DESC: Packs the deterministic fresh-install application order into four-bit slots.
+// DESC: Packs one half of the deterministic fresh-install application order into five-bit slots.
 // ------------------=
-const fn default_launcher_order() -> u64 {
+const fn default_launcher_order(part: usize) -> u64 {
     let mut bits = 0u64;
-    let mut index = 0usize;
-    while index < LAUNCHER_APPS.len() {
-        bits |= (index as u64) << (index * 4);
-        index += 1;
+    let mut slot = 0usize;
+    while slot < 12 {
+        let index = part * 12 + slot;
+        if index >= LAUNCHER_APPS.len() {
+            break;
+        }
+        bits |= (index as u64) << (slot * 5);
+        slot += 1;
     }
     bits
 }
@@ -263,11 +282,12 @@ const fn default_launcher_order() -> u64 {
 // DESC: Expands the atomic packed application order for rendering and hit testing.
 // ------------------=
 fn decoded_launcher_order() -> [u8; LAUNCHER_APPS.len()] {
-    let bits = LAUNCHER_ORDER.load(Ordering::Relaxed);
     let mut order = [0u8; LAUNCHER_APPS.len()];
     let mut index = 0usize;
     while index < order.len() {
-        order[index] = ((bits >> (index * 4)) & 0x0f) as u8;
+        let part = index / 12;
+        let slot = index % 12;
+        order[index] = ((LAUNCHER_ORDER[part].load(Ordering::Relaxed) >> (slot * 5)) & 0x1f) as u8;
         index += 1;
     }
     order
@@ -279,13 +299,17 @@ fn decoded_launcher_order() -> [u8; LAUNCHER_APPS.len()] {
 // DESC: Packs and publishes a complete application order after a native drag operation.
 // ------------------=
 pub(crate) fn encode_launcher_order(order: &[u8; LAUNCHER_APPS.len()]) {
-    let mut bits = 0u64;
-    let mut index = 0usize;
-    while index < order.len() {
-        bits |= u64::from(order[index]) << (index * 4);
-        index += 1;
+    for part in 0..2 {
+        let mut bits = 0u64;
+        let mut slot = 0usize;
+        while slot < 12 {
+            let index = part * 12 + slot;
+            if index >= order.len() { break; }
+            bits |= u64::from(order[index] & 0x1f) << (slot * 5);
+            slot += 1;
+        }
+        LAUNCHER_ORDER[part].store(bits, Ordering::Relaxed);
     }
-    LAUNCHER_ORDER.store(bits, Ordering::Relaxed);
 }
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -499,7 +523,8 @@ pub fn launcher_state_hash() -> u64 {
 // ------------------=
 pub fn launcher_interaction_state_hash() -> u64 {
     let presentation = launcher_presentation();
-    LAUNCHER_ORDER.load(Ordering::Relaxed)
+    LAUNCHER_ORDER[0].load(Ordering::Relaxed)
+        ^ LAUNCHER_ORDER[1].load(Ordering::Relaxed).rotate_left(13)
         ^ (presentation.scroll as u64).rotate_left(7)
         ^ (presentation.drag_source.unwrap_or(0xff) as u64).rotate_left(27)
         ^ (presentation.drag_target.unwrap_or(0xff) as u64).rotate_left(35)
@@ -548,7 +573,8 @@ pub(crate) fn launcher_visible_app_id(query: &[u8], visible_index: usize) -> Opt
 // DESC: Restores the deterministic fresh-install order and clears transient launcher positioning.
 // ------------------=
 pub fn launcher_restore_default_order() {
-    LAUNCHER_ORDER.store(default_launcher_order(), Ordering::Relaxed);
+    LAUNCHER_ORDER[0].store(default_launcher_order(0), Ordering::Relaxed);
+    LAUNCHER_ORDER[1].store(default_launcher_order(1), Ordering::Relaxed);
     LAUNCHER_SCROLL.store(0, Ordering::Relaxed);
     LAUNCHER_SCROLL_TARGET.store(0, Ordering::Relaxed);
     LAUNCHER_TRANSITION.store(255, Ordering::Relaxed);

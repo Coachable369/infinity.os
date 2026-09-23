@@ -442,7 +442,15 @@ fn app_launcher_behavior_test() {
     assert_eq!(DESKTOP_DOCK_ENTRIES[0].action, DockAction::Launcher);
     assert_eq!(DESKTOP_DOCK_ENTRIES[1].action, DockAction::Files);
     assert_eq!(DESKTOP_DOCK_ENTRIES[6].action, DockAction::SpatialDesktop);
-    assert_eq!(DESKTOP_DOCK_ENTRIES[6].icon_kind, 8);
+    assert_eq!(DESKTOP_DOCK_ENTRIES[6].icon_kind, 9);
+    assert_eq!(
+        LAUNCHER_APPS.iter().filter(|entry| entry.action == LauncherAction::HolographicDesktop).count(),
+        1
+    );
+    assert_eq!(
+        LAUNCHER_APPS.iter().filter(|entry| entry.action == LauncherAction::WorldShift).count(),
+        1
+    );
     assert!(LAUNCHER_APPS
         .iter()
         .any(|entry| entry.action == LauncherAction::Settings(6)));
@@ -1364,6 +1372,13 @@ fn installed_system_hit_geometry_test() {
         Some(SettingsTarget::Section(0))
     );
     assert!(ui::system_layout::SETTINGS_SECTION_ICON_SIZE >= 24);
+    let world_shift_hero = square.settings_world_shift_hero_geometry(settings);
+    let world_shift_point = normalized_center(world_shift_hero);
+    assert_eq!(
+        square.settings_target_for_section(world_shift_point.0, world_shift_point.1, settings, 1),
+        Some(SettingsTarget::WorldShiftHero)
+    );
+    assert_eq!(world_shift_hero.width, square.settings_window_geometry_for_section(settings, 1).viewport.width);
     for index in 0..10 {
         let section = square.settings_section_geometry(settings, index);
         assert!(section.y >= settings_geometry.navigation.y);

@@ -1,7 +1,8 @@
 //! Launcher copies and pointer capture; only the UI thread publishes this state.
 use super::{LAUNCHER_APPS, LAUNCHER_NO_ITEM};
 
-pub const STATE_BYTES: usize = 84;
+pub const STATE_BYTES: usize = 94;
+const LEGACY_STATE_BYTES: usize = 84;
 const PATH_PREFIX: &[u8] = b"/home/default/.launcher-layout-";
 // ------------------------=
 // FUNC: user_path
@@ -18,7 +19,7 @@ pub fn user_path(user: [u8; 16]) -> [u8; PATH_PREFIX.len() + 32] {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
-    pub positions: [[u16; 2]; 15],
+    pub positions: [[u16; 2]; LAUNCHER_APPS.len()],
     pub drag: Option<(usize, i32, i32, bool)>,
     pub pointer: [i32; 2],
 }
@@ -27,7 +28,7 @@ impl State {
     // FUNC: stationary_positions
     // DESC: Omits the captured shortcut while its single moving presentation is visible.
     // ------------------=
-    pub fn stationary_positions(self) -> [[u16; 2]; 15] {
+    pub fn stationary_positions(self) -> [[u16; 2]; LAUNCHER_APPS.len()] {
         let mut positions = self.positions;
         if let Some((id, _, _, true)) = self.drag {
             positions[id] = [0, 0];
@@ -40,7 +41,7 @@ impl State {
     // ------------------=
     pub const fn new() -> Self {
         Self {
-            positions: [[0; 2]; 15],
+            positions: [[0; 2]; LAUNCHER_APPS.len()],
             drag: None,
             pointer: [0; 2],
         }
@@ -78,42 +79,48 @@ impl State {
     // FUNC: encode
     // DESC: Writes versioned app identities, normalized positions and launcher order with a checksum.
     // ------------------=
-    pub fn encode(self, order: [u8; 15]) -> [u8; STATE_BYTES] {
+    pub fn encode(self, order: [u8; LAUNCHER_APPS.len()]) -> [u8; STATE_BYTES] {
         let mut out = [0; STATE_BYTES];
-        out[..4].copy_from_slice(b"IAP1");
-        out[4..19].copy_from_slice(&order);
+        out[..4].copy_from_slice(b"IAP2");
+        out[4..4 + LAUNCHER_APPS.len()].copy_from_slice(&order);
+        let positions_at = 4 + LAUNCHER_APPS.len() + 1;
         for (i, p) in self.positions.iter().enumerate() {
-            out[20 + i * 4..22 + i * 4].copy_from_slice(&p[0].to_le_bytes());
-            out[22 + i * 4..24 + i * 4].copy_from_slice(&p[1].to_le_bytes());
+            out[positions_at + i * 4..positions_at + 2 + i * 4].copy_from_slice(&p[0].to_le_bytes());
+            out[positions_at + 2 + i * 4..positions_at + 4 + i * 4].copy_from_slice(&p[1].to_le_bytes());
         }
-        let sum = checksum(&out[..80]);
-        out[80..].copy_from_slice(&sum.to_le_bytes());
+        let checksum_at = STATE_BYTES - 4;
+        let sum = checksum(&out[..checksum_at]);
+        out[checksum_at..].copy_from_slice(&sum.to_le_bytes());
         out
     }
     // ------------------------=
     // FUNC: decode
     // DESC: Rejects corrupt coordinates or non-permutation orders before publishing any state.
     // ------------------=
-    pub fn decode(bytes: &[u8]) -> Option<(Self, [u8; 15])> {
-        if bytes.len() != STATE_BYTES
-            || &bytes[..4] != b"IAP1"
-            || checksum(&bytes[..80]) != u32::from_le_bytes(bytes[80..84].try_into().ok()?)
+    pub fn decode(bytes: &[u8]) -> Option<(Self, [u8; LAUNCHER_APPS.len()])> {
+        let legacy = bytes.len() == LEGACY_STATE_BYTES && &bytes[..4] == b"IAP1";
+        let current = bytes.len() == STATE_BYTES && &bytes[..4] == b"IAP2";
+        let checksum_at = bytes.len().checked_sub(4)?;
+        if (!legacy && !current)
+            || checksum(&bytes[..checksum_at]) != u32::from_le_bytes(bytes[checksum_at..].try_into().ok()?)
         {
             return None;
         }
-        let mut order = [0; 15];
-        order.copy_from_slice(&bytes[4..19]);
-        let mut seen = 0u16;
+        let stored_count = if legacy { 15 } else { LAUNCHER_APPS.len() };
+        let mut order = core::array::from_fn(|index| index as u8);
+        order[..stored_count].copy_from_slice(&bytes[4..4 + stored_count]);
+        let mut seen = 0u32;
         for id in order {
-            if id >= 15 || seen & (1 << id) != 0 {
+            if id as usize >= LAUNCHER_APPS.len() || seen & (1 << id) != 0 {
                 return None;
             }
             seen |= 1 << id;
         }
         let mut state = Self::new();
-        for (i, p) in state.positions.iter_mut().enumerate() {
-            p[0] = u16::from_le_bytes(bytes[20 + i * 4..22 + i * 4].try_into().ok()?);
-            p[1] = u16::from_le_bytes(bytes[22 + i * 4..24 + i * 4].try_into().ok()?);
+        let positions_at = 4 + stored_count + 1;
+        for (i, p) in state.positions.iter_mut().take(stored_count).enumerate() {
+            p[0] = u16::from_le_bytes(bytes[positions_at + i * 4..positions_at + 2 + i * 4].try_into().ok()?);
+            p[1] = u16::from_le_bytes(bytes[positions_at + 2 + i * 4..positions_at + 4 + i * 4].try_into().ok()?);
             if *p != [0, 0] && (!(35..=930).contains(&p[0]) || !(90..=840).contains(&p[1])) {
                 return None;
             }

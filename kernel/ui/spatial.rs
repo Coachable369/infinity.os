@@ -292,9 +292,7 @@ impl Preview {
         label: Label::empty(),
     };
 }
-pub const TABS: [&[u8]; 5] = [
-    b"Holographic",
-    b"Worldshift",
+pub const TABS: [&[u8]; 3] = [
     b"Gravity Wall",
     b"Matter Shelf",
     b"Constellations",

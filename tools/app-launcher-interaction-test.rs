@@ -78,7 +78,7 @@ fn main() {
     assert_eq!(app_launcher::launcher_visible_entry(b"", 1), Some(third));
     assert_eq!(app_launcher::launcher_visible_entry(b"", 2), Some(first));
     // Cross rows in both directions, then return horizontally left.
-    for (source, target) in [(2, 14), (14, 6), (6, 7), (7, 0)] {
+    for (source, target) in [(2, 16), (16, 14), (14, 6), (6, 7), (7, 0)] {
         let moved = app_launcher::launcher_visible_entry(b"", source).unwrap();
         app_launcher::launcher_begin_drag(source, 500, 500);
         app_launcher::launcher_update_drag(Some(target), 700, 700);
@@ -151,6 +151,17 @@ fn shortcut_drag_and_persistence() {
     invalid[0] = invalid[1];
     assert!(State::decode(&s.encode(invalid)).is_none());
     assert!(State::decode(&encoded[..83]).is_none());
+    let mut legacy = [0u8; 84];
+    legacy[..4].copy_from_slice(b"IAP1");
+    legacy[4..19].copy_from_slice(&order[..15]);
+    legacy[20..22].copy_from_slice(&400u16.to_le_bytes());
+    legacy[22..24].copy_from_slice(&500u16.to_le_bytes());
+    let legacy_sum = legacy_checksum(&legacy[..80]);
+    legacy[80..].copy_from_slice(&legacy_sum.to_le_bytes());
+    let (legacy_state, legacy_order) = State::decode(&legacy).unwrap();
+    assert_eq!(legacy_state.positions[0], [400, 500]);
+    assert_eq!(legacy_state.positions[15..], [[0, 0], [0, 0]]);
+    assert_eq!(legacy_order[15..], [15, 16]);
     shortcuts::publish(s);
     let _ = shortcuts::take_damage(1920, 1080);
     s.begin(6, 400, 500, true);
@@ -166,4 +177,14 @@ fn shortcut_drag_and_persistence() {
     assert!(shortcuts::take_damage(1920, 1080).is_none());
     shortcuts::publish(State::new());
     let _ = shortcuts::take_changed();
+}
+
+// ------------------------=
+// FUNC: legacy_checksum
+// DESC: Produces a genuine IAP1 record so migration is exercised through the public decoder.
+// ------------------=
+fn legacy_checksum(bytes: &[u8]) -> u32 {
+    bytes
+        .iter()
+        .fold(2166136261u32, |hash, byte| (hash ^ *byte as u32).wrapping_mul(16777619))
 }

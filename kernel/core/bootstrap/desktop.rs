@@ -41,6 +41,9 @@ pub(super) const ONBOARDING_BMP: &[u8] =
 pub(super) const TOP_BAR_INFINITY_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-topbar-icon-v2.bmp");
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const WORLD_SHIFT_HERO_BMP: &[u8] =
+    include_bytes!("../../../assets/desktop/worldshift-hero-v1.bmp");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const NODE_TRUST_TOPOLOGY_BMP: &[u8] =
     include_bytes!("../../../assets/mesh/infinity-node-trust-topology-v1.bmp");
 #[cfg(all(
@@ -230,6 +233,10 @@ impl super::DisplayDevice {
         role: usize,
         size: usize,
     ) -> bool {
+        if (57..=59).contains(&role) {
+            self.spatial_identity_icon(center_x, center_y, size, role - 57);
+            return true;
+        }
         let roles = [0usize, 1, 4, 8, 9, 10, 12, 19, 23, 25, 26, 28, 32, 49];
         let Some(cell) = roles.iter().position(|candidate| *candidate == role) else {
             return self.themed_icon(center_x, center_y, role, size);
@@ -310,7 +317,49 @@ impl super::DisplayDevice {
         role: usize,
         size: usize,
     ) -> bool {
-        self.themed_icon(center_x, center_y, role, size)
+        if (57..=59).contains(&role) {
+            self.spatial_identity_icon(center_x, center_y, size, role - 57);
+            true
+        } else {
+            self.themed_icon(center_x, center_y, role, size)
+        }
+    }
+
+    // ------------------------=
+    // FUNC: spatial_identity_icon
+    // DESC: Draws distinct code-native identities for Spatial, Holographic, and World Shift surfaces.
+    // ------------------=
+    fn spatial_identity_icon(&mut self, center_x: usize, center_y: usize, size: usize, kind: usize) {
+        let left = center_x.saturating_sub(size / 2);
+        let top = center_y.saturating_sub(size / 2);
+        let radius = (size / 5).max(5);
+        let palette = [(12, 65, 105), (25, 52, 108), (34, 38, 104)][kind.min(2)];
+        self.fill_rounded_rect_alpha(left, top, size, size, radius, palette.0, palette.1, palette.2, 248);
+        self.outline_rounded_rect(left, top, size, size, radius, 112, 224, 255);
+        let stroke: (u8, u8, u8) = (173, 240, 255);
+        if kind == 0 {
+            for ring in 0..3 {
+                let inset = size * (18 + ring * 10) / 100;
+                self.outline_rounded_rect(left + inset, top + inset, size - inset * 2, size - inset * 2,
+                    size / 2, stroke.0, stroke.1.saturating_sub((ring * 28) as u8), stroke.2);
+            }
+            self.fill_rounded_rect_alpha(center_x.saturating_sub(size / 12), center_y.saturating_sub(size / 12), size / 6, size / 6, size / 12, 235, 252, 255, 255);
+        } else if kind == 1 {
+            for offset in [size / 5, size / 2, size * 4 / 5] {
+                self.outline_rounded_rect(left + offset.saturating_sub(size / 7), top + size / 5,
+                    size * 2 / 7, size * 3 / 5, size / 9, stroke.0, stroke.1, stroke.2);
+            }
+        } else {
+            self.icon_line((left + size / 5) as i32, center_y as i32, center_x as i32,
+                (top + size / 5) as i32, stroke, size);
+            self.icon_line(center_x as i32, (top + size / 5) as i32,
+                (left + size * 4 / 5) as i32, center_y as i32, stroke, size);
+            self.icon_line((left + size * 4 / 5) as i32, center_y as i32, center_x as i32,
+                (top + size * 4 / 5) as i32, stroke, size);
+            self.icon_line(center_x as i32, (top + size * 4 / 5) as i32,
+                (left + size / 5) as i32, center_y as i32, stroke, size);
+            self.fill_rounded_rect_alpha(center_x.saturating_sub(size / 10), center_y.saturating_sub(size / 10), size / 5, size / 5, size / 10, 225, 248, 255, 255);
+        }
     }
 
     #[cfg(any(feature = "installer", target_arch = "x86"))]
@@ -5303,6 +5352,68 @@ impl super::DisplayDevice {
             geometry.viewport.width as usize,
             geometry.viewport.height as usize,
         );
+        if focus == 1 {
+            let hero = layout.settings_world_shift_hero_geometry(settings_window);
+            let hero_left = hero.x.max(0) as usize;
+            let hero_top = hero.y.max(0) as usize;
+            let hero_width = hero.width as usize;
+            let hero_height = hero.height as usize;
+            self.paint_bitmap_cover_box(
+                WORLD_SHIFT_HERO_BMP,
+                hero_left,
+                hero_top,
+                hero_width,
+                hero_height,
+            );
+            self.fill_rounded_rect_alpha(
+                hero_left,
+                hero_top,
+                hero_width * 58 / 100,
+                hero_height,
+                14 * scale,
+                2,
+                12,
+                28,
+                190,
+            );
+            self.outline_rounded_rect(
+                hero_left,
+                hero_top,
+                hero_width,
+                hero_height,
+                14 * scale,
+                117,
+                218,
+                255,
+            );
+            self.ui_text_strong(
+                hero_left + 24 * scale,
+                hero_top + 30 * scale,
+                b"WORLD SHIFT",
+                235,
+                250,
+                255,
+                1,
+            );
+            self.ui_text_elided_strong(
+                hero_left + 24 * scale,
+                hero_top + 76 * scale,
+                hero_width * 48 / 100,
+                b"Move your complete workspace between living worlds.",
+                190,
+                224,
+                243,
+            );
+            self.polished_button(
+                hero_left + 24 * scale,
+                hero_top + hero_height.saturating_sub(56 * scale),
+                176 * scale,
+                38 * scale,
+                b"Open World Shift",
+                true,
+                false,
+            );
+        }
         for (index, (label, value)) in rows
             .iter()
             .take(settings_window.row_count.clamp(1, 8))
@@ -7211,11 +7322,16 @@ impl super::DisplayDevice {
         kind: usize,
         active: bool,
     ) {
-        let role = [25usize, 2, 26, 28, 23, 27, 17, 10, 19]
+        let role = [25usize, 2, 26, 28, 23, 27, 17, 10, 19, 57]
             .get(kind)
             .copied()
             .unwrap_or(2);
-        if self.themed_icon(left + size / 2, top + size / 2, role, size) {
+        let painted = if role >= 57 {
+            self.launcher_icon(left + size / 2, top + size / 2, role, size)
+        } else {
+            self.themed_icon(left + size / 2, top + size / 2, role, size)
+        };
+        if painted {
             if active {
                 self.fill_rounded_rect_alpha(
                     left + size / 2 - 3,
