@@ -562,6 +562,31 @@ impl ConsoleRuntime {
         true
     }
     // ------------------------=
+    // FUNC: spatial_cycle
+    // DESC: Opens the holographic carousel and advances its selection without activating or discarding edits.
+    // ------------------=
+    pub(super) fn spatial_cycle(&mut self, reverse: bool) {
+        if self.spatial.pending_drop.is_some() || self.spatial.editing != 0 {
+            return;
+        }
+        if !self.spatial.open || self.spatial.tab != 0 {
+            self.spatial.tab = 0;
+            if !self.spatial.open {
+                self.spatial_open();
+            } else {
+                self.spatial.focus = 0;
+                self.spatial_reveal();
+            }
+            self.spatial.motion = Motion::settled(255);
+            self.spatial_present();
+        }
+        self.spatial_input(if reverse {
+            ConsoleKey::Left
+        } else {
+            ConsoleKey::Right
+        });
+    }
+    // ------------------------=
     // FUNC: spatial_input
     // DESC: Provides keyboard navigation, explicit reference removal, and normal bounded text editing.
     // ------------------=

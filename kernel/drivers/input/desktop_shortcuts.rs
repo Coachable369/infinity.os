@@ -1,4 +1,28 @@
 //! Reserved Ctrl+Shift desktop workflows shared by all keyboard transports.
+pub const SPATIAL_NEXT: u8 = 0x80;
+pub const SPATIAL_PREVIOUS: u8 = 0x81;
+
+// ------------------------=
+// FUNC: hid_modifiers
+// DESC: Preserves Shift, Control and either Command/Super key from USB HID reports.
+// ------------------=
+pub fn hid_modifiers(bits: u8) -> u8 {
+    u8::from(bits & 0x22 != 0)
+        | (u8::from(bits & 0x11 != 0) << 1)
+        | (u8::from(bits & 0x88 != 0) << 2)
+}
+
+// ------------------------=
+// FUNC: spatial_chord
+// DESC: Reserves Command/Super Tab for carousel navigation without consuming ordinary Tab.
+// ------------------=
+pub fn spatial_chord(tab: bool, command: bool, shift: bool) -> Option<u8> {
+    (tab && command).then_some(if shift {
+        SPATIAL_PREVIOUS
+    } else {
+        SPATIAL_NEXT
+    })
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DesktopAction {
     Notes,

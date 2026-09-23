@@ -9,6 +9,13 @@ pub fn decode(scan: u16, character: u16, shift_state: u32) -> Option<ConsoleKey>
     let valid = shift_state & 0x8000_0000 != 0;
     let shift = valid && shift_state & 3 != 0;
     let control = valid && shift_state & 12 != 0;
+    if let Some(code) = super::desktop_shortcuts::spatial_chord(
+        scan == 0 && character == 9,
+        valid && shift_state & 0xc0 != 0,
+        shift,
+    ) {
+        return Some(ConsoleKey::Shortcut(code));
+    }
     if control && scan == 0 {
         let letter = match character {
             1..=26 => b'a' + character as u8 - 1,

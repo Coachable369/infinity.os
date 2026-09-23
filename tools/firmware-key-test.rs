@@ -30,6 +30,39 @@ mod firmware_key;
 fn main() {
     use console::ConsoleKey::*;
     use firmware_key::decode;
+    for command in [0x40, 0x80, 0xc0] {
+        assert_eq!(
+            decode(0, 9, 0x8000_0000 | command),
+            Some(Shortcut(desktop_shortcuts::SPATIAL_NEXT))
+        );
+        assert_eq!(
+            decode(0, 9, 0x8000_0001 | command),
+            Some(Shortcut(desktop_shortcuts::SPATIAL_PREVIOUS))
+        );
+        assert_eq!(decode(0, 9, command), Some(Tab(false)));
+    }
+    for bits in 0..=255u8 {
+        let modifiers = desktop_shortcuts::hid_modifiers(bits);
+        assert_eq!(modifiers & 1 != 0, bits & 0x22 != 0);
+        assert_eq!(modifiers & 2 != 0, bits & 0x11 != 0);
+        assert_eq!(modifiers & 4 != 0, bits & 0x88 != 0);
+        assert_eq!(
+            desktop_shortcuts::spatial_chord(true, modifiers & 4 != 0, modifiers & 1 != 0),
+            if bits & 0x88 == 0 {
+                None
+            } else {
+                Some(if bits & 0x22 == 0 {
+                    desktop_shortcuts::SPATIAL_NEXT
+                } else {
+                    desktop_shortcuts::SPATIAL_PREVIOUS
+                })
+            }
+        );
+        assert_eq!(
+            desktop_shortcuts::spatial_chord(false, modifiers & 4 != 0, modifiers & 1 != 0),
+            None
+        );
+    }
     for letter in [b'n', b'e', b't', b'p', b'l'] {
         assert_eq!(
             decode(0, letter as u16, 0x8000_0005),

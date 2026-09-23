@@ -787,8 +787,7 @@ fn poll_usb_keyboard(usb: *mut UsbIo, endpoint: u8) {
         report[2], report[3], report[4], report[5], report[6], report[7],
     ];
     let previous = unsafe { USB_KEYS };
-    let modifiers = (if report[0] & 0x22 != 0 { 1 } else { 0 })
-        | (if report[0] & 0x11 != 0 { 2 } else { 0 });
+    let modifiers = super::desktop_shortcuts::hid_modifiers(report[0]);
     for &usage in &current {
         if usage != 0 && !previous.contains(&usage) {
             dispatch(InputEvent {

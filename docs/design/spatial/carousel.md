@@ -1,5 +1,19 @@
 # Holographic carousel interaction
 
+Command/Super+Tab opens the Holographic view and advances one card on each press;
+Command/Super+Shift+Tab reverses. Selection uses the existing carousel animation.
+Release does not launch an app: click the front card or press Enter to activate.
+Plain Tab retains its original UI navigation behavior. USB HID, UEFI logo-key
+modifiers and PS/2 Windows keys feed the same shortcut. The host must forward
+the chord to the guest; macOS Command+Tab and VirtualBox's default Left Command
+Host Key can intercept it before InfinityOS receives it.
+
+Hotkey regression coverage exercises all 256 HID modifier combinations, both
+UEFI logo modifiers, reverse-shortcut decoding and rejection of invalid firmware modifier
+state. Plain Tab and existing Ctrl shortcuts retain their previous decoding.
+The input regression suite and both native installed-kernel builds pass. Host
+shortcut forwarding and live guest interaction are separate verification steps.
+
 App-bar entry: replace the former Network slot (seventh item) with Spatial
 Desktop, retaining the existing dock spacing and selected-pack desktop/monitor
 artwork (role 19). Its action opens the native spatial overlay, not Settings.
