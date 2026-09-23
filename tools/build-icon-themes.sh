@@ -5,6 +5,15 @@ cd "$(dirname "$0")/.."
 
 sizes="24 32 48 64 96 128 256"
 families="crystal-blue-glass luminous-obsidian frosted-quartz aurora-harmony"
+if [ "$#" -gt 0 ]; then
+    families="$*"
+    for requested in "$@"; do
+        case "$requested" in
+            crystal-blue-glass|luminous-obsidian|frosted-quartz|aurora-harmony) ;;
+            *) echo "Unknown icon family: $requested" >&2; exit 2 ;;
+        esac
+    done
+fi
 base_names="home user folder folder-open documents downloads pictures music videos projects trash-empty trash-full drive-internal drive-external optical-disc usb-drive cloud-drive network server computer display printer camera microphone headphones terminal settings search information help lock unlock shield key power restart sleep wifi bluetooth battery volume clipboard mail calendar clock"
 action_names="back forward up refresh new-file new-folder save cut copy paste undo redo add remove close"
 
@@ -28,7 +37,9 @@ build_group() {
     rows=$3
     names=$4
     master="assets/icons/$family/master-$group.png"
-    if test -s "assets/icons/$family/master-$group-v2.png"; then
+    if test -s "assets/icons/$family/master-$group-v3.png"; then
+        master="assets/icons/$family/master-$group-v3.png"
+    elif test -s "assets/icons/$family/master-$group-v2.png"; then
         master="assets/icons/$family/master-$group-v2.png"
     elif test -s "assets/icons/$family/master-$group-v1.png"; then
         master="assets/icons/$family/master-$group-v1.png"
@@ -60,6 +71,6 @@ for family in $families; do
     build_runtime_atlas "$family" actions 5x3
 done
 
-python3 tools/build-launcher-icon-atlases.py
+python3 tools/build-launcher-icon-atlases.py $families
 
-echo "Built four 60-icon InfinityOS families at 24, 32, 48, 64, 96, 128, and 256 pixels."
+echo "Built selected 60-icon InfinityOS families at 24, 32, 48, 64, 96, 128, and 256 pixels."

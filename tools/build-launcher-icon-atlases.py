@@ -2,6 +2,7 @@
 """Build compact 256px alpha atlases for the native installed app launcher."""
 
 from pathlib import Path
+import argparse
 
 from PIL import Image
 
@@ -73,7 +74,10 @@ def build_family(family: str) -> None:
 # DESC: Rebuilds the high-resolution installed launcher resources for all selectable themes.
 # ------------------=
 def main() -> None:
-    for family in FAMILIES:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("families", nargs="*", choices=FAMILIES)
+    selected = parser.parse_args().families or FAMILIES
+    for family in selected:
         build_family(family)
 
 

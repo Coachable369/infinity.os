@@ -41,7 +41,7 @@ impl IconThemeId {
     // ------------------=
     pub const fn name(self) -> &'static [u8] {
         match self {
-            Self::CrystalBlueGlass => b"Crystal Blue Glass",
+            Self::CrystalBlueGlass => b"Infinity Blue",
             Self::LuminousObsidian => b"Luminous Obsidian",
             Self::FrostedQuartz => b"Frosted Quartz",
             Self::AuroraHarmony => b"Aurora Harmony",
@@ -71,7 +71,7 @@ pub struct IconThemeRegistry {
 impl IconThemeRegistry {
     // ------------------------=
     // FUNC: new
-    // DESC: Creates the default desktop icon registry with blue glass selected.
+    // DESC: Selects the mixed-material Infinity Blue pack using its stable persisted identifier.
     // ------------------=
     pub const fn new() -> Self {
         Self {

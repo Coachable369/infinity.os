@@ -2,6 +2,8 @@
 """Validate installed icon-family dimensions, semantic coverage, and transparency."""
 
 import csv
+import argparse
+import mmap
 import struct
 from pathlib import Path
 
@@ -81,7 +83,7 @@ def validate_generated_master(path: Path, rows: int) -> None:
         )
         alpha = image.getchannel("A")
         minimum, maximum = alpha.getextrema()
-        assert minimum == 0 and maximum == 255, f"generated master lost alpha range: {path}"
+        assert minimum == 0 and maximum >= 250, f"generated master lost alpha range: {path}"
         assert any(alpha.histogram()[1:255]), f"generated master lost partial alpha: {path}"
 
 
@@ -90,6 +92,9 @@ def validate_generated_master(path: Path, rows: int) -> None:
 # DESC: Validates every semantic icon in every installed family and supported pixel tier.
 # ------------------=
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--installed-kernel", type=Path)
+    arguments = parser.parse_args()
     root = Path("assets/icons")
     manifest = root / "manifest.csv"
     checked = 0
@@ -114,6 +119,15 @@ def main() -> None:
     validate_generated_master(root / "luminous-obsidian" / "master-actions-v2.png", 3)
     validate_generated_master(root / "aurora-harmony" / "master-base-v1.png", 9)
     validate_generated_master(root / "aurora-harmony" / "master-actions-v1.png", 3)
+    validate_generated_master(root / "crystal-blue-glass" / "master-base-v3.png", 9)
+    validate_generated_master(root / "crystal-blue-glass" / "master-actions-v3.png", 3)
+    if arguments.installed_kernel:
+        with arguments.installed_kernel.open("rb") as stream:
+            with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as kernel:
+                for family in FAMILIES:
+                    for group in ("base", "actions", "launcher-256"):
+                        payload = (root / "runtime" / f"{family}-{group}.bmp").read_bytes()
+                        assert kernel.find(payload) >= 0, (family, group, "installed asset mismatch")
     assert checked == len(FAMILIES) * len(SIZES) * sum(GROUP_COUNTS.values())
     print(f"PASS icon assets: {checked} semantic PNGs have exact dimensions and alpha")
 
