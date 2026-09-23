@@ -5,6 +5,44 @@ mod spatial;
 use spatial::*;
 #[test]
 // ------------------------=
+// FUNC: collection_controls_share_drop_geometry_and_preserve_sources
+// DESC: Tests destination boundaries, non-mutating previews, and confirmed metadata-only organization.
+// ------------------=
+fn collection_controls_share_drop_geometry_and_preserve_sources() {
+    let owner = [1; 16];
+    let mut state = SpatialState::new(owner);
+    let index = state.gather(owner, clipping()).unwrap();
+    let source = state.items[index].unwrap();
+    for group in 0..WORLD_COUNT {
+        let (x, y, w, h) = collection_card(group);
+        assert_eq!(collection_hit(x as i32, y as i32), Some(group as u8));
+        assert_eq!(
+            collection_hit((x + w - 1) as i32, (y + h - 1) as i32),
+            Some(group as u8)
+        );
+        assert_eq!(collection_hit((x + w) as i32, y as i32), None);
+        assert_eq!(collection_hit(x as i32, (y + h) as i32), None);
+        let before = state;
+        let request = DropRequest::new(&state, index, DropTarget::Collection(group as u8)).unwrap();
+        assert_eq!(state, before);
+        let DropTarget::Collection(destination) = request.target else {
+            panic!()
+        };
+        state
+            .place(owner, index, destination, x.min(710) as u16, 230)
+            .unwrap();
+        let result = state.items[index].unwrap();
+        assert_eq!(result.collection, group as u8);
+        assert_eq!(
+            (result.object, result.path, result.text),
+            (source.object, source.path, source.text)
+        );
+    }
+    assert_eq!(collection_hit(-1, 750), None);
+    assert_eq!(collection_hit(1000, 750), None);
+}
+#[test]
+// ------------------------=
 // FUNC: carousel_endpoints_retarget_depth_and_activation
 // DESC: Exercises all window counts and focus pairs, visible-position retargeting, matching depth hits, and second-click activation.
 // ------------------=

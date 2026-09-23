@@ -755,8 +755,10 @@ pub fn present(
                             d.ui_text(
                                 p.0 + 12,
                                 p.1 + size + 12 + UI_FONT_CELL_HEIGHT * d.ui_scale(),
-                                [b"Home".as_slice(), b"Create", b"Research", b"Explore"]
-                                    [item.collection as usize],
+                                crate::ui::spatial::collection_name(
+                                    state,
+                                    item.collection as usize,
+                                ),
                                 120,
                                 191,
                                 226,
@@ -773,7 +775,11 @@ pub fn present(
                     d.ui_text_strong(
                         p.0,
                         p.1,
-                        b"Your ideas, deliberately connected.",
+                        if tab == 2 {
+                            b"Keep related files and notes together."
+                        } else {
+                            b"Your ideas, deliberately connected."
+                        },
                         211,
                         235,
                         248,
@@ -783,7 +789,7 @@ pub fn present(
                     d.ui_text(
                         p.0,
                         p.1,
-                        b"Collect a selected file, or add a text clipping in Matter Shelf.",
+                        if tab == 2 { b"Select a file in File Navigator, then Add selected file. Or start with Add note." } else { b"Collect a selected file, or add a text clipping in Matter Shelf." },
                         151,
                         193,
                         214,
@@ -791,12 +797,23 @@ pub fn present(
                     );
                 }
                 if tab == 2 {
-                    for (i, label) in [b"Home".as_slice(), b"Create", b"Research", b"Explore"]
-                        .iter()
-                        .enumerate()
-                    {
-                        let p = rect(80 + i * 210, 750, 190, 35);
-                        d.polished_button(p.0, p.1, p.2, p.3, label, false, false);
+                    for i in 0..4 {
+                        let (a, b, w, h) = crate::ui::spatial::collection_card(i);
+                        let p = rect(a, b, w, h);
+                        let selected = state
+                            .items
+                            .get(focus)
+                            .and_then(|v| *v)
+                            .is_some_and(|item| item.collection as usize == i);
+                        d.polished_button(
+                            p.0,
+                            p.1,
+                            p.2,
+                            p.3,
+                            crate::ui::spatial::collection_name(state, i),
+                            selected,
+                            false,
+                        );
                     }
                 }
             }
@@ -804,10 +821,10 @@ pub fn present(
                 0 => [b"Open / focus", b"", b"", b"Reduced motion"],
                 1 => [b"Switch", b"Save layout", b"Rename", b"Reduced motion"],
                 2 => [
-                    b"Collect selected",
-                    b"Next collection",
-                    b"Remove reference",
-                    b"Open",
+                    b"Add selected file",
+                    b"Add note",
+                    b"Remove shortcut",
+                    b"Open selected",
                 ],
                 3 => [
                     b"Collect selected",
@@ -835,7 +852,7 @@ pub fn present(
                 match tab {
                     0=>b"Tab: views   Arrows: focus   Wheel / +/-: zoom   Enter: open   M: motion   Esc: close".as_slice(),
                     1=>b"Tab: views   Arrows: focus   Enter: switch   S: save   R: rename   M: motion   Esc: close",
-                    2=>b"C: collect   Drag: arrange / drop into a collection   G: next collection   Del: remove",
+                    2=>b"Original files stay in place.  1-4: collection   Enter: open   T: note   Esc: close",
                     3=>notice,
                     _=>b"C: collect   Drag: arrange   L: link / unlink   Enter: open   Del: remove   Esc: close",
                 },
@@ -907,7 +924,7 @@ pub fn present(
                 let p = rect(140, 350, 720, 260);
                 d.glass_panel(p.0, p.1, p.2, p.3, true);
                 let title: &[u8] = match request.target {
-                    DropTarget::Collection(_) => b"Gather this reference?",
+                    DropTarget::Collection(_) => b"Move shortcut to this collection?",
                     DropTarget::Editor => b"Open this file in Text Editor?",
                     DropTarget::Folder(_) => b"Copy this file to the selected folder?",
                 };
@@ -919,7 +936,7 @@ pub fn present(
                 }
                 let destination: &[u8] = match &request.target {
                     DropTarget::Collection(group) => {
-                        [b"Home".as_slice(), b"Create", b"Research", b"Explore"][*group as usize]
+                        crate::ui::spatial::collection_name(state, *group as usize)
                     }
                     DropTarget::Editor => b"Existing unsaved text will not be replaced.",
                     DropTarget::Folder(path) => path.get(),

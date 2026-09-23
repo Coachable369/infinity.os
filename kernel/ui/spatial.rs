@@ -23,6 +23,36 @@ pub fn drag_position(origin: (usize, usize), press: (i32, i32), current: (i32, i
 pub const STATE_BYTES: usize = 8192;
 pub const ITEM_COUNT: usize = 16;
 pub const WORLD_COUNT: usize = 4;
+// ------------------------=
+// FUNC: collection_card
+// DESC: Shares collection geometry between painting, clicks, and drops.
+// ------------------=
+pub fn collection_card(index: usize) -> (usize, usize, usize, usize) {
+    (80 + index * 210, 730, 190, 60)
+}
+// ------------------------=
+// FUNC: collection_hit
+// DESC: Resolves named destinations without accepting gutters.
+// ------------------=
+pub fn collection_hit(x: i32, y: i32) -> Option<u8> {
+    (0..WORLD_COUNT)
+        .find(|&i| contains(collection_card(i), x, y))
+        .map(|i| i as u8)
+}
+// ------------------------=
+// FUNC: collection_name
+// DESC: Uses saved collection names consistently across controls and confirmations.
+// ------------------=
+pub fn collection_name(state: &SpatialState, group: usize) -> &[u8] {
+    let Some(world) = state.worlds.get(group) else {
+        return b"";
+    };
+    if world.name.get().is_empty() {
+        [b"Home".as_slice(), b"Create", b"Research", b"Explore"][group]
+    } else {
+        world.name.get()
+    }
+}
 pub const OVERVIEW_COUNT: usize = 10;
 pub type OverviewBounds = (usize, usize, usize, usize);
 

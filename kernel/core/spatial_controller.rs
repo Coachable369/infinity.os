@@ -123,6 +123,26 @@ fn now() -> u64 {
 
 impl ConsoleRuntime {
     // ------------------------=
+    // FUNC: spatial_choose_collection
+    // DESC: Previews a named destination without changing source files or empty selections.
+    // ------------------=
+    fn spatial_choose_collection(&mut self, group: u8) {
+        let Some(item) = self.spatial.state.items[self.spatial.focus] else {
+            self.spatial.notice =
+                b"Add a selected file or a note, then choose its collection below.";
+            return;
+        };
+        if item.collection == group {
+            self.spatial.notice = b"This shortcut is already in that collection.";
+            return;
+        }
+        self.spatial.pending_drop = DropRequest::new(
+            &self.spatial.state,
+            self.spatial.focus,
+            DropTarget::Collection(group),
+        );
+    }
+    // ------------------------=
     // FUNC: spatial_confirm_drop
     // DESC: Applies an explicit drop only after confirmation, revalidating source identity and never moving originals.
     // ------------------=
@@ -684,7 +704,10 @@ impl ConsoleRuntime {
             ConsoleKey::Character(b'r') if self.spatial.tab == 1 => self.spatial_action(2),
             ConsoleKey::Character(b't') if self.spatial.tab == 3 => self.spatial_action(1),
             ConsoleKey::Character(b'l') if self.spatial.tab == 4 => self.spatial_action(1),
-            ConsoleKey::Character(b'g') if self.spatial.tab == 2 => self.spatial_action(1),
+            ConsoleKey::Character(value @ b'1'..=b'4') if self.spatial.tab == 2 => {
+                self.spatial_choose_collection(value - b'1')
+            }
+            ConsoleKey::Character(b't') if self.spatial.tab == 2 => self.spatial_action(1),
             ConsoleKey::Character(b'm') if self.spatial.tab < 2 => self.spatial_action(3),
             ConsoleKey::Character(b'+' | b'=') if self.spatial.tab == 0 => {
                 self.spatial_scroll(1);
@@ -909,18 +932,15 @@ impl ConsoleRuntime {
                     }
                 }
                 if self.spatial.state != old {
-                    if self.spatial.tab == 2 && (750..785).contains(&self.pointer_y) {
-                        for group in 0..4 {
-                            if (80 + group * 210..270 + group * 210).contains(&self.pointer_x) {
-                                self.spatial.state = old;
-                                self.spatial.pending_drop = DropRequest::new(
-                                    &old,
-                                    index,
-                                    DropTarget::Collection(group as u8),
-                                );
-                                self.spatial_present();
-                                return;
-                            }
+                    if self.spatial.tab == 2 {
+                        if let Some(group) =
+                            crate::ui::spatial::collection_hit(self.pointer_x, self.pointer_y)
+                        {
+                            self.spatial.state = old;
+                            self.spatial.pending_drop =
+                                DropRequest::new(&old, index, DropTarget::Collection(group));
+                            self.spatial_present();
+                            return;
                         }
                     }
                     self.spatial_commit(old);
@@ -975,6 +995,13 @@ impl ConsoleRuntime {
             return;
         }
         let tabs_top = if shelf { 635 } else { 150 };
+        if self.spatial.tab == 2 {
+            if let Some(group) = crate::ui::spatial::collection_hit(x, y) {
+                self.spatial_choose_collection(group);
+                self.spatial_present();
+                return;
+            }
+        }
         if (tabs_top..tabs_top + 45).contains(&y) {
             for i in 0..5 {
                 if (70 + i * 176..234 + i * 176).contains(&x) {
@@ -1076,7 +1103,7 @@ impl ConsoleRuntime {
         self.spatial.notice = [
             b"Choose a window. Inspect its live surface, then return to work.".as_slice(),
             b"Your environments. Save this scene, or travel to another.",
-            b"Gather references. Drag into a collection to organize without moving originals.",
+            b"Select a shortcut, then click a collection below or drag it there. Originals stay in place.",
             b"Lift a clipping into your work. T adds text; Enter inserts it in the editor.",
             b"Connect your work. Select a node, press L, then select its partner.",
         ][self.spatial.tab];
@@ -1406,7 +1433,7 @@ impl ConsoleRuntime {
             self.spatial_collect();
             return;
         }
-        if tab == 3 && action == 1 {
+        if (tab == 2 || tab == 3) && action == 1 {
             self.spatial.editing = 2;
             self.spatial.length = 0;
             self.spatial.caret = 0;
@@ -1419,13 +1446,6 @@ impl ConsoleRuntime {
         };
         let old = self.spatial.state;
         match action {
-            1 if tab == 2 => {
-                self.spatial.pending_drop = DropRequest::new(
-                    &self.spatial.state,
-                    index,
-                    DropTarget::Collection((item.collection + 1) % 4),
-                );
-            }
             1 if tab == 4 => {
                 if let Some(source) = self.spatial.link.take() {
                     if self
