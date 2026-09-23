@@ -32,7 +32,11 @@ impl DisplayDevice {
             x,
             w,
             y + w / 10,
-            if state.offset > 0 { b"^" } else { b"APPS" },
+            if state.drag.is_some() {
+                b"MOVE"
+            } else {
+                b"DRAG"
+            },
             137,
             199,
             228,

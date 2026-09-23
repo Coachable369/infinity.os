@@ -373,6 +373,7 @@ fn world_layout_survives_roundtrip() {
         settings_expanded_row: None,
         settings_scroll_offset: 0,
         input_preferences: [0; 8],
+        app_drawer_left: false,
     };
     state.worlds[2].layout = Some(layout);
     state.worlds[2].name.set(b"Research");

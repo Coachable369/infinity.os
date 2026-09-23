@@ -97,6 +97,37 @@ impl ConsoleRuntime {
             y: (self.pointer_y as i64 * self.system.framebuffer_height as i64 / 1000) as i32,
         };
         let mut consumed = g.rail.contains(point);
+        if let Some((_, grab)) = state.drag {
+            let rail_width =
+                g.rail.width as i32 * 1000 / self.system.framebuffer_width.max(1) as i32;
+            let x = (self.pointer_x - grab).clamp(0, 1000 - rail_width);
+            if self.pointer_pressed {
+                state.drag = Some((x, grab));
+            } else {
+                state.left = x + rail_width / 2 < 500;
+                state.drag = None;
+            }
+            shelf::publish(state);
+            if state.drag.is_none() {
+                let _ = self.checkpoint_desktop_layout();
+            }
+            if state != old {
+                self.redraw();
+            }
+            return true;
+        }
+        if clicked
+            && state.menu.is_none()
+            && consumed
+            && point.y < g.rail.y + (g.rail.width / 2) as i32
+        {
+            let x = g.rail.x * 1000 / self.system.framebuffer_width.max(1) as i32;
+            state.drag = Some((x, self.pointer_x - x));
+            state.hover = None;
+            shelf::publish(state);
+            self.redraw();
+            return true;
+        }
         if let Some(id) = state.menu {
             consumed = true;
             state.row = g.menu_row(point);

@@ -16,6 +16,8 @@ pub enum Action {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
+    pub left: bool,
+    pub drag: Option<(i32, i32)>,
     pub mask: u16,
     pub offset: usize,
     pub menu: Option<usize>,
@@ -29,6 +31,8 @@ impl State {
     // ------------------=
     pub const fn new() -> Self {
         Self {
+            left: false,
+            drag: None,
             mask: 0,
             offset: 0,
             menu: None,
@@ -104,7 +108,16 @@ impl Geometry {
         let w = (width * 6 / 100).max(72).min(width / 4) as u32;
         let h = (height * 58 / 100) as u32;
         let rail = Rect {
-            x: (width * 99 / 100) as i32 - w as i32,
+            x: state
+                .drag
+                .map(|(x, _)| x * width as i32 / 1000)
+                .unwrap_or_else(|| {
+                    if state.left {
+                        (width / 100) as i32
+                    } else {
+                        (width * 99 / 100) as i32 - w as i32
+                    }
+                }),
             y: (height * 18 / 100) as i32,
             width: w,
             height: h,
@@ -120,7 +133,11 @@ impl Geometry {
             .unwrap_or(0)
             .saturating_sub(state.offset);
         let menu = Rect {
-            x: (rail.x - menu_width as i32 - 12).max(0),
+            x: if rail.x < width as i32 / 2 {
+                (rail.right() + 12).min((width as i32 - menu_width as i32).max(0))
+            } else {
+                (rail.x - menu_width as i32 - 12).max(0)
+            },
             y: (rail.y + (w / 2 + index as u32 * tile) as i32)
                 .min((height as i32 - (row_height * 4) as i32).max(0)),
             width: menu_width,

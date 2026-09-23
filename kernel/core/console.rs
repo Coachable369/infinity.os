@@ -2850,6 +2850,7 @@ impl ConsoleRuntime {
             settings_expanded_row: self.settings_window.expanded_row,
             settings_scroll_offset: self.settings_window.scroll_offset,
             input_preferences: crate::ui::input_preferences::current().encode(),
+            app_drawer_left: crate::ui::app_launcher::minimized_shelf::current().left,
         }
     }
 
@@ -2859,6 +2860,10 @@ impl ConsoleRuntime {
     // ------------------=
     fn restore_desktop_layout(&mut self, layout: DesktopSessionLayout) {
         let _ = crate::runtime::with_runtime(|runtime| runtime.restore_desktop_tasks(layout));
+        let mut drawer = crate::ui::app_launcher::minimized_shelf::current();
+        drawer.left = layout.app_drawer_left;
+        drawer.drag = None;
+        crate::ui::app_launcher::minimized_shelf::publish(drawer);
         crate::ui::input_preferences::apply(crate::ui::input_preferences::Preferences::decode(
             layout.input_preferences,
         ));

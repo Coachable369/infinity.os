@@ -31,6 +31,7 @@ fn example_layout() -> DesktopSessionLayout {
         settings_expanded_row: Some(3),
         settings_scroll_offset: 91,
         input_preferences: [0xa1, 7, 8, 3, 2, 3, 0, 0],
+        app_drawer_left: true,
     }
 }
 

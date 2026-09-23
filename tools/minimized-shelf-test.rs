@@ -8,6 +8,30 @@ mod ui {
 mod shelf;
 use geometry::Point;
 use shelf::*;
+#[test]
+// ------------------------=
+// FUNC: drawer_anchors_and_tracks_drag_without_losing_apps
+// DESC: Verifies both edges, inward menus, and live drag geometry at different display sizes.
+// ------------------=
+fn drawer_anchors_and_tracks_drag_without_losing_apps() {
+    for (w, h) in [(800, 600), (1920, 1080), (3840, 2160)] {
+        let mut state = State::new();
+        state.set(EDITOR, true);
+        state.menu = Some(EDITOR);
+        let right = Geometry::new(w, h, state);
+        assert!(right.menu.right() < right.rail.x);
+        state.left = true;
+        let left = Geometry::new(w, h, state);
+        assert!(left.menu.x > left.rail.right());
+        assert_eq!(left.rail.x, (w / 100) as i32);
+        state.drag = Some((400, 10));
+        let moving = Geometry::new(w, h, state);
+        assert_eq!(moving.rail.x, (w * 400 / 1000) as i32);
+        assert_eq!(state.item(0), Some(EDITOR));
+        state.drag = None;
+        assert_eq!(Geometry::new(w, h, state).rail, left.rail);
+    }
+}
 
 #[test]
 // ------------------------=
