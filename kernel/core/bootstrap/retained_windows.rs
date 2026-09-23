@@ -108,6 +108,69 @@ pub(super) fn over(source: u32, destination: u32) -> u32 {
 
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: spatial_surface
+    // DESC: Bilinearly scales a premultiplied retained surface into a clipped destination without application paint work.
+    // ------------------=
+    pub(super) fn spatial_surface(
+        &mut self,
+        pixels: &[u32],
+        width: usize,
+        height: usize,
+        bounds: (usize, usize, usize, usize),
+    ) {
+        let (left, top, w, h) = bounds;
+        if width == 0
+            || height == 0
+            || w == 0
+            || h == 0
+            || width.checked_mul(height).is_none_or(|n| n > pixels.len())
+        {
+            return;
+        }
+        let Some(region) = self.clipped_render_region(left, top, w, h) else {
+            return;
+        };
+        for y in region.top..region.bottom {
+            let sy = ((y - top) * 256 * height / h).min((height - 1) * 256);
+            for x in region.left..region.right {
+                let sx = ((x - left) * 256 * width / w).min((width - 1) * 256);
+                let (x0, y0, fx, fy) = (sx / 256, sy / 256, sx % 256, sy % 256);
+                let (x1, y1) = ((x0 + 1).min(width - 1), (y0 + 1).min(height - 1));
+                let mut sum = [0usize; 4];
+                for (px, py, weight) in [
+                    (x0, y0, (256 - fx) * (256 - fy)),
+                    (x1, y0, fx * (256 - fy)),
+                    (x0, y1, (256 - fx) * fy),
+                    (x1, y1, fx * fy),
+                ] {
+                    let pixel = pixels[py * width + px];
+                    for (i, value) in sum.iter_mut().enumerate() {
+                        *value += ((pixel >> (8 * i)) & 255) as usize * weight;
+                    }
+                }
+                let mut pixel = 0u32;
+                for (i, value) in sum.iter().enumerate() {
+                    pixel |= ((value / 65536) as u32) << (8 * i);
+                }
+                unsafe {
+                    let out = self.buffer.add(y * self.stride + x);
+                    let alpha = if self.recording_surface {
+                        ((pixel >> 24) + (*out >> 24) * (255 - (pixel >> 24)) / 255) << 24
+                    } else {
+                        0
+                    };
+                    *out = over(pixel, *out) | alpha;
+                }
+            }
+        }
+        self.mark_dirty_rect(
+            region.left,
+            region.top,
+            region.right - region.left,
+            region.bottom - region.top,
+        );
+    }
+    // ------------------------=
     // FUNC: spatial_preview
     // DESC: Samples a real retained window with bilinear premultiplied filtering without calling its renderer.
     // ------------------=
@@ -130,45 +193,7 @@ impl DisplayDevice {
             let h = (cache.height * factor / 65536).max(1);
             let left = left + (width - w) / 2;
             let top = top + (height - h) / 2;
-            let Some(region) = self.clipped_render_region(left, top, w, h) else {
-                return;
-            };
-            for y in region.top..region.bottom {
-                let sy = ((y - top) * 256 * cache.height / h).min((cache.height - 1) * 256);
-                for x in region.left..region.right {
-                    let sx = ((x - left) * 256 * cache.width / w).min((cache.width - 1) * 256);
-                    let (x0, y0) = (sx / 256, sy / 256);
-                    let (fx, fy) = (sx % 256, sy % 256);
-                    let (x1, y1) = (
-                        (x0 + 1).min(cache.width - 1),
-                        (y0 + 1).min(cache.height - 1),
-                    );
-                    let mut sum = [0usize; 4];
-                    for (px, py, weight) in [
-                        (x0, y0, (256 - fx) * (256 - fy)),
-                        (x1, y0, fx * (256 - fy)),
-                        (x0, y1, (256 - fx) * fy),
-                        (x1, y1, fx * fy),
-                    ] {
-                        let pixel = cache.pixels[py * cache.width + px];
-                        for (i, value) in sum.iter_mut().enumerate() {
-                            *value += ((pixel >> (8 * i)) & 255) as usize * weight;
-                        }
-                    }
-                    let mut pixel = 0u32;
-                    for (i, value) in sum.iter().enumerate() {
-                        pixel |= ((value / 65536) as u32) << (8 * i);
-                    }
-                    let out = self.buffer.add(y * self.stride + x);
-                    *out = over(pixel, *out);
-                }
-            }
-            self.mark_dirty_rect(
-                region.left,
-                region.top,
-                region.right - region.left,
-                region.bottom - region.top,
-            );
+            self.spatial_surface(&cache.pixels, cache.width, cache.height, (left, top, w, h));
         }
     }
     // ------------------------=

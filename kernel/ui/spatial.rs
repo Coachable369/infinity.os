@@ -24,6 +24,70 @@ pub const STATE_BYTES: usize = 8192;
 pub const ITEM_COUNT: usize = 16;
 pub const WORLD_COUNT: usize = 4;
 pub const OVERVIEW_COUNT: usize = 10;
+pub type OverviewBounds = (usize, usize, usize, usize);
+
+#[derive(Clone, Copy)]
+pub struct OverviewFrame {
+    pub bounds: [OverviewBounds; OVERVIEW_COUNT],
+    pub order: [usize; OVERVIEW_COUNT],
+    pub count: usize,
+}
+impl OverviewFrame {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Samples curved carousel geometry and sorts its cards back to front from their visible size.
+    // ------------------=
+    pub fn new(
+        from: Option<&[OverviewBounds; OVERVIEW_COUNT]>,
+        focus: usize,
+        zoom: u8,
+        count: usize,
+        progress: u8,
+    ) -> Self {
+        let count = count.min(OVERVIEW_COUNT);
+        let mut frame = Self {
+            bounds: [(0, 0, 0, 0); OVERVIEW_COUNT],
+            order: [0; OVERVIEW_COUNT],
+            count,
+        };
+        let t = usize::from(progress);
+        for i in 0..count {
+            let target = overview_bounds(i, focus, zoom, count);
+            let origin = from.map_or(target, |r| r[i]);
+            let mix = |a: usize, b: usize| (a * (255 - t) + b * t) / 255;
+            let arc = origin.0.abs_diff(target.0).min(400) * t * (255 - t) / (255 * 255 * 8);
+            frame.bounds[i] = (
+                mix(origin.0, target.0),
+                mix(origin.1, target.1).saturating_sub(arc),
+                mix(origin.2, target.2),
+                mix(origin.3, target.3),
+            );
+            frame.order[i] = i;
+        }
+        frame.order[..count]
+            .sort_unstable_by_key(|i| (frame.bounds[*i].2 * frame.bounds[*i].3, *i == focus));
+        frame
+    }
+    // ------------------------=
+    // FUNC: hit
+    // DESC: Resolves the topmost visible animated card, matching the renderer's exact depth order.
+    // ------------------=
+    pub fn hit(&self, x: i32, y: i32) -> Option<usize> {
+        self.order[..self.count]
+            .iter()
+            .rev()
+            .copied()
+            .find(|i| contains(self.bounds[*i], x, y))
+    }
+}
+
+// ------------------------=
+// FUNC: overview_activates
+// DESC: Activates only a second selection of the settled foreground card, never an in-flight side selection.
+// ------------------=
+pub fn overview_activates(hit: usize, focus: usize, moving: bool) -> bool {
+    hit == focus && !moving
+}
 
 // ------------------------=
 // FUNC: next_reference

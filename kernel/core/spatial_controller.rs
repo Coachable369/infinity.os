@@ -64,6 +64,9 @@ pub(super) struct Controller {
     pending_drop: Option<DropRequest>,
     settling: Option<(usize, usize, usize)>,
     settle: Motion,
+    carousel_from: Option<[crate::ui::spatial::OverviewBounds; OVERVIEW_COUNT]>,
+    carousel: Motion,
+    last_carousel: i32,
 }
 impl Controller {
     // ------------------------=
@@ -104,6 +107,9 @@ impl Controller {
             pending_drop: None,
             settling: None,
             settle: Motion::settled(255),
+            carousel_from: None,
+            carousel: Motion::settled(255),
+            last_carousel: -1,
         }
     }
 }
@@ -320,6 +326,7 @@ impl ConsoleRuntime {
         self.spatial.open = true;
         self.spatial.notice = b"Choose a window. Inspect its live surface, then return to work.";
         self.spatial.closing = false;
+        self.spatial.carousel_from = None;
         self.spatial.last_progress = -1;
         self.spatial.motion = Motion::settled(0);
         self.spatial.motion.retarget(
@@ -403,6 +410,13 @@ impl ConsoleRuntime {
             self.spatial.zoom.value(now()).clamp(0, 255) as u8,
             self.spatial.ghost.and(self.spatial.drag.map(|d| d.0)),
             self.spatial.pending_drop,
+            if self.spatial.tab == 0 {
+                self.spatial
+                    .carousel_from
+                    .map(|from| (from, self.spatial.carousel.value(now()).clamp(0, 255) as u8))
+            } else {
+                None
+            },
         );
     }
     // ------------------------=
@@ -410,6 +424,18 @@ impl ConsoleRuntime {
     // DESC: Schedules only changing animation frames and settles without idle repaints.
     // ------------------=
     pub(super) fn spatial_tick(&mut self) -> bool {
+        if self.spatial.tab == 0 && self.spatial.carousel_from.is_some() && !self.spatial.closing {
+            let progress = self.spatial.carousel.value(now());
+            if progress != self.spatial.last_carousel {
+                self.spatial.last_carousel = progress;
+                if progress == 255 {
+                    self.spatial.carousel_from = None;
+                    crate::bootstrap::spatial_invalidate_transition();
+                }
+                self.spatial_present();
+                return true;
+            }
+        }
         if self.spatial.settling.is_some() {
             if !self.spatial.settle.active(now()) {
                 self.spatial.settling = None;
@@ -422,7 +448,9 @@ impl ConsoleRuntime {
         if crate::ui::spatial::refresh_due(
             self.spatial.refresh.get(),
             now().saturating_sub(self.spatial.refreshed_at),
-            self.spatial.motion.active(now()) || self.spatial.zoom.active(now()),
+            self.spatial.motion.active(now())
+                || self.spatial.zoom.active(now())
+                || self.spatial.carousel.active(now()),
             self.spatial.closing,
         ) {
             self.spatial.refresh.set(false);
@@ -623,6 +651,8 @@ impl ConsoleRuntime {
         } else {
             16
         };
+        let previous_focus = self.spatial.focus;
+        let previous_tab = self.spatial.tab;
         match key {
             ConsoleKey::Character(b'c') if self.spatial.tab >= 2 => self.spatial_action(0),
             ConsoleKey::Character(b's') if self.spatial.tab == 1 => self.spatial_action(1),
@@ -638,6 +668,8 @@ impl ConsoleRuntime {
                 self.spatial_scroll(-1);
             }
             ConsoleKey::Escape | ConsoleKey::Shortcut(b'K') => {
+                self.spatial.carousel_from = None;
+                crate::bootstrap::spatial_invalidate_transition();
                 self.spatial.closing = true;
                 self.spatial.motion.retarget(
                     0,
@@ -684,6 +716,9 @@ impl ConsoleRuntime {
             ConsoleKey::Enter => self.spatial_action(if self.spatial.tab < 2 { 0 } else { 3 }),
             ConsoleKey::Delete if self.spatial.tab >= 2 => self.spatial_action(2),
             _ => {}
+        }
+        if previous_tab == 0 && self.spatial.tab == 0 && self.spatial.focus != previous_focus {
+            self.spatial_start_carousel(previous_focus);
         }
         if self.spatial.open {
             self.spatial_present();
@@ -937,24 +972,24 @@ impl ConsoleRuntime {
         } else if self.spatial.tab == 1 {
             (0..4).find(|i| crate::ui::spatial::contains(crate::ui::spatial::world_card(*i), x, y))
         } else {
-            let focus = self.spatial.focus;
-            core::iter::once(focus)
-                .chain((0..self.spatial.preview_count).filter(|i| *i != focus))
-                .find(|i| {
-                    crate::ui::spatial::contains(
-                        crate::ui::spatial::overview_bounds(
-                            *i,
-                            focus,
-                            self.spatial.zoom.value(now()).clamp(0, 255) as u8,
-                            self.spatial.preview_count,
-                        ),
-                        x,
-                        y,
-                    )
-                })
+            self.spatial_overview_frame(self.spatial.focus).hit(x, y)
         };
         if let Some(i) = hit {
+            if self.spatial.tab == 0
+                && crate::ui::spatial::overview_activates(
+                    i,
+                    self.spatial.focus,
+                    self.spatial.carousel.active(now()) || self.spatial.motion.active(now()),
+                )
+            {
+                self.spatial_action(0);
+                return;
+            }
+            let previous_focus = self.spatial.focus;
             self.spatial.focus = i;
+            if self.spatial.tab == 0 && i != previous_focus {
+                self.spatial_start_carousel(previous_focus);
+            }
             if self.spatial.tab >= 2 {
                 self.spatial.drag = Some((i, x, y, self.spatial.state));
             }
@@ -972,10 +1007,44 @@ impl ConsoleRuntime {
         }
     }
     // ------------------------=
+    // FUNC: spatial_overview_frame
+    // DESC: Shares the current carousel geometry between pointer targeting and interruption-safe retargeting.
+    // ------------------=
+    fn spatial_overview_frame(&self, focus: usize) -> crate::ui::spatial::OverviewFrame {
+        crate::ui::spatial::OverviewFrame::new(
+            self.spatial.carousel_from.as_ref(),
+            focus,
+            self.spatial.zoom.value(now()).clamp(0, 255) as u8,
+            self.spatial.preview_count,
+            self.spatial.carousel.value(now()).clamp(0, 255) as u8,
+        )
+    }
+    // ------------------------=
+    // FUNC: spatial_start_carousel
+    // DESC: Retargets from visible card positions and starts the clock after one-time sprite preparation.
+    // ------------------=
+    fn spatial_start_carousel(&mut self, previous_focus: usize) {
+        let from = self.spatial_overview_frame(previous_focus).bounds;
+        let reduced =
+            self.spatial.state.reduced_motion || crate::ui::performance::monotonic_ns().is_none();
+        self.spatial.carousel_from = if reduced { None } else { Some(from) };
+        self.spatial.carousel = Motion::settled(0);
+        self.spatial.carousel.retarget(255, now(), 320, reduced);
+        self.spatial.last_carousel = -1;
+        crate::bootstrap::spatial_invalidate_transition();
+        if !reduced {
+            self.spatial_present();
+            self.spatial.carousel = Motion::settled(0);
+            self.spatial.carousel.retarget(255, now(), 320, false);
+        }
+    }
+    // ------------------------=
     // FUNC: spatial_reveal
     // DESC: Starts one bounded scene reveal, clears stale notices, and honors reduced motion.
     // ------------------=
     fn spatial_reveal(&mut self) {
+        self.spatial.carousel_from = None;
+        self.spatial.carousel = Motion::settled(255);
         if self.spatial.tab >= 2 && self.spatial.state.items[self.spatial.focus].is_none() {
             self.spatial.focus = crate::ui::spatial::next_reference(&self.spatial.state, 15, false);
         }
@@ -1113,6 +1182,7 @@ impl ConsoleRuntime {
     // ------------------=
     fn spatial_action(&mut self, action: usize) {
         if self.spatial.tab < 2 && action == 0 {
+            self.spatial.carousel_from = None;
             self.spatial
                 .selection
                 .request(self.spatial.tab, self.spatial.focus);
@@ -1158,9 +1228,16 @@ impl ConsoleRuntime {
                         self.focus_desktop_app(DesktopAppKind::None);
                     }
                 }
+                1 if preview.visible => self.focus_desktop_app(DesktopAppKind::CommandWindow),
+                2 if preview.visible => self.focus_desktop_app(DesktopAppKind::TextEditor),
+                3 if preview.visible => self.focus_desktop_app(DesktopAppKind::TaskManager),
                 1 => self.open_command_window(),
                 2 => self.open_text_editor(),
                 3 => self.open_task_manager(),
+                _ if preview.visible => {
+                    self.store_active_app_window();
+                    self.mode = ConsoleMode::Settings;
+                }
                 _ => self.open_settings(0),
             }
             self.redraw();

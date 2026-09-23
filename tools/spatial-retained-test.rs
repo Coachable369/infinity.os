@@ -87,6 +87,46 @@ impl DisplayDevice {
 }
 #[path = "../kernel/core/bootstrap/retained_windows.rs"]
 mod retained;
+#[test]
+// ------------------------=
+// FUNC: carousel_surface_preserves_alpha_and_clip
+// DESC: Keeps transparent cached previews visible and confines scaled composition to damage.
+// ------------------=
+fn carousel_surface_preserves_alpha_and_clip() {
+    let mut pixels = [0u32; 16];
+    let mut d = DisplayDevice {
+        buffer: pixels.as_mut_ptr(),
+        width: 4,
+        height: 4,
+        stride: 4,
+        recording_surface: true,
+        fast_motion_frame: true,
+        render_clip: Some(PresentRegion {
+            left: 1,
+            top: 1,
+            right: 3,
+            bottom: 3,
+        }),
+    };
+    d.spatial_surface(&[0x80800000; 4], 2, 2, (0, 0, 4, 4));
+    for y in 0..4 {
+        for x in 0..4 {
+            assert_eq!(
+                pixels[y * 4 + x],
+                if (1..3).contains(&x) && (1..3).contains(&y) {
+                    0x80800000
+                } else {
+                    0
+                }
+            );
+        }
+    }
+    d.spatial_surface(&[0x80800000; 4], 2, 2, (0, 0, 4, 4));
+    assert_eq!(pixels[5], 0xbfbf0000);
+    d.recording_surface = false;
+    d.spatial_surface(&[0xff00ff00; 4], 2, 2, (0, 0, 4, 4));
+    assert_eq!(pixels[5], 0x0000ff00);
+}
 // ------------------------=
 // FUNC: paint
 // DESC: Supplies real premultiplied content to the native surface recorder.

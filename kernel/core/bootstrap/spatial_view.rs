@@ -1,6 +1,9 @@
 //! Native spatial panel. Decorative assets never substitute for interactive state.
 use super::*;
 use crate::ui::spatial::{item_card, overview_bounds, world_card, Preview, SpatialState, TABS};
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+#[path = "spatial_carousel.rs"]
+mod carousel;
 #[path = "spatial_timing.rs"]
 mod timing;
 static mut TIMINGS: timing::Timings = timing::Timings::new();
@@ -149,6 +152,7 @@ pub fn refresh_end() {
     invalidate_transition();
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     unsafe {
+        carousel::invalidate();
         if let Some(c) = (*(&raw mut CONSOLE)).as_mut() {
             c.restore_cursor();
             c.display.clear_render_clip();
@@ -288,6 +292,7 @@ pub fn close() {
     invalidate_transition();
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     unsafe {
+        carousel::invalidate();
         if let Some(c) = (*(&raw mut CONSOLE)).as_mut() {
             c.restore_cursor();
             c.display.clear_render_clip();
@@ -299,6 +304,45 @@ pub fn close() {
             c.display
                 .mark_dirty_rect(0, 0, c.display.width, c.display.height);
         }
+    }
+}
+
+// ------------------------=
+// FUNC: paint_card
+// DESC: Renders one kit-styled preview card for both settled scenes and reusable carousel sprites.
+// ------------------=
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+fn paint_card(
+    d: &mut DisplayDevice,
+    preview: &Preview,
+    p: (usize, usize, usize, usize),
+    selected: bool,
+) {
+    d.glass_panel(p.0, p.1, p.2, p.3, false);
+    let thumb = (
+        p.0 + 8,
+        p.1 + 16 + UI_FONT_CELL_HEIGHT * d.ui_scale(),
+        p.2.saturating_sub(16),
+        p.3.saturating_sub(24 + UI_FONT_CELL_HEIGHT * d.ui_scale()),
+    );
+    if preview.visible {
+        d.spatial_preview(preview.slot, thumb);
+    } else {
+        let role = [4, 25, 49, 19, 26][preview.app.min(4) as usize];
+        let size = p.3.saturating_sub(42).min(p.2 / 2).min(160).max(24);
+        let _ = d.launcher_icon(p.0 + p.2 / 2, p.1 + p.3.saturating_sub(30) / 2, role, size);
+    }
+    d.ui_text_elided_strong(
+        p.0 + 12,
+        p.1 + 8,
+        p.2.saturating_sub(24),
+        preview.label.get(),
+        220,
+        237,
+        247,
+    );
+    if selected {
+        d.outline_rounded_rect(p.0, p.1, p.2, p.3, 12, 110, 214, 255);
     }
 }
 
@@ -320,6 +364,10 @@ pub fn present(
     zoom: u8,
     dragging: Option<usize>,
     pending_drop: Option<crate::ui::spatial::DropRequest>,
+    carousel_frame: Option<(
+        [crate::ui::spatial::OverviewBounds; crate::ui::spatial::OVERVIEW_COUNT],
+        u8,
+    )>,
 ) {
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
     unsafe {
@@ -335,6 +383,45 @@ pub fn present(
             let started = c.display.frame_started_ns;
             let captured = crate::ui::performance::monotonic_ns();
             let d = &mut c.display;
+            if let Some((from, phase)) = carousel_frame.filter(|_| tab == 0) {
+                d.set_render_clip(
+                    d.width * 6 / 100,
+                    d.height * 22 / 100,
+                    d.width * 88 / 100,
+                    d.height * 57 / 100,
+                );
+                launcher_backdrop::restore_stage(d);
+                d.spatial_orbit(
+                    d.width / 2,
+                    d.height * 677 / 1000,
+                    d.width * 36 / 100,
+                    d.height * 3 / 100,
+                    255,
+                    true,
+                );
+                if carousel::paint(d, previews, &from, focus, zoom, phase) {
+                    d.mark_dirty_rect(
+                        d.width * 6 / 100,
+                        d.height * 22 / 100,
+                        d.width * 88 / 100,
+                        d.height * 57 / 100,
+                    );
+                    let painted = crate::ui::performance::monotonic_ns();
+                    d.clear_render_clip();
+                    c.save_and_draw_cursor(x, y);
+                    c.display.present_damage();
+                    (*(&raw mut TIMINGS)).record([
+                        started,
+                        captured,
+                        painted,
+                        painted,
+                        crate::ui::performance::monotonic_ns(),
+                    ]);
+                    TRANSITION_KEY = None;
+                    return;
+                }
+                d.clear_render_clip();
+            }
             let transition_progress = progress;
             let key = (d.width, d.height, d.stride, tab, focus, zoom);
             let reusable = TRANSITION_KEY == Some(key);
@@ -453,50 +540,15 @@ pub fn present(
             if tab == 0 {
                 let p = rect(500, 677, 0, 0);
                 d.spatial_orbit(p.0, p.1, dw * 36 / 100, dh * 3 / 100, progress, true);
-                for i in (0..previews.len())
-                    .rev()
-                    .filter(|i| *i != focus)
-                    .chain(core::iter::once(
-                        focus.min(previews.len().saturating_sub(1)),
-                    ))
-                {
+                let frame =
+                    crate::ui::spatial::OverviewFrame::new(None, focus, zoom, previews.len(), 255);
+                for &i in &frame.order[..frame.count] {
                     let Some(preview) = previews.get(i) else {
                         continue;
                     };
-                    let label = preview.label.get();
                     let (a, b, w, h) = overview_bounds(i, focus, zoom, previews.len());
                     let p = rect(a, b, w, h);
-                    d.glass_panel(p.0, p.1, p.2, p.3, false);
-                    let thumb = (
-                        p.0 + 8,
-                        p.1 + 16 + UI_FONT_CELL_HEIGHT * d.ui_scale(),
-                        p.2.saturating_sub(16),
-                        p.3.saturating_sub(24 + UI_FONT_CELL_HEIGHT * d.ui_scale()),
-                    );
-                    if preview.visible {
-                        d.spatial_preview(preview.slot, thumb);
-                    } else {
-                        let role = [4, 25, 49, 19, 26][preview.app.min(4) as usize];
-                        let size = (p.3.saturating_sub(42)).min(p.2 / 2).min(160).max(24);
-                        let _ = d.launcher_icon(
-                            p.0 + p.2 / 2,
-                            p.1 + p.3.saturating_sub(30) / 2,
-                            role,
-                            size,
-                        );
-                    }
-                    d.ui_text_elided_strong(
-                        p.0 + 12,
-                        p.1 + 8,
-                        p.2.saturating_sub(24),
-                        label,
-                        220,
-                        237,
-                        247,
-                    );
-                    if focus == i {
-                        d.outline_rounded_rect(p.0, p.1, p.2, p.3, 12, 110, 214, 255);
-                    }
+                    paint_card(d, preview, p, focus == i);
                 }
             } else if tab == 1 {
                 for i in 0..3 {
@@ -938,5 +990,6 @@ pub fn present(
         zoom,
         dragging,
         pending_drop,
+        carousel_frame,
     );
 }

@@ -5,6 +5,55 @@ mod spatial;
 use spatial::*;
 #[test]
 // ------------------------=
+// FUNC: carousel_endpoints_retarget_depth_and_activation
+// DESC: Exercises all window counts and focus pairs, visible-position retargeting, matching depth hits, and second-click activation.
+// ------------------=
+fn carousel_endpoints_retarget_depth_and_activation() {
+    for zoom in [0, 128, 255] {
+        for count in 1..=OVERVIEW_COUNT {
+            for first in 0..count {
+                let initial = OverviewFrame::new(None, first, zoom, count, 255);
+                assert_eq!(initial.order[count - 1], first);
+                for next in 0..count {
+                    let start = OverviewFrame::new(Some(&initial.bounds), next, zoom, count, 0);
+                    assert_eq!(start.bounds, initial.bounds);
+                    let end = OverviewFrame::new(Some(&initial.bounds), next, zoom, count, 255);
+                    assert_eq!(
+                        end.bounds,
+                        OverviewFrame::new(None, next, zoom, count, 255).bounds
+                    );
+                    assert_eq!(end.order[count - 1], next);
+                    for progress in [1, 64, 128, 192, 254] {
+                        let frame =
+                            OverviewFrame::new(Some(&initial.bounds), next, zoom, count, progress);
+                        let retarget =
+                            OverviewFrame::new(Some(&frame.bounds), first, zoom, count, 0);
+                        assert_eq!(frame.bounds, retarget.bounds);
+                        let front = frame.order[count - 1];
+                        let (x, y, w, h) = frame.bounds[front];
+                        assert_eq!(
+                            frame.hit((x + w / 2) as i32, (y + h / 2) as i32),
+                            Some(front)
+                        );
+                        assert!(!overview_activates(next, next, true));
+                    }
+                    assert_eq!(overview_activates(next, first, false), next == first);
+                    // Native-resolution card atlases remain bounded at supported 4K size.
+                    let pixels: usize = (0..count)
+                        .map(|i| {
+                            let a = initial.bounds[i];
+                            let b = end.bounds[i];
+                            (a.2.max(b.2) * 3840 / 1000 + 24) * (a.3.max(b.3) * 2160 / 1000 + 24)
+                        })
+                        .sum();
+                    assert!(pixels <= 12 * 1024 * 1024);
+                }
+            }
+        }
+    }
+}
+#[test]
+// ------------------------=
 // FUNC: queued_refresh_waits_for_transition_then_runs
 // DESC: Verifies moving and closing scenes retain their pixels without discarding pending refresh work.
 // ------------------=
