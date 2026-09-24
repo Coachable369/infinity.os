@@ -44,8 +44,12 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--trials", type=int, default=5)
     parser.add_argument("--prompt", default="hello")
+    parser.add_argument("--baseline-pump", choices=("legacy", "deadline"))
+    parser.add_argument("--candidate-pump", choices=("legacy", "deadline"))
+    parser.add_argument("--io-delay-us", type=int, default=0)
     args = parser.parse_args()
     assert args.trials >= 3
+    assert 0 <= args.io_delay_us <= 10000
     args.output.mkdir(parents=True, exist_ok=False)
     samples = {"baseline": [], "candidate": []}
     reference = None
@@ -54,6 +58,11 @@ def main():
         for name in order:
             path = (args.output / f"{name}-{trial}.bin").resolve()
             env = dict(os.environ, HERMES_TEST_REPORT=str(path), HERMES_TEST_PROMPT=args.prompt)
+            for key in ("HERMES_TEST_PUMP", "HERMES_TEST_IO_US"):
+                env.pop(key, None)
+            pump = getattr(args, f"{name}_pump")
+            if pump:
+                env.update(HERMES_TEST_PUMP=pump, HERMES_TEST_IO_US=str(args.io_delay_us))
             with path.with_suffix(".log").open("wb") as log:
                 subprocess.run([str(getattr(args, name).resolve()), "--forward"], env=env,
                                stdout=log, stderr=subprocess.STDOUT, check=True, timeout=180)
@@ -68,6 +77,8 @@ def main():
                      for key in ("first_ns", "last_ns", "decode_ns", "total_ns")}
                for name, values in samples.items()}
     result = {"boundary": "controlled native ARM64 host; not installed guest timing",
+              "scheduler_experiment": {"baseline": args.baseline_pump, "candidate": args.candidate_pump,
+                                       "injected_event_delay_us": args.io_delay_us},
               "trials": args.trials, "samples": samples, "medians": medians,
               "identical_generated_bytes": True,
               "speedups": {key: speed_ratio(medians["baseline"][key], medians["candidate"][key])

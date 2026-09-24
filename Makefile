@@ -417,6 +417,8 @@ boot-media-test:
 ai-test:
 	@tools/ai-test.sh
 	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 --test kernel/runtime/ai/qwen/pump.rs -o build/behavior-tests/qwen-pump-test
+	@build/behavior-tests/qwen-pump-test
 	@rustc --edition=2021 --test kernel/runtime/ai/qwen/metrics.rs -o build/behavior-tests/qwen-metrics-test
 	@build/behavior-tests/qwen-metrics-test
 	@clang -O3 -ffp-contract=off -c kernel/runtime/ai/qwen/cpu_math.c -o build/behavior-tests/qwen-worker-math.o

@@ -235,9 +235,8 @@ impl AiRuntime {
             service.cancel();
             return false;
         }
-        #[cfg(target_os = "none")]
-        let started = crate::ui::performance::monotonic_ns();
-        for _ in 0..256 {
+        let mut budget = qwen::pump::PumpBudget::new(crate::ui::performance::monotonic_ns());
+        while budget.next(crate::ui::performance::monotonic_ns()) {
             let slice_start = crate::ui::performance::monotonic_ns();
             let result = service.poll();
             self.qwen_metrics.slice(slice_start, crate::ui::performance::monotonic_ns(), matches!(result, Ok(true)));
@@ -268,13 +267,6 @@ impl AiRuntime {
                     self.chat.publish_native_completion(service.output(), true);
                     return true;
                 }
-                break;
-            }
-            #[cfg(target_os = "none")]
-            if started
-                .zip(crate::ui::performance::monotonic_ns())
-                .is_some_and(|(a, b)| b.saturating_sub(a) >= 2_000_000)
-            {
                 break;
             }
         }

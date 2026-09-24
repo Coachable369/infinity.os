@@ -1,6 +1,7 @@
 //! Native, allocation-free Qwen3 tensor primitives. No external inference runtime.
 pub mod gguf;
 pub mod metrics;
+pub mod pump;
 pub mod workers;
 pub mod quant;
 pub mod service;

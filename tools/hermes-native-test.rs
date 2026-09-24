@@ -30,10 +30,27 @@ fn main() {
         service.submit(forward_prompt.as_bytes()).unwrap();
         let mut tokens = 0;
         let mut token_times = Vec::new();
+        // Optional real-model scheduler experiment. The delay represents host
+        // event/firmware work, not measured guest latency. Default stays unpaced.
+        let pump = std::env::var("HERMES_TEST_PUMP").unwrap_or_default();
+        assert!(matches!(pump.as_str(), "" | "legacy" | "deadline"));
+        let io_us = std::env::var("HERMES_TEST_IO_US").ok()
+            .map(|v| v.parse::<u64>().unwrap()).unwrap_or(0);
         while service.busy() && tokens < 32 {
-            if service.poll().unwrap() {
-                tokens += 1;
-                token_times.push(start.elapsed().as_nanos() as u64);
+            let mut budget = qwen::pump::PumpBudget::new(Some(start.elapsed().as_nanos() as u64));
+            let mut polls = 0;
+            while service.busy() && tokens < 32 {
+                if pump == "legacy" && polls >= 256 { break; }
+                if !pump.is_empty() && !budget.next(Some(start.elapsed().as_nanos() as u64)) { break; }
+                polls += 1;
+                if service.poll().unwrap() {
+                    tokens += 1;
+                    token_times.push(start.elapsed().as_nanos() as u64);
+                    if !pump.is_empty() { break; }
+                }
+            }
+            if !pump.is_empty() && service.busy() && io_us != 0 {
+                std::thread::sleep(std::time::Duration::from_micros(io_us));
             }
         }
         assert!(tokens > 0);
