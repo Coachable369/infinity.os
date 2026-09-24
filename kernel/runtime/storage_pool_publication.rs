@@ -5,6 +5,7 @@ pub(super) struct Publisher {
     cursor: usize,
     ticks: u8,
     due: [u64; 4],
+    resource_kind: [u8; 4],
     reconnect: [u64; 4],
     prepared: Option<(usize, StorageOperationV1)>,
     pending: Option<(usize, Pending)>,
@@ -21,6 +22,7 @@ impl Publisher {
             cursor: 0,
             ticks: 0,
             due: [0; 4],
+            resource_kind: [0; 4],
             reconnect: [0; 4],
             prepared: None,
             pending: None,
@@ -85,33 +87,10 @@ fn advertise_policy(user:StableId,session:StableId,peer:NodeId,grant:u64,durable
 }
 // ------------------------=
 // FUNC: packet
-// DESC: Encodes measured native resource identity and capacity exactly; only the explicit resource lease is newly supplied.
+// DESC: Encodes measured native resource identity, kind, and capacity through the canonical typed resource schema.
 // ------------------=
-fn packet(resource: Resource) -> StorageOperationV1 {
-    let mut p = StorageOperationV1 {
-        operation: Operation::ResourceAdvertise,
-        object: resource.id.0,
-        authority_generation: resource.generation,
-        manifest_generation: resource.sequence,
-        object_version: resource.capacity,
-        offset: resource.available,
-        scope: 0,
-        value: 60,
-        length: 48,
-        data: [0; 64],
-    };
-    p.data[..16].copy_from_slice(&resource.id.0);
-    p.data[16..32].copy_from_slice(&resource.device);
-    p.data[32..40].copy_from_slice(&resource.reserved.to_le_bytes());
-    p.data[40..44].copy_from_slice(&resource.capabilities.to_le_bytes());
-    p.data[44] = match resource.health {
-        fabric::resources::Health::Healthy => 1,
-        fabric::resources::Health::Degraded => 2,
-        fabric::resources::Health::Failed => 3,
-    };
-    p.data[45] = resource.online as u8;
-    p.data[46..48].copy_from_slice(&1u16.to_le_bytes());
-    p
+fn packet(resource: Resource) -> Result<StorageOperationV1, RemoteError> {
+    fabric::resource_protocol::encode(resource, 60).map_err(|_| RemoteError::MalformedRequest)
 }
 // ------------------------=
 // FUNC: step
@@ -129,7 +108,10 @@ fn step(r: &mut InfinityRuntime, now: u64) -> Result<bool, RemoteError> {
         r.iop.remote.discard(caller, p.request);
         let _ = r.capabilities.retire_leaf(p.capability, caller);
         r.storage_coordinator.publisher.pending = None;
-        r.storage_coordinator.publisher.due[index] = now.saturating_add(20);
+        let next_kind = (r.storage_coordinator.publisher.resource_kind[index] + 1) % 3;
+        r.storage_coordinator.publisher.resource_kind[index] = next_kind;
+        r.storage_coordinator.publisher.due[index] =
+            now.saturating_add(if next_kind == 0 { 20 } else { 1 });
         let reply = done.ok_or(RemoteError::DeadlineExceeded)?.result?;
         if reply != p.payload {
             return Err(RemoteError::UnknownResponse);
@@ -244,14 +226,29 @@ fn step(r: &mut InfinityRuntime, now: u64) -> Result<bool, RemoteError> {
         return Ok(false);
     }
     let owner = r.nodes.local_id().ok_or(RemoteError::ServiceUnavailable)?;
-    let NativeReply::Resource(resource) = native(r, NativeRequest::LocalResource { owner }, now)?
-    else {
-        return Err(RemoteError::InvalidState);
+    let resource = if r.storage_coordinator.publisher.resource_kind[index] == 0 {
+        let NativeReply::Resource(resource) = native(r, NativeRequest::LocalResource { owner }, now)?
+        else { return Err(RemoteError::InvalidState); };
+        resource
+    } else {
+        let kind = if r.storage_coordinator.publisher.resource_kind[index] == 1 {
+            fabric::resources::ResourceKind::Compute
+        } else {
+            fabric::resources::ResourceKind::Memory
+        };
+        let mut resource = r.fabric_resources.entries().iter().flatten()
+            .find(|resource| resource.owner == owner && resource.kind == kind && resource.online)
+            .copied().ok_or(RemoteError::ServiceUnavailable)?;
+        let reserved = r.fabric_resources.reserved_for(resource.id, resource.generation).unwrap_or(0);
+        resource.available = resource.available.saturating_sub(reserved);
+        resource.reserved = 0;
+        resource.sequence = now.max(resource.sequence.saturating_add(1));
+        resource
     };
     if resource.owner != owner {
         return Err(RemoteError::AccessDenied);
     }
-    let mut p = packet(resource);
+    let mut p = packet(resource)?;
     p.scope = r.storage_coordinator.config.scope;
     r.storage_coordinator.publisher.prepared = Some((index, p));
     Ok(true)
@@ -278,6 +275,32 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: publication_packet_preserves_each_typed_resource_kind
+    // DESC: Verifies the persistent publisher cannot collapse compute, memory, or accelerator observations into storage packets.
+    // ------------------=
+    #[test]
+    fn publication_packet_preserves_each_typed_resource_kind() {
+        let owner = NodeId([9; 32]);
+        for (marker, kind) in [
+            (1, fabric::resources::ResourceKind::Storage),
+            (2, fabric::resources::ResourceKind::Compute),
+            (3, fabric::resources::ResourceKind::Memory),
+            (4, fabric::resources::ResourceKind::Accelerator),
+        ] {
+            let resource = Resource {
+                id: fabric::resources::ResourceId([marker; 16]), owner, kind,
+                device: [marker + 4; 16], capacity: 4096, available: 3072,
+                reserved: 1024, health: fabric::resources::Health::Healthy,
+                online: true, capabilities: 1, generation: 2, sequence: 3, expires: 99,
+            };
+            let decoded = fabric::resource_protocol::decode(packet(resource).unwrap(), owner, 10).unwrap();
+            assert_eq!(decoded.kind, kind);
+            assert_eq!(decoded.id, resource.id);
+            assert_eq!(decoded.capacity, resource.capacity);
+            assert_eq!(decoded.available, resource.available);
+        }
+    }
     // ------------------------=
     // FUNC: persisted
     // DESC: Returns an explicit persisted publication fixture without any user session or negotiated peer key.

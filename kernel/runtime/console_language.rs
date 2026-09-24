@@ -417,6 +417,7 @@ const NODE_LINK_ARGS: &[ArgumentSchema] = &[
 ];
 const NODE_GRANT_ARGS: &[ArgumentSchema] = &[
     ArgumentSchema { name: b"name", value_type: ArgumentType::Text, required: true },
+    ArgumentSchema { name: b"scope", value_type: ArgumentType::Text, required: false },
     ArgumentSchema { name: b"seconds", value_type: ArgumentType::Text, required: false },
     ArgumentSchema { name: b"durable", value_type: ArgumentType::Boolean, required: false },
     ArgumentSchema { name: b"confirm", value_type: ArgumentType::Boolean, required: false },
@@ -542,6 +543,11 @@ const SETTING_ARGS: &[ArgumentSchema] = &[
         name: b"value",
         value_type: ArgumentType::Text,
         required: true,
+    },
+    ArgumentSchema {
+        name: b"scope",
+        value_type: ArgumentType::Text,
+        required: false,
     },
 ];
 const PAIR_CONFIRM_ARGS: &[ArgumentSchema] = &[ArgumentSchema {
@@ -1815,7 +1821,7 @@ pub static OPERATIONS: &[OperationSchema] = &[
         b"network service-discover",
     ),
     op(b"node", b"list", b"List signed discovered nodes without granting trust", OperationId::NodeList, ValueType::Unit, ValueType::NodeSet, None, NO_ARGS, 1, SideEffectClass::Query, b"node list"),
-    op(b"node", b"capability-grant", b"Review and approve one leased peer operation in scope zero", OperationId::NodeCapabilityGrant, ValueType::Unit, ValueType::NodePolicy, Some(ArgumentType::NodeRef), NODE_GRANT_ARGS, 9, SideEffectClass::SecurityChange, b"node capability-grant node:<complete-id> name=inspect seconds=600 confirm=true"),
+    op(b"node", b"capability-grant", b"Review and approve one leased peer operation in an explicit scope", OperationId::NodeCapabilityGrant, ValueType::Unit, ValueType::NodePolicy, Some(ArgumentType::NodeRef), NODE_GRANT_ARGS, 9, SideEffectClass::SecurityChange, b"node capability-grant node:<complete-id> name=compute-request scope=11 seconds=600 confirm=true"),
     op(b"node", b"capability-revoke", b"Revoke one peer grant immediately", OperationId::NodeCapabilityRevoke, ValueType::Unit, ValueType::NodePolicy, Some(ArgumentType::NodeRef), NO_ARGS, 9, SideEffectClass::SecurityChange, b"node capability-revoke 1"),
     op(b"node", b"capability-list", b"Inspect bounded peer grants", OperationId::NodeCapabilityList, ValueType::Unit, ValueType::NodePolicy, None, NO_ARGS, 1, SideEffectClass::Query, b"node capability-list"),
     op(b"node", b"remote-read", b"Queue authenticated inspection of this node at a peer", OperationId::NodeInspect, ValueType::Unit, ValueType::NodeSet, Some(ArgumentType::NodeRef), NODE_REMOTE_ARGS, 1, SideEffectClass::Query, b"node remote-read node:<complete-id> grant=1"),

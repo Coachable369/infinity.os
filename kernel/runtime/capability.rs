@@ -254,6 +254,22 @@ impl CapabilityManager {
         self.entries[index] = None;
         Ok(())
     }
+
+    // ------------------------=
+    // FUNC: reclaim_expired_leaves
+    // DESC: Reclaims expired nondelegating leaves so bounded transient service authority cannot exhaust the global capability table.
+    // ------------------=
+    pub fn reclaim_expired_leaves(&mut self, now: u64) -> usize {
+        let mut reclaimed = 0;
+        for index in 0..MAX_CAPABILITIES {
+            let Some(capability) = self.entries[index] else { continue; };
+            if capability.delegation_rights != 0 || capability.expires_at.is_none_or(|expires| now < expires)
+                || self.entries.iter().flatten().any(|entry| entry.parent == Some(capability.id)) { continue; }
+            self.entries[index] = None;
+            reclaimed += 1;
+        }
+        reclaimed
+    }
     // ------------------------=
     // FUNC: delegate
     // DESC: Implements the delegate operation.

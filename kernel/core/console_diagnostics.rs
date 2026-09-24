@@ -14,6 +14,9 @@ static mut INFINITY_SETTINGS_DIAGNOSTIC_SNAPSHOT: [u64; 128] = [0; 128];
 #[used]
 #[no_mangle]
 static mut INFINITY_NAVIGATOR_DIAGNOSTIC_SNAPSHOT: [u64; 64] = [0; 64];
+#[used]
+#[no_mangle]
+static mut INFINITY_COMPUTE_DIAGNOSTIC_SNAPSHOT: [u64; 256] = [0; 256];
 
 // ------------------------=
 // FUNC: publish_navigator
@@ -131,6 +134,7 @@ fn words(target: &mut [u64], bytes: &[u8]) {
 pub(super) fn publish(console: &ConsoleRuntime) {
     let mut data = [0u64; 512];
     let mut pool = [0u64;256]; pool[0]=0x494e46504f4f4c31;pool[1]=1;
+    let mut compute = [0u64; 256]; compute[0] = 0x494e46434f4d3131; compute[1] = 1;
     data[0] = 0x494e464449414731; data[1] = 1;
     data[3] = (!console.system.live_profile) as u64;
     data[4] = console.mode as u64; data[5] = console.installer_step as u64;
@@ -264,6 +268,64 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         }
         data[48] = runtime.network.connections.count() as u64;
         data[49] = runtime.capabilities.count() as u64;
+        compute[3] = runtime.compute.task_count() as u64;
+        compute[4] = runtime.compute_coordinator.task_count() as u64;
+        compute[5] = runtime.remote_compute.active_count() as u64;
+        compute[6] = runtime.execution.count() as u64;
+        compute[7] = runtime.compute.notice_count() as u64;
+        let caller = crate::runtime::execution::SecurityIdentity(console.current_session.0);
+        let mut capability_slot = 0usize;
+        for index in 0..runtime.capabilities.count() {
+            let Some(capability) = runtime.capabilities.nth(index) else { continue; };
+            if capability.holder != caller || !matches!(capability.kind,
+                crate::runtime::capability::CapabilityType::ComputeUse |
+                crate::runtime::capability::CapabilityType::ComputeCancel) { continue; }
+            if capability.kind == crate::runtime::capability::CapabilityType::ComputeUse { compute[8] += 1; }
+            if capability.kind == crate::runtime::capability::CapabilityType::ComputeCancel { compute[9] += 1; }
+            if capability_slot < 4 {
+                let at = 226 + capability_slot * 7;
+                compute[at] = capability.id;
+                compute[at + 1] = capability.kind as u64;
+                compute[at + 2] = capability.target;
+                compute[at + 3] = capability.rights as u64;
+                compute[at + 4] = capability.expires_at.unwrap_or(0);
+                compute[at + 5] = capability.revoked as u64;
+                compute[at + 6] = capability.constraints;
+                capability_slot += 1;
+            }
+        }
+        for resource in runtime.fabric_resources.entries().iter().flatten() {
+            let reserved = runtime.fabric_resources.reserved_for(resource.id, resource.generation).unwrap_or(0);
+            match resource.kind {
+                crate::runtime::fabric::resources::ResourceKind::Compute => { compute[10] += 1; compute[12] = compute[12].saturating_add(reserved); }
+                crate::runtime::fabric::resources::ResourceKind::Memory => { compute[11] += 1; compute[13] = compute[13].saturating_add(reserved); }
+                crate::runtime::fabric::resources::ResourceKind::Accelerator => compute[14] += 1,
+                crate::runtime::fabric::resources::ResourceKind::Storage => (),
+            }
+        }
+        for index in 0..runtime.compute.task_count().min(6) {
+            let Some(task) = runtime.compute.task_nth(index) else { continue; };
+            let at = 16 + index * 26;
+            compute[at] = task.task_id; compute[at + 1] = task.epoch as u64;
+            compute[at + 2] = task.state as u64; compute[at + 3] = task.error.map(|error| error as u64 + 1).unwrap_or(0);
+            words(&mut compute[at + 4..at + 8], &task.node.0);
+            words(&mut compute[at + 8..at + 10], &task.resource.0);
+            compute[at + 10] = task.correlation_id; compute[at + 11] = task.workload_kind as u64;
+            compute[at + 12] = task.locality as u64; compute[at + 13] = task.durability as u64;
+            compute[at + 14] = task.privacy_local_only as u64; compute[at + 15] = task.deadline;
+            compute[at + 16] = task.context.is_some() as u64; compute[at + 17] = task.accounting.reserved_cpu_units as u64;
+            compute[at + 18] = task.accounting.reserved_memory_bytes; compute[at + 19] = task.accounting.used_cpu_ticks;
+            compute[at + 20] = task.accounting.started_at; compute[at + 21] = task.accounting.finished_at;
+            compute[at + 22] = task.accounting.restart_count as u64;
+            words(&mut compute[at + 23..at + 25], &task.output_digest);
+        }
+        for index in 0..runtime.compute.notice_count().min(6) {
+            let Some(notice) = runtime.compute.notice_nth(index) else { continue; };
+            let at = 172 + index * 9;
+            compute[at] = notice.sequence; compute[at + 1] = notice.task_id;
+            compute[at + 2] = notice.epoch as u64; compute[at + 3] = notice.kind as u64;
+            compute[at + 4] = notice.state as u64; words(&mut compute[at + 5..at + 9], &notice.node.0);
+        }
         for (index, error) in runtime.node_links.errors.iter().enumerate() {
             data[50 + index] = error.map(|value| value as u64 + 1).unwrap_or(0);
         }
@@ -285,5 +347,10 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         for index in 0..256 {if index!=2 {core::ptr::write_volatile(pool_pointer.add(index),pool[index]);}}
         core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
         core::ptr::write_volatile(pool_pointer.add(2),generation);
+        let compute_pointer=(&raw mut INFINITY_COMPUTE_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
+        core::ptr::write_volatile(compute_pointer.add(2),generation|1);compute[2]=generation;compute[255]=generation;
+        for index in 0..256 {if index!=2 {core::ptr::write_volatile(compute_pointer.add(index),compute[index]);}}
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        core::ptr::write_volatile(compute_pointer.add(2),generation);
     }
 }

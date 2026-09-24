@@ -38,7 +38,7 @@ use crate::ui::text_editor::{
 const OUTPUT_ROWS: usize = 6;
 const LINE_CAPACITY: usize = 96;
 // Full ObjectId plus full peer NodeId and generation fences must fit without truncation.
-const COMMAND_CAPACITY: usize = 256;
+const COMMAND_CAPACITY: usize = 512;
 
 #[path = "console_diagnostics.rs"]
 mod diagnostics;
@@ -3038,6 +3038,7 @@ impl ConsoleRuntime {
     // DESC: Locks the active identity session only after retaining its complete desktop layout.
     // ------------------=
     fn lock_session_preserving_desktop(&mut self, inactive: bool) -> bool {
+        self.cancel_personalization_drag();
         self.spatial_finish_arrival();
         if self.spatial.open { self.spatial_close(); }
         if self.current_session.is_zero() {
@@ -3048,7 +3049,6 @@ impl ConsoleRuntime {
             runtime
                 .identity
                 .lock_session(self.current_session, self.current_user)
-        self.cancel_personalization_drag();
         })
         .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState))
         .is_ok();
@@ -3615,6 +3615,7 @@ impl ConsoleRuntime {
     // DESC: Opens one Settings section without accidentally activating its first value.
     // ------------------=
     fn open_settings(&mut self, section: usize) {
+        self.cancel_personalization_drag();
         crate::ui::app_launcher::minimized_shelf::set(crate::ui::app_launcher::minimized_shelf::SETTINGS, false);
         self.settings_open=true;
         self.cancel_node_pairing_input();
@@ -3625,7 +3626,6 @@ impl ConsoleRuntime {
             8
         } else if self.system_focus == 3 {
             7
-        self.cancel_personalization_drag();
         } else {
             5
         };
@@ -3693,6 +3693,7 @@ impl ConsoleRuntime {
     // DESC: Moves all Settings sections toward bounded logical scroll targets while leaving navigation focus unchanged.
     // ------------------=
     fn scroll_settings(&mut self, direction: i8) {
+        self.cancel_personalization_drag();
         let amount = crate::ui::input_preferences::current().wheel(direction);
         let distance = amount.unsigned_abs() as usize * 20;
         let maximum_scroll = SystemLayout::new(
@@ -3703,7 +3704,6 @@ impl ConsoleRuntime {
         .maximum_scroll;
         if amount < 0 {
             self.settings_scroll_target = self.settings_scroll_target.saturating_sub(distance);
-        self.cancel_personalization_drag();
         } else {
             self.settings_scroll_target = self
                 .settings_scroll_target
@@ -8110,6 +8110,10 @@ impl ConsoleRuntime {
                 SystemMenuTarget::Dismiss => {}
             }
         } else if self.mode == ConsoleMode::Settings {
+            if self.settings_personalization_pointer(layout, clicked, released, left_button) {
+                self.present_continuous_motion(released);
+                return;
+            }
             if self.settings_timeout_dragging {
                 if left_button {
                     let value = layout.settings_slider_drag_value_for_section(
@@ -8120,10 +8124,6 @@ impl ConsoleRuntime {
                         4,
                     );
                     self.preview_user_no_activity_timeout(value.saturating_add(1));
-            if self.settings_personalization_pointer(layout, clicked, released, left_button) {
-                self.present_continuous_motion(released);
-                return;
-            }
                 }
                 if released {
                     self.settings_timeout_dragging = false;
@@ -9665,7 +9665,16 @@ impl ConsoleRuntime {
                 Some(b"object-policy") => OperationId::ObjectSetPolicy.machine_id(),
                 Some(b"pool-inspect") => OperationId::PoolInspect.machine_id(),
                 Some(b"pool-metadata") => OperationId::PoolMetadata.machine_id(),
+                Some(b"compute-request") => OperationId::ComputeRequest.machine_id(),
+                Some(b"compute-cancel") => OperationId::ComputeCancel.machine_id(),
                 _ => { self.output.write_line(b"Choose a registered node, resource, or replica operation."); return true; }
+            };
+            request.scope = match node_argument(node, b"scope") {
+                Some(value) => {
+                    let Some(scope) = parse_u64_decimal(value) else { self.output.write_line(b"Scope must be an unsigned decimal value."); return true; };
+                    scope
+                }
+                None => 0,
             };
             let durable = node_argument(node,b"durable")==Some(b"true".as_slice());
             if durable && (node_argument(node,b"seconds").is_some() || !crate::runtime::node::durable::allowed(request.value)) {self.output.write_line(b"Durable approval is Pool-only, until revoked; omit seconds.");return true;}
@@ -9675,7 +9684,8 @@ impl ConsoleRuntime {
             self.output.write_hex(b"Requesting peer: ", &request.node_id);
             self.output.write_number(b"Exact operation: ", request.value as u64);
             if durable {self.output.write_line(b"DURABLE AUTHORITY: survives reboot until explicitly revoked. No automatic expiration.");}else{self.output.write_number(b"Duration in seconds: ", seconds);}
-            self.output.write_line(b"Scope: 0. One operation only; peer policy must separately allow it.");
+            self.output.write_number(b"Scope: ", request.scope);
+            self.output.write_line(b"One operation only; peer policy must separately allow this exact scope.");
             self.output.write_line(b"Policy source: authenticated local operator. Exact peer and operation only.");
             if node_argument(node, b"confirm") != Some(b"true".as_slice()) {
                 self.output.write_line(b"No authority changed. Repeat with confirm=true to approve this scope."); return true;
@@ -9711,6 +9721,13 @@ impl ConsoleRuntime {
                 return true;
             };
             request.flags = category as u32;
+            request.scope = match node_argument(node, b"scope") {
+                Some(value) => {
+                    let Some(scope) = parse_u64_decimal(value) else { self.output.write_line(b"Policy scope must be an unsigned decimal value."); return true; };
+                    scope
+                }
+                None => 0,
+            };
             request.value = match node_argument(node, b"value") {
                 Some(b"deny") => 0,
                 Some(b"allow") => 1,
@@ -10670,8 +10687,109 @@ impl ConsoleRuntime {
             return true;
         }
         if command == b"compute" || command == b"help compute" {
-            self.output.write_line(b"compute - inspect and cancel distributed execution");
-            self.output.write_line(b"list | inspect TASK_ID | cancel TASK_ID COMPUTE_CANCEL_CAP");
+            self.output.write_line(b"compute - authorize, submit, inspect, cancel, and revoke distributed execution");
+            self.output.write_line(b"authorize scope=N seconds=N confirm=true | authorize-cancel task=N seconds=N confirm=true");
+            self.output.write_line(b"submit scope=N capability=N kind=checksum|counter|accelerator locality=local|remote|prefer-local|prefer-remote durability=pinned|restartable work=N memory=N cpu=N deadline=N [node=ID request-grant=N cancel-grant=N] [fallback=ID fallback-request-grant=N fallback-cancel-grant=N]");
+            self.output.write_line(b"list | inspect TASK_ID | cancel TASK_ID COMPUTE_CANCEL_CAP | revoke CAPABILITY");
+            return true;
+        }
+        if let Some(arguments) = command.strip_prefix(b"compute authorize ") {
+            crate::output_text(b"[operation] Compute.Authorize\n");
+            let scope = command_argument(arguments, b"scope").and_then(parse_u64_decimal).filter(|value| *value != 0);
+            let seconds = command_argument(arguments, b"seconds").and_then(parse_u64_decimal).filter(|value| (1..=3600).contains(value));
+            if scope.is_none() || seconds.is_none() { self.output.write_line(b"Usage: compute authorize scope=N seconds=1..3600 confirm=true"); return true; }
+            if command_argument(arguments, b"confirm") != Some(b"true".as_slice()) { self.output.write_line(b"No authority changed. Repeat with confirm=true to approve this workload scope."); return true; }
+            let Ok(lease) = crate::runtime::node_client::begin_capability_input(self.current_user, self.current_session) else { self.output.write_line(b"Trusted capability consent is unavailable."); return true; };
+            let Some(now) = crate::runtime::node_client::clock() else { crate::runtime::with_runtime(|runtime| { let _ = runtime.ui.trusted.release_secure_input(lease); }); self.output.write_line(b"Compute authorization unavailable."); return true; };
+            let caller = crate::runtime::execution::SecurityIdentity(self.current_session.0);
+            let capability = crate::runtime::with_runtime(|runtime| runtime.capabilities.grant(crate::runtime::capability::CapabilityType::ComputeUse, scope.unwrap(), crate::runtime::compute::COMPUTE_RIGHT_EXECUTE, 0, caller, caller, Some(now.saturating_add(seconds.unwrap())), 0));
+            crate::runtime::with_runtime(|runtime| { let _ = runtime.ui.trusted.release_secure_input(lease); });
+            match capability {
+                Some(Ok(capability)) => self.output.write_number(b"Compute capability: ", capability),
+                _ => self.output.write_line(b"Compute authorization rejected."),
+            }
+            return true;
+        }
+        if let Some(arguments) = command.strip_prefix(b"compute authorize-cancel ") {
+            crate::output_text(b"[operation] Compute.AuthorizeCancel\n");
+            let task = command_argument(arguments, b"task").and_then(parse_u64_decimal).filter(|value| *value != 0);
+            let seconds = command_argument(arguments, b"seconds").and_then(parse_u64_decimal).filter(|value| (1..=3600).contains(value));
+            if task.is_none() || seconds.is_none() { self.output.write_line(b"Usage: compute authorize-cancel task=N seconds=1..3600 confirm=true"); return true; }
+            if command_argument(arguments, b"confirm") != Some(b"true".as_slice()) { self.output.write_line(b"No authority changed. Repeat with confirm=true to approve cancellation for this task."); return true; }
+            let Ok(lease) = crate::runtime::node_client::begin_capability_input(self.current_user, self.current_session) else { self.output.write_line(b"Trusted capability consent is unavailable."); return true; };
+            let Some(now) = crate::runtime::node_client::clock() else { crate::runtime::with_runtime(|runtime| { let _ = runtime.ui.trusted.release_secure_input(lease); }); self.output.write_line(b"Compute authorization unavailable."); return true; };
+            let caller = crate::runtime::execution::SecurityIdentity(self.current_session.0);
+            let capability = crate::runtime::with_runtime(|runtime| runtime.capabilities.grant(crate::runtime::capability::CapabilityType::ComputeCancel, task.unwrap(), 1, 0, caller, caller, Some(now.saturating_add(seconds.unwrap())), 0));
+            crate::runtime::with_runtime(|runtime| { let _ = runtime.ui.trusted.release_secure_input(lease); });
+            match capability {
+                Some(Ok(capability)) => self.output.write_number(b"Cancellation capability: ", capability),
+                _ => self.output.write_line(b"Cancellation authorization rejected."),
+            }
+            return true;
+        }
+        if let Some(value) = command.strip_prefix(b"compute revoke ") {
+            crate::output_text(b"[operation] Compute.Revoke\n");
+            let Some(capability) = parse_u64_decimal(value) else { self.output.write_line(b"Usage: compute revoke CAPABILITY"); return true; };
+            let caller = crate::runtime::execution::SecurityIdentity(self.current_session.0);
+            let revoked = crate::runtime::with_runtime(|runtime| {
+                let owned = runtime.capabilities.get(capability).is_some_and(|entry| entry.holder == caller && entry.issuer == caller && matches!(entry.kind, crate::runtime::capability::CapabilityType::ComputeUse | crate::runtime::capability::CapabilityType::ComputeCancel));
+                owned && runtime.capabilities.revoke(capability).is_ok()
+            });
+            self.output.write_line(if revoked == Some(true) { b"Compute capability revoked." } else { b"Compute capability revocation rejected." });
+            return true;
+        }
+        if let Some(arguments) = command.strip_prefix(b"compute submit ") {
+            crate::output_text(b"[operation] Compute.Request\n");
+            let Some(scope) = command_argument(arguments, b"scope").and_then(parse_u64_decimal).filter(|value| *value != 0) else { self.output.write_line(b"A nonzero workload scope is required."); return true; };
+            let Some(capability_ref) = command_argument(arguments, b"capability").and_then(parse_u64_decimal) else { self.output.write_line(b"An explicit Compute.Use capability is required."); return true; };
+            let workload_kind = match command_argument(arguments, b"kind") {
+                Some(b"checksum") => crate::runtime::compute::WorkloadKind::CpuChecksum,
+                Some(b"counter") => crate::runtime::compute::WorkloadKind::CpuBoundedCounter,
+                Some(b"accelerator") => crate::runtime::compute::WorkloadKind::AcceleratorInferenceFixture,
+                _ => { self.output.write_line(b"Kind must be checksum, counter, or accelerator."); return true; }
+            };
+            let locality = match command_argument(arguments, b"locality") {
+                Some(b"local") => crate::runtime::compute::ComputeLocality::RequireLocal,
+                Some(b"remote") => crate::runtime::compute::ComputeLocality::RequireRemote,
+                Some(b"prefer-local") => crate::runtime::compute::ComputeLocality::PreferLocal,
+                Some(b"prefer-remote") => crate::runtime::compute::ComputeLocality::PreferRemote,
+                _ => { self.output.write_line(b"Locality must be local, remote, prefer-local, or prefer-remote."); return true; }
+            };
+            let durability = match command_argument(arguments, b"durability") {
+                Some(b"pinned") => crate::runtime::compute::ComputeDurability::Pinned,
+                Some(b"restartable") => crate::runtime::compute::ComputeDurability::Restartable,
+                _ => { self.output.write_line(b"Durability must be pinned or restartable."); return true; }
+            };
+            let Some(work_units) = command_argument(arguments, b"work").and_then(parse_u32_decimal).filter(|value| (1..=1_000_000).contains(value)) else { self.output.write_line(b"Work must be between 1 and 1000000 units."); return true; };
+            let Some(memory_bytes) = command_argument(arguments, b"memory").and_then(parse_u64_decimal).filter(|value| (1..=crate::runtime::compute::MAX_COMPUTE_MEMORY).contains(value)) else { self.output.write_line(b"Memory is outside the bounded compute limit."); return true; };
+            let Some(cpu_units) = command_argument(arguments, b"cpu").and_then(parse_u64_decimal).and_then(|value| u16::try_from(value).ok()).filter(|value| (1..=64).contains(value)) else { self.output.write_line(b"CPU units must be between 1 and 64."); return true; };
+            let Some(deadline_seconds) = command_argument(arguments, b"deadline").and_then(parse_u64_decimal).filter(|value| (1..=3600).contains(value)) else { self.output.write_line(b"Deadline must be between 1 and 3600 seconds."); return true; };
+            let primary = command_argument(arguments, b"node").and_then(parse_node_id);
+            let fallback = command_argument(arguments, b"fallback").and_then(parse_node_id);
+            if fallback.is_some() && primary.is_none() { self.output.write_line(b"A fallback node requires a primary node."); return true; }
+            if locality != crate::runtime::compute::ComputeLocality::RequireLocal && primary.is_none() { self.output.write_line(b"Remote-capable placement requires an explicit node and grants."); return true; }
+            let primary_authority = if let Some(node) = primary {
+                let Some(request_grant) = command_argument(arguments, b"request-grant").and_then(parse_u64_decimal) else { self.output.write_line(b"The primary node requires request-grant."); return true; };
+                let Some(cancel_grant) = command_argument(arguments, b"cancel-grant").and_then(parse_u64_decimal) else { self.output.write_line(b"The primary node requires cancel-grant."); return true; };
+                Some(crate::runtime::compute_operator::RemoteComputeAuthority { node, request_grant, cancel_grant })
+            } else { None };
+            let fallback_authority = if let Some(node) = fallback {
+                let Some(request_grant) = command_argument(arguments, b"fallback-request-grant").and_then(parse_u64_decimal) else { self.output.write_line(b"The fallback node requires fallback-request-grant."); return true; };
+                let Some(cancel_grant) = command_argument(arguments, b"fallback-cancel-grant").and_then(parse_u64_decimal) else { self.output.write_line(b"The fallback node requires fallback-cancel-grant."); return true; };
+                Some(crate::runtime::compute_operator::RemoteComputeAuthority { node, request_grant, cancel_grant })
+            } else { None };
+            let Some(now) = crate::runtime::node_client::clock() else { self.output.write_line(b"Compute clock unavailable."); return true; };
+            let mut workload_id = [0u8; 16]; workload_id[..8].copy_from_slice(&scope.to_le_bytes()); workload_id[8..].copy_from_slice(&now.to_le_bytes());
+            let nodes = [primary.unwrap_or_default(), fallback.unwrap_or_default()];
+            let empty_authority = crate::runtime::compute_operator::RemoteComputeAuthority { node: Default::default(), request_grant: 0, cancel_grant: 0 };
+            let authorities = [primary_authority.unwrap_or(empty_authority), fallback_authority.unwrap_or(empty_authority)];
+            let node_count = primary.is_some() as u8 + fallback.is_some() as u8;
+            let request = crate::runtime::compute::ComputeRequestV1 { schema_version: crate::runtime::compute::COMPUTE_SCHEMA_VERSION, workload_kind, locality, durability, priority: 128, privacy_local_only: locality == crate::runtime::compute::ComputeLocality::RequireLocal, workload_id, input_refs: [[0; 16]; 2], allowed_nodes: nodes, allowed_node_count: node_count, allowed_domains: [0; 2], allowed_domain_count: 0, memory_bytes, deadline: now.saturating_add(deadline_seconds), correlation_id: now ^ scope, capability_ref, affinity: 0, anti_affinity: 0, work_units, cpu_units, restart_eligible: durability == crate::runtime::compute::ComputeDurability::Restartable, result_contract: crate::runtime::compute::COMPUTE_RESULT_CONTRACT_V1 };
+            let caller = crate::runtime::execution::SecurityIdentity(self.current_session.0);
+            match crate::runtime::submit_compute_request(request, caller, authorities, node_count, now) {
+                Ok(task) => self.output.write_number(b"Distributed task: ", task),
+                Err(error) => self.output.write_segments(&[b"Compute request rejected: ", compute_error_text(error)]),
+            }
             return true;
         }
         if command == b"compute list" {
@@ -11740,6 +11858,18 @@ fn command_word(command: &[u8], index: usize) -> Option<&[u8]> {
 }
 
 // ------------------------=
+// FUNC: command_argument
+// DESC: Returns one exact name=value argument from a bounded raw Console command without allocating.
+// ------------------=
+fn command_argument<'a>(arguments: &'a [u8], name: &[u8]) -> Option<&'a [u8]> {
+    arguments
+        .split(|byte| byte.is_ascii_whitespace())
+        .filter_map(|word| split_once(word, b'='))
+        .find(|(candidate, _)| *candidate == name)
+        .map(|(_, value)| value)
+}
+
+// ------------------------=
 // FUNC: node_argument
 // DESC: Returns one validated typed argument from a parsed node operation without reparsing command text.
 // ------------------=
@@ -12274,6 +12404,21 @@ fn compute_result_text(task: crate::runtime::compute::ComputeSnapshot) -> &'stat
         Some(InvalidRequest) => b"Invalid request", Some(InvalidState) => b"Invalid state",
         Some(UnknownTask) => b"Unknown task", Some(Full) => b"Capacity full", Some(Context) => b"Execution context failure",
         None => b"Pending",
+    }
+}
+
+// ------------------------=
+// FUNC: compute_error_text
+// DESC: Projects a typed compute admission or lifecycle error without relying on diagnostic strings as protocol state.
+// ------------------=
+fn compute_error_text(error: crate::runtime::compute::ComputeError) -> &'static [u8] {
+    use crate::runtime::compute::ComputeError::*;
+    match error {
+        AccessDenied => b"Access denied", InvalidRequest => b"Invalid request",
+        DeadlineExceeded => b"Deadline exceeded", NoPlacement => b"No placement",
+        Full => b"Capacity full", UnknownTask => b"Unknown task", InvalidState => b"Invalid state",
+        Cancelled => b"Cancelled", NodeLost => b"Node lost", UnsupportedDurability => b"Unsupported durability",
+        StaleResult => b"Stale result", ResourceUnavailable => b"Resource unavailable", Context => b"Execution context failure",
     }
 }
 // ------------------------=

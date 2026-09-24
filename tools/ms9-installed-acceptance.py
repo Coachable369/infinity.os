@@ -14,6 +14,8 @@ import struct
 import subprocess
 import time
 
+CONSOLE_COMMAND_CAPACITY = 512
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 # ------------------------=
@@ -42,7 +44,7 @@ class Guest:
     # FUNC: __init__
     # DESC: Creates one isolated machine with a unique blank disk and independently booted installed generation.
     # ------------------=
-    def __init__(self, work, number, firmware, reuse=False, width=2048, height=2048):
+    def __init__(self, work, number, firmware, reuse=False, width=2048, height=2048, memory_mb=4096):
         self.work = work / f"node-{number}"
         if not reuse:
             self.work.mkdir()
@@ -60,6 +62,8 @@ class Guest:
         self.mesh_port = None
         self.mesh_connect = False
         self.width, self.height = width, height
+        assert 512 <= memory_mb <= 16384
+        self.memory_mb = memory_mb
         self.last_pairing = None
         self.last_remote = None
         self.input_latency_ns = []
@@ -74,11 +78,15 @@ class Guest:
         self.installer = installer
         elf = self.work.parent / "artifacts" / ("kernel.elf" if installer else "installed-kernel.elf")
         self.address, self.length = symbol(elf, "INFINITY_DIAGNOSTIC_SNAPSHOT")
+        try:
+            self.compute_address, self.compute_length = symbol(elf, "INFINITY_COMPUTE_DIAGNOSTIC_SNAPSHOT")
+        except AssertionError:
+            self.compute_address, self.compute_length = None, 0
         self.frames_address, self.frames_length = symbol(elf, "INFINITY_DIAGNOSTIC_FRAMES")
         qmp = self.work / "qmp.sock"
         qmp.unlink(missing_ok=True)
         self.log = (self.work / ("installer.log" if installer else "installed.log")).open("ab")
-        command = ["qemu-system-x86_64", "-machine", "pc", "-cpu", "max", "-m", "4096M",
+        command = ["qemu-system-x86_64", "-machine", "pc", "-cpu", "max", "-m", f"{self.memory_mb}M",
                    "-vga", "none", "-device", f"VGA,xres={self.width},yres={self.height},xmax={self.width},ymax={self.height}",
                    "-drive", f"if=pflash,format=raw,readonly=on,file={self.firmware}",
                    "-drive", f"if=ide,index=0,format=raw,file={self.disk}",
@@ -153,6 +161,35 @@ class Guest:
         return values
 
     # ------------------------=
+    # FUNC: compute_state
+    # DESC: Decodes the read-only authoritative compute lifecycle snapshot without parsing Console or GUI prose.
+    # ------------------=
+    def compute_state(self):
+        if self.compute_address is None:
+            return None
+        values = struct.unpack("<256Q", self.memory(self.compute_address, self.compute_length))
+        if values[0] != 0x494e46434f4d3131 or values[1] != 1 or values[2] & 1 or values[2] != values[255]:
+            return None
+        return values
+
+    # ------------------------=
+    # FUNC: wait_compute
+    # DESC: Waits on a bounded structured compute predicate and captures visual/runtime evidence on failure.
+    # ------------------=
+    def wait_compute(self, predicate, label, timeout=120):
+        deadline = time.monotonic() + timeout
+        last = None
+        while time.monotonic() < deadline:
+            assert self.process.poll() is None, {"stage": label, "exit": self.process.returncode}
+            last = self.compute_state()
+            if last is not None and predicate(last):
+                print(json.dumps({"node": self.number, "stage": label, "snapshot": last[2]}), flush=True)
+                return last
+            time.sleep(.25)
+        self.screenshot("compute-failure")
+        raise AssertionError({"stage": label, "compute_state": last})
+
+    # ------------------------=
     # FUNC: wait
     # DESC: Waits on a bounded behavioral predicate and records the exact final binary state on failure.
     # ------------------=
@@ -225,7 +262,7 @@ class Guest:
         initial = self.state()
         fast = self.fast_commands and initial is not None and initial[4] == 5 and initial[71] != 0
         if fast:
-            assert len(value) <= 256 - initial[71]
+            assert len(value) <= CONSOLE_COMMAND_CAPACITY - initial[71]
         batch = []
         batch_codes = set()
         for index, character in enumerate(value):

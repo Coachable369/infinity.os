@@ -2024,8 +2024,16 @@ pub fn initialize_node_identity(entropy: &[u8; 32], valid: bool) -> bool {
 // DESC: Publishes actual bounded execution slots and boot-reserved native memory as local Resource Fabric capacity.
 // ------------------=
 pub fn register_local_compute_resources(memory_bytes: u64, now: u64) -> bool {
-    if memory_bytes == 0 { return false; }
     let runtime = runtime_mut();
+    register_local_compute_resources_from(runtime, memory_bytes, now)
+}
+
+// ------------------------=
+// FUNC: register_local_compute_resources_from
+// DESC: Publishes measured local execution and memory capacity against the runtime's current durable node identity.
+// ------------------=
+fn register_local_compute_resources_from(runtime: &mut InfinityRuntime, memory_bytes: u64, now: u64) -> bool {
+    if memory_bytes == 0 { return false; }
     let Some(owner) = runtime.nodes.local_id() else { return false; };
     let mut compute_id = [0; 16]; compute_id.copy_from_slice(&owner.0[..16]); compute_id[0] ^= 0xc1;
     let mut memory_id = [0; 16]; memory_id.copy_from_slice(&owner.0[..16]); memory_id[0] ^= 0xa3;
@@ -2440,6 +2448,10 @@ pub fn storage_initialized() {
         }
         #[cfg(target_os = "none")]
         {
+            let boot_node = runtime.nodes.local_id();
+            let boot_memory = boot_node.and_then(|owner| runtime.fabric_resources.entries().iter().flatten()
+                .find(|resource| resource.owner == owner && resource.kind == fabric::resources::ResourceKind::Memory)
+                .map(|resource| resource.capacity));
             let mut persisted = zeroize::Zeroizing::new([0u8; node::types::NODE_STATE_BYTES]);
             match crate::storage::node_state_load(&mut persisted[..]) {
                 Ok(length) if &persisted[..length] == b"INFNOD01\x01\0FIRST-BOOT-KEY-GENERATION" => {
@@ -2457,6 +2469,14 @@ pub fn storage_initialized() {
                     }
                 }
                 Err(_) => { runtime.nodes = node::NodeRuntime::new(); }
+            }
+            if runtime.nodes.local_id() != boot_node {
+                if let Some(owner) = boot_node {
+                    let _ = runtime.fabric_resources.retire_local_compute_identity(owner);
+                }
+                if let Some(memory_bytes) = boot_memory {
+                    let _ = register_local_compute_resources_from(runtime, memory_bytes, 1);
+                }
             }
         }
         #[cfg(target_os = "none")]

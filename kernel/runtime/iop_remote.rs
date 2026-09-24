@@ -727,7 +727,7 @@ impl IopRouter {
 
 // ------------------------=
 // FUNC: operation
-// DESC: Maps only supported remote service operations; pairing consent and unsynchronized membership cannot be remotely bypassed.
+// DESC: Maps only supported remote node and compute operations; pairing consent and unsynchronized membership cannot be remotely bypassed.
 // ------------------=
 pub(super) fn operation(value: u32) -> Result<OperationId, RemoteError> {
     use OperationId::*;
@@ -744,6 +744,8 @@ pub(super) fn operation(value: u32) -> Result<OperationId, RemoteError> {
         NodePolicyUpdate,
         NodeHealth,
         NodeDiagnostics,
+        ComputeRequest,
+        ComputeCancel,
     ]
     .into_iter()
     .find(|o| o.machine_id() == value)
@@ -820,11 +822,12 @@ fn validate_authority(nodes: &NodeRuntime, r: &Request, now: u64) -> Result<(), 
             NodeError::CapabilityExpired => RemoteError::CapabilityExpired,
             _ => RemoteError::CapabilityScopeDenied,
         })?;
-    // Category 0 is peer metadata; category 1 is explicitly delegated node control.
+    // Category 0 is peer metadata/storage, category 1 is delegated node control,
+    // and category 2 is compute. A storage-readable peer does not implicitly gain execution.
     let category = match r.message.payload {
         Payload::Node(p) => if is_read(p.operation) { 0 } else { 1 },
         Payload::Storage(_) => 0,
-        Payload::Compute(_) => 0,
+        Payload::Compute(_) => 2,
     };
     if peer.policy.scope != r.message.payload.scope() {
         return Err(RemoteError::PolicyDenied);

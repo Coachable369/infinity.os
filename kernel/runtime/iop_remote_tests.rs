@@ -15,6 +15,25 @@ struct Fixture {
 }
 
 // ------------------------=
+// FUNC: expired_transient_capabilities_are_reclaimed_before_new_work
+// DESC: Fills the bounded authority table with expired service leaves, reclaims them through the typed API, and proves new work can be authorized.
+// ------------------=
+#[test]
+fn expired_transient_capabilities_are_reclaimed_before_new_work() {
+    use crate::runtime::capability::{CapabilityType, MAX_CAPABILITIES};
+    let mut capabilities = CapabilityManager::new();
+    let service = SecurityIdentity([71; 16]);
+    for target in 1..=MAX_CAPABILITIES as u64 {
+        capabilities.grant(CapabilityType::ServiceCall, target, 1, 0, service, service, Some(5), 0).unwrap();
+    }
+    assert!(capabilities.grant(CapabilityType::ServiceCall, 999, 1, 0, service, service, Some(8), 0).is_err());
+    assert_eq!(capabilities.reclaim_expired_leaves(6), MAX_CAPABILITIES);
+    assert_eq!(capabilities.count(), 0);
+    let replacement = capabilities.grant(CapabilityType::ServiceCall, 999, 1, 0, service, service, Some(8), 0).unwrap();
+    assert!(capabilities.validate(replacement, service, CapabilityType::ServiceCall, 999, 1, 0, 6).is_ok());
+}
+
+// ------------------------=
 // FUNC: reused_slot_preserves_authenticated_request_order
 // DESC: Reuses a completed low slot through real request APIs and admits production-selected requests through the existing authenticated router replay gate.
 // ------------------=
@@ -88,6 +107,45 @@ fn storage_grants_require_human_approval_and_one_registered_operation() {
     assert_eq!(execute_node_operation(&mut f.nodes, OperationId::NodeCapabilityGrant, request, 5, 7), Err(IopError::InvalidPayload));
 }
 
+// ------------------------=
+// FUNC: compute_grants_accept_only_registered_request_and_cancel_operations
+// DESC: Exercises the real node grant executor and proves both compute wire operations receive exact peer, scope, rights and lease-bound authority.
+// ------------------=
+#[test]
+fn compute_grants_accept_only_registered_request_and_cancel_operations() {
+    use crate::runtime::iop::{execute_node_operation, NODE_OPERATION_HUMAN_APPROVED};
+    let mut f = Fixture::new();
+    for operation in [OperationId::ComputeRequest, OperationId::ComputeCancel] {
+        let request = NodeOperationV1 {
+            node_id: f.peer.0,
+            handle: 0,
+            scope: 11,
+            lease_deadline: 100,
+            operation: OperationId::NodeCapabilityGrant.machine_id(),
+            rights: 1,
+            value: operation.machine_id(),
+            flags: NODE_OPERATION_HUMAN_APPROVED,
+            schema_version: 1,
+        };
+        let granted = execute_node_operation(
+            &mut f.nodes,
+            OperationId::NodeCapabilityGrant,
+            request,
+            5,
+            7,
+        )
+        .unwrap();
+        assert!(f
+            .nodes
+            .authorize_remote(granted.handle, f.peer, operation.machine_id(), 11, 1, 6)
+            .is_ok());
+        assert!(f
+            .nodes
+            .authorize_remote(granted.handle, f.peer, operation.machine_id(), 12, 1, 6)
+            .is_err());
+    }
+}
+
 impl Fixture {
     // ------------------------=
     // FUNC: new
@@ -112,6 +170,7 @@ impl Fixture {
         let mut policy = nodes.discovered_nodes()[0].unwrap().policy;
         policy.categories[0] = PolicyDecision::Allow;
         policy.categories[1] = PolicyDecision::Allow;
+        policy.categories[2] = PolicyDecision::Allow;
         nodes.update_policy(peer, policy, 4, 1).unwrap();
         let grant = nodes
             .grant_remote(
@@ -319,8 +378,36 @@ fn authenticated_compute_executes_real_bounded_context_and_rechecks_revocation()
 
 #[test]
 // ------------------------=
+// FUNC: compute_policy_does_not_inherit_storage_read_authority
+// DESC: Proves an exact compute grant remains insufficient when the independent compute policy category denies execution.
+// ------------------=
+fn compute_policy_does_not_inherit_storage_read_authority() {
+    let mut f = Fixture::new();
+    let mut policy = f.nodes.discovered_nodes()[0].unwrap().policy;
+    assert_eq!(policy.categories[0], PolicyDecision::Allow);
+    policy.categories[2] = PolicyDecision::Deny;
+    f.nodes.update_policy(f.peer, policy, 5, 1).unwrap();
+    let local = f.nodes.local_id().unwrap();
+    let payload = compute_payload(local);
+    let grant = f.nodes.grant_remote(f.peer, OperationId::ComputeRequest as u32, payload.scope, 1, 100, 5, 1).unwrap();
+    let reference = f.nodes.sessions().iter().flatten().find(|session| session.id == f.session).unwrap().protocol_reference;
+    let request = Envelope { kind: 1, error: 0, id: 64, correlation: 65, causation: 66, grant, lease: 14, payload: Payload::Compute(payload) };
+    f.admit(data(f.peer, reference, request), 6).unwrap();
+    let mut invoked = false;
+    f.router.execute_remote_compute(&mut f.nodes, 7, |_| {
+        invoked = true;
+        Err(RemoteError::RemoteFailure)
+    });
+    assert!(!invoked);
+    assert_eq!(f.router.remote.incoming_count(), 0);
+    let response = f.router.remote.responses.iter().flatten().next().copied().unwrap();
+    assert_eq!(error_from_byte(response.message.error), Ok(RemoteError::PolicyDenied));
+}
+
+#[test]
+// ------------------------=
 // FUNC: coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations
-// DESC: Proves the production coordinator creates an outbound request for the selected peer and commits its fenced result into the same authoritative lifecycle.
+// DESC: Proves remote completion, cancellation, hop-timeout failover, fenced restart, and reservation release through the production coordinator.
 // ------------------=
 fn coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations() {
     use super::super::super::{
@@ -408,12 +495,25 @@ fn coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations(
     let failover_task = compute.request(failover_request, f.caller, &f.caps, &mut directory, local, 34).unwrap();
     coordinator.track(failover_task, f.caller, [RemoteComputeAuthority { node: f.peer, request_grant, cancel_grant }, RemoteComputeAuthority { node: peer_c, request_grant: request_c, cancel_grant: cancel_c }], 2).unwrap();
     coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 35);
-    let stale_envelope = f.router.remote.pending.iter().flatten().find(|pending| pending.request.message.payload.compute().is_ok_and(|payload| payload.task_id == failover_task)).unwrap().request.message;
-    assert_eq!(stale_envelope.payload.compute().unwrap().target_node, f.peer);
+    let pending_b = f.router.remote.pending.iter_mut().flatten().find(|pending| pending.request.message.payload.compute().is_ok_and(|payload| payload.task_id == failover_task)).unwrap();
+    let first_envelope = pending_b.request.message;
+    assert_eq!(first_envelope.payload.compute().unwrap().target_node, f.peer);
+    pending_b.result = Some(RemoteResult { request_id: first_envelope.id, correlation_id: first_envelope.correlation,
+        causation_id: first_envelope.causation, result: Err(RemoteError::DeadlineExceeded) });
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 36);
+    let retry = compute.inspect(failover_task).unwrap();
+    assert_eq!((retry.state, retry.node, retry.epoch, retry.accounting.restart_count),
+        (ComputeState::Running, f.peer, 1, 0));
+    let pending_b = f.router.remote.pending.iter_mut().flatten().find(|pending| pending.request.message.payload.compute().is_ok_and(|payload| payload.task_id == failover_task)).unwrap();
+    let stale_envelope = pending_b.request.message;
     directory.mark_peer_offline(f.peer);
-    compute.node_lost(f.peer, &mut directory, local, 36);
-    assert_eq!(compute.inspect(failover_task).unwrap().node, peer_c);
+    pending_b.result = Some(RemoteResult { request_id: stale_envelope.id, correlation_id: stale_envelope.correlation,
+        causation_id: stale_envelope.causation, result: Err(RemoteError::DeadlineExceeded) });
     coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 37);
+    let replaced = compute.inspect(failover_task).unwrap();
+    assert_eq!((replaced.state, replaced.node, replaced.epoch, replaced.accounting.restart_count),
+        (ComputeState::Running, peer_c, 2, 1));
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 38);
     let pending_c = f.router.remote.pending.iter_mut().flatten().find(|pending| pending.request.message.payload.compute().is_ok_and(|payload| payload.task_id == failover_task)).unwrap();
     let envelope_c = pending_c.request.message;
     assert_eq!(envelope_c.payload.compute().unwrap().target_node, peer_c);

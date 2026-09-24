@@ -133,7 +133,23 @@ impl ComputeCoordinator {
         if flight.operation == OperationId::ComputeCancel { return; }
         match result.result {
             Ok(payload) => { let _ = compute.accept_remote_result(task, payload, directory, now); }
-            Err(error) => { let _ = compute.remote_transport_failed(task, flight.epoch, map_remote_error(error), directory, local, now); }
+            Err(error) => {
+                // The IOP request lease is intentionally shorter than the
+                // workload deadline.  Expiring that per-hop lease while the
+                // workload is still live means the selected node stopped
+                // responding; restartable work must enter node-loss recovery
+                // rather than being terminally misreported as deadline expiry.
+                let snapshot = compute.inspect(task).ok();
+                if error == RemoteError::DeadlineExceeded && snapshot.is_some_and(|snapshot|
+                    (snapshot.deadline == 0 || now < snapshot.deadline) && directory.entries().iter().flatten().any(|resource|
+                        resource.id == snapshot.resource && resource.owner == snapshot.node && resource.online && now < resource.expires)) {
+                    return;
+                }
+                let error = if error == RemoteError::DeadlineExceeded
+                    && snapshot.is_some_and(|snapshot| snapshot.deadline == 0 || now < snapshot.deadline)
+                { ComputeError::NodeLost } else { map_remote_error(error) };
+                let _ = compute.remote_transport_failed(task, flight.epoch, error, directory, local, now);
+            }
         }
     }
 
@@ -148,6 +164,7 @@ impl ComputeCoordinator {
         let operation = if cancel { OperationId::ComputeCancel } else { OperationId::ComputeRequest };
         let transport_deadline = if payload.deadline == 0 { now.saturating_add(30) } else { payload.deadline.min(now.saturating_add(30)) };
         if transport_deadline <= now { return Err(ComputeError::DeadlineExceeded); }
+        capabilities.reclaim_expired_leaves(now);
         let service_capability = capabilities.grant(CapabilityType::ServiceCall, operation as u64, 1, 0, service, service, Some(transport_deadline), 0).map_err(|_| ComputeError::Full)?;
         let grant = if cancel { authority.cancel_grant } else { authority.request_grant };
         match iop.next_node_request().map_err(|_| ComputeError::Full).and_then(|correlation| iop.request_remote_compute(capabilities, nodes, service, service_capability, snapshot.node, grant, payload, snapshot.correlation_id, correlation, now, transport_deadline).map_err(map_submit_error)) {

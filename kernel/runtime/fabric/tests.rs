@@ -62,6 +62,32 @@ fn resource(id: u8, owner: NodeId) -> Resource {
 }
 
 // ------------------------=
+// FUNC: restored_node_identity_retires_only_stale_local_compute_capacity
+// DESC: Verifies durable identity restoration can remove boot-ephemeral compute and memory observations without deleting storage or peer resources.
+// ------------------=
+#[test]
+fn restored_node_identity_retires_only_stale_local_compute_capacity() {
+    let boot = NodeId([7; 32]);
+    let peer = NodeId([8; 32]);
+    let mut directory = Directory::new();
+    for (marker, kind) in [(2, ResourceKind::Compute), (3, ResourceKind::Memory), (4, ResourceKind::Storage)] {
+        let value = Resource { id: ResourceId([marker; 16]), owner: boot, kind,
+            device: [marker + 8; 16], capacity: 4096, available: 4096, reserved: 0,
+            health: Health::Healthy, online: true, capabilities: 1,
+            generation: 1, sequence: 1, expires: u64::MAX };
+        directory.observe_local(value, boot, 1).unwrap();
+    }
+    directory.apply(Resource { id: ResourceId([5; 16]), owner: peer,
+        kind: ResourceKind::Compute, device: [13; 16], capacity: 2, available: 2,
+        reserved: 0, health: Health::Healthy, online: true, capabilities: 1,
+        generation: 1, sequence: 1, expires: 60 }, 1).unwrap();
+    assert_eq!(directory.retire_local_compute_identity(boot), Ok(2));
+    assert!(directory.entries().iter().flatten().all(|resource|
+        resource.owner != boot || resource.kind == ResourceKind::Storage));
+    assert!(directory.entries().iter().flatten().any(|resource| resource.owner == peer));
+}
+
+// ------------------------=
 // FUNC: resource_loss_notifications_are_bounded_and_generation_fenced
 // DESC: Exercises expiry and disconnect transitions, delivery backpressure, duplicate loss suppression and recovery without losing resource identity or reservations.
 // ------------------=

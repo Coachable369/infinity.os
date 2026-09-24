@@ -93,6 +93,24 @@ impl Directory {
     pub fn entries(&self) -> &[Option<Resource>; MAX_RESOURCES] { &self.entries }
 
     // ------------------------=
+    // FUNC: retire_local_compute_identity
+    // DESC: Removes only unreserved boot-local compute and memory observations owned by a superseded node identity.
+    // ------------------=
+    pub(crate) fn retire_local_compute_identity(&mut self, owner: NodeId) -> Result<usize, ResourceError> {
+        let mut retired = 0;
+        for index in 0..self.entries.len() {
+            if self.entries[index].is_some_and(|resource| resource.owner == owner
+                && matches!(resource.kind, ResourceKind::Compute | ResourceKind::Memory)) {
+                if self.reserved[index] != 0 { return Err(ResourceError::Conflict); }
+                self.entries[index] = None;
+                self.offline_notices &= !(1u32 << index);
+                retired += 1;
+            }
+        }
+        Ok(retired)
+    }
+
+    // ------------------------=
     // FUNC: observe_local
     // DESC: Admits only the exact local node's measured native storage observation; callers cannot use this path to invent peer advertisements.
     // ------------------=
