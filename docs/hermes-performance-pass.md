@@ -175,5 +175,9 @@ Local measurement artifacts are under `builds/hermes-refine-20260923/`.
 
 The installer build links the same tested math object into live and installed
 kernels; the installed ELF and its P1 payload were independently byte-compared.
+The published `builds/InfinityOS-aarch64.iso` was checked directly through its
+EFI image: its installed-kernel shard and bootloader match the verified build.
+ISO SHA-256: `ac28b5624fa6b34300dde437963e590b1a1e25085a6bfe2515facdf0eb78bfde`.
+Installed-kernel SHA-256: `d8532a3dc8624308223a4c015eaad026bafc5d90b921940c6b7181fe2c868d14`.
 Authenticated, ISO-detached VM response timing remains pending. The user's
 running VM and credentials were not modified or bypassed.
