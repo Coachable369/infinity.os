@@ -234,3 +234,13 @@ Reproduction: `sh tools/qwen-kernel-perf.sh b36ad4f` and
 Evidence is in `builds/hermes-plus25-20260923/`; the five-trial binary receipts and
 numeric summary are in its `response-pass4/` directory. ISO publication and
 authenticated, detached-media guest timing are separate verification gates.
+
+The rebuilt canonical ISO passed both model install-parity checks. Direct reads
+from the published ISO's EFI image byte-match the optimized installed kernel and
+bootloader; the linked math object also byte-matches the freestanding validation
+object. ISO SHA-256:
+`23ea8a9260d709a9d0348aae9e2c3a9c7304299891182d9568e21b48a707a2d6`.
+Installed-kernel SHA-256:
+`69ec5bfa43895fc6b4de6d1f565b4249dff22a8f9bfe613d1bc23785d512552b`.
+The user elected to test the rebuilt ISO personally. Installed response timing
+remains unverified; no VM, account, or installed disk was modified by this pass.
