@@ -349,7 +349,11 @@ pub fn present(
             if !OPEN {
                 launcher_backdrop::capture(&c.display);
                 c.display.paint_desktop_background();
-                launcher_backdrop::capture_clean_stage(&c.display);
+                if !switcher && tab >= 2 {
+                    launcher_backdrop::capture_wallpaper_stage(&c.display);
+                } else {
+                    launcher_backdrop::capture_clean_stage(&c.display);
+                }
                 c.display.mark_dirty_rect(0, 0, c.display.width, c.display.height);
                 OPEN = true;
             }
@@ -400,10 +404,10 @@ pub fn present(
             let reusable = TRANSITION_KEY == Some(key);
             if reusable && damage.is_none() {
                 d.set_render_clip(
-                    d.width * 4 / 100,
-                    d.height * 7 / 100,
-                    d.width * 92 / 100,
-                    d.height * 89 / 100,
+                    d.width * 3 / 100,
+                    d.height * 5 / 100,
+                    d.width * 94 / 100,
+                    d.height * 91 / 100,
                 );
                 let region = d.clipped_render_region(0, 0, d.width, d.height).unwrap();
                 let painted = crate::ui::performance::monotonic_ns();
@@ -449,12 +453,7 @@ pub fn present(
                     h * d.height / 1000 + 2,
                 );
             } else {
-                d.set_render_clip(
-                    d.width * 4 / 100,
-                    d.height * 7 / 100,
-                    d.width * 92 / 100,
-                    d.height * 89 / 100,
-                );
+                d.set_render_clip(0, 0, d.width, d.height);
             }
             launcher_backdrop::restore_stage(d);
             if let Some((a, b, w, h)) = damage {
@@ -466,12 +465,7 @@ pub fn present(
                 );
             }
             if changed_tab || damage.is_none() {
-                d.mark_dirty_rect(
-                    d.width * 4 / 100,
-                    d.height * 7 / 100,
-                    d.width * 92 / 100,
-                    d.height * 89 / 100,
-                );
+                d.mark_dirty_rect(0, 0, d.width, d.height);
             }
             let lift = (255 - usize::from(progress)) * 35 / 255;
             let (dw, dh) = (d.width, d.height);
@@ -503,10 +497,10 @@ pub fn present(
                 }
             }
             if !shelf && !switcher && tab >= 2 {
-                let header = rect(60, 82, 880, 132);
+                let header = rect(35, 52, 930, 80);
                 d.glass_panel_with_palette(header.0, header.1, header.2, header.3, false, (8, 29, 48), (82, 181, 231));
             }
-            let p = rect(82, if shelf { 588 } else { 101 }, 0, 0);
+            let p = rect(70, if shelf { 588 } else if tab >= 2 { 86 } else { 101 }, 0, 0);
             let surface_title: &[u8] = if switcher {
                 b"HOLOGRAPHIC DESKTOP"
             } else if tab == 1 {
@@ -515,15 +509,15 @@ pub fn present(
                 b"SPATIAL DESKTOP"
             };
             d.ui_text_strong(p.0, p.1, surface_title, 200, 236, 255, 1);
-            let p = rect(897, if shelf { 585 } else { 95 }, 44, 38);
+            let p = rect(897, if shelf { 585 } else if tab >= 2 { 72 } else { 95 }, 44, 38);
             d.window_control(p.0 + (p.2.saturating_sub(p.3)) / 2, p.1, p.3, 2, false);
             for (i, label) in TABS.iter().enumerate() {
                 if switcher || tab == 1 { break; }
                 let (a,b,w,h)=crate::ui::spatial::spatial_tab(i,shelf);
                 let p = rect(a,b,w,h);
-                d.polished_button(p.0, p.1, p.2, p.3, label, tab == i + 2, false);
+                d.glass_label_pill(p.0, p.1, p.2, p.3, label, tab == i + 2);
             }
-            if !shelf {
+            if !shelf && tab != 2 {
                 let p = rect(80, 212, 840, 30);
                 d.ui_text_elided_strong(p.0, p.1, p.2, notice, 155, 190, 209);
             }
@@ -800,6 +794,12 @@ pub fn present(
                     v.is_none()
                         || (tab == 2 && v.is_some_and(|i| i.collection != state.selected_ring))
                 }) {
+                    if tab == 2 {
+                        let p = rect(350, 344, 300, 88);
+                        d.glass_panel_with_palette(p.0,p.1,p.2,p.3,false,(10,22,40),(100,149,190));
+                        d.ui_text_centered_strong(p.0,p.2,p.1+16,b"Your ideas, organized in orbit.",227,238,247,1);
+                        d.ui_text_centered(p.0,p.2,p.1+16+UI_FONT_CELL_HEIGHT+8,b"Add an idea or create a category.",151,193,214,1);
+                    } else {
                     let p = rect(240, if shelf { 710 } else { 410 }, 0, 0);
                     d.ui_text_strong(
                         p.0,
@@ -828,20 +828,22 @@ pub fn present(
                         214,
                         1,
                     );
+                    }
                 }
                 if tab == 2 {
                     for i in 0..4 {
                         let (a, b, w, h) = crate::ui::spatial::collection_card(i);
                         let p = rect(a, b, w, h);
                         let selected = state.selected_ring as usize == i;
-                        d.polished_button(
+                        d.gravity_collection(
                             p.0,
                             p.1,
                             p.2,
                             p.3,
                             crate::ui::spatial::collection_name(state, i),
+                            state.items.iter().flatten().filter(|item| item.collection as usize == i).count(),
+                            i,
                             selected,
-                            false,
                         );
                     }
                 }
@@ -876,7 +878,11 @@ pub fn present(
                     } else {
                         rect(80 + i * 210, 805, 190, 48)
                     };
-                    d.polished_button(p.0, p.1, p.2, p.3, label, false, false);
+                    if tab == 2 {
+                        d.glass_label_pill(p.0,p.1,p.2,p.3,label,i==0);
+                    } else {
+                        d.polished_button(p.0, p.1, p.2, p.3, label, false, false);
+                    }
                 }
             }
             if tab == 2 {
@@ -901,7 +907,7 @@ pub fn present(
                     0 if switcher=>b"Tab / Arrows: rotate   Enter: open   Esc: return".as_slice(),
                     0=>b"Tab: configuration views   M: reduced motion   Esc: close".as_slice(),
                     1=>b"Tab: views   Arrows: focus   Enter: switch   S: save   R: rename   M: motion   Esc: close",
-                    2=>b"1-4 rings   Wheel zoom   T add idea   N new category   More actions in ...",
+                    2=>b"",
                     3=>notice,
                     _=>b"C: collect   Drag: arrange   L: link / unlink   Enter: open   Del: remove   Esc: close",
                 },

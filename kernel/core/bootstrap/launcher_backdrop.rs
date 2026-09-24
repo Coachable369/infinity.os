@@ -73,6 +73,19 @@ pub(super) fn capture_clean_stage(display: &DisplayDevice) {
     capture_stage_pixels(display, true);
 }
 // ------------------------=
+// FUNC: capture_wallpaper_stage
+// DESC: Keeps the kit's luminous wallpaper for the spatial workspace without capturing desktop windows.
+// ------------------=
+pub(super) fn capture_wallpaper_stage(display: &DisplayDevice) {
+    unsafe {
+        if SIZE != (display.width, display.height, display.stride) {
+            return;
+        }
+        core::ptr::copy_nonoverlapping(display.buffer, (&raw mut STAGE).cast::<u32>(), display.stride * display.height);
+        STAGE_SIZE = SIZE;
+    }
+}
+// ------------------------=
 // FUNC: capture_stage_pixels
 // DESC: Builds an edge-to-edge soft stage from the original desktop or isolated wallpaper.
 // ------------------=

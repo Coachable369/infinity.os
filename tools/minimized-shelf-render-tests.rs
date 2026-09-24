@@ -7,6 +7,27 @@ use holographic_card::paint_card;
 
 #[test]
 // ------------------------=
+// FUNC: gravity_collections_render_circular_glass
+// DESC: Checks untouched circle corners, distinct accent pixels, and renders production collection controls for visual review.
+// ------------------=
+fn gravity_collections_render_circular_glass() {
+    let (width, height) = (1200, 320);
+    let mut pixels = vec![0x201005u32; width * height];
+    let mut d = DisplayDevice { buffer:pixels.as_mut_ptr(),width,height,stride:width,
+        format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false };
+    for (i,label) in [b"Ideas".as_slice(),b"Projects",b"Inspiration",b"Archive"].iter().enumerate() {
+        d.gravity_collection(30+i*290,40,240,240,label,0,i,i==0);
+        assert_eq!(pixels[40*width+30+i*290],0x201005);
+        assert_ne!(pixels[45*width+150+i*290],0x201005);
+    }
+    use std::io::Write;
+    let mut file=std::io::BufWriter::new(std::fs::File::create("/tmp/infinity-gravity-controls.ppm").unwrap());
+    write!(file,"P6\n{width} {height}\n255\n").unwrap();
+    for pixel in pixels { file.write_all(&[(pixel&255)as u8,((pixel>>8)&255)as u8,((pixel>>16)&255)as u8]).unwrap(); }
+}
+
+#[test]
+// ------------------------=
 // FUNC: pill_text_is_centered_and_density_stable
 // DESC: Measures rendered glyph ink and compares exact capsule pixels across display-density boundaries.
 // ------------------=

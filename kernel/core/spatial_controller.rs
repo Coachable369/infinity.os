@@ -222,8 +222,17 @@ impl ConsoleRuntime {
             .get()
             .is_empty()
         {
-            self.spatial_action(1);
-            return;
+            let old = self.spatial.state;
+            let mut name = [0u8; 24];
+            let label = crate::ui::spatial::collection_name(&self.spatial.state, group as usize);
+            let length = label.len();
+            name[..length].copy_from_slice(label);
+            if self.spatial.state.categories.iter().any(|category| category.get().eq_ignore_ascii_case(&name[..length])) {
+                self.spatial_action(1);
+                return;
+            }
+            self.spatial.state.categories[group as usize].set(&name[..length]);
+            self.spatial_commit(old);
         }
         let old = self.spatial.state;
         self.spatial.state.selected_ring = group;
@@ -1167,7 +1176,7 @@ impl ConsoleRuntime {
             self.pointer_y - (255 - self.spatial.motion.value(now()).clamp(0, 255)) * 35 / 255,
         );
         let shelf = self.spatial.tab == 3;
-        let close_top = if shelf { 585 } else { 95 };
+        let close_top = if shelf { 585 } else if self.spatial.tab >= 2 { 72 } else { 95 };
         if (897..941).contains(&x) && (close_top..close_top + 38).contains(&y) {
             self.spatial_input(ConsoleKey::Escape);
             return;
@@ -1199,7 +1208,7 @@ impl ConsoleRuntime {
             }
             self.spatial.overflow_open = false;
         }
-        let tabs_top = if shelf { 635 } else { 151 };
+        let tabs_top = if shelf { 635 } else { 72 };
         if self.spatial.tab == 2 {
             if let Some(group) = crate::ui::spatial::collection_hit(x, y) {
                 self.spatial_choose_collection(group);

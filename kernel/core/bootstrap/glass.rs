@@ -2,6 +2,61 @@
 use super::*;
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: gravity_collection
+    // DESC: Paints a circular kit collection with concentric glass rims, accent lighting and centered live labels.
+    // ------------------=
+    pub(in super::super) fn gravity_collection(
+        &mut self, x: usize, y: usize, width: usize, height: usize,
+        label: &[u8], count: usize, index: usize, selected: bool,
+    ) {
+        let size = width.min(height);
+        let left = x + (width - size) / 2;
+        let top = y + (height - size) / 2;
+        let (r,g,b) = [(0,209,255),(167,139,250),(251,191,36),(163,215,246)][index.min(3)];
+        self.fill_rounded_rect_alpha(left,top,size,size,size/2,r,g,b,if selected {70}else{28});
+        self.fill_rounded_rect_alpha(left+3,top+3,size.saturating_sub(6),size.saturating_sub(6),size/2-3,5,17,32,235);
+        self.outline_rounded_rect(left,top,size,size,size/2,r,g,b);
+        if size > 32 {
+            self.outline_rounded_rect(left+8,top+8,size-16,size-16,(size-16)/2,r/2,g/2,b/2);
+            let radius = size as i32 / 2 - 10;
+            for dy in -radius..radius {
+                for dx in -radius..radius {
+                    if dx*dx + dy*dy < radius*radius {
+                        let alpha = ((radius-dy) * 22 / (radius*2)) as u8;
+                        self.blend_color((left+size/2) as i32+dx,(top+size/2) as i32+dy,r,g,b,alpha);
+                    }
+                }
+            }
+        }
+        let cy = top + size/3;
+        let cx = left + size/2;
+        let points: &[(i32,i32)] = match index {
+            0 => &[(-10,-9),(-3,-9),(0,-5),(10,-5),(10,10),(-10,10),(-10,-9)],
+            1 => &[(8,-10),(3,4),(-8,10),(-3,-4),(8,-10)],
+            2 => &[(0,-12),(4,-4),(12,-3),(6,3),(8,12),(0,7),(-8,12),(-6,3),(-12,-3),(-4,-4),(0,-12)],
+            _ => &[],
+        };
+        let scale = (size/100).max(1) as i32;
+        for segment in points.windows(2) {
+            self.icon_line(cx as i32+segment[0].0*scale,cy as i32+segment[0].1*scale,
+                cx as i32+segment[1].0*scale,cy as i32+segment[1].1*scale,(r,g,b),18);
+        }
+        if index==1 { self.icon_circle(cx as i32,cy as i32,12*scale,(r,g,b),18); }
+        if index==3 {
+            for offset in [-8,0,8] {
+                self.fill_rounded_rect_alpha((cx as i32+offset*scale-2) as usize,cy-2,5,5,2,227,238,247,255);
+            }
+        }
+        self.ui_text_centered_strong(left,size,top+size/2,label,227,238,247,1);
+        let count = count.min(99);
+        let mut caption = *b"00 ideas";
+        caption[0] = b'0' + (count/10) as u8;
+        caption[1] = b'0' + (count%10) as u8;
+        self.ui_text_centered(left,size,top+size/2+UI_FONT_CELL_HEIGHT+6,
+            if count<10 {&caption[1..]} else {&caption},143,185,208,1);
+    }
+
+    // ------------------------=
     // FUNC: glass_label_pill
     // DESC: Paints a compact kit capsule with matched semibold metrics and stable selection geometry.
     // ------------------=

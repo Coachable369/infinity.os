@@ -140,7 +140,7 @@ pub fn ring_hit(state: &SpatialState, x: i32, y: i32) -> Option<u8> {
 // DESC: Shares collection geometry between painting, clicks, and drops.
 // ------------------=
 pub fn collection_card(index: usize) -> (usize, usize, usize, usize) {
-    (105 + index * 200, 680, 170, 92)
+    (180 + index * 175, 580, 130, 170)
 }
 // ------------------------=
 // FUNC: collection_hit
@@ -177,7 +177,11 @@ pub const fn gravity_overflow_action(index: usize) -> (usize, usize, usize, usiz
 // DESC: Shares compact segmented-navigation geometry between painting and pointer routing.
 // ------------------=
 pub const fn spatial_tab(index: usize, shelf: bool) -> (usize, usize, usize, usize) {
-    (82 + index * 156, if shelf { 635 } else { 151 }, 144, 42)
+    if shelf {
+        (82 + index * 156, 635, 144, 42)
+    } else {
+        (310 + index * 154, 72, 154, 48)
+    }
 }
 // ------------------------=
 // FUNC: orb_pulse
@@ -196,7 +200,7 @@ pub fn collection_name(state: &SpatialState, group: usize) -> &[u8] {
         return b"";
     };
     if name.get().is_empty() {
-        b"+ Category"
+        [b"Ideas".as_slice(), b"Projects", b"Inspiration", b"Archive"][group]
     } else {
         name.get()
     }
