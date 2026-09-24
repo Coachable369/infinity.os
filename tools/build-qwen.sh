@@ -51,6 +51,9 @@ cp build/aarch64/BOOTAA64.EFI ${payload_build}/live/EFI/BOOT/
 mkfile -n "$iso_size" ${payload_build}/iso/efi.img
 mformat -F -i ${payload_build}/iso/efi.img -v INFINITYOS ::
 mcopy -i ${payload_build}/iso/efi.img -s ${payload_build}/live/EFI ::
+# The ISO's EFI image now owns the live payload. Release this private mktemp
+# duplicate before allocating the final ISO alongside the previous release.
+rm -r -- "${payload_build}/live"
 CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-install-parity -- ${payload_build}/installed-esp.img --ministral
 if test -n "$hermes"; then
     CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-install-parity -- ${payload_build}/installed-esp.img
