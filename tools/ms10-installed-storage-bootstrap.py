@@ -12,6 +12,7 @@ import pathlib
 import shutil
 import struct
 import ms10_installed_pool
+from ms10_installed_workspace import validate_workspace
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("installed_acceptance", ROOT / "tools/ms9-installed-acceptance.py")
@@ -125,7 +126,7 @@ def main():
     args = parser.parse_args()
     assert not (args.resume and args.resume_pending)
     existing = args.resume or args.resume_pending
-    work = args.output.resolve()
+    work = validate_workspace(args.output)
     if not existing:
         work.mkdir(parents=True, exist_ok=False)
     artifacts = work / "artifacts"

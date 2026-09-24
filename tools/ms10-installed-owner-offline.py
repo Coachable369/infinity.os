@@ -17,6 +17,7 @@ import ms10_installed_owner_lifecycle as lifecycle
 import ms10_installed_pool_parity as parity
 import ms10_installed_pool_event_gap as event_gap
 from ms10_installed_failure_evidence import capture_final
+from ms10_installed_workspace import validate_workspace
 
 SPEC = importlib.util.spec_from_file_location("distribution", pathlib.Path(__file__).with_name("ms10-installed-distribution.py"))
 D = importlib.util.module_from_spec(SPEC)
@@ -223,7 +224,7 @@ def main():
     parser.add_argument("--parity", action="store_true", help="Requires the final shared ObjectInspect runtime; do not use on older installed generations.")
     parser.add_argument("--event-gap", action="store_true", help="Requires final IEF observer diagnostics; performs real policy commits, never injected events.")
     args = parser.parse_args()
-    work = args.output.resolve()
+    work = validate_workspace(args.output)
     assert 0 <= args.seed <= 0xffffffff
     assert not (args.lifecycle and args.measurement_only)
     validate_mode(args.resume_measured, args.reuse_configured, args.measurement_only)
