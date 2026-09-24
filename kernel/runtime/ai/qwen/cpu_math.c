@@ -3,6 +3,7 @@
 #if defined(__aarch64__) && !defined(QWEN_SCALAR)
 #include <arm_neon.h>
 #endif
+#define QWEN_MAX_WIDTH 12288
 // ------------------------=
 // FUNC: qwen_half
 // DESC: Decodes unaligned little-endian half precision values.
@@ -14,6 +15,90 @@ static float qwen_half(const uint8_t *p) {
     if(!e)return(sign?-1.0f:1.0f)*(float)f*(1.0f/16777216.0f);
     v.u=sign|(e==31?0x7f800000u|f<<13:(e+112)<<23|f<<13);return v.f;
 }
+#if defined(__aarch64__) && !defined(QWEN_SCALAR)
+// ------------------------=
+// FUNC: qwen_dotprod_available
+// DESC: Guards freestanding integer-dot execution on ARM CPUs that advertise the extension.
+// ------------------=
+static int qwen_dotprod_available(void) {
+#if defined(__STDC_HOSTED__) && __STDC_HOSTED__
+#if defined(__ARM_FEATURE_DOTPROD)
+    return 1;
+#else
+    return 0;
+#endif
+#else
+    uint64_t features;
+    __asm__ volatile("mrs %0, id_aa64isar0_el1":"=r"(features));
+    return ((features>>44)&15)>=1;
+#endif
+}
+
+// ------------------------=
+// FUNC: qwen_quantize_q8
+// DESC: Quantizes one activation vector into per-block Q8 values for fused Q4_K dot products.
+// ------------------=
+static void qwen_quantize_q8(const float *input,size_t width,int8_t *values,float *scales) {
+    for(size_t block=0;block<width/256;block++) {
+        const float *x=input+block*256;
+        float32x4_t maximum=vdupq_n_f32(0);
+        for(unsigned lane=0;lane<256;lane+=16) {
+            maximum=vmaxq_f32(maximum,vabsq_f32(vld1q_f32(x+lane)));
+            maximum=vmaxq_f32(maximum,vabsq_f32(vld1q_f32(x+lane+4)));
+            maximum=vmaxq_f32(maximum,vabsq_f32(vld1q_f32(x+lane+8)));
+            maximum=vmaxq_f32(maximum,vabsq_f32(vld1q_f32(x+lane+12)));
+        }
+        float scale=vmaxvq_f32(maximum)*(1.0f/127.0f);
+        scales[block]=scale;
+        float inverse=scale==0.0f?0.0f:1.0f/scale;
+        for(unsigned lane=0;lane<256;lane+=16) {
+            int32x4_t a=vcvtnq_s32_f32(vmulq_n_f32(vld1q_f32(x+lane),inverse));
+            int32x4_t b=vcvtnq_s32_f32(vmulq_n_f32(vld1q_f32(x+lane+4),inverse));
+            int32x4_t c=vcvtnq_s32_f32(vmulq_n_f32(vld1q_f32(x+lane+8),inverse));
+            int32x4_t d=vcvtnq_s32_f32(vmulq_n_f32(vld1q_f32(x+lane+12),inverse));
+            int16x8_t low=vcombine_s16(vqmovn_s32(a),vqmovn_s32(b));
+            int16x8_t high=vcombine_s16(vqmovn_s32(c),vqmovn_s32(d));
+            vst1q_s8(values+block*256+lane,vcombine_s8(vqmovn_s16(low),vqmovn_s16(high)));
+        }
+    }
+}
+
+// ------------------------=
+// FUNC: qwen_q4_q8_rows
+// DESC: Multiplies Q4_K rows by a shared Q8 activation using ARM integer dot products.
+// ------------------=
+__attribute__((target("dotprod")))
+static void qwen_q4_q8_rows(const uint8_t *data,const int8_t *input,const float *scales,
+                            size_t width,size_t rows,float *output) {
+    size_t stride=width/256*144;
+    for(size_t row=0;row<rows;row++) {
+        float sum=0.0f;
+        for(size_t block=0;block<width/256;block++) {
+            const uint8_t *p=data+row*stride+block*144;
+            const int8_t *x=input+block*256;
+            float d=qwen_half(p),m=qwen_half(p+2),xd=scales[block];
+            const uint8_t *s=p+4;
+            for(unsigned g=0;g<8;g++) {
+                unsigned scale=g<4?s[g]&63:(s[g+4]&15)|((s[g-4]>>6)<<4);
+                unsigned minimum=g<4?s[g+4]&63:(s[g+4]>>4)|((s[g]>>6)<<4);
+                const uint8_t *packed=p+16+(g/2)*32;
+                int32x4_t products=vdupq_n_s32(0);
+                int total=0;
+                for(unsigned lane=0;lane<32;lane+=16) {
+                    uint8x16_t nibble=vld1q_u8(packed+lane);
+                    nibble=(g&1)?vshrq_n_u8(nibble,4):vandq_u8(nibble,vdupq_n_u8(15));
+                    int8x16_t activation=vld1q_s8(x+g*32+lane);
+                    products=vdotq_s32(products,vreinterpretq_s8_u8(nibble),activation);
+                    total+=vaddlvq_s8(activation);
+                }
+                int dot=vaddvq_s32(products);
+                sum+=xd*(d*(float)scale*(float)dot-m*(float)minimum*(float)total);
+            }
+        }
+        output[row]=sum;
+    }
+}
+#endif
 // ------------------------=
 // FUNC: infinity_qwen_dot
 // DESC: Fuses K-quant decoding with CPU floating-point dot products through a pointer-only ABI.
@@ -83,6 +168,15 @@ void infinity_qwen_dot(uint32_t kind,const uint8_t *data,const float *input,size
 // ------------------=
 void infinity_qwen_dot_rows(uint32_t kind,const uint8_t *data,const float *input,size_t width,size_t rows,float *output) {
     size_t stride=width/256*(kind==12?144:210),row=0;
+#if defined(__aarch64__) && !defined(QWEN_SCALAR)
+    if(kind==12 && width<=QWEN_MAX_WIDTH && qwen_dotprod_available()) {
+        int8_t quantized[QWEN_MAX_WIDTH];
+        float scales[QWEN_MAX_WIDTH/256];
+        qwen_quantize_q8(input,width,quantized,scales);
+        qwen_q4_q8_rows(data,quantized,scales,width,rows,output);
+        return;
+    }
+#endif
 #if defined(__aarch64__) && !defined(QWEN_SCALAR)
     for(;(kind==12 || kind==14) && row+4<=rows;row+=4) {
         float32x4_t accum[4]={vdupq_n_f32(0),vdupq_n_f32(0),vdupq_n_f32(0),vdupq_n_f32(0)};

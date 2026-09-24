@@ -552,6 +552,36 @@ fn mat_rows(
     if let Some(done) = unsafe { super::workers::rows(t.kind, t.data, input, output, cursor) } {
         return Ok(done);
     }
+    #[cfg(target_arch = "aarch64")]
+    if t.kind == 12 || t.kind == 14 {
+        unsafe {
+            extern "C" {
+                fn infinity_qwen_dot_rows(
+                    kind: u32,
+                    data: *const u8,
+                    input: *const f32,
+                    width: usize,
+                    rows: usize,
+                    output: *mut f32,
+                );
+            }
+            let block_size = if t.kind == 12 { 144 } else { 210 };
+            infinity_qwen_dot_rows(
+                t.kind,
+                t.data.as_ptr().add(*cursor * (width / 256) * block_size),
+                input.as_ptr(),
+                width,
+                end - *cursor,
+                output.as_mut_ptr().add(*cursor),
+            );
+        }
+        *cursor = end;
+        if end == output.len() {
+            *cursor = 0;
+            return Ok(true);
+        }
+        return Ok(false);
+    }
     for at in *cursor..end {
         #[cfg(all(target_arch = "aarch64", target_os = "none"))]
         if t.kind == 12 || t.kind == 14 {

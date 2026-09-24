@@ -357,6 +357,24 @@ mod tests {
         );
     }
     // ------------------------=
+    // FUNC: outputs_match
+    // DESC: Requires exact Q6 output and bounded normalized Q4 activation-quantization error.
+    // ------------------=
+    fn outputs_match(kind: u32, expected: &[f32], actual: &[f32]) -> bool {
+        if expected.len() != actual.len() {
+            return false;
+        }
+        if kind == 14 {
+            return expected.iter().zip(actual).all(|(a, b)| a.to_bits() == b.to_bits());
+        }
+        let (error, reference) = expected.iter().zip(actual).fold((0.0f64, 0.0f64), |sum, (a, b)| {
+            let delta = *a as f64 - *b as f64;
+            (sum.0 + delta * delta, sum.1 + *a as f64 * *a as f64)
+        });
+        actual.iter().all(|value| value.is_finite())
+            && (error / (reference + expected.len() as f64)).sqrt() <= 0.02
+    }
+    // ------------------------=
     // FUNC: concurrent_rows_and_cancellation
     // DESC: Compares real concurrent kernels with direct execution and retires cancelled jobs before reusing buffers.
     // ------------------=
@@ -411,16 +429,13 @@ mod tests {
                 assert!(deadline.elapsed().as_secs() < 5);
                 std::thread::yield_now();
             }
-            assert_eq!(tiny[0].to_bits(), expected[0].to_bits());
+            assert!(outputs_match(kind, &expected[..1], &tiny));
             let deadline = std::time::Instant::now();
             while unsafe { rows(kind, &data, &input, &mut actual, &mut cursor) } != Some(true) {
                 assert!(deadline.elapsed().as_secs() < 5);
                 std::thread::yield_now();
             }
-            assert_eq!(
-                actual.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
-                expected.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
-            );
+            assert!(outputs_match(kind, &expected, &actual));
             drain();
         }
         assert!(completed() >= 10);

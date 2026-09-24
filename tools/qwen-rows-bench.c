@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include <time.h>
 #ifndef QWEN_BENCH_REPEATS
 #define QWEN_BENCH_REPEATS 2000
@@ -12,8 +13,17 @@ void infinity_qwen_scalar_dot(uint32_t,const uint8_t *,const float *,size_t,floa
 void infinity_qwen_dot(uint32_t,const uint8_t *,const float *,size_t,float *);
 void infinity_qwen_dot_rows(uint32_t,const uint8_t *,const float *,size_t,size_t,float *);
 // ------------------------=
+// FUNC: q4_error_is_bounded
+// DESC: Accepts Q8 activation-rounding drift only within a strict mixed absolute and relative bound.
+// ------------------=
+static int q4_error_is_bounded(float expected,float actual) {
+    if(isfinite(actual) && fabsf(expected-actual)<=1.0f+0.05f*fabsf(expected))return 1;
+    fprintf(stderr,"q4 expected=%f actual=%f error=%f\n",expected,actual,fabsf(expected-actual));
+    return 0;
+}
+// ------------------------=
 // FUNC: main
-// DESC: Verifies exact batched arithmetic, widths and row tails, then compares equal independent-row workloads.
+// DESC: Verifies bounded Q4 and exact Q6 arithmetic, widths and row tails, then compares equal workloads.
 // ------------------=
 int main(void) {
     static uint8_t data[9*48*210]; static float input[12288];
@@ -41,7 +51,11 @@ int main(void) {
             for(unsigned rows=0;rows<=9;rows++) {
                 actual[rows<9?rows:8]=123;
                 infinity_qwen_dot_rows(kind,data,input,width,rows,actual);
-                assert(memcmp(reference,actual,rows*sizeof(float))==0);
+                if(kind==12) {
+                    for(unsigned r=0;r<rows;r++)assert(q4_error_is_bounded(reference[r],actual[r]));
+                } else {
+                    assert(memcmp(reference,actual,rows*sizeof(float))==0);
+                }
                 if(rows<9)assert(actual[rows]==123);
             }
             clock_t start=clock();

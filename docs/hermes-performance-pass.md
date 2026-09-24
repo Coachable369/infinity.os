@@ -30,10 +30,34 @@ peak RAM. Worker utilization is summed Q4/Q6 compute divided by request wall tim
 and online worker count. This excludes firmware/OS CPU usage and initial loading.
 Steady-state rate is `(output_tokens - 1) / decode_seconds`.
 
-No controlled performance improvement has been established yet. The former
-baseline ISO under `build/` was removed by the full clean build on September 22;
-do not rely on that path as a retained baseline artifact. Historical observations
-below are not a replacement for a matched before/after benchmark.
+## Controlled ARM64 host comparison, 2026-09-23
+
+The pinned Hermes artifact and deterministic `hello` request were run through
+the same release `hermes-native-test --forward` harness before and after this
+change. The baseline was rebuilt from the pre-change Git revision in an isolated
+temporary tree; both runs used the same cached model file and produced the same
+nine-token response, `Hello! How can I assist you today?`.
+
+| Measurement | Baseline | Optimized | Reduction |
+| --- | ---: | ---: | ---: |
+| First visible token | 15.288925 s | 4.276984 s | 72.0% |
+| Eighth visible token | 27.489967 s | 7.711431 s | 72.0% |
+
+Hermes' Q4_K matrices now quantize each shared activation to Q8 once per row
+batch and use ARMv8.2 integer dot products. The freestanding path checks the CPU
+feature before executing those instructions and retains the existing floating
+point fallback. At the large worker batch size, alternating seven-trial kernel
+medians improved by 3.13x at width 4096, 3.18x at width 8192, and 3.17x at width
+12288. Q4 normalized RMS error is bounded to 2%; Q6 remains bit exact. The real
+Hermes harness also returned the correct concise result for an independent
+arithmetic prompt.
+
+`make ai-test` passes the concurrent six-worker, cancellation, numerical-bound,
+service, privacy, memory, and chat behavior checks. Both the live and installed
+ARM64 kernels link the same optimized object, and installed-kernel/loader binary
+parity passes for ARM64 and x86_64. The measurements above are controlled host
+evidence; installed-guest `model bench hermes` remains a separate proof level and
+must not be inferred from host timing.
 
 ## Installed observation, 2026-09-21
 

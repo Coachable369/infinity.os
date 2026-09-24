@@ -6,6 +6,7 @@ mod qwen;
 // DESC: Exercises pinned real Hermes weights, cancellation and optional native forward execution; not guest proof.
 // ------------------=
 fn main() {
+    let forward_prompt = std::env::var("HERMES_TEST_PROMPT").unwrap_or_else(|_| "hello".into());
     let bytes = Box::leak(
         std::fs::read("model-cache/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf")
             .unwrap()
@@ -25,7 +26,7 @@ fn main() {
     assert!(!service.busy());
     service.clear_conversation();
     if std::env::args().any(|arg| arg == "--forward") {
-        service.submit(b"hello").unwrap();
+        service.submit(forward_prompt.as_bytes()).unwrap();
         let start = std::time::Instant::now();
         let mut tokens = 0;
         while service.busy() && tokens < 32 {
