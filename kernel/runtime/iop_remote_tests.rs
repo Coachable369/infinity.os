@@ -317,6 +317,142 @@ fn authenticated_compute_executes_real_bounded_context_and_rechecks_revocation()
     }
 }
 
+#[test]
+// ------------------------=
+// FUNC: coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations
+// DESC: Proves the production coordinator creates an outbound request for the selected peer and commits its fenced result into the same authoritative lifecycle.
+// ------------------=
+fn coordinator_binds_placed_task_to_remote_iop_result_and_releases_reservations() {
+    use super::super::super::{
+        compute::{ComputeDurability, ComputeLocality, ComputeRequestV1, ComputeService, ComputeState, NodeComputeObservation, RemoteComputeExecutor, WorkloadKind, COMPUTE_RESULT_CONTRACT_V1, COMPUTE_SCHEMA_VERSION},
+        compute_operator::{ComputeCoordinator, RemoteComputeAuthority},
+        fabric::resources::{Directory, Health, Resource, ResourceId, ResourceKind},
+    };
+    let mut f = Fixture::new();
+    let local = f.nodes.local_id().unwrap();
+    let scope = u64::from_le_bytes([7; 8]);
+    let advertise_grant = f.nodes.grant_remote(f.peer, OperationId::ResourceAdvertise as u32, 0, 1, 100, 5, 1).unwrap();
+    let request_grant = f.nodes.grant_remote(f.peer, OperationId::ComputeRequest as u32, scope, 1, 100, 5, 2).unwrap();
+    let cancel_grant = f.nodes.grant_remote(f.peer, OperationId::ComputeCancel as u32, scope, 1, 100, 5, 3).unwrap();
+    let mut directory = Directory::new();
+    for (kind, marker, capacity) in [(ResourceKind::Compute, 1u8, 8u64), (ResourceKind::Memory, 2, 65_536)] {
+        directory.advertise(&f.nodes, f.session, advertise_grant, 0, Resource { id: ResourceId([marker; 16]), owner: f.peer, kind, device: [marker + 2; 16], capacity, available: capacity, reserved: 0, health: Health::Healthy, online: true, capabilities: 1, generation: 1, sequence: 1, expires: 100 }, 5).unwrap();
+    }
+    let mut compute = ComputeService::new();
+    compute.observe_node(&directory, NodeComputeObservation { node: f.peer, trust_domain: 4, latency_us: 120, latency_known: true, load_percent: 2, generation: 1 }).unwrap();
+    let compute_capability = f.caps.grant(CapabilityType::ComputeUse, scope, 1, 0, f.caller, f.caller, Some(100), 0).unwrap();
+    let request = ComputeRequestV1 { schema_version: COMPUTE_SCHEMA_VERSION, workload_kind: WorkloadKind::CpuChecksum, locality: ComputeLocality::RequireRemote, durability: ComputeDurability::Restartable, priority: 128, privacy_local_only: false, workload_id: [7; 16], input_refs: [[8; 16], [9; 16]], allowed_nodes: [f.peer, NodeId([0; 32])], allowed_node_count: 1, allowed_domains: [4, 0], allowed_domain_count: 1, memory_bytes: 4096, deadline: 90, correlation_id: 88, capability_ref: compute_capability, affinity: 0, anti_affinity: 0, work_units: 9, cpu_units: 2, restart_eligible: true, result_contract: COMPUTE_RESULT_CONTRACT_V1 };
+    let task = compute.request(request, f.caller, &f.caps, &mut directory, local, 5).unwrap();
+    let mut coordinator = ComputeCoordinator::new();
+    coordinator.track(task, f.caller, [RemoteComputeAuthority { node: f.peer, request_grant, cancel_grant }, RemoteComputeAuthority { node: NodeId([0; 32]), request_grant: 0, cancel_grant: 0 }], 1).unwrap();
+    let mut local_execution = super::super::super::execution::ExecutionManager::new();
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 6);
+    assert_eq!(compute.inspect(task).unwrap().state, ComputeState::Running);
+    assert_eq!(local_execution.count(), 0);
+    let pending = f.router.remote.pending.iter_mut().flatten().find(|pending| matches!(pending.request.message.payload, Payload::Compute(_))).unwrap();
+    let envelope = pending.request.message;
+    let mut remote_execution = super::super::super::execution::ExecutionManager::new();
+    let mut remote_runtime = RemoteComputeExecutor::new();
+    let completed = remote_runtime.execute(envelope.payload.compute().unwrap(), &mut remote_execution, f.peer, 7).unwrap();
+    pending.result = Some(RemoteResult { request_id: envelope.id, correlation_id: envelope.correlation, causation_id: envelope.causation, result: Ok(Payload::Compute(completed)) });
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 8);
+    let final_state = compute.inspect(task).unwrap();
+    assert_eq!(final_state.state, ComputeState::Completed);
+    assert_eq!(final_state.node, f.peer);
+    assert_eq!(final_state.accounting.used_cpu_ticks, 9);
+    assert_eq!(coordinator.task_count(), 0);
+    assert_eq!(remote_execution.count(), 0);
+    assert_eq!(directory.reserved_for(ResourceId([1; 16]), 1), Some(0));
+    assert_eq!(directory.reserved_for(ResourceId([2; 16]), 1), Some(0));
+
+    let long_request = ComputeRequestV1 { correlation_id: 89, work_units: 128, ..request };
+    let cancelled_task = compute.request(long_request, f.caller, &f.caps, &mut directory, local, 9).unwrap();
+    coordinator.track(cancelled_task, f.caller, [RemoteComputeAuthority { node: f.peer, request_grant, cancel_grant }, RemoteComputeAuthority { node: NodeId([0; 32]), request_grant: 0, cancel_grant: 0 }], 1).unwrap();
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 10);
+    let pending_long = f.router.remote.pending.iter_mut().flatten().find(|pending| pending.request.message.payload.compute().is_ok_and(|payload| payload.task_id == cancelled_task && payload.operation == OperationId::ComputeRequest as u32)).unwrap();
+    let long_envelope = pending_long.request.message;
+    let running = remote_runtime.execute(long_envelope.payload.compute().unwrap(), &mut remote_execution, f.peer, 11).unwrap();
+    assert_eq!((running.state, remote_runtime.active_count(), remote_execution.count()), (ComputeState::Running as u8, 1, 1));
+    pending_long.result = Some(RemoteResult { request_id: long_envelope.id, correlation_id: long_envelope.correlation, causation_id: long_envelope.causation, result: Ok(Payload::Compute(running)) });
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 12);
+    let cancel_capability = f.caps.grant(CapabilityType::ComputeCancel, cancelled_task, 1, 0, f.caller, f.caller, Some(100), 0).unwrap();
+    compute.cancel(cancelled_task, f.caller, cancel_capability, &f.caps, &mut local_execution, &mut directory, 13).unwrap();
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 14);
+    let pending_cancel = f.router.remote.pending.iter_mut().flatten().find(|pending| pending.request.message.payload.compute().is_ok_and(|payload| payload.operation == OperationId::ComputeCancel as u32)).unwrap();
+    let cancel_envelope = pending_cancel.request.message;
+    let cancelled = remote_runtime.execute(cancel_envelope.payload.compute().unwrap(), &mut remote_execution, f.peer, 15).unwrap();
+    assert_eq!((remote_runtime.active_count(), remote_execution.count()), (0, 0));
+    pending_cancel.result = Some(RemoteResult { request_id: cancel_envelope.id, correlation_id: cancel_envelope.correlation, causation_id: cancel_envelope.causation, result: Ok(Payload::Compute(cancelled)) });
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 16);
+    assert_eq!(compute.inspect(cancelled_task).unwrap().state, ComputeState::Cancelled);
+    assert_eq!(coordinator.task_count(), 0);
+    assert_eq!(directory.reserved_for(ResourceId([1; 16]), 1), Some(0));
+    assert_eq!(directory.reserved_for(ResourceId([2; 16]), 1), Some(0));
+
+    let mut remote_c = NodeRuntime::new();
+    let peer_c = remote_c.initialize(&[92; 32], true).unwrap();
+    f.nodes.discover(remote_c.advertise(30, 1, 1).unwrap(), 30).unwrap();
+    let pairing_c = f.nodes.begin_pairing(peer_c, 31).unwrap();
+    f.nodes.confirm_pairing(pairing_c.id, pairing_c.verification_code, true, 32, 1).unwrap();
+    let (_, public_c) = super::super::super::crypto::NodeCrypto::agreement_keypair(&[93; 32]);
+    let session_c = f.nodes.open_session(peer_c, &[94; 32], &public_c, b"coordinator-peer-c", 33, 1).unwrap();
+    let advertise_c = f.nodes.grant_remote(peer_c, OperationId::ResourceAdvertise as u32, 0, 1, 200, 33, 4).unwrap();
+    let request_c = f.nodes.grant_remote(peer_c, OperationId::ComputeRequest as u32, scope, 1, 200, 33, 5).unwrap();
+    let cancel_c = f.nodes.grant_remote(peer_c, OperationId::ComputeCancel as u32, scope, 1, 200, 33, 6).unwrap();
+    for (kind, marker, capacity) in [(ResourceKind::Compute, 3u8, 8u64), (ResourceKind::Memory, 4, 65_536)] {
+        directory.advertise(&f.nodes, session_c, advertise_c, 0, Resource { id: ResourceId([marker; 16]), owner: peer_c, kind, device: [marker + 2; 16], capacity, available: capacity, reserved: 0, health: Health::Healthy, online: true, capabilities: 1, generation: 1, sequence: 1, expires: 200 }, 33).unwrap();
+    }
+    compute.observe_node(&directory, NodeComputeObservation { node: peer_c, trust_domain: 4, latency_us: 300, latency_known: true, load_percent: 2, generation: 1 }).unwrap();
+    let failover_capability = f.caps.grant(CapabilityType::ComputeUse, scope, 1, 0, f.caller, f.caller, Some(200), 0).unwrap();
+    let failover_request = ComputeRequestV1 { allowed_nodes: [f.peer, peer_c], allowed_node_count: 2, deadline: 190, correlation_id: 90, capability_ref: failover_capability, work_units: 9, ..request };
+    let failover_task = compute.request(failover_request, f.caller, &f.caps, &mut directory, local, 34).unwrap();
+    coordinator.track(failover_task, f.caller, [RemoteComputeAuthority { node: f.peer, request_grant, cancel_grant }, RemoteComputeAuthority { node: peer_c, request_grant: request_c, cancel_grant: cancel_c }], 2).unwrap();
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 35);
+    let stale_envelope = f.router.remote.pending.iter().flatten().find(|pending| pending.request.message.payload.compute().is_ok_and(|payload| payload.task_id == failover_task)).unwrap().request.message;
+    assert_eq!(stale_envelope.payload.compute().unwrap().target_node, f.peer);
+    directory.mark_peer_offline(f.peer);
+    compute.node_lost(f.peer, &mut directory, local, 36);
+    assert_eq!(compute.inspect(failover_task).unwrap().node, peer_c);
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 37);
+    let pending_c = f.router.remote.pending.iter_mut().flatten().find(|pending| pending.request.message.payload.compute().is_ok_and(|payload| payload.task_id == failover_task)).unwrap();
+    let envelope_c = pending_c.request.message;
+    assert_eq!(envelope_c.payload.compute().unwrap().target_node, peer_c);
+    let completed_c = remote_runtime.execute(envelope_c.payload.compute().unwrap(), &mut remote_execution, peer_c, 38).unwrap();
+    pending_c.result = Some(RemoteResult { request_id: envelope_c.id, correlation_id: envelope_c.correlation, causation_id: envelope_c.causation, result: Ok(Payload::Compute(completed_c)) });
+    coordinator.poll(&mut compute, &mut f.router, &mut f.caps, &f.nodes, &mut local_execution, &mut directory, local, f.caller, 39);
+    let recovered = compute.inspect(failover_task).unwrap();
+    assert_eq!((recovered.state, recovered.node, recovered.epoch, recovered.accounting.restart_count), (ComputeState::Completed, peer_c, 2, 1));
+    let stale_b = remote_runtime.execute(stale_envelope.payload.compute().unwrap(), &mut remote_execution, f.peer, 40).unwrap();
+    assert_eq!(compute.accept_remote_result(failover_task, stale_b, &mut directory, 41), Err(super::super::super::compute::ComputeError::StaleResult));
+    assert_eq!(compute.inspect(failover_task).unwrap(), recovered);
+    assert_eq!(coordinator.task_count(), 0);
+}
+
+#[test]
+// ------------------------=
+// FUNC: remote_executor_retains_and_cancels_live_bounded_contexts
+// DESC: Proves multi-slice work remains a real remote context and that typed cancellation and deadline expiry reclaim it.
+// ------------------=
+fn remote_executor_retains_and_cancels_live_bounded_contexts() {
+    use super::super::super::compute::{ComputeState, RemoteComputeExecutor};
+    let node = NodeId([44; 32]);
+    let mut execution = super::super::super::execution::ExecutionManager::new();
+    let mut remote = RemoteComputeExecutor::new();
+    let mut request = compute_payload(node); request.work_units = 128;
+    let first = remote.execute(request, &mut execution, node, 8).unwrap();
+    assert_eq!((first.state, first.work_units, remote.active_count(), execution.count()), (ComputeState::Running as u8, 64, 1, 1));
+    let mut altered = request; altered.work_units = 64; altered.used_ticks = 64; altered.memory_bytes = 8192;
+    assert_eq!(remote.execute(altered, &mut execution, node, 9), Err(super::super::super::compute::ComputeError::InvalidRequest));
+    assert_eq!((remote.active_count(), execution.count()), (1, 1));
+    let mut cancel = request; cancel.operation = OperationId::ComputeCancel as u32;
+    let cancelled = remote.execute(cancel, &mut execution, node, 10).unwrap();
+    assert_eq!((cancelled.state, remote.active_count(), execution.count()), (ComputeState::Cancelled as u8, 0, 0));
+    let _ = remote.execute(request, &mut execution, node, 11).unwrap();
+    assert_eq!(remote.active_count(), 1);
+    remote.expire(&mut execution, request.deadline);
+    assert_eq!((remote.active_count(), execution.count()), (0, 0));
+}
+
 // ------------------------=
 // FUNC: storage_requests_share_authenticated_iop_and_owned_completion
 // DESC: Exercises the actual shared router across admission, execution, correlated response, typed mailbox isolation and replay rejection.

@@ -413,6 +413,38 @@ impl AiRuntime {
         local: crate::runtime::node::types::NodeId,
         now: u64,
     ) -> Result<u64, AiError> {
+        let distributed = self.distributed_inference_request(request, workload_id, compute_capability, now)?;
+        compute.request(distributed, request.caller, capabilities, directory, local, now).map_err(map_distributed_compute_error)
+    }
+
+    // ------------------------=
+    // FUNC: request_coordinated_distributed_inference
+    // DESC: Submits provider-neutral remote inference through the production coordinator with explicit per-node IOP grants.
+    // ------------------=
+    pub fn request_coordinated_distributed_inference(
+        &self,
+        request: &ModelExecutionRequest<'_>,
+        workload_id: [u8; 16],
+        compute_capability: crate::runtime::capability::CapabilityId,
+        authorities: [crate::runtime::compute_operator::RemoteComputeAuthority; 2],
+        authority_count: u8,
+        now: u64,
+    ) -> Result<u64, AiError> {
+        let distributed = self.distributed_inference_request(request, workload_id, compute_capability, now)?;
+        crate::runtime::submit_compute_request(distributed, request.caller, authorities, authority_count, now).map_err(map_distributed_compute_error)
+    }
+
+    // ------------------------=
+    // FUNC: distributed_inference_request
+    // DESC: Validates AI privacy and provider policy before producing the shared accelerator scheduling contract.
+    // ------------------=
+    fn distributed_inference_request(
+        &self,
+        request: &ModelExecutionRequest<'_>,
+        workload_id: [u8; 16],
+        compute_capability: crate::runtime::capability::CapabilityId,
+        now: u64,
+    ) -> Result<crate::runtime::compute::ComputeRequestV1, AiError> {
         if !self.initialized || request.input_ref_count > 4 || request.deadline <= now {
             return Err(if request.deadline <= now { AiError::DeadlineExceeded } else { AiError::InvalidRequest });
         }
@@ -422,7 +454,7 @@ impl AiRuntime {
         if provider.local { return Err(AiError::ProviderUnavailable); }
         let mut refs = [[0; 16]; 2];
         for (index, value) in request.input_refs.iter().take(request.input_ref_count.min(2) as usize).enumerate() { refs[index] = *value; }
-        let distributed = crate::runtime::compute::ComputeRequestV1 {
+        Ok(crate::runtime::compute::ComputeRequestV1 {
             schema_version: crate::runtime::compute::COMPUTE_SCHEMA_VERSION,
             workload_kind: crate::runtime::compute::WorkloadKind::AcceleratorInferenceFixture,
             locality: crate::runtime::compute::ComputeLocality::RequireRemote,
@@ -445,12 +477,6 @@ impl AiRuntime {
             cpu_units: request.resource_policy.cpu_weight.max(1),
             restart_eligible: true,
             result_contract: crate::runtime::compute::COMPUTE_RESULT_CONTRACT_V1,
-        };
-        compute.request(distributed, request.caller, capabilities, directory, local, now).map_err(|error| match error {
-            crate::runtime::compute::ComputeError::AccessDenied => AiError::AccessDenied,
-            crate::runtime::compute::ComputeError::DeadlineExceeded => AiError::DeadlineExceeded,
-            crate::runtime::compute::ComputeError::Full => AiError::QueueFull,
-            _ => AiError::ProviderUnavailable,
         })
     }
 
@@ -547,6 +573,19 @@ impl AiRuntime {
     // ------------------=
     pub const fn last_plan(&self) -> Option<IntentPlan> {
         self.last_plan
+    }
+}
+
+// ------------------------=
+// FUNC: map_distributed_compute_error
+// DESC: Preserves stable provider-neutral AI errors across distributed compute admission and coordination failures.
+// ------------------=
+fn map_distributed_compute_error(error: crate::runtime::compute::ComputeError) -> AiError {
+    match error {
+        crate::runtime::compute::ComputeError::AccessDenied => AiError::AccessDenied,
+        crate::runtime::compute::ComputeError::DeadlineExceeded => AiError::DeadlineExceeded,
+        crate::runtime::compute::ComputeError::Full => AiError::QueueFull,
+        _ => AiError::ProviderUnavailable,
     }
 }
 

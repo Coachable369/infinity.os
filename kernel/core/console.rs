@@ -1784,7 +1784,12 @@ impl ConsoleRuntime {
                     if let Some(task) = runtime.task_manager.distributed_task_nth(&runtime.compute, index) {
                         self.output.write_number(b"  Task id: ", task.task_id);
                         self.output.write_segments(&[b"  ", compute_state_text(task.state)]);
+                        self.output.write_segments(&[b"  ", compute_locality_text(task.locality), b" / ", compute_durability_text(task.durability)]);
+                        self.output.write_hex(b"  Node: ", &task.node.0[..8]);
+                        self.output.write_number(b"  Reserved memory: ", task.accounting.reserved_memory_bytes);
                         self.output.write_number(b"  CPU ticks: ", task.accounting.used_cpu_ticks);
+                        self.output.write_number(b"  Restarts: ", task.accounting.restart_count as u64);
+                        self.output.write_segments(&[b"  Result: ", compute_result_text(task)]);
                     }
                 }
             }
@@ -10677,9 +10682,13 @@ impl ConsoleRuntime {
                     if let Some(task) = runtime.compute.task_nth(index) {
                         self.output.write_number(b"Task id: ", task.task_id);
                         self.output.write_segments(&[b"  State: ", compute_state_text(task.state)]);
+                        self.output.write_hex(b"  Node: ", &task.node.0[..8]);
+                        self.output.write_segments(&[b"  Policy: ", compute_locality_text(task.locality), b" / ", compute_durability_text(task.durability)]);
                         self.output.write_number(b"  Epoch: ", task.epoch as u64);
                         self.output.write_number(b"  CPU ticks: ", task.accounting.used_cpu_ticks);
                         self.output.write_number(b"  Memory bytes: ", task.accounting.reserved_memory_bytes);
+                        self.output.write_number(b"  Restarts: ", task.accounting.restart_count as u64);
+                        self.output.write_segments(&[b"  Result: ", compute_result_text(task)]);
                     }
                 }
             });
@@ -10690,7 +10699,7 @@ impl ConsoleRuntime {
             let Some(task_id) = parse_u64_decimal(value) else { self.output.write_line(b"Usage: compute inspect TASK_ID"); return true; };
             crate::runtime::with_runtime(|runtime| match runtime.compute.inspect(task_id) {
                 Ok(task) => {
-                    self.output.write_number(b"Task id: ", task.task_id); self.output.write_number(b"Epoch: ", task.epoch as u64); self.output.write_segments(&[b"State: ", compute_state_text(task.state)]); self.output.write_number(b"Correlation: ", task.correlation_id); self.output.write_number(b"CPU ticks: ", task.accounting.used_cpu_ticks); self.output.write_number(b"Reserved CPU: ", task.accounting.reserved_cpu_units as u64); self.output.write_number(b"Reserved memory: ", task.accounting.reserved_memory_bytes); self.output.write_number(b"Restarts: ", task.accounting.restart_count as u64);
+                    self.output.write_number(b"Task id: ", task.task_id); self.output.write_number(b"Epoch: ", task.epoch as u64); self.output.write_segments(&[b"State: ", compute_state_text(task.state)]); self.output.write_hex(b"Node: ", &task.node.0); self.output.write_hex(b"Resource: ", &task.resource.0); self.output.write_segments(&[b"Placement: ", compute_locality_text(task.locality)]); self.output.write_segments(&[b"Durability: ", compute_durability_text(task.durability)]); self.output.write_number(b"Correlation: ", task.correlation_id); self.output.write_number(b"CPU ticks: ", task.accounting.used_cpu_ticks); self.output.write_number(b"Reserved CPU: ", task.accounting.reserved_cpu_units as u64); self.output.write_number(b"Reserved memory: ", task.accounting.reserved_memory_bytes); self.output.write_number(b"Started: ", task.accounting.started_at); self.output.write_number(b"Finished: ", task.accounting.finished_at); self.output.write_number(b"Restarts: ", task.accounting.restart_count as u64); self.output.write_segments(&[b"Result: ", compute_result_text(task)]); self.output.write_hex(b"Output digest: ", &task.output_digest);
                 }
                 Err(_) => self.output.write_line(b"Unknown distributed task."),
             });
@@ -12229,6 +12238,42 @@ fn compute_state_text(state: crate::runtime::compute::ComputeState) -> &'static 
         Failed => b"Failed",
         Cancelled => b"Cancelled",
         NodeLost => b"Node Lost",
+    }
+}
+
+// ------------------------=
+// FUNC: compute_locality_text
+// DESC: Projects typed placement locality into both graphical Task Manager and Console inspection.
+// ------------------=
+fn compute_locality_text(locality: crate::runtime::compute::ComputeLocality) -> &'static [u8] {
+    use crate::runtime::compute::ComputeLocality::*;
+    match locality { RequireLocal => b"Require local", PreferLocal => b"Prefer local", PreferRemote => b"Prefer remote", RequireRemote => b"Require remote" }
+}
+
+// ------------------------=
+// FUNC: compute_durability_text
+// DESC: Projects the declared recovery contract without claiming scaffolded migration or checkpoint support.
+// ------------------=
+fn compute_durability_text(durability: crate::runtime::compute::ComputeDurability) -> &'static [u8] {
+    use crate::runtime::compute::ComputeDurability::*;
+    match durability { Pinned => b"Pinned", Restartable => b"Restartable", CheckpointableScaffold => b"Checkpoint scaffold", MigratableScaffold => b"Migration scaffold" }
+}
+
+// ------------------------=
+// FUNC: compute_result_text
+// DESC: Summarizes authoritative terminal result or typed failure state for both inspection surfaces.
+// ------------------=
+fn compute_result_text(task: crate::runtime::compute::ComputeSnapshot) -> &'static [u8] {
+    use crate::runtime::compute::{ComputeError::*, ComputeState};
+    if task.state == ComputeState::Completed { return b"Completed"; }
+    match task.error {
+        Some(AccessDenied) => b"Access denied", Some(DeadlineExceeded) => b"Deadline exceeded",
+        Some(NodeLost) => b"Node lost", Some(Cancelled) => b"Cancelled",
+        Some(NoPlacement) => b"No placement", Some(ResourceUnavailable) => b"Resource unavailable",
+        Some(UnsupportedDurability) => b"Unsupported durability", Some(StaleResult) => b"Stale result",
+        Some(InvalidRequest) => b"Invalid request", Some(InvalidState) => b"Invalid state",
+        Some(UnknownTask) => b"Unknown task", Some(Full) => b"Capacity full", Some(Context) => b"Execution context failure",
+        None => b"Pending",
     }
 }
 // ------------------------=

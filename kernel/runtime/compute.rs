@@ -22,6 +22,7 @@ pub const MAX_COMPUTE_NODES: usize = 16;
 pub const MAX_COMPUTE_NOTICES: usize = 64;
 pub const MAX_COMPUTE_MEMORY: u64 = 64 * 1024 * 1024;
 pub const MAX_SLICE_TICKS: u32 = 64;
+pub const MAX_REMOTE_EXECUTIONS: usize = 8;
 pub const COMPUTE_RIGHT_EXECUTE: u32 = 1;
 pub const COMPUTE_RESULT_CONTRACT_V1: u8 = 1;
 
@@ -141,6 +142,117 @@ pub struct ComputeDispatchV1 {
     pub error: u8,
     pub flags: u8,
     pub used_ticks: u64,
+}
+
+#[derive(Clone, Copy)]
+struct RemoteExecution {
+    task_id: u64,
+    epoch: u32,
+    deadline: u64,
+    workload_kind: WorkloadKind,
+    memory_bytes: u64,
+    scope: u64,
+    workload_id: [u8; 16],
+    input_refs: [[u8; 16]; 2],
+    cpu_units: u16,
+    priority: u8,
+    result_contract: u8,
+    remaining: u32,
+    used_ticks: u64,
+    context: ContextHandle,
+}
+
+pub struct RemoteComputeExecutor {
+    active: [Option<RemoteExecution>; MAX_REMOTE_EXECUTIONS],
+}
+
+impl RemoteComputeExecutor {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates a fixed-capacity remote execution authority with no ambient or unbounded task state.
+    // ------------------=
+    pub const fn new() -> Self { Self { active: [None; MAX_REMOTE_EXECUTIONS] } }
+
+    // ------------------------=
+    // FUNC: active_count
+    // DESC: Exposes live remote contexts for cancellation, deadline, and leak assertions.
+    // ------------------=
+    pub fn active_count(&self) -> usize { self.active.iter().flatten().count() }
+
+    // ------------------------=
+    // FUNC: expire
+    // DESC: Terminates remote contexts whose declared deadline has elapsed even when no further request arrives.
+    // ------------------=
+    pub fn expire(&mut self, execution: &mut ExecutionManager, now: u64) {
+        for slot in &mut self.active {
+            if slot.is_some_and(|active| active.deadline != 0 && now >= active.deadline) {
+                if let Some(active) = slot.take() { let _ = execution.destroy(active.context); }
+            }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: execute
+    // DESC: Starts or resumes one fenced remote context, applies a bounded slice, and destroys it on cancel, deadline, or completion.
+    // ------------------=
+    pub fn execute(&mut self, mut dispatch: ComputeDispatchV1, execution: &mut ExecutionManager, local: NodeId, now: u64) -> Result<ComputeDispatchV1, ComputeError> {
+        ComputeDispatchV1::decode(&dispatch.encode())?;
+        if dispatch.target_node != local { return Err(ComputeError::AccessDenied); }
+        let matching = self.active.iter().position(|slot| slot.is_some_and(|active| active.task_id == dispatch.task_id && active.epoch == dispatch.epoch));
+        if dispatch.operation == super::iop::OperationId::ComputeCancel as u32 {
+            if let Some(index) = matching { if let Some(active) = self.active[index].take() { let _ = execution.destroy(active.context); } }
+            dispatch.state = ComputeState::Cancelled as u8; dispatch.error = ComputeError::Cancelled as u8; dispatch.operation = super::iop::OperationId::ComputeResult as u32;
+            return Ok(dispatch);
+        }
+        if dispatch.operation != super::iop::OperationId::ComputeRequest as u32 { return Err(ComputeError::InvalidRequest); }
+        if dispatch.deadline != 0 && now >= dispatch.deadline {
+            if let Some(index) = matching { if let Some(active) = self.active[index].take() { let _ = execution.destroy(active.context); } }
+            return Err(ComputeError::DeadlineExceeded);
+        }
+        let index = if let Some(index) = matching { index } else {
+            if self.active.iter().flatten().any(|active| active.task_id == dispatch.task_id) { return Err(ComputeError::StaleResult); }
+            let index = self.active.iter().position(Option::is_none).ok_or(ComputeError::Full)?;
+            let handle = create_remote_context(dispatch, execution)?;
+            self.active[index] = Some(RemoteExecution { task_id: dispatch.task_id, epoch: dispatch.epoch, deadline: dispatch.deadline, workload_kind: dispatch.workload_kind, memory_bytes: dispatch.memory_bytes, scope: dispatch.scope, workload_id: dispatch.workload_id, input_refs: dispatch.input_refs, cpu_units: dispatch.cpu_units, priority: dispatch.priority, result_contract: dispatch.result_contract, remaining: dispatch.work_units, used_ticks: dispatch.used_ticks, context: handle });
+            index
+        };
+        let active = self.active[index].unwrap();
+        if !remote_contract_matches(active, dispatch) || dispatch.work_units != active.remaining || dispatch.used_ticks != active.used_ticks { return Err(ComputeError::InvalidRequest); }
+        let handle = active.context;
+        let ticks = dispatch.work_units.min(MAX_SLICE_TICKS);
+        for _ in 0..ticks {
+            if execution.account_cpu_tick(handle).is_err() { if let Some(active) = self.active[index].take() { let _ = execution.destroy(active.context); } return Err(ComputeError::Context); }
+        }
+        dispatch.used_ticks = dispatch.used_ticks.saturating_add(ticks as u64); dispatch.work_units = dispatch.work_units.saturating_sub(ticks);
+        if dispatch.work_units == 0 {
+            if let Some(active) = self.active[index].take() { let _ = execution.destroy(active.context); }
+            dispatch.state = ComputeState::Completed as u8;
+        } else {
+            let active = self.active[index].as_mut().unwrap(); active.remaining = dispatch.work_units; active.used_ticks = dispatch.used_ticks;
+            dispatch.state = ComputeState::Running as u8;
+        }
+        dispatch.operation = super::iop::OperationId::ComputeResult as u32;
+        dispatch.input_refs[0] = output_digest_parts(dispatch.workload_id, dispatch.input_refs, dispatch.epoch, dispatch.used_ticks as u32);
+        Ok(dispatch)
+    }
+}
+
+// ------------------------=
+// FUNC: remote_contract_matches
+// DESC: Prevents a resumed task and epoch from changing its authenticated workload, authority scope, inputs, or resource budget.
+// ------------------=
+fn remote_contract_matches(active: RemoteExecution, dispatch: ComputeDispatchV1) -> bool {
+    active.deadline == dispatch.deadline && active.workload_kind == dispatch.workload_kind && active.memory_bytes == dispatch.memory_bytes && active.scope == dispatch.scope && active.workload_id == dispatch.workload_id && active.input_refs == dispatch.input_refs && active.cpu_units == dispatch.cpu_units && active.priority == dispatch.priority && active.result_contract == dispatch.result_contract
+}
+
+// ------------------------=
+// FUNC: create_remote_context
+// DESC: Creates a remote context with only the CPU and memory budget declared by the authenticated dispatch.
+// ------------------=
+fn create_remote_context(dispatch: ComputeDispatchV1, execution: &mut ExecutionManager) -> Result<ContextHandle, ComputeError> {
+    let handle = execution.create(0x1100, workload_image(dispatch.workload_kind), MemoryRegion { base: context_base(dispatch.task_id), length: dispatch.memory_bytes }, 0x6d00u16.saturating_add((dispatch.task_id % 64) as u16), priority(dispatch.priority), ResourceBudget { memory_limit: dispatch.memory_bytes, cpu_weight: dispatch.cpu_units, message_queue_limit: 8, io_priority: 2 }).map_err(|_| ComputeError::Context)?;
+    if execution.account_memory(handle, dispatch.memory_bytes).is_err() || execution.set_state(handle, ContextState::Running).is_err() { let _ = execution.destroy(handle); return Err(ComputeError::Context); }
+    Ok(handle)
 }
 
 impl ComputeDispatchV1 {
@@ -452,9 +564,10 @@ impl ComputeService {
     // FUNC: start
     // DESC: Revalidates task authority and creates a genuinely bounded execution context on the selected node runtime.
     // ------------------=
-    pub fn start(&mut self, task_id: u64, epoch: u32, caller: super::execution::SecurityIdentity, capabilities: &CapabilityManager, execution: &mut ExecutionManager, directory: &mut Directory, now: u64) -> Result<ContextHandle, ComputeError> {
+    pub fn start(&mut self, task_id: u64, epoch: u32, caller: super::execution::SecurityIdentity, capabilities: &CapabilityManager, execution_node: NodeId, execution: &mut ExecutionManager, directory: &mut Directory, now: u64) -> Result<ContextHandle, ComputeError> {
         let index = self.task_index(task_id)?; let task = self.tasks[index].unwrap();
         if task.snapshot.epoch != epoch { return Err(ComputeError::StaleResult); }
+        if task.snapshot.node != execution_node { return Err(ComputeError::AccessDenied); }
         if task.snapshot.state != ComputeState::Placed { return Err(ComputeError::InvalidState); }
         if task.request.deadline != 0 && now >= task.request.deadline { self.release(index, directory); self.terminal(index, ComputeState::Failed, Some(ComputeError::DeadlineExceeded), ComputeEventKind::Failed, None, now); return Err(ComputeError::DeadlineExceeded); }
         if capabilities.validate(task.request.capability_ref, caller, CapabilityType::ComputeUse, task.request.authority_target(), COMPUTE_RIGHT_EXECUTE, 0, now).is_err() { self.release(index, directory); self.terminal(index, ComputeState::Failed, Some(ComputeError::AccessDenied), ComputeEventKind::Failed, None, now); return Err(ComputeError::AccessDenied); }
@@ -467,12 +580,88 @@ impl ComputeService {
     }
 
     // ------------------------=
+    // FUNC: remote_dispatch
+    // DESC: Revalidates authority and materializes the next fenced outbound slice without creating a false local Execution Context.
+    // ------------------=
+    pub fn remote_dispatch(&mut self, task_id: u64, caller: super::execution::SecurityIdentity, capabilities: &CapabilityManager, local: NodeId, directory: &mut Directory, now: u64) -> Result<ComputeDispatchV1, ComputeError> {
+        let index = self.task_index(task_id)?;
+        let task = self.tasks[index].unwrap();
+        if task.snapshot.node == local || !matches!(task.snapshot.state, ComputeState::Placed | ComputeState::Running) { return Err(ComputeError::InvalidState); }
+        if task.request.deadline != 0 && now >= task.request.deadline { self.release(index, directory); self.terminal(index, ComputeState::Failed, Some(ComputeError::DeadlineExceeded), ComputeEventKind::Failed, None, now); return Err(ComputeError::DeadlineExceeded); }
+        if capabilities.validate(task.request.capability_ref, caller, CapabilityType::ComputeUse, task.request.authority_target(), COMPUTE_RIGHT_EXECUTE, 0, now).is_err() { self.release(index, directory); self.terminal(index, ComputeState::Failed, Some(ComputeError::AccessDenied), ComputeEventKind::Failed, None, now); return Err(ComputeError::AccessDenied); }
+        if task.snapshot.state == ComputeState::Placed {
+            let current = self.tasks[index].as_mut().unwrap(); current.snapshot.state = ComputeState::Running; current.snapshot.accounting.started_at = now;
+            self.emit(index, ComputeEventKind::Started);
+        }
+        let task = self.tasks[index].unwrap();
+        Ok(ComputeDispatchV1 { schema_version: COMPUTE_SCHEMA_VERSION, workload_kind: task.request.workload_kind, state: ComputeState::Running as u8, operation: super::iop::OperationId::ComputeRequest as u32, task_id, epoch: task.snapshot.epoch, work_units: task.request.work_units.saturating_sub(task.progress), memory_bytes: task.request.memory_bytes, deadline: task.request.deadline, scope: task.request.authority_target(), workload_id: task.request.workload_id, input_refs: task.request.input_refs, target_node: task.snapshot.node, cpu_units: task.request.cpu_units, priority: task.request.priority, result_contract: task.request.result_contract, error: 0, flags: 0, used_ticks: task.snapshot.accounting.used_cpu_ticks })
+    }
+
+    // ------------------------=
+    // FUNC: remote_cancel_dispatch
+    // DESC: Builds the exact fenced cancellation message for a remotely placed task without reviving terminal local state.
+    // ------------------=
+    pub fn remote_cancel_dispatch(&self, task_id: u64, epoch: u32) -> Result<ComputeDispatchV1, ComputeError> {
+        let index = self.task_index(task_id)?;
+        let task = self.tasks[index].unwrap();
+        if task.snapshot.epoch != epoch { return Err(ComputeError::StaleResult); }
+        Ok(ComputeDispatchV1 { schema_version: COMPUTE_SCHEMA_VERSION, workload_kind: task.request.workload_kind, state: task.snapshot.state as u8, operation: super::iop::OperationId::ComputeCancel as u32, task_id, epoch, work_units: task.request.work_units.saturating_sub(task.progress).max(1), memory_bytes: task.request.memory_bytes, deadline: task.request.deadline, scope: task.request.authority_target(), workload_id: task.request.workload_id, input_refs: task.request.input_refs, target_node: task.snapshot.node, cpu_units: task.request.cpu_units, priority: task.request.priority, result_contract: task.request.result_contract, error: 0, flags: 0, used_ticks: task.snapshot.accounting.used_cpu_ticks })
+    }
+
+    // ------------------------=
+    // FUNC: accept_remote_result
+    // DESC: Correlates one authenticated remote slice into the authoritative lifecycle while fencing node, task, epoch, progress, and result contract.
+    // ------------------=
+    pub fn accept_remote_result(&mut self, task_id: u64, result: ComputeDispatchV1, directory: &mut Directory, now: u64) -> Result<ComputeSnapshot, ComputeError> {
+        ComputeDispatchV1::decode(&result.encode())?;
+        let index = self.task_index(task_id)?;
+        let task = self.tasks[index].unwrap();
+        if result.operation != super::iop::OperationId::ComputeResult as u32 || result.task_id != task_id || result.epoch != task.snapshot.epoch || result.target_node != task.snapshot.node { return Err(ComputeError::StaleResult); }
+        if task.snapshot.state != ComputeState::Running { return Err(ComputeError::StaleResult); }
+        if result.used_ticks < task.snapshot.accounting.used_cpu_ticks || result.used_ticks > task.request.work_units as u64 || result.work_units > task.request.work_units { return Err(ComputeError::InvalidRequest); }
+        if result.error != 0 {
+            let error = decode_error(result.error)?;
+            self.release(index, directory);
+            self.terminal(index, if error == ComputeError::Cancelled { ComputeState::Cancelled } else { ComputeState::Failed }, Some(error), if error == ComputeError::Cancelled { ComputeEventKind::Cancelled } else { ComputeEventKind::Failed }, None, now);
+            return Ok(self.tasks[index].unwrap().snapshot);
+        }
+        if !((result.state == ComputeState::Completed as u8 && result.work_units == 0) || (result.state == ComputeState::Running as u8 && result.work_units != 0)) { return Err(ComputeError::InvalidRequest); }
+        let current = self.tasks[index].as_mut().unwrap();
+        current.progress = current.request.work_units.saturating_sub(result.work_units);
+        current.snapshot.accounting.used_cpu_ticks = result.used_ticks;
+        current.snapshot.output_digest = result.input_refs[0];
+        if result.state == ComputeState::Completed as u8 && result.work_units == 0 {
+            self.release(index, directory);
+            self.terminal(index, ComputeState::Completed, None, ComputeEventKind::Completed, None, now);
+        }
+        Ok(self.tasks[index].unwrap().snapshot)
+    }
+
+    // ------------------------=
+    // FUNC: remote_transport_failed
+    // DESC: Converts a correlated transport failure into restartable node-loss recovery or an explicit terminal task failure.
+    // ------------------=
+    pub fn remote_transport_failed(&mut self, task_id: u64, epoch: u32, error: ComputeError, directory: &mut Directory, local: NodeId, now: u64) -> Result<ComputeSnapshot, ComputeError> {
+        let index = self.task_index(task_id)?;
+        let task = self.tasks[index].unwrap();
+        if task.snapshot.epoch != epoch { return Err(ComputeError::StaleResult); }
+        if error == ComputeError::NodeLost {
+            self.node_lost(task.snapshot.node, directory, local, now);
+            return self.inspect(task_id);
+        }
+        self.release(index, directory);
+        self.terminal(index, ComputeState::Failed, Some(error), ComputeEventKind::Failed, None, now);
+        Ok(self.tasks[index].unwrap().snapshot)
+    }
+
+    // ------------------------=
     // FUNC: run_slice
     // DESC: Executes a strictly bounded deterministic slice, accounts every tick, and fences results by execution epoch.
     // ------------------=
-    pub fn run_slice(&mut self, task_id: u64, epoch: u32, caller: super::execution::SecurityIdentity, capabilities: &CapabilityManager, execution: &mut ExecutionManager, requested_ticks: u32, directory: &mut Directory, now: u64) -> Result<ComputeSnapshot, ComputeError> {
+    pub fn run_slice(&mut self, task_id: u64, epoch: u32, caller: super::execution::SecurityIdentity, capabilities: &CapabilityManager, execution_node: NodeId, execution: &mut ExecutionManager, requested_ticks: u32, directory: &mut Directory, now: u64) -> Result<ComputeSnapshot, ComputeError> {
         let index = self.task_index(task_id)?; let task = self.tasks[index].unwrap();
         if task.snapshot.epoch != epoch { return Err(ComputeError::StaleResult); }
+        if task.snapshot.node != execution_node { return Err(ComputeError::AccessDenied); }
         if task.snapshot.state != ComputeState::Running { return Err(ComputeError::InvalidState); }
         if task.request.deadline != 0 && now >= task.request.deadline { self.finish(index, execution, directory, ComputeState::Failed, Some(ComputeError::DeadlineExceeded), ComputeEventKind::Failed, now); return Err(ComputeError::DeadlineExceeded); }
         if capabilities.validate(task.request.capability_ref, caller, CapabilityType::ComputeUse, task.request.authority_target(), COMPUTE_RIGHT_EXECUTE, 0, now).is_err() { self.finish(index, execution, directory, ComputeState::Failed, Some(ComputeError::AccessDenied), ComputeEventKind::Failed, now); return Err(ComputeError::AccessDenied); }

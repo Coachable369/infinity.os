@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod capability;
 pub mod compute;
+pub mod compute_operator;
 pub mod console_language;
 pub mod event;
 pub mod execution;
@@ -159,6 +160,12 @@ const NODE_EVENT_TYPES: [u32; 19] = [
     EVENT_NODE_CHECKPOINT_CHANGED,
 ];
 
+const COMPUTE_EVENT_TYPES: [u32; 8] = [
+    EVENT_COMPUTE_QUEUED, EVENT_COMPUTE_PLACED, EVENT_COMPUTE_STARTED,
+    EVENT_COMPUTE_COMPLETED, EVENT_COMPUTE_FAILED, EVENT_COMPUTE_CANCELLED,
+    EVENT_COMPUTE_RESTARTED, EVENT_COMPUTE_NODE_LOST,
+];
+
 const UI_EVENT_TYPES: [u32; 12] = [
     EVENT_WINDOW_CREATED,
     EVENT_WINDOW_DESTROYED,
@@ -186,6 +193,8 @@ pub struct InfinityRuntime {
     storage_event_cap: [Option<u64>; 4],
     pub fabric_resources: fabric::resources::Directory,
     pub compute: compute::ComputeService,
+    pub compute_coordinator: compute_operator::ComputeCoordinator,
+    pub remote_compute: compute::RemoteComputeExecutor,
     pub execution: ExecutionManager,
     pub scheduler: Scheduler,
     pub capabilities: CapabilityManager,
@@ -214,6 +223,8 @@ pub struct InfinityRuntime {
     ui_event_capabilities: [Option<u64>; UI_EVENT_TYPES.len()],
     network_event_capabilities: [Option<u64>; NETWORK_EVENT_TYPES.len()],
     node_event_capabilities: [Option<u64>; NODE_EVENT_TYPES.len()],
+    compute_event_capabilities: [Option<u64>; COMPUTE_EVENT_TYPES.len()],
+    compute_notice_published: u64,
     pub node_projection: node::reconciliation::Projection,
     pub node_selection: Option<node::types::NodeId>,
     pub node_policy_offset: usize,
@@ -294,6 +305,8 @@ impl InfinityRuntime {
             storage_event_cap: [None; 4],
             fabric_resources: fabric::resources::Directory::new(),
             compute: compute::ComputeService::new(),
+            compute_coordinator: compute_operator::ComputeCoordinator::new(),
+            remote_compute: compute::RemoteComputeExecutor::new(),
             execution: ExecutionManager::new(),
             scheduler: Scheduler::new(),
             capabilities: CapabilityManager::new(),
@@ -321,6 +334,8 @@ impl InfinityRuntime {
             ui_event_capabilities: [None; UI_EVENT_TYPES.len()],
             network_event_capabilities: [None; NETWORK_EVENT_TYPES.len()],
             node_event_capabilities: [None; NODE_EVENT_TYPES.len()],
+            compute_event_capabilities: [None; COMPUTE_EVENT_TYPES.len()],
+            compute_notice_published: 0,
             node_projection: node::reconciliation::Projection::new(),
             node_selection: None,
             node_policy_offset: 0,
@@ -1516,6 +1531,20 @@ impl InfinityRuntime {
                 }
             }
         }
+        if self.compute_event_capabilities[0].is_none() {
+            for (index, event_type) in COMPUTE_EVENT_TYPES.iter().copied().enumerate() {
+                self.compute_event_capabilities[index] = self.capabilities.grant(
+                    CapabilityType::EventPublish,
+                    event_type as u64,
+                    1,
+                    0,
+                    runtime,
+                    runtime,
+                    None,
+                    0,
+                ).ok();
+            }
+        }
         if self.settings_network_profile_capability.is_none() {
             if let Some(settings) = self.service_identity(SERVICE_SETTINGS) {
                 self.settings_network_profile_capability = self
@@ -2009,6 +2038,22 @@ pub fn register_local_compute_resources(memory_bytes: u64, now: u64) -> bool {
 }
 
 // ------------------------=
+// FUNC: submit_compute_request
+// DESC: Creates one authoritative task and binds it to explicit remote transport authority for native coordinator execution.
+// ------------------=
+pub fn submit_compute_request(request: compute::ComputeRequestV1, caller: execution::SecurityIdentity, authorities: [compute_operator::RemoteComputeAuthority; 2], authority_count: u8, now: u64) -> Result<u64, compute::ComputeError> {
+    let runtime = runtime_mut();
+    let local = runtime.nodes.local_id().ok_or(compute::ComputeError::ResourceUnavailable)?;
+    if !runtime.compute_coordinator.available() { return Err(compute::ComputeError::Full); }
+    let task = runtime.compute.request(request, caller, &runtime.capabilities, &mut runtime.fabric_resources, local, now)?;
+    if let Err(error) = runtime.compute_coordinator.track(task, caller, authorities, authority_count) {
+        let _ = runtime.compute.remote_transport_failed(task, 1, error, &mut runtime.fabric_resources, local, now);
+        return Err(error);
+    }
+    Ok(task)
+}
+
+// ------------------------=
 // FUNC: poll_node_transport
 // DESC: Pumps one explicitly registered native node link and publishes discovery only after commit.
 // ------------------=
@@ -2038,8 +2083,10 @@ pub fn poll_node_transport(now: u64) {
         let iop = &mut runtime.iop;
         let nodes = &mut runtime.nodes;
         let execution = &mut runtime.execution;
+        runtime.remote_compute.expire(execution, now);
+        let remote_compute = &mut runtime.remote_compute;
         iop.execute_remote_compute(nodes, now, |request| {
-            compute::execute_remote_dispatch(request.payload, execution, request.local, now)
+            remote_compute.execute(request.payload, execution, request.local, now)
                 .map_err(|error| match error {
                     compute::ComputeError::AccessDenied => iop::remote::RemoteError::AccessDenied,
                     compute::ComputeError::DeadlineExceeded => iop::remote::RemoteError::DeadlineExceeded,
@@ -2133,7 +2180,30 @@ pub fn poll_node_transport(now: u64) {
         }
         refresh_node_projection(runtime, now);
     });
-    let _ = persist_compute_state();
+    with_runtime(|runtime| {
+        let Some(local) = runtime.nodes.local_id() else { return; };
+        let Some(service) = runtime.service_identity(SERVICE_RUNTIME) else { return; };
+        runtime.compute_coordinator.poll(&mut runtime.compute, &mut runtime.iop, &mut runtime.capabilities, &runtime.nodes, &mut runtime.execution, &mut runtime.fabric_resources, local, service, now);
+    });
+    if persist_compute_state() { publish_committed_compute_notices(now); }
+}
+
+// ------------------------=
+// FUNC: publish_committed_compute_notices
+// DESC: Delivers retained compute lifecycle notifications only after authoritative task state has committed, advancing independently of task recovery.
+// ------------------=
+fn publish_committed_compute_notices(now: u64) {
+    with_runtime(|runtime| {
+        let Some(source) = runtime.service_identity(SERVICE_RUNTIME) else { return; };
+        for index in 0..runtime.compute.notice_count() {
+            let Some(notice) = runtime.compute.notice_nth(index) else { continue; };
+            if notice.sequence <= runtime.compute_notice_published { continue; }
+            let Some(kind) = COMPUTE_EVENT_TYPES.iter().position(|event_type| *event_type == notice.event_type()) else { continue; };
+            let Some(capability) = runtime.compute_event_capabilities[kind] else { return; };
+            if compute::publish_notice(notice, source, capability, &mut runtime.events, &runtime.capabilities, now).is_err() { return; }
+            runtime.compute_notice_published = notice.sequence;
+        }
+    });
 }
 
 // ------------------------=

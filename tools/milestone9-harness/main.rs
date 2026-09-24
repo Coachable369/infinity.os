@@ -10,6 +10,8 @@ mod capability;
 mod fabric;
 #[path = "../../kernel/runtime/compute.rs"]
 mod compute;
+#[path = "../../kernel/runtime/compute_operator.rs"]
+mod compute_operator;
 #[path = "../../kernel/runtime/iop.rs"]
 mod iop;
 #[path = "../../kernel/runtime/event.rs"]
@@ -17,7 +19,7 @@ mod event;
 #[path = "../../kernel/runtime/network/mod.rs"]
 mod network;
 mod runtime {
-    pub(crate) use crate::{capability, compute, crypto, execution, fabric, network, node, iop};
+    pub(crate) use crate::{capability, compute, compute_operator, crypto, execution, fabric, network, node, iop};
 }
 
 const EVENT_COMPUTE_QUEUED: u32 = 0x9f001;
