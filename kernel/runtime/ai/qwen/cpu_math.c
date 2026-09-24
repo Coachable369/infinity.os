@@ -10,10 +10,17 @@
 // ------------------=
 static float qwen_half(const uint8_t *p) {
     uint16_t h=(uint16_t)p[0]|(uint16_t)p[1]<<8;
+#if defined(__aarch64__) && !defined(QWEN_SCALAR)
+    // ARMv8's base floating-point conversion supports half storage even when
+    // the optional half-precision arithmetic extension is unavailable.
+    union { uint16_t bits; __fp16 value; } half={.bits=h};
+    return (float)half.value;
+#else
     uint32_t e=(h>>10)&31,f=h&1023,sign=(uint32_t)(h&32768)<<16;
     union {uint32_t u;float f;} v;
     if(!e)return(sign?-1.0f:1.0f)*(float)f*(1.0f/16777216.0f);
     v.u=sign|(e==31?0x7f800000u|f<<13:(e+112)<<23|f<<13);return v.f;
+#endif
 }
 #if defined(__aarch64__) && !defined(QWEN_SCALAR)
 // ------------------------=
@@ -41,13 +48,14 @@ static int qwen_dotprod_available(void) {
 static void qwen_quantize_q8(const float *input,size_t width,int8_t *values,float *scales,float *totals) {
     for(size_t block=0;block<width/256;block++) {
         const float *x=input+block*256;
-        float32x4_t maximum=vdupq_n_f32(0);
+        float32x4_t maximum=vdupq_n_f32(0),maximum1=maximum,maximum2=maximum,maximum3=maximum;
         for(unsigned lane=0;lane<256;lane+=16) {
             maximum=vmaxq_f32(maximum,vabsq_f32(vld1q_f32(x+lane)));
-            maximum=vmaxq_f32(maximum,vabsq_f32(vld1q_f32(x+lane+4)));
-            maximum=vmaxq_f32(maximum,vabsq_f32(vld1q_f32(x+lane+8)));
-            maximum=vmaxq_f32(maximum,vabsq_f32(vld1q_f32(x+lane+12)));
+            maximum1=vmaxq_f32(maximum1,vabsq_f32(vld1q_f32(x+lane+4)));
+            maximum2=vmaxq_f32(maximum2,vabsq_f32(vld1q_f32(x+lane+8)));
+            maximum3=vmaxq_f32(maximum3,vabsq_f32(vld1q_f32(x+lane+12)));
         }
+        maximum=vmaxq_f32(vmaxq_f32(maximum,maximum1),vmaxq_f32(maximum2,maximum3));
         float scale=vmaxvq_f32(maximum)*(1.0f/127.0f);
         scales[block]=scale;
         float inverse=scale==0.0f?0.0f:1.0f/scale;
@@ -69,7 +77,7 @@ static void qwen_quantize_q8(const float *input,size_t width,int8_t *values,floa
 
 // ------------------------=
 // FUNC: qwen_q4_q8_rows
-// DESC: Reuses activation group totals across Q4_K rows without changing their floating-point accumulation order.
+// DESC: Computes four Q4_K groups together, sharing packed loads and preserving the ordered scalar accumulation.
 // ------------------=
 __attribute__((target("dotprod")))
 static void qwen_q4_q8_rows(const uint8_t *data,const int8_t *input,const float *scales,const float *totals,
@@ -82,20 +90,34 @@ static void qwen_q4_q8_rows(const uint8_t *data,const int8_t *input,const float 
             const int8_t *x=input+block*256;
             float d=qwen_half(p),m=qwen_half(p+2),xd=scales[block];
             const uint8_t *s=p+4;
-            for(unsigned g=0;g<8;g++) {
-                unsigned scale=g<4?s[g]&63:(s[g+4]&15)|((s[g-4]>>6)<<4);
-                unsigned minimum=g<4?s[g+4]&63:(s[g+4]>>4)|((s[g]>>6)<<4);
+            uint8x8_t s0=vld1_u8(s),s4=vld1_u8(s+4),s8=vld1_u8(s+8);
+            #pragma clang loop unroll(full)
+            for(unsigned g=0;g<8;g+=4) {
+                uint8x8_t scale=g==0?vand_u8(s0,vdup_n_u8(63)):
+                    vorr_u8(vand_u8(s8,vdup_n_u8(15)),vshl_n_u8(vshr_n_u8(s0,6),4));
+                uint8x8_t minimum=g==0?vand_u8(s4,vdup_n_u8(63)):
+                    vorr_u8(vshr_n_u8(s8,4),vshl_n_u8(vshr_n_u8(s4,6),4));
                 const uint8_t *packed=p+16+(g/2)*32;
-                int32x4_t products=vdupq_n_s32(0);
-                float total=totals[block*8+g];
+                int32x4_t dots[4]={vdupq_n_s32(0),vdupq_n_s32(0),vdupq_n_s32(0),vdupq_n_s32(0)};
+                #pragma clang loop unroll(full)
                 for(unsigned lane=0;lane<32;lane+=16) {
-                    uint8x16_t nibble=vld1q_u8(packed+lane);
-                    nibble=(g&1)?vshrq_n_u8(nibble,4):vandq_u8(nibble,vdupq_n_u8(15));
-                    int8x16_t activation=vld1q_s8(x+g*32+lane);
-                    products=vdotq_s32(products,vreinterpretq_s8_u8(nibble),activation);
+                    uint8x16_t a=vld1q_u8(packed+lane),b=vld1q_u8(packed+32+lane);
+                    dots[0]=vdotq_s32(dots[0],vreinterpretq_s8_u8(vandq_u8(a,vdupq_n_u8(15))),vld1q_s8(x+g*32+lane));
+                    dots[1]=vdotq_s32(dots[1],vreinterpretq_s8_u8(vshrq_n_u8(a,4)),vld1q_s8(x+(g+1)*32+lane));
+                    dots[2]=vdotq_s32(dots[2],vreinterpretq_s8_u8(vandq_u8(b,vdupq_n_u8(15))),vld1q_s8(x+(g+2)*32+lane));
+                    dots[3]=vdotq_s32(dots[3],vreinterpretq_s8_u8(vshrq_n_u8(b,4)),vld1q_s8(x+(g+3)*32+lane));
                 }
-                int dot=vaddvq_s32(products);
-                sum+=xd*(d*(float)scale*(float)dot-m*(float)minimum*total);
+                int32x4_t dot=vpaddq_s32(vpaddq_s32(dots[0],dots[1]),vpaddq_s32(dots[2],dots[3]));
+                float32x4_t ds=vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(scale)))),d);
+                float32x4_t dm=vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(minimum)))),m);
+                float32x4_t terms=vmulq_n_f32(vsubq_f32(vmulq_f32(ds,vcvtq_f32_s32(dot)),
+                    vmulq_f32(dm,vld1q_f32(totals+block*8+g))),xd);
+                // Deliberately do not horizontally reduce these floats: the
+                // existing eight group additions must retain their order.
+                sum+=vgetq_lane_f32(terms,0);
+                sum+=vgetq_lane_f32(terms,1);
+                sum+=vgetq_lane_f32(terms,2);
+                sum+=vgetq_lane_f32(terms,3);
             }
         }
         output[row]=sum;
@@ -235,9 +257,14 @@ void infinity_qwen_dot_rows(uint32_t kind,const uint8_t *data,const float *input
                         low=g<2?vandq_u8(low,vdupq_n_u8(15)):vshrq_n_u8(low,4);
                         high=vandq_u8(vshlq_u8(high,vdupq_n_s8(-(int)(g*2))),vdupq_n_u8(3));
                         uint8x16_t packed=vorrq_u8(low,vshlq_n_u8(high,4));
-                        int16x8_t q=vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(vget_low_u8(packed))),vdupq_n_s16(32));
-                        int16x8_t q_hi=vsubq_s16(vreinterpretq_s16_u16(vmovl_u8(vget_high_u8(packed))),vdupq_n_s16(32));
-                        float ds=d[r]*(float)(int8_t)p[r][192+part*8+g*2+lane/16];
+                        // q * scale fits int16. A finite half's 11-bit
+                        // significand times that product fits float32 exactly,
+                        // so scaling before conversion preserves each weight.
+                        int8x16_t centered=vsubq_s8(vreinterpretq_s8_u8(packed),vdupq_n_s8(32));
+                        int8x8_t scale=vdup_n_s8((int8_t)p[r][192+part*8+g*2+lane/16]);
+                        int16x8_t q=vmull_s8(vget_low_s8(centered),scale);
+                        int16x8_t q_hi=vmull_s8(vget_high_s8(centered),scale);
+                        float ds=d[r];
                         float32x4_t weight=vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_low_s16(q))),ds);
                         float32x4_t weight_hi=vmulq_n_f32(vcvtq_f32_s32(vmovl_s16(vget_high_s16(q))),ds);
                         accum[r]=vaddq_f32(accum[r],vmulq_f32(weight,activation));

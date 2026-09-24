@@ -8,6 +8,16 @@
 void infinity_qwen_dot_rows(uint32_t,const uint8_t *,const float *,size_t,size_t,float *);
 
 // ------------------------=
+// FUNC: half_value
+// DESC: Independently expands finite half precision scales, including signed zeros and subnormals.
+// ------------------=
+static float half_value(const uint8_t *p) {
+    unsigned h=p[0]|(unsigned)p[1]<<8,exponent=(h>>10)&31,mantissa=h&1023;
+    float value=exponent?ldexpf((float)(1024+mantissa),(int)exponent-25):ldexpf((float)mantissa,-24);
+    return (h&32768)?-value:value;
+}
+
+// ------------------------=
 // FUNC: reference
 // DESC: Independently computes the existing Q8 activation rounding and ordered Q4 products, with integer totals recalculated for each row.
 // ------------------=
@@ -29,8 +39,7 @@ static float reference(const uint8_t *data,const float *input,unsigned width) {
             }
             unsigned scale=g<4?s[g]&63:(s[g+4]&15)|((s[g-4]>>6)<<4);
             unsigned minimum=g<4?s[g+4]&63:(s[g+4]>>4)|((s[g]>>6)<<4);
-            // Fixtures use exact half values d=1/64 and m=1/128.
-            result+=xd*((1.0f/64)*(float)scale*(float)dot-(1.0f/128)*(float)minimum*(float)total);
+            result+=xd*(half_value(p)*(float)scale*(float)dot-half_value(p+2)*(float)minimum*(float)total);
         }
     }
     return result;
@@ -51,7 +60,10 @@ int main(void) {
         for(unsigned i=0;i<9*stride;i++){seed=seed*1664525+1013904223;data[i]=seed>>24;}
         for(unsigned r=0;r<9;r++)for(unsigned b=0;b<width/256;b++) {
             uint8_t *p=data+r*stride+b*144;
-            p[0]=0;p[1]=0x24;p[2]=0;p[3]=0x20;
+            // Keep randomized signs, mantissas and finite exponents, including
+            // subnormal/zero/minimum/maximum scales at explicit boundaries.
+            p[1]&=0xfb;p[3]&=0xfb;
+            if(b==0) { p[0]=r==0?0:r==1?1:255;p[1]=r<2?0:0x7b; }
         }
         for(unsigned pattern=0;pattern<5;pattern++) {
             for(unsigned i=0;i<width;i++) {

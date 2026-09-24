@@ -181,3 +181,56 @@ ISO SHA-256: `ac28b5624fa6b34300dde437963e590b1a1e25085a6bfe2515facdf0eb78bfde`.
 Installed-kernel SHA-256: `d8532a3dc8624308223a4c015eaad026bafc5d90b921940c6b7181fe2c868d14`.
 Authenticated, ISO-detached VM response timing remains pending. The user's
 running VM and credentials were not modified or bypassed.
+
+## Additional 25% target pass, 2026-09-23
+
+Baseline: the already optimized math kernel in `b36ad4f` / `6ce06e7`, not the
+older pre-optimization kernel. Profiling the actual Hermes forward path attributed
+about 63% of matrix time to Q4 and 36% to Q6. The bounded changes are:
+
+- Four independent activation-maximum accumulators remove a serial dependency.
+- Four Q4 groups share packed loads, integer reductions and vector scale math;
+  their final floating-point additions retain the original order.
+- ARM half-storage conversion replaces software bit decoding. Scalar/x86 paths
+  retain the software decoder.
+- Q6 signed weight/scale products are formed exactly in int16 before conversion
+  to float. Finite half scales make the resulting float weights exact; the
+  activation multiplication and ordered accumulation are unchanged.
+
+No weight requantization, shortened responses, context reduction, extra model
+allocation, changed service scheduling, or larger work slices were introduced.
+The ARM freestanding main kernel stack frame decreased from 14,656 to 14,512
+bytes; its Q4 helper frame decreased from 32 to 16 bytes.
+
+Five alternating fresh-process native ARM64 host trials, with identical `hello`
+prompts and conversation state, returned identical nine-token response bytes:
+
+| Median | Previous baseline | New | Time reduction | Throughput gain |
+| --- | ---: | ---: | ---: | ---: |
+| First emitted token | 2.775 s | 2.112 s | 23.9% | 31.4% |
+| Eight-token decode interval | 3.045 s | 2.422 s | 20.5% | 25.7% |
+| Complete response, including EOS | 6.201 s | 4.839 s | 22.0% | 28.1% |
+
+This meets a 25% **throughput** target on the controlled host, not a 25% reduction
+in complete-response latency. These are not installed guest or widget-visible
+timings. Unlike the preceding pass, no VirtualBox VM was running during these
+trials; only the alternating measurements against this pass's baseline are a
+valid comparison. Timings exclude model loading and integrity verification.
+
+The seven-trial kernel comparison measured Q4 throughput gains of 48–50% for
+eight-row slices and 34–36% for 4,096-row worker batches. Q6 improved about 4–6%
+in most cases (the 8,192-wide large batch gained 1.7%). Guest scheduling and
+multicore memory contention can produce different end-to-end results.
+
+Verification passed: `make ai-test` (including worker concurrency/cancellation),
+exact Q4 reference comparisons with varied signed finite half scales, all 63,488
+finite half encodings through Q6 against an independent scalar path, row tails,
+ASan/UBSan, ARM64/x86_64 freestanding compilation, binary timing-receipt tests,
+and actual Hermes/Ministral generation. An additional arithmetic request returned
+identical output bytes in both variants. No console prose was used as an oracle.
+
+Reproduction: `sh tools/qwen-kernel-perf.sh b36ad4f` and
+`tools/hermes-response-perf.py` with the saved baseline/candidate executables.
+Evidence is in `builds/hermes-plus25-20260923/`; the five-trial binary receipts and
+numeric summary are in its `response-pass4/` directory. ISO publication and
+authenticated, detached-media guest timing are separate verification gates.

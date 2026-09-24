@@ -424,6 +424,8 @@ ai-test:
 	@build/behavior-tests/qwen-rows-test
 	@clang -O3 -ffp-contract=off tools/qwen-q8-totals-test.c kernel/runtime/ai/qwen/cpu_math.c -o build/behavior-tests/qwen-q8-totals-test
 	@build/behavior-tests/qwen-q8-totals-test || test $$? -eq 77
+	@clang -O3 -ffp-contract=off tools/qwen-q6-scales-test.c kernel/runtime/ai/qwen/cpu_math.c build/behavior-tests/qwen-scalar-math.o -o build/behavior-tests/qwen-q6-scales-test
+	@build/behavior-tests/qwen-q6-scales-test
 	@clang -O2 tools/psci-topology-test.c -o build/behavior-tests/psci-topology-test
 	@build/behavior-tests/psci-topology-test
 
