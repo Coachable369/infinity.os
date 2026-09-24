@@ -272,6 +272,12 @@ pub enum OperationId {
     ReplicaDelete = 0xe024,
     PoolHeal = 0xe030,
     PoolMetadata = 0xe050,
+    ComputeRequest = 0xe201,
+    ComputeInspect = 0xe202,
+    ComputeList = 0xe203,
+    ComputeCancel = 0xe204,
+    ComputeResult = 0xe205,
+    ComputeDiagnostics = 0xe206,
 }
 impl OperationId {
     // ------------------------=

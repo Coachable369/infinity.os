@@ -80,6 +80,10 @@ pub enum CapabilityType {
     ResourcePolicyInspect,
     ResourcePolicyModify,
     ResourceExpand,
+    ComputeUse,
+    ComputeInspect,
+    ComputeCancel,
+    AcceleratorUse,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

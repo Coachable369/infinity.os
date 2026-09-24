@@ -399,6 +399,62 @@ impl AiRuntime {
     }
 
     // ------------------------=
+    // FUNC: request_distributed_inference
+    // DESC: Adapts a provider-neutral AI request into authorized Resource Fabric accelerator work while preserving locality and privacy policy.
+    // ------------------=
+    pub fn request_distributed_inference(
+        &self,
+        request: &ModelExecutionRequest<'_>,
+        workload_id: [u8; 16],
+        compute_capability: crate::runtime::capability::CapabilityId,
+        compute: &mut crate::runtime::compute::ComputeService,
+        capabilities: &crate::runtime::capability::CapabilityManager,
+        directory: &mut crate::runtime::fabric::resources::Directory,
+        local: crate::runtime::node::types::NodeId,
+        now: u64,
+    ) -> Result<u64, AiError> {
+        if !self.initialized || request.input_ref_count > 4 || request.deadline <= now {
+            return Err(if request.deadline <= now { AiError::DeadlineExceeded } else { AiError::InvalidRequest });
+        }
+        if matches!(request.provider_policy, ProviderPolicy::LocalOnly | ProviderPolicy::PrivateDataLocalOnly | ProviderPolicy::AskBeforeRemote)
+            || matches!(request.privacy_policy, PrivacyPolicy::Personal | PrivacyPolicy::Secret) { return Err(AiError::PrivacyDenied); }
+        let provider = self.providers.select(request)?;
+        if provider.local { return Err(AiError::ProviderUnavailable); }
+        let mut refs = [[0; 16]; 2];
+        for (index, value) in request.input_refs.iter().take(request.input_ref_count.min(2) as usize).enumerate() { refs[index] = *value; }
+        let distributed = crate::runtime::compute::ComputeRequestV1 {
+            schema_version: crate::runtime::compute::COMPUTE_SCHEMA_VERSION,
+            workload_kind: crate::runtime::compute::WorkloadKind::AcceleratorInferenceFixture,
+            locality: crate::runtime::compute::ComputeLocality::RequireRemote,
+            durability: crate::runtime::compute::ComputeDurability::Restartable,
+            priority: request.options.priority,
+            privacy_local_only: false,
+            workload_id,
+            input_refs: refs,
+            allowed_nodes: [crate::runtime::node::types::NodeId([0; 32]); 2],
+            allowed_node_count: 0,
+            allowed_domains: [0; 2],
+            allowed_domain_count: 0,
+            memory_bytes: request.resource_policy.memory_limit,
+            deadline: request.deadline,
+            correlation_id: request.correlation_id,
+            capability_ref: compute_capability,
+            affinity: request.model.unwrap_or(0) as u64,
+            anti_affinity: 0,
+            work_units: (request.options.maximum_output_units as u32).max(1),
+            cpu_units: request.resource_policy.cpu_weight.max(1),
+            restart_eligible: true,
+            result_contract: crate::runtime::compute::COMPUTE_RESULT_CONTRACT_V1,
+        };
+        compute.request(distributed, request.caller, capabilities, directory, local, now).map_err(|error| match error {
+            crate::runtime::compute::ComputeError::AccessDenied => AiError::AccessDenied,
+            crate::runtime::compute::ComputeError::DeadlineExceeded => AiError::DeadlineExceeded,
+            crate::runtime::compute::ComputeError::Full => AiError::QueueFull,
+            _ => AiError::ProviderUnavailable,
+        })
+    }
+
+    // ------------------------=
     // FUNC: resolve_intent
     // DESC: Produces and validates a typed IntentPlan while leaving execution to InfinityOS policy and IOP.
     // ------------------=

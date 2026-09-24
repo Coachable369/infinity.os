@@ -598,12 +598,12 @@ impl<D: BlockDevice> ObjectStore<D> {
         progress(57, b"INSTALLING RUNTIME AND SERVICE REGISTRY");
         let runtime =
             self.create_record(b"runtime-core", ObjectType::SystemComponent, Space::System)?;
-        self.write_record(
-            runtime,
-            &[
-                b'I', b'N', b'F', b'R', b'U', b'N', b'1', 0, 1, 0, 0, 0, 1, 0, 0, 0,
-            ],
-        )?;
+        let mut runtime_state = [0u8; 4096];
+        runtime_state[..16].copy_from_slice(&[
+            b'I', b'N', b'F', b'R', b'U', b'N', b'1', 0, 1, 0, 0, 0, 1, 0, 0, 0,
+        ]);
+        runtime_state[16..].copy_from_slice(&compute_bootstrap_state());
+        self.write_record(runtime, &runtime_state)?;
         self.attach_record(b"/system/runtime", runtime)?;
         let registry =
             self.create_record(b"service-registry", ObjectType::Metadata, Space::System)?;
@@ -756,6 +756,10 @@ impl<D: BlockDevice> ObjectStore<D> {
                 b"INFNOD01".as_slice(),
             ),
             (
+                b"/system/runtime".as_slice(),
+                b"INFCMP01".as_slice(),
+            ),
+            (
                 b"/system/settings/shell/profiles".as_slice(),
                 b"INFSHL01".as_slice(),
             ),
@@ -772,7 +776,8 @@ impl<D: BlockDevice> ObjectStore<D> {
             let Ok(length) = self.read(id, None, &mut content) else {
                 return false;
             };
-            if length < magic.len() || &content[..magic.len()] != magic {
+            let offset = if magic == b"INFCMP01" { 16 } else { 0 };
+            if length < offset + magic.len() || &content[offset..offset + magic.len()] != magic {
                 return false;
             }
             if path == b"/system/models/local-intent-v1"
@@ -2163,6 +2168,16 @@ impl<D: BlockDevice> ObjectStore<D> {
         self.mounted_root ^= 1;
         Ok(())
     }
+}
+
+// ------------------------=
+// FUNC: compute_bootstrap_state
+// DESC: Creates the empty versioned compute-audit object without coupling Object Store formatting to the runtime module.
+// ------------------=
+fn compute_bootstrap_state() -> [u8; 4080] {
+    let mut out = [0; 4080]; out[..8].copy_from_slice(b"INFCMP01"); out[8..10].copy_from_slice(&1u16.to_le_bytes()); out[16..24].copy_from_slice(&1u64.to_le_bytes());
+    let checksum_at = out.len() - 4;
+    let checksum = out[..checksum_at].iter().fold(0x811c9dc5u32, |value, byte| value.wrapping_mul(16777619) ^ *byte as u32); out[checksum_at..].copy_from_slice(&checksum.to_le_bytes()); out
 }
 
 /// Typed machine boundary. Policy validation occurs before every object-store

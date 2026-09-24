@@ -135,6 +135,7 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     );
     let _ =
         runtime::initialize_node_identity(&info.firmware_entropy, info.firmware_entropy_valid == 1);
+    let _ = runtime::register_local_compute_resources(info.native_pool_bytes, 1);
     if info.network_device_count > 0 {
         let mut hardware_address = [0u8; 6];
         hardware_address.copy_from_slice(&info.network_mac[..6]);

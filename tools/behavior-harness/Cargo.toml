@@ -121,5 +121,9 @@ name = "resource-policy-test"
 path = "../resource-policy-test.rs"
 
 [[bin]]
+name = "milestone-11-compute-test"
+path = "../milestone-11-compute-test.rs"
+
+[[bin]]
 name = "ministral-native-test"
 path = "../ministral-native-test.rs"

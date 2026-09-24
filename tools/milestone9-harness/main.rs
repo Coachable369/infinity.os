@@ -6,6 +6,10 @@ mod node;
 mod execution;
 #[path = "../../kernel/runtime/capability.rs"]
 mod capability;
+#[path = "../../kernel/runtime/fabric/mod.rs"]
+mod fabric;
+#[path = "../../kernel/runtime/compute.rs"]
+mod compute;
 #[path = "../../kernel/runtime/iop.rs"]
 mod iop;
 #[path = "../../kernel/runtime/event.rs"]
@@ -13,8 +17,17 @@ mod event;
 #[path = "../../kernel/runtime/network/mod.rs"]
 mod network;
 mod runtime {
-    pub(crate) use crate::{capability, execution, network, node, iop};
+    pub(crate) use crate::{capability, compute, crypto, execution, fabric, network, node, iop};
 }
+
+const EVENT_COMPUTE_QUEUED: u32 = 0x9f001;
+const EVENT_COMPUTE_PLACED: u32 = 0x9f002;
+const EVENT_COMPUTE_STARTED: u32 = 0x9f003;
+const EVENT_COMPUTE_COMPLETED: u32 = 0x9f004;
+const EVENT_COMPUTE_FAILED: u32 = 0x9f005;
+const EVENT_COMPUTE_CANCELLED: u32 = 0x9f006;
+const EVENT_COMPUTE_RESTARTED: u32 = 0x9f007;
+const EVENT_COMPUTE_NODE_LOST: u32 = 0x9f008;
 
 use node::types::{MeshRole, NodeError, TrustState};
 use node::NodeRuntime;

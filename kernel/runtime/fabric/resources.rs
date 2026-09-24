@@ -185,8 +185,16 @@ impl Directory {
     // DESC: Computes unreserved capacity only for currently healthy, writable storage advertisements.
     // ------------------=
     pub fn usable(&self, index: usize, now: u64) -> u64 {
+        self.usable_kind(index, ResourceKind::Storage, now)
+    }
+
+    // ------------------------=
+    // FUNC: usable_kind
+    // DESC: Computes unreserved capacity for one healthy advertised resource kind without inventing coordinator-local capacity.
+    // ------------------=
+    pub(crate) fn usable_kind(&self, index: usize, kind: ResourceKind, now: u64) -> u64 {
         self.entries.get(index).copied().flatten().filter(|r| r.online && r.expires > now
-            && r.health == Health::Healthy && r.kind == ResourceKind::Storage && r.capabilities & 1 != 0)
+            && r.health == Health::Healthy && r.kind == kind && r.capabilities & 1 != 0)
             .map(|r| r.available.saturating_sub(self.reserved[index])).unwrap_or(0)
     }
 
@@ -195,9 +203,17 @@ impl Directory {
     // DESC: Reserves bounded transfer capacity so concurrent planned replicas cannot spend the same advertised bytes.
     // ------------------=
     pub(super) fn reserve(&mut self, id: ResourceId, generation: u64, bytes: u64, now: u64) -> Result<(), ResourceError> {
+        self.reserve_kind(id, generation, ResourceKind::Storage, bytes, now)
+    }
+
+    // ------------------------=
+    // FUNC: reserve_kind
+    // DESC: Atomically reserves capacity from an exact live resource generation and kind.
+    // ------------------=
+    pub(crate) fn reserve_kind(&mut self, id: ResourceId, generation: u64, kind: ResourceKind, amount: u64, now: u64) -> Result<(), ResourceError> {
         let index = self.entries.iter().position(|r| r.map(|r| (r.id, r.generation)) == Some((id, generation))).ok_or(ResourceError::NotFound)?;
-        if bytes == 0 || self.usable(index, now) < bytes { return Err(ResourceError::Capacity); }
-        self.reserved[index] = self.reserved[index].checked_add(bytes).ok_or(ResourceError::Capacity)?;
+        if amount == 0 || self.usable_kind(index, kind, now) < amount { return Err(ResourceError::Capacity); }
+        self.reserved[index] = self.reserved[index].checked_add(amount).ok_or(ResourceError::Capacity)?;
         Ok(())
     }
 
@@ -205,9 +221,19 @@ impl Directory {
     // FUNC: release
     // DESC: Releases one transfer reservation only against its original device generation.
     // ------------------=
-    pub(super) fn release(&mut self, id: ResourceId, generation: u64, bytes: u64) -> Result<(), ResourceError> {
+    pub(crate) fn release(&mut self, id: ResourceId, generation: u64, bytes: u64) -> Result<(), ResourceError> {
         let index = self.entries.iter().position(|r| r.map(|r| (r.id, r.generation)) == Some((id, generation))).ok_or(ResourceError::NotFound)?;
         self.reserved[index] = self.reserved[index].checked_sub(bytes).ok_or(ResourceError::Conflict)?;
         Ok(())
+    }
+
+
+    // ------------------------=
+    // FUNC: reserved_for
+    // DESC: Exposes exact generation-bound reservation accounting for typed runtime diagnostics and behavioral verification.
+    // ------------------=
+    pub fn reserved_for(&self, id: ResourceId, generation: u64) -> Option<u64> {
+        self.entries.iter().position(|r| r.map(|r| (r.id, r.generation)) == Some((id, generation)))
+            .map(|index| self.reserved[index])
     }
 }

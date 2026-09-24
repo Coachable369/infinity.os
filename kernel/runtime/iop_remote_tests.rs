@@ -262,6 +262,62 @@ fn storage_payload() -> StorageOperationV1 {
 }
 
 // ------------------------=
+// FUNC: compute_payload
+// DESC: Constructs one bounded typed remote CPU request for authenticated frame and admission behavior.
+// ------------------=
+fn compute_payload(target_node: NodeId) -> ComputeDispatchV1 {
+    ComputeDispatchV1 { schema_version: super::super::super::compute::COMPUTE_SCHEMA_VERSION,
+        workload_kind: super::super::super::compute::WorkloadKind::CpuChecksum,
+        state: super::super::super::compute::ComputeState::Placed as u8,
+        operation: OperationId::ComputeRequest as u32, task_id: 41, epoch: 2, work_units: 9,
+        memory_bytes: 4096, deadline: 20, scope: 0, workload_id: [7; 16], input_refs: [[8; 16], [9; 16]],
+        target_node, cpu_units: 4, priority: 128,
+        result_contract: super::super::super::compute::COMPUTE_RESULT_CONTRACT_V1,
+        error: 0, flags: 0, used_ticks: 0 }
+}
+
+// ------------------------=
+// FUNC: compute_frames_roundtrip_without_storage_aliasing
+// DESC: Proves the full-size compute schema survives the authenticated IOP frame and cannot be decoded as a storage or truncated message.
+// ------------------=
+#[test]
+fn compute_frames_roundtrip_without_storage_aliasing() {
+    let target = NodeId([55; 32]); let payload = compute_payload(target);
+    let envelope = Envelope { kind: 1, error: 0, id: 11, correlation: 12, causation: 13, grant: 14, lease: 10, payload: Payload::Compute(payload) };
+    let (bytes, length) = encode(envelope).unwrap(); assert_eq!(length, COMPUTE_FRAME_BYTES);
+    assert_eq!(decode(&bytes[..length]).unwrap(), envelope);
+    assert_eq!(decode(&bytes[..STORAGE_FRAME_BYTES]), Err(RemoteError::MalformedRequest));
+}
+
+// ------------------------=
+// FUNC: authenticated_compute_executes_real_bounded_context_and_rechecks_revocation
+// DESC: Exercises receiver admission, dequeue authority, bounded Execution Context work, typed response, cleanup, and live grant revocation without shell transport.
+// ------------------=
+#[test]
+fn authenticated_compute_executes_real_bounded_context_and_rechecks_revocation() {
+    for revoked in [false, true] {
+        let mut f = Fixture::new(); let local = f.nodes.local_id().unwrap(); let payload = compute_payload(local);
+        let grant = f.nodes.grant_remote(f.peer, OperationId::ComputeRequest as u32, 0, 1, 100, 5, 1).unwrap();
+        let reference = f.nodes.sessions().iter().flatten().find(|session| session.id == f.session).unwrap().protocol_reference;
+        let request = Envelope { kind: 1, error: 0, id: 61, correlation: 62, causation: 63, grant, lease: 14, payload: Payload::Compute(payload) };
+        f.admit(data(f.peer, reference, request), 6).unwrap();
+        if revoked { f.nodes.revoke_remote(grant, 7, 1).unwrap(); }
+        let mut execution = super::super::super::execution::ExecutionManager::new(); let mut invoked = false;
+        f.router.execute_remote_compute(&mut f.nodes, 8, |call| {
+            invoked = true; super::super::super::compute::execute_remote_dispatch(call.payload, &mut execution, call.local, 8).map_err(|_| RemoteError::RemoteFailure)
+        });
+        assert_eq!(invoked, !revoked); assert_eq!(execution.count(), 0);
+        let response = f.router.remote.responses.iter().flatten().next().copied().unwrap();
+        if revoked {
+            assert_eq!(error_from_byte(response.message.error), Ok(RemoteError::CapabilityRevoked));
+        } else {
+            let completed = response.message.payload.compute().unwrap();
+            assert_eq!(completed.operation, OperationId::ComputeResult as u32); assert_eq!(completed.work_units, 0); assert_eq!(completed.used_ticks, 9);
+        }
+    }
+}
+
+// ------------------------=
 // FUNC: storage_requests_share_authenticated_iop_and_owned_completion
 // DESC: Exercises the actual shared router across admission, execution, correlated response, typed mailbox isolation and replay rejection.
 // ------------------=

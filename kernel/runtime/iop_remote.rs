@@ -12,10 +12,12 @@ use super::{
 mod payload;
 use payload::Payload;
 use super::storage_protocol::StorageOperationV1;
+use super::super::compute::{ComputeDispatchV1, COMPUTE_DISPATCH_V1_BYTES};
 
 const MAGIC: &[u8; 4] = b"IOP9";
 const FRAME_BYTES: usize = 128;
 const STORAGE_FRAME_BYTES: usize = 48 + super::storage_protocol::OPERATION_BYTES;
+const COMPUTE_FRAME_BYTES: usize = 48 + COMPUTE_DISPATCH_V1_BYTES;
 const CAPACITY: usize = 8;
 const MAX_LEASE: u64 = 30;
 
@@ -68,7 +70,19 @@ pub struct AuthenticatedStorageRequest {
     pub payload: StorageOperationV1,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AuthenticatedComputeRequest {
+    pub local: NodeId,
+    pub peer: NodeId,
+    pub session_reference: [u8; 16],
+    pub grant: u64,
+    pub request_id: u64,
+    pub correlation: u64,
+    pub causation: u64,
+    pub payload: ComputeDispatchV1,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Envelope {
     kind: u8,
     error: u8,
@@ -182,6 +196,15 @@ impl RemoteState {
             causation_id: result.causation_id, result: result.result.and_then(Payload::storage) })
     }
     // ------------------------=
+    // FUNC: take_compute_result
+    // DESC: Collects one caller-owned fenced compute result from the shared authenticated remote mailbox.
+    // ------------------=
+    pub fn take_compute_result(&mut self, caller: SecurityIdentity, id: u64) -> Option<RemoteResult<ComputeDispatchV1>> {
+        let index = self.pending.iter().position(|pending| pending.as_ref().is_some_and(|pending| pending.caller == caller && pending.request.message.id == id && pending.result.is_some() && matches!(pending.request.message.payload, Payload::Compute(_))))?;
+        let result = self.pending[index].take()?.result?;
+        Some(RemoteResult { request_id: result.request_id, correlation_id: result.correlation_id, causation_id: result.causation_id, result: result.result.and_then(Payload::compute) })
+    }
+    // ------------------------=
     // FUNC: incoming_count
     // DESC: Exposes bounded queue occupancy for operational diagnostics and dequeue-race tests.
     // ------------------=
@@ -234,6 +257,15 @@ impl IopRouter {
         payload.encode().map_err(|_| RemoteError::MalformedRequest)?;
         self.request_remote_payload(capabilities, nodes, caller, capability, peer, grant,
             Payload::Storage(payload), correlation, causation, now, deadline)
+    }
+    // ------------------------=
+    // FUNC: request_remote_compute
+    // DESC: Dispatches a bounded compute slice through the same authenticated session, grant, replay, and correlation path as native node IOP.
+    // ------------------=
+    pub fn request_remote_compute(&mut self, capabilities: &CapabilityManager, nodes: &NodeRuntime, caller: SecurityIdentity, capability: u64, peer: NodeId, grant: u64, payload: ComputeDispatchV1, correlation: u64, causation: u64, now: u64, deadline: u64) -> Result<u64, RemoteError> {
+        ComputeDispatchV1::decode(&payload.encode()).map_err(|_| RemoteError::MalformedRequest)?;
+        if !matches!(payload.operation, value if value == OperationId::ComputeRequest as u32 || value == OperationId::ComputeCancel as u32) { return Err(RemoteError::UnsupportedOperation); }
+        self.request_remote_payload(capabilities, nodes, caller, capability, peer, grant, Payload::Compute(payload), correlation, causation, now, deadline)
     }
     // ------------------------=
     // FUNC: request_remote_payload
@@ -589,6 +621,25 @@ impl IopRouter {
         committed
     }
     // ------------------------=
+    // FUNC: execute_remote_compute
+    // DESC: Revalidates native remote authority immediately before invoking the bounded compute executor and staging its fenced reply.
+    // ------------------=
+    pub fn execute_remote_compute(&mut self, nodes: &mut NodeRuntime, now: u64, execute: impl FnOnce(AuthenticatedComputeRequest) -> Result<ComputeDispatchV1, RemoteError>) {
+        let Some(output) = self.remote.responses.iter().position(Option::is_none) else { return; };
+        let Some(index) = self.remote.incoming.iter().position(|request| request.is_some_and(|request| matches!(request.message.payload, Payload::Compute(_)))) else { return; };
+        let mut request = self.remote.incoming[index].take().unwrap();
+        let result = validate_authority(nodes, &request, now).and_then(|_| {
+            let payload = request.message.payload.compute()?;
+            let response = execute(AuthenticatedComputeRequest { local: nodes.local_id().ok_or(RemoteError::InvalidState)?, peer: request.peer, session_reference: request.reference, grant: request.message.grant, request_id: request.message.id, correlation: request.message.correlation, causation: request.message.causation, payload })?;
+            ComputeDispatchV1::decode(&response.encode()).map_err(|_| RemoteError::RemoteFailure)?;
+            if !request.message.payload.same_target(Payload::Compute(response)) { return Err(RemoteError::RemoteFailure); }
+            Ok(response)
+        });
+        if result.is_ok() { self.remote.executed = self.remote.executed.saturating_add(1); }
+        nodes.record(0xdb01, request.peer, now, request.message.correlation, result.as_ref().err().map(|error| *error as u8).unwrap_or(0));
+        request.message.kind = 2; request.message.causation = request.message.id; request.message.error = result.as_ref().err().map(|error| *error as u8).unwrap_or(0); if let Ok(payload) = result { request.message.payload = Payload::Compute(payload); } request.expires = now.saturating_add(5); self.remote.responses[output] = Some(request);
+    }
+    // ------------------------=
     // FUNC: poll_remote_node
     // DESC: Performs bounded receive/send and completion cleanup without waiting for peers or executing service mutations in transport.
     // ------------------=
@@ -741,6 +792,7 @@ fn validate_authority(nodes: &NodeRuntime, r: &Request, now: u64) -> Result<(), 
         // Storage's full ObjectId is validated by its owning service, never
         // reinterpreted as a node identity or replaced with a 64-bit scope.
         Payload::Storage(_) => true,
+        Payload::Compute(payload) => nodes.local_id() == Some(payload.target_node),
     };
     if !selected {
         return Err(RemoteError::CapabilityScopeDenied);
@@ -772,6 +824,7 @@ fn validate_authority(nodes: &NodeRuntime, r: &Request, now: u64) -> Result<(), 
     let category = match r.message.payload {
         Payload::Node(p) => if is_read(p.operation) { 0 } else { 1 },
         Payload::Storage(_) => 0,
+        Payload::Compute(_) => 0,
     };
     if peer.policy.scope != r.message.payload.scope() {
         return Err(RemoteError::PolicyDenied);
@@ -801,6 +854,7 @@ fn encode(m: Envelope) -> Result<([u8; 192], usize), RemoteError> {
         Payload::Node(p) => { out[4] = 1; out[48..FRAME_BYTES].copy_from_slice(&p.encode()); FRAME_BYTES },
         Payload::Storage(p) => { out[4] = 2; out[48..STORAGE_FRAME_BYTES].copy_from_slice(
             &p.encode().map_err(|_| RemoteError::MalformedRequest)?); STORAGE_FRAME_BYTES },
+        Payload::Compute(p) => { out[4] = 3; out[48..COMPUTE_FRAME_BYTES].copy_from_slice(&p.encode()); COMPUTE_FRAME_BYTES },
     };
     Ok((out, length))
 }
@@ -809,14 +863,14 @@ fn encode(m: Envelope) -> Result<([u8; 192], usize), RemoteError> {
 // DESC: Rejects malformed, oversized, reserved-field and unsupported-version frames before any queue or authority mutation.
 // ------------------=
 fn decode(bytes: &[u8]) -> Result<Envelope, RemoteError> {
-    if !matches!(bytes.len(), FRAME_BYTES | STORAGE_FRAME_BYTES)
+    if !matches!(bytes.len(), FRAME_BYTES | STORAGE_FRAME_BYTES | COMPUTE_FRAME_BYTES)
         || &bytes[..4] != MAGIC
         || bytes[7] != 0
         || bytes[44..48] != [0; 4]
     {
         return Err(RemoteError::MalformedRequest);
     }
-    if !matches!(bytes[4], 1 | 2) {
+    if !matches!(bytes[4], 1 | 2 | 3) {
         return Err(RemoteError::UnsupportedSchemaVersion);
     }
     if !matches!(bytes[5], 1 | 2) || (bytes[5] == 1 && bytes[6] != 0) {
@@ -830,6 +884,7 @@ fn decode(bytes: &[u8]) -> Result<Envelope, RemoteError> {
     let payload = match bytes[4] {
         1 if bytes.len() == FRAME_BYTES => Payload::Node(NodeOperationV1::decode(&bytes[48..]).map_err(|_| RemoteError::MalformedRequest)?),
         2 if bytes.len() == STORAGE_FRAME_BYTES => Payload::Storage(StorageOperationV1::decode(&bytes[48..]).map_err(|_| RemoteError::MalformedRequest)?),
+        3 if bytes.len() == COMPUTE_FRAME_BYTES => Payload::Compute(ComputeDispatchV1::decode(&bytes[48..]).map_err(|_| RemoteError::MalformedRequest)?),
         _ => return Err(RemoteError::MalformedRequest),
     };
     Ok(Envelope {

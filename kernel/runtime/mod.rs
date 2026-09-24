@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod capability;
+pub mod compute;
 pub mod console_language;
 pub mod event;
 pub mod execution;
@@ -120,6 +121,14 @@ pub const EVENT_NODE_COMPATIBILITY_CHANGED: u32 = 0x9e010;
 pub const EVENT_NODE_POLICY_CHANGED: u32 = 0x9e011;
 pub const EVENT_NODE_DOMAIN_CHANGED: u32 = 0x9e012;
 pub const EVENT_NODE_CHECKPOINT_CHANGED: u32 = 0x9e013;
+pub const EVENT_COMPUTE_QUEUED: u32 = 0x9f001;
+pub const EVENT_COMPUTE_PLACED: u32 = 0x9f002;
+pub const EVENT_COMPUTE_STARTED: u32 = 0x9f003;
+pub const EVENT_COMPUTE_COMPLETED: u32 = 0x9f004;
+pub const EVENT_COMPUTE_FAILED: u32 = 0x9f005;
+pub const EVENT_COMPUTE_CANCELLED: u32 = 0x9f006;
+pub const EVENT_COMPUTE_RESTARTED: u32 = 0x9f007;
+pub const EVENT_COMPUTE_NODE_LOST: u32 = 0x9f008;
 
 const NETWORK_EVENT_TYPES: [u32; 15] = [
     EVENT_NETWORK_INTERFACE_STATE_CHANGED,
@@ -176,6 +185,7 @@ pub struct InfinityRuntime {
     storage_handler: Option<iop::storage_protocol::StorageHandler>,
     storage_event_cap: [Option<u64>; 4],
     pub fabric_resources: fabric::resources::Directory,
+    pub compute: compute::ComputeService,
     pub execution: ExecutionManager,
     pub scheduler: Scheduler,
     pub capabilities: CapabilityManager,
@@ -283,6 +293,7 @@ impl InfinityRuntime {
             storage_handler: None,
             storage_event_cap: [None; 4],
             fabric_resources: fabric::resources::Directory::new(),
+            compute: compute::ComputeService::new(),
             execution: ExecutionManager::new(),
             scheduler: Scheduler::new(),
             capabilities: CapabilityManager::new(),
@@ -1980,6 +1991,24 @@ pub fn initialize_node_identity(entropy: &[u8; 32], valid: bool) -> bool {
 }
 
 // ------------------------=
+// FUNC: register_local_compute_resources
+// DESC: Publishes actual bounded execution slots and boot-reserved native memory as local Resource Fabric capacity.
+// ------------------=
+pub fn register_local_compute_resources(memory_bytes: u64, now: u64) -> bool {
+    if memory_bytes == 0 { return false; }
+    let runtime = runtime_mut();
+    let Some(owner) = runtime.nodes.local_id() else { return false; };
+    let mut compute_id = [0; 16]; compute_id.copy_from_slice(&owner.0[..16]); compute_id[0] ^= 0xc1;
+    let mut memory_id = [0; 16]; memory_id.copy_from_slice(&owner.0[..16]); memory_id[0] ^= 0xa3;
+    let mut compute_device = [0; 16]; compute_device.copy_from_slice(&owner.0[16..]); compute_device[0] ^= 0xc1;
+    let mut memory_device = [0; 16]; memory_device.copy_from_slice(&owner.0[16..]); memory_device[0] ^= 0xa3;
+    let compute = fabric::resources::Resource { id: fabric::resources::ResourceId(compute_id), owner, kind: fabric::resources::ResourceKind::Compute, device: compute_device, capacity: execution::MAX_CONTEXTS as u64, available: execution::MAX_CONTEXTS.saturating_sub(runtime.execution.count()) as u64, reserved: 0, health: fabric::resources::Health::Healthy, online: true, capabilities: 1, generation: 1, sequence: now.max(1), expires: u64::MAX };
+    let memory = fabric::resources::Resource { id: fabric::resources::ResourceId(memory_id), owner, kind: fabric::resources::ResourceKind::Memory, device: memory_device, capacity: memory_bytes, available: memory_bytes, reserved: 0, health: fabric::resources::Health::Healthy, online: true, capabilities: 1, generation: 1, sequence: now.max(1), expires: u64::MAX };
+    if runtime.fabric_resources.observe_local(compute, owner, now).is_err() || runtime.fabric_resources.observe_local(memory, owner, now).is_err() { return false; }
+    runtime.compute.observe_node(&runtime.fabric_resources, compute::NodeComputeObservation { node: owner, trust_domain: 0, latency_us: 0, latency_known: true, load_percent: 0, generation: now.max(1) }).is_ok()
+}
+
+// ------------------------=
 // FUNC: poll_node_transport
 // DESC: Pumps one explicitly registered native node link and publishes discovery only after commit.
 // ------------------=
@@ -2005,11 +2034,26 @@ pub fn poll_node_transport(now: u64) {
         runtime.iop.execute_remote_node_durable(&mut runtime.nodes, now, &mut persist_control_state)
     }).flatten();
     if let Some(committed) = committed { let _ = publish_committed_node_control(committed, now); }
+    with_runtime(|runtime| {
+        let iop = &mut runtime.iop;
+        let nodes = &mut runtime.nodes;
+        let execution = &mut runtime.execution;
+        iop.execute_remote_compute(nodes, now, |request| {
+            compute::execute_remote_dispatch(request.payload, execution, request.local, now)
+                .map_err(|error| match error {
+                    compute::ComputeError::AccessDenied => iop::remote::RemoteError::AccessDenied,
+                    compute::ComputeError::DeadlineExceeded => iop::remote::RemoteError::DeadlineExceeded,
+                    compute::ComputeError::Context | compute::ComputeError::ResourceUnavailable => iop::remote::RemoteError::ServiceUnavailable,
+                    _ => iop::remote::RemoteError::InvalidState,
+                })
+        });
+    });
     let storage_commit = with_runtime(|runtime| {
         runtime.fabric_resources.expire(now);
         let handler = runtime.storage_handler;
         let metadata_handler = runtime.storage_metadata.handler;
         let directory = &mut runtime.fabric_resources;
+        let compute_service = &mut runtime.compute;
         runtime.iop.execute_remote_storage(&mut runtime.nodes, now, |request| {
             use iop::storage_protocol::{Operation, StorageCommit, EVENT_RESOURCE_CHANGED};
             if request.payload.operation==Operation::PoolMetadata {
@@ -2018,6 +2062,8 @@ pub fn poll_node_transport(now: u64) {
             }
             let handler = handler.ok_or(iop::remote::RemoteError::ServiceUnavailable)?;
             if request.payload.operation == Operation::ResourceAdvertise {
+                let advertised = fabric::resource_protocol::decode(request.payload, request.peer, now)
+                    .map_err(|_| iop::remote::RemoteError::MalformedRequest)?;
                 let changed = directory.accept_storage_advertisement(request, now).map_err(|error| {
                     use fabric::resources::ResourceError;
                     match error { ResourceError::AccessDenied => iop::remote::RemoteError::AccessDenied,
@@ -2025,6 +2071,15 @@ pub fn poll_node_transport(now: u64) {
                         ResourceError::Full => iop::remote::RemoteError::QueueFull,
                         _ => iop::remote::RemoteError::MalformedRequest }
                 })?;
+                if matches!(advertised.kind, fabric::resources::ResourceKind::Compute | fabric::resources::ResourceKind::Memory | fabric::resources::ResourceKind::Accelerator) {
+                    let compute_resource = directory.entries().iter().flatten().filter(|resource| resource.owner == request.peer && matches!(resource.kind, fabric::resources::ResourceKind::Compute | fabric::resources::ResourceKind::Accelerator) && resource.online).max_by_key(|resource| resource.sequence).copied();
+                    let memory_resource = directory.entries().iter().flatten().filter(|resource| resource.owner == request.peer && resource.kind == fabric::resources::ResourceKind::Memory && resource.online).max_by_key(|resource| resource.sequence).copied();
+                    if let (Some(compute_resource), Some(memory_resource)) = (compute_resource, memory_resource) {
+                        let used = compute_resource.capacity.saturating_sub(compute_resource.available);
+                        let load_percent = used.saturating_mul(100).checked_div(compute_resource.capacity).unwrap_or(100).min(100) as u8;
+                        let _ = compute_service.observe_node(directory, compute::NodeComputeObservation { node: request.peer, trust_domain: 0, latency_us: 0, latency_known: false, load_percent, generation: compute_resource.sequence.max(memory_resource.sequence) });
+                    }
+                }
                 return Ok((request.payload, changed.then_some(StorageCommit {
                     event: EVENT_RESOURCE_CHANGED, object: request.payload.object,
                     generation: request.payload.manifest_generation, copied: request.payload.offset,
@@ -2042,7 +2097,12 @@ pub fn poll_node_transport(now: u64) {
         Some(node::transport::DiscoveryChange::Discovered(peer)) => Some((EVENT_NODE_DISCOVERED, peer)),
         Some(node::transport::DiscoveryChange::Recovered(peer)) => Some((EVENT_NODE_RECOVERED, peer)),
         Some(node::transport::DiscoveryChange::Offline(peer)) => {
-            with_runtime(|runtime| runtime.fabric_resources.mark_peer_offline(peer));
+            with_runtime(|runtime| {
+                runtime.fabric_resources.mark_peer_offline(peer);
+                if let Some(local) = runtime.nodes.local_id() {
+                    runtime.compute.node_lost(peer, &mut runtime.fabric_resources, local, now);
+                }
+            });
             Some((EVENT_NODE_OFFLINE, peer))
         },
         None => None,
@@ -2051,6 +2111,11 @@ pub fn poll_node_transport(now: u64) {
     // Publish at most one retained resource-loss observation per iteration.
     // Inventory is already offline; IEF delivery never determines availability.
     if let Some(resource) = with_runtime(|runtime| runtime.fabric_resources.offline_notice()).flatten() {
+        with_runtime(|runtime| {
+            if let Some(local) = runtime.nodes.local_id() {
+                runtime.compute.node_lost(resource.owner, &mut runtime.fabric_resources, local, now);
+            }
+        });
         let notice = iop::storage_protocol::StorageCommit {
             event: iop::storage_protocol::EVENT_RESOURCE_CHANGED, object: resource.id.0,
             generation: resource.sequence, copied: resource.available,
@@ -2068,6 +2133,7 @@ pub fn poll_node_transport(now: u64) {
         }
         refresh_node_projection(runtime, now);
     });
+    let _ = persist_compute_state();
 }
 
 // ------------------------=
@@ -2168,6 +2234,26 @@ fn persist_control_state(bytes: &[u8; node::types::NODE_STATE_BYTES]) -> bool {
     { crate::storage::node_state_commit(bytes).is_ok() }
     #[cfg(not(target_os = "none"))]
     { let _ = bytes; false }
+}
+
+// ------------------------=
+// FUNC: persist_compute_state
+// DESC: Transactionally checkpoints dirty distributed task and audit state in installed System Space.
+// ------------------=
+pub fn persist_compute_state() -> bool {
+    if !runtime_ref().compute.needs_persistence() { return true; }
+    #[cfg(target_os = "none")]
+    {
+        let encoded = runtime_ref().compute.encode_state();
+        if crate::storage::compute_state_commit(&encoded).is_err() { return false; }
+        runtime_mut().compute.mark_persisted();
+        true
+    }
+    #[cfg(not(target_os = "none"))]
+    {
+        runtime_mut().compute.mark_persisted();
+        true
+    }
 }
 
 // ------------------------=
@@ -2301,6 +2387,15 @@ pub fn storage_initialized() {
                     }
                 }
                 Err(_) => { runtime.nodes = node::NodeRuntime::new(); }
+            }
+        }
+        #[cfg(target_os = "none")]
+        {
+            let mut persisted = [0u8; compute::COMPUTE_STATE_BYTES];
+            if let Ok(length) = crate::storage::compute_state_load(&mut persisted) {
+                if runtime.compute.restore_state(&persisted[..length]).is_err() {
+                    runtime.compute = compute::ComputeService::new();
+                }
             }
         }
         if ai::initialize_global() {

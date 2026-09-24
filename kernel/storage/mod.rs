@@ -745,6 +745,42 @@ pub fn node_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
 }
 
 // ------------------------=
+// FUNC: compute_state_load
+// DESC: Loads authoritative distributed task and audit state from installed System Space.
+// ------------------=
+pub fn compute_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError> {
+    let mut combined = [0u8; 16 + crate::runtime::compute::COMPUTE_STATE_BYTES];
+    let (_, length) = object_read_path(b"/system/runtime", None, &mut combined)?;
+    if length != combined.len() || out.len() < crate::runtime::compute::COMPUTE_STATE_BYTES { return Err(object::ObjectError::CorruptMetadata); }
+    out[..crate::runtime::compute::COMPUTE_STATE_BYTES].copy_from_slice(&combined[16..]);
+    Ok(crate::runtime::compute::COMPUTE_STATE_BYTES)
+}
+
+// ------------------------=
+// FUNC: compute_state_commit
+// DESC: Transactionally replaces the versioned distributed task and audit object.
+// ------------------=
+pub fn compute_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    {
+        with_store(|store| {
+            let id = store.resolve(b"/system/runtime")?;
+            if content.len() != crate::runtime::compute::COMPUTE_STATE_BYTES { return Err(object::ObjectError::InvalidObject); }
+            let mut combined = [0u8; 16 + crate::runtime::compute::COMPUTE_STATE_BYTES];
+            let length = store.read(id, None, &mut combined)?;
+            if length != combined.len() || &combined[..7] != b"INFRUN1" { return Err(object::ObjectError::CorruptMetadata); }
+            combined[16..].copy_from_slice(content);
+            store.replace_state(id, &combined)
+        })
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        let _ = content;
+        Err(object::ObjectError::SpaceUnavailable)
+    }
+}
+
+// ------------------------=
 // FUNC: shell_profile_state_load
 // DESC: Loads versioned declarative Shell Profile objects from authoritative System Space.
 // ------------------=

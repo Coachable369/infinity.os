@@ -8,7 +8,7 @@ use iop::{remote::RemoteError, storage_protocol::{Operation, StorageOperationV1}
 #[derive(Clone, Copy)]
 struct Subscription {
     user: StableId, session: StableId, peer: NodeId, grant: u64,
-    next: u64, request: Option<u64>,
+    next: u64, request: Option<u64>, resource_kind: u8,
 }
 pub struct Publisher {
     entries: [Option<Subscription>; 4], cursor: usize,
@@ -45,7 +45,7 @@ pub(super) fn start_from(r: &mut InfinityRuntime, user: StableId, session: Stabl
         return Err(RemoteError::Conflict);
     }
     let slot = r.storage_advertiser.entries.iter().position(Option::is_none).ok_or(RemoteError::QueueFull)?;
-    r.storage_advertiser.entries[slot] = Some(Subscription { user, session, peer, grant, next: now, request: None });
+    r.storage_advertiser.entries[slot] = Some(Subscription { user, session, peer, grant, next: now, request: None, resource_kind: 0 });
     Ok(())
 }
 
@@ -79,13 +79,23 @@ pub(super) fn poll(r: &mut InfinityRuntime, now: u64) {
             if let Some(done) = storage_operator::take_from(r, sub.user, sub.session, id)? {
                 let response = done.result?;
                 if response.operation != Operation::ResourceAdvertise { return Err(RemoteError::UnknownResponse); }
-                sub.request = None; sub.next = now.saturating_add(20);
+                sub.request = None; sub.resource_kind = (sub.resource_kind + 1) % 3; sub.next = now.saturating_add(if sub.resource_kind == 0 { 20 } else { 1 });
                 r.storage_advertiser.completed = r.storage_advertiser.completed.saturating_add(1);
             }
         } else if now >= sub.next {
-            let observed = storage_client::read(r, now).map_err(|_| RemoteError::ServiceUnavailable)?;
             let owner = r.nodes.local_id().ok_or(RemoteError::ServiceUnavailable)?;
-            let payload = advertisement(observed, owner, now)?;
+            let payload = if sub.resource_kind == 0 {
+                let observed = storage_client::read(r, now).map_err(|_| RemoteError::ServiceUnavailable)?;
+                advertisement(observed, owner, now)?
+            } else {
+                let kind = if sub.resource_kind == 1 { fabric::resources::ResourceKind::Compute } else { fabric::resources::ResourceKind::Memory };
+                let mut observed = r.fabric_resources.entries().iter().flatten().find(|resource| resource.owner == owner && resource.kind == kind && resource.online).copied().ok_or(RemoteError::ServiceUnavailable)?;
+                let reserved = r.fabric_resources.reserved_for(observed.id, observed.generation).unwrap_or(0);
+                observed.available = observed.available.saturating_sub(reserved);
+                observed.reserved = 0;
+                observed.sequence = now.max(observed.sequence.saturating_add(1));
+                fabric::resource_protocol::encode(observed, 60).map_err(|_| RemoteError::MalformedRequest)?
+            };
             sub.request = Some(storage_operator::submit_to(r, sub.user, sub.session, sub.peer, sub.grant, payload)?);
         }
         Ok(())

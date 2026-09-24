@@ -66,6 +66,30 @@ impl TaskManager {
     }
 
     // ------------------------=
+    // FUNC: distributed_task_count
+    // DESC: Exposes distributed lifecycle count from the same compute authority used by console operations.
+    // ------------------=
+    pub fn distributed_task_count(&self, compute: &super::compute::ComputeService) -> usize {
+        compute.task_count()
+    }
+
+    // ------------------------=
+    // FUNC: distributed_task_nth
+    // DESC: Returns one UI-ready distributed snapshot without maintaining a second task model.
+    // ------------------=
+    pub fn distributed_task_nth(&self, compute: &super::compute::ComputeService, index: usize) -> Option<super::compute::ComputeSnapshot> {
+        compute.task_nth(index)
+    }
+
+    // ------------------------=
+    // FUNC: distributed_inspect
+    // DESC: Resolves UI task inspection through the same authoritative compute state as IOP and console clients.
+    // ------------------=
+    pub fn distributed_inspect(&self, compute: &super::compute::ComputeService, task_id: u64) -> Result<super::compute::ComputeSnapshot, super::compute::ComputeError> {
+        compute.inspect(task_id)
+    }
+
+    // ------------------------=
     // FUNC: task_nth
     // DESC: Returns one typed monitoring snapshot without exposing mutable context storage.
     // ------------------=

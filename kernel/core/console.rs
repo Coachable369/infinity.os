@@ -1778,6 +1778,16 @@ impl ConsoleRuntime {
                     ]);
                 }
             }
+            if runtime.compute.task_count() != 0 {
+                self.output.write_line(b"DISTRIBUTED");
+                for index in 0..runtime.compute.task_count().min(3) {
+                    if let Some(task) = runtime.task_manager.distributed_task_nth(&runtime.compute, index) {
+                        self.output.write_number(b"  Task id: ", task.task_id);
+                        self.output.write_segments(&[b"  ", compute_state_text(task.state)]);
+                        self.output.write_number(b"  CPU ticks: ", task.accounting.used_cpu_ticks);
+                    }
+                }
+            }
         });
     }
 
@@ -10654,6 +10664,48 @@ impl ConsoleRuntime {
             );
             return true;
         }
+        if command == b"compute" || command == b"help compute" {
+            self.output.write_line(b"compute - inspect and cancel distributed execution");
+            self.output.write_line(b"list | inspect TASK_ID | cancel TASK_ID COMPUTE_CANCEL_CAP");
+            return true;
+        }
+        if command == b"compute list" {
+            crate::output_text(b"[operation] Compute.List\n");
+            crate::runtime::with_runtime(|runtime| {
+                self.output.write_line(b"DISTRIBUTED TASKS");
+                for index in 0..runtime.compute.task_count() {
+                    if let Some(task) = runtime.compute.task_nth(index) {
+                        self.output.write_number(b"Task id: ", task.task_id);
+                        self.output.write_segments(&[b"  State: ", compute_state_text(task.state)]);
+                        self.output.write_number(b"  Epoch: ", task.epoch as u64);
+                        self.output.write_number(b"  CPU ticks: ", task.accounting.used_cpu_ticks);
+                        self.output.write_number(b"  Memory bytes: ", task.accounting.reserved_memory_bytes);
+                    }
+                }
+            });
+            return true;
+        }
+        if let Some(value) = command.strip_prefix(b"compute inspect ") {
+            crate::output_text(b"[operation] Compute.Inspect\n");
+            let Some(task_id) = parse_u64_decimal(value) else { self.output.write_line(b"Usage: compute inspect TASK_ID"); return true; };
+            crate::runtime::with_runtime(|runtime| match runtime.compute.inspect(task_id) {
+                Ok(task) => {
+                    self.output.write_number(b"Task id: ", task.task_id); self.output.write_number(b"Epoch: ", task.epoch as u64); self.output.write_segments(&[b"State: ", compute_state_text(task.state)]); self.output.write_number(b"Correlation: ", task.correlation_id); self.output.write_number(b"CPU ticks: ", task.accounting.used_cpu_ticks); self.output.write_number(b"Reserved CPU: ", task.accounting.reserved_cpu_units as u64); self.output.write_number(b"Reserved memory: ", task.accounting.reserved_memory_bytes); self.output.write_number(b"Restarts: ", task.accounting.restart_count as u64);
+                }
+                Err(_) => self.output.write_line(b"Unknown distributed task."),
+            });
+            return true;
+        }
+        if let Some(arguments) = command.strip_prefix(b"compute cancel ") {
+            crate::output_text(b"[operation] Compute.Cancel\n");
+            let parsed = command_word(arguments, 0).and_then(parse_u64_decimal).zip(command_word(arguments, 1).and_then(parse_u64_decimal));
+            let Some((task_id, capability)) = parsed else { self.output.write_line(b"Usage: compute cancel TASK_ID COMPUTE_CANCEL_CAP"); return true; };
+            let caller = crate::runtime::execution::SecurityIdentity(self.current_session.0);
+            let now = crate::runtime::node_client::clock().unwrap_or(0);
+            let result = crate::runtime::with_runtime(|runtime| runtime.compute.cancel(task_id, caller, capability, &runtime.capabilities, &mut runtime.execution, &mut runtime.fabric_resources, now));
+            self.output.write_line(if matches!(result, Some(Ok(()))) { b"Distributed task cancelled." } else { b"Cancellation rejected." });
+            return true;
+        }
         if command == b"task list" || command == b"tasks" {
             crate::output_text(b"[operation] Task.List\n");
             crate::runtime::with_runtime(|runtime| {
@@ -12160,6 +12212,23 @@ fn context_state_text(state: crate::runtime::execution::ContextState) -> &'stati
         Waiting => b"Paused",
         Stopped => b"Stopped",
         Failed => b"Failed",
+    }
+}
+
+// ------------------------=
+// FUNC: compute_state_text
+// DESC: Projects authoritative distributed lifecycle state into shared Task Manager and Console presentation.
+// ------------------=
+fn compute_state_text(state: crate::runtime::compute::ComputeState) -> &'static [u8] {
+    use crate::runtime::compute::ComputeState::*;
+    match state {
+        Queued => b"Queued",
+        Placed => b"Placed",
+        Running => b"Running",
+        Completed => b"Completed",
+        Failed => b"Failed",
+        Cancelled => b"Cancelled",
+        NodeLost => b"Node Lost",
     }
 }
 // ------------------------=
