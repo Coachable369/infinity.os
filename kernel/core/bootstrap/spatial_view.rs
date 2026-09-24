@@ -221,7 +221,11 @@ impl DisplayDevice {
                 if bright { depth } else { depth / 2 },
             );
         }
-        let (x, y) = point(usize::from(phase) * 64 / 256);
+        let step = usize::from(phase) / 4;
+        let fraction = i32::from(phase % 4);
+        let (ax, ay) = point(step);
+        let (bx, by) = point(step + 1);
+        let (x, y) = (ax + (bx-ax)*fraction/4, ay + (by-ay)*fraction/4);
         self.spatial_light(x, y, if bright { 9 } else { 5 });
     }
     // ------------------------=
@@ -1033,7 +1037,13 @@ pub fn present(
             }
             let size = d.stride * d.height;
             if size <= 3840 * 2160 {
-                core::ptr::copy_nonoverlapping(d.buffer, (&raw mut ARRIVAL).cast::<u32>(), size);
+                if let Some(region) = d.clipped_render_region(0, 0, d.width, d.height) {
+                    for row in region.top..region.bottom {
+                        let offset = row * d.stride + region.left;
+                        core::ptr::copy_nonoverlapping(d.buffer.add(offset),
+                            (&raw mut ARRIVAL).cast::<u32>().add(offset), region.right-region.left);
+                    }
+                }
                 TRANSITION_KEY = Some(key);
             }
             let painted = crate::ui::performance::monotonic_ns();

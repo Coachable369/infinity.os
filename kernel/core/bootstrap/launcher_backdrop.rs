@@ -63,33 +63,27 @@ fn column_sum(source: *const u32, stride: usize, x: usize, rows: [usize; 3]) -> 
 // DESC: Caches a defocused, dimmed spatial stage once per desktop change, preserving the original for dismissal.
 // ------------------=
 pub(super) fn capture_stage(display: &DisplayDevice) {
-    capture_stage_pixels(display, false);
+    capture_stage_pixels(display, false, false);
 }
 // ------------------------=
 // FUNC: capture_clean_stage
 // DESC: Retains wallpaper-only pixels while preserving the desktop snapshot for closing.
 // ------------------=
 pub(super) fn capture_clean_stage(display: &DisplayDevice) {
-    capture_stage_pixels(display, true);
+    capture_stage_pixels(display, true, false);
 }
 // ------------------------=
 // FUNC: capture_wallpaper_stage
-// DESC: Keeps the kit's luminous wallpaper for the spatial workspace without capturing desktop windows.
+// DESC: Caches blurred wallpaper beneath a translucent navy tint; never repeated during orb animation.
 // ------------------=
 pub(super) fn capture_wallpaper_stage(display: &DisplayDevice) {
-    unsafe {
-        if SIZE != (display.width, display.height, display.stride) {
-            return;
-        }
-        core::ptr::copy_nonoverlapping(display.buffer, (&raw mut STAGE).cast::<u32>(), display.stride * display.height);
-        STAGE_SIZE = SIZE;
-    }
+    capture_stage_pixels(display, true, true);
 }
 // ------------------------=
 // FUNC: capture_stage_pixels
 // DESC: Builds an edge-to-edge soft stage from the original desktop or isolated wallpaper.
 // ------------------=
-fn capture_stage_pixels(display: &DisplayDevice, clean: bool) {
+fn capture_stage_pixels(display: &DisplayDevice, clean: bool, tinted: bool) {
     unsafe {
         STAGE_SIZE = (0, 0, 0);
         if SIZE != (display.width, display.height, display.stride)
@@ -122,7 +116,12 @@ fn capture_stage_pixels(display: &DisplayDevice, clean: bool) {
                 let mut pixel = original & 0xff000000;
                 for i in 0..3 {
                     let sum = ((sums >> (i * 16)) & 0xffff) as u32;
-                    pixel |= (sum / 45) << (i * 8);
+                    let channel = if tinted {
+                        ((sum / 9) * 90 + [8, 23, 42][i] * 165) / 255
+                    } else {
+                        sum / 45
+                    };
+                    pixel |= channel << (i * 8);
                 }
                 (*(&raw mut STAGE))[y * display.stride + x] = pixel;
             }

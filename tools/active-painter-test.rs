@@ -248,6 +248,23 @@ fn spatial_stage_blurs_to_screen_edges() {
     }
     assert!(launcher_backdrop::restore(&mut display));
     assert_eq!(pixels, original);
+    launcher_backdrop::capture_wallpaper_stage(&display);
+    assert!(launcher_backdrop::restore_stage(&mut display));
+    for y in 0..height {
+        for x in 0..width {
+            let mut expected = 0;
+            for channel in 0..3 {
+                let mut sum = 0;
+                for sy in [y.saturating_sub(8), y, (y + 8).min(height - 1)] {
+                    for sx in [x.saturating_sub(8), x, (x + 8).min(width - 1)] {
+                        sum += (original[sy * width + sx] >> (channel * 8)) & 255;
+                    }
+                }
+                expected |= (((sum/9)*90 + [8,23,42][channel]*165)/255) << (channel*8);
+            }
+            assert_eq!(pixels[y*width+x],expected);
+        }
+    }
     launcher_backdrop::invalidate();
 }
 
