@@ -5,6 +5,18 @@ mod spatial;
 use spatial::*;
 #[test]
 // ------------------------=
+// FUNC: tab_controls_have_real_gutters
+// DESC: Verifies glowing tab controls retain a noninteractive gutter between adjacent hit bounds.
+// ------------------=
+fn tab_controls_have_real_gutters() {
+    for index in 0..2 {
+        let (x, _, width, _) = spatial_tab(index, false);
+        let (next, _, _, _) = spatial_tab(index + 1, false);
+        assert!(next >= x + width + 12);
+    }
+}
+#[test]
+// ------------------------=
 // FUNC: spatial_workspace_excludes_independent_surfaces
 // DESC: Ensures Holographic Desktop and World Shift are not exposed as Spatial Desktop tabs.
 // ------------------=

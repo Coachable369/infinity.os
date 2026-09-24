@@ -180,7 +180,7 @@ pub const fn spatial_tab(index: usize, shelf: bool) -> (usize, usize, usize, usi
     if shelf {
         (82 + index * 156, 635, 144, 42)
     } else {
-        (310 + index * 154, 72, 154, 48)
+        (310 + index * 154, 72, 142, 48)
     }
 }
 // ------------------------=

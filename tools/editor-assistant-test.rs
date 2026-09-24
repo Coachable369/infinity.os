@@ -243,6 +243,13 @@ fn panels() {
     p.input[..8].copy_from_slice(b"rm -rf /");
     p.length = 8;
     assert!(!p.propose(true, 7));
+    let command = b"open folder /home/default/documents";
+    p.input[..command.len()].copy_from_slice(command);
+    p.length = command.len();
+    assert!(p.propose(false, 7));
+    assert_eq!(p.take_action(7), Action::Navigate);
+    assert_eq!(&p.argument[..p.argument_len], b"/home/default/documents");
+    assert_eq!(p.take_action(7), Action::None);
     p.expanded = true;
     ai::write(2, p);
     assert!(ai::read(2).expanded);

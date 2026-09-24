@@ -5365,17 +5365,13 @@ impl super::DisplayDevice {
                 hero_width,
                 hero_height,
             );
-            self.fill_rounded_rect_alpha(
-                hero_left,
-                hero_top,
-                hero_width * 58 / 100,
-                hero_height,
-                14 * scale,
-                2,
-                12,
-                28,
-                190,
-            );
+            // Continuous scrim: retain the artwork without a hard vertical
+            // seam through the hero. Cache ownership remains with the window.
+            for column in 0..hero_width {
+                let alpha = 230usize.saturating_sub(column * 210 / hero_width.max(1));
+                self.fill_rect_alpha(hero_left + column, hero_top, 1, hero_height,
+                    2, 12, 28, alpha as u8);
+            }
             self.outline_rounded_rect(
                 hero_left,
                 hero_top,
@@ -5397,21 +5393,20 @@ impl super::DisplayDevice {
             );
             self.ui_text_elided_strong(
                 hero_left + 24 * scale,
-                hero_top + 76 * scale,
+                hero_top + 62 * scale,
                 hero_width * 48 / 100,
                 b"Move your complete workspace between living worlds.",
                 190,
                 224,
                 243,
             );
-            self.polished_button(
+            self.spatial_glass_action(
                 hero_left + 24 * scale,
                 hero_top + hero_height.saturating_sub(56 * scale),
                 176 * scale,
                 38 * scale,
                 b"Open World Shift",
                 true,
-                false,
             );
         }
         for (index, (label, value)) in rows

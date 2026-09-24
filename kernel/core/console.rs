@@ -7147,7 +7147,14 @@ impl ConsoleRuntime {
             let chat_state = crate::runtime::ai::with_ai_runtime(|runtime| {
                 (runtime.chat.enabled(), runtime.chat.minimized())
             });
-            if clicked && chat_state.0 && self.resize_pointer_shape().is_none() {
+            // Widgets are painted below application surfaces. Do not dispatch a
+            // covered widget's controls before the foreground window's controls.
+            let over_window = self.assistant_owner().map(|(_, rect)| rect.contains(
+                crate::ui::geometry::Point {
+                    x: self.pointer_x * self.system.framebuffer_width as i32 / 1000,
+                    y: self.pointer_y * self.system.framebuffer_height as i32 / 1000,
+                })).unwrap_or(false);
+            if clicked && chat_state.0 && !over_window && self.resize_pointer_shape().is_none() {
                 if let Some(target) =
                     layout.ai_chat_target(self.pointer_x, self.pointer_y, chat_state.1)
                 {
@@ -7479,18 +7486,10 @@ impl ConsoleRuntime {
                         return;
                     }
                 }
-            } else if clicked {
-                if let Some(app) = self.inactive_app_at_pointer(layout) {
-                    self.focus_desktop_app(app);
-                    self.redraw();
-                    return;
-                }
-                if let Some(index) = self.inactive_file_navigator_at_pointer() {
-                    let _ = self.load_file_navigator_window(index);
-                    self.redraw();
-                    return;
-                }
             }
+            // activate_clicked_window already selected the topmost surface.
+            // Searching inactive rectangles here would raise a covered window
+            // and steal this press from the navigator in front of it.
             let navigator_context = crate::runtime::with_runtime(|runtime| runtime.file_navigator)
                 .flatten()
                 .filter(|state| state.context_menu_open);
@@ -11974,6 +11973,7 @@ fn profile_id_text(value: u32) -> [u8; 10] {
 // DESC: Maps File Navigator sidebar rows to configured native Namespace references.
 // ------------------=
 fn home_location_path(location: usize) -> &'static [u8] {
+    if location == 11 { return b"/"; }
     [
         b"/home/default".as_slice(),
         b"/home/default",

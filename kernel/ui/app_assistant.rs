@@ -14,6 +14,7 @@ pub enum Action {
     SelectAll,
     Save,
     Refresh,
+    Navigate,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
@@ -89,6 +90,11 @@ impl Panel {
             b"select all" if editor => Action::SelectAll,
             b"save" if editor => Action::Save,
             b"refresh" => Action::Refresh,
+            _ if !editor && text.starts_with(b"open folder ") => {
+                self.argument_len = self.length - 12;
+                self.argument[..self.argument_len].copy_from_slice(&self.input[12..self.length]);
+                Action::Navigate
+            }
             _ if editor && text.starts_with(b"find ") => {
                 self.argument_len = self.length - 5;
                 self.argument[..self.argument_len].copy_from_slice(&self.input[5..self.length]);
@@ -106,6 +112,10 @@ impl Panel {
         }
         self.pending = action;
         self.document_revision = revision;
+        if action == Action::Navigate {
+            self.reply(b"Navigate this File Navigator to the supplied folder. Apply to confirm.");
+            return true;
+        }
         self.reply(match action {Action::Maximize=>b"Maximize this window. Apply to confirm.",Action::Restore=>b"Restore this window's saved size. Apply to confirm.",Action::Minimize=>b"Minimize this window. Apply to confirm.",Action::Find=>b"Find and select this text in the current document. Apply to confirm.",Action::Insert=>b"Insert your supplied text at the caret, replacing any selection. This is undoable. Apply to confirm.",Action::Undo=>b"Undo the latest document edit. Apply to confirm.",Action::Redo=>b"Redo the last undone edit. Apply to confirm.",Action::SelectAll=>b"Select the current document. Apply to confirm.",Action::Save=>b"Save the current document through the app's normal save workflow. Apply to confirm.",_=>b"Refresh this app's visible state. Apply to confirm."});
         true
     }

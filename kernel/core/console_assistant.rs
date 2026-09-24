@@ -200,7 +200,8 @@ impl ConsoleRuntime {
             let text = &panel.input[..panel.length];
             if text.eq_ignore_ascii_case(b"help") || text.eq_ignore_ascii_case(b"what can you do") {
                 panel.reply(if id==2 {b"Local editor actions: find TEXT, insert TEXT, undo, redo, select all, save, maximize, restore, minimize. Each action is previewed before Apply. This local assistant does not generate or refactor code."}
-                    else {b"Local window actions: maximize, restore, minimize, refresh. Every action requires Apply. This app has no additional registered automation capabilities yet; no files or settings are changed by chat."});
+                    else if id >= 5 {b"This File Navigator supports open folder /absolute/path, maximize, restore, minimize, and refresh. Actions target this window only and require Apply."}
+                    else {b"Local window actions: maximize, restore, minimize, refresh. Every action requires Apply. No files or settings are changed by chat."});
             } else if id == 2 && text.eq_ignore_ascii_case(b"describe document") {
                 let language = self.editor_tools.language.name();
                 let mut response = [0; 512];
@@ -243,25 +244,35 @@ impl ConsoleRuntime {
         match action {
             Action::Maximize | Action::Restore => {
                 let value = action == Action::Maximize;
-                if id == 4 {
-                    self.settings_window.maximized = value;
+                let current = if id == 4 {
+                    self.settings_window.maximized
                 } else if id >= 5 {
-                    self.home_window_maximized = value;
+                    self.home_window_maximized
                 } else {
-                    self.app_window_maximized = value;
+                    self.app_window_maximized
+                };
+                if current != value {
+                    self.toggle_window_maximized(if id >= 5 { 0 } else { id });
                 }
                 let _ = self.checkpoint_desktop_layout();
             }
             Action::Minimize => {
                 panel.focused = false;
                 if id == 4 {
+                    crate::ui::app_launcher::minimized_shelf::set(
+                        crate::ui::app_launcher::minimized_shelf::SETTINGS, true);
                     self.settings_open = false;
                     self.mode = ConsoleMode::Desktop;
                 } else if id >= 5 {
+                    self.checkpoint_active_file_navigator();
+                    let _ = crate::runtime::with_runtime(|runtime| {
+                        runtime.file_navigators.minimize_active()
+                    });
                     self.home_window_visible = false;
                 } else {
                     self.minimize_desktop_app();
                 }
+                let _ = self.checkpoint_desktop_layout();
             }
             Action::Find if id == 2 => {
                 success = self
@@ -288,6 +299,19 @@ impl ConsoleRuntime {
                     self.refresh_task_manager_output();
                 } else if id >= 5 {
                     self.refresh_desktop_items();
+                }
+            }
+            Action::Navigate if id >= 5 => {
+                let path = &panel.argument[..panel.argument_len];
+                success = crate::storage::object_inspect_path(path).ok()
+                    .map(|(metadata, _)| metadata.kind == crate::storage::object::ObjectType::NamespaceNode)
+                    .unwrap_or(false);
+                if success {
+                    success = crate::runtime::with_runtime(|runtime| {
+                        runtime.file_navigator.as_mut().map(|navigator| navigator.navigate(path).is_ok())
+                    }).flatten().unwrap_or(false);
+                    self.home_selected_item = None;
+                    self.checkpoint_active_file_navigator();
                 }
             }
             _ => success = false,

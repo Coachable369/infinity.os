@@ -1169,7 +1169,7 @@ impl SystemLayout {
                 }
             }
             let sidebar_width = browser_width * 27 / 100;
-            for index in 0..9usize {
+            for index in (0..9usize).chain(core::iter::once(11)) {
                 if self.navigator_sidebar_row(rect(browser_left, browser_top, browser_width, browser_height), index)
                 .contains(point)
                 {

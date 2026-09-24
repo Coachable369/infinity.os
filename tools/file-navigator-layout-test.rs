@@ -36,6 +36,16 @@ fn main() {
         assert!(resized.2 > 400 && resized.3 > 400);
     }
     let layout = SystemLayout::new(1600, 1000);
+    let (x, y, w, h) = layout.home_window_geometry_sized(80, 180, 780, 560, false);
+    for index in (0..9).chain(core::iter::once(11)) {
+        let row = layout.navigator_sidebar_row(ui::geometry::Rect {
+            x: x as i32, y: y as i32, width: w as u32, height: h as u32,
+        }, index);
+        assert_eq!(layout.desktop_target_sized(
+            (row.x + row.width as i32 / 2) * 1000 / 1600,
+            row.y + row.height as i32 / 2,
+            80, 180, 780, 560, true, false), Some(DesktopTarget::HomeSidebar(index)));
+    }
     let (left, top, width, _) = layout.home_window_geometry_sized(80, 180, 780, 560, false);
     let toolbar_y = top + 34 + 18;
     let normalized_y = (toolbar_y as i32 * 1000 / 1000) as i32;
