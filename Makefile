@@ -15,7 +15,7 @@ QEMU_X64 := qemu-system-x86_64
 QEMU_AARCH64 := qemu-system-aarch64
 OVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-x86_64-code.fd /opt/homebrew/share/qemu/edk2-x86_64-code.fd))
 AAVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-aarch64-code.fd))
-KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern assets/desktop/spatial-world-*.bmp assets/desktop/worldshift-hero-v1.bmp) sdk/c/examples/hello.c
+KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern assets/desktop/spatial-world-*.bmp assets/desktop/worldshift-hero-v1.bmp assets/cursors/*.rgba assets/cursors/hotspots.rs) sdk/c/examples/hello.c
 FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt)
 ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
@@ -447,6 +447,8 @@ ui-install-parity-test: x86 x86_64 aarch64
 
 input-regression-test:
 	@mkdir -p build/behavior-tests
+	@rustc --edition=2021 -A warnings --test tools/personalization-test.rs -o build/behavior-tests/personalization-test
+	@build/behavior-tests/personalization-test --test-threads=1
 	@rustc --edition=2021 --test tools/desktop-widgets-test.rs -o build/behavior-tests/desktop-widgets-test
 	@build/behavior-tests/desktop-widgets-test
 	@rustc --edition=2021 --test tools/minimized-shelf-test.rs -o build/behavior-tests/minimized-shelf-test

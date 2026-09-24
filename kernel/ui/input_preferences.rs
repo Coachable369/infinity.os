@@ -20,6 +20,8 @@ pub struct Preferences {
     pub acceleration: bool,
     pub delay: u8,
     pub rate: u8,
+    pub cursor_size: u8,
+    pub cursor_style: u8,
 }
 impl Preferences {
     // ------------------------=
@@ -35,6 +37,8 @@ impl Preferences {
             acceleration: true,
             delay: 1,
             rate: 1,
+            cursor_size: 2,
+            cursor_style: 0,
         }
     }
     // ------------------------=
@@ -59,6 +63,8 @@ impl Preferences {
             acceleration: bytes[3] & 4 != 0,
             delay: bytes[4],
             rate: bytes[5],
+            cursor_size: if bytes[6] == 0 { 2 } else { bytes[6].clamp(1, 6) },
+            cursor_style: bytes[7].min(9),
         }
     }
     // ------------------------=
@@ -73,8 +79,8 @@ impl Preferences {
             self.natural as u8 | (self.left_handed as u8) << 1 | (self.acceleration as u8) << 2,
             self.delay,
             self.rate,
-            0,
-            0,
+            self.cursor_size,
+            self.cursor_style,
         ]
     }
     // ------------------------=

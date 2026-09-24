@@ -803,7 +803,7 @@ impl super::DisplayDevice {
     // DESC: Uses the shared glyph rasterizer with an optional horizontal grayscale tint.
     // ------------------=
     pub(super) fn ui_text_shaded(
-        &mut self, mut x: usize, y: usize, text: &[u8], red: u8, green: u8,
+        &mut self, x: usize, y: usize, text: &[u8], red: u8, green: u8,
         blue: u8, scale: usize, semibold: bool, shade: Option<(usize, usize)>,
     ) {
         let scale = self.ui_effective_text_scale(scale);
@@ -811,6 +811,15 @@ impl super::DisplayDevice {
             UI_FONT_NATIVE_SIZE_PX,
             UI_FONT_SIZE_PX.saturating_mul(scale),
         );
+        self.ui_text_raster(x,y,text,red,green,blue,font_size,semibold,shade);
+    }
+
+    // ------------------------=
+    // FUNC: ui_text_raster
+    // DESC: Rasterizes the existing native font at an explicit pixel size without changing global typography.
+    // ------------------=
+    pub(super) fn ui_text_raster(&mut self, mut x: usize, y: usize, text: &[u8], red: u8, green: u8,
+        blue: u8, font_size: FontSize, semibold: bool, shade: Option<(usize,usize)>) {
         let atlas = if semibold {
             UI_FONT_SEMIBOLD_ATLAS
         } else {
@@ -872,7 +881,8 @@ impl super::DisplayDevice {
     pub(super) fn pointer_cursor(&mut self, cursor_x: i32, cursor_y: i32) {
         let x = self.width as i32 * cursor_x / 1000;
         let y = self.height as i32 * cursor_y / 1000;
-        let scale = self.ui_scale();
+        let prefs = crate::ui::input_preferences::current();
+        let scale = crate::ui::cursor::shape_scale(prefs, self.ui_scale());
         match crate::ui::text_input::pointer_shape() {
             crate::ui::text_input::PointerShape::Text => {
                 self.pointer_text_cursor(x, y, scale);
@@ -887,47 +897,19 @@ impl super::DisplayDevice {
             }
             crate::ui::text_input::PointerShape::Default => {}
         }
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-        {
-            let offset = le32(CURSOR_BMP, 10) as usize;
-            let source_width = le32(CURSOR_BMP, 18) as usize;
-            let signed_height = le32(CURSOR_BMP, 22) as i32;
-            let source_height = signed_height.unsigned_abs() as usize;
-            let size = 28 * scale;
-            for py in 0..size {
-                for px in 0..size {
-                    let sx = px * source_width / size;
-                    let sy = py * source_height / size;
-                    let source_y = if signed_height < 0 {
-                        sy
-                    } else {
-                        source_height - 1 - sy
-                    };
-                    let index = offset + (source_y * source_width + sx) * 4;
-                    if index + 3 >= CURSOR_BMP.len() {
-                        return;
-                    }
-                    let alpha = CURSOR_BMP[index + 3];
-                    if alpha > 2 {
-                        self.blend_color(
-                            x + px as i32,
-                            y + py as i32,
-                            CURSOR_BMP[index + 2],
-                            CURSOR_BMP[index + 1],
-                            CURSOR_BMP[index],
-                            alpha,
-                        );
-                    }
-                }
-            }
-        }
-        #[cfg(target_arch = "x86")]
-        for row in 0..14 * scale as i32 {
-            for column in 0..=(row / 2) {
-                self.pixel(x + column + 2, y + row + 3, 20, 24, 32);
-                self.pixel(x + column, y + row, 248, 250, 255);
-            }
-        }
+        let bounds = crate::ui::cursor::bounds(x,y,self.ui_scale(),prefs,false);
+        self.cursor_sprite(prefs.cursor_style as usize,bounds.x,bounds.y,bounds.width as usize);
+    }
+
+    // ------------------------=
+    // FUNC: cursor_sprite
+    // DESC: Paints straight-alpha cursor art identically in the gallery and at the live pointer hotspot.
+    // ------------------=
+    pub(super) fn cursor_sprite(&mut self, style: usize, x: i32, y: i32, size: usize) {
+        for py in 0..size {for px in 0..size {
+            let p=crate::ui::cursor::sample(style,px,py,size);
+            self.blend_color(x+px as i32,y+py as i32,p[0],p[1],p[2],p[3]);
+        }}
     }
 
     // ------------------------=

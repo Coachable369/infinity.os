@@ -42,6 +42,21 @@ pub const ITEM_COUNT: usize = 16;
 pub const WORLD_COUNT: usize = 4;
 static DESKTOP_WORLD: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(255);
 static WORLD_DIRTY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+static BACKDROP_TINT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0xa52a1708);
+// ------------------------=
+// FUNC: backdrop_tint
+// DESC: Reads RGB and strength as one coherent snapshot outside persistent storage.
+// ------------------=
+pub fn backdrop_tint() -> [u8; 4] {
+    BACKDROP_TINT.load(core::sync::atomic::Ordering::Relaxed).to_le_bytes()
+}
+// ------------------------=
+// FUNC: publish_backdrop_tint
+// DESC: Publishes user-owned veil settings for the next cached spatial composition.
+// ------------------=
+pub fn publish_backdrop_tint(value: [u8; 4]) {
+    BACKDROP_TINT.store(u32::from_le_bytes(value), core::sync::atomic::Ordering::Relaxed);
+}
 // ------------------------=
 // FUNC: publish_world
 // DESC: Publishes a wallpaper identity and invalidates the retained desktop only when it changes.
@@ -150,6 +165,20 @@ pub fn collection_hit(x: i32, y: i32) -> Option<u8> {
     (0..WORLD_COUNT)
         .find(|&i| contains(collection_card(i), x, y))
         .map(|i| i as u8)
+}
+// ------------------------=
+// FUNC: collection_detail_row
+// DESC: Shares the inline collection detail row geometry with pointer routing.
+// ------------------=
+pub const fn collection_detail_row(index: usize) -> (usize,usize,usize,usize) {
+    (210, 295+index*52, 580, 44)
+}
+// ------------------------=
+// FUNC: collection_detail_action
+// DESC: Shares add, previous, next and collapse hit targets for a paged live collection.
+// ------------------=
+pub const fn collection_detail_action(index: usize) -> (usize,usize,usize,usize) {
+    match index {0=>(640,232,150,44),1=>(540,512,110,40),2=>(660,512,110,40),_=>(790,232,34,36)}
 }
 // ------------------------=
 // FUNC: gravity_primary_action
@@ -582,6 +611,7 @@ pub struct SpatialState {
     pub world_primary: [u32; 4],
     pub world_skin: [u8; 4],
     pub world_enabled: bool,
+    pub backdrop_tint: [u8; 4],
 }
 impl SpatialState {
     // ------------------------=
@@ -676,6 +706,7 @@ impl SpatialState {
             world_primary: [0x031422, 0x20130b, 0x101329, 0x06241e],
             world_skin: [0; 4],
             world_enabled: false,
+            backdrop_tint: [8, 23, 42, 165],
         }
     }
     // ------------------------=
@@ -829,6 +860,8 @@ impl SpatialState {
         out[26] = 2;
         out[27] = self.selected_ring;
         out[28] = u8::from(self.world_enabled);
+        out[7408] = 1;
+        out[7409..7413].copy_from_slice(&self.backdrop_tint);
         for i in 0..4 {
             put_label(&mut out, 7264 + i * 25, &self.categories[i]);
             out[7364 + i] = self.ring_zoom[i];
@@ -890,6 +923,11 @@ impl SpatialState {
             return Err(Error::Corrupt);
         }
         let mut state = Self::new(owner);
+        if bytes[7408] == 1 {
+            state.backdrop_tint.copy_from_slice(&bytes[7409..7413]);
+        } else if bytes[7408] != 0 {
+            return Err(Error::Corrupt);
+        }
         state.active_world = bytes[24];
         state.reduced_motion = bytes[25] != 0;
         if bytes[26] == 1 || bytes[26] == 2 {
@@ -998,6 +1036,11 @@ impl SpatialState {
                 canonical[7264..7372].fill(0);
             }
             canonical[7372..7408].fill(0);
+        }
+        if bytes[7408] == 0 {
+            canonical[7408..7413].fill(0);
+        }
+        if bytes[26] < 2 || bytes[7408] == 0 {
             let sum = checksum(&canonical[..STATE_BYTES - 4]);
             canonical[STATE_BYTES - 4..].copy_from_slice(&sum.to_le_bytes());
         }

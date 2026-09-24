@@ -40,10 +40,19 @@ impl DisplayDevice {
         label: &[u8], count: usize, index: usize, selected: bool,
     ) {
         if width < 32 || height < 32 || self.clipped_render_region(x,y,width,height).is_none() { return; }
-        let size = width.min(height);
+        let size = width.min(height*3/4).saturating_sub(16).max(16);
         let left = x + (width - size) / 2;
-        let top = y + (height - size) / 2;
+        let top = y + 8;
         let (r,g,b) = [(0,209,255),(167,139,250),(251,191,36),(163,215,246)][index.min(3)];
+        // A continuous radial aura softens the silhouette without hard rings.
+        let radius=size as i32/2;
+        for dy in -radius-8..=radius+8 {for dx in -radius-8..=radius+8 {
+            let outside=(dx*dx+dy*dy-radius*radius)/(2*radius.max(1));
+            if (0..8).contains(&outside) {
+                let alpha=((8-outside)*(8-outside)*if selected {2}else{1}).min(110) as u8;
+                self.blend_color((left+size/2) as i32+dx,(top+size/2) as i32+dy,r,g,b,alpha);
+            }
+        }}
         self.fill_rounded_rect_alpha(left,top,size,size,size/2,r,g,b,if selected {70}else{28});
         self.fill_rounded_rect_alpha(left+3,top+3,size.saturating_sub(6),size.saturating_sub(6),size/2-3,5,17,32,235);
         self.outline_rounded_rect(left,top,size,size,size/2,r,g,b);
@@ -100,6 +109,20 @@ impl DisplayDevice {
         caption[1] = b'0' + (count%10) as u8;
         self.ui_text_centered(left,size,top+size/2+UI_FONT_CELL_HEIGHT+6,
             if count<10 {&caption[1..]} else {&caption},143,185,208,1);
+        // Mirror the actual glass surface, including its highlights, then fade
+        // toward the floor. This is composed once with the retained scene.
+        let reflection=height.saturating_sub(size+16).min(size/3);
+        for row in 0..reflection {
+            let sy=top+size-1-row*size/reflection.max(1);
+            let alpha=((reflection-row)*(reflection-row)*80/reflection.max(1).pow(2)) as u8;
+            for col in 0..size {
+                let dx=col as i32-radius;let dy=sy as i32-top as i32-radius;
+                if dx*dx+dy*dy>radius*radius {continue;}
+                let p=self.framebuffer_pixel(left+col,sy);
+                let (red,blue)=if self.format==0 {(p as u8,(p>>16)as u8)}else{((p>>16)as u8,p as u8)};
+                self.blend_color((left+col) as i32,(top+size+4+row) as i32,red,(p>>8) as u8,blue,alpha);
+            }
+        }
     }
 
     // ------------------------=

@@ -5308,7 +5308,7 @@ impl super::DisplayDevice {
             5 => [
                 (b"Display", b"Ready"),
                 (b"Keyboard", b"Ready"),
-                (b"Pointer", b"Ready"),
+                (b"Pointer", crate::ui::personalization::CURSOR_NAMES[preferences.cursor_style as usize]),
                 (b"Audio Input", b"Unavailable"),
                 (b"Audio Output", b"Unavailable"),
                 (b"", b""),
@@ -5640,6 +5640,10 @@ impl super::DisplayDevice {
                             40 * scale,
                         );
                     }
+                } else if (focus == 5 && index == 2) || (focus == 1 && index == 7) {
+                    let row=crate::ui::system_layout::SystemLayout::new(self.width,self.height)
+                        .settings_row_geometry_for_section(settings_window,index,focus);
+                    self.settings_personalization_panel(row.detail,scale,focus==5);
                 } else if focus == 1 && index == 2 {
                     self.settings_color_picker(settings_window, scale, true);
                 } else if focus == 1 && index == 3 {
@@ -10944,6 +10948,10 @@ fn system_content_hash(
         hash ^= if masked { b'*' } else { *byte } as u32;
         hash = hash.wrapping_mul(0x0100_0193);
     }
+    for byte in crate::ui::input_preferences::current().encode().iter().chain(crate::ui::spatial::backdrop_tint().iter()) {
+        hash=(hash ^ *byte as u32).wrapping_mul(0x0100_0193);
+    }
+    hash ^= crate::ui::personalization::save_status() as u32;
     for row in 0..output_count.min(6) {
         for byte in &output_lines[row][..output_lengths[row].min(96)] {
             hash ^= *byte as u32;

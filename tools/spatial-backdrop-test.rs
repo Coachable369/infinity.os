@@ -1,4 +1,6 @@
 //! Pixel verification of the exact native overlay backdrop implementation.
+#[path = "../kernel/ui/mod.rs"]
+mod ui;
 struct Region {
     left: usize,
     top: usize,
@@ -10,6 +12,7 @@ struct DisplayDevice {
     width: usize,
     height: usize,
     stride: usize,
+    format: u32,
     render_clip: Option<(usize, usize, usize, usize)>,
 }
 impl DisplayDevice {
@@ -48,6 +51,7 @@ fn frozen_backdrop_fade_respects_damage_and_endpoints() {
         width: 8,
         height: 8,
         stride: 10,
+        format: 0,
         render_clip: None,
     };
     backdrop::capture(&display);
@@ -125,6 +129,23 @@ fn frozen_backdrop_fade_respects_damage_and_endpoints() {
     ));
     assert_eq!(pixels, unchanged);
     reference_equivalence();
+    // Same RGB tint on both framebuffer byte orders, with exact endpoint behavior.
+    for format in [0,1] {for strength in [0u8,165,255] {
+        display.format=format;display.render_clip=None;
+        ui::spatial::publish_backdrop_tint([8,23,42,strength]);
+        pixels.fill(0xff646464);
+        backdrop::capture(&display);
+        backdrop::capture_wallpaper_stage(&display);
+        pixels.fill(0);
+        assert!(backdrop::restore_stage(&mut display));
+        let channels=if format==0 {[8u32,23,42]}else{[42u32,23,8]};
+        for c in 0..3 {
+            let expected=(100*(255-strength as u32)+channels[c]*strength as u32)/255;
+            assert_eq!((pixels[44]>>(c*8))&255,expected);
+        }
+    }}
+    ui::spatial::publish_backdrop_tint([8,23,42,165]);
+    backdrop::invalidate();
 }
 
 // ------------------------=
@@ -144,6 +165,7 @@ fn reference_equivalence() {
             width,
             height,
             stride,
+            format: 0,
             render_clip: None,
         };
         backdrop::capture(&display);
@@ -218,6 +240,7 @@ fn backdrop_costs_at_desktop_resolution() {
         width: 2560,
         height: 1440,
         stride: 2560,
+        format: 0,
         render_clip: None,
     };
     backdrop::capture(&display);

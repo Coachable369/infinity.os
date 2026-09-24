@@ -1,5 +1,35 @@
 //! Runs the production shelf, glass recipe, bitmap and font rasterizers against a host-owned framebuffer.
 use super::*;
+#[test]
+// ------------------------=
+// FUNC: personalization_panels_and_pointer_pixels
+// DESC: Renders native panels for visual review and verifies every cursor is contained by its restoration bounds.
+// ------------------=
+fn personalization_panels_and_pointer_pixels() {
+    use crate::ui::{geometry::Rect,cursor,input_preferences::{self,Preferences}};
+    let (width,height)=(1280,800);
+    let mut pixels=vec![0x201005u32;width*height];
+    let mut d=DisplayDevice {buffer:pixels.as_mut_ptr(),width,height,stride:width,format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false};
+    input_preferences::apply(Preferences::defaults());
+    d.settings_personalization_panel(Rect{x:40,y:60,width:600,height:620},1,true);
+    d.settings_personalization_panel(Rect{x:670,y:60,width:560,height:362},1,false);
+    use std::io::Write;
+    let mut file=std::io::BufWriter::new(std::fs::File::create("build/personalization-panels.ppm").unwrap());
+    write!(file,"P6\n{width} {height}\n255\n").unwrap();
+    for p in &pixels {file.write_all(&[(*p&255)as u8,((*p>>8)&255)as u8,((*p>>16)&255)as u8]).unwrap();}
+    for style in 0..10 {for size in [1,2,6] {for (x,y) in [(0,0),(500,500),(999,999)] {
+        pixels.fill(0x201005);
+        let mut p=Preferences::defaults();p.cursor_style=style;p.cursor_size=size;input_preferences::apply(p);
+        let r=cursor::bounds(width as i32*x/1000,height as i32*y/1000,1,p,false);
+        d.pointer_cursor(x,y);
+        let mut changed=0;
+        for (index,pixel) in pixels.iter().enumerate() {if *pixel!=0x201005 {
+            assert!(r.contains(crate::ui::geometry::Point{x:(index%width)as i32,y:(index/width)as i32}));changed+=1;
+        }}
+        assert!(changed>0);
+    }}}
+    input_preferences::apply(Preferences::defaults());
+}
 use crate::primitives::UI_FONT_CELL_HEIGHT;
 #[path = "../kernel/core/bootstrap/holographic_card.rs"]
 mod holographic_card;
@@ -18,7 +48,8 @@ fn gravity_collections_render_circular_glass() {
     for (i,label) in [b"Ideas".as_slice(),b"Projects",b"Inspiration",b"Archive"].iter().enumerate() {
         d.gravity_collection(30+i*290,40,240,240,label,0,i,i==0);
         assert_eq!(pixels[40*width+30+i*290],0x201005);
-        assert_ne!(pixels[45*width+150+i*290],0x201005);
+        assert_ne!(pixels[100*width+150+i*290],0x201005);
+        assert_ne!(pixels[215*width+150+i*290],0x201005); // reflected lower hemisphere
     }
     d.spatial_glass_action(300,330,260,56,b"+ Add idea",true);
     d.spatial_glass_action(600,330,260,56,b"New category",false);

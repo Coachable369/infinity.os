@@ -69,6 +69,7 @@ pub(super) struct Controller {
     carousel: Motion,
     last_carousel: i32,
     overflow_open: bool,
+    collection_detail: Option<usize>,
     last_orb_phase: u64,
 }
 impl Controller {
@@ -115,6 +116,7 @@ impl Controller {
             carousel: Motion::settled(255),
             last_carousel: -1,
             overflow_open: false,
+            collection_detail: None,
             last_orb_phase: u64::MAX,
         }
     }
@@ -170,6 +172,9 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn spatial_apply_world_appearance(&mut self) {
         let state = self.spatial.state;
+        crate::ui::spatial::publish_backdrop_tint(if self.spatial.owner == self.current_user.0 {
+            state.backdrop_tint
+        } else { [8, 23, 42, 165] });
         if self.spatial.owner != self.current_user.0 || !state.world_enabled {
             crate::ui::spatial::publish_world(255);
             return;
@@ -204,6 +209,7 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn spatial_restore_world_appearance(&mut self) {
         crate::ui::spatial::publish_world(255);
+        crate::ui::spatial::publish_backdrop_tint([8, 23, 42, 165]);
         if let Ok(state) =
             crate::storage::spatial_state::load(self.current_user.0, self.current_session.0)
         {
@@ -218,6 +224,7 @@ impl ConsoleRuntime {
     // DESC: Previews a named destination without changing source files or empty selections.
     // ------------------=
     fn spatial_choose_collection(&mut self, group: u8) {
+        self.spatial.collection_detail = if self.spatial.collection_detail.is_some() && self.spatial.state.selected_ring==group {None} else {Some(0)};
         if self.spatial.state.categories[group as usize]
             .get()
             .is_empty()
@@ -245,6 +252,79 @@ impl ConsoleRuntime {
             .unwrap_or(0);
         self.spatial_commit(old);
         self.spatial.notice = b"Selected ring. Wheel or +/- zooms. Add idea attaches here; drag ideas to another category.";
+    }
+    // ------------------------=
+    // FUNC: settings_personalization_pointer
+    // DESC: Captures native sliders, previews changes immediately and commits user-owned preferences only on release.
+    // ------------------=
+    pub(super) fn settings_personalization_pointer(&mut self, layout: SystemLayout, clicked: bool, released: bool, held: bool) -> bool {
+        use crate::ui::personalization::{Layout, Target, TINTS};
+        use crate::ui::input_preferences::{self, Preferences};
+        let pointer=self.system_focus==5 && self.settings_window.expanded_row==Some(2);
+        let tint=self.system_focus==1 && self.settings_window.expanded_row==Some(7);
+        if !pointer && !tint {if self.personalization_drag.is_some(){self.cancel_personalization_drag();}return false;}
+        let index=if pointer {2}else{7};
+        let window=layout.settings_window_geometry_for_section(self.settings_window,self.system_focus);
+        let detail=layout.settings_row_geometry_for_section(self.settings_window,index,self.system_focus).detail;
+        let s=layout.scale();
+        let controls=Layout::new(detail,s,pointer);
+        let point=crate::ui::geometry::Point {x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
+        let target=if clicked {controls.hit(point,window.viewport)} else {None};
+        if target.is_none() && self.personalization_drag.is_none() {return false;}
+        if tint && self.spatial.owner!=self.current_user.0 {
+            match crate::storage::spatial_state::load(self.current_user.0,self.current_session.0) {
+                Ok(state)=>{self.spatial.state=state;self.spatial.writable=true;},
+                Err(crate::storage::object::ObjectError::NotFound | crate::storage::object::ObjectError::NamespaceNotFound)=>{self.spatial.state=SpatialState::new(self.current_user.0);self.spatial.writable=true;},
+                Err(_)=>{crate::ui::personalization::set_save_status(3);return true;},
+            }
+            self.spatial.owner=self.current_user.0;
+        }
+        let before=input_preferences::current().encode();
+        let old_tint=self.spatial.state.backdrop_tint;
+        if let Some(Target::Slider(i))=target {self.personalization_drag=Some((pointer,i,before,old_tint));crate::ui::personalization::set_save_status(1);}
+        if let Some((_,i,_,_))=self.personalization_drag {
+            if held || released {
+                if pointer {
+                    let mut p=input_preferences::current();
+                    let value=controls.value(i,point.x,if i==0 {9}else{5})+1;
+                    if i==0 {p.speed=value;} else {p.cursor_size=value;}
+                    input_preferences::apply(p);
+                } else {
+                    self.spatial.state.backdrop_tint[i]=controls.value(i,point.x,255);
+                    crate::ui::spatial::publish_backdrop_tint(self.spatial.state.backdrop_tint);
+                }
+            }
+        }
+        if let Some(Target::Choice(i))=target {
+            if pointer {let mut p=input_preferences::current();p.cursor_style=i as u8;input_preferences::apply(p);}
+            else {self.spatial.state.backdrop_tint=TINTS[i];crate::ui::spatial::publish_backdrop_tint(TINTS[i]);}
+        }
+        if released || matches!(target,Some(Target::Choice(_))) {
+            let (_,_,old_input,original_tint)=self.personalization_drag.take().unwrap_or((pointer,0,before,old_tint));
+            if pointer {
+                let saved=self.persist_desktop_layout();
+                if !saved {input_preferences::apply(Preferences::decode(old_input));let _=self.checkpoint_desktop_layout();}
+                crate::ui::personalization::set_save_status(if saved {2}else{3});
+            } else {
+                let mut old=self.spatial.state;old.backdrop_tint=original_tint;
+                let saved=self.spatial_commit(old);
+                crate::ui::personalization::set_save_status(if saved {2}else{3});
+                crate::ui::spatial::publish_backdrop_tint(self.spatial.state.backdrop_tint);
+                crate::bootstrap::spatial_invalidate_transition();
+            }
+        }
+        true
+    }
+    // ------------------------=
+    // FUNC: cancel_personalization_drag
+    // DESC: Restores the pre-drag values if navigation or locking interrupts a preview before release.
+    // ------------------=
+    pub(super) fn cancel_personalization_drag(&mut self) {
+        if let Some((pointer,_,input,tint))=self.personalization_drag.take() {
+            if pointer {crate::ui::input_preferences::apply(crate::ui::input_preferences::Preferences::decode(input));}
+            else {self.spatial.state.backdrop_tint=tint;crate::ui::spatial::publish_backdrop_tint(tint);}
+        }
+        crate::ui::personalization::set_save_status(0);
     }
     // ------------------------=
     // FUNC: spatial_confirm_drop
@@ -579,6 +659,7 @@ impl ConsoleRuntime {
             },
             self.spatial.pending_drop,
             self.spatial.overflow_open,
+            self.spatial.collection_detail,
             if self.spatial.tab == 0 {
                 self.spatial
                     .carousel_from
@@ -1209,6 +1290,26 @@ impl ConsoleRuntime {
             self.spatial.overflow_open = false;
         }
         let tabs_top = if shelf { 635 } else { 72 };
+        if self.spatial.tab==2 {
+            if let Some(page)=self.spatial.collection_detail {
+                for i in 0..4 {
+                    if crate::ui::spatial::contains(crate::ui::spatial::collection_detail_action(i),x,y) {
+                        let count=self.spatial.state.items.iter().flatten().filter(|item|item.collection==self.spatial.state.selected_ring).count();
+                        match i {0=>self.spatial_action(0),1=>self.spatial.collection_detail=Some(page.saturating_sub(1)),2=>self.spatial.collection_detail=Some((page+1).min(count.saturating_sub(1)/4)),_=>self.spatial.collection_detail=None}
+                        self.spatial_present();return;
+                    }
+                }
+                for i in 0..4 {
+                    if crate::ui::spatial::contains(crate::ui::spatial::collection_detail_row(i),x,y) {
+                        if let Some(at)=self.spatial.state.items.iter().enumerate().filter(|(_,v)|v.is_some_and(|item|item.collection==self.spatial.state.selected_ring)).nth(page*4+i).map(|(at,_)|at) {
+                            self.spatial.focus=at;self.spatial_action(3);
+                        }
+                        self.spatial_present();return;
+                    }
+                }
+                if crate::ui::spatial::contains((180,215,660,350),x,y) {return;}
+            }
+        }
         if self.spatial.tab == 2 {
             if let Some(group) = crate::ui::spatial::collection_hit(x, y) {
                 self.spatial_choose_collection(group);

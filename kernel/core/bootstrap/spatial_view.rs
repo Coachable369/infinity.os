@@ -343,6 +343,7 @@ pub fn present(
     dragging: Option<usize>,
     pending_drop: Option<crate::ui::spatial::DropRequest>,
     overflow_open: bool,
+    collection_detail: Option<usize>,
     carousel_frame: Option<(
         [crate::ui::spatial::OverviewBounds; crate::ui::spatial::OVERVIEW_COUNT],
         u8,
@@ -858,6 +859,29 @@ pub fn present(
                             i,
                             selected,
                         );
+                    }
+                }
+            }
+            if tab==2 {
+                if let Some(page)=collection_detail {
+                    let p=rect(180,215,660,350);
+                    d.fill_rounded_rect_alpha(p.0,p.1,p.2,p.3,18,8,23,39,248);
+                    d.outline_rounded_rect(p.0,p.1,p.2,p.3,18,60,152,198);
+                    let title=rect(210,244,410,24);
+                    d.ui_text_elided_strong(title.0,title.1,title.2,crate::ui::spatial::collection_name(state,state.selected_ring as usize),228,241,252);
+                    let mut entries=state.items.iter().flatten().filter(|item|item.collection==state.selected_ring).skip(page*4);
+                    let empty=entries.clone().next().is_none();
+                    for i in 0..4 {
+                        if let Some(item)=entries.next() {
+                            let (a,b,w,h)=crate::ui::spatial::collection_detail_row(i);let p=rect(a,b,w,h);
+                            d.fill_rounded_rect_alpha(p.0,p.1,p.2,p.3,8,20,48,67,240);
+                            d.ui_text_elided_strong(p.0+12,p.1+8,p.2.saturating_sub(24),item.name.get(),215,234,247);
+                        }
+                    }
+                    if empty {let p=rect(210,325,540,30);d.ui_text(p.0,p.1,b"No ideas here yet. Add one to this collection.",160,188,211,1);}
+                    for (i,label) in [b"Add idea".as_slice(),b"Previous",b"Next",b"x"].iter().enumerate() {
+                        let (a,b,w,h)=crate::ui::spatial::collection_detail_action(i);let p=rect(a,b,w,h);
+                        d.spatial_glass_action(p.0,p.1,p.2,p.3,label,i==0);
                     }
                 }
             }

@@ -483,6 +483,7 @@ struct ConsoleRuntime {
     settings_primary_dirty: bool,
     settings_effects_dirty: bool,
     settings_effect_dragging: Option<usize>,
+    personalization_drag: Option<(bool, usize, [u8;8], [u8;4])>,
     settings_timeout_dragging: bool,
     settings_scroll_dragging: bool,
     settings_scroll_grab_offset: i32,
@@ -645,6 +646,7 @@ impl ConsoleRuntime {
             settings_primary_dirty: false,
             settings_effects_dirty: false,
             settings_effect_dragging: None,
+            personalization_drag: None,
             settings_timeout_dragging: false,
             settings_scroll_dragging: false,
             settings_scroll_grab_offset: 0,
@@ -3031,6 +3033,7 @@ impl ConsoleRuntime {
             runtime
                 .identity
                 .lock_session(self.current_session, self.current_user)
+        self.cancel_personalization_drag();
         })
         .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState))
         .is_ok();
@@ -3607,6 +3610,7 @@ impl ConsoleRuntime {
             8
         } else if self.system_focus == 3 {
             7
+        self.cancel_personalization_drag();
         } else {
             5
         };
@@ -3684,6 +3688,7 @@ impl ConsoleRuntime {
         .maximum_scroll;
         if amount < 0 {
             self.settings_scroll_target = self.settings_scroll_target.saturating_sub(distance);
+        self.cancel_personalization_drag();
         } else {
             self.settings_scroll_target = self
                 .settings_scroll_target
@@ -8100,6 +8105,10 @@ impl ConsoleRuntime {
                         4,
                     );
                     self.preview_user_no_activity_timeout(value.saturating_add(1));
+            if self.settings_personalization_pointer(layout, clicked, released, left_button) {
+                self.present_continuous_motion(released);
+                return;
+            }
                 }
                 if released {
                     self.settings_timeout_dragging = false;

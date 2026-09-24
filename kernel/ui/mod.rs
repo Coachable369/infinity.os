@@ -24,6 +24,8 @@ pub mod input;
 pub mod input_batch;
 pub mod input_capture;
 pub mod input_preferences;
+pub mod personalization;
+pub mod cursor;
 pub mod input_router;
 pub mod installer_layout;
 pub mod installer_template;

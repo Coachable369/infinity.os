@@ -6,7 +6,7 @@ ministral=model-cache/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
 hermes=${INFINITY_HERMES_MODEL:-}
 if test -z "$hermes"; then exec sh tools/build-hermes.sh; fi
 test -f "$hermes"
-mkdir -p model-cache build/qwen build/hermes builds
+mkdir -p model-cache build/qwen build/hermes build/tools builds
 installer_output=builds/InfinityOS-aarch64.iso
 if test -n "${QWEN_ISO_OUTPUT:-}" && test "$QWEN_ISO_OUTPUT" != "$installer_output"; then
     echo 'ERROR: installer output is fixed at builds/InfinityOS-aarch64.iso' >&2
@@ -47,6 +47,8 @@ build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.
 cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - build/aarch64/installed-kernel.elf
 RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target aarch64-unknown-none-softfloat --features streamed-payload
 /opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/aarch64.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a build/aarch64/qwen-math.o
+rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
+build/tools/cursor-install-parity build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
 cp build/aarch64/BOOTAA64.EFI ${payload_build}/live/EFI/BOOT/
 mkfile -n "$iso_size" ${payload_build}/iso/efi.img
 mformat -F -i ${payload_build}/iso/efi.img -v INFINITYOS ::

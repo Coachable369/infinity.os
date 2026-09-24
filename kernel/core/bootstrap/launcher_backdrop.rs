@@ -84,6 +84,9 @@ pub(super) fn capture_wallpaper_stage(display: &DisplayDevice) {
 // DESC: Builds an edge-to-edge soft stage from the original desktop or isolated wallpaper.
 // ------------------=
 fn capture_stage_pixels(display: &DisplayDevice, clean: bool, tinted: bool) {
+    let tint = crate::ui::spatial::backdrop_tint();
+    let channels = if display.format == 0 { [tint[0], tint[1], tint[2]] }
+        else { [tint[2], tint[1], tint[0]] };
     unsafe {
         STAGE_SIZE = (0, 0, 0);
         if SIZE != (display.width, display.height, display.stride)
@@ -117,7 +120,7 @@ fn capture_stage_pixels(display: &DisplayDevice, clean: bool, tinted: bool) {
                 for i in 0..3 {
                     let sum = ((sums >> (i * 16)) & 0xffff) as u32;
                     let channel = if tinted {
-                        ((sum / 9) * 90 + [8, 23, 42][i] * 165) / 255
+                        ((sum / 9) * (255 - tint[3] as u32) + channels[i] as u32 * tint[3] as u32) / 255
                     } else {
                         sum / 45
                     };

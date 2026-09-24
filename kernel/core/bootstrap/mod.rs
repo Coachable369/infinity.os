@@ -21,6 +21,7 @@ mod installer;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 mod launcher_backdrop;
 mod primitives;
+mod personalization_view;
 mod retained_windows;
 mod template_compositor;
 mod window_chrome;

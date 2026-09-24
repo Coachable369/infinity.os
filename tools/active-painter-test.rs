@@ -2,6 +2,8 @@
 #[cfg(not(baseline))]
 #[path = "../kernel/core/bootstrap/primitives.rs"]
 mod primitives;
+#[path = "../kernel/core/bootstrap/personalization_view.rs"]
+mod personalization_view;
 #[cfg(baseline)]
 #[path = "../build/primitives-before.rs"]
 mod primitives;
@@ -84,6 +86,14 @@ mod retained_windows;
 #[path = "../kernel/core/bootstrap/window_chrome.rs"]
 mod window_chrome;
 impl DisplayDevice {
+    // ------------------------=
+    // FUNC: intersect_render_clip
+    // DESC: Preserves parent clipping while exercising the production settings label renderer.
+    // ------------------=
+    fn intersect_render_clip(&mut self,x:usize,y:usize,width:usize,height:usize) {
+        let old=self.render_clip.unwrap_or(Region{left:0,top:0,right:self.width,bottom:self.height});
+        self.render_clip=Some(Region{left:old.left.max(x),top:old.top.max(y),right:old.right.min(x+width),bottom:old.bottom.min(y+height)});
+    }
     // ------------------------=
     // FUNC: active_icon_theme
     // DESC: Supplies mutable theme state for retained-surface appearance regression tests.

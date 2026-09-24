@@ -997,11 +997,13 @@ impl ConsoleSurface {
     // DESC: Saves pixels beneath the cursor and then draws the cursor artwork.
     // ------------------=
     pub(super) fn save_and_draw_cursor(&mut self, cursor_x: i32, cursor_y: i32) {
-        let left = (self.display.width as i32 * cursor_x / 1000).max(0) as usize;
-        let top = (self.display.height as i32 * cursor_y / 1000).max(0) as usize;
-        let size = (28 * self.display.ui_scale()).min(128);
-        let width = size.min(self.display.width.saturating_sub(left));
-        let height = size.min(self.display.height.saturating_sub(top));
+        let bounds = crate::ui::cursor::bounds(self.display.width as i32 * cursor_x / 1000,
+            self.display.height as i32 * cursor_y / 1000, self.display.ui_scale(),
+            crate::ui::input_preferences::current(), crate::ui::text_input::pointer_shape()!=crate::ui::text_input::PointerShape::Default);
+        let left = bounds.x.max(0).min(self.display.width as i32) as usize;
+        let top = bounds.y.max(0).min(self.display.height as i32) as usize;
+        let width = bounds.right().max(0).min(self.display.width as i32) as usize - left;
+        let height = bounds.bottom().max(0).min(self.display.height as i32) as usize - top;
         for y in 0..height {
             for x in 0..width {
                 self.cursor_backing[y * width + x] =
