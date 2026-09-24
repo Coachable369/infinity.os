@@ -20,3 +20,15 @@ Verification: production collection-control pixel tests and spatial metadata /
 interaction tests. This is not yet a claim of exact whole-screen visual parity:
 installed-VM review is still required. The running VM initially showed the old
 installed kernel. Do not confuse an ISO rebuild with an installed-system update.
+
+## Backdrop and motion follow-up
+
+The spatial backdrop now caches wallpaper blur plus a 65% navy tint, leaving
+foreground controls sharp. Refreshes use the same treatment. The independent
+carousel retains its separate darker backdrop recipe.
+
+Orb repaint retention copies clipped rows rather than the full framebuffer
+(the nominal orb damage area is 18% by 19%, or 3.42% of the screen). Travelling
+lights interpolate all four animation phases between adjacent orbit vertices,
+instead of holding each position for four ticks. These are bounded code-path
+improvements, not a claim of measured installed-VM FPS.
