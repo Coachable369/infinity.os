@@ -19,7 +19,7 @@ static float half_value(const uint8_t *p) {
 
 // ------------------------=
 // FUNC: reference
-// DESC: Independently computes the existing Q8 activation rounding and ordered Q4 products, with integer totals recalculated for each row.
+// DESC: Independently computes Q8 activation rounding and integer-weighted Q4 block sums, recalculating totals for each row.
 // ------------------=
 static float reference(const uint8_t *data,const float *input,unsigned width) {
     float result=0;
@@ -29,6 +29,7 @@ static float reference(const uint8_t *data,const float *input,unsigned width) {
         float maximum=0;
         for(unsigned i=0;i<256;i++)maximum=fmaxf(maximum,fabsf(x[i]));
         float xd=maximum*(1.0f/127.0f),inverse=xd==0?0:1.0f/xd;
+        int32_t weighted=0,offset=0;
         for(unsigned g=0;g<8;g++) {
             int total=0,dot=0;
             for(unsigned lane=0;lane<32;lane++) {
@@ -39,8 +40,10 @@ static float reference(const uint8_t *data,const float *input,unsigned width) {
             }
             unsigned scale=g<4?s[g]&63:(s[g+4]&15)|((s[g-4]>>6)<<4);
             unsigned minimum=g<4?s[g+4]&63:(s[g+4]>>4)|((s[g]>>6)<<4);
-            result+=xd*(half_value(p)*(float)scale*(float)dot-half_value(p+2)*(float)minimum*(float)total);
+            weighted+=(int32_t)scale*dot;
+            offset+=(int32_t)minimum*total;
         }
+        result+=((float)weighted*half_value(p)-(float)offset*half_value(p+2))*xd;
     }
     return result;
 }

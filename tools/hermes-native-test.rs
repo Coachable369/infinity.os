@@ -26,22 +26,18 @@ fn main() {
     assert!(!service.busy());
     service.clear_conversation();
     if std::env::args().any(|arg| arg == "--forward") {
-        service.submit(forward_prompt.as_bytes()).unwrap();
         let start = std::time::Instant::now();
+        service.submit(forward_prompt.as_bytes()).unwrap();
         let mut tokens = 0;
         let mut token_times = Vec::new();
         while service.busy() && tokens < 32 {
             if service.poll().unwrap() {
                 tokens += 1;
                 token_times.push(start.elapsed().as_nanos() as u64);
-                println!(
-                    "{tokens} {:?}: {}",
-                    start.elapsed(),
-                    String::from_utf8_lossy(service.output())
-                );
             }
         }
         assert!(tokens > 0);
+        assert!(!service.busy(), "Timing requires a complete response, not the token limit");
         assert!(!service.output().is_empty());
         if let Some(path) = std::env::var_os("HERMES_TEST_REPORT") {
             // Binary timing and generated-byte evidence avoids using formatted

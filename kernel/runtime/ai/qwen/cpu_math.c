@@ -77,7 +77,7 @@ static void qwen_quantize_q8(const float *input,size_t width,int8_t *values,floa
 
 // ------------------------=
 // FUNC: qwen_q4_q8_rows
-// DESC: Computes four Q4_K groups together, sharing packed loads and preserving the ordered scalar accumulation.
+// DESC: Computes Q4_K blocks with exact integer weighted reductions before applying floating point scales.
 // ------------------=
 __attribute__((target("dotprod")))
 static void qwen_q4_q8_rows(const uint8_t *data,const int8_t *input,const float *scales,const float *totals,
@@ -91,6 +91,9 @@ static void qwen_q4_q8_rows(const uint8_t *data,const int8_t *input,const float 
             float d=qwen_half(p),m=qwen_half(p+2),xd=scales[block];
             const uint8_t *s=p+4;
             uint8x8_t s0=vld1_u8(s),s4=vld1_u8(s+4),s8=vld1_u8(s+8);
+            // Bounds: weighted <= 256*15*127*63, offset <= 256*127*63.
+            // Both fit int32; only final block scaling rounds to float.
+            int32x4_t weighted=vdupq_n_s32(0),offset=vdupq_n_s32(0);
             #pragma clang loop unroll(full)
             for(unsigned g=0;g<8;g+=4) {
                 uint8x8_t scale=g==0?vand_u8(s0,vdup_n_u8(63)):
@@ -108,17 +111,12 @@ static void qwen_q4_q8_rows(const uint8_t *data,const int8_t *input,const float 
                     dots[3]=vdotq_s32(dots[3],vreinterpretq_s8_u8(vshrq_n_u8(b,4)),vld1q_s8(x+(g+3)*32+lane));
                 }
                 int32x4_t dot=vpaddq_s32(vpaddq_s32(dots[0],dots[1]),vpaddq_s32(dots[2],dots[3]));
-                float32x4_t ds=vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(scale)))),d);
-                float32x4_t dm=vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(vmovl_u8(minimum)))),m);
-                float32x4_t terms=vmulq_n_f32(vsubq_f32(vmulq_f32(ds,vcvtq_f32_s32(dot)),
-                    vmulq_f32(dm,vld1q_f32(totals+block*8+g))),xd);
-                // Deliberately do not horizontally reduce these floats: the
-                // existing eight group additions must retain their order.
-                sum+=vgetq_lane_f32(terms,0);
-                sum+=vgetq_lane_f32(terms,1);
-                sum+=vgetq_lane_f32(terms,2);
-                sum+=vgetq_lane_f32(terms,3);
+                int32x4_t si=vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(vmovl_u8(scale))));
+                int32x4_t mi=vreinterpretq_s32_u32(vmovl_u16(vget_low_u16(vmovl_u8(minimum))));
+                weighted=vaddq_s32(weighted,vmulq_s32(si,dot));
+                offset=vaddq_s32(offset,vmulq_s32(mi,vcvtq_s32_f32(vld1q_f32(totals+block*8+g))));
             }
+            sum+=((float)vaddvq_s32(weighted)*d-(float)vaddvq_s32(offset)*m)*xd;
         }
         output[row]=sum;
     }
