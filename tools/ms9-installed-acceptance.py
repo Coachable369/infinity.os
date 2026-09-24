@@ -468,7 +468,12 @@ class Guest:
             state = self.authenticate()
         assert state is not None
         self.key("esc")
-        self.wait(lambda state: state[4] == 5, "desktop before launcher")
+        state = self.wait(lambda state: state[4] in (5, 9, 10), "desktop or authentication before launcher")
+        # Idle locking can race the initial snapshot and Escape. Use ordinary
+        # authentication rather than waiting for a locked session to unlock itself.
+        if state[4] in (9, 10):
+            state = self.authenticate()
+        assert state[4] == 5
         self.key("slash")
         self.wait(lambda state: state[4] == 6, "launcher opened")
         self.text(query)

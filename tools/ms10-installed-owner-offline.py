@@ -168,6 +168,21 @@ def validate_boot_budget(serial, budget):
 
 
 # ------------------------=
+# FUNC: validate_startup_resume
+# DESC: Restricts explicit input-precheck continuation to the same untouched installed set before network setup or authority creation.
+# ------------------=
+def validate_startup_resume(failed, identities, digest, length, seed, first_node):
+    assert first_node in (1, 2, 3, 4)
+    assert failed["stage"] in ("boot", "input-precheck") and failed.get("failure")
+    assert failed["identities"] == identities and len(set(identities)) == 4
+    assert failed["artifact_sha256"] == digest
+    assert (failed["length"], failed["seed"]) == (length, seed)
+    assert "created" not in failed and "authority" not in failed
+    if "input_precheck_node" in failed:
+        assert failed["input_precheck_node"] == first_node
+
+
+# ------------------------=
 # FUNC: await_boot_readiness
 # DESC: Observes coherent installed login readiness before authentication without altering authentication or networking deadlines.
 # ------------------=
@@ -197,6 +212,8 @@ def main():
     parser.add_argument("--retry-measurement", action="store_true")
     parser.add_argument("--resume-pairing", action="store_true")
     parser.add_argument("--resume-boot", action="store_true")
+    parser.add_argument("--resume-startup-at", type=int, choices=(1, 2, 3, 4),
+                        help="Explicit first unfinished input precheck on a failed pre-configuration run; preserves earlier checks.")
     parser.add_argument("--baseline-receipt", type=pathlib.Path)
     parser.add_argument("--serial-boot", action="store_true")
     parser.add_argument("--boot-readiness-timeout", type=int, choices=(120, 300), default=120)
@@ -216,6 +233,9 @@ def main():
     assert not (args.resume_pairing and (args.retry_measurement or args.resume_published or args.resume_prepared or args.resume_measured or args.reuse_configured))
     assert not (args.resume_boot and (args.resume_pairing or args.retry_measurement or args.resume_published or args.resume_prepared or args.resume_measured or args.reuse_configured))
     assert args.resume_boot == (args.baseline_receipt is not None)
+    assert not (args.resume_startup_at and any((args.resume_boot, args.resume_pairing, args.retry_measurement,
+                                               args.resume_published, args.resume_prepared,
+                                               args.resume_measured, args.reuse_configured)))
     validate_boot_budget(args.serial_boot, args.boot_readiness_timeout)
     provenance = json.loads((work / "result.json").read_text())
     assert provenance["independent_installs"] == 4
@@ -223,6 +243,16 @@ def main():
     assert len(set(identities)) == 4
     prior = None
     prepared_grants = None
+    if args.resume_startup_at:
+        failed = json.loads((work / "owner-offline-gate-result.json").read_text())
+        validate_startup_resume(failed, identities, artifact_hash(work), args.length, args.seed, args.resume_startup_at)
+        assert not (work / "prepared-authority.json").exists()
+        encoded = json.dumps(failed, indent=2)
+        archive = work / f"owner-offline-startup-failure-{hashlib.sha256(encoded.encode()).hexdigest()[:16]}.json"
+        if archive.exists():
+            assert archive.read_text() == encoded
+        else:
+            archive.write_text(encoded)
     if args.resume_boot:
         failed = json.loads((work / "owner-offline-gate-result.json").read_text())
         assert args.baseline_receipt.resolve() != (work / "owner-offline-gate-result.json").resolve()
@@ -296,6 +326,8 @@ def main():
               "resume_published": args.resume_published,
               "retry_measurement": args.retry_measurement,
               "resume_boot": args.resume_boot, "serial_boot": args.serial_boot,
+              "resume_startup_at": args.resume_startup_at, "input_prechecks_completed": [],
+              "input_prechecks_preserved": list(range(1, args.resume_startup_at or 1)),
               "boot_readiness_timeout": args.boot_readiness_timeout, "boot_readiness": [],
               "baseline_receipt": str(args.baseline_receipt.resolve()) if args.baseline_receipt else None,
               "length": args.length, "seed": args.seed,
@@ -316,12 +348,19 @@ def main():
             with ThreadPoolExecutor(max_workers=4) as workers:
                 list(workers.map(lambda guest: guest.authenticate(), guests))
         assert [D.identity(guest) for guest in guests] == identities
+        report["stage"] = "input-precheck"
         for guest in guests:
+            if args.resume_startup_at and guest.number < args.resume_startup_at:
+                guest.fast_commands = True
+                continue
+            report["input_precheck_node"] = guest.number
             guest.launch("command", 5)
             guest.fast_input_probe()
             guest.key("esc")
             guest.fast_commands = True
+            report["input_prechecks_completed"].append(guest.number)
         if prior is None:
+            report["stage"] = "network-configuration"
             with ThreadPoolExecutor(max_workers=4) as workers:
                 list(workers.map(lambda guest: D.MESH.configure(guest, 4), guests))
         for guest in guests:

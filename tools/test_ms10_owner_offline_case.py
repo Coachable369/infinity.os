@@ -14,6 +14,21 @@ SPEC.loader.exec_module(MODULE)
 
 class CaseFence(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_startup_resume_rejects_mutated_or_different_installed_sets
+    # DESC: Resumes the selected unfinished input check, never a configured or authority-bearing run.
+    # ------------------=
+    def test_startup_resume_rejects_mutated_or_different_installed_sets(self):
+        failed = {"stage": "input-precheck", "failure": True, "identities": [1, 2, 3, 4],
+                  "artifact_sha256": "cd"*32, "length": 65536, "seed": 17, "input_precheck_node": 3}
+        MODULE.validate_startup_resume(failed, [1, 2, 3, 4], "cd"*32, 65536, 17, 3)
+        for field, value in (("created", {}), ("authority", []), ("stage", "network-configuration"),
+                             ("artifact_sha256", "00"*32), ("input_precheck_node", 2)):
+            invalid = dict(failed)
+            invalid[field] = value
+            with self.assertRaises(AssertionError):
+                MODULE.validate_startup_resume(invalid, [1, 2, 3, 4], "cd"*32, 65536, 17, 3)
+
+    # ------------------------=
     # FUNC: test_explicit_serial_boot_budget_observation
     # DESC: Extended readiness is opt-in serial-only and preserves evidence that measured login exceeded the original deadline.
     # ------------------=

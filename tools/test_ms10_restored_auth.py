@@ -48,6 +48,50 @@ class Guest:
 
 class RestoredAuthentication(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_launcher_authenticates_when_idle_lock_races_escape
+    # DESC: Exercises the actual launcher helper through a Desktop-to-Locked race and a successful app launch.
+    # ------------------=
+    def test_launcher_authenticates_when_idle_lock_races_escape(self):
+        class LockRace(Guest):
+            # ------------------------=
+            # FUNC: state
+            # DESC: Supplies the coherent pre-key Desktop snapshot.
+            # ------------------=
+            def state(self):
+                return tuple(self.snapshot)
+
+            # ------------------------=
+            # FUNC: authenticate
+            # DESC: Records ordinary authentication without suppressing idle locking.
+            # ------------------=
+            def authenticate(self):
+                assert self.snapshot[4] == 10
+                self.authentications += 1
+                self.snapshot[4], self.snapshot[9] = 5, 3
+                return self.state()
+
+            # ------------------------=
+            # FUNC: key
+            # DESC: Locks on the initial Escape, then follows normal launcher and Settings transitions.
+            # ------------------=
+            def key(self, key):
+                self.keys.append(key)
+                if key == "esc":
+                    self.snapshot[4] = 10
+                elif key == "slash":
+                    assert self.snapshot[4] == 5
+                    self.snapshot[4] = 6
+                elif key == "ret":
+                    assert self.snapshot[4] == 6
+                    self.snapshot[4], self.snapshot[8] = 8, 6
+        guest = LockRace(5)
+        guest.snapshot[4], guest.snapshot[9] = 5, 3
+        guest.authentications = 0
+        state = API.Guest.launch(guest, "network", 8, 6)
+        self.assertEqual((state[4], state[8], guest.authentications), (8, 6, 1))
+        self.assertEqual(guest.keys, ["esc", "slash", "ret"])
+
+    # ------------------------=
     # FUNC: test_restored_settings_and_desktop_both_reach_authenticated_desktop
     # DESC: Proves restored app navigation remains explicit while an already restored Desktop needs no extra key.
     # ------------------=
