@@ -38,7 +38,7 @@ static int qwen_dotprod_available(void) {
 // FUNC: qwen_quantize_q8
 // DESC: Quantizes one activation vector into per-block Q8 values for fused Q4_K dot products.
 // ------------------=
-static void qwen_quantize_q8(const float *input,size_t width,int8_t *values,float *scales) {
+static void qwen_quantize_q8(const float *input,size_t width,int8_t *values,float *scales,float *totals) {
     for(size_t block=0;block<width/256;block++) {
         const float *x=input+block*256;
         float32x4_t maximum=vdupq_n_f32(0);
@@ -60,15 +60,19 @@ static void qwen_quantize_q8(const float *input,size_t width,int8_t *values,floa
             int16x8_t high=vcombine_s16(vqmovn_s32(c),vqmovn_s32(d));
             vst1q_s8(values+block*256+lane,vcombine_s8(vqmovn_s16(low),vqmovn_s16(high)));
         }
+        for(unsigned g=0;g<8;g++) {
+            const int8_t *xq=values+block*256+g*32;
+            totals[block*8+g]=(float)(vaddlvq_s8(vld1q_s8(xq))+vaddlvq_s8(vld1q_s8(xq+16)));
+        }
     }
 }
 
 // ------------------------=
 // FUNC: qwen_q4_q8_rows
-// DESC: Multiplies Q4_K rows by a shared Q8 activation using ARM integer dot products.
+// DESC: Reuses activation group totals across Q4_K rows without changing their floating-point accumulation order.
 // ------------------=
 __attribute__((target("dotprod")))
-static void qwen_q4_q8_rows(const uint8_t *data,const int8_t *input,const float *scales,
+static void qwen_q4_q8_rows(const uint8_t *data,const int8_t *input,const float *scales,const float *totals,
                             size_t width,size_t rows,float *output) {
     size_t stride=width/256*144;
     for(size_t row=0;row<rows;row++) {
@@ -83,16 +87,15 @@ static void qwen_q4_q8_rows(const uint8_t *data,const int8_t *input,const float 
                 unsigned minimum=g<4?s[g+4]&63:(s[g+4]>>4)|((s[g]>>6)<<4);
                 const uint8_t *packed=p+16+(g/2)*32;
                 int32x4_t products=vdupq_n_s32(0);
-                int total=0;
+                float total=totals[block*8+g];
                 for(unsigned lane=0;lane<32;lane+=16) {
                     uint8x16_t nibble=vld1q_u8(packed+lane);
                     nibble=(g&1)?vshrq_n_u8(nibble,4):vandq_u8(nibble,vdupq_n_u8(15));
                     int8x16_t activation=vld1q_s8(x+g*32+lane);
                     products=vdotq_s32(products,vreinterpretq_s8_u8(nibble),activation);
-                    total+=vaddlvq_s8(activation);
                 }
                 int dot=vaddvq_s32(products);
-                sum+=xd*(d*(float)scale*(float)dot-m*(float)minimum*(float)total);
+                sum+=xd*(d*(float)scale*(float)dot-m*(float)minimum*total);
             }
         }
         output[row]=sum;
@@ -172,8 +175,9 @@ void infinity_qwen_dot_rows(uint32_t kind,const uint8_t *data,const float *input
     if(kind==12 && width<=QWEN_MAX_WIDTH && qwen_dotprod_available()) {
         int8_t quantized[QWEN_MAX_WIDTH];
         float scales[QWEN_MAX_WIDTH/256];
-        qwen_quantize_q8(input,width,quantized,scales);
-        qwen_q4_q8_rows(data,quantized,scales,width,rows,output);
+        float totals[QWEN_MAX_WIDTH/32];
+        qwen_quantize_q8(input,width,quantized,scales,totals);
+        qwen_q4_q8_rows(data,quantized,scales,totals,width,rows,output);
         return;
     }
 #endif

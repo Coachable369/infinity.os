@@ -53,12 +53,12 @@ static double median(double *values) {
 // DESC: Compares baseline and optimized real kernels with exact outputs, alternating order, and both cache-sized and worker-sized matrices.
 // ------------------=
 int main(void) {
-    const unsigned widths[]={4096,8192,12288}, row_counts[]={8,4096};
+    const unsigned widths[]={3072,4096,8192,12288}, row_counts[]={8,4096};
     uint8_t *data=malloc(4096*48*210);
     float *input=malloc(12288*sizeof(float)), *expected=malloc(4096*sizeof(float)), *actual=malloc(4096*sizeof(float));
     assert(data && input && expected && actual);
     uint32_t seed=42; unsigned q6_count=0;
-    for(unsigned kind=12;kind<=14;kind+=2) for(unsigned wi=0;wi<3;wi++) for(unsigned ri=0;ri<2;ri++) {
+    for(unsigned kind=12;kind<=14;kind+=2) for(unsigned wi=0;wi<sizeof(widths)/sizeof(widths[0]);wi++) for(unsigned ri=0;ri<2;ri++) {
         unsigned width=widths[wi],rows=row_counts[ri],block=kind==12?144:210;
         size_t stride=width/256*block;
         for(size_t i=0;i<rows*stride;i++){seed=seed*1664525+1013904223;data[i]=seed>>24;}
@@ -89,7 +89,7 @@ int main(void) {
     }
     // The measurement report is authoritative; no noisy speed threshold is
     // enforced in CI. Deployment acceptance evaluates the recorded medians.
-    assert(q6_count==6);
+    assert(q6_count==2*sizeof(widths)/sizeof(widths[0]));
     free(data);free(input);free(expected);free(actual);
     return 0;
 }

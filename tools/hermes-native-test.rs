@@ -29,9 +29,11 @@ fn main() {
         service.submit(forward_prompt.as_bytes()).unwrap();
         let start = std::time::Instant::now();
         let mut tokens = 0;
+        let mut token_times = Vec::new();
         while service.busy() && tokens < 32 {
             if service.poll().unwrap() {
                 tokens += 1;
+                token_times.push(start.elapsed().as_nanos() as u64);
                 println!(
                     "{tokens} {:?}: {}",
                     start.elapsed(),
@@ -41,6 +43,18 @@ fn main() {
         }
         assert!(tokens > 0);
         assert!(!service.output().is_empty());
+        if let Some(path) = std::env::var_os("HERMES_TEST_REPORT") {
+            // Binary timing and generated-byte evidence avoids using formatted
+            // console output or a particular answer as the test oracle.
+            let mut report = Vec::new();
+            for value in [1, tokens as u64, start.elapsed().as_nanos() as u64,
+                          service.output().len() as u64] {
+                report.extend_from_slice(&value.to_le_bytes());
+            }
+            for time in token_times { report.extend_from_slice(&time.to_le_bytes()); }
+            report.extend_from_slice(service.output());
+            std::fs::write(path, report).unwrap();
+        }
         service.cancel();
     }
 }
