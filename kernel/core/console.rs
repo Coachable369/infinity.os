@@ -11130,6 +11130,7 @@ impl ConsoleRuntime {
                 self.output.write_number(b"Output tokens: ", ai.qwen_tokens);
                 self.output.write_number(b"Decode us: ", ai.qwen_decode_ns / 1000);
                 self.output.write_number(b"TTFT us: ", ai.qwen_metrics.first_token_ns / 1000);
+                self.output.write_number(b"Widget visible us: ", ai.qwen_metrics.first_visible_response_ns / 1000);
                 self.output.write_number(b"Total us: ", ai.qwen_metrics.total_response_ns / 1000);
                 self.output.write_number(b"BSP compute us: ", (ai.qwen_metrics.prefill_work_ns + ai.qwen_metrics.decode_work_ns) / 1000);
             });
@@ -11148,6 +11149,7 @@ impl ConsoleRuntime {
                 self.output.write_number(b"Output tokens: ", ai.qwen_tokens);
                 self.output.write_number(b"Decode milliseconds: ", ai.qwen_decode_ns / 1_000_000);
                 self.output.write_number(b"First token milliseconds: ", ai.qwen_metrics.first_token_ns / 1_000_000);
+                self.output.write_number(b"Widget visible milliseconds: ", ai.qwen_metrics.first_visible_response_ns / 1_000_000);
                 self.output.write_number(b"BSP prefill milliseconds: ", ai.qwen_metrics.prefill_work_ns / 1_000_000);
                 self.output.write_number(b"BSP decode milliseconds: ", ai.qwen_metrics.decode_work_ns / 1_000_000);
                 self.output.write_number(b"Maximum pump microseconds: ", ai.qwen_metrics.max_pump_ns / 1_000);
@@ -12407,6 +12409,7 @@ pub fn poll_native_ai() {
     unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { geturl::poll(runtime); } }
     if crate::runtime::ai::with_ai_runtime(|ai|ai.poll_qwen()) {
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
+        crate::runtime::ai::with_ai_runtime(|ai|ai.record_first_visible_response());
     }
 }
 static mut INPUT_PRESENTATION: crate::ui::input_batch::PresentationBatch = crate::ui::input_batch::PresentationBatch::new();

@@ -59,6 +59,28 @@ parity passes for ARM64 and x86_64. The measurements above are controlled host
 evidence; installed-guest `model bench hermes` remains a separate proof level and
 must not be inferred from host timing.
 
+## Widget-visible response correction, 2026-09-23
+
+The acceptance clock now starts when the OS AI Chat widget submits a turn and
+stops only after the first assistant text frame has been presented. `ai timing`
+and `ai bench timing` expose this independently as `Widget visible`; token
+compute and whole-response timing remain available for diagnosis.
+
+The previous chat boundary withheld every partial result until EOS, so the
+historical installed sample in `native-hermes.md` did not display anything for
+8.898 seconds even though its first token existed at 4.622 seconds. The native
+chat path now publishes each cumulative partial immediately and updates one
+assistant bubble until completion. Holding inference performance constant, that
+sample moves first visible response from 8.898 to approximately 4.622 seconds,
+a 48.1% reduction. This comparison isolates the removed UI/service buffering;
+it is not presented as a new guest run.
+
+A private clone of the preserved installed ARM64 System Generation was patched
+with the candidate kernel and booted successfully to its existing login screen.
+Fresh authenticated widget timing remains pending because the account requires
+the user's password; no credential was guessed, reset, or bypassed. The original
+VM disk was reattached unchanged after the boot check.
+
 ## Installed observation, 2026-09-21
 
 The logged-in ARM64 desktop displayed a completed Hermes response to

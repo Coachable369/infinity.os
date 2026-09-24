@@ -68,6 +68,8 @@ pub(super) struct Controller {
     carousel_from: Option<[crate::ui::spatial::OverviewBounds; OVERVIEW_COUNT]>,
     carousel: Motion,
     last_carousel: i32,
+    overflow_open: bool,
+    last_orb_phase: u64,
 }
 impl Controller {
     // ------------------------=
@@ -112,6 +114,8 @@ impl Controller {
             carousel_from: None,
             carousel: Motion::settled(255),
             last_carousel: -1,
+            overflow_open: false,
+            last_orb_phase: u64::MAX,
         }
     }
 }
@@ -565,6 +569,7 @@ impl ConsoleRuntime {
                 self.spatial.ghost.and(self.spatial.drag.map(|d| d.0))
             },
             self.spatial.pending_drop,
+            self.spatial.overflow_open,
             if self.spatial.tab == 0 {
                 self.spatial
                     .carousel_from
@@ -656,6 +661,16 @@ impl ConsoleRuntime {
             }
             self.spatial_close();
             return true;
+        }
+        if self.spatial.tab == 2 && progress == 255 && !self.spatial.state.reduced_motion {
+            let orb_phase = now() / 34;
+            if orb_phase != self.spatial.last_orb_phase {
+                self.spatial.last_orb_phase = orb_phase;
+                self.spatial.damage = Some((410, 375, 180, 190));
+                self.spatial_present();
+                self.spatial.damage = None;
+                return true;
+            }
         }
         let zoom = self.spatial.zoom.value(now());
         let phase = now() / 500;
@@ -1169,7 +1184,22 @@ impl ConsoleRuntime {
             }
             return;
         }
-        let tabs_top = if shelf { 635 } else { 150 };
+        if self.spatial.tab == 2 && self.spatial.overflow_open {
+            for i in 0..4 {
+                if crate::ui::spatial::contains(crate::ui::spatial::gravity_overflow_action(i), x, y) {
+                    self.spatial.overflow_open = false;
+                    self.spatial_action(i + 2);
+                    return;
+                }
+            }
+            if crate::ui::spatial::contains(crate::ui::spatial::gravity_overflow_button(), x, y) {
+                self.spatial.overflow_open = false;
+                self.spatial_present();
+                return;
+            }
+            self.spatial.overflow_open = false;
+        }
+        let tabs_top = if shelf { 635 } else { 151 };
         if self.spatial.tab == 2 {
             if let Some(group) = crate::ui::spatial::collection_hit(x, y) {
                 self.spatial_choose_collection(group);
@@ -1179,7 +1209,7 @@ impl ConsoleRuntime {
         }
         if !self.spatial.switcher && self.spatial.tab >= 2 && (tabs_top..tabs_top + 45).contains(&y) {
             for i in 0..3 {
-                if (70 + i * 176..234 + i * 176).contains(&x) {
+                if crate::ui::spatial::contains(crate::ui::spatial::spatial_tab(i,shelf),x,y) {
                     self.spatial.tab = i as usize + 2;
                     self.spatial.focus = 0;
                     self.spatial.link = None;
@@ -1243,7 +1273,19 @@ impl ConsoleRuntime {
                 self.spatial_choose_collection(group);
             }
         }
-        if (805..853).contains(&y) {
+        if self.spatial.tab == 2 {
+            for i in 0..2 {
+                if crate::ui::spatial::contains(crate::ui::spatial::gravity_primary_action(i), x, y) {
+                    self.spatial_action(i);
+                    return;
+                }
+            }
+            if crate::ui::spatial::contains(crate::ui::spatial::gravity_overflow_button(), x, y) {
+                self.spatial.overflow_open = true;
+                self.spatial_present();
+                return;
+            }
+        } else if (805..853).contains(&y) {
             let (count, pitch, width) = if self.spatial.tab == 2 {
                 (6, 140, 130)
             } else {

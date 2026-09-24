@@ -217,6 +217,13 @@ impl AiRuntime {
         changed
     }
     // ------------------------=
+    // FUNC: record_first_visible_response
+    // DESC: Closes the user-observed chat latency interval only after presentation completes.
+    // ------------------=
+    pub fn record_first_visible_response(&mut self) {
+        self.qwen_metrics.visible(crate::ui::performance::monotonic_ns());
+    }
+    // ------------------------=
     // FUNC: poll_qwen_inner
     // DESC: Performs one cooperative inference pump, including response publication.
     // ------------------=

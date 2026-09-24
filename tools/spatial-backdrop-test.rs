@@ -167,23 +167,9 @@ fn reference_equivalence() {
                         }
                     }
                 }
-                let edge = if width >= 256 {
-                    x.saturating_sub(width * 4 / 100)
-                        .min((width * 96 / 100).saturating_sub(x))
-                        .min(y.saturating_sub(height * 7 / 100))
-                        .min((height * 96 / 100).saturating_sub(y))
-                        .saturating_mul(255)
-                        / (width / 24).max(1)
-                } else {
-                    255
-                }
-                .min(255) as u32;
                 let mut expected = original & 0xff000000;
                 for i in 0..3 {
-                    expected |= ((sums[i] / 45 * edge
-                        + ((original >> (i * 8)) & 255) * (255 - edge))
-                        / 255)
-                        << (i * 8);
+                    expected |= (sums[i] / 45) << (i * 8);
                 }
                 assert_eq!(pixels[y * stride + x], expected, "stage at {width}:{x},{y}");
             }

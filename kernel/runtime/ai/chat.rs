@@ -220,14 +220,20 @@ impl ChatRuntime {
 
     // ------------------------=
     // FUNC: publish_native_completion
-    // DESC: Keeps partial inference private and publishes the complete assistant response exactly at completion.
+    // DESC: Publishes cumulative model output as it arrives and marks the turn complete only at its terminal token.
     // ------------------=
     pub fn publish_native_completion(&mut self, bytes: &[u8], complete: bool) -> bool {
-        if !complete {
+        if (!complete && self.generation_state == GenerationState::Complete)
+            || (bytes.is_empty() && !complete)
+        {
             return false;
         }
-        self.update_native_response(bytes);
-        self.generation_state = GenerationState::Complete;
+        if !bytes.is_empty() {
+            self.update_native_response(bytes);
+        }
+        if complete {
+            self.generation_state = GenerationState::Complete;
+        }
         true
     }
 

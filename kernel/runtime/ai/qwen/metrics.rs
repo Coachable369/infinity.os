@@ -27,6 +27,7 @@ impl Profile {
 pub struct Metrics {
     pub load_ns: u64,
     pub first_token_ns: u64,
+    pub first_visible_response_ns: u64,
     pub total_response_ns: u64,
     pub prefill_work_ns: u64,
     pub decode_work_ns: u64,
@@ -36,6 +37,7 @@ pub struct Metrics {
     pub prefill_tokens: usize,
     start_ns: Option<u64>,
     first_seen: bool,
+    first_visible_seen: bool,
 }
 impl Metrics {
     // ------------------------=
@@ -46,6 +48,7 @@ impl Metrics {
         Self {
             load_ns: 0,
             first_token_ns: 0,
+            first_visible_response_ns: 0,
             total_response_ns: 0,
             prefill_work_ns: 0,
             decode_work_ns: 0,
@@ -55,6 +58,7 @@ impl Metrics {
             prefill_tokens: 0,
             start_ns: None,
             first_seen: false,
+            first_visible_seen: false,
         }
     }
     // ------------------------=
@@ -99,6 +103,20 @@ impl Metrics {
             self.first_seen = true;
         }
     }
+    // ------------------------=
+    // FUNC: visible
+    // DESC: Records submit-to-present latency once, after the first response frame reaches scanout.
+    // ------------------=
+    pub fn visible(&mut self, now: Option<u64>) {
+        if self.first_visible_seen || !self.first_seen {
+            return;
+        }
+        self.first_visible_response_ns = self
+            .start_ns
+            .zip(now)
+            .map_or(0, |(a, b)| b.saturating_sub(a));
+        self.first_visible_seen = true;
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -130,15 +148,18 @@ mod tests {
         m.begin(Some(100), 12, 3);
         m.slice(Some(110), Some(120), false);
         m.slice(Some(150), Some(170), true);
+        m.visible(Some(185));
+        m.visible(Some(999));
         m.slice(Some(200), Some(205), true);
         assert_eq!(
             (
                 m.first_token_ns,
                 m.prefill_work_ns,
                 m.decode_work_ns,
-                m.max_slice_ns
+                m.max_slice_ns,
+                m.first_visible_response_ns
             ),
-            (70, 30, 5, 20)
+            (70, 30, 5, 20, 85)
         );
         assert_eq!((m.reused_tokens, m.prefill_tokens), (12, 3));
         m.finish(Some(220));

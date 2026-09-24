@@ -140,7 +140,7 @@ pub fn ring_hit(state: &SpatialState, x: i32, y: i32) -> Option<u8> {
 // DESC: Shares collection geometry between painting, clicks, and drops.
 // ------------------=
 pub fn collection_card(index: usize) -> (usize, usize, usize, usize) {
-    (80 + index * 210, 730, 190, 60)
+    (105 + index * 200, 680, 170, 92)
 }
 // ------------------------=
 // FUNC: collection_hit
@@ -150,6 +150,42 @@ pub fn collection_hit(x: i32, y: i32) -> Option<u8> {
     (0..WORLD_COUNT)
         .find(|&i| contains(collection_card(i), x, y))
         .map(|i| i as u8)
+}
+// ------------------------=
+// FUNC: gravity_primary_action
+// DESC: Shares the compact primary action geometry between painting and pointer routing.
+// ------------------=
+pub const fn gravity_primary_action(index: usize) -> (usize, usize, usize, usize) {
+    (300 + index * 184, 815, 170, 48)
+}
+// ------------------------=
+// FUNC: gravity_overflow_button
+// DESC: Returns the compact secondary-action disclosure geometry.
+// ------------------=
+pub const fn gravity_overflow_button() -> (usize, usize, usize, usize) {
+    (668, 815, 54, 48)
+}
+// ------------------------=
+// FUNC: gravity_overflow_action
+// DESC: Shares one secondary menu row geometry between painting and pointer routing.
+// ------------------=
+pub const fn gravity_overflow_action(index: usize) -> (usize, usize, usize, usize) {
+    (602, 573 + index * 53, 270, 45)
+}
+// ------------------------=
+// FUNC: spatial_tab
+// DESC: Shares compact segmented-navigation geometry between painting and pointer routing.
+// ------------------=
+pub const fn spatial_tab(index: usize, shelf: bool) -> (usize, usize, usize, usize) {
+    (82 + index * 156, if shelf { 635 } else { 151 }, 144, 42)
+}
+// ------------------------=
+// FUNC: orb_pulse
+// DESC: Returns one staggered center-orb halo's expanding radius percentage and fading opacity.
+// ------------------=
+pub const fn orb_pulse(tick: u64, lane: usize) -> (usize, u8) {
+    let phase = ((tick + lane as u64 * 20) % 60) as usize;
+    (42 + phase, 115usize.saturating_sub(phase * 115 / 60) as u8)
 }
 // ------------------------=
 // FUNC: collection_name

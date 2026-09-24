@@ -334,6 +334,7 @@ pub fn present(
     zoom: u8,
     dragging: Option<usize>,
     pending_drop: Option<crate::ui::spatial::DropRequest>,
+    overflow_open: bool,
     carousel_frame: Option<(
         [crate::ui::spatial::OverviewBounds; crate::ui::spatial::OVERVIEW_COUNT],
         u8,
@@ -493,7 +494,7 @@ pub fn present(
             if shelf {
                 d.glass_panel(panel.0, panel.1, panel.2, panel.3, false);
             } else {
-                let footer = rect(65, 790, 870, 110);
+                let footer = rect(if tab == 2 { 278 } else { 65 }, 795, if tab == 2 { 466 } else { 870 }, 82);
                 if switcher {
                     d.glass_panel_with_palette(footer.0, footer.1, footer.2, footer.3,
                         false, (14, 40, 62), (97, 178, 224));
@@ -501,7 +502,11 @@ pub fn present(
                     d.glass_panel(footer.0, footer.1, footer.2, footer.3, false);
                 }
             }
-            let p = rect(70, if shelf { 588 } else { 98 }, 0, 0);
+            if !shelf && !switcher && tab >= 2 {
+                let header = rect(60, 82, 880, 132);
+                d.glass_panel_with_palette(header.0, header.1, header.2, header.3, false, (8, 29, 48), (82, 181, 231));
+            }
+            let p = rect(82, if shelf { 588 } else { 101 }, 0, 0);
             let surface_title: &[u8] = if switcher {
                 b"HOLOGRAPHIC DESKTOP"
             } else if tab == 1 {
@@ -514,7 +519,8 @@ pub fn present(
             d.window_control(p.0 + (p.2.saturating_sub(p.3)) / 2, p.1, p.3, 2, false);
             for (i, label) in TABS.iter().enumerate() {
                 if switcher || tab == 1 { break; }
-                let p = rect(70 + i * 176, if shelf { 635 } else { 150 }, 164, 45);
+                let (a,b,w,h)=crate::ui::spatial::spatial_tab(i,shelf);
+                let p = rect(a,b,w,h);
                 d.polished_button(p.0, p.1, p.2, p.3, label, tab == i + 2, false);
             }
             if !shelf {
@@ -647,6 +653,15 @@ pub fn present(
             } else {
                 if tab == 2 {
                     let center = rect(500, 475, 0, 0);
+                    if !state.reduced_motion {
+                        let tick = crate::ui::performance::monotonic_ns().unwrap_or(0) / 34_000_000;
+                        for lane in 0..3 {
+                            let (radius_percent, alpha) = crate::ui::spatial::orb_pulse(tick, lane);
+                            let radius = dh * radius_percent / 1000;
+                            let radius=radius.max(14);
+                            d.fill_rounded_rect_alpha(center.0.saturating_sub(radius),center.1.saturating_sub(radius),radius*2,radius*2,radius,96,214,255,alpha/5);
+                        }
+                    }
                     for i in 0..4 {
                         if state.categories[i].get().is_empty() {
                             continue;
@@ -857,7 +872,7 @@ pub fn present(
             for (i, label) in labels.iter().enumerate() {
                 if !label.is_empty() {
                     let p = if tab == 2 {
-                        rect(80 + i * 140, 805, 130, 48)
+                        if i >= 2 { continue; } else { let (a,b,w,h)=crate::ui::spatial::gravity_primary_action(i); rect(a,b,w,h) }
                     } else {
                         rect(80 + i * 210, 805, 190, 48)
                     };
@@ -865,12 +880,17 @@ pub fn present(
                 }
             }
             if tab == 2 {
-                for (i, label) in [b"Sub-idea".as_slice(), b"Expand / fold"]
-                    .iter()
-                    .enumerate()
-                {
-                    let p = rect(80 + (i + 4) * 140, 805, 130, 48);
-                    d.polished_button(p.0, p.1, p.2, p.3, label, false, false);
+                let (a,b,w,h)=crate::ui::spatial::gravity_overflow_button();
+                let p=rect(a,b,w,h);
+                d.polished_button(p.0,p.1,p.2,p.3,b"...",overflow_open,false);
+                if overflow_open {
+                    let menu=rect(590,558,294,230);
+                    d.glass_panel_with_palette(menu.0,menu.1,menu.2,menu.3,false,(8,27,45),(94,199,244));
+                    for (i,label) in [b"Remove idea".as_slice(),b"Read / edit idea",b"Create sub-idea",b"Expand / fold"].iter().enumerate() {
+                        let (a,b,w,h)=crate::ui::spatial::gravity_overflow_action(i);
+                        let p=rect(a,b,w,h);
+                        d.polished_button(p.0,p.1,p.2,p.3,label,false,false);
+                    }
                 }
             }
             let p = rect(80, 870, 0, 0);
@@ -881,7 +901,7 @@ pub fn present(
                     0 if switcher=>b"Tab / Arrows: rotate   Enter: open   Esc: return".as_slice(),
                     0=>b"Tab: configuration views   M: reduced motion   Esc: close".as_slice(),
                     1=>b"Tab: views   Arrows: focus   Enter: switch   S: save   R: rename   M: motion   Esc: close",
-                    2=>b"1-4: ring   Wheel / +/-: zoom   T: idea   N: category   Drag idea: assign category",
+                    2=>b"1-4 rings   Wheel zoom   T add idea   N new category   More actions in ...",
                     3=>notice,
                     _=>b"C: collect   Drag: arrange   L: link / unlink   Enter: open   Del: remove   Esc: close",
                 },

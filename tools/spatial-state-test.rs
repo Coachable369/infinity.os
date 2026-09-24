@@ -123,6 +123,45 @@ fn collection_controls_share_drop_geometry_and_preserve_sources() {
     assert_eq!(collection_hit(-1, 750), None);
     assert_eq!(collection_hit(1000, 750), None);
 }
+
+#[test]
+// ------------------------=
+// FUNC: gravity_actions_are_compact_distinct_and_bounded
+// DESC: Verifies primary and overflow actions retain separate usable targets inside the action dock.
+// ------------------=
+fn gravity_actions_are_compact_distinct_and_bounded() {
+    let first = gravity_primary_action(0);
+    let second = gravity_primary_action(1);
+    let more = gravity_overflow_button();
+    assert!(first.0 + first.2 < second.0);
+    assert!(second.0 + second.2 < more.0);
+    assert!(more.0 + more.2 <= 1000 && more.1 + more.3 <= 900);
+    for index in 0..4 {
+        let row = gravity_overflow_action(index);
+        assert!(contains(row, (row.0 + 1) as i32, (row.1 + 1) as i32));
+        assert!(row.0 + row.2 <= 1000 && row.1 + row.3 <= 900);
+        if index != 0 {
+            let previous = gravity_overflow_action(index - 1);
+            assert!(previous.1 + previous.3 < row.1);
+        }
+    }
+}
+
+#[test]
+// ------------------------=
+// FUNC: center_orb_pulse_expands_fades_and_wraps
+// DESC: Verifies staggered halo phases expand continuously, fade as they grow, and restart cleanly.
+// ------------------=
+fn center_orb_pulse_expands_fades_and_wraps() {
+    let start = orb_pulse(0, 0);
+    let middle = orb_pulse(30, 0);
+    let end = orb_pulse(59, 0);
+    assert!(start.0 < middle.0 && middle.0 < end.0);
+    assert!(start.1 > middle.1 && middle.1 > end.1);
+    assert_eq!(orb_pulse(60, 0), start);
+    assert_eq!(orb_pulse(0, 1), orb_pulse(20, 0));
+    assert_eq!(orb_pulse(0, 2), orb_pulse(40, 0));
+}
 #[test]
 // ------------------------=
 // FUNC: carousel_endpoints_retarget_depth_and_activation
