@@ -1,0 +1,14 @@
+{
+  "fresh_install": true,
+  "iso_detached": true,
+  "identity": {
+    "node_id": "bed3b28904bb7004b81d244b202d4e9f4b2d9abc3cd105dbe7c940bfd0440f51",
+    "cold_boot_identity": true,
+    "authenticated_desktop": true
+  },
+  "disclosures_toggle": true,
+  "moved_row_click": true,
+  "scroll_and_lower_row_click": true,
+  "detail_nonoverlap": true,
+  "saved_template_in_both_architectures": true
+}

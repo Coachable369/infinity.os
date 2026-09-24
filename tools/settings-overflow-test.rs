@@ -15,18 +15,15 @@ fn main() {
     sidebar_spacing();
     verify_authored_row_flow();
     verify_configuration_network_targets();
+    verify_settings_chrome_targets();
+    verify_expanded_action_targets();
     for width in [1024, 1366, 1920, 2560] {
         let layout = SystemLayout::new(width, 1440);
         let state = SettingsWindowState { x: 145, y: 155, width: 690, height: 500,
             maximized: false, expanded_row: Some(1), scroll_offset: 0, control_focus: 0, row_count: 8 };
         let geometry = layout.node_settings_geometry(state);
         assert!(!geometry.main.intersects(geometry.sidebar));
-        if let Some(authored) = layout.authored_settings_rect(state, SETTINGS_NODE_SECTION,
-            ui::installer_template::InstallerTemplateRole::SettingsSidebarCard, 0) {
-            assert_eq!(geometry.sidebar, authored);
-        } else {
-            assert!(geometry.sidebar.width >= 220 * layout.scale() as u32);
-        }
+        assert!(geometry.sidebar.width >= 220 * layout.scale() as u32);
         for control in geometry.controls {
             assert_eq!(geometry.main.intersection(control), control);
         }
@@ -60,12 +57,8 @@ fn main() {
     assert!(window.maximum_scroll > 0);
     let top = layout.node_settings_geometry(state);
     for index in 0..5 {
-        if let Some(authored) = layout.authored_settings_rect(state, SETTINGS_NODE_SECTION,
-            ui::installer_template::InstallerTemplateRole::SettingsTab, index) {
-            assert_eq!(top.tabs[index], authored);
-        } else {
-            assert!(top.tabs[index].width >= (184 * layout.scale()) as u32);
-        }
+        assert!(top.tabs[index].width >= (184 * layout.scale()) as u32);
+        assert_eq!(top.tabs[index].height, (44 * layout.scale()) as u32);
         for following in (index + 1)..5 {
             assert!(!top.tabs[index].intersects(top.tabs[following]));
         }
@@ -78,12 +71,7 @@ fn main() {
     assert!(top.summary.y > tab_bottom);
     assert!(!top.main.intersects(top.sidebar));
     for (index, control) in top.controls.iter().enumerate() {
-        if let Some(authored) = layout.authored_settings_rect(state, SETTINGS_NODE_SECTION,
-            ui::installer_template::InstallerTemplateRole::Metadata, index) {
-            assert_eq!(*control, authored);
-        } else {
-            assert!(control.height >= (12 + 28 + 4 + 28 + 8) * layout.scale() as u32);
-        }
+        assert!(control.height >= (12 + 28 + 4 + 28 + 8) * layout.scale() as u32);
         assert_eq!(top.main.intersection(*control), *control);
         if index > 0 {
             assert!(top.controls[index - 1].bottom() < control.y);
@@ -158,6 +146,56 @@ fn main() {
     let minimum_window = SystemLayout::new(1920, 1080)
         .settings_window_geometry_for_section(minimum, SETTINGS_NETWORK_SECTION);
     assert!(minimum_window.maximum_scroll > 0);
+}
+
+// ------------------------=
+// FUNC: verify_settings_chrome_targets
+// DESC: Checks visible window-button centers and dashboard bottom reachability for every category and display scale.
+// ------------------=
+fn verify_settings_chrome_targets() {
+    for (width, height) in [(1024, 768), (1920, 1080), (2560, 1440)] {
+        let layout = SystemLayout::new(width, height);
+        let scale = layout.scale() as i32;
+        for section in 0..11 {
+            let state = SettingsWindowState { x: 60, y: 80, width: 850, height: 760,
+                maximized: false, expanded_row: None, scroll_offset: 0, control_focus: 0, row_count: 8 };
+            let geometry = layout.settings_window_geometry_for_section(state, section);
+            for index in 0..3 {
+                let x = geometry.window.right() - (26 + (2 - index as i32) * 25) * scale + 10 * scale;
+                let y = geometry.title.y + geometry.title.height as i32 / 2;
+                assert_eq!(layout.settings_target_for_section(x * 1000 / width as i32,
+                    y * 1000 / height as i32, state, section), Some(SettingsTarget::WindowControl(index)));
+            }
+            if matches!(section, SETTINGS_NODE_SECTION | SETTINGS_NETWORK_SECTION) {
+                let bottom = SettingsWindowState { scroll_offset: geometry.maximum_scroll, ..state };
+                let dashboard = if section == SETTINGS_NODE_SECTION { layout.node_settings_geometry(bottom) }
+                    else { layout.network_settings_geometry(bottom) };
+                assert!(dashboard.sidebar.bottom() <= geometry.viewport.bottom());
+                assert!(dashboard.main.bottom() <= geometry.viewport.bottom());
+            }
+        }
+    }
+}
+
+// ------------------------=
+// FUNC: verify_expanded_action_targets
+// DESC: Checks the widened action edge and excludes invisible actions from inspection-only details.
+// ------------------=
+fn verify_expanded_action_targets() {
+    let layout = SystemLayout::new(1920, 1440);
+    for (section, actionable) in [(0, true), (1, true), (2, false), (3, true),
+        (4, false), (5, false), (8, true), (9, false)] {
+        let state = SettingsWindowState { x: 0, y: 0, width: 1000, height: 1000,
+            maximized: true, expanded_row: Some(0), scroll_offset: 0,
+            control_focus: 0, row_count: 5 };
+        let detail = layout.settings_row_geometry_for_section(state, 0, section).detail;
+        let x = detail.x + ui::system_layout::UI_GUTTER as i32 + 220;
+        let y = detail.bottom() - 30;
+        assert!(layout.settings_window_geometry_for_section(state, section).viewport.contains(
+            layout.point(x * 1000 / 1920, y * 1000 / 1440)));
+        assert_eq!(layout.settings_target_for_section(x * 1000 / 1920, y * 1000 / 1440, state, section),
+            actionable.then_some(SettingsTarget::ExpandedAction));
+    }
 }
 
 // ------------------------=

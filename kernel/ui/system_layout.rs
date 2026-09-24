@@ -2090,7 +2090,7 @@ impl SystemLayout {
             .map(|value| value.height as usize)
             .unwrap_or(height.saturating_sub(title_height + 116 * self.scale));
         // The content panel contains fixed headings and a separately scrolling row area.
-        if !matches!(section, SETTINGS_NODE_SECTION | SETTINGS_NETWORK_SECTION) {
+        {
             if let Some((console, _, _, _)) = authored {
                 let bottom = viewport_top + viewport_height;
                 for role in [
@@ -2106,15 +2106,15 @@ impl SystemLayout {
                 viewport_height = bottom.saturating_sub(viewport_top);
             }
         }
-        let mut total_content_height = if section == SETTINGS_NODE_SECTION {
-            SETTINGS_NODE_CONTENT_HEIGHT
-                + if content_width < 840 * self.scale {
-                    632
-                } else {
-                    0
-                }
-        } else if section == SETTINGS_NETWORK_SECTION {
-            SETTINGS_DASHBOARD_CONTENT_HEIGHT
+        let mut total_content_height = if matches!(section, SETTINGS_NODE_SECTION | SETTINGS_NETWORK_SECTION) {
+            let node = section == SETTINGS_NODE_SECTION;
+            let pages = if node { 5 } else { 7 };
+            let columns = ((content_width + 12 * self.scale)
+                / ((if node { 184 } else { 112 }) * self.scale + 12 * self.scale)).clamp(1, pages);
+            let tab_rows = pages.div_ceil(columns);
+            let body = 620;
+            tab_rows * 56 + 104 + 24
+                + body + if content_width < 840 * self.scale { body + 12 } else { 0 }
         } else {
             let detail_height = state.expanded_row.map(|i| settings_detail_height(i, section)).unwrap_or(0);
             state.row_count.clamp(1, 8) * 58 + detail_height
@@ -2131,22 +2131,16 @@ impl SystemLayout {
                     ) else {
                         break;
                     };
-                    last_bottom = last_bottom.max(map(row.frame, console).bottom().max(0) as usize);
+                    let first = crate::ui::settings_template::role_at(section, InstallerTemplateRole::Metadata, 0).unwrap();
+                    let base = map(first.frame, console).y.max(0) as usize;
+                    let mapped = map(row.frame, console);
+                    last_bottom = last_bottom.max((mapped.y.max(0) as usize).max(base + index * 84 * self.scale)
+                        + (mapped.height as usize).max(72 * self.scale));
                 }
                 let detail = state
                     .expanded_row
-                    .and_then(|_| {
-                        crate::ui::settings_template::element(
-                            section,
-                            InstallerTemplateRole::LiveDetails,
-                        )
-                    })
-                    .map(|element| map(element.frame, console).height as usize)
-                    .unwrap_or(0);
-                let detail = state
-                    .expanded_row
                     .map(|index| {
-                        detail.max(settings_detail_height(index, section) * self.scale) + 8 * self.scale
+                        (settings_detail_height(index, section) + 8) * self.scale
                     })
                     .unwrap_or(0);
                 total_content_height = last_bottom
@@ -2293,21 +2287,8 @@ impl SystemLayout {
                 };
                 let detail_height = state
                     .expanded_row
-                    .and_then(|_| {
-                        crate::ui::settings_template::element(
-                            section,
-                            InstallerTemplateRole::LiveDetails,
-                        )
-                    })
-                    .map(|element| {
-                        element.frame.height as usize * outer.height as usize
-                            / console.frame.height.max(1) as usize
-                    })
-                    .unwrap_or(0);
-                let detail_height = state
-                    .expanded_row
                     .map(|expanded| {
-                        detail_height.max(settings_detail_height(expanded, section) * self.scale)
+                        settings_detail_height(expanded, section) * self.scale
                     })
                     .unwrap_or(0);
                 let prior_detail =
@@ -2315,15 +2296,17 @@ impl SystemLayout {
                         * (detail_height + 8 * self.scale);
                 let hero_offset = usize::from(section == 1)
                     * (SETTINGS_WORLD_SHIFT_HERO_HEIGHT + 14) * self.scale;
-                let summary_top = map_y(row.frame.y) as i32 + hero_offset as i32 + prior_detail as i32
+                let first = crate::ui::settings_template::role_at(section, InstallerTemplateRole::Metadata, 0).unwrap();
+                let row_top = map_y(row.frame.y).max(map_y(first.frame.y) + index * 84 * self.scale);
+                let summary_top = row_top as i32 + hero_offset as i32 + prior_detail as i32
                     - (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
                 let mut summary = rect(
                     map_x(row.frame.x),
                     summary_top.max(0) as usize,
                     row.frame.width as usize * outer.width as usize
                         / console.frame.width.max(1) as usize,
-                    row.frame.height as usize * outer.height as usize
-                        / console.frame.height.max(1) as usize,
+                    (row.frame.height as usize * outer.height as usize
+                        / console.frame.height.max(1) as usize).max(72 * self.scale),
                 );
                 summary.y = summary_top;
                 return SettingsRowGeometry {
@@ -2368,11 +2351,22 @@ impl SystemLayout {
         role: crate::ui::installer_template::InstallerTemplateRole,
     ) -> Option<Rect> {
         let mut child = self.authored_settings_rect(state, section, role, index)?;
-        let anchor = self.authored_settings_rect(state, section,
-            crate::ui::installer_template::InstallerTemplateRole::Metadata, index)?;
-        let row = self.settings_row_geometry_for_section(state, index, section).summary;
+        let anchor = self.authored_settings_rect(
+            state,
+            section,
+            crate::ui::installer_template::InstallerTemplateRole::Metadata,
+            index,
+        )?;
+        let row = self
+            .settings_row_geometry_for_section(state, index, section)
+            .summary;
         child.x += row.x - anchor.x;
-        child.y += row.y - anchor.y;
+        child.y = row.y + (row.height.saturating_sub(28) / 2) as i32;
+        child.height = 28;
+        if role == crate::ui::installer_template::InstallerTemplateRole::SettingsDisclosure {
+            child.height = (32 * self.scale) as u32;
+            child.y = row.y + (row.height.saturating_sub(child.height) / 2) as i32;
+        }
         Some(child)
     }
 
@@ -2477,7 +2471,7 @@ impl SystemLayout {
             let control_left = left + width.saturating_sub((26 + (2 - index) * 25) * self.scale);
             if rect(
                 control_left,
-                top + 12 * self.scale,
+                top + (geometry.title.height as usize).saturating_sub(24 * self.scale) / 2,
                 20 * self.scale,
                 24 * self.scale,
             )
@@ -2537,12 +2531,14 @@ impl SystemLayout {
                         .bottom()
                         .saturating_sub(((UI_COMPACT_ACTION_HEIGHT + 10) * self.scale) as i32)
                         .max(0) as usize,
-                    (170 * self.scale).min(
+                    (240 * self.scale).min(
                         (row.detail.width as usize).saturating_sub(UI_GUTTER * 2 * self.scale),
                     ),
                     UI_COMPACT_ACTION_HEIGHT * self.scale,
                 );
-                if action.contains(point) {
+                let has_action = matches!((section, index),
+                    (0, 0) | (1, 0) | (3, 0..=2) | (8, 0..=7));
+                if has_action && action.contains(point) {
                     return Some(SettingsTarget::ExpandedAction);
                 }
             }
@@ -2612,15 +2608,15 @@ impl SystemLayout {
         let content = window.content;
         let gap = 12 * self.scale;
         let node_panel = section == SETTINGS_NODE_SECTION;
-        let top = content.y.max(0) as usize + if node_panel { 104 } else { 68 } * self.scale;
+        let top = window.viewport.y.max(0) as usize;
         let left = content.x.max(0) as usize;
         let width = content.width as usize;
-        let tab_gap = 6 * self.scale;
+        let tab_gap = 12 * self.scale;
         let minimum_tab_width = if node_panel { 184 } else { 112 } * self.scale;
         let columns =
             ((width + tab_gap) / (minimum_tab_width + tab_gap)).clamp(1, page_count.max(1));
         let tab_width = width.saturating_sub(tab_gap * columns.saturating_sub(1)) / columns;
-        let tab_height = 38 * self.scale;
+        let tab_height = 44 * self.scale;
         let tab_rows = (page_count + columns - 1) / columns;
         let mut tabs = [rect(0, 0, 0, 0); 7];
         for (index, tab) in tabs.iter_mut().take(page_count).enumerate() {
@@ -2635,19 +2631,12 @@ impl SystemLayout {
         }
         let summary_top =
             top + tab_rows * tab_height + tab_rows.saturating_sub(1) * tab_gap + 12 * self.scale;
-        let summary_height = 88 * self.scale;
+        let summary_height = 104 * self.scale;
         let body_top = summary_top + summary_height + gap;
-        let preferred_body_height = if node_panel { 620 } else { 420 } * self.scale;
-        let available_body_height =
-            content.bottom().saturating_sub(body_top as i32).max(0) as usize;
-        let body_height = if node_panel {
-            preferred_body_height
-        } else if available_body_height >= 120 * self.scale {
-            preferred_body_height.min(available_body_height)
-        } else {
-            preferred_body_height
-        };
-        let stacked = node_panel && width < 840 * self.scale;
+        let preferred_body_height = 620 * self.scale;
+        // Never compress controls to fit a short window: overflow is scrollable.
+        let body_height = preferred_body_height;
+        let stacked = width < 840 * self.scale;
         let main_width = if stacked { width } else { width * 68 / 100 };
         let main = rect(
             left,
@@ -2656,21 +2645,28 @@ impl SystemLayout {
             body_height,
         );
         let sidebar = rect(
-            if stacked { left } else { left + main_width + gap / 2 },
-            if stacked { body_top + body_height + gap } else { body_top },
-            if stacked { width } else { width.saturating_sub(main_width + gap / 2) },
+            if stacked {
+                left
+            } else {
+                left + main_width + gap / 2
+            },
+            if stacked {
+                body_top + body_height + gap
+            } else {
+                body_top
+            },
+            if stacked {
+                width
+            } else {
+                width.saturating_sub(main_width + gap / 2)
+            },
             body_height,
         );
-        let control_gap = 8 * self.scale;
+        let control_gap = 12 * self.scale;
         let control_height = if node_panel {
             80 * self.scale
-        } else if body_height < preferred_body_height {
-            body_height
-                .saturating_sub(24 * self.scale)
-                .saturating_sub(control_gap * 5)
-                / 6
         } else {
-            58 * self.scale
+            64 * self.scale
         };
         let mut controls = [rect(0, 0, 0, 0); 6];
         for (index, control) in controls.iter_mut().enumerate() {
@@ -2681,34 +2677,12 @@ impl SystemLayout {
                 control_height,
             );
         }
-        for (index, tab) in tabs.iter_mut().take(page_count).enumerate() {
-            if let Some(authored) = self.authored_settings_rect(
-                state, section,
-                crate::ui::installer_template::InstallerTemplateRole::SettingsTab, index,
-            ) {
-                *tab = authored;
-            }
-        }
-        let mut summary = self.authored_settings_rect(
-            state, section,
-            crate::ui::installer_template::InstallerTemplateRole::SettingsSummaryCard, 0,
-        ).unwrap_or_else(|| rect(left, summary_top, width, summary_height));
-        let mut main = self.authored_settings_rect(
-            state, section,
-            crate::ui::installer_template::InstallerTemplateRole::SettingsMainCard, 0,
-        ).unwrap_or(main);
-        let mut sidebar = self.authored_settings_rect(
-            state, section,
-            crate::ui::installer_template::InstallerTemplateRole::SettingsSidebarCard, 0,
-        ).unwrap_or(sidebar);
-        for (index, control) in controls.iter_mut().enumerate() {
-            if let Some(authored) = self.authored_settings_rect(
-                state, section,
-                crate::ui::installer_template::InstallerTemplateRole::Metadata, index,
-            ) {
-                *control = authored;
-            }
-        }
+        // Studio supplies materials and copy; the responsive kit supplies bounds.
+        // Scaling its fixed-height rows independently from native typography was
+        // the cause of overlapping labels and summary text at normal resolutions.
+        let mut summary = rect(left, summary_top, width, summary_height);
+        let mut main = main;
+        let mut sidebar = sidebar;
         let scroll = (state.scroll_offset.min(window.maximum_scroll) * self.scale) as i32;
         for tab in tabs.iter_mut() {
             tab.y = tab.y.saturating_sub(scroll);
@@ -3164,6 +3138,9 @@ impl SystemLayout {
             return None;
         }
         let point = self.point(normalized_x, normalized_y);
+        if !self.settings_window_geometry_for_section(state, 1).viewport.contains(point) {
+            return None;
+        }
         let geometry = self.settings_color_geometry(state, index);
         if geometry.spectrum.contains(point) {
             let x = point.x.saturating_sub(geometry.spectrum.x) as u32;
@@ -3193,11 +3170,12 @@ impl SystemLayout {
 const fn settings_detail_height(index: usize, section: usize) -> usize {
     if section == 5 && index == 2 { return 620; }
     if section == 1 && index == 7 { return 400; }
+    if section == 8 { return 144; }
     match index {
         1 => 108,
         2 | 3 => 112,
         4 | 5 => 78,
-        _ => 96,
+        _ => 112,
     }
 }
 

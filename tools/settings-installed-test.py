@@ -73,12 +73,47 @@ def verify_artifacts():
                 assert binary.find(template) >= 0, (architecture, name)
 
 # ------------------------=
+# FUNC: review_sections
+# DESC: Visits every real Settings category through pointer input and captures the production rendered result.
+# ------------------=
+def review_sections(guest):
+    reviewed = []
+    for section in range(11):
+        state = settings(guest)
+        helpers.click(guest, state[89 + section * 2], state[90 + section * 2])
+        state = wait_settings(guest, lambda s: s[3] == 1 and s[4] == section)
+        assert state[13] >= state[9] and state[13] + state[15] <= state[9] + state[11]
+        assert state[14] >= state[10] and state[14] + state[16] <= state[10] + state[12]
+        guest.screenshot(f"settings-category-{section:02d}")
+        if section not in (6, 7, 10):
+            disclosure(guest, 0, True)
+            guest.screenshot(f"settings-category-{section:02d}-expanded")
+            disclosure(guest, 0, False)
+        reviewed.append(section)
+    return reviewed
+
+# ------------------------=
 # FUNC: main
 # DESC: Installs the current ISO, removes installation media, and checks native expanders, shifted click targets, scrolling and screenshots.
 # ------------------=
 def main():
     verify_artifacts()
     work = pathlib.Path(sys.argv[1]).resolve()
+    if "--review-existing" in sys.argv[2:]:
+        guest = base.Guest(work, 1, "/opt/homebrew/share/qemu/edk2-x86_64-code.fd",
+                           reuse=True, width=1920, height=1080)
+        try:
+            guest.boot(False)
+            guest.authenticate()
+            guest.launch("settings", 8)
+            reviewed = review_sections(guest)
+            (work / "category-review.json").write_text(json.dumps({
+                "iso_detached": True, "resolution": list(guest.state()[11:13]),
+                "category_navigation": reviewed,
+                "note": "Uses the retained installed fixture and its archived kernel, not a new install."}, indent=2))
+        finally:
+            guest.stop()
+        return
     work.mkdir(exist_ok=False)
     artifacts = work / "artifacts"
     artifacts.mkdir()
@@ -116,10 +151,12 @@ def main():
         wait_settings(guest, lambda s: s[4] == 4 and s[5] == 0)
         disclosure(guest, 3, True)
         guest.screenshot("settings-privacy-timeout")
+        reviewed = review_sections(guest)
         (work / "result.json").write_text(json.dumps({"fresh_install": True, "iso_detached": True,
             "identity": identity, "disclosures_toggle": True, "moved_row_click": True,
             "scroll_and_lower_row_click": True, "detail_nonoverlap": True,
-            "saved_template_in_both_architectures": True}, indent=2))
+            "saved_template_in_both_architectures": True,
+            "category_navigation": reviewed}, indent=2))
         print("Installed Settings behavior passed", flush=True)
     finally:
         guest.stop()

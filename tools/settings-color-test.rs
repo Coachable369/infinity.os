@@ -28,10 +28,10 @@ fn main() {
         assert!(row.summary.bottom() <= window.viewport.bottom());
     }
 
-    let primary_state = SettingsWindowState {
+    let primary_state = reveal_color(layout, SettingsWindowState {
         expanded_row: Some(2),
         ..state
-    };
+    }, 2);
     let primary = layout.settings_primary_geometry(primary_state);
     let primary_x = (primary.spectrum.x + primary.spectrum.width as i32 / 2) * 1000 / 2560;
     let primary_y = (primary.spectrum.y + primary.spectrum.height as i32 / 2) * 1000 / 1440;
@@ -44,10 +44,10 @@ fn main() {
         None
     );
 
-    let secondary_state = SettingsWindowState {
+    let secondary_state = reveal_color(layout, SettingsWindowState {
         expanded_row: Some(3),
         ..state
-    };
+    }, 3);
     let secondary = layout.settings_accent_geometry(secondary_state);
     let secondary_x =
         (secondary.spectrum.x + secondary.spectrum.width as i32 / 2) * 1000 / 2560;
@@ -99,4 +99,18 @@ fn main() {
             skins.accent_surface(AccentSurface::Selection),
         ]
     );
+}
+
+// ------------------------=
+// FUNC: reveal_color
+// DESC: Applies the same expansion-to-viewport scroll used by Settings before testing a visible color control.
+// ------------------=
+fn reveal_color(layout: SystemLayout, mut state: SettingsWindowState, row: usize) -> SettingsWindowState {
+    let window = layout.settings_window_geometry_for_section(state, 1);
+    let detail = layout.settings_row_geometry_for_section(state, row, 1).detail;
+    state.scroll_offset = (detail.bottom().saturating_sub(window.viewport.bottom()).max(0)
+        as usize).div_ceil(layout.scale()).min(window.maximum_scroll);
+    let detail = layout.settings_row_geometry_for_section(state, row, 1).detail;
+    assert_eq!(window.viewport.intersection(detail), detail);
+    state
 }

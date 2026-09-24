@@ -4834,7 +4834,7 @@ impl super::DisplayDevice {
                     (b"Architecture", b"Native"),
                     (b"Boot", b"Verified"),
                     (b"Identity Format", b"Version 1"),
-                    (b"Icon Families", b"3 complete sets"),
+                    (b"Icon Families", b"Installed theme registry"),
                 ],
             };
             for (index, (label, value)) in rows.iter().enumerate() {
@@ -4890,6 +4890,22 @@ impl super::DisplayDevice {
             if focus == 1 {
                 self.settings_color_picker(settings_window, scale, false);
             }
+        }
+    }
+
+    // ------------------------=
+    // FUNC: settings_card_sheen
+    // DESC: Adds a bounded soft reflection to retained Settings cards without blur or framebuffer-sized work.
+    // ------------------=
+    fn settings_card_sheen(&mut self, x: usize, y: usize, width: usize, height: usize, scale: usize) {
+        let inset = 12 * scale;
+        if width <= inset * 2 || height < 16 { return; }
+        let reflection_height = (height / 2).min(48 * scale);
+        for band in 0..8 {
+            let top = y + 2 + band * reflection_height / 8;
+            let bottom = y + 2 + (band + 1) * reflection_height / 8;
+            self.fill_rect_alpha(x + inset, top, width - inset * 2,
+                bottom.saturating_sub(top), 157, 205, 236, (12 - band) as u8);
         }
     }
 
@@ -5040,37 +5056,24 @@ impl super::DisplayDevice {
             geometry.navigation.height as usize,
         );
         for (index, section) in sections.iter().enumerate() {
-            let _ = section;
-            for role in [
-                crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationItem,
-                crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationIcon,
-                crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationLabel,
-            ] {
-                let Some(element) = crate::ui::settings_template::role_at(
-                    focus, role, index,
-                ).filter(|element| !element.hidden && element.opacity > 0) else { continue };
-                let Some((x, y, mapped_width, mapped_height)) = authored_rect(element) else {
-                    continue;
-                };
-                if role == crate::ui::installer_template::InstallerTemplateRole::SettingsNavigationIcon
-                    && self.themed_icon(x + mapped_width/2, y + mapped_height/2,
-                        crate::ui::icon_theme::settings_section_icon(index), mapped_width.min(mapped_height)) {
-                    continue;
-                }
-                let image = if element.kind == 2 {
-                    settings_template.and_then(|template| template.asset(element.image_asset))
-                } else {
-                    None
-                };
-                self.template_element_in_rect(
-                    element,
-                    image,
-                    None,
-                    crate::ui::installer_layout::InstallerRect {
-                        left: x, top: y, width: mapped_width, height: mapped_height,
-                    },
-                );
+            let row = layout.settings_section_geometry_for_section(settings_window, index, focus);
+            let (x, y, w, h) = (row.x.max(0) as usize, row.y.max(0) as usize,
+                row.width as usize, row.height as usize);
+            if index == focus {
+                self.fill_rounded_rect_alpha(x, y, w, h, 10 * scale,
+                    selection_r, selection_g, selection_b, 235);
+                self.outline_rounded_rect(x, y, w, h, 10 * scale, outline_r, outline_g, outline_b);
+                self.settings_card_sheen(x, y, w, h, scale);
             }
+            let icon_size = (28 * scale).min(h.saturating_sub(8));
+            let _ = self.themed_icon(x + 28 * scale, y + h / 2,
+                crate::ui::icon_theme::settings_section_icon(index), icon_size);
+            self.ui_text_elided_strong(x + 52 * scale,
+                y + h.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
+                w.saturating_sub(68 * scale), section,
+                if index == focus { 240 } else { 182 },
+                if index == focus { 248 } else { 204 },
+                if index == focus { 252 } else { 220 });
         }
         self.render_clip = caller_clip;
         let content_x = geometry.content.x.max(0) as usize;
@@ -5095,7 +5098,8 @@ impl super::DisplayDevice {
                         element.role,
                         value if value == 0
                             || value == crate::ui::installer_template::InstallerTemplateRole::Image as u8
-                            || value == crate::ui::installer_template::InstallerTemplateRole::SettingsArtwork as u8
+                            || (value == crate::ui::installer_template::InstallerTemplateRole::SettingsArtwork as u8
+                                && !matches!(focus, 6 | 7 | 8))
                     ) {
                         continue;
                     }
@@ -5340,7 +5344,7 @@ impl super::DisplayDevice {
                 (b"Architecture", b"Native"),
                 (b"Boot", b"Verified"),
                 (b"Identity Format", b"Version 1"),
-                (b"Icon Families", b"3 complete sets"),
+                (b"Icon Families", b"Installed theme registry"),
                 (b"", b""),
                 (b"", b""),
                 (b"", b""),
@@ -5437,8 +5441,11 @@ impl super::DisplayDevice {
             let label_frame = row_frame(crate::ui::installer_template::InstallerTemplateRole::SettingsRowLabel);
             let value_frame = row_frame(crate::ui::installer_template::InstallerTemplateRole::SettingsRowValue);
             let disclosure_frame = row_frame(crate::ui::installer_template::InstallerTemplateRole::SettingsDisclosure);
-            let label = authored_label.map(|element| element.text)
-                .filter(|text| !text.is_empty()).unwrap_or(*label);
+            // Input labels are coupled to the preference operation, not decorative template copy.
+            let label = if focus == 10 { *label } else {
+                authored_label.map(|element| element.text)
+                    .filter(|text| !text.is_empty()).unwrap_or(*label)
+            };
             if row.summary.intersects(geometry.viewport) {
                 let summary_left = row.summary.x.max(0) as usize;
                 let summary_top = row.summary.y.max(0) as usize;
@@ -5465,6 +5472,8 @@ impl super::DisplayDevice {
                     authored_row.map(|element| element.border[1]).unwrap_or(if expanded { outline_g } else { outline_g / 2 }),
                     authored_row.map(|element| element.border[2]).unwrap_or(if expanded { outline_b } else { outline_b / 2 }),
                 );
+                self.settings_card_sheen(summary_left, summary_top, summary_width,
+                    row.summary.height as usize, scale);
                 let label_limit = label_frame.map(|frame| frame.2).unwrap_or(summary_width * 46 / 100);
                 let mut label_length = label.len();
                 while label_length > 0
@@ -5590,19 +5599,19 @@ impl super::DisplayDevice {
                             let x=detail_left+gutter+column*available/3;
                             self.ui_text_elided_strong(x,detail_top+8*scale,available/3,labels[column],160,191,211);
                             let mut digits=[0;24];let n=navigator_decimal(&mut digits,*value as usize);
-                            self.ui_text_elided_strong(x,detail_top+29*scale,available/3,&digits[..n],230,242,250);
+                            self.ui_text_elided_strong(x,detail_top+40*scale,available/3,&digits[..n],230,242,250);
                         }
                     } else if index==2 {
                         self.ui_text_elided_strong(detail_left+gutter,detail_top+8*scale,available,&pool_node_identity[..32],210,231,245);
-                        self.ui_text_elided_strong(detail_left+gutter,detail_top+29*scale,available,&pool_node_identity[32..],210,231,245);
+                        self.ui_text_elided_strong(detail_left+gutter,detail_top+40*scale,available,&pool_node_identity[32..],210,231,245);
                     } else if index==3 {
                         self.ui_text_elided_strong(detail_left+gutter,detail_top+8*scale,available,&pool_identity,210,231,245);
                         let labels:[&[u8];3]=[b"Version",b"Desired",b"Verified"];
                         let values=pool_object.map(|o|[o.version,o.desired as u64,o.verified as u64]).unwrap_or([0;3]);
                         for column in 0..3 {let x=detail_left+gutter+column*available/3;
-                            self.ui_text_elided_strong(x,detail_top+32*scale,available/3*2/3,labels[column],160,191,211);
+                            self.ui_text_elided_strong(x,detail_top+44*scale,available/3*2/3,labels[column],160,191,211);
                             let mut digits=[0;24];let n=navigator_decimal(&mut digits,values[column]as usize);
-                            self.ui_text_elided_strong(x+available/3*2/3,detail_top+32*scale,available/9,&digits[..n],230,242,250);
+                            self.ui_text_elided_strong(x+available/3*2/3,detail_top+44*scale,available/9,&digits[..n],230,242,250);
                         }
                     } else {
                         let explanation:&[u8]=if index==0 {if pool.failed{b"Observation failed. Refresh to retry."}else if pool_object.is_some_and(|o|o.healing){b"Healing is active for the selected object."}
@@ -5614,7 +5623,7 @@ impl super::DisplayDevice {
                     }
                     let action: &[u8] = match index {0|1=>b"REFRESH",2=>b"NEXT NODE",3=>b"NEXT OBJECT",4=>b"NEXT REPLICA",5=>b"USE TEMPORARY",6=>b"USE PROTECTED",_=>b"USE CRITICAL"};
                     self.polished_button(detail_left+gutter,detail_top+detail_height.saturating_sub((crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT+10)*scale),
-                        (170*scale).min(available),crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT*scale,action,
+                        (240*scale).min(available),crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT*scale,action,
                         index<=1 || (index==2 && pool_node.is_some()) || (index>=3 && pool_object.is_some()),false);
                 } else if focus == 1 && index == 1 {
                     let theme_count = crate::ui::icon_theme::ICON_THEME_COUNT as usize;
@@ -5666,15 +5675,42 @@ impl super::DisplayDevice {
                 } else {
                     let description: &[u8] = match (focus, index) {
                         (0, 0) => b"Rename this machine through the durable identity service.",
+                        (0, 1) => b"The installed interface language is English (US).",
+                        (0, 2) => b"Regional formatting follows the installed US locale.",
+                        (0, 3) => b"This is the active installed System Generation.",
+                        (0, 4) => b"Updates are delivered as a complete System Generation.",
                         (1, 0) => b"Switch between installed, verified InfinityUI skins.",
                         (1, 6) => b"Automatic scale follows the active display density.",
                         (1, 7) => b"Cosmic Horizon is the active packaged desktop wallpaper.",
                         (3, 0) => {
                             b"Choose whether the local provider is strictly required or preferred."
                         }
+                        (3, 1) => b"Show or hide your local desktop AI chat widget.",
+                        (3, 2) => b"Choose the next installed local model without restarting.",
+                        (2, 0) => b"The authenticated user owns this desktop session.",
+                        (2, 1) => b"Password credentials are managed by the trusted identity flow.",
+                        (2, 2) => b"This session is authenticated; locking preserves your workspace.",
+                        (2, 3) => b"Personal Space isolates this user's objects and preferences.",
+                        (2, 4) => b"The user profile persists with the installed system.",
+                        (3, 3) => b"Remote processing is disabled; local inference stays on this device.",
+                        (3, 4) => b"Microphone access is not enabled for this session.",
+                        (3, 5) => b"Voice activation is disabled; chat accepts typed requests.",
+                        (3, 6) => b"Model operations remain subject to capability enforcement.",
+                        (4, 0) => b"Applications receive no implicit authority over your data.",
+                        (4, 1) => b"No microphone capability has been granted here.",
+                        (4, 2) => b"Remote AI access requires explicit capability authorization.",
                         (4, 3) => {
                             b"Lock this user's session after the selected period without input."
                         }
+                        (4, 4) => b"Sensitive decisions use the trusted system interface.",
+                        (5, 0) => b"The active display is used by the native desktop compositor.",
+                        (5, 1) => b"Open Input to adjust keyboard repeat delay and rate.",
+                        (5, 3 | 4) => b"This audio path is unavailable; no device control is exposed.",
+                        (9, 0) => b"InfinityOS development System Generation.",
+                        (9, 1) => b"The desktop and services execute in the native OS runtime.",
+                        (9, 2) => b"Startup uses the installed boot contract and generation checks.",
+                        (9, 3) => b"Identity records use the version 1 durable format.",
+                        (9, 4) => b"Select an installed icon family in Themes & Skins.",
                         _ => b"This value is read from the active System Generation.",
                     };
                     self.ui_text_elided_strong(
@@ -5690,6 +5726,8 @@ impl super::DisplayDevice {
                         (0, 0) => Some(b"EDIT NAME"),
                         (1, 0) => Some(b"SWITCH SKIN"),
                         (3, 0) => Some(b"CHANGE POLICY"),
+                        (3, 1) => Some(if chat_enabled { b"DISABLE CHAT" } else { b"ENABLE CHAT" }),
+                        (3, 2) => Some(b"NEXT MODEL"),
                         _ => None,
                     };
                     if let Some(action) = action {
@@ -5700,7 +5738,7 @@ impl super::DisplayDevice {
                                     (crate::ui::system_layout::UI_COMPACT_ACTION_HEIGHT + 10)
                                         * scale,
                                 ),
-                            (170 * scale).min(
+                            (240 * scale).min(
                                 detail_width.saturating_sub(
                                     crate::ui::system_layout::UI_GUTTER * 2 * scale,
                                 ),
@@ -5923,16 +5961,17 @@ impl super::DisplayDevice {
                 if active { outline_g } else { outline_g / 2 },
                 if active { outline_b } else { outline_b / 2 },
             );
-            self.ui_text_centered(
-                tab.x.max(0) as usize,
-                tab.width as usize,
-                tab.y.max(0) as usize + 9 * scale,
-                authored.map(|value| value.text).filter(|text| !text.is_empty())
-                    .unwrap_or(tabs[index]),
+            let label = authored.map(|value| value.text).filter(|text| !text.is_empty()).unwrap_or(tabs[index]);
+            let available = (tab.width as usize).saturating_sub(24 * scale);
+            let text_width = self.ui_text_width_weighted(label, 1, true).min(available);
+            self.ui_text_elided_strong(
+                tab.x.max(0) as usize + (tab.width as usize - text_width) / 2,
+                tab.y.max(0) as usize + (tab.height as usize).saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
+                available,
+                label,
                 if active { 242 } else { 166 },
                 if active { 248 } else { 190 },
                 if active { 252 } else { 207 },
-                1,
             );
         }
         let summary_left = geometry.summary.x.max(0) as usize;
@@ -5955,9 +5994,10 @@ impl super::DisplayDevice {
             outline_b,
             1,
         );
-        self.ui_text_strong(
+        self.ui_text_elided_strong(
             summary_left + 74 * scale,
             summary_top + 46 * scale,
+            (geometry.summary.width as usize).saturating_sub(96 * scale),
             if identity_ready {
                 b"Cryptographic identity ready"
             } else {
@@ -5966,7 +6006,6 @@ impl super::DisplayDevice {
             239,
             246,
             251,
-            1,
         );
         let mut labels: [[&[u8]; 2]; 6] = match page {
             0 => [
@@ -6061,25 +6100,8 @@ impl super::DisplayDevice {
                 if active { outline_g } else { outline_g / 2 },
                 if active { outline_b } else { outline_b / 2 },
             );
-            self.ui_text_strong(
-                card.x.max(0) as usize + 15 * scale,
-                card.y.max(0) as usize + 12 * scale,
-                authored.map(|value| value.text).filter(|text| !text.is_empty())
-                    .unwrap_or(labels[index][0]),
-                220,
-                239,
-                249,
-                1,
-            );
-            self.ui_text(
-                card.x.max(0) as usize + 15 * scale,
-                card.y.max(0) as usize + 44 * scale,
-                labels[index][1],
-                145,
-                174,
-                193,
-                1,
-            );
+            self.settings_card_sheen(card.x.max(0) as usize, card.y.max(0) as usize,
+                card.width as usize, card.height as usize, scale);
             let (mut number, mut length) = Self::network_metric_text(values[index] as u64);
             if page == 1 {
                 let verification = selected.and_then(|(_, verification)| verification);
@@ -6106,6 +6128,12 @@ impl super::DisplayDevice {
                 length = value.len().min(number.len()); number[..length].copy_from_slice(&value[..length]);
             }
             let number_width = self.ui_text_width(&number[..length], 1);
+            let label_width = (card.width as usize).saturating_sub(number_width + 48 * scale);
+            self.ui_text_elided_strong(card.x.max(0) as usize + 15 * scale,
+                card.y.max(0) as usize + 12 * scale, label_width, labels[index][0], 220, 239, 249);
+            self.ui_text_elided_strong(card.x.max(0) as usize + 15 * scale,
+                card.y.max(0) as usize + 44 * scale,
+                (card.width as usize).saturating_sub(30 * scale), labels[index][1], 145, 174, 193);
             self.ui_text(
                 card.right().max(0) as usize - number_width - 14 * scale,
                 card.y.max(0) as usize + 18 * scale,
@@ -6155,19 +6183,22 @@ impl super::DisplayDevice {
             let authored = crate::ui::settings_template::element(
                 7, crate::ui::installer_template::InstallerTemplateRole::SettingsArtwork,
             );
-            let authored_rect = layout.authored_settings_rect(
-                settings_window, 7,
-                crate::ui::installer_template::InstallerTemplateRole::SettingsArtwork, 0,
-            ).unwrap_or(art);
+            let authored_rect = art;
             let bytes = authored
                 .and_then(|element| template.and_then(|value| value.asset(element.image_asset)))
                 .unwrap_or(NODE_TRUST_TOPOLOGY_BMP);
+            let available_width = (authored_rect.width as usize).saturating_sub(24 * scale);
+            let available_height = (authored_rect.height as usize).saturating_sub(144 * scale);
+            let source_width = if bytes.len() >= 54 { le32(bytes, 18) as usize } else { 1 }.max(1);
+            let source_height = if bytes.len() >= 54 { (le32(bytes, 22) as i32).unsigned_abs() as usize } else { 1 }.max(1);
+            let image_width = available_width.min(available_height * source_width / source_height);
+            let image_height = image_width * source_height / source_width;
             self.paint_bitmap_fit_rect(
                 bytes,
-                authored_rect.x.max(0) as usize,
-                authored_rect.y.max(0) as usize,
-                authored_rect.width as usize,
-                authored_rect.height as usize,
+                authored_rect.x.max(0) as usize + (authored_rect.width as usize - image_width) / 2,
+                authored_rect.y.max(0) as usize + 12 * scale,
+                image_width,
+                image_height,
             );
         }
         #[cfg(target_arch = "x86")]
@@ -6190,26 +6221,10 @@ impl super::DisplayDevice {
             22,
             220,
         );
-        self.ui_text_centered(
-            art.x.max(0) as usize,
-            art.width as usize,
-            art.bottom().max(0) as usize - 55 * scale,
-            b"DISCOVERY IS NOT TRUST",
-            226,
-            241,
-            249,
-            1,
-        );
-        self.ui_text_centered(
-            art.x.max(0) as usize,
-            art.width as usize,
-            art.bottom().max(0) as usize - 29 * scale,
-            b"TRUST IS NOT AUTHORITY",
-            outline_r,
-            outline_g,
-            outline_b,
-            1,
-        );
+        self.ui_text_wrapped(art.x.max(0) as usize + 16 * scale,
+            art.bottom().max(0) as usize - 132 * scale,
+            (art.width as usize).saturating_sub(32 * scale),
+            b"Discovery is not trust. Trust is not authority.", 185, 215, 233, 4);
     }
 
     // ------------------------=
@@ -6343,16 +6358,17 @@ impl super::DisplayDevice {
                 if active { outline_g } else { outline_g / 2 },
                 if active { outline_b } else { outline_b / 2 },
             );
-            self.ui_text_centered(
-                tab.x.max(0) as usize,
-                tab.width as usize,
-                tab.y.max(0) as usize + 9 * scale,
-                authored.map(|value| value.text).filter(|text| !text.is_empty())
-                    .unwrap_or(page_labels[index]),
+            let label = authored.map(|value| value.text).filter(|text| !text.is_empty()).unwrap_or(page_labels[index]);
+            let available = (tab.width as usize).saturating_sub(24 * scale);
+            let text_width = self.ui_text_width_weighted(label, 1, true).min(available);
+            self.ui_text_elided_strong(
+                tab.x.max(0) as usize + (tab.width as usize - text_width) / 2,
+                tab.y.max(0) as usize + (tab.height as usize).saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
+                available,
+                label,
                 if active { 242 } else { 166 },
                 if active { 248 } else { 190 },
                 if active { 252 } else { 207 },
-                1,
             );
         }
 
@@ -6376,14 +6392,14 @@ impl super::DisplayDevice {
             outline_b,
             1,
         );
-        self.ui_text_strong(
+        self.ui_text_elided_strong(
             overview_left + 74 * scale,
             overview_top + 39 * scale,
+            (geometry.summary.width as usize).saturating_sub(252 * scale),
             connectivity,
             239,
             246,
             251,
-            2,
         );
         let profile_name: &[u8] = match status.active_profile {
             1 => b"STANDARD",
@@ -6536,8 +6552,7 @@ impl super::DisplayDevice {
             self.ui_text_strong(
                 left + 15 * scale,
                 top + card.height as usize / 2 - UI_FONT_CELL_HEIGHT / 2,
-                authored.map(|value| value.text).filter(|text| !text.is_empty())
-                    .unwrap_or(control_labels[index]),
+                control_labels[index],
                 if active { 240 } else { 190 },
                 if active { 247 } else { 211 },
                 if active { 251 } else { 224 },
@@ -6833,16 +6848,21 @@ impl super::DisplayDevice {
                 b"Unknown applications remain denied.",
             ],
         };
-        for (index, line) in state_lines.iter().enumerate() {
-            self.ui_text(
+        let mut line_top = detail_top + 36 * scale;
+        let line_width = (geometry.sidebar.width as usize).saturating_sub(34 * scale);
+        for line in state_lines.iter() {
+            let lines = self.ui_text_wrapped_line_count(line_width, line, 3).max(1);
+            self.ui_text_wrapped(
                 sidebar_left + 17 * scale,
-                detail_top + (32 + index * 28) * scale,
+                line_top,
+                line_width,
                 line,
                 174,
                 198,
                 215,
-                1,
+                3,
             );
+            line_top += lines * (UI_FONT_CELL_HEIGHT + 4) * self.ui_scale() + 8 * scale;
         }
         if !settings_window.maximized {
             let window = layout.settings_window_geometry(settings_window).window;

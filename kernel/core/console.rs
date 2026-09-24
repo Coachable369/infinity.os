@@ -3674,13 +3674,13 @@ impl ConsoleRuntime {
             .settings_window
             .expanded_row
             .map(|expanded| {
-                layout
+                (layout
                     .settings_row_geometry_for_section(unscrolled, expanded, self.system_focus)
                     .detail
                     .bottom()
                     .saturating_sub(window.viewport.bottom())
-                    .max(0) as usize
-                    / layout.scale().max(1)
+                    .max(0) as usize)
+                    .div_ceil(layout.scale().max(1))
             })
             .unwrap_or(0);
         let maximum_scroll = window.maximum_scroll;
