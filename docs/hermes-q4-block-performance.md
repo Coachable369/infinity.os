@@ -45,8 +45,10 @@ responses instead of reporting a token-limited result as complete.
 Real Hermes complete-response and Ministral forward runs passed against the
 production change. The ARM64 installed kernel also built successfully.
 
-Installer rebuild was stopped before payload staging: only 5.5 GiB free on the
-host. Canonical `builds/InfinityOS-aarch64.iso` remains the previous artifact.
-Allow roughly 25 GiB free for safe staging/publication. Installed-VM validation
-and fresh-install binary/model parity remain pending that rebuild; do not claim
-the installed system has this change yet.
+The initial incremental installer rebuild was stopped for insufficient space.
+The subsequent clean `sh build.sh` completed on September 24, with binary/model
+parity and boot-payload extraction checks passing. Canonical
+`builds/InfinityOS-aarch64.iso` now includes this optimization and both local
+models; `builds/SHA256SUMS` records the fresh set of images. Reproducible staging
+files were reclaimed; VM disks and backups were preserved. Installed-VM latency
+verification remains pending; rebuilding the ISO is not guest performance proof.
