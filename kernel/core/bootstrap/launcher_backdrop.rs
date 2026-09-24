@@ -74,7 +74,7 @@ pub(super) fn capture_clean_stage(display: &DisplayDevice) {
 }
 // ------------------------=
 // FUNC: capture_stage_pixels
-// DESC: Builds the bounded soft stage from either the original desktop or the isolated wallpaper.
+// DESC: Builds an edge-to-edge soft stage from the original desktop or isolated wallpaper.
 // ------------------=
 fn capture_stage_pixels(display: &DisplayDevice, clean: bool) {
     unsafe {
@@ -106,22 +106,10 @@ fn capture_stage_pixels(display: &DisplayDevice, clean: bool) {
                 let sums =
                     columns[x.saturating_sub(8) % 17] + columns[x % 17] + columns[right % 17];
                 let original = *source.add(y * display.stride + x);
-                let edge = if display.width >= 256 {
-                    x.saturating_sub(display.width * 4 / 100)
-                        .min((display.width * 96 / 100).saturating_sub(x))
-                        .min(y.saturating_sub(display.height * 7 / 100))
-                        .min((display.height * 96 / 100).saturating_sub(y))
-                        .saturating_mul(255)
-                        / (display.width / 24).max(1)
-                } else {
-                    255
-                }
-                .min(255) as u32;
                 let mut pixel = original & 0xff000000;
                 for i in 0..3 {
                     let sum = ((sums >> (i * 16)) & 0xffff) as u32;
-                    let source = (original >> (i * 8)) & 255;
-                    pixel |= ((sum / 45 * edge + source * (255 - edge)) / 255) << (i * 8);
+                    pixel |= (sum / 45) << (i * 8);
                 }
                 (*(&raw mut STAGE))[y * display.stride + x] = pixel;
             }

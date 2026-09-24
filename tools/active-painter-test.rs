@@ -212,6 +212,45 @@ fn launcher_backdrop_test() {
     assert!(!launcher_backdrop::restore(&mut display));
 }
 
+#[test]
+// ------------------------=
+// FUNC: spatial_stage_blurs_to_screen_edges
+// DESC: Compares every stage pixel to clamped blur taps and verifies dismissal restores the original.
+// ------------------=
+fn spatial_stage_blurs_to_screen_edges() {
+    let (width, height) = (320usize, 180usize);
+    let mut pixels: Vec<u32> = (0..width * height)
+        .map(|i| if (i % width / 8 + i / width / 8) % 2 == 0 { 0xffffff } else { 0x304050 })
+        .collect();
+    let original = pixels.clone();
+    let mut display = DisplayDevice {
+        buffer: pixels.as_mut_ptr(), width, height, stride: width, format: 0,
+        render_clip: None, fast_motion_frame: false, submissions: 0, recording_surface: false,
+    };
+    launcher_backdrop::invalidate();
+    launcher_backdrop::capture(&display);
+    launcher_backdrop::capture_clean_stage(&display);
+    assert!(launcher_backdrop::restore_stage(&mut display));
+    for y in 0..height {
+        for x in 0..width {
+            let mut expected = 0;
+            for channel in 0..3 {
+                let mut sum = 0;
+                for sy in [y.saturating_sub(8), y, (y + 8).min(height - 1)] {
+                    for sx in [x.saturating_sub(8), x, (x + 8).min(width - 1)] {
+                        sum += (original[sy * width + sx] >> (channel * 8)) & 255;
+                    }
+                }
+                expected |= (sum / 45) << (channel * 8);
+            }
+            assert_eq!(pixels[y * width + x], expected, "pixel {x},{y}");
+        }
+    }
+    assert!(launcher_backdrop::restore(&mut display));
+    assert_eq!(pixels, original);
+    launcher_backdrop::invalidate();
+}
+
 // ------------------------=
 // FUNC: main
 // DESC: Verifies clipped painting against full-render pixels and reports actual painter cost and damage calls.
