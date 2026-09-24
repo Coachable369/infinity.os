@@ -11,7 +11,7 @@ use holographic_card::paint_card;
 // DESC: Checks untouched circle corners, distinct accent pixels, and renders production collection controls for visual review.
 // ------------------=
 fn gravity_collections_render_circular_glass() {
-    let (width, height) = (1200, 320);
+    let (width, height) = (1200, 420);
     let mut pixels = vec![0x201005u32; width * height];
     let mut d = DisplayDevice { buffer:pixels.as_mut_ptr(),width,height,stride:width,
         format:0,render_clip:None,fast_motion_frame:false,submissions:0,recording_surface:false };
@@ -20,6 +20,11 @@ fn gravity_collections_render_circular_glass() {
         assert_eq!(pixels[40*width+30+i*290],0x201005);
         assert_ne!(pixels[45*width+150+i*290],0x201005);
     }
+    d.spatial_glass_action(300,330,260,56,b"+ Add idea",true);
+    d.spatial_glass_action(600,330,260,56,b"New category",false);
+    let primary = pixels[350*width+320];
+    let secondary = pixels[350*width+620];
+    assert!(((primary >> 8) & 255) > ((secondary >> 8) & 255) + 80);
     use std::io::Write;
     let mut file=std::io::BufWriter::new(std::fs::File::create("/tmp/infinity-gravity-controls.ppm").unwrap());
     write!(file,"P6\n{width} {height}\n255\n").unwrap();

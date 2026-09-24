@@ -2,6 +2,36 @@
 use super::*;
 impl DisplayDevice {
     // ------------------------=
+    // FUNC: spatial_glass_action
+    // DESC: Renders spatial controls with a continuous glass gradient and luminous cyan primary state.
+    // ------------------=
+    pub(in super::super) fn spatial_glass_action(
+        &mut self, x: usize, y: usize, width: usize, height: usize,
+        label: &[u8], primary: bool,
+    ) {
+        if width < 32 || height < 16 || self.clipped_render_region(x.saturating_sub(5),y.saturating_sub(5),width+10,height+10).is_none() { return; }
+        let radius = (height/2).min(18);
+        if primary {
+            for spread in (1..=5).rev() {
+                self.outline_rounded_rect(x.saturating_sub(spread),y.saturating_sub(spread),
+                    width+spread*2,height+spread*2,radius+spread,0,30+(5-spread) as u8*14,55+(5-spread) as u8*22);
+            }
+        }
+        for row in 0..height {
+            let dy = if row<radius {radius-row} else if row>=height-radius {row-(height-radius-1)} else {0};
+            let mut inset = 0;
+            while inset<radius && (radius-inset)*(radius-inset)+dy*dy>radius*radius {inset+=1;}
+            let t = row*255/height;
+            let (r,g,b) = if primary {(3, (199-t*75/255) as u8, (250-t*22/255) as u8)}
+                else {((20-t*12/255) as u8,(42-t*23/255) as u8,(65-t*31/255) as u8)};
+            self.fill_rect(x+inset,y+row,width.saturating_sub(inset*2),1,r,g,b);
+        }
+        let edge = if primary {(102,231,255)} else {(78,111,142)};
+        self.outline_rounded_rect(x,y,width,height,radius,edge.0,edge.1,edge.2);
+        self.ui_text_centered_strong(x,width,y+height.saturating_sub(UI_FONT_CELL_HEIGHT)/2,label,236,248,255,1);
+    }
+
+    // ------------------------=
     // FUNC: gravity_collection
     // DESC: Paints a circular kit collection with concentric glass rims, accent lighting and centered live labels.
     // ------------------=
@@ -9,6 +39,7 @@ impl DisplayDevice {
         &mut self, x: usize, y: usize, width: usize, height: usize,
         label: &[u8], count: usize, index: usize, selected: bool,
     ) {
+        if width < 32 || height < 32 || self.clipped_render_region(x,y,width,height).is_none() { return; }
         let size = width.min(height);
         let left = x + (width - size) / 2;
         let top = y + (height - size) / 2;
@@ -24,6 +55,21 @@ impl DisplayDevice {
                     if dx*dx + dy*dy < radius*radius {
                         let alpha = ((radius-dy) * 22 / (radius*2)) as u8;
                         self.blend_color((left+size/2) as i32+dx,(top+size/2) as i32+dy,r,g,b,alpha);
+                    }
+                }
+            }
+            // Refractive rim and two asymmetric specular highlights are cached
+            // with the collection surface rather than animated by repainting it.
+            let radius = size as i32 / 2 - 4;
+            for dy in -radius..=radius {
+                for dx in -radius..=radius {
+                    let distance = (dx*dx + dy*dy - radius*radius).abs() / (2*radius);
+                    if distance < 7 {
+                        let alpha = ((7-distance)*if selected {26}else{18}).min(255) as u8;
+                        self.blend_color((left+size/2) as i32+dx,(top+size/2) as i32+dy,r,g,b,alpha);
+                        if (dx+dy).abs()<radius/5 && dy<0 {
+                            self.blend_color((left+size/2) as i32+dx,(top+size/2) as i32+dy,224,247,255,alpha);
+                        }
                     }
                 }
             }

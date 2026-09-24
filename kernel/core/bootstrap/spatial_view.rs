@@ -159,7 +159,11 @@ pub fn refresh_end() {
             c.display.clear_render_clip();
             launcher_backdrop::capture(&c.display);
             c.display.paint_desktop_background();
-            launcher_backdrop::capture_clean_stage(&c.display);
+            if LAST_TAB >= 2 && LAST_TAB != usize::MAX {
+                launcher_backdrop::capture_wallpaper_stage(&c.display);
+            } else {
+                launcher_backdrop::capture_clean_stage(&c.display);
+            }
         }
     }
     REFRESHING.store(false, core::sync::atomic::Ordering::Relaxed);
@@ -515,7 +519,7 @@ pub fn present(
                 if switcher || tab == 1 { break; }
                 let (a,b,w,h)=crate::ui::spatial::spatial_tab(i,shelf);
                 let p = rect(a,b,w,h);
-                d.glass_label_pill(p.0, p.1, p.2, p.3, label, tab == i + 2);
+                d.spatial_glass_action(p.0, p.1, p.2, p.3, label, tab == i + 2);
             }
             if !shelf && tab != 2 {
                 let p = rect(80, 212, 840, 30);
@@ -671,6 +675,11 @@ pub fn present(
                         );
                     }
                     d.spatial_light(center.0 as i32, center.1 as i32, (dh / 24).max(8) as i32);
+                    let phase = if state.reduced_motion { 0 } else {
+                        (crate::ui::performance::monotonic_ns().unwrap_or(0) / 34_000_000) as u8
+                    };
+                    d.spatial_orbit(center.0,center.1,dh/14,dh/32,phase,true);
+                    d.spatial_orbit(center.0,center.1,dh/25,dh/14,255-phase,false);
                     d.icon_circle(
                         center.0 as i32,
                         center.1 as i32,
@@ -879,7 +888,7 @@ pub fn present(
                         rect(80 + i * 210, 805, 190, 48)
                     };
                     if tab == 2 {
-                        d.glass_label_pill(p.0,p.1,p.2,p.3,label,i==0);
+                        d.spatial_glass_action(p.0,p.1,p.2,p.3,label,i==0);
                     } else {
                         d.polished_button(p.0, p.1, p.2, p.3, label, false, false);
                     }
