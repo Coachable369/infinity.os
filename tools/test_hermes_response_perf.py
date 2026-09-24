@@ -12,6 +12,14 @@ SPEC.loader.exec_module(PERF)
 
 class TimingReceiptTests(unittest.TestCase):
     # ------------------------=
+    # FUNC: test_single_token_has_no_decode_rate
+    # DESC: Keeps zero-length decode intervals distinct from measured speedups.
+    # ------------------=
+    def test_single_token_has_no_decode_rate(self):
+        self.assertIsNone(PERF.speed_ratio(0, 0))
+        self.assertEqual(PERF.speed_ratio(30, 20), 1.5)
+
+    # ------------------------=
     # FUNC: test_binary_metrics_and_output_boundaries
     # DESC: Verifies numeric timing, content bytes and malformed receipt rejection without any console-text oracle.
     # ------------------=

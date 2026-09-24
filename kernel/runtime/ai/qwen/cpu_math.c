@@ -43,7 +43,7 @@ static int qwen_dotprod_available(void) {
 
 // ------------------------=
 // FUNC: qwen_quantize_q8
-// DESC: Quantizes one activation vector into per-block Q8 values for fused Q4_K dot products.
+// DESC: Quantizes one activation vector for fused K-quant dots; optional Q4 offset totals are skipped for Q6.
 // ------------------=
 static void qwen_quantize_q8(const float *input,size_t width,int8_t *values,float *scales,float *totals) {
     for(size_t block=0;block<width/256;block++) {
@@ -68,7 +68,7 @@ static void qwen_quantize_q8(const float *input,size_t width,int8_t *values,floa
             int16x8_t high=vcombine_s16(vqmovn_s32(c),vqmovn_s32(d));
             vst1q_s8(values+block*256+lane,vcombine_s8(vqmovn_s16(low),vqmovn_s16(high)));
         }
-        for(unsigned g=0;g<8;g++) {
+        for(unsigned g=0;totals && g<8;g++) {
             const int8_t *xq=values+block*256+g*32;
             totals[block*8+g]=(float)(vaddlvq_s8(vld1q_s8(xq))+vaddlvq_s8(vld1q_s8(xq+16)));
         }
@@ -123,12 +123,51 @@ static void qwen_q4_q8_rows(const uint8_t *data,const int8_t *input,const float 
         output[row]=sum;
     }
 }
+// ------------------------=
+// FUNC: qwen_q6_q8_rows
+// DESC: Fuses Q6 decoding with bounded Q8 activation integer dots without materializing float tensors.
+// ------------------=
+__attribute__((target("dotprod")))
+static void qwen_q6_q8_rows(const uint8_t *data,const int8_t *input,const float *scales,
+                           size_t width,size_t rows,float *output) {
+    size_t stride=width/256*210;
+    for(size_t row=0;row<rows;row++) {
+        float sum=0;
+        for(size_t block=0;block<width/256;block++) {
+            const uint8_t *p=data+row*stride+block*210;
+            const int8_t *x=input+block*256;
+            int32x4_t total=vdupq_n_s32(0);
+            for(unsigned part=0;part<2;part++) for(unsigned g=0;g<4;g++) {
+                for(unsigned lane=0;lane<32;lane+=16) {
+                    uint8x16_t lo=vld1q_u8(p+part*64+(g%2)*32+lane);
+                    uint8x16_t hi=vld1q_u8(p+128+part*32+lane);
+                    lo=g<2?vandq_u8(lo,vdupq_n_u8(15)):vshrq_n_u8(lo,4);
+                    hi=vandq_u8(vshlq_u8(hi,vdupq_n_s8(-(int)(g*2))),vdupq_n_u8(3));
+                    int8x16_t q=vsubq_s8(vreinterpretq_s8_u8(vorrq_u8(lo,vshlq_n_u8(hi,4))),vdupq_n_s8(32));
+                    int32x4_t dot=vdotq_s32(vdupq_n_s32(0),q,vld1q_s8(x+part*128+g*32+lane));
+                    total=vaddq_s32(total,vmulq_n_s32(dot,(int8_t)p[192+part*8+g*2+lane/16]));
+                }
+            }
+            sum+=(float)vaddvq_s32(total)*qwen_half(p+208)*scales[block];
+        }
+        output[row]=sum;
+    }
+}
 #endif
 // ------------------------=
 // FUNC: infinity_qwen_dot
 // DESC: Fuses K-quant decoding with CPU floating-point dot products through a pointer-only ABI.
 // ------------------=
 void infinity_qwen_dot(uint32_t kind,const uint8_t *data,const float *input,size_t width,float *output) {
+#if defined(__aarch64__) && !defined(QWEN_SCALAR) && !defined(QWEN_EXACT_Q6)
+    if(kind==14 && width<=QWEN_MAX_WIDTH && qwen_dotprod_available()) {
+        int8_t quantized[QWEN_MAX_WIDTH];
+        float scales[QWEN_MAX_WIDTH/256];
+        qwen_quantize_q8(input,width,quantized,scales,0);
+        qwen_q6_q8_rows(data,quantized,scales,width,1,output);
+        return;
+    }
+#endif
     float sums[4]={0,0,0,0};
 #if defined(__aarch64__) && !defined(QWEN_SCALAR)
     float32x4_t accum=vdupq_n_f32(0);
@@ -189,17 +228,22 @@ void infinity_qwen_dot(uint32_t kind,const uint8_t *data,const float *input,size
 
 // ------------------------=
 // FUNC: infinity_qwen_dot_rows
-// DESC: Interleaves four independent rows, reusing activations while preserving each row's floating-point accumulation order.
+// DESC: Dispatches shared-activation integer dots on capable ARM CPUs, retaining exact floating-point fallback kernels.
 // ------------------=
 void infinity_qwen_dot_rows(uint32_t kind,const uint8_t *data,const float *input,size_t width,size_t rows,float *output) {
     size_t stride=width/256*(kind==12?144:210),row=0;
 #if defined(__aarch64__) && !defined(QWEN_SCALAR)
-    if(kind==12 && width<=QWEN_MAX_WIDTH && qwen_dotprod_available()) {
+    if((kind==12
+#ifndef QWEN_EXACT_Q6
+        || kind==14
+#endif
+        ) && width<=QWEN_MAX_WIDTH && qwen_dotprod_available()) {
         int8_t quantized[QWEN_MAX_WIDTH];
         float scales[QWEN_MAX_WIDTH/256];
         float totals[QWEN_MAX_WIDTH/32];
-        qwen_quantize_q8(input,width,quantized,scales,totals);
-        qwen_q4_q8_rows(data,quantized,scales,totals,width,rows,output);
+        qwen_quantize_q8(input,width,quantized,scales,kind==12?totals:0);
+        if(kind==14) qwen_q6_q8_rows(data,quantized,scales,width,rows,output);
+        else qwen_q4_q8_rows(data,quantized,scales,totals,width,rows,output);
         return;
     }
 #endif

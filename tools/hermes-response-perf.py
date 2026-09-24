@@ -26,6 +26,14 @@ def read_result(path):
 
 
 # ------------------------=
+# FUNC: speed_ratio
+# DESC: Reports no decode speedup when a one-token response has no steady-state interval.
+# ------------------=
+def speed_ratio(before, after):
+    return before / after if after > 0 else None
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Alternates baseline and candidate with identical prompts and fresh caches, comparing complete binary generated results before reporting medians.
 # ------------------=
@@ -62,7 +70,7 @@ def main():
     result = {"boundary": "controlled native ARM64 host; not installed guest timing",
               "trials": args.trials, "samples": samples, "medians": medians,
               "identical_generated_bytes": True,
-              "speedups": {key: medians["baseline"][key] / medians["candidate"][key]
+              "speedups": {key: speed_ratio(medians["baseline"][key], medians["candidate"][key])
                            for key in medians["baseline"]}}
     (args.output / "result.json").write_text(json.dumps(result, indent=2))
     print(json.dumps(result["speedups"]), flush=True)
