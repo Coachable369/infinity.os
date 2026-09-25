@@ -193,26 +193,47 @@ impl super::DisplayDevice {
         }
         let t = g.toggle;
         let shadow_x = if g.tab_left {
-            t.x - 3 * s as i32
+            t.x - 2 * s as i32
         } else {
-            t.x + 3 * s as i32
+            t.x + 2 * s as i32
         };
         self.fill_rounded_rect_alpha(
             shadow_x.max(0) as usize,
-            (t.y + 3 * s as i32).max(0) as usize,
+            (t.y + 4 * s as i32).max(0) as usize,
             t.width as usize,
             t.height as usize,
-            13 * s,
+            9 * s,
             0,
             6,
             14,
-            150,
+            118,
         );
-        self.app_card(
-            t,
-            if panel.expanded { (10, 27, 43) } else { (9, 34, 54) },
-            if panel.expanded { (56, 125, 158) } else { (42, 184, 219) },
-            s,
+        let body_x = if g.tab_left {
+            t.x
+        } else {
+            t.x + 3 * s as i32
+        };
+        let body_width = t.width.saturating_sub(3 * s as u32);
+        self.fill_rounded_rect_alpha(
+            body_x.max(0) as usize,
+            t.y.max(0) as usize,
+            body_width as usize,
+            t.height as usize,
+            8 * s,
+            if panel.expanded { 8 } else { 7 },
+            if panel.expanded { 25 } else { 31 },
+            if panel.expanded { 40 } else { 49 },
+            238,
+        );
+        self.outline_rounded_rect(
+            body_x.max(0) as usize,
+            t.y.max(0) as usize,
+            body_width as usize,
+            t.height as usize,
+            8 * s,
+            if panel.expanded { 83 } else { 45 },
+            if panel.expanded { 154 } else { 190 },
+            if panel.expanded { 182 } else { 222 },
         );
         let seam_x = if g.tab_left {
             t.right() - 2 * s as i32
@@ -228,13 +249,29 @@ impl super::DisplayDevice {
             210,
             241,
         );
+        let notch_y = t.y + (t.height / 2) as i32 - 10 * s as i32;
+        self.fill_rect(
+            if g.tab_left {
+                t.right() - 8 * s as i32
+            } else {
+                t.x + 6 * s as i32
+            }
+            .max(0) as usize,
+            notch_y.max(0) as usize,
+            2 * s,
+            20 * s,
+            28,
+            82,
+            111,
+        );
         if panel.expanded {
             self.app_symbol(t, b'x', TEXT, s);
         } else {
+            let mark_offset = if g.tab_left { 9 } else { 10 };
             self.app_ai_mark(Rect {
-                x: t.x + 8 * s as i32,
+                x: t.x + mark_offset * s as i32,
                 y: t.y + 10 * s as i32,
-                width: 24 * s as u32,
+                width: 22 * s as u32,
                 height: 30 * s as u32,
             });
             self.app_label(

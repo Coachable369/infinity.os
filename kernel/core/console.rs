@@ -2357,6 +2357,9 @@ impl ConsoleRuntime {
     // DESC: Submits one chat turn and durably checkpoints any semantic-memory change.
     // ------------------=
     fn submit_ai_chat_input(&mut self) {
+        if !self.ai_chat_allowed() {
+            return;
+        }
         let memory = crate::runtime::ai::with_ai_runtime(|runtime| {
             if !runtime.submit_chat() {
                 return None;
@@ -2421,6 +2424,79 @@ impl ConsoleRuntime {
         if changed {
             self.persist_ai_chat_preferences();
         }
+    }
+
+    // ------------------------=
+    // FUNC: ai_chat_allowed
+    // DESC: Reads the authenticated user's durable desktop AI chat grant before widget actions run.
+    // ------------------=
+    fn ai_chat_allowed(&self) -> bool {
+        crate::runtime::with_runtime(|runtime| {
+            runtime
+                .identity
+                .ai_profile(self.current_user)
+                .map(|profile| profile.chat_enabled)
+        })
+        .flatten()
+        .unwrap_or(false)
+    }
+
+    // ------------------------=
+    // FUNC: voice_microphone_allowed
+    // DESC: Reads the authenticated user's durable voice and microphone grant for the desktop AI widget.
+    // ------------------=
+    fn voice_microphone_allowed(&self) -> bool {
+        crate::runtime::with_runtime(|runtime| {
+            runtime
+                .identity
+                .voice_profile(self.current_user)
+                .map(|profile| {
+                    profile.enabled
+                        && profile.activation
+                            != crate::runtime::identity::VoiceActivation::Disabled
+                })
+        })
+        .flatten()
+        .unwrap_or(false)
+    }
+
+    // ------------------------=
+    // FUNC: set_voice_microphone_enabled
+    // DESC: Persists the user's desktop voice and microphone grant and stops capture when revoked.
+    // ------------------=
+    fn set_voice_microphone_enabled(&mut self, enabled: bool) {
+        #[cfg(all(target_os = "none", target_arch = "aarch64"))]
+        if !enabled {
+            crate::runtime::ai::voice_conversation::stop(
+                crate::runtime::execution::SecurityIdentity(self.current_session.0),
+            );
+        }
+        let activation = if enabled {
+            crate::runtime::identity::VoiceActivation::PushToTalk
+        } else {
+            crate::runtime::identity::VoiceActivation::Disabled
+        };
+        let user = self.current_user;
+        let updated = crate::runtime::with_runtime(|runtime| {
+            runtime
+                .identity
+                .update_voice_profile(user, user, enabled, activation)
+        })
+        .transpose()
+        .is_ok();
+        if updated {
+            let _ = crate::runtime::persist_identity_state();
+            self.redraw();
+        }
+    }
+
+    // ------------------------=
+    // FUNC: toggle_voice_microphone
+    // DESC: Flips the durable voice and microphone grant from Settings using the current user profile.
+    // ------------------=
+    fn toggle_voice_microphone(&mut self) {
+        let enabled = self.voice_microphone_allowed();
+        self.set_voice_microphone_enabled(!enabled);
     }
 
     // ------------------------=
@@ -4644,6 +4720,7 @@ impl ConsoleRuntime {
                 self.set_ai_chat_enabled(!enabled);
             }
             (3, 2) => self.select_next_chat_model(),
+            (3, 4 | 5) | (4, 1) => self.toggle_voice_microphone(),
             (4, 3) => self.cycle_user_no_activity_timeout(),
             (6, profile @ 0..=4) => {
                 let profile_id = profile as u32 + 1;
@@ -7309,7 +7386,7 @@ impl ConsoleRuntime {
                     let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
                     if rect.contains(point){
                         let owner=crate::runtime::execution::SecurityIdentity(self.current_session.0);
-                        if matches!(voice_conversation::state().0,State::Off|State::Failed){voice_conversation::start(owner);}else{voice_conversation::stop(owner);}
+                        if self.voice_microphone_allowed() && matches!(voice_conversation::state().0,State::Off|State::Failed){voice_conversation::start(owner);}else{voice_conversation::stop(owner);}
                         self.redraw();return;
                     }
                 }

@@ -5409,6 +5409,21 @@ impl super::DisplayDevice {
                 } else { b"Local model unavailable".as_slice() },
             )
         });
+        let voice_enabled = crate::runtime::with_runtime(|runtime| {
+            (0..crate::runtime::identity::MAX_SESSIONS)
+                .filter_map(|index| runtime.identity.session_nth(index))
+                .find(|session| {
+                    session.state == crate::runtime::identity::SessionState::Active
+                })
+                .and_then(|session| runtime.identity.voice_profile(session.user))
+                .map(|profile| {
+                    profile.enabled
+                        && profile.activation
+                            != crate::runtime::identity::VoiceActivation::Disabled
+                })
+        })
+        .flatten()
+        .unwrap_or(false);
         if focus == 6 {
             self.intersect_render_clip(
                 geometry.viewport.x.max(0) as usize,
@@ -5509,14 +5524,14 @@ impl super::DisplayDevice {
                 ),
                 (b"Chat Model", chat_model),
                 (b"Remote Processing", b"Off"),
-                (b"Voice", b"Off"),
-                (b"Activation", b"Disabled"),
+                (b"Voice", if voice_enabled { b"Granted" } else { b"Restricted" }),
+                (b"Activation", if voice_enabled { b"Push to talk" } else { b"Disabled" }),
                 (b"Model Access", b"Capability gated"),
                 (b"", b""),
             ],
             4 => [
                 (b"Ambient Authority", b"Denied"),
-                (b"Microphone", b"Not granted"),
+                (b"Microphone", if voice_enabled { b"Granted" } else { b"Restricted" }),
                 (b"Remote AI", b"Denied"),
                 (b"No Activity Timeout", input),
                 (b"Trusted UI", b"Active"),
@@ -5923,11 +5938,11 @@ impl super::DisplayDevice {
                         (2, 3) => b"Personal Space isolates this user's objects and preferences.",
                         (2, 4) => b"The user profile persists with the installed system.",
                         (3, 3) => b"Remote processing is disabled; local inference stays on this device.",
-                        (3, 4) => b"Microphone access is not enabled for this session.",
-                        (3, 5) => b"Voice activation is disabled; chat accepts typed requests.",
+                        (3, 4) => b"Microphone access follows the current user permission.",
+                        (3, 5) => b"Voice activation follows the current user permission.",
                         (3, 6) => b"Model operations remain subject to capability enforcement.",
                         (4, 0) => b"Applications receive no implicit authority over your data.",
-                        (4, 1) => b"No microphone capability has been granted here.",
+                        (4, 1) => b"Microphone access is explicitly granted or restricted here.",
                         (4, 2) => b"Remote AI access requires explicit capability authorization.",
                         (4, 3) => {
                             b"Lock this user's session after the selected period without input."
@@ -5958,6 +5973,7 @@ impl super::DisplayDevice {
                         (3, 0) => Some(b"CHANGE POLICY"),
                         (3, 1) => Some(if chat_enabled { b"DISABLE CHAT" } else { b"ENABLE CHAT" }),
                         (3, 2) => Some(b"NEXT MODEL"),
+                        (3, 4) | (3, 5) | (4, 1) => Some(if voice_enabled { b"RESTRICT" } else { b"GRANT" }),
                         _ => None,
                     };
                     if let Some(action) = action {
@@ -9663,6 +9679,21 @@ impl super::DisplayDevice {
         if !chat.enabled() {
             return;
         }
+        let voice_enabled = crate::runtime::with_runtime(|runtime| {
+            (0..crate::runtime::identity::MAX_SESSIONS)
+                .filter_map(|index| runtime.identity.session_nth(index))
+                .find(|session| {
+                    session.state == crate::runtime::identity::SessionState::Active
+                })
+                .and_then(|session| runtime.identity.voice_profile(session.user))
+                .map(|profile| {
+                    profile.enabled
+                        && profile.activation
+                            != crate::runtime::identity::VoiceActivation::Disabled
+                })
+        })
+        .flatten()
+        .unwrap_or(false);
         let layout = crate::ui::system_layout::SystemLayout::new(self.width, self.height);
         let geometry = layout.ai_chat_geometry(chat.minimized());
         let left = geometry.panel.x.max(0) as usize;
@@ -9712,13 +9743,15 @@ impl super::DisplayDevice {
         #[cfg(all(target_os="none",target_arch="aarch64"))]
         let state = {
             use crate::runtime::ai::voice_conversation::{state,State};
-            match state().0 {
+            if !voice_enabled {
+                b"VOICE OFF".as_slice()
+            } else { match state().0 {
                 State::Off if chat.generation_state==crate::runtime::ai::chat::GenerationState::Running=>b"Thinking...".as_slice(),
                 State::Off=>b"VOICE OFF".as_slice(),State::Listening=>b"LISTEN".as_slice(),
                 State::Recognizing=>b"HEARING".as_slice(),State::Thinking=>b"THINKING".as_slice(),
                 State::Speaking=>b"SPEAKING".as_slice(),State::Stopping=>b"STOPPING".as_slice(),
                 State::Failed=>b"UNAVAILABLE".as_slice(),
-            }
+            }}
         };
         let state_width = self.ui_text_width(state, 1);
         let thinking = chat.generation_state == crate::runtime::ai::chat::GenerationState::Running
@@ -9731,7 +9764,7 @@ impl super::DisplayDevice {
             let region=indicator::control(geometry.panel,scale);
             self.outline_rounded_rect(region.x.max(0)as usize,region.y.max(0)as usize,region.width as usize,region.height as usize,8*scale,46,107,137);
             let (voice,level)=state();
-            if voice==State::Listening{
+            if voice_enabled && voice==State::Listening{
                 let x=region.x+6*scale as i32;
                 let y=top as i32+23*scale as i32;
                 let available=(state_x as i32-x-6*scale as i32).max(0)as usize;

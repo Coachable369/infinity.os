@@ -691,6 +691,27 @@ fn desktop_chat() {
     let user = identities
         .create_user(b"chat-user", b"Chat User", 1)
         .unwrap();
+    let voice = identities.voice_profile(user.id).unwrap();
+    assert!(voice.enabled);
+    assert_eq!(
+        voice.activation,
+        runtime::identity::VoiceActivation::PushToTalk
+    );
+    identities
+        .update_voice_profile(
+            user.id,
+            user.id,
+            false,
+            runtime::identity::VoiceActivation::Disabled,
+        )
+        .unwrap();
+    let restored = runtime::identity::IdentitySystem::decode(&identities.encode()).unwrap();
+    let voice = restored.voice_profile(user.id).unwrap();
+    assert!(!voice.enabled);
+    assert_eq!(
+        voice.activation,
+        runtime::identity::VoiceActivation::Disabled
+    );
     identities
         .update_ai_chat_preferences(user.id, user.id, false, 3)
         .unwrap();

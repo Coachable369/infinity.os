@@ -527,8 +527,8 @@ impl IdentitySystem {
         self.ai_memories[slot] = AiMemory::new();
         self.voice_profiles[slot] = Some(VoiceProfile {
             user: user_id,
-            enabled: false,
-            activation: VoiceActivation::Disabled,
+            enabled: true,
+            activation: VoiceActivation::PushToTalk,
         });
         self.ownership[slot] = Some(PersonalSpaceOwnership {
             owner: user_id,
@@ -1891,7 +1891,7 @@ fn read_user(
     };
     let voice = VoiceProfile {
         user: id,
-        enabled: input[at + 158] != 0,
+        enabled: input[at + 158] & 1 != 0,
         activation: if input[at + 159] == 2 {
             VoiceActivation::PushToTalk
         } else {
