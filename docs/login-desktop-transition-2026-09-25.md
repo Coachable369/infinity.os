@@ -25,8 +25,10 @@ playback, and other owners' playback is not interrupted.
 - `make authentication-motion-test`: two behavioral tests for drop, ripple,
   black handoff, gated completion, delayed frames, monotonic opacity, and packed
   pixel fade endpoints.
-- System-sound asset and resident HDA DMA checks are run separately; they do
-  not establish visible or audible success in the user's installed VirtualBox.
+- `make system-sound-test audio-hardware-test` passed. The login PCM asset
+  contains 87,772 frames (5.485 seconds). QEMU resident DMA emitted a 439.85 Hz
+  test tone for 1.998 seconds without scheduler refills. This checks the resident
+  playback mechanism, not listening to the login cue in installed VirtualBox.
 - Installed visual smoothness and uninterrupted login-cue listening still need
   VM verification. Do not treat compilation or mathematical timing as that proof.
 
