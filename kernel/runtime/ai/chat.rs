@@ -12,6 +12,14 @@ pub const INTENT_ASSISTANT_MODEL_ID: ModelId = super::model::LOCAL_INTENT_MODEL_
 pub const MINISTRAL_MODEL_ID: ModelId = 0x4149_1004;
 pub const HERMES_MODEL_ID: ModelId = 0x4149_1005;
 
+// ------------------------=
+// FUNC: response_line_height
+// DESC: Matches scale-one chat glyph height with a compact baseline gap, independent of desktop geometry scaling.
+// ------------------=
+pub const fn response_line_height(cell_height: usize, font_pixels: usize, atlas_pixels: usize) -> usize {
+    cell_height * font_pixels / if atlas_pixels == 0 { 1 } else { atlas_pixels } + 2
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GenerationState {
     Ready,
@@ -289,6 +297,9 @@ impl ChatRuntime {
         } else {
             self.push(ChatMessage::new(ChatRole::Assistant, bytes));
         }
+        // Request bottom-following before the renderer measures the new text.
+        // Manual history scrolling remains available between response updates.
+        self.scroll_timeline_to_end();
     }
 
     // ------------------------=

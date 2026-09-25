@@ -9858,7 +9858,10 @@ impl super::DisplayDevice {
         } else {
             let bubble_width = timeline_width.saturating_sub(43 * scale);
             let text_width = bubble_width.saturating_sub(20 * scale);
-            let line_height = (UI_FONT_CELL_HEIGHT + 1) * scale;
+            // Chat glyphs below use font scale 1, independently of the desktop
+            // geometry scale. Scaling their baseline twice creates blank rows.
+            let line_height = crate::runtime::ai::chat::response_line_height(
+                UI_FONT_CELL_HEIGHT, UI_FONT_SIZE_PX, UI_FONT_NATIVE_SIZE_PX);
             let vertical_padding = 12 * scale;
             let message_gap = 7 * scale;
             let viewport_padding = 7 * scale;

@@ -554,6 +554,8 @@ fn services_and_events() {
 // DESC: Verifies bounded conversation, real model selection, session minimization, and enablement behavior.
 // ------------------=
 fn desktop_chat() {
+    assert_eq!(runtime::ai::chat::response_line_height(28, 24, 24), 30);
+    assert_eq!(runtime::ai::chat::response_line_height(28, 30, 24), 37);
     let mut turns = ChatRuntime::new();
     assert_eq!(turns.set_timeline_scroll_metrics(600), 600);
     assert_eq!(turns.timeline_maximum_scroll(), 600);
@@ -563,6 +565,13 @@ fn desktop_chat() {
     assert!(turns.scroll_timeline(2_000));
     assert_eq!(turns.timeline_scroll_offset(), 900);
     assert_eq!(turns.set_timeline_scroll_metrics(120), 120);
+    assert!(turns.scroll_timeline(-100));
+    turns.update_native_response(b"New response\r\nwith another line");
+    assert_eq!(turns.set_timeline_scroll_metrics(500), 500);
+    assert!(turns.scroll_timeline(-50));
+    assert_eq!(turns.set_timeline_scroll_metrics(500), 450);
+    turns.update_native_response(b"The response grows while receiving text");
+    assert_eq!(turns.set_timeline_scroll_metrics(800), 800);
     let initial_turn = turns.turn_id();
     assert!(!turns.submit(b""));
     assert_eq!(turns.turn_id(), initial_turn);

@@ -4,9 +4,18 @@
 // DESC: Converts bounded 16-kHz mono speech to negotiated HDA stereo, padding only the final DMA block with silence.
 // ------------------=
 pub fn fill(input: &[i16], output: &mut [i16], start: usize, rate: u32) -> bool {
-    if !matches!(rate, 44_100 | 48_000) || output.len() % 2 != 0 || input.len() > 480_000 || start > 1_500_000 { return false; }
+    fill_rate(input, output, start, 16_000, rate)
+}
+
+// ------------------------=
+// FUNC: fill_rate
+// DESC: Converts bounded 16/24-kHz mono speech at its true source rate without changing pitch or duration.
+// ------------------=
+pub fn fill_rate(input: &[i16], output: &mut [i16], start: usize, source_rate: u32, rate: u32) -> bool {
+    if !matches!(source_rate, 16_000 | 24_000) || !matches!(rate, 44_100 | 48_000)
+        || output.len() % 2 != 0 || input.len() > source_rate as usize * 30 || start > 1_500_000 { return false; }
     for (i, pair) in output.chunks_exact_mut(2).enumerate() {
-        let phase = (start + i) as u64 * 16000;
+        let phase = (start + i) as u64 * source_rate as u64;
         let index = (phase / rate as u64) as usize;
         let fraction = (phase % rate as u64) as i64;
         let a = input.get(index).copied().unwrap_or(0) as i64;
@@ -19,6 +28,29 @@ pub fn fill(input: &[i16], output: &mut [i16], start: usize, rate: u32) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: neural_voice_rate_preserves_duration_and_chunk_phase
+    // DESC: Verifies 24-kHz waveform sample positions, stereo duplication and chunk invariance at both HDA rates.
+    // ------------------=
+    #[test]
+    fn neural_voice_rate_preserves_duration_and_chunk_phase() {
+        let input = [0, 1000, 2000, 3000, 4000, 5000];
+        for rate in [44_100, 48_000] {
+            let mut whole = [0; 80];
+            let mut chunks = [0; 80];
+            assert!(fill_rate(&input, &mut whole, 0, 24_000, rate));
+            for (i, chunk) in chunks.chunks_mut(10).enumerate() {
+                assert!(fill_rate(&input, chunk, i * 5, 24_000, rate));
+            }
+            assert_eq!(whole, chunks);
+            assert!(whole.chunks_exact(2).all(|p| p[0] == p[1]));
+            assert!(whole[24..].iter().all(|s| *s == 0));
+            if rate == 48_000 { assert_eq!(&whole[..8], &[0,0,500,500,1000,1000,1500,1500]); }
+        }
+        let mut output = [123; 4];
+        assert!(!fill_rate(&input, &mut output, 0, 22_050, 48_000));
+        assert_eq!(output, [123; 4]);
+    }
     // ------------------------=
     // FUNC: chunking_extrema_and_tail
     // DESC: Verifies phase continuity, identical stereo channels, extreme-amplitude arithmetic and tail silence.
