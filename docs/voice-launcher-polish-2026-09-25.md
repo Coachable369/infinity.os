@@ -45,6 +45,10 @@ console launcher input path; these are behavioral tests, not screenshot QA.
 
 The native recognizer and launcher are linked into both live and installed
 kernels through the existing model-inclusive build. No new optional payload
-component or host inference dependency was introduced. A fresh ARM64 installer
-build is required after these changes; installed VM interaction is not yet
-verified for this revision.
+component or host inference dependency was introduced. `sh tools/build-hermes.sh`
+completed successfully after these changes. The fresh installer is
+`builds/InfinityOS-aarch64.iso` (5,503,328,256 bytes), SHA-256
+`8f1affe853f78668c1a9264ca469c3c233f5f004d444013931d6bf7cb2cfc3c5`.
+Binary installed-kernel, loader, and speech-model parity passed. Installed VM
+interaction is not yet verified for this revision. Other architecture ISOs
+were not rebuilt.
