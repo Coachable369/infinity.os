@@ -488,100 +488,38 @@ impl super::DisplayDevice {
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     // ------------------------=
-    // FUNC: authentication_integer_sqrt
-    // DESC: Resolves one bounded integer square root for the low-cost water ellipse rasterizer.
+    // FUNC: authentication_success_frame_region
+    // DESC: Restores and composites one non-interface portion of an authentication-success keyframe.
     // ------------------=
-    fn authentication_integer_sqrt(value: u64) -> u32 {
-        if value == 0 {
-            return 0;
-        }
-        let mut estimate = value;
-        let mut next = (estimate + value / estimate) / 2;
-        while next < estimate {
-            estimate = next;
-            next = (estimate + value / estimate) / 2;
-        }
-        estimate as u32
-    }
-
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    // ------------------------=
-    // FUNC: authentication_ripple_vector
-    // DESC: Draws three luminous elliptical water crests without alpha-resampling a full rectangular sprite.
-    // ------------------=
-    fn authentication_ripple_vector(
-        &mut self,
-        center_x: i32,
-        center_y: i32,
-        width: usize,
-        height: usize,
-        opacity: u8,
-    ) {
-        if width < 8 || height < 4 || opacity == 0 {
-            return;
-        }
-        for inset in [0usize, 10, 22] {
-            let ring_width = width.saturating_sub(inset * 2).max(8);
-            let ring_height = height.saturating_sub(inset).max(4);
-            let radius_x = (ring_width / 2).max(1) as i32;
-            let radius_y = (ring_height / 2).max(1) as i32;
-            let ring_opacity = opacity.saturating_sub((inset * 5) as u8);
-            let radius_x_squared = (radius_x as i64 * radius_x as i64) as u64;
-            for x in -radius_x..=radius_x {
-                let remaining = radius_x_squared.saturating_sub((x as i64 * x as i64) as u64);
-                let root = Self::authentication_integer_sqrt(remaining) as i64;
-                let y = (root * radius_y as i64 / radius_x as i64) as i32;
-                for thickness in -1..=1 {
-                    for point_y in [center_y - y + thickness, center_y + y + thickness] {
-                        self.blend_color(
-                            center_x + x,
-                            point_y,
-                            84,
-                            213,
-                            255,
-                            ring_opacity,
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-    // ------------------------=
-    // FUNC: authentication_success_frame
-    // DESC: Composites one bounded orb-drop, impact-crown, and dual-ripple success keyframe over clean water.
-    // ------------------=
-    fn authentication_success_frame(
+    fn authentication_success_frame_region(
         &mut self,
         presentation: crate::ui::authentication_motion::Presentation,
+        left: usize,
+        top: usize,
+        right: usize,
+        bottom: usize,
+        offset_y: i32,
+        scale: usize,
+        center_x: i32,
+        water_y: i32,
     ) {
-        if self.skin_visual_mode() != 0 {
+        if left >= right || top >= bottom {
             return;
         }
-        let (offset_x, offset_y, scale) = self.authentication_art_geometry();
-        // Only the orb's narrow travel lane needs reconstruction. Expanding
-        // vector crests intentionally remain as a short-lived luminous wake
-        // until the desktop transition replaces the authentication scene.
-        let source_left = offset_x + 1_235 * scale as i32 / 1_000;
-        let source_top = offset_y + 680 * scale as i32 / 1_000;
-        let source_right = offset_x + 1_435 * scale as i32 / 1_000;
-        let source_bottom = offset_y + 900 * scale as i32 / 1_000;
-        let left = source_left.max(0) as usize;
-        let top = source_top.max(0) as usize;
-        let right = source_right.max(0).min(self.width as i32) as usize;
-        let bottom = source_bottom.max(0).min(self.height as i32) as usize;
+        self.set_render_clip(
+            left,
+            top,
+            right.saturating_sub(left),
+            bottom.saturating_sub(top),
+        );
         self.paint_authentication_background_rect(
             left,
             top,
             right.saturating_sub(left),
             bottom.saturating_sub(top),
         );
-
-        let center_x = offset_x + 1_335 * scale as i32 / 1_000;
-        let water_y = offset_y + 865 * scale as i32 / 1_000;
-        let base_ripple_width = (760 * scale / 1_000).max(1);
-        let base_ripple_height = (220 * scale / 1_000).max(1);
+        let base_ripple_width = (768 * scale / 1_000).max(1);
+        let base_ripple_height = (344 * scale / 1_000).max(1);
         for (wave_scale, opacity) in [
             (
                 presentation.primary_ripple_scale,
@@ -597,7 +535,14 @@ impl super::DisplayDevice {
             }
             let width = (base_ripple_width * wave_scale as usize / 1_000).max(1);
             let height = (base_ripple_height * wave_scale as usize / 1_000).max(1);
-            self.authentication_ripple_vector(center_x, water_y, width, height, opacity);
+            self.paint_bitmap_alpha_fit_rect_opacity(
+                AUTHENTICATION_RIPPLE_BMP,
+                center_x.saturating_sub((width / 2) as i32).max(0) as usize,
+                water_y.saturating_sub((height / 2) as i32).max(0) as usize,
+                width,
+                height,
+                opacity,
+            );
         }
 
         if presentation.orb_opacity != 0 {
@@ -630,6 +575,79 @@ impl super::DisplayDevice {
                 presentation.splash_opacity,
             );
         }
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: authentication_success_frame
+    // DESC: Composites one orb-drop and dual-ripple keyframe while retaining the card and utility tray above the water.
+    // ------------------=
+    fn authentication_success_frame(
+        &mut self,
+        presentation: crate::ui::authentication_motion::Presentation,
+    ) {
+        if self.skin_visual_mode() != 0 {
+            return;
+        }
+        let (offset_x, offset_y, scale) = self.authentication_art_geometry();
+        let source_left = offset_x
+            + crate::ui::authentication_motion::DAMAGE_LEFT as i32 * scale as i32 / 1_000;
+        let source_top = offset_y
+            + crate::ui::authentication_motion::DAMAGE_TOP as i32 * scale as i32 / 1_000;
+        let source_right = offset_x
+            + crate::ui::authentication_motion::DAMAGE_RIGHT as i32 * scale as i32 / 1_000;
+        let source_bottom = offset_y
+            + crate::ui::authentication_motion::DAMAGE_BOTTOM as i32 * scale as i32 / 1_000;
+        let left = source_left.max(0) as usize;
+        let top = source_top.max(0) as usize;
+        let right = source_right.max(0).min(self.width as i32) as usize;
+        let bottom = source_bottom.max(0).min(self.height as i32) as usize;
+        let center_x = offset_x
+            + crate::ui::authentication_motion::ARTWORK_CENTER_X as i32 * scale as i32 / 1_000;
+        let water_y = offset_y
+            + crate::ui::authentication_motion::ARTWORK_WATER_Y as i32 * scale as i32 / 1_000;
+
+        let fit = (self.width.saturating_mul(1_000) / 1_536)
+            .min(self.height.saturating_mul(1_000) / 1_024)
+            .max(1);
+        let content_width = 1_536usize.saturating_mul(fit) / 1_000;
+        let content_height = 1_024usize.saturating_mul(fit) / 1_000;
+        let ui_offset_x = self.width.saturating_sub(content_width) / 2;
+        let ui_offset_y = self.height.saturating_sub(content_height) / 2;
+        let sx = |value: usize| ui_offset_x + value.saturating_mul(fit) / 1_000;
+        let sy = |value: usize| ui_offset_y + value.saturating_mul(fit) / 1_000;
+        let sw = |value: usize| value.saturating_mul(fit) / 1_000;
+        let card_left = sx(54);
+        let card_top = sy(123);
+        let card_right = card_left.saturating_add(sw(521));
+        let card_bottom = card_top.saturating_add(sw(754));
+        let tray_left = sx(529);
+        let tray_top = sy(914);
+        let tray_right = tray_left.saturating_add(sw(478));
+        let tray_bottom = tray_top.saturating_add(sw(90));
+
+        let regions = [
+            (left, top, right, bottom.min(card_top)),
+            (left.max(card_right), top.max(card_top), right, bottom.min(card_bottom)),
+            (left, top.max(card_bottom), right, bottom.min(tray_top)),
+            (left, top.max(tray_top), right.min(tray_left), bottom.min(tray_bottom)),
+            (left.max(tray_right), top.max(tray_top), right, bottom.min(tray_bottom)),
+            (left, top.max(tray_bottom), right, bottom),
+        ];
+        for (region_left, region_top, region_right, region_bottom) in regions {
+            self.authentication_success_frame_region(
+                presentation,
+                region_left,
+                region_top,
+                region_right,
+                region_bottom,
+                offset_y,
+                scale,
+                center_x,
+                water_y,
+            );
+        }
+        self.clear_render_clip();
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

@@ -1,6 +1,13 @@
 //! Deterministic elapsed-time choreography for successful authentication.
 
-pub const DURATION_MS: u16 = 1_350;
+pub const DURATION_MS: u16 = 1_500;
+
+pub const ARTWORK_CENTER_X: u16 = 1_335;
+pub const ARTWORK_WATER_Y: u16 = 865;
+pub const DAMAGE_LEFT: u16 = 790;
+pub const DAMAGE_TOP: u16 = 570;
+pub const DAMAGE_RIGHT: u16 = 1_920;
+pub const DAMAGE_BOTTOM: u16 = 1_080;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Presentation {
@@ -144,32 +151,34 @@ pub const fn presentation_at(elapsed_ms: u16) -> Presentation {
         DURATION_MS
     };
     let progress = ((bounded_elapsed as u32 * 1_000) / DURATION_MS as u32) as u16;
-    let orb_y_per_mille = if progress < 133 {
-        lerp(725, 719, segment(progress, 0, 133))
-    } else if progress < 480 {
-        lerp(719, 830, ease_in_quad(segment(progress, 133, 480)))
+    let orb_y_per_mille = if progress < 80 {
+        lerp(725, 660, segment(progress, 0, 80))
+    } else if progress < 350 {
+        lerp(660, 790, ease_in_quad(segment(progress, 80, 350)))
+    } else if progress < 500 {
+        lerp(790, 830, segment(progress, 350, 500))
     } else {
-        lerp(830, 846, segment(progress, 480, 650))
+        830
     };
-    let orb_opacity = if progress < 480 {
+    let orb_opacity = if progress < 350 {
         255
     } else {
-        (255u32 * (1_000 - segment(progress, 480, 650)) as u32 / 1_000) as u8
+        (255u32 * (1_000 - segment(progress, 350, 560)) as u32 / 1_000) as u8
     };
-    let compression = opacity_between(progress, 405, 500, 595, 255) as u16;
-    let orb_width_per_mille = 1_000 + compression * 140 / 255;
-    let orb_height_per_mille = 1_000 - compression * 260 / 255;
-    let primary_ripple_scale = if progress < 450 {
-        lerp(1_000, 760, segment(progress, 0, 450))
+    let compression = opacity_between(progress, 290, 365, 470, 255) as u16;
+    let orb_width_per_mille = 1_000 + (compression as u32 * 180 / 255) as u16;
+    let orb_height_per_mille = 1_000 - (compression as u32 * 300 / 255) as u16;
+    let primary_ripple_scale = if progress < 310 {
+        0
     } else {
-        lerp(760, 1_520, segment(progress, 450, 980))
+        lerp(160, 1_650, segment(progress, 310, 920))
     };
-    let primary_ripple_opacity = if progress < 450 {
-        lerp(170, 245, segment(progress, 0, 450)) as u8
+    let primary_ripple_opacity = opacity_between(progress, 295, 340, 920, 235);
+    let secondary_ripple_scale = if progress < 400 {
+        0
     } else {
-        lerp(245, 0, segment(progress, 450, 1_000)) as u8
+        lerp(120, 1_450, segment(progress, 400, 1_000))
     };
-    let secondary_progress = segment(progress, 545, 1_000);
     Presentation {
         progress,
         orb_y_per_mille,
@@ -178,10 +187,10 @@ pub const fn presentation_at(elapsed_ms: u16) -> Presentation {
         orb_height_per_mille,
         primary_ripple_scale,
         primary_ripple_opacity,
-        secondary_ripple_scale: lerp(420, 1_280, secondary_progress),
-        secondary_ripple_opacity: opacity_between(progress, 525, 650, 1_000, 205),
-        splash_scale: lerp(520, 1_180, segment(progress, 410, 750)),
-        splash_opacity: opacity_between(progress, 390, 500, 760, 255),
+        secondary_ripple_scale,
+        secondary_ripple_opacity: opacity_between(progress, 385, 435, 1_000, 200),
+        splash_scale: lerp(420, 1_220, segment(progress, 285, 620)),
+        splash_opacity: opacity_between(progress, 275, 350, 650, 255),
     }
 }
 
@@ -201,11 +210,14 @@ mod tests {
         let resting = timeline.presentation();
         assert!(timeline.active());
         assert_eq!(resting.orb_y_per_mille, 725);
-        let falling = presentation_at(600);
-        let impact = presentation_at(740);
-        let wake = presentation_at(1_100);
+        let lifted = presentation_at(100);
+        let falling = presentation_at(420);
+        let impact = presentation_at(550);
+        let wake = presentation_at(1_000);
+        assert!(lifted.orb_y_per_mille < resting.orb_y_per_mille);
         assert!(falling.orb_y_per_mille > resting.orb_y_per_mille);
         assert!(impact.splash_opacity > 0);
+        assert_eq!(presentation_at(300).primary_ripple_opacity, 0);
         assert!(wake.primary_ripple_scale > impact.primary_ripple_scale);
         assert!(wake.orb_opacity < impact.orb_opacity);
         assert!(matches!(timeline.advance(DURATION_MS - 1), Advance::Frame(_)));

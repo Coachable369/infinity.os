@@ -1750,15 +1750,21 @@ impl super::DisplayDevice {
                 if index + 2 >= bitmap.len() {
                     return;
                 }
-                self.pixel(
-                    x as i32,
-                    y as i32,
+                self.write_rgb_unchecked(
+                    x,
+                    y,
                     bitmap[index + 2],
                     bitmap[index + 1],
                     bitmap[index],
                 );
             }
         }
+        self.mark_dirty_rect(
+            region.left,
+            region.top,
+            region.right - region.left,
+            region.bottom - region.top,
+        );
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -2031,9 +2037,9 @@ impl super::DisplayDevice {
                 }
                 let alpha = (bitmap[index + 3] as u16 * opacity as u16 / 255) as u8;
                 if alpha != 0 {
-                    self.blend_color(
-                        (left + x) as i32,
-                        (top + y) as i32,
+                    self.blend_color_unchecked(
+                        left + x,
+                        top + y,
                         bitmap[index + 2],
                         bitmap[index + 1],
                         bitmap[index],
@@ -2042,6 +2048,12 @@ impl super::DisplayDevice {
                 }
             }
         }
+        self.mark_dirty_rect(
+            region.left,
+            region.top,
+            region.right - region.left,
+            region.bottom - region.top,
+        );
     }
 
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

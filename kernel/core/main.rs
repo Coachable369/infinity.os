@@ -179,6 +179,7 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     runtime::storage_initialized();
     drivers::network::initialize(info);
     drivers::audio::initialize(info);
+    let _ = system_sounds::play_boot_once();
     crash::set_phase(crash::CrashPhase::Services);
     runtime::announce_services();
     crash::set_phase(crash::CrashPhase::UserInterface);

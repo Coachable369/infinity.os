@@ -12995,7 +12995,6 @@ pub fn initialize(system: SystemSnapshot) {
             runtime.enter_onboarding();
         }
     }
-    let _ = crate::system_sounds::play_boot_once();
     runtime.redraw();
     unsafe {
         RUNTIME = Some(runtime);

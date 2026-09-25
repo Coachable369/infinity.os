@@ -7,8 +7,25 @@ pub enum SystemSoundCue {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BootOrigin {
+    Iso,
+    Installed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BootPhase {
+    FirmwareEntry,
+    NativeAudioReady,
+    UserInterfaceReady,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SystemSoundEvent {
-    BootReady { audio_available: bool },
+    BootTransition {
+        origin: BootOrigin,
+        phase: BootPhase,
+        audio_available: bool,
+    },
     Authentication { accepted: bool },
 }
 
@@ -21,8 +38,10 @@ pub const fn cue_for_event(
     boot_already_played: bool,
 ) -> Option<SystemSoundCue> {
     match event {
-        SystemSoundEvent::BootReady {
+        SystemSoundEvent::BootTransition {
+            phase: BootPhase::NativeAudioReady,
             audio_available: true,
+            ..
         } if !boot_already_played => Some(SystemSoundCue::Boot),
         SystemSoundEvent::Authentication { accepted: true } => Some(SystemSoundCue::Login),
         _ => None,
@@ -31,7 +50,7 @@ pub const fn cue_for_event(
 
 #[cfg(test)]
 mod tests {
-    use super::{cue_for_event, SystemSoundCue, SystemSoundEvent};
+    use super::{BootOrigin, BootPhase, SystemSoundCue, SystemSoundEvent, cue_for_event};
 
     // ------------------------=
     // FUNC: emits_boot_once_only_after_audio_is_ready
@@ -39,33 +58,52 @@ mod tests {
     // ------------------=
     #[test]
     fn emits_boot_once_only_after_audio_is_ready() {
-        assert_eq!(
-            cue_for_event(
-                SystemSoundEvent::BootReady {
-                    audio_available: false,
-                },
-                false,
-            ),
-            None
-        );
-        assert_eq!(
-            cue_for_event(
-                SystemSoundEvent::BootReady {
-                    audio_available: true,
-                },
-                false,
-            ),
-            Some(SystemSoundCue::Boot)
-        );
-        assert_eq!(
-            cue_for_event(
-                SystemSoundEvent::BootReady {
-                    audio_available: true,
-                },
-                true,
-            ),
-            None
-        );
+        for origin in [BootOrigin::Iso, BootOrigin::Installed] {
+            assert_eq!(
+                cue_for_event(
+                    SystemSoundEvent::BootTransition {
+                        origin,
+                        phase: BootPhase::FirmwareEntry,
+                        audio_available: false,
+                    },
+                    false,
+                ),
+                None
+            );
+            assert_eq!(
+                cue_for_event(
+                    SystemSoundEvent::BootTransition {
+                        origin,
+                        phase: BootPhase::NativeAudioReady,
+                        audio_available: true,
+                    },
+                    false,
+                ),
+                Some(SystemSoundCue::Boot)
+            );
+            assert_eq!(
+                cue_for_event(
+                    SystemSoundEvent::BootTransition {
+                        origin,
+                        phase: BootPhase::UserInterfaceReady,
+                        audio_available: true,
+                    },
+                    false,
+                ),
+                None
+            );
+            assert_eq!(
+                cue_for_event(
+                    SystemSoundEvent::BootTransition {
+                        origin,
+                        phase: BootPhase::NativeAudioReady,
+                        audio_available: true,
+                    },
+                    true,
+                ),
+                None
+            );
+        }
     }
 
     // ------------------------=

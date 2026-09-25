@@ -5,7 +5,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use crate::runtime::{
     capability::CapabilityType,
     execution::SecurityIdentity,
-    system_sound_policy::{cue_for_event, SystemSoundCue, SystemSoundEvent},
+    system_sound_policy::{
+        BootOrigin, BootPhase, SystemSoundCue, SystemSoundEvent, cue_for_event,
+    },
 };
 
 const SYSTEM_SOUND_OWNER: SecurityIdentity = SecurityIdentity([0xfe; 16]);
@@ -83,7 +85,13 @@ fn play(cue: SystemSoundCue) -> bool {
 pub fn play_boot_once() -> bool {
     let available = crate::drivers::audio::available();
     if cue_for_event(
-        SystemSoundEvent::BootReady {
+        SystemSoundEvent::BootTransition {
+            origin: if cfg!(feature = "installer") {
+                BootOrigin::Iso
+            } else {
+                BootOrigin::Installed
+            },
+            phase: BootPhase::NativeAudioReady,
             audio_available: available,
         },
         BOOT_PLAYED.load(Ordering::Acquire),
