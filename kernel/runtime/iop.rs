@@ -81,6 +81,8 @@ pub enum OperationId {
     CapabilityList = 0xa201,
     EventSubscriptions = 0xa301,
     VoiceStatus = 0xa401,
+    AudioTone = 0xa410,
+    AudioCaptureStart = 0xa411,
     ModelList = 0x9001,
     ModelInspect = 0x9002,
     ModelLoad = 0x9003,

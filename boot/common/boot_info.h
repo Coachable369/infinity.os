@@ -39,7 +39,7 @@ typedef struct {
     uint8_t network_mac[32];
     uint8_t firmware_entropy[32];
     uint32_t firmware_entropy_valid;
-    uint32_t boot_reserved;
+    uint32_t boot_reserved; /* Optional HDA MMIO BAR below 4 GiB; zero means absent. */
     uint64_t payload_bridge;
     uint64_t model_address;
     uint64_t model_bytes;

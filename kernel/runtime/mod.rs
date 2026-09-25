@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod audio;
 pub mod capability;
 pub mod compute;
 pub mod compute_operator;

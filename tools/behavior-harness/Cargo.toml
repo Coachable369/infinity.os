@@ -7,6 +7,10 @@ edition = "2021"
 cc = "1"
 
 [[bin]]
+name = "audio-test"
+path = "../audio-test.rs"
+
+[[bin]]
 name = "hermes-native-test"
 path = "../hermes-native-test.rs"
 

@@ -10635,6 +10635,31 @@ impl ConsoleRuntime {
     // DESC: Implements the execute runtime command operation.
     // ------------------=
     fn execute_runtime_command(&mut self, command: &[u8]) -> bool {
+        if command == b"audio status" {
+            self.output.write_line(if crate::drivers::audio::available() {
+                b"HDA output ready: native PCM S16 stereo. Capture not yet available."
+            } else { b"No supported HDA output route initialized." });
+            return true;
+        }
+        if command == b"audio tone" {
+            use crate::runtime::{capability::CapabilityType, execution::SecurityIdentity};
+            let owner = SecurityIdentity(self.current_session.0);
+            let Some(now) = crate::ui::performance::monotonic_ns() else { return true; };
+            let capability = crate::runtime::with_runtime(|runtime| {
+                let active = (0..crate::runtime::identity::MAX_SESSIONS)
+                    .filter_map(|i| runtime.identity.session_nth(i))
+                    .any(|s| s.id == self.current_session && s.user == self.current_user &&
+                        s.state == crate::runtime::identity::SessionState::Active);
+                if !active { return None; }
+                runtime.capabilities.grant(CapabilityType::AudioOutput, 0, 1, 0,
+                    owner, owner, Some(now / 1_000_000_000 + 3), 0).ok()
+            }).flatten();
+            let started = capability.map(|cap| crate::drivers::audio::tone(owner, cap)).unwrap_or(false);
+            if !started { if let Some(cap) = capability { crate::runtime::with_runtime(|runtime| { let _ = runtime.capabilities.retire_leaf(cap, owner); }); } }
+            self.output.write_line(if started { b"Playing 440 Hz for two seconds." }
+                else { b"Audio unavailable, busy, or permission denied." });
+            return true;
+        }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if geturl::execute(self, command) { return true; }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

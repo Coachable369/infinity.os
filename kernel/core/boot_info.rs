@@ -38,6 +38,7 @@ pub struct BootInfo {
     pub network_mac: [u8; 32],
     pub firmware_entropy: [u8; 32],
     pub firmware_entropy_valid: u32,
+    /// Optional firmware-assigned HDA MMIO BAR below 4 GiB. Old loaders supply zero.
     pub boot_reserved: u32,
     pub payload_bridge: u64,
     pub model_address: u64,

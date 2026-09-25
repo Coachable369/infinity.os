@@ -1,0 +1,17 @@
+{
+  "test": "native-hda-freestanding-aarch64",
+  "device": "QEMU intel-hda + hda-duplex",
+  "accelerator": "HVF",
+  "backend": "QEMU WAV",
+  "sample_rate_hz": 48000,
+  "channels": 2,
+  "sample_bits": 16,
+  "measured_tone_hz": 439.56,
+  "active_duration_seconds": 1.995,
+  "rms_s16": 5788.1,
+  "dma_progress_assertion": true,
+  "pcm_and_capability_tests_passed": true,
+  "installed_desktop_verified": false,
+  "virtualbox_verified": false,
+  "microphone_capture_verified": false
+}

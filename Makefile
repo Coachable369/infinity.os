@@ -1,4 +1,12 @@
 SHELL := /bin/sh
+.DEFAULT_GOAL := all
+
+.PHONY: audio-test audio-hardware-test
+audio-test:
+	cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin audio-test
+
+audio-hardware-test:
+	sh tools/audio-probe/run.sh
 
 BUILD := build
 BOOT_IMAGE_SIZE_MB := 1024

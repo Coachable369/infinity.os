@@ -1291,6 +1291,33 @@ static void gather_firmware_network(EFI_SYSTEM_TABLE *system, InfinityBootInfo *
 }
 
 // ------------------------=
+// FUNC: gather_firmware_audio
+// DESC: Hands off one firmware-assigned 32-bit HDA BAR; no capture or playback starts at boot.
+// ------------------=
+static void gather_firmware_audio(EFI_SYSTEM_TABLE *system, InfinityBootInfo *info) {
+    EFI_HANDLE *handles = NULL;
+    size_t count = 0;
+    EFI_GUID guid = pci_io_guid;
+    EFI_BOOT_SERVICES *boot = system->boot_services;
+    if (boot->locate_handle_buffer(EFI_BY_PROTOCOL, &guid, NULL, &count, &handles) != EFI_SUCCESS) return;
+    for (size_t index = 0; index < count; ++index) {
+        EFI_PCI_IO_PROTOCOL *pci = NULL;
+        uint32_t config[6] = {0};
+        if (boot->handle_protocol(handles[index], &guid, (void **)&pci) != EFI_SUCCESS ||
+            !pci || !pci->pci.read || !pci->pci.write ||
+            pci->pci.read(pci, 2u, 0u, 6u, config) != EFI_SUCCESS) continue;
+        if ((config[2] >> 8) != 0x040300u || (config[4] & 1u) ||
+            ((config[4] & 6u) == 4u && config[5] != 0) ||
+            (config[4] & ~15u) < 0x100000u) continue;
+        uint16_t command = (uint16_t)config[1] | 6u;
+        if (pci->pci.write(pci, 1u, 4u, 1u, &command) != EFI_SUCCESS) continue;
+        info->boot_reserved = config[4] & ~15u;
+        break;
+    }
+    boot->free_pool(handles);
+}
+
+// ------------------------=
 // FUNC: efi_main
 // DESC: Runs the UEFI loader entry point.
 // ------------------=
@@ -1418,6 +1445,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     }
 #endif
     gather_firmware_network(system, info);
+    gather_firmware_audio(system, info);
 
     /* AArch64 retains selected firmware services for its input bridge. Disable
      * the standard five-minute image watchdog before transferring control so a
