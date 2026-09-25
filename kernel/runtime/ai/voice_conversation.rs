@@ -37,6 +37,7 @@ static mut REPLY_LENGTH: usize = 0;
 static mut REPLY_AT: usize = 0;
 static mut LEVEL: u16 = 0;
 static mut RESTART_LISTENING: bool = false;
+static mut CHAT_TURN: u64 = 0;
 
 // ------------------------=
 // FUNC: active_owner
@@ -171,7 +172,9 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         voice_output::stop(owner);
         if STATE == State::Thinking {
             super::with_ai_runtime(|ai| {
-                ai.cancel_chat();
+                if ai.chat.turn_id() == CHAT_TURN {
+                    ai.cancel_chat();
+                }
             });
         }
         retire(RECOGNIZE_CAP);
@@ -310,7 +313,11 @@ pub fn poll() -> bool {
                                 for &byte in &(&*(&raw const TRANSCRIPT))[..n] {
                                     ai.chat.push_input(byte);
                                 }
-                                ai.submit_chat()
+                                let accepted = ai.submit_chat();
+                                if accepted {
+                                    CHAT_TURN = ai.chat.turn_id();
+                                }
+                                accepted
                             })
                         })
                         .unwrap_or(false);
@@ -340,6 +347,10 @@ pub fn poll() -> bool {
                 _ => {}
             },
             State::Thinking => {
+                if super::with_ai_runtime(|ai| ai.chat.turn_id() != CHAT_TURN) {
+                    stop(OWNER);
+                    return true;
+                }
                 let generation = super::with_ai_runtime(|ai| ai.chat.generation_state);
                 if generation == GenerationState::Complete {
                     REPLY_LENGTH = 0;

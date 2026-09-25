@@ -19,7 +19,11 @@ voice-synthesis-test:
 voice-synthesis-hardware-test:
 	sh tools/voice-flite/probe/run.sh tcg
 
-.PHONY: voice-recognition-test voice-indicator-test
+.PHONY: voice-recognition-test voice-indicator-test voice-output-test
+voice-output-test:
+	$(RUSTC) --edition=2021 --test tools/voice-output-test.rs -o build/voice-output-test
+	build/voice-output-test
+
 voice-recognition-test: build/voice-pocketsphinx-arm/private-native.o
 	python3 tools/voice-pocketsphinx/probe/run.py
 

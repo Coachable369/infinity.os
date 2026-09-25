@@ -1,5 +1,9 @@
 # Native voice implementation status
 
+Latest follow-up: [audio QA and Hermes measurements](voice-qa-performance-2026-09-25.md).
+This adds deadline-publication and chat-turn isolation fixes; live conversation
+and the requested 25% installed response-time improvement remain unaccepted.
+
 ## Current acceptance status — September 25, native recognizer integration
 
 **In progress, not end-to-end accepted.** The sections below are chronological;

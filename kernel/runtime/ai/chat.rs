@@ -100,6 +100,7 @@ pub const CHAT_MODELS: [ChatModel; 5] = [
 pub struct ChatRuntime {
     messages: [Option<ChatMessage>; CHAT_MESSAGE_CAPACITY],
     count: usize,
+    turn_id: u64,
     selected_model: ModelId,
     ministral_ready: bool,
     hermes_ready: bool,
@@ -124,6 +125,7 @@ impl ChatRuntime {
         Self {
             messages: [None; CHAT_MESSAGE_CAPACITY],
             count: 0,
+            turn_id: 0,
             selected_model: HERMES_MODEL_ID,
             ministral_ready: false,
             hermes_ready: false,
@@ -146,6 +148,14 @@ impl ChatRuntime {
     // ------------------=
     pub const fn message_count(&self) -> usize {
         self.count
+    }
+
+    // ------------------------=
+    // FUNC: turn_id
+    // DESC: Identifies an accepted turn independently of bounded history rollover.
+    // ------------------=
+    pub const fn turn_id(&self) -> u64 {
+        self.turn_id
     }
 
     // ------------------------=
@@ -196,11 +206,13 @@ impl ChatRuntime {
     // DESC: Records an accepted asynchronous turn without a canned response.
     // ------------------=
     pub fn begin_native_turn(&mut self) {
+        self.turn_id = self.turn_id.wrapping_add(1);
         let input = self.input;
         self.push(ChatMessage::new(
             ChatRole::User,
             &input[..self.input_length],
         ));
+        self.input.fill(0);
         self.input_length = 0;
         self.input_cursor = 0;
     }
@@ -476,6 +488,7 @@ impl ChatRuntime {
         if trimmed.is_empty() {
             return false;
         }
+        self.turn_id = self.turn_id.wrapping_add(1);
         self.push(ChatMessage::new(ChatRole::User, trimmed));
         let mut response = [0u8; MAX_GENERATED_BYTES];
         self.last_memory_response = None;

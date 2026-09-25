@@ -9,7 +9,8 @@ const ROWS: usize = 4096;
 const WIDTH: usize = 12288;
 const CACHE_FLOATS: usize = (WIDTH + WIDTH / 256 * 9 * 4) / 4;
 const MATRIX_ROWS: usize = 131072;
-const CHUNK_ROWS: usize = 128;
+// Smaller claims bound straggler/cancellation latency without changing row math.
+const CHUNK_ROWS: usize = 32;
 static NEXT_ROW: AtomicUsize = AtomicUsize::new(0);
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 // Exclusive row ranges are assigned by NEXT_ROW; BSP reads only after all APs

@@ -71,7 +71,7 @@ unsafe fn worker() {
         speech_pcm::fill(&(&*(&raw const PCM))[..FRAMES], &mut (&mut *(&raw mut RESIDENT.0))[..OUTPUT_SAMPLES], 0, RATE);
     }
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
-    STATE.store(if ERROR == 2 || CANCEL.load(Ordering::Acquire) { 6 } else if result.is_ok() { 3 } else { 4 }, Ordering::Release);
+    STATE.store(if ERROR == 2 || cancelled() != 0 { 6 } else if result.is_ok() { 3 } else { 4 }, Ordering::Release);
 }
 // ------------------------=
 // FUNC: submit
