@@ -422,6 +422,14 @@ boot-media-test:
 	@clang -O2 -fshort-wchar -Wno-ignored-attributes tools/boot-media-test.c -o build/behavior-tests/boot-media-test
 	@build/behavior-tests/boot-media-test
 
+.PHONY: voice-vad-test
+voice-vad-test:
+	mkdir -p build/tools
+	rustc --edition=2021 -O tools/voice-vad-test.rs -o build/tools/voice-vad-test
+	build/tools/voice-vad-test
+	rustc --edition=2021 --test kernel/runtime/ai/voice_vad.rs -o build/tools/voice-vad-private-test
+	build/tools/voice-vad-private-test
+
 ai-test:
 	@tools/ai-test.sh
 	@cargo test --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-native-test causal_attention

@@ -337,11 +337,22 @@ fn voice_and_agents() {
         .start_push_to_talk(owner, microphone, 10, 1, &capabilities)
         .unwrap();
     assert_eq!(voice.state(), VoiceState::Listening);
+    assert_eq!(voice.stop(session, issuer), Err(AiError::AccessDenied));
+    assert_eq!(voice.start_push_to_talk(owner, microphone, 10, 1, &capabilities), Err(AiError::QueueFull));
+    assert_eq!(voice.push_pcm(session, issuer, &[1000; 320], 16000, 2, &capabilities), Err(AiError::AccessDenied));
+    assert_eq!(voice.push_pcm(session + 1, owner, &[1000; 320], 16000, 2, &capabilities), Err(AiError::InvalidRequest));
+    assert_eq!(voice.push_pcm(session, owner, &[1000; 1601], 16000, 2, &capabilities), Err(AiError::InvalidRequest));
+    assert_eq!(voice.push_pcm(session, owner, &[1000; 320], 44100, 2, &capabilities), Err(AiError::InvalidRequest));
+    for _ in 0..3 { voice.push_pcm(session, owner, &[1000; 320], 16000, 2, &capabilities).unwrap(); }
+    for _ in 0..30 { voice.push_pcm(session, owner, &[0; 320], 16000, 2, &capabilities).unwrap(); }
+    assert_eq!(voice.state(), VoiceState::Recognizing);
+    assert_eq!(voice.speech_segment(session, owner).unwrap().unwrap().end, 2560);
+    assert_eq!(voice.push_pcm(session, owner, &[0; 320], 16000, 2, &capabilities), Err(AiError::InvalidRequest));
     assert!(voice.refresh_authority(2, &capabilities));
     capabilities.revoke(microphone).unwrap();
     assert!(!voice.refresh_authority(3, &capabilities));
     assert_eq!(voice.state(), VoiceState::Idle);
-    assert_eq!(voice.stop(session), Err(AiError::InvalidRequest));
+    assert_eq!(voice.stop(session, owner), Err(AiError::InvalidRequest));
     let mut speech = UnavailableLocalSpeechProvider;
     assert_eq!(
         speech.recognize_pcm(&[0; 32], 16_000, &mut [0; 32]),

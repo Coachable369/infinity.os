@@ -1,4 +1,5 @@
 use super::types::AiError;
+use super::voice_vad::{Detector, Segment, VadState, RATE};
 use crate::runtime::{
     capability::{CapabilityId, CapabilityManager, CapabilityType},
     execution::SecurityIdentity,
@@ -25,6 +26,7 @@ pub struct VoiceSession {
 pub struct VoiceService {
     session: Option<VoiceSession>,
     next_id: u32,
+    detector: Detector,
 }
 
 impl VoiceService {
@@ -36,6 +38,7 @@ impl VoiceService {
         Self {
             session: None,
             next_id: 1,
+            detector: Detector::new(300),
         }
     }
 
@@ -54,9 +57,11 @@ impl VoiceService {
         capabilities
             .validate(capability, owner, CapabilityType::AudioInput, 0, 1, 0, now)
             .map_err(|_| AiError::AccessDenied)?;
-        if expires_at <= now {
+        if expires_at <= now || expires_at.saturating_sub(now) > 10 {
             return Err(AiError::InvalidRequest);
         }
+        self.expire(now);
+        if self.session.is_some() { return Err(AiError::QueueFull); }
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1).max(1);
         self.session = Some(VoiceSession {
@@ -66,18 +71,53 @@ impl VoiceService {
             microphone_capability: capability,
             expires_at,
         });
+        self.detector = Detector::new(300);
         Ok(id)
+    }
+
+    // ------------------------=
+    // FUNC: push_pcm
+    // DESC: Segments bounded native 16-kHz mono chunks only for the current authorized session owner.
+    // ------------------=
+    pub fn push_pcm(&mut self, id: u32, owner: SecurityIdentity, pcm: &[i16], rate: u32,
+        now: u64, capabilities: &CapabilityManager) -> Result<VadState, AiError> {
+        let session = self.session.ok_or(AiError::InvalidRequest)?;
+        if session.id != id { return Err(AiError::InvalidRequest); }
+        if session.owner != owner { return Err(AiError::AccessDenied); }
+        if session.state != VoiceState::Listening || rate != RATE as u32 || pcm.len() > RATE / 10 {
+            return Err(AiError::InvalidRequest);
+        }
+        if !self.refresh_authority(now, capabilities) { return Err(AiError::AccessDenied); }
+        self.detector.push(pcm);
+        let state = self.detector.state();
+        if let Some(session) = self.session.as_mut() {
+            if state == VadState::Complete { session.state = VoiceState::Recognizing; }
+            else if matches!(state, VadState::Limit | VadState::NoSpeech) { session.state = VoiceState::Failed; }
+        }
+        Ok(state)
+    }
+
+    // ------------------------=
+    // FUNC: speech_segment
+    // DESC: Returns trimmed sample bounds only to the owning session, never a fabricated transcript.
+    // ------------------=
+    pub fn speech_segment(&self, id: u32, owner: SecurityIdentity) -> Result<Option<Segment>, AiError> {
+        let session = self.session.ok_or(AiError::InvalidRequest)?;
+        if session.id != id { return Err(AiError::InvalidRequest); }
+        if session.owner != owner { return Err(AiError::AccessDenied); }
+        Ok(self.detector.segment())
     }
 
     // ------------------------=
     // FUNC: stop
     // DESC: Ends listening immediately and removes the microphone lease from the session.
     // ------------------=
-    pub fn stop(&mut self, id: u32) -> Result<(), AiError> {
-        if self.session.map(|s| s.id) != Some(id) {
-            return Err(AiError::InvalidRequest);
-        }
+    pub fn stop(&mut self, id: u32, owner: SecurityIdentity) -> Result<(), AiError> {
+        let session = self.session.ok_or(AiError::InvalidRequest)?;
+        if session.id != id { return Err(AiError::InvalidRequest); }
+        if session.owner != owner { return Err(AiError::AccessDenied); }
         self.session = None;
+        self.detector.cancel();
         Ok(())
     }
 
@@ -99,6 +139,7 @@ impl VoiceService {
     pub fn expire(&mut self, now: u64) {
         if self.session.map(|s| now >= s.expires_at).unwrap_or(false) {
             self.session = None;
+            self.detector.cancel();
         }
     }
 
@@ -124,6 +165,7 @@ impl VoiceService {
                 .is_err()
         {
             self.session = None;
+            self.detector.cancel();
             return false;
         }
         true
