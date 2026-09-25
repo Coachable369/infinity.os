@@ -27,6 +27,8 @@ mod runtime;
 #[path = "../storage/mod.rs"]
 mod storage;
 mod system;
+#[path = "../runtime/system_sounds.rs"]
+mod system_sounds;
 #[path = "../ui/mod.rs"]
 mod ui;
 

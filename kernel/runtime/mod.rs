@@ -19,6 +19,7 @@ pub mod storage_fixture;
 pub mod storage_metadata;
 pub mod storage_metadata_repair;
 pub mod storage_metadata_auto;
+pub mod system_sound_policy;
 pub mod identity;
 pub mod iop;
 pub mod network;

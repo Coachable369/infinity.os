@@ -2299,6 +2299,7 @@ impl ConsoleRuntime {
         self.authentication_restore_locked_layout = restore_locked_layout;
         self.authentication_tick_ns = crate::ui::performance::monotonic_ns();
         self.authentication_success.begin();
+        let _ = crate::system_sounds::play_login();
     }
 
     // ------------------------=
@@ -12994,6 +12995,7 @@ pub fn initialize(system: SystemSnapshot) {
             runtime.enter_onboarding();
         }
     }
+    let _ = crate::system_sounds::play_boot_once();
     runtime.redraw();
     unsafe {
         RUNTIME = Some(runtime);

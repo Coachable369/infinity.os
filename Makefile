@@ -1,12 +1,23 @@
 SHELL := /bin/sh
 .DEFAULT_GOAL := all
+SYSTEM_SOUND_SOURCES := assets/sounds/boot.mp3 assets/sounds/login.mp3
+SYSTEM_SOUND_ASSETS := assets/sounds/boot.pcm assets/sounds/login.pcm
 
-.PHONY: audio-test audio-hardware-test
+.PHONY: audio-test audio-hardware-test system-sound-test system-sound-install-parity-test
 audio-test:
 	cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin audio-test
 
 audio-hardware-test:
 	sh tools/audio-probe/run.sh
+
+system-sound-test: $(SYSTEM_SOUND_ASSETS)
+	@mkdir -p build/tools
+	$(RUSTC) --test kernel/runtime/system_sound_policy.rs -o build/tools/system-sound-policy-test
+	build/tools/system-sound-policy-test
+	python3 tools/system-sound-assets-test.py
+
+system-sound-install-parity-test: build/x86_64/kernel.elf build/x86_64/installed-kernel.elf build/aarch64/kernel.elf build/aarch64/installed-kernel.elf
+	python3 tools/system-sound-install-parity.py
 
 .PHONY: voice-synthesis-test voice-synthesis-hardware-test
 voice-synthesis-test:
@@ -50,7 +61,7 @@ AUTHENTICATION_MOTION_ASSETS := assets/desktop/infinity-auth-success-stage-v1.bm
 	assets/desktop/infinity-auth-success-orb-v1.bmp \
 	assets/desktop/infinity-auth-success-ripple-v1.bmp \
 	assets/desktop/infinity-auth-success-splash-v1.bmp
-KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern assets/desktop/spatial-world-*.bmp assets/desktop/worldshift-hero-v1.bmp assets/cursors/*.rgba assets/cursors/hotspots.rs) $(AUTHENTICATION_MOTION_ASSETS) sdk/c/examples/hello.c
+KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern assets/desktop/spatial-world-*.bmp assets/desktop/worldshift-hero-v1.bmp assets/cursors/*.rgba assets/cursors/hotspots.rs) $(AUTHENTICATION_MOTION_ASSETS) $(SYSTEM_SOUND_ASSETS) sdk/c/examples/hello.c
 FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt)
 ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
@@ -112,6 +123,12 @@ SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-
 	$(CRASH_ASSETS) $(NODE_ASSETS)
 
 .PHONY: all x86_64 x86 aarch64 run-x86_64 run-x86 run-aarch64 test test-x86 test-x86_64 test-aarch64 test-console test-mouse-menu test-installer-safety installer-capacity-test installer-layout-test installer-template-runtime installer-template-test force-installer-template-compile component-manifest-test object-test namespace-test crash-recovery-test crash-screen-test object-vm-test milestone-3b-test runtime-test runtime-vm-test iop-test event-test capability-test service-crash-test milestone-4-test ai-test milestone-6-test milestone-6-5-test milestone-7-test milestone-7x-test milestone-7c-test milestone-8-test milestone-9-test milestone-11-test resource-policy-test network-test icon-theme-test settings-color-test settings-timeout-test desktop-system-test ui-install-parity-test input-regression-test app-launcher-interaction-test worldshift-art-test task-manager-test file-navigator-workspace-test installed-object-test vm-disk reset-test-disk install-test install-boot-test installed-console-test system-generation-test boot-installed clean check-tools
+
+assets/sounds/boot.pcm: assets/sounds/boot.mp3 tools/build-system-sound.sh
+	tools/build-system-sound.sh $< $@
+
+assets/sounds/login.pcm: assets/sounds/login.mp3 tools/build-system-sound.sh
+	tools/build-system-sound.sh $< $@
 
 app-launcher-interaction-test:
 	@mkdir -p build/tools
