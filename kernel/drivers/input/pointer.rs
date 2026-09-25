@@ -11,12 +11,12 @@ pub const BUTTON_FORWARD: u8 = 1 << 4;
 pub const fn absolute_pointer_state_changed(
     previous_x: i32,
     previous_y: i32,
-    previous_pressed: bool,
+    previous_buttons: u8,
     next_x: i32,
     next_y: i32,
-    next_pressed: bool,
+    next_buttons: u8,
 ) -> bool {
-    previous_x != next_x || previous_y != next_y || previous_pressed != next_pressed
+    previous_x != next_x || previous_y != next_y || previous_buttons != next_buttons
 }
 
 pub const TRANSPORT_PS2: u32 = 1 << 0;

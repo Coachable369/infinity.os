@@ -8616,14 +8616,14 @@ impl ConsoleRuntime {
         }
         let next_x = x.clamp(0, 1000);
         let next_y = y.clamp(0, 1000);
-        let left_button = buttons & crate::drivers::input::pointer::BUTTON_LEFT != 0;
+        let normalized_buttons = crate::ui::input_preferences::current().buttons(buttons);
         if !crate::drivers::input::pointer::absolute_pointer_state_changed(
             self.pointer_x,
             self.pointer_y,
-            self.pointer_pressed,
+            self.pointer_buttons,
             next_x,
             next_y,
-            left_button,
+            normalized_buttons,
         ) {
             return;
         }

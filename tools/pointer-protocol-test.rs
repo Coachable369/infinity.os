@@ -144,16 +144,22 @@ fn composite_button_capture() {
 // ------------------=
 fn absolute_pointer_edges() {
     assert!(!pointer::absolute_pointer_state_changed(
-        420, 830, false, 420, 830, false
+        420, 830, 0, 420, 830, 0
     ));
     assert!(pointer::absolute_pointer_state_changed(
-        420, 830, false, 421, 830, false
+        420, 830, 0, 421, 830, 0
     ));
     assert!(pointer::absolute_pointer_state_changed(
-        420, 830, false, 420, 830, true
+        420, 830, 0, 420, 830, BUTTON_LEFT
     ));
     assert!(pointer::absolute_pointer_state_changed(
-        420, 830, true, 420, 830, false
+        420, 830, BUTTON_LEFT, 420, 830, 0
+    ));
+    assert!(pointer::absolute_pointer_state_changed(
+        420, 830, 0, 420, 830, BUTTON_RIGHT
+    ));
+    assert!(pointer::absolute_pointer_state_changed(
+        420, 830, BUTTON_RIGHT, 420, 830, 0
     ));
 }
 
