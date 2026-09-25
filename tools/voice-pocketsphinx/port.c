@@ -229,12 +229,17 @@ FILE *popen(const char*c,const char*m){(void)c;(void)m;errno=ENOSYS;return NULL;
 int pclose(FILE*f){(void)f;errno=ENOSYS;return -1;}
 // ------------------------=
 // FUNC: native_recognize
-// DESC: Runs one bounded real English utterance with cancellable chunk processing and no host dependencies.
+// DESC: Decodes a completed bounded utterance with batch normalization and cancellation gates, without host dependencies.
 // ------------------=
 int native_recognize(const int16_t *pcm,size_t samples,char *text,size_t capacity,size_t *length,size_t *memory,int(*cancel)(void)){
     if(active||poisoned||!pcm||!samples||samples>160000||!text||capacity<2||!length||!memory)return 1;
     *length=0;*memory=heap_used;memset(text,0,capacity);
     if(cancel&&cancel())return 2;
+    /* Digital silence contains no speech. Do not let language-model priors
+     * invent a transcript when a capture device returns zero-filled PCM. */
+    size_t nonzero=0;
+    for(size_t i=0;i<samples;i++)nonzero|=(uint16_t)pcm[i];
+    if(!nonzero)return 5;
     active=1;
     if(setjmp(failure)){
         /* libc may retain pointers after a fatal exit. Quarantine this provider
@@ -254,11 +259,14 @@ int native_recognize(const int16_t *pcm,size_t samples,char *text,size_t capacit
     ps_config_free(config);
     if(!decoder){active=0;*memory=heap_used;return 3;}
     int result=ps_start_utt(decoder)<0?3:0;
-    for(size_t at=0;!result&&at<samples;at+=1600){
-        if(cancel&&cancel()){result=2;break;}
-        size_t count=samples-at;if(count>1600)count=1600;
-        if(ps_process_raw(decoder,pcm+at,count,0,0)<0)result=3;
-    }
+    /* VAD already completed this recording. Streaming normalization restarts
+     * from generic channel statistics on every short phrase and can change
+     * its words. Batch mode estimates the channel from the entire recording.
+     * This bounded upstream call stays on an AP; cancellation is checked on
+     * both sides, before any transcript can be published. */
+    if(!result&&cancel&&cancel())result=2;
+    if(!result&&ps_process_raw(decoder,pcm,samples,0,1)<0)result=3;
+    if(!result&&cancel&&cancel())result=2;
     if(!result&&ps_end_utt(decoder)<0)result=3;
     if(!result){const char*hyp=ps_get_hyp(decoder,NULL);size_t n=hyp?strlen(hyp):0;
         if(!n)result=5;else if(n>=capacity)result=6;else{memcpy(text,hyp,n);text[n]=0;*length=n;}}

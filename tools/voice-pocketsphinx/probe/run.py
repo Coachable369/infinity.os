@@ -49,19 +49,19 @@ def main():
         offset += length
         # Transcript bytes are the recognizer's actual API output, not a log oracle.
         if case < 2:
-            assert text == b"go forward ten years", "Decoder diverges from identical upstream model/configuration"
+            assert text == b"go forward ten meters", "Completed recording must match its reference transcript"
         else:
             assert length == 0
         if rows:
             assert live == rows[0]["retained_bytes"] and memory == rows[0]["heap_committed_bytes"]
             assert erased >= rows[-1]["erased_bytes"]
-            if case != 5:
+            if case not in (4, 5):
                 assert erased > rows[-1]["erased_bytes"]
         rows.append(dict(case=case, result=code, transcript=text.decode(), seconds=ticks/frequency,
                          heap_committed_bytes=memory, retained_bytes=live, erased_bytes=erased))
     assert offset == len(data)
     evidence = dict(environment=f"freestanding ARM64 QEMU {args.accel}; not installed InfinityOS",
-                    known_accuracy_failure="Fixture says ten meters; decoder returns ten years, also on host reference",
+                    accuracy_scope="One recorded fixture; live microphone word error rate is not established",
                     cases=rows)
     (output / f"verified-{args.accel}.json").write_text(json.dumps(evidence, indent=2) + "\n")
     print(json.dumps(evidence, indent=2))

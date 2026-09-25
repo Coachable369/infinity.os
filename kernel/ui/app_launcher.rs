@@ -9,6 +9,8 @@ const LAUNCHER_TRANSITION_STEP: usize = 32;
 
 #[path = "motion.rs"]
 pub mod motion;
+#[path = "launcher_navigation.rs"]
+pub mod navigation;
 #[path = "minimized_shelf.rs"]
 pub mod minimized_shelf;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]

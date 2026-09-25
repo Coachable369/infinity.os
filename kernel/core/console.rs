@@ -1298,7 +1298,7 @@ impl ConsoleRuntime {
         self.session_idle.note_activity();
         self.caret_visible = true;
         if let Some(reverse) = crate::drivers::input::desktop_shortcuts::switcher_request(
-            matches!(key,ConsoleKey::Tab(true)),
+            matches!(key,ConsoleKey::Tab(true)) && self.mode != ConsoleMode::AppLauncher,
             if let ConsoleKey::Shortcut(code)=key {Some(code)} else {None},
             !self.current_session.is_zero(),
             matches!(self.mode,ConsoleMode::Desktop | ConsoleMode::Settings | ConsoleMode::SystemMenu | ConsoleMode::AppLauncher),
@@ -4641,6 +4641,8 @@ impl ConsoleRuntime {
     fn activate_launcher_focus(&mut self) {
         let query = &self.command[..self.command_length];
         let visible = launcher_visible_count(query);
+        let Some(focus) = crate::ui::app_launcher::navigation::activation_focus(self.system_focus, visible) else { return; };
+        self.system_focus = focus;
         if (1..=visible).contains(&self.system_focus) {
             if let Some(entry) = launcher_visible_entry(query, self.system_focus - 1) {
                 self.activate_launcher_action(entry.action);
@@ -5444,7 +5446,11 @@ impl ConsoleRuntime {
     fn input_shell(&mut self, key: ConsoleKey) {
         if self.mode == ConsoleMode::AppLauncher {
             if matches!(key, ConsoleKey::Escape) {
-                self.close_app_launcher();
+                if crate::ui::app_launcher::navigation::clear_before_dismiss(self.command_length) {
+                    self.reset_input();
+                    self.system_focus = 0;
+                    let _ = crate::ui::app_launcher::launcher_scroll_to(0, 0);
+                } else { self.close_app_launcher(); }
                 return;
             }
             if matches!(key, ConsoleKey::Character(b'/')) && self.command_length == 0 {
@@ -5473,20 +5479,18 @@ impl ConsoleRuntime {
                 return;
             }
             let visible = launcher_visible_count(&self.command[..self.command_length]);
-            let focus_count = visible + LAUNCHER_CATEGORIES.len() + 1;
-            if matches!(
-                key,
-                ConsoleKey::Up | ConsoleKey::Left | ConsoleKey::Tab(true)
-            ) {
-                self.system_focus = (self.system_focus + focus_count - 1) % focus_count;
-                self.reveal_launcher_focus(visible);
-                return;
-            }
-            if matches!(
-                key,
-                ConsoleKey::Down | ConsoleKey::Right | ConsoleKey::Tab(false)
-            ) {
-                self.system_focus = (self.system_focus + 1) % focus_count;
+            use crate::ui::app_launcher::navigation::{next_focus, Direction};
+            let direction = match key {
+                ConsoleKey::Up => Some(Direction::Up),
+                ConsoleKey::Down => Some(Direction::Down),
+                ConsoleKey::Left => Some(Direction::Left),
+                ConsoleKey::Right => Some(Direction::Right),
+                ConsoleKey::Tab(true) => Some(Direction::Previous),
+                ConsoleKey::Tab(false) => Some(Direction::Next),
+                _ => None,
+            };
+            if let Some(direction) = direction {
+                self.system_focus = next_focus(self.system_focus, visible, LAUNCHER_CATEGORIES.len(), crate::ui::app_launcher::LAUNCHER_COLUMNS, direction);
                 self.reveal_launcher_focus(visible);
                 return;
             }

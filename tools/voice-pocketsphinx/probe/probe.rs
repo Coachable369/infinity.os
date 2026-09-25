@@ -17,7 +17,7 @@ unsafe extern "C" {
 static mut CANCEL_CALLS: usize = 0;
 // ------------------------=
 // FUNC: cancel
-// DESC: Cancels after initialization and the first real audio chunk for cleanup verification.
+// DESC: Cancels after initialization and bounded utterance processing, before transcript publication.
 // ------------------=
 unsafe extern "C" fn cancel() -> i32 {
     CANCEL_CALLS += 1;
@@ -132,6 +132,11 @@ pub unsafe extern "C" fn probe() -> ! {
         core::arch::asm!("mrs {},cntvct_el0",out(reg)end);
         core::arch::asm!("mrs {},cntfrq_el0",out(reg)frequency);
         infinity_stt_native_memory_state(&mut live, &mut erased);
+        for v in [2, case, result as u64, length as u64, memory as u64,
+            end - start, frequency, live as u64, erased as u64] {
+            bytes(&v.to_le_bytes());
+        }
+        bytes(&text[..length]);
         if case == 0 {
             baseline = live;
         } else {
@@ -151,20 +156,6 @@ pub unsafe extern "C" fn probe() -> ! {
             assert_eq!(text[0], 0);
         }
         assert!(erased > 0);
-        for v in [
-            2,
-            case,
-            result as u64,
-            length as u64,
-            memory as u64,
-            end - start,
-            frequency,
-            live as u64,
-            erased as u64,
-        ] {
-            bytes(&v.to_le_bytes());
-        }
-        bytes(&text[..length]);
     }
     finish()
 }

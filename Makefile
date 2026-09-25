@@ -111,6 +111,9 @@ SPLASH_ASSET := assets/boot/infinity-eclipse-header-v1.bmp assets/boot/infinity-
 
 app-launcher-interaction-test:
 	@mkdir -p build/tools
+	@rustc --test kernel/ui/launcher_navigation.rs -o build/tools/launcher-navigation-test
+	@build/tools/launcher-navigation-test
+	@mkdir -p build/tools
 	@rustc --edition 2021 -A warnings tools/app-launcher-interaction-test.rs -o build/tools/app-launcher-interaction-test
 	@build/tools/app-launcher-interaction-test
 	@rustc --edition 2021 -A warnings tools/desktop-input-calendar-test.rs -o build/tools/desktop-input-calendar-test
