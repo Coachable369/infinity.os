@@ -9,6 +9,7 @@ cd "$project_root"
 # Catch provisioning contract failures before expensive builds or cleanup.
 sh tools/select-install-iso-test.sh
 python3 tools/installer-output-test.py
+python3 tools/iso-staging-test.py
 python3 tools/re-provision-tpm-test.py
 make install-boot-handoff-test
 

@@ -13,16 +13,23 @@ if test -n "${QWEN_ISO_OUTPUT:-}" && test "$QWEN_ISO_OUTPUT" != "$installer_outp
     exit 1
 fi
 # A fresh staging tree cannot inherit removed model shards from an older build.
+if ! mkdir builds/.aarch64-build-lock 2>/dev/null; then
+    echo 'ERROR: ARM64 ISO build already active (builds/.aarch64-build-lock).' >&2
+    exit 1
+fi
+trap 'rmdir builds/.aarch64-build-lock' EXIT
 payload_build=$(mktemp -d build/hermes/payload.XXXXXX)
 # This private staging tree is disposable; keep published ISOs and model-cache
 # files, but do not retain tens of GiB after every successful or failed build.
-trap 'test ! -d "$payload_build" || rm -r -- "$payload_build"' EXIT
-esp_size=7g
-iso_size=8g
+trap 'test ! -d "$payload_build" || rm -r -- "$payload_build"; rm -f -- builds/InfinityOS-aarch64.iso.partial; rmdir builds/.aarch64-build-lock' EXIT
+trap 'exit 130' HUP INT TERM
 if ! test -f "$ministral"; then
     curl -fL --retry 3 -o "$ministral.part" https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/resolve/eb599d408350ea2bb60452cb86be7c7b2fc28227/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
     mv "$ministral.part" "$ministral"
 fi
+model_bytes=$(wc -c < "$hermes")
+secondary_bytes=$(wc -c < "$ministral")
+python3 tools/iso-staging.py check build "$((2 * (model_bytes + secondary_bytes) + 3221225472))"
 make build/aarch64/BOOTAA64.EFI build/aarch64/installed-kernel.elf build/aarch64/installed-esp.img
 CARGO_TARGET_DIR=build/behavior-harness cargo build --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-pack
 mkdir -p ${payload_build}/installed/EFI/INFINITY/PAYLOAD ${payload_build}/live/EFI/BOOT ${payload_build}/live/EFI/INFINITY/PAYLOAD ${payload_build}/iso
@@ -36,15 +43,19 @@ if test -n "$hermes"; then
     cp docs/licenses/Hermes-NOTICE.txt ${payload_build}/installed/EFI/INFINITY/PAYLOAD/HERMES-NOTICE.txt
 fi
 cp docs/licenses/Ministral-Apache-2.0.txt ${payload_build}/installed/EFI/INFINITY/PAYLOAD/MINISTRAL-LICENSE.txt
+esp_size=$(python3 tools/iso-staging.py size "${payload_build}/installed")
+# Consumptive copies need headroom for one model shard, not a second whole tree.
+python3 tools/iso-staging.py check "$payload_build" 1073741824
 mkfile -n "$esp_size" ${payload_build}/installed-esp.img
 mformat -F -i ${payload_build}/installed-esp.img -v INFINITYEFI ::
-mcopy -i ${payload_build}/installed-esp.img -s ${payload_build}/installed/EFI ::
+python3 tools/iso-staging.py consume "${payload_build}/installed" "${payload_build}/installed-esp.img"
 # The packed ESP owns these bytes now; release the disposable duplicate tree.
 rm -r -- "${payload_build}/installed"
 CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-install-parity -- ${payload_build}/installed-esp.img --ministral
 if test -n "$hermes"; then
     CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-install-parity -- ${payload_build}/installed-esp.img
 fi
+python3 tools/iso-staging.py check "$payload_build" "$((esp_size + 1073741824))"
 build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.img build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/PAYLOAD build/qwen/payload-manifest.rs
 # Behavioral fresh-install parity: the reassembled kernel payload must be byte
 # identical to the installed kernel, including native UI and transport changes.
@@ -57,14 +68,18 @@ RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release 
 rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
 build/tools/cursor-install-parity build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
 cp build/aarch64/BOOTAA64.EFI ${payload_build}/live/EFI/BOOT/
+rm -r -- "${payload_build}/cargo"
+iso_size=$(python3 tools/iso-staging.py size "${payload_build}/live")
+python3 tools/iso-staging.py check "$payload_build" 1073741824
 mkfile -n "$iso_size" ${payload_build}/iso/efi.img
 mformat -F -i ${payload_build}/iso/efi.img -v INFINITYOS ::
-mcopy -i ${payload_build}/iso/efi.img -s ${payload_build}/live/EFI ::
+python3 tools/iso-staging.py consume "${payload_build}/live" "${payload_build}/iso/efi.img"
 # The ISO's EFI image now owns the live payload. Release this private mktemp
 # duplicate before allocating the final ISO alongside the previous release.
 rm -r -- "${payload_build}/live"
 # Publish only after model and installed-kernel parity have passed. Keep a failed
 # image out of the canonical filename used by provisioning.
+python3 tools/iso-staging.py check builds "$((iso_size + 1073741824))"
 xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o builds/InfinityOS-aarch64.iso.partial ${payload_build}/iso
 python3 tools/audio-install-parity.py builds/InfinityOS-aarch64.iso.partial
 mv builds/InfinityOS-aarch64.iso.partial "$installer_output"

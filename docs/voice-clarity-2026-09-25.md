@@ -44,4 +44,7 @@ Do not present this change as complete end-to-end voice acceptance.
 during FAT image population with insufficient host disk space. Temporary staging
 was cleaned by the build. The published `builds/InfinityOS-aarch64.iso` remains
 the earlier September 25 09:49 artifact and does **not** contain these changes.
-Fresh-install parity and installed listening verification are therefore pending.
+That packaging blocker was subsequently resolved by the bounded staging changes
+documented in `installer-build-space.md`. The September 25 10:41 ARM64 ISO now
+contains these changes and passes binary installed/live parity. Installed
+listening verification remains pending.
