@@ -1,6 +1,5 @@
 #![no_std]
-static INPUT: &[u8] =
-    include_bytes!("../../../build/voice-pocketsphinx-src/test/data/goforward.raw");
+static INPUT: &[u8] = include_bytes!(env!("INFINITY_STT_FIXTURE"));
 static mut PCM: [i16; 160000] = [0; 160000];
 unsafe extern "C" {
     fn infinity_stt_native_recognize(

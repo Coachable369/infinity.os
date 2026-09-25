@@ -16,8 +16,15 @@ ROOT = Path(__file__).resolve().parents[3]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--accel", choices=("tcg", "hvf"), default="tcg")
+    parser.add_argument("--pcm", type=Path, default=ROOT / "build/voice-pocketsphinx-src/test/data/goforward.raw",
+                        help="Recorded signed little-endian 16 kHz mono PCM, at most ten seconds")
+    parser.add_argument("--expected", default="go forward ten meters", help="Independent reference transcript")
     args = parser.parse_args()
+    fixture = args.pcm.resolve()
+    size = fixture.stat().st_size
+    assert 0 < size <= 320000 and size % 2 == 0, "Fixture must contain complete bounded PCM samples"
     env = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(ROOT / "build/voice-pocketsphinx-probe-target"))
+    env["INFINITY_STT_FIXTURE"] = str(fixture)
     subprocess.run(["cargo", "build", "--manifest-path", "tools/voice-pocketsphinx/probe/Cargo.toml",
                     "--release", "-Z", "build-std=core", "--target", "aarch64-unknown-none-softfloat"],
                    cwd=ROOT, env=env, check=True)
@@ -49,7 +56,7 @@ def main():
         offset += length
         # Transcript bytes are the recognizer's actual API output, not a log oracle.
         if case < 2:
-            assert text == b"go forward ten meters", "Completed recording must match its reference transcript"
+            assert text == args.expected.encode(), "Completed recording must match its reference transcript"
         else:
             assert length == 0
         if rows:
@@ -61,6 +68,7 @@ def main():
                          heap_committed_bytes=memory, retained_bytes=live, erased_bytes=erased))
     assert offset == len(data)
     evidence = dict(environment=f"freestanding ARM64 QEMU {args.accel}; not installed InfinityOS",
+                    fixture=str(fixture), expected=args.expected,
                     accuracy_scope="One recorded fixture; live microphone word error rate is not established",
                     cases=rows)
     (output / f"verified-{args.accel}.json").write_text(json.dumps(evidence, indent=2) + "\n")
