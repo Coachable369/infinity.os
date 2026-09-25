@@ -17,9 +17,11 @@ static mut THINKING_HEADER_DIRTY: bool = false;
 // DESC: Schedules a bounded header repaint on the UI thread while generation is visible.
 // ------------------=
 pub fn thinking_animation_tick(visible: bool) -> bool {
-    let active = visible && crate::runtime::ai::with_ai_runtime(|ai|
+    let mut active = visible && crate::runtime::ai::with_ai_runtime(|ai|
         ai.chat.enabled() && !ai.chat.minimized()
         && ai.chat.generation_state == crate::runtime::ai::chat::GenerationState::Running);
+    #[cfg(all(target_os="none",target_arch="aarch64"))]
+    { active |= visible && crate::runtime::ai::voice_conversation::state().0 == crate::runtime::ai::voice_conversation::State::Listening; }
     let now = crate::ui::performance::monotonic_ns().unwrap_or(0);
     unsafe {
         let changed = (&mut *(&raw mut THINKING_ANIMATION)).advance(active, now);
@@ -9494,11 +9496,39 @@ impl super::DisplayDevice {
                 _ => b"LOCAL  READY".as_slice(),
             }
         };
+        #[cfg(all(target_os="none",target_arch="aarch64"))]
+        let state = {
+            use crate::runtime::ai::voice_conversation::{state,State};
+            match state().0 {
+                State::Off if chat.generation_state==crate::runtime::ai::chat::GenerationState::Running=>b"Thinking...".as_slice(),
+                State::Off=>b"VOICE OFF".as_slice(),State::Listening=>b"LISTEN".as_slice(),
+                State::Recognizing=>b"HEARING".as_slice(),State::Thinking=>b"THINKING".as_slice(),
+                State::Speaking=>b"SPEAKING".as_slice(),State::Stopping=>b"STOPPING".as_slice(),
+                State::Failed=>b"UNAVAILABLE".as_slice(),
+            }
+        };
         let state_width = self.ui_text_width(state, 1);
         let thinking = chat.generation_state == crate::runtime::ai::chat::GenerationState::Running
             && !chat.minimized();
         let state_x = left + width.saturating_sub(state_width + 72 * scale);
         let frame = unsafe { THINKING_ANIMATION.frame as usize };
+        #[cfg(all(target_os="none",target_arch="aarch64"))]
+        {
+            use crate::runtime::ai::voice_conversation::{state,State,indicator};
+            let region=indicator::control(geometry.panel,scale);
+            self.outline_rounded_rect(region.x.max(0)as usize,region.y.max(0)as usize,region.width as usize,region.height as usize,8*scale,46,107,137);
+            let (voice,level)=state();
+            if voice==State::Listening{
+                let x=region.x+6*scale as i32;
+                let y=top as i32+23*scale as i32;
+                let available=(state_x as i32-x-6*scale as i32).max(0)as usize;
+                for offset in 1..available.min(42*scale){
+                    let a=indicator::sample((offset-1)/scale,frame,level)*scale as i32;
+                    let b=indicator::sample(offset/scale,frame,level)*scale as i32;
+                    self.line(x+offset as i32-1,y+a,x+offset as i32,y+b,80,215,249);
+                }
+            }
+        }
         self.ui_text_shaded(
             state_x,
             top + 15 * scale,
@@ -9990,7 +10020,9 @@ pub fn system_ui_present(
             console.display.fast_motion_frame = fast_motion_frame;
             console.system_ui_active = true;
             console.restore_cursor();
-            let chat_content = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.state_hash());
+            let mut chat_content = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.state_hash());
+            #[cfg(all(target_os="none",target_arch="aarch64"))]
+            { chat_content ^= (crate::runtime::ai::voice_conversation::state().0 as u64).wrapping_mul(0x9e3779b97f4a7c15); }
             let chat_changed = console.last_chat_content != chat_content;
             let content = system_content_hash(
                 input,
@@ -10007,10 +10039,7 @@ pub fn system_ui_present(
                 editor_dialog,
                 editor_dialog_input,
                 editor_dialog_focus,
-            ) ^ crate::runtime::ai::with_ai_runtime(|runtime| {
-                let hash = runtime.chat.state_hash();
-                hash as u32 ^ (hash >> 32) as u32
-            }) ^ crate::ui::text_input::presentation_hash()
+            ) ^ (chat_content as u32 ^ (chat_content >> 32) as u32) ^ crate::ui::text_input::presentation_hash()
                 ^ crate::ui::object_picker::presentation().state_hash()
                 ^ if screen == 10 {
                     u32::from(clock.second)
@@ -10022,9 +10051,7 @@ pub fn system_ui_present(
                 system_content_hash(&[], masked, output_lines, output_lengths, output_count,
                     editor_saved, editor_input, &[], editor_window, command_window,
                     editor_scroll_row, editor_dialog, editor_dialog_input, editor_dialog_focus)
-                    ^ crate::runtime::ai::with_ai_runtime(|runtime| {
-                        let hash = runtime.chat.state_hash(); hash as u32 ^ (hash >> 32) as u32
-                    })
+                    ^ (chat_content as u32 ^ (chat_content >> 32) as u32)
             } else { 0 };
             let focus_changed = console.last_system_focus != focus;
             let clock_changed = console.last_system_clock != clock;
@@ -10660,7 +10687,7 @@ pub fn system_ui_present(
                     focus,
                     menu_kind,
                 );
-            } else if crate::ui::redraw::desktop_chat_content_requires_bounded_redraw(
+            } else if (matches!(screen,4|8|9|10) && thinking_header_changed && !content_changed) || crate::ui::redraw::desktop_chat_content_requires_bounded_redraw(
                 screen,
                 content_changed || thinking_header_changed,
             ) {

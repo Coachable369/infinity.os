@@ -333,6 +333,19 @@ fn voice_and_agents() {
         )
         .unwrap();
     let mut voice = VoiceService::new();
+    let mut recognition = runtime::iop::IopMessage::request(OperationId::SpeechRecognize,
+        1, owner, microphone, 11, 1, &[]).unwrap();
+    assert_eq!(authorize_recognition(&recognition, owner, 16000, &capabilities, 1), Ok(()));
+    assert_eq!(authorize_recognition(&recognition, issuer, 16000, &capabilities, 1), Err(AiError::InvalidRequest));
+    assert_eq!(authorize_recognition(&recognition, owner, 160001, &capabilities, 1), Err(AiError::InvalidRequest));
+    assert_eq!(authorize_recognition(&recognition, owner, 0, &capabilities, 1), Err(AiError::InvalidRequest));
+    assert_eq!(authorize_recognition(&recognition, owner, 16000, &capabilities, 11), Err(AiError::InvalidRequest));
+    recognition.header.operation_type_id = OperationId::SpeechSynthesize as u32;
+    assert_eq!(authorize_recognition(&recognition, owner, 16000, &capabilities, 1), Err(AiError::InvalidRequest));
+    recognition.header.operation_type_id = OperationId::SpeechRecognize as u32;
+    recognition.header.payload_length = 1;
+    assert_eq!(authorize_recognition(&recognition, owner, 16000, &capabilities, 1), Err(AiError::InvalidRequest));
+    recognition.header.payload_length = 0;
     let session = voice
         .start_push_to_talk(owner, microphone, 10, 1, &capabilities)
         .unwrap();
@@ -350,6 +363,7 @@ fn voice_and_agents() {
     assert_eq!(voice.push_pcm(session, owner, &[0; 320], 16000, 2, &capabilities), Err(AiError::InvalidRequest));
     assert!(voice.refresh_authority(2, &capabilities));
     capabilities.revoke(microphone).unwrap();
+    assert_eq!(authorize_recognition(&recognition, owner, 16000, &capabilities, 3), Err(AiError::AccessDenied));
     assert!(!voice.refresh_authority(3, &capabilities));
     assert_eq!(voice.state(), VoiceState::Idle);
     assert_eq!(voice.stop(session, owner), Err(AiError::InvalidRequest));

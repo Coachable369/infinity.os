@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""Behavioral native-guest decoder, cancellation, bounds, and repeat-use test."""
+from pathlib import Path
+import argparse
+import json
+import os
+import struct
+import subprocess
+
+ROOT = Path(__file__).resolve().parents[3]
+
+# ------------------------=
+# FUNC: main
+# DESC: Executes actual guest recognition and asserts binary API results, not diagnostic log prose.
+# ------------------=
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--accel", choices=("tcg", "hvf"), default="tcg")
+    args = parser.parse_args()
+    env = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(ROOT / "build/voice-pocketsphinx-probe-target"))
+    subprocess.run(["cargo", "build", "--manifest-path", "tools/voice-pocketsphinx/probe/Cargo.toml",
+                    "--release", "-Z", "build-std=core", "--target", "aarch64-unknown-none-softfloat"],
+                   cwd=ROOT, env=env, check=True)
+    output = ROOT / "build/voice-pocketsphinx-arm"
+    subprocess.run(["/opt/homebrew/opt/lld/bin/ld.lld", "--gc-sections", "-nostdlib", "-T",
+                    str(ROOT / "tools/attention-softfloat-probe.ld"), "-o", str(output / "probe.elf"),
+                    str(ROOT / "build/voice-pocketsphinx-probe-target/aarch64-unknown-none-softfloat/release/libinfinity_stt_probe.a"),
+                    str(output / "private-native.o")], check=True)
+    result = output / f"verified-{args.accel}.bin"
+    # A unique current invocation output prevents stale pass evidence.
+    if result.exists():
+        result.unlink()
+    subprocess.run(["qemu-system-aarch64", "-machine", "virt", "-accel", args.accel, "-cpu",
+                    "host" if args.accel == "hvf" else "max", "-m", "512M", "-display", "none",
+                    "-serial", "file:" + str(result), "-monitor", "none", "-kernel", str(output / "probe.elf")],
+                   check=True, timeout=120)
+    data = result.read_bytes()
+    rows = []
+    offset = 0
+    for case in range(6):
+        assert len(data) - offset >= 72, "Guest exception, panic, or incomplete result"
+        version, index, code, length, memory, ticks, frequency, live, erased = struct.unpack_from("<9Q", data, offset)
+        offset += 72
+        assert version == 2 and index == case and frequency > 0
+        assert code == [0, 0, 2, 6, 5, 2][case]
+        assert 0 < memory <= 192 * 1024 * 1024 and erased > 0
+        assert offset + length <= len(data)
+        text = data[offset:offset + length]
+        offset += length
+        # Transcript bytes are the recognizer's actual API output, not a log oracle.
+        if case < 2:
+            assert text == b"go forward ten years", "Decoder diverges from identical upstream model/configuration"
+        else:
+            assert length == 0
+        if rows:
+            assert live == rows[0]["retained_bytes"] and memory == rows[0]["heap_committed_bytes"]
+            assert erased >= rows[-1]["erased_bytes"]
+            if case != 5:
+                assert erased > rows[-1]["erased_bytes"]
+        rows.append(dict(case=case, result=code, transcript=text.decode(), seconds=ticks/frequency,
+                         heap_committed_bytes=memory, retained_bytes=live, erased_bytes=erased))
+    assert offset == len(data)
+    evidence = dict(environment=f"freestanding ARM64 QEMU {args.accel}; not installed InfinityOS",
+                    known_accuracy_failure="Fixture says ten meters; decoder returns ten years, also on host reference",
+                    cases=rows)
+    (output / f"verified-{args.accel}.json").write_text(json.dumps(evidence, indent=2) + "\n")
+    print(json.dumps(evidence, indent=2))
+
+if __name__ == "__main__":
+    main()

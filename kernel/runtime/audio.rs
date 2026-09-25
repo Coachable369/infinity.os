@@ -95,4 +95,14 @@ impl AudioStream {
         let kind = match self.route { AudioRoute::Playback => CapabilityType::AudioOutput, AudioRoute::Capture => CapabilityType::AudioInput };
         now < self.deadline && caps.validate(self.capability, self.owner, kind, 0, 1, 0, now).is_ok()
     }
+    // ------------------------=
+    // FUNC: renew
+    // DESC: Reauthorizes an unexpired stream without changing owner or direction or resurrecting revoked authority.
+    // ------------------=
+    pub fn renew(&self, message: &IopMessage, caps: &CapabilityManager, now: u64) -> Result<Self, AudioError> {
+        if !self.valid(caps, now) { return Err(AudioError::Denied); }
+        let next = Self::authorize(message, self.owner, caps, now)?;
+        if next.route != self.route { return Err(AudioError::Denied); }
+        Ok(next)
+    }
 }

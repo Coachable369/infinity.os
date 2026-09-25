@@ -6,6 +6,8 @@ use core::cell::Cell;
 
 pub const FRAMES: usize = 4800;
 pub const SAMPLES: usize = FRAMES * 2;
+pub const CAPTURE_FRAMES: usize = 96000;
+pub const CAPTURE_SAMPLES: usize = CAPTURE_FRAMES * 2;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Timeout, Unsupported, Busy, Invalid, Dma }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,7 +64,7 @@ fn route_visit<F: FnMut(u32, u32) -> Result<u32, Error>>(
 pub struct Dma {
     descriptors: [[u64; 2]; 16],
     playback: [i16; SAMPLES],
-    capture: [i16; SAMPLES],
+    capture: [i16; CAPTURE_SAMPLES],
     commands: [u32; 256],
     responses: [u64; 256],
 }
@@ -72,7 +74,7 @@ impl Dma {
     // DESC: Reserves resident zeroed DMA storage without allocation.
     // ------------------=
     pub const fn new() -> Self {
-        Self { descriptors: [[0; 2]; 16], playback: [0; SAMPLES], capture: [0; SAMPLES], commands: [0; 256], responses: [0; 256] }
+        Self { descriptors: [[0; 2]; 16], playback: [0; SAMPLES], capture: [0; CAPTURE_SAMPLES], commands: [0; 256], responses: [0; 256] }
     }
 }
 pub struct Hda {
@@ -312,15 +314,15 @@ impl Hda {
         let r = 0x80;
         self.w8(r, 1); self.wait(r, 1, 1)?;
         self.w8(r, 0); self.wait(r, 1, 0)?;
-        for i in 0..SAMPLES { write_volatile(core::ptr::addr_of_mut!((*self.dma).capture[i]), 0); }
+        for i in 0..CAPTURE_SAMPLES { write_volatile(core::ptr::addr_of_mut!((*self.dma).capture[i]), 0); }
         let address = core::ptr::addr_of_mut!((*self.dma).capture) as u64;
         let bdl = core::ptr::addr_of_mut!((*self.dma).descriptors[8]) as u64;
-        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[8]), [address, SAMPLES as u64]);
-        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[9]), [address + SAMPLES as u64, SAMPLES as u64]);
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[8]), [address, CAPTURE_SAMPLES as u64]);
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[9]), [address + CAPTURE_SAMPLES as u64, CAPTURE_SAMPLES as u64]);
         fence(Ordering::SeqCst);
         #[cfg(target_arch = "aarch64")]
         core::arch::asm!("dsb sy", options(nostack));
-        self.w32(r + 8, (SAMPLES * 2) as u32); self.w16(r + 0x0c, 1);
+        self.w32(r + 8, (CAPTURE_SAMPLES * 2) as u32); self.w16(r + 0x0c, 1);
         self.w16(r + 0x12, if self.sample_rate == 48000 { 0x11 } else { 0x4011 });
         self.w32(r + 0x18, bdl as u32); self.w32(r + 0x1c, (bdl >> 32) as u32);
         self.verb(self.adc, if self.sample_rate == 48000 { 0x20011 } else { 0x24011 })?; self.verb(self.adc, 0x70620)?;
@@ -339,14 +341,14 @@ impl Hda {
         if !self.capturing { return Err(Error::Invalid); }
         if self.r32(0x80) & (0x18 << 24) != 0 { return Err(Error::Dma); }
         let bytes = self.r32(0x84) as usize;
-        if bytes >= SAMPLES * 2 { return Err(Error::Dma); }
+        if bytes >= CAPTURE_SAMPLES * 2 { return Err(Error::Dma); }
         let position = bytes / 4 * 2;
         fence(Ordering::Acquire);
-        let count = ((position + SAMPLES - self.capture_position) % SAMPLES).min(out.len() & !1);
+        let count = ((position + CAPTURE_SAMPLES - self.capture_position) % CAPTURE_SAMPLES).min(out.len() & !1);
         for (i, sample) in out[..count].iter_mut().enumerate() {
-            *sample = read_volatile(core::ptr::addr_of!((*self.dma).capture[(self.capture_position + i) % SAMPLES]));
+            *sample = read_volatile(core::ptr::addr_of!((*self.dma).capture[(self.capture_position + i) % CAPTURE_SAMPLES]));
         }
-        self.capture_position = (self.capture_position + count) % SAMPLES;
+        self.capture_position = (self.capture_position + count) % CAPTURE_SAMPLES;
         Ok(count)
     }
     // ------------------------=
@@ -360,6 +362,7 @@ impl Hda {
             let _ = self.verb(route.nodes[route.length - 1], 0x70700);
         }
         self.capturing = false;
+        for i in 0..CAPTURE_SAMPLES { write_volatile(core::ptr::addr_of_mut!((*self.dma).capture[i]), 0); }
     }
     // ------------------------=
     // FUNC: start

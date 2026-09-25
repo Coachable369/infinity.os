@@ -22,7 +22,7 @@ static mut INPUT_LEASE: Option<crate::runtime::audio::AudioStream> = None;
 static mut INPUT_UNTIL: u64 = 0;
 static mut INPUT_LAST_POLL: u64 = 0;
 static mut INPUT: AudioBuffer<192000> = AudioBuffer::new();
-static mut INPUT_PCM: [i16; hda::SAMPLES] = [0; hda::SAMPLES];
+static mut INPUT_PCM: [i16; hda::CAPTURE_SAMPLES] = [0; hda::CAPTURE_SAMPLES];
 static mut INPUT_STATUS: CaptureStatus = CaptureStatus { state: CaptureState::Idle, sample_rate: 0, frames: 0, peak: 0 };
 
 // ------------------------=
@@ -69,6 +69,28 @@ pub fn capture(owner: crate::runtime::execution::SecurityIdentity, capability: u
 pub fn capture_status() -> Option<CaptureStatus> {
     if LOCK.swap(true, Ordering::Acquire) { return None; }
     let status = unsafe { INPUT_STATUS }; LOCK.store(false, Ordering::Release); Some(status)
+}
+// ------------------------=
+// FUNC: renew_capture
+// DESC: Extends a caller-owned live stream through another validated short IOP lease without restarting DMA.
+// ------------------=
+pub fn renew_capture(owner: crate::runtime::execution::SecurityIdentity, capability: u64) -> bool {
+    let Some(now) = crate::ui::performance::monotonic_ns() else { return false; };
+    if LOCK.swap(true, Ordering::Acquire) { return false; }
+    let renewed = unsafe {
+        if let Some(lease) = INPUT_LEASE.filter(|lease| lease.owner == owner) {
+            let request = crate::runtime::iop::IopMessage::request(crate::runtime::iop::OperationId::AudioCaptureStart,
+                now, owner, capability, now / 1_000_000_000 + 5, now, &[]);
+            let next = request.ok().and_then(|request| crate::runtime::with_runtime(|r|
+                lease.renew(&request, &r.capabilities, now / 1_000_000_000).ok()).flatten());
+            if INPUT_STATUS.state == CaptureState::Recording && next.is_some() {
+                INPUT_LEASE = next; INPUT_UNTIL = now.saturating_add(3_000_000_000);
+                if capability != lease.capability { crate::runtime::with_runtime(|r| { let _ = r.capabilities.retire_leaf(lease.capability, owner); }); }
+                true
+            } else { false }
+        } else { false }
+    };
+    LOCK.store(false, Ordering::Release); renewed
 }
 // ------------------------=
 // FUNC: read_capture
@@ -261,7 +283,7 @@ pub fn poll() {
                     .and_then(|(l, n)| crate::runtime::with_runtime(|r| l.valid(&r.capabilities, n / 1_000_000_000))).unwrap_or(false);
                 let n = now.unwrap_or(0);
                 if !authorized { finish_capture(device, CaptureState::Denied); }
-                else if n.saturating_sub(INPUT_LAST_POLL) >= hda::FRAMES as u64 * 1_000_000_000 / device.sample_rate as u64 {
+                else if n.saturating_sub(INPUT_LAST_POLL) >= hda::CAPTURE_FRAMES as u64 * 1_000_000_000 / device.sample_rate as u64 {
                     finish_capture(device, CaptureState::Overrun);
                 } else {
                     INPUT_LAST_POLL = n;

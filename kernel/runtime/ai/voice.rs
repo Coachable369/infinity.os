@@ -5,6 +5,33 @@ use crate::runtime::{
     execution::SecurityIdentity,
 };
 
+// ------------------------=
+// FUNC: authorize_recognition
+// DESC: Validates the typed speech operation and its bounded PCM contract before a provider receives audio.
+// ------------------=
+pub fn authorize_recognition(
+    message: &crate::runtime::iop::IopMessage,
+    owner: SecurityIdentity,
+    samples: usize,
+    capabilities: &CapabilityManager,
+    now: u64,
+) -> Result<(), AiError> {
+    use crate::runtime::iop::{MessageType, OperationId, IOP_VERSION};
+    let h = &message.header;
+    if h.protocol_version != IOP_VERSION || h.schema_version != 1
+        || h.message_type != MessageType::Request
+        || h.operation_type_id != OperationId::SpeechRecognize as u32
+        || h.caller_identity != owner || h.payload_length != 0
+        || samples == 0 || samples > 160000
+        || h.deadline <= now || h.deadline.saturating_sub(now) > 10
+    {
+        return Err(AiError::InvalidRequest);
+    }
+    capabilities.validate(h.capability_ref, owner, CapabilityType::AudioInput, 0, 1, 0, now)
+        .map_err(|_| AiError::AccessDenied)?;
+    Ok(())
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum VoiceState {
     Idle,

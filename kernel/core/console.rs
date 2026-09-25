@@ -2366,6 +2366,8 @@ impl ConsoleRuntime {
     // DESC: Enables or disables the desktop AI surface and persists the authenticated preference.
     // ------------------=
     fn set_ai_chat_enabled(&mut self, enabled: bool) {
+        #[cfg(all(target_os="none",target_arch="aarch64"))]
+        if !enabled { crate::runtime::ai::voice_conversation::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0)); }
         let mut widgets=crate::ui::desktop_widgets::current();
         if enabled { widgets.visible |= 2; } else { widgets.visible &= !2; }
         crate::ui::desktop_widgets::publish(widgets);
@@ -7175,6 +7177,17 @@ impl ConsoleRuntime {
                     y: self.pointer_y * self.system.framebuffer_height as i32 / 1000,
                 })).unwrap_or(false);
             if clicked && chat_state.0 && !over_window && self.resize_pointer_shape().is_none() {
+                #[cfg(all(target_os="none",target_arch="aarch64"))]
+                {
+                    use crate::runtime::ai::voice_conversation::{self,State,indicator};
+                    let rect=indicator::control(layout.ai_chat_geometry(chat_state.1).panel,layout.scale());
+                    let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
+                    if rect.contains(point){
+                        let owner=crate::runtime::execution::SecurityIdentity(self.current_session.0);
+                        if matches!(voice_conversation::state().0,State::Off|State::Failed){voice_conversation::start(owner);}else{voice_conversation::stop(owner);}
+                        self.redraw();return;
+                    }
+                }
                 if let Some(target) =
                     layout.ai_chat_target(self.pointer_x, self.pointer_y, chat_state.1)
                 {
@@ -11477,6 +11490,13 @@ impl ConsoleRuntime {
                 .write_line(b"remote       SCAFFOLDED  disabled by policy");
             return true;
         }
+        #[cfg(all(target_os = "none", target_arch = "aarch64"))]
+        if command == b"voice conversation start" || command == b"voice listen" {
+            let started = crate::runtime::ai::voice_conversation::start(crate::runtime::execution::SecurityIdentity(self.current_session.0));
+            self.output.write_line(if started { b"Local voice enabled. Microphone listens between replies. voice stop mutes." }
+                else { b"Voice unavailable: requires an idle local-model chat, active login, and native microphone." });
+            return true;
+        }
         #[cfg(target_os = "none")]
         if command.starts_with(b"voice say ") {
             use crate::runtime::{capability::CapabilityType, execution::SecurityIdentity};
@@ -11498,13 +11518,21 @@ impl ConsoleRuntime {
             return true;
         }
         #[cfg(target_os = "none")]
-        if command == b"voice stop" {
+        if command == b"voice stop" || command == b"voice conversation stop" {
+            #[cfg(target_arch = "aarch64")]
+            crate::runtime::ai::voice_conversation::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0));
             crate::runtime::ai::voice_output::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0));
             self.output.write_line(b"Voice output cancellation requested.");
             return true;
         }
+        if command == b"voice devices" {
+            self.output.write_line(if crate::drivers::audio::available() { b"Native HDA playback ready." } else { b"No native playback route." });
+            self.output.write_line(if crate::drivers::audio::capture_available() { b"Native HDA microphone ready." } else { b"No native capture route." });
+            return true;
+        }
         if command == b"voice status" {
             crate::output_text(b"[operation] Voice.Status\n");
+            #[cfg(not(all(target_os="none",target_arch="aarch64")))]
             crate::runtime::ai::with_ai_runtime(|ai| {
                 self.output.write_segments(&[
                     b"Voice session: ",
@@ -11524,7 +11552,22 @@ impl ConsoleRuntime {
                 self.output.write_number(b"Synthesis arena peak bytes: ", status.peak_bytes as u64);
                 self.output.write_number(b"Speech error: ", status.error as u64);
             }
-            self.output.write_line(b"Native HDA capture available via audio capture; automatic speech recognition is not yet connected.");
+            #[cfg(all(target_os = "none", target_arch = "aarch64"))]
+            {
+                let (state, level) = crate::runtime::ai::voice_conversation::state();
+                use crate::runtime::ai::voice_conversation::State;
+                self.output.write_line(match state {
+                    State::Off=>b"Voice: off", State::Listening=>b"Voice: listening (voice stop mutes)",
+                    State::Recognizing=>b"Voice: recognizing locally",State::Thinking=>b"Voice: Hermes responding",
+                    State::Speaking=>b"Voice: speaking (microphone paused)",State::Stopping=>b"Voice: stopping",State::Failed=>b"Voice: unavailable",
+                });
+                let recognition = crate::runtime::ai::voice_input::status();
+                self.output.write_number(b"Conversation state: ", state as u64);
+                self.output.write_number(b"Microphone level: ", level as u64);
+                self.output.write_number(b"Recognition milliseconds: ", recognition.elapsed_ns / 1_000_000);
+                self.output.write_number(b"Recognition heap bytes: ", recognition.heap_bytes as u64);
+                self.output.write_number(b"Recognition error: ", recognition.error as u64);
+            }
             return true;
         }
         if command == b"agent list" {
@@ -12750,6 +12793,10 @@ static mut RUNTIME: Option<ConsoleRuntime> = None;
 // DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
 // ------------------=
 pub fn poll_native_ai() {
+    #[cfg(all(target_os = "none", target_arch = "aarch64"))]
+    if crate::runtime::ai::voice_conversation::poll() {
+        unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
+    }
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { geturl::poll(runtime); } }
     if crate::runtime::ai::with_ai_runtime(|ai|ai.poll_qwen()) {
@@ -12889,7 +12936,7 @@ pub fn ui_animation_tick() -> bool {
         let motion_frame = runtime.continuous_motion_frames.take_for_tick();
         if runtime.spatial.arriving { return runtime.spatial_arrival_tick(); }
         if runtime.spatial.open { return runtime.spatial_tick(); }
-        let thinking_changed = crate::bootstrap::thinking_animation_tick(runtime.mode == ConsoleMode::Desktop);
+        let thinking_changed = crate::bootstrap::thinking_animation_tick(matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::Settings));
         if thinking_changed && !motion_frame {
             runtime.redraw();
         }

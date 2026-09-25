@@ -1,5 +1,96 @@
 # Native voice implementation status
 
+## Current acceptance status — September 25, native recognizer integration
+
+**In progress, not end-to-end accepted.** The sections below are chronological;
+this section supersedes their earlier statements that STT is absent.
+
+Media built September 25 at 02:38 CDT:
+`builds/InfinityOS-aarch64.iso`, 8,590,336,000 bytes,
+SHA-256 `15d30a9689d971bde58b210410426cfbffaef3b48cb739c3361462bdb69e5682`.
+The build's binary parity check passed for the 249,854,016-byte installed
+kernel, 24,576-byte loader, and 33,722,129 bytes of checked acoustic/LM resources.
+Hermes and Ministral payload parity also passed. Other architecture/test ISOs
+were not refreshed by this build.
+
+Implemented for AArch64:
+
+- PocketSphinx 5.1.1 at `511126b492dcb267cf30d49d631946d7b61a9530`, with its
+  bundled English acoustic model, dictionary, and language model linked as
+  immutable native resources. Newlib supplies a private, symbol-prefixed C
+  runtime; there is no Linux, Python, cloud, or host recognizer at runtime.
+- One cancellable AP recognition job, 16 kHz mono PCM, maximum ten-second
+  utterance, bounded 192 MiB decoder heap and 512-byte transcript. Private
+  allocations and PCM are erased on release; a caught decoder fatal error
+  quarantines that provider until reboot rather than reusing corrupted state.
+- `SpeechRecognize` typed IOP validation, caller/capability checks, deadline,
+  output ownership, revocation, and one-time result delivery. Native audio
+  capture renews its existing stream with fresh short-lived authority instead
+  of restarting DMA. The two-second HDA ring replaces the overrun-prone 100 ms
+  capture ring; playback remains independent.
+- `voice listen` / `voice conversation start` connect capture, resampling, VAD,
+  native STT, the selected local chat model (Hermes by default), and native
+  Flite reply chunks. `voice stop`, `voice status`, `voice devices`, and
+  `voice say` expose the same underlying state. Explicit listening during a
+  reply requests cancellation before restarting capture after worker release.
+- A desktop chat-header listening control and bounded audio-reactive sine
+  waveform; chat damage now incorporates voice state so a foreground app
+  does not leave a stale listening label. Closing/hiding chat or locking the
+  owning session stops capture. Reboot does not resume microphone access.
+
+Evidence collected:
+
+- Six freestanding AArch64 decoder cases pass with QEMU HVF and TCG: repeated
+  real recorded speech, mid-utterance cancellation, output bounds, silence,
+  and pre-start cancellation. These are native bare-metal probes, **not**
+  installed desktop conversation proof.
+- HVF recorded-fixture runs took 0.8364 s and 0.8057 s including decoder/model
+  setup. Committed heap was 108,351,616 bytes, with 1,316 retained bytes stable
+  across requests. This is committed decoder heap, not total OS peak RAM.
+- The fixture says “go forward ten meters”; both the native guest and the
+  identical upstream host reference decode “go forward ten years”. That is a
+  known accuracy failure, not a successful exact-transcript acceptance test.
+- The installed private VirtualBox disk boots without an ISO, opens continuous
+  HDA capture, survives the former short-ring overrun interval, and displays
+  LISTEN with the waveform. Console status remains accessible. Longer-run
+  VirtualBox virtual-time lag was observed, so no installed latency or desktop
+  responsiveness acceptance is claimed from that run.
+- The acoustic speaker-fixture attempt produced no transcript in that session.
+  VirtualBox microphone permission was already enabled. Subsequently even
+  debugger/poweroff calls stalled; the private test instance was terminated.
+  This does not establish the root cause or prove a microphone hardware fault.
+- Behavioral host tests cover PCM conversion, VAD, stream capability renewal,
+  speech IOP validation, waveform bounds, and existing AI security/chat behavior.
+  AArch64 installed kernel links with both speech backends.
+
+Remaining acceptance / limitations:
+
+1. A live microphone utterance producing the expected transcript, a real
+   Hermes response, and an audible synthesized reply in the installed desktop
+   has **not yet been demonstrated**. Earlier audible tone confirmation is not
+   speech confirmation.
+2. Cold installation from the newly packaged ISO, no-ISO installed retest,
+   GUI microphone toggle reliability, and whole-turn cancellation/restart
+   still need end-to-end verification.
+3. Current conversation is turn-taking: capture pauses during recognition,
+   thinking, and playback and resumes between replies. There is no acoustic
+   echo cancellation, spoken barge-in, or wake word. Speech begins after the
+   completed chat reply, not on token streaming. Explicit restart is supported.
+4. English-only recognizer, ASCII/compact diphone voice, ten-second utterances;
+   recognition quality needs live testing. Decoder setup occurs per utterance;
+   cancellation checkpoints begin after model initialization.
+5. Full installed stage latencies, Hermes throughput regression, total peak
+   RAM/CPU, and a spoken capability-gated OS action remain unmeasured/unproven.
+6. Native STT/controller integration is AArch64-only; do not advertise the
+   x86_64 ISO as having the same voice-conversation capability.
+
+Reproduction: `make voice-recognition-test`, `make voice-indicator-test`,
+`make audio-test voice-vad-test voice-pcm-test`, `sh tools/ai-test.sh`.
+Native binary-result reports live under `build/voice-pocketsphinx-arm/`.
+`tools/audio-install-parity.py` checks actual packaged kernel/model/loader bytes,
+not source strings or human-readable diagnostics. Packaging parity alone does
+not establish installed conversation acceptance.
+
 ## Verified audio prerequisite
 
 See `native-audio-substrate.md` and `evidence/audio-virtualbox-installed.json`.

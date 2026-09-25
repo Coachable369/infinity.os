@@ -2,6 +2,7 @@
 from pathlib import Path
 import struct
 import subprocess
+import sys
 
 # ------------------------=
 # FUNC: main
@@ -11,7 +12,14 @@ def main():
     root = Path(__file__).resolve().parent.parent
     installed = (root / "build/aarch64/installed-kernel.elf").read_bytes()
     assert installed[:6] == b"\x7fELF\x02\x01" and int.from_bytes(installed[18:20], "little") == 183
-    iso = root / "builds/InfinityOS-aarch64.iso"
+    # Check actual immutable binary speech models, not source/log text or symbols.
+    speech_root = root / "build/voice-pocketsphinx-src/model/en-us"
+    model_bytes = 0
+    for relative in ("en-us.lm.bin", "en-us/mdef", "en-us/means", "en-us/variances", "en-us/sendump", "en-us/transition_matrices"):
+        data = (speech_root / relative).read_bytes()
+        assert len(data) > 0 and installed.find(data) >= 0
+        model_bytes += len(data)
+    iso = Path(sys.argv[1]) if len(sys.argv) == 2 else root / "builds/InfinityOS-aarch64.iso"
     # Decode the ISO's El Torito catalog, then address its FAT image directly.
     with iso.open("rb") as file:
         file.seek(17 * 2048)
@@ -31,7 +39,7 @@ def main():
     for image in (str(root / "build/aarch64/installed-esp.img"), media):
         actual = subprocess.check_output(["mtype", "-i", image, "::/EFI/BOOT/BOOTAA64.EFI"])
         assert actual == loader
-    print({"installed_kernel_bytes": len(installed), "loader_bytes": len(loader), "audio_kernel_loader_parity": True})
+    print({"installed_kernel_bytes": len(installed), "loader_bytes": len(loader), "speech_model_bytes": model_bytes, "audio_kernel_loader_parity": True})
 
 if __name__ == "__main__":
     main()

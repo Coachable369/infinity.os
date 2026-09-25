@@ -41,12 +41,19 @@ mformat -F -i ${payload_build}/installed-esp.img -v INFINITYEFI ::
 mcopy -i ${payload_build}/installed-esp.img -s ${payload_build}/installed/EFI ::
 # The packed ESP owns these bytes now; release the disposable duplicate tree.
 rm -r -- "${payload_build}/installed"
+CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-install-parity -- ${payload_build}/installed-esp.img --ministral
+if test -n "$hermes"; then
+    CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-install-parity -- ${payload_build}/installed-esp.img
+fi
 build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.img build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/PAYLOAD build/qwen/payload-manifest.rs
 # Behavioral fresh-install parity: the reassembled kernel payload must be byte
 # identical to the installed kernel, including native UI and transport changes.
 cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - build/aarch64/installed-kernel.elf
+# Its validated bytes now belong to the payload shards. Release only this
+# invocation's disposable ESP before allocating another full EFI image.
+rm -- "${payload_build}/installed-esp.img"
 RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target aarch64-unknown-none-softfloat --features streamed-payload
-/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/aarch64.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a build/aarch64/qwen-math.o
+/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/aarch64.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a build/aarch64/qwen-math.o build/voice-flite/aarch64/libflite.a build/voice-pocketsphinx-arm/private-native.o
 rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
 build/tools/cursor-install-parity build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
 cp build/aarch64/BOOTAA64.EFI ${payload_build}/live/EFI/BOOT/
@@ -56,11 +63,8 @@ mcopy -i ${payload_build}/iso/efi.img -s ${payload_build}/live/EFI ::
 # The ISO's EFI image now owns the live payload. Release this private mktemp
 # duplicate before allocating the final ISO alongside the previous release.
 rm -r -- "${payload_build}/live"
-CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-install-parity -- ${payload_build}/installed-esp.img --ministral
-if test -n "$hermes"; then
-    CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-install-parity -- ${payload_build}/installed-esp.img
-fi
 # Publish only after model and installed-kernel parity have passed. Keep a failed
 # image out of the canonical filename used by provisioning.
 xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o builds/InfinityOS-aarch64.iso.partial ${payload_build}/iso
+python3 tools/audio-install-parity.py builds/InfinityOS-aarch64.iso.partial
 mv builds/InfinityOS-aarch64.iso.partial "$installer_output"

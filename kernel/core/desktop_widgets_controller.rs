@@ -53,8 +53,8 @@ impl ConsoleRuntime {
                     let row = (point.y - menu.y) as usize / (36 * scale);
                     if row == 1 || row == 2 {
                         state.visible ^= 1 << (row - 1);
-                        if row == 2 && state.visible & 2 != 0 {
-                            self.set_ai_chat_enabled(true);
+                        if row == 2 {
+                            self.set_ai_chat_enabled(state.visible & 2 != 0);
                         }
                         self.ai_chat_focus = 0;
                     } else if row == 3 {
@@ -125,6 +125,8 @@ impl ConsoleRuntime {
                 }
                 let rect = state.rect(id, width, height, scale, minimized && id == 1);
                 if rect.contains(point) {
+                    #[cfg(all(target_os="none",target_arch="aarch64"))]
+                    if id==1 && crate::runtime::ai::voice_conversation::indicator::control(rect,scale).contains(point) { return false; }
                     if point.y < rect.y + (40 * scale) as i32
                         && point.x < rect.right() - (80 * scale) as i32
                     {

@@ -41,6 +41,8 @@ pub fn initialize(_info: &crate::boot_info::BootInfo) {
 pub fn poll() {
     #[cfg(target_os = "none")]
     crate::runtime::ai::voice_output::poll();
+    #[cfg(all(target_os = "none", target_arch = "aarch64"))]
+    crate::runtime::ai::voice_input::poll();
     super::audio::poll();
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {
