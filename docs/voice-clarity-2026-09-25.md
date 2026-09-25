@@ -37,3 +37,11 @@ PocketSphinx's acoustic/language models are unchanged. Word substitutions remain
 an open limitation; these segmentation fixes do not establish a reduced word
 error rate. The previously observed VirtualBox capture stall remains unresolved.
 Do not present this change as complete end-to-end voice acceptance.
+
+## Packaging status
+
+`sh tools/build-hermes.sh` compiled both installed and live kernels, but failed
+during FAT image population with insufficient host disk space. Temporary staging
+was cleaned by the build. The published `builds/InfinityOS-aarch64.iso` remains
+the earlier September 25 09:49 artifact and does **not** contain these changes.
+Fresh-install parity and installed listening verification are therefore pending.
