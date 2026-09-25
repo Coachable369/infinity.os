@@ -33,3 +33,12 @@ playback, and other owners' playback is not interrupted.
   VM verification. Do not treat compilation or mathematical timing as that proof.
 
 Existing unrelated boot-audio changes in the working tree are preserved.
+
+## Fresh installer artifact
+
+`sh tools/build-hermes.sh` completed successfully. The refreshed
+`builds/InfinityOS-aarch64.iso` is 5,503,328,256 bytes, with SHA256
+`e3f5aa698727f979bc1067e715e750f620e8190b6a086efeab6a90de328112dc`.
+Artifact extraction verified installed-kernel, loader, and speech-model parity
+(255,623,096, 24,576, and 33,722,129 bytes respectively). This is packaging
+evidence, not a cold-installed visual or listening test.
