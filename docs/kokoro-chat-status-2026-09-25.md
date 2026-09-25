@@ -16,6 +16,14 @@ after history scrolling, extent growth, baseline metrics, 24 kHz sample
 positions, stereo duplication, chunk continuity, silence padding, and invalid
 format rejection. These are not installed desktop screenshot or listening tests.
 
+`sh tools/build-hermes.sh` successfully rebuilt `builds/InfinityOS-aarch64.iso`
+(5,503,328,256 bytes), SHA-256
+`d55beeae1b5ed3e9b309d4d006a187d6463aebfc5d0f54cd9f545994e6937352`.
+Installed/live kernel, loader and speech payload binary parity passed. This
+ISO contains the chat fixes and still uses Flite; it does not contain working
+Kokoro synthesis. The build also incorporates existing workspace changes;
+unrelated authentication edits were preserved and not included in this commit.
+
 ## Kokoro is not yet the installed voice
 
 The current default remains Flite/KAL16. No Kokoro availability claim, model-only
