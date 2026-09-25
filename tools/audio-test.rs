@@ -12,7 +12,19 @@ fn output_text(_: &[u8]) {}
 // DESC: Runs behavioral authority, deadline, route-isolation and PCM checks.
 // ------------------=
 fn main() {
+    route_tests();
     use runtime::{audio::*, capability::*, execution::SecurityIdentity, iop::*};
+    let mut buffer = AudioBuffer::<3>::new();
+    buffer.push_stereo(&[100, 300, -32768, 32767]).unwrap();
+    assert!(buffer.push_stereo(&[1, 1, 2, 2]).is_err());
+    let mut output = [0; 2];
+    assert_eq!(buffer.read(&mut output), 2); assert_eq!(output, [200, 0]);
+    buffer.push_stereo(&[4, 6, 8, 10, 12, 14]).unwrap();
+    assert_eq!(buffer.read(&mut output), 2); assert_eq!(output, [5, 9]);
+    buffer.clear(); assert_eq!(buffer.read(&mut output), 0);
+    assert!(buffer.push_stereo(&[1]).is_err());
+    let mut zero = AudioBuffer::<0>::new();
+    assert!(zero.push_stereo(&[0, 0]).is_err()); assert_eq!(zero.read(&mut output), 0);
     let owner = SecurityIdentity([7; 16]);
     let other = SecurityIdentity([8; 16]);
     let mut caps = CapabilityManager::new();
@@ -46,4 +58,41 @@ fn main() {
     assert!(hda::tone_at_rate(&mut fallback, 48000).is_err());
     assert_eq!(PCM.sample_rate, 48000);
     println!("Audio authority and deterministic PCM: PASS");
+}
+// ------------------------=
+// FUNC: route_tests
+// DESC: Exercises direct, VirtualBox selector/amplifier, cyclic, malformed and missing input topologies.
+// ------------------=
+fn route_tests() {
+    let mut kinds = [0u32; 32];
+    let mut edges = [0u32; 32];
+    let mut counts = [0u32; 32];
+    kinds[6] = 1; kinds[23] = 3; kinds[18] = 3; kinds[14] = 4;
+    edges[6] = 23; edges[23] = 18; edges[18] = 14;
+    counts[6] = 1; counts[23] = 1; counts[18] = 1;
+    let read = |n: u32, c: u32| -> Result<u32, hda::Error> {
+        assert!((n as usize) < kinds.len());
+        Ok(match c { 0xf0009 => kinds[n as usize] << 20, 0xf000c => 0x20,
+            0xf000e => counts[n as usize], 0xf0200 => edges[n as usize], _ => panic!("unexpected codec write") })
+    };
+    let route = hda::capture_route(6, 2, 28, &mut read.clone()).unwrap().unwrap();
+    assert_eq!(route.length, 4); assert_eq!(&route.nodes[..4], &[6, 23, 18, 14]);
+    edges[6] = 14;
+    let mut calls = 0;
+    let mut read = |n: u32, c: u32| -> Result<u32, hda::Error> {
+        calls += 1;
+        Ok(match c { 0xf0009 => kinds[n as usize] << 20, 0xf000c => 0x20,
+            0xf000e => counts[n as usize], 0xf0200 => edges[n as usize], _ => panic!("unexpected codec write") })
+    };
+    assert_eq!(hda::capture_route(6, 2, 28, &mut read).unwrap().unwrap().length, 2);
+    assert!(calls < 10);
+    edges[6] = 23; edges[18] = 6;
+    let mut read = |n: u32, c: u32| -> Result<u32, hda::Error> {
+        Ok(match c { 0xf0009 => kinds[n as usize] << 20, 0xf000c => 0x20,
+            0xf000e => counts[n as usize], 0xf0200 => edges[n as usize], _ => panic!("unexpected codec write") })
+    };
+    assert!(hda::capture_route(6, 2, 28, &mut read).unwrap().is_none());
+    assert_eq!(hda::capture_route(128, 2, 129, &mut read), Err(hda::Error::Invalid));
+    assert!(hda::capture_route(2, 2, 28, &mut read).unwrap().is_none());
+    assert_eq!(hda::capture_route(6, 2, 28, &mut |_, _| Err(hda::Error::Timeout)), Err(hda::Error::Timeout));
 }

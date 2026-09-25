@@ -10,6 +10,56 @@ pub const PCM: AudioFormat = AudioFormat { sample_rate: 48000, channels: 2, bits
 pub enum AudioRoute { Playback, Capture }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AudioError { Invalid, Denied, Expired }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureState { Idle, Recording, Complete, Cancelled, Denied, DeviceLost, Overrun }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaptureStatus {
+    pub state: CaptureState,
+    pub sample_rate: u32,
+    pub frames: u64,
+    pub peak: u16,
+}
+pub struct AudioBuffer<const N: usize> {
+    samples: [i16; N],
+    read: usize,
+    length: usize,
+}
+impl<const N: usize> AudioBuffer<N> {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Allocates fixed stream storage with no per-poll allocation.
+    // ------------------=
+    pub const fn new() -> Self { Self { samples: [0; N], read: 0, length: 0 } }
+    // ------------------------=
+    // FUNC: push_stereo
+    // DESC: Atomically appends complete stereo frames as mono; rejects overflow instead of silently overwriting speech.
+    // ------------------=
+    pub fn push_stereo(&mut self, samples: &[i16]) -> Result<(), AudioError> {
+        if samples.len() % 2 != 0 || samples.len() / 2 > N - self.length { return Err(AudioError::Invalid); }
+        for pair in samples.chunks_exact(2) {
+            self.samples[(self.read + self.length) % N] = ((pair[0] as i32 + pair[1] as i32) / 2) as i16;
+            self.length += 1;
+        }
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: read
+    // DESC: Transfers captured mono samples in order and zeroes consumed private audio.
+    // ------------------=
+    pub fn read(&mut self, output: &mut [i16]) -> usize {
+        let count = output.len().min(self.length);
+        for sample in &mut output[..count] {
+            *sample = self.samples[self.read]; self.samples[self.read] = 0;
+            self.read = (self.read + 1) % N;
+        }
+        self.length -= count; count
+    }
+    // ------------------------=
+    // FUNC: clear
+    // DESC: Erases buffered microphone data on stop, revocation or replacement.
+    // ------------------=
+    pub fn clear(&mut self) { self.samples.fill(0); self.read = 0; self.length = 0; }
+}
 #[derive(Clone, Copy)]
 pub struct AudioStream {
     pub owner: SecurityIdentity,

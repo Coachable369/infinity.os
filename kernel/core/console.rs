@@ -10637,11 +10637,30 @@ impl ConsoleRuntime {
     fn execute_runtime_command(&mut self, command: &[u8]) -> bool {
         if command == b"audio status" {
             self.output.write_line(if crate::drivers::audio::available() {
-                b"HDA output ready: native PCM S16 stereo. Capture not yet available."
+                b"HDA output ready: native PCM S16 stereo."
             } else { b"No supported HDA output route initialized." });
+            self.output.write_line(if crate::drivers::audio::capture_available() { b"HDA capture route ready." } else { b"No supported HDA capture route." });
+            if let Some(status) = crate::drivers::audio::capture_status() {
+                use crate::runtime::audio::CaptureState;
+                self.output.write_line(match status.state {
+                    CaptureState::Idle => b"Capture: idle", CaptureState::Recording => b"Capture: recording",
+                    CaptureState::Complete => b"Capture: complete", CaptureState::Cancelled => b"Capture: cancelled",
+                    CaptureState::Denied => b"Capture: authority expired or revoked", CaptureState::DeviceLost => b"Capture: hardware failure",
+                    CaptureState::Overrun => b"Capture: overrun (samples discarded)",
+                });
+                self.output.write_number(b"Sample rate: ", status.sample_rate as u64);
+                self.output.write_number(b"Captured frames: ", status.frames);
+                self.output.write_number(b"Peak sample: ", status.peak as u64);
+            }
             return true;
         }
-        if command == b"audio tone" {
+        if command == b"audio stop" {
+            let owner = crate::runtime::execution::SecurityIdentity(self.current_session.0);
+            self.output.write_line(if crate::drivers::audio::stop_capture(owner) { b"Capture stopped; private samples erased." } else { b"No caller-owned capture active." });
+            return true;
+        }
+        if command == b"audio tone" || command == b"audio capture" {
+            let recording = command == b"audio capture";
             use crate::runtime::{capability::CapabilityType, execution::SecurityIdentity};
             let owner = SecurityIdentity(self.current_session.0);
             let Some(now) = crate::ui::performance::monotonic_ns() else { return true; };
@@ -10651,12 +10670,13 @@ impl ConsoleRuntime {
                     .any(|s| s.id == self.current_session && s.user == self.current_user &&
                         s.state == crate::runtime::identity::SessionState::Active);
                 if !active { return None; }
-                runtime.capabilities.grant(CapabilityType::AudioOutput, 0, 1, 0,
-                    owner, owner, Some(now / 1_000_000_000 + 3), 0).ok()
+                runtime.capabilities.grant(if recording { CapabilityType::AudioInput } else { CapabilityType::AudioOutput }, 0, 1, 0,
+                    owner, owner, Some(now / 1_000_000_000 + 5), 0).ok()
             }).flatten();
-            let started = capability.map(|cap| crate::drivers::audio::tone(owner, cap)).unwrap_or(false);
+            let started = capability.map(|cap| if recording { crate::drivers::audio::capture(owner, cap) } else { crate::drivers::audio::tone(owner, cap) }).unwrap_or(false);
             if !started { if let Some(cap) = capability { crate::runtime::with_runtime(|runtime| { let _ = runtime.capabilities.retire_leaf(cap, owner); }); } }
-            self.output.write_line(if started { b"Playing 440 Hz for two seconds." }
+            self.output.write_line(if started && recording { b"Recording microphone for three seconds. audio stop cancels; audio status shows measurements." }
+                else if started { b"Playing 440 Hz for two seconds." }
                 else { b"Audio unavailable, busy, or permission denied." });
             return true;
         }

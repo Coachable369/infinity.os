@@ -2,16 +2,69 @@
 //! Caller must exclusively own the mapped controller and resident DMA storage.
 use core::ptr::{read_volatile, write_volatile};
 use core::sync::atomic::{fence, Ordering};
+use core::cell::Cell;
 
 pub const FRAMES: usize = 4800;
 pub const SAMPLES: usize = FRAMES * 2;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Timeout, Unsupported, Busy, Invalid, Dma }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaptureRoute {
+    pub nodes: [u32; 8],
+    pub selectors: [u32; 8],
+    pub length: usize,
+}
+// ------------------------=
+// FUNC: capture_route
+// DESC: Searches a bounded codec graph without enabling any microphone or mutating codec state.
+// ------------------=
+pub fn capture_route<F: FnMut(u32, u32) -> Result<u32, Error>>(
+    adc: u32, first: u32, end: u32, command: &mut F,
+) -> Result<Option<CaptureRoute>, Error> {
+    if first >= end || end > 128 || adc < first || adc >= end { return Err(Error::Invalid); }
+    let mut route = CaptureRoute { nodes: [0; 8], selectors: [0; 8], length: 0 };
+    if route_visit(adc, first, end, 0, 0, &mut route, command)? { Ok(Some(route)) } else { Ok(None) }
+}
+// ------------------------=
+// FUNC: route_visit
+// DESC: Follows ADC, mixer and selector connections with cycle, depth and connection-count bounds.
+// ------------------=
+fn route_visit<F: FnMut(u32, u32) -> Result<u32, Error>>(
+    node: u32, first: u32, end: u32, visited: u128, depth: usize,
+    route: &mut CaptureRoute, command: &mut F,
+) -> Result<bool, Error> {
+    if node < first || node >= end || depth == route.nodes.len() || visited & (1u128 << node) != 0 { return Ok(false); }
+    let caps = command(node, 0xf0009)?;
+    let kind = (caps >> 20) & 15;
+    route.nodes[depth] = node;
+    route.selectors[depth] = 0;
+    if kind == 4 {
+        if command(node, 0xf000c)? & 0x20 == 0 { return Ok(false); }
+        route.length = depth + 1;
+        return Ok(true);
+    }
+    if !matches!(kind, 1 | 2 | 3) { return Ok(false); }
+    let connections = command(node, 0xf000e)?;
+    // This backend supports short, non-range lists; unsupported routes fail closed.
+    if connections & 0x80 != 0 || connections & 127 > 16 { return Ok(false); }
+    for index in 0..(connections & 127) {
+        let packed = command(node, 0xf0200 | (index & !3))?;
+        let next = (packed >> ((index & 3) * 8)) & 255;
+        if next & 0x80 != 0 { continue; }
+        if route_visit(next, first, end, visited | (1u128 << node), depth + 1, route, command)? {
+            route.selectors[depth] = index;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 #[repr(C, align(128))]
 pub struct Dma {
     descriptors: [[u64; 2]; 16],
     playback: [i16; SAMPLES],
     capture: [i16; SAMPLES],
+    commands: [u32; 256],
+    responses: [u64; 256],
 }
 impl Dma {
     // ------------------------=
@@ -19,7 +72,7 @@ impl Dma {
     // DESC: Reserves resident zeroed DMA storage without allocation.
     // ------------------=
     pub const fn new() -> Self {
-        Self { descriptors: [[0; 2]; 16], playback: [0; SAMPLES], capture: [0; SAMPLES] }
+        Self { descriptors: [[0; 2]; 16], playback: [0; SAMPLES], capture: [0; SAMPLES], commands: [0; 256], responses: [0; 256] }
     }
 }
 pub struct Hda {
@@ -29,6 +82,10 @@ pub struct Hda {
     codec: u32,
     dac: u32,
     adc: u32,
+    input_route: Option<CaptureRoute>,
+    input_group: u32,
+    command_write: Cell<u16>,
+    response_read: Cell<u16>,
     capture_position: usize,
     pub capturing: bool,
     pub codec_id: u32,
@@ -69,17 +126,58 @@ impl Hda {
     }
     // ------------------------=
     // FUNC: verb
-    // DESC: Executes one immediate codec command with bounded timeout and no CORB dependency.
+    // DESC: Executes one codec verb through coherent CORB/RIRB DMA, including VirtualBox where immediate responses are masked.
     // ------------------=
     unsafe fn verb(&self, node: u32, command: u32) -> Result<u32, Error> {
-        self.wait(0x68, 1, 0)?;
-        self.w16(0x68, 2);
-        self.w32(0x60, self.codec << 28 | node << 20 | command);
-        self.w16(0x68, 1);
-        self.wait(0x68, 3, 2)?;
-        let value = self.r32(0x64);
-        self.w16(0x68, 2);
-        Ok(value)
+        let next = (self.command_write.get() + 1) & 255;
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).commands[next as usize]), self.codec << 28 | node << 20 | command);
+        fence(Ordering::Release);
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!("dsb sy", options(nostack));
+        self.command_write.set(next);
+        self.w16(0x48, next);
+        let response = (self.response_read.get() + 1) & 255;
+        for _ in 0..100_000 {
+            if read_volatile((self.base + 0x58) as *const u16) & 255 != self.response_read.get() {
+                fence(Ordering::Acquire);
+                #[cfg(target_arch = "aarch64")]
+                core::arch::asm!("dsb sy", options(nostack));
+                let value = read_volatile(core::ptr::addr_of!((*self.dma).responses[response as usize]));
+                self.response_read.set(response);
+                self.w8(0x5d, 1); // Retire the response-count event even when controller interrupts are disabled.
+                if ((value >> 32) as u32 & 31) != self.codec { return Err(Error::Dma); }
+                return Ok(value as u32);
+            }
+            core::hint::spin_loop();
+        }
+        Err(Error::Timeout)
+    }
+    // ------------------------=
+    // FUNC: initialize_commands
+    // DESC: Configures resident 256-entry codec command and response DMA rings with interrupts disabled.
+    // ------------------=
+    unsafe fn initialize_commands(&self) -> Result<(), Error> {
+        if read_volatile((self.base + 0x4e) as *const u8) & 0x40 == 0
+            || read_volatile((self.base + 0x5e) as *const u8) & 0x40 == 0 { return Err(Error::Unsupported); }
+        let commands = core::ptr::addr_of_mut!((*self.dma).commands) as u64;
+        let responses = core::ptr::addr_of_mut!((*self.dma).responses) as u64;
+        if commands & 127 != 0 || responses & 127 != 0 { return Err(Error::Invalid); }
+        for index in 0..256 {
+            write_volatile(core::ptr::addr_of_mut!((*self.dma).commands[index]), 0);
+            write_volatile(core::ptr::addr_of_mut!((*self.dma).responses[index]), 0);
+        }
+        self.w32(0x40, commands as u32); self.w32(0x44, (commands >> 32) as u32);
+        self.w32(0x50, responses as u32); self.w32(0x54, (responses >> 32) as u32);
+        self.w8(0x4e, 2); self.w8(0x5e, 2);
+        self.w16(0x4a, 0x8000); self.w16(0x4a, 0);
+        self.w16(0x48, 0); self.w16(0x58, 0x8000); self.w16(0x5a, 1);
+        self.w8(0x4d, 1); self.w8(0x5d, 5);
+        fence(Ordering::SeqCst);
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!("dsb sy", options(nostack));
+        // Enable response events for acknowledgement; INTCTL remains zero so no CPU IRQ is delivered.
+        self.w8(0x5c, 3); self.w8(0x4c, 2);
+        Ok(())
     }
     // ------------------------=
     // FUNC: parameter
@@ -97,11 +195,14 @@ impl Hda {
             return Err(Error::Invalid);
         }
         let mut h = Self { base, dma, output: 0, codec: 0, dac: 0, adc: 0,
+            input_route: None, input_group: 0,
+            command_write: Cell::new(0), response_read: Cell::new(0),
             capture_position: 0, capturing: false, codec_id: 0, sample_rate: 48000, playing: false };
         h.w32(0x20, 0); // No interrupts until an interrupt service exists.
         h.w8(0x4c, 0); h.w8(0x5c, 0);
         h.w32(8, 0); h.wait(8, 1, 0)?;
         h.w32(8, 1); h.wait(8, 1, 1)?;
+        h.initialize_commands()?;
         let caps = h.r32(0) & 0xffff;
         let inputs = (caps >> 8) & 15;
         if (caps >> 12) & 15 == 0 { return Err(Error::Unsupported); }
@@ -154,7 +255,7 @@ impl Hda {
                             h.verb(pin, 0x3b000 | (amp & 127))?;
                         }
                         h.dac = dac;
-                        if inputs != 0 { h.discover_capture(first, end, group)?; }
+                        if inputs != 0 { let _ = h.discover_capture(first, end, group); }
                         return Ok(h);
                     }
                 }
@@ -164,7 +265,7 @@ impl Hda {
     }
     // ------------------------=
     // FUNC: discover_capture
-    // DESC: Finds a direct input-pin to ADC route without activating capture or its pin.
+    // DESC: Discovers direct or selector/amplifier ADC input paths without activating the microphone.
     // ------------------=
     unsafe fn discover_capture(&mut self, first: u32, end: u32, group: u32) -> Result<(), Error> {
         for adc in first..end {
@@ -173,19 +274,9 @@ impl Hda {
             let pcm = self.parameter(if caps & 0x10 != 0 { adc } else { group }, 0x0a)?;
             let rate = if self.sample_rate == 48000 { 1 << 6 } else { 1 << 5 };
             if pcm & ((1 << 17) | rate) != ((1 << 17) | rate) { continue; }
-            let connections = self.parameter(adc, 0x0e)?;
-            if connections & 0x80 != 0 { continue; }
-            for index in 0..(connections & 127).min(16) {
-                let packed = self.verb(adc, 0xf0200 | (index & !3))?;
-                let pin = (packed >> ((index & 3) * 8)) & 255;
-                if pin < first || pin >= end || (self.parameter(pin, 9)? >> 20) & 15 != 4 { continue; }
-                if self.parameter(pin, 0x0c)? & 0x20 == 0 { continue; }
-                self.verb(adc, 0x70500)?;
-                self.verb(adc, 0x70100 | index)?;
-                if caps & 2 != 0 {
-                    let amp = self.parameter(if caps & 8 != 0 { adc } else { group }, 0x0d)?;
-                    self.verb(adc, 0x37000 | (index << 8) | (amp & 127))?;
-                }
+            if let Some(route) = capture_route(adc, first, end, &mut |n, c| self.verb(n, c))? {
+                self.input_route = Some(route);
+                self.input_group = group;
                 self.adc = adc;
                 return Ok(());
             }
@@ -203,7 +294,21 @@ impl Hda {
     // ------------------=
     pub unsafe fn start_capture(&mut self) -> Result<(), Error> {
         if self.capturing { return Err(Error::Busy); }
-        if self.adc == 0 { return Err(Error::Unsupported); }
+        let route = self.input_route.ok_or(Error::Unsupported)?;
+        for i in 0..route.length {
+            let node = route.nodes[i];
+            let caps = self.parameter(node, 9)?;
+            if caps & (1 << 10) != 0 { self.verb(node, 0x70500)?; }
+            if i + 1 < route.length { self.verb(node, 0x70100 | route.selectors[i])?; }
+            if caps & 2 != 0 {
+                let amp = self.parameter(if caps & 8 != 0 { node } else { self.input_group }, 0x0d)?;
+                self.verb(node, 0x37000 | (route.selectors[i] << 8) | (amp & 127))?;
+            }
+            if caps & 4 != 0 {
+                let amp = self.parameter(if caps & 8 != 0 { node } else { self.input_group }, 0x12)?;
+                self.verb(node, 0x3b000 | (amp & 127))?;
+            }
+        }
         let r = 0x80;
         self.w8(r, 1); self.wait(r, 1, 1)?;
         self.w8(r, 0); self.wait(r, 1, 0)?;
@@ -219,10 +324,7 @@ impl Hda {
         self.w16(r + 0x12, if self.sample_rate == 48000 { 0x11 } else { 0x4011 });
         self.w32(r + 0x18, bdl as u32); self.w32(r + 0x1c, (bdl >> 32) as u32);
         self.verb(self.adc, if self.sample_rate == 48000 { 0x20011 } else { 0x24011 })?; self.verb(self.adc, 0x70620)?;
-        // Connection selection is fixed during discovery; enable only this pin.
-        let index = self.verb(self.adc, 0xf0100)? & 127;
-        let connections = self.verb(self.adc, 0xf0200 | (index & !3))?;
-        let pin = (connections >> ((index & 3) * 8)) & 127;
+        let pin = route.nodes[route.length - 1];
         self.verb(pin, 0x70720)?;
         self.capture_position = 0;
         self.w8(r + 3, 0x1c); self.w32(r, (2 << 20) | 2);
@@ -236,7 +338,9 @@ impl Hda {
     pub unsafe fn read_capture(&mut self, out: &mut [i16]) -> Result<usize, Error> {
         if !self.capturing { return Err(Error::Invalid); }
         if self.r32(0x80) & (0x18 << 24) != 0 { return Err(Error::Dma); }
-        let position = (self.r32(0x84) as usize / 4 * 2) % SAMPLES;
+        let bytes = self.r32(0x84) as usize;
+        if bytes >= SAMPLES * 2 { return Err(Error::Dma); }
+        let position = bytes / 4 * 2;
         fence(Ordering::Acquire);
         let count = ((position + SAMPLES - self.capture_position) % SAMPLES).min(out.len() & !1);
         for (i, sample) in out[..count].iter_mut().enumerate() {
@@ -252,6 +356,9 @@ impl Hda {
     pub unsafe fn stop_capture(&mut self) {
         self.w8(0x80, 0);
         if self.adc != 0 { let _ = self.verb(self.adc, 0x70600); }
+        if let Some(route) = self.input_route {
+            let _ = self.verb(route.nodes[route.length - 1], 0x70700);
+        }
         self.capturing = false;
     }
     // ------------------------=

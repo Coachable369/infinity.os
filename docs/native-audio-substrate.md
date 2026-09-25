@@ -66,6 +66,41 @@ than changing samples or accepting log messages as evidence.
 
 This increment does **not** claim the full audio substrate or voice interface is complete.
 
+## VirtualBox capture follow-up (September 24–25, 2026)
+
+The current source now uses resident CORB/RIRB command DMA instead of the
+immediate-response register. VirtualBox's immediate-response register masks
+guest reads; the DMA command path completes on both emulators. RIRB response
+events are acknowledged while CPU interrupt delivery remains disabled.
+
+Input discovery walks bounded ADC/mixer/selector paths, including VirtualBox's
+6 → 23 → 18 → 14 route. Authenticated `audio capture`, `audio stop`, and
+`audio status` expose a three-second diagnostic recording. A fixed mono FIFO
+rejects overflow; owner/capability checks gate PCM reads. Stop, revocation and
+failure erase captured samples. This is not yet the general voice stream service.
+
+Behavioral results for this follow-up:
+
+- `make audio-test` passes route traversal/cycle/error cases, fixed FIFO ordering,
+  stereo folding, wrap, overflow rejection and clearing, plus authority tests.
+- The same command-ring driver in QEMU emits 439.69 Hz for 1.992 seconds,
+  RMS 5787.6 at 48 kHz stereo.
+- A private copy of the installed VirtualBox disk cold-boots with no ISO attached,
+  accepts login, and detects both HDA routes. The original disk is preserved.
+- VirtualBox's host-side PCM debug capture contains actual generated tone samples
+  at 44.1 kHz stereo. First use produced only 0.300 seconds; the second invocation
+  added 1.975 seconds. The source now starts the duration timer after hardware
+  initialization, within the existing bounded capability lease. That latest
+  timing change still needs installed-system retesting.
+- Microphone initialization times out in VirtualBox's macOS input-permission
+  check. The guest reports expired authority and zero captured frames. This is
+  **not usable microphone proof**. Host permission must be resolved before a
+  real input test. Temporary PCM debug capture is disabled for the next VM boot.
+
+These follow-up changes are **not yet in the published ISO**. The old parity
+result below applies only to the previous published increment. Full native STT,
+TTS, voice conversation, and the chat-header waveform remain unimplemented.
+
 ## Build handoff
 
 `make aarch64` completed successfully on September 24, 2026. The published
