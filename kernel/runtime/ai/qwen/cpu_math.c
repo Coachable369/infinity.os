@@ -327,3 +327,29 @@ void infinity_qwen_dot_rows(uint32_t kind,const uint8_t *data,const float *input
 #endif
     for(;row<rows;row++) infinity_qwen_dot(kind,data+row*stride,input,width,output+row);
 }
+
+// ------------------------=
+// FUNC: infinity_qwen_dot_rows_cached
+// DESC: Reuses engine-owned activation quantization across cooperative row slices; refresh starts each new matrix.
+// ------------------=
+void infinity_qwen_dot_rows_cached(uint32_t kind,const uint8_t *data,const float *input,
+                                  size_t width,size_t rows,float *output,float *scratch,int refresh) {
+#if defined(__aarch64__) && !defined(QWEN_SCALAR)
+    if((kind==12
+#ifndef QWEN_EXACT_Q6
+        || kind==14
+#endif
+        ) && width && width%256==0 && width<=QWEN_MAX_WIDTH && qwen_dotprod_available()) {
+        // The engine provides width floats. Values plus scales and totals use
+        // less than two bytes per input element, with naturally aligned floats.
+        int8_t *values=(int8_t *)scratch;
+        float *scales=(float *)(values+width);
+        float *totals=scales+width/256;
+        if(refresh) qwen_quantize_q8(input,width,values,scales,kind==12?totals:0);
+        if(kind==14) qwen_q6_q8_rows(data,values,scales,width,rows,output);
+        else qwen_q4_q8_rows(data,values,scales,totals,width,rows,output);
+        return;
+    }
+#endif
+    infinity_qwen_dot_rows(kind,data,input,width,rows,output);
+}

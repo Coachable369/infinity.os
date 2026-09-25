@@ -2350,6 +2350,14 @@ impl SystemLayout {
         index: usize,
         role: crate::ui::installer_template::InstallerTemplateRole,
     ) -> Option<Rect> {
+        let row = self.settings_row_geometry_for_section(state, index, section).summary;
+        let card = super::settings_cards::content(row, self.scale);
+        if role == crate::ui::installer_template::InstallerTemplateRole::SettingsRowLabel {
+            return Some(card.label);
+        }
+        if role == crate::ui::installer_template::InstallerTemplateRole::SettingsRowValue {
+            return Some(card.value);
+        }
         let mut child = self.authored_settings_rect(state, section, role, index)?;
         let anchor = self.authored_settings_rect(
             state,

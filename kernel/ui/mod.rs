@@ -43,6 +43,7 @@ pub mod status_menu;
 pub mod surface;
 pub mod system_layout;
 pub mod settings_template;
+pub mod settings_cards;
 pub mod text_editor;
 pub mod text_input;
 pub mod trusted;

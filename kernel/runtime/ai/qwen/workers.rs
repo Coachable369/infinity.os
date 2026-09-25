@@ -134,6 +134,29 @@ pub fn completed() -> usize {
 }
 
 // ------------------------=
+// FUNC: run_host_worker
+// DESC: Exercises the production mailbox and kernels in the native benchmark without firmware startup.
+// ------------------=
+#[cfg(not(target_os = "none"))]
+pub unsafe fn run_host_worker(index: usize) {
+    assert!(index < COUNT);
+    worker_entry((index + 1) as *mut u8);
+}
+
+// ------------------------=
+// FUNC: stop_host_workers
+// DESC: Retires benchmark work before asking host workers to exit through the existing mailbox protocol.
+// ------------------=
+#[cfg(not(target_os = "none"))]
+pub unsafe fn stop_host_workers() {
+    drain();
+    let ready = READY.load(Ordering::Acquire);
+    for (i, slot) in SLOTS.iter().enumerate() {
+        if ready & (1 << i) != 0 { slot.state.store(3, Ordering::Release); }
+    }
+}
+
+// ------------------------=
 // FUNC: initialize
 // DESC: Requests asynchronous AP startup through the versioned firmware bridge on ARM.
 // ------------------=

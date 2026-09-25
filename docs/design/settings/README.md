@@ -16,6 +16,7 @@ The request for 100% visual matching remains unaccepted until every production s
 - Spacing: 12 logical-pixel dashboard gaps; 24-pixel panel inset; 72-pixel minimum standard summaries with 12-pixel separation; 80-pixel minimum two-line Nodes controls.
 - Tabs: 44-pixel minimum height, 12-pixel gaps, wrapping rather than squeezing. Nodes minimum width184; Network112. Narrow dashboard detail panels stack below controls.
 - Text: native antialiased UI font, centered vertically; never shrink readable text to fit compressed authored geometry. Long content must truncate or wrap, never paint into another control.
+- Standard cards now use `settings_cards::content`: a 44-logical-pixel inset icon well, a two-line title/description column, and a separate trailing value column. The title, description, icon and value have non-overlapping typed bounds. Descriptions explain the existing operation rather than advertising unsupported editing.
 - Overflow: clip to viewport, keep lower controls reachable, and use identical geometry for painting and hit testing.
 - Expanders: one open detail well; subsequent rows shift by its full height. Read-only wells must not contain implied save actions.
 - State: selected, focus, hover, expanded, disabled/unavailable, loading, failure and empty states must be distinguishable without invented data.

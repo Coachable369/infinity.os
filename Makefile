@@ -424,7 +424,9 @@ ai-test:
 	@clang -O3 -ffp-contract=off -c kernel/runtime/ai/qwen/cpu_math.c -o build/behavior-tests/qwen-worker-math.o
 	@rustc --edition=2021 --test kernel/runtime/ai/qwen/workers.rs -C link-arg=build/behavior-tests/qwen-worker-math.o -o build/behavior-tests/qwen-workers-test
 	@build/behavior-tests/qwen-workers-test
-	@clang -O3 -ffp-contract=off -DQWEN_SCALAR -Dinfinity_qwen_dot=infinity_qwen_scalar_dot -Dinfinity_qwen_dot_rows=infinity_qwen_scalar_dot_rows -c kernel/runtime/ai/qwen/cpu_math.c -o build/behavior-tests/qwen-scalar-math.o
+	@clang -O3 -ffp-contract=off -DQWEN_SCALAR -Dinfinity_qwen_dot=infinity_qwen_scalar_dot -Dinfinity_qwen_dot_rows=infinity_qwen_scalar_dot_rows -Dinfinity_qwen_dot_rows_cached=infinity_qwen_scalar_dot_rows_cached -c kernel/runtime/ai/qwen/cpu_math.c -o build/behavior-tests/qwen-scalar-math.o
+	@clang -O3 -ffp-contract=off tools/qwen-activation-cache-test.c kernel/runtime/ai/qwen/cpu_math.c -o build/behavior-tests/qwen-activation-cache-test
+	@build/behavior-tests/qwen-activation-cache-test
 	@clang -O3 -ffp-contract=off -DQWEN_EXACT_Q6 -DQWEN_VERIFY_SCALAR tools/qwen-rows-bench.c kernel/runtime/ai/qwen/cpu_math.c build/behavior-tests/qwen-scalar-math.o -o build/behavior-tests/qwen-rows-test
 	@build/behavior-tests/qwen-rows-test
 	@clang -O3 -ffp-contract=off tools/qwen-q8-totals-test.c kernel/runtime/ai/qwen/cpu_math.c -o build/behavior-tests/qwen-q8-totals-test

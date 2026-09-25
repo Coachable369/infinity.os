@@ -547,7 +547,7 @@ fn mat_rows(
         return Err(Error::Format);
     }
     let end = (*cursor + 8).min(output.len());
-    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    #[cfg(target_arch = "aarch64")]
     // SAFETY: the sole service-owned engine retains its weights until Drop drains APs.
     if let Some(done) = unsafe { super::workers::rows(t.kind, t.data, input, output, cursor) } {
         return Ok(done);
@@ -556,23 +556,27 @@ fn mat_rows(
     if t.kind == 12 || t.kind == 14 {
         unsafe {
             extern "C" {
-                fn infinity_qwen_dot_rows(
+                fn infinity_qwen_dot_rows_cached(
                     kind: u32,
                     data: *const u8,
                     input: *const f32,
                     width: usize,
                     rows: usize,
                     output: *mut f32,
+                    scratch: *mut f32,
+                    refresh: i32,
                 );
             }
             let block_size = if t.kind == 12 { 144 } else { 210 };
-            infinity_qwen_dot_rows(
+            infinity_qwen_dot_rows_cached(
                 t.kind,
                 t.data.as_ptr().add(*cursor * (width / 256) * block_size),
                 input.as_ptr(),
                 width,
                 end - *cursor,
                 output.as_mut_ptr().add(*cursor),
+                scratch.as_mut_ptr(),
+                i32::from(*cursor == 0),
             );
         }
         *cursor = end;

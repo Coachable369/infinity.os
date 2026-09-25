@@ -5474,6 +5474,21 @@ impl super::DisplayDevice {
                 );
                 self.settings_card_sheen(summary_left, summary_top, summary_width,
                     row.summary.height as usize, scale);
+                let card = crate::ui::settings_cards::content(row.summary, scale);
+                self.fill_rounded_rect_alpha(card.icon.x.max(0) as usize,
+                    card.icon.y.max(0) as usize, card.icon.width as usize,
+                    card.icon.height as usize, 9 * scale, 4, 20, 34, panel_alpha(150));
+                self.outline_rounded_rect(card.icon.x.max(0) as usize,
+                    card.icon.y.max(0) as usize, card.icon.width as usize,
+                    card.icon.height as usize, 9 * scale, 35, 64, 84);
+                let _ = self.themed_icon(
+                    (card.icon.x + card.icon.width as i32 / 2).max(0) as usize,
+                    (card.icon.y + card.icon.height as i32 / 2).max(0) as usize,
+                    crate::ui::icon_theme::settings_section_icon(focus),
+                    (28 * scale).min(card.icon.width as usize));
+                self.ui_text_elided_strong(card.description.x.max(0) as usize,
+                    card.description.y.max(0) as usize, card.description.width as usize,
+                    crate::ui::settings_cards::description(focus, index), 141, 174, 198);
                 let label_limit = label_frame.map(|frame| frame.2).unwrap_or(summary_width * 46 / 100);
                 let mut label_length = label.len();
                 while label_length > 0

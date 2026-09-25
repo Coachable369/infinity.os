@@ -12,6 +12,7 @@ use ui::system_layout::{
 // DESC: Verifies bounded Settings navigation, dashboard scrolling, and draggable scrollbar geometry.
 // ------------------=
 fn main() {
+    verify_card_content();
     sidebar_spacing();
     verify_authored_row_flow();
     verify_configuration_network_targets();
@@ -149,6 +150,28 @@ fn main() {
 }
 
 // ------------------------=
+// FUNC: verify_card_content
+// DESC: Verifies kit card content stays inside its row with no label, value or icon overlap at supported densities.
+// ------------------=
+fn verify_card_content() {
+    for scale in [1, 2] {
+        for width in [380, 600, 900] {
+            let row = ui::geometry::Rect { x: 20, y: 30, width: width * scale,
+                height: 72 * scale };
+            let card = ui::settings_cards::content(row, scale as usize);
+            for child in [card.icon, card.label, card.description, card.value] {
+                assert_eq!(row.intersection(child), child);
+                assert!(child.width > 0 && child.height > 0);
+            }
+            assert!(!card.label.intersects(card.description));
+            assert!(!card.label.intersects(card.value));
+            assert!(!card.description.intersects(card.value));
+            assert!(!card.icon.intersects(card.label));
+        }
+    }
+}
+
+// ------------------------=
 // FUNC: verify_settings_chrome_targets
 // DESC: Checks visible window-button centers and dashboard bottom reachability for every category and display scale.
 // ------------------=
@@ -172,6 +195,7 @@ fn verify_settings_chrome_targets() {
                     else { layout.network_settings_geometry(bottom) };
                 assert!(dashboard.sidebar.bottom() <= geometry.viewport.bottom());
                 assert!(dashboard.main.bottom() <= geometry.viewport.bottom());
+                assert!(geometry.viewport.bottom() - dashboard.sidebar.bottom() <= 24 * scale);
             }
         }
     }

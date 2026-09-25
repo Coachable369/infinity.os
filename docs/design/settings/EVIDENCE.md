@@ -1,5 +1,15 @@
 # Settings redesign verification — 2026-09-24
 
+## Follow-up: shared two-line cards
+
+The follow-up adds native icon wells, distinct title/description lines and a separate value column to the shared disclosure-card renderer. This is a visible composition change, not a complete implementation of every concept board.
+
+- `sh tools/settings-overflow-test.sh` passes containment and non-overlap assertions for card columns at multiple widths/scales.
+- A new disposable fresh installation passed all eleven category transitions, disclosure open/close, moved-row targeting and lower-row scrolling with the ISO detached. See [structured result](evidence/cards-fresh-install.json), [General expanded](evidence/cards-general-expanded.png), and [Nodes](evidence/cards-nodes.png).
+- This fixture used the intermediate card build, before the shared AI kernel follow-up. Its archived ELF is not byte-identical to the final release ELF; do not describe it as final-image installed proof.
+- `make x86_64 aarch64` subsequently completed successfully. Release ISO timestamps: x86_64 2026-09-24 19:17:30 CDT; AArch64 19:28:14 CDT. The user's existing VirtualBox installation was not upgraded by producing these files.
+- Remaining visual limitations include repeated category icons in row wells, tight trailing disclosure spacing, background content showing through glass, and dashboard composition that is not yet identical to the kit. The earlier outstanding acceptance list still applies.
+
 ## What changed
 
 The screenshot's overlapping Nodes & Mesh controls came from independently scaling fixed authored rectangles while keeping native text readable. Settings now uses responsive control geometry, with authored materials and artwork retained. Shared row paint and hit geometry agree. Short windows scroll instead of compressing text into undersized controls.

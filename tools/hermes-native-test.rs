@@ -25,6 +25,16 @@ fn main() {
     service.cancel();
     assert!(!service.busy());
     service.clear_conversation();
+    let workers = std::env::var("HERMES_TEST_WORKERS").ok()
+        .map(|value| value.parse::<usize>().unwrap()).unwrap_or(0);
+    assert!(workers <= 16);
+    let threads: Vec<_> = (0..workers).map(|index|
+        std::thread::spawn(move || unsafe { qwen::workers::run_host_worker(index) })).collect();
+    let ready_started = std::time::Instant::now();
+    while qwen::workers::online() != workers {
+        assert!(ready_started.elapsed().as_secs() < 10);
+        std::thread::yield_now();
+    }
     if std::env::args().any(|arg| arg == "--forward") {
         let start = std::time::Instant::now();
         service.submit(forward_prompt.as_bytes()).unwrap();
@@ -70,4 +80,6 @@ fn main() {
         }
         service.cancel();
     }
+    unsafe { qwen::workers::stop_host_workers(); }
+    for thread in threads { thread.join().unwrap(); }
 }

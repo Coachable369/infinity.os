@@ -46,10 +46,13 @@ def main():
     parser.add_argument("--prompt", default="hello")
     parser.add_argument("--baseline-pump", choices=("legacy", "deadline"))
     parser.add_argument("--candidate-pump", choices=("legacy", "deadline"))
+    parser.add_argument("--baseline-workers", type=int, default=0)
+    parser.add_argument("--candidate-workers", type=int, default=0)
     parser.add_argument("--io-delay-us", type=int, default=0)
     args = parser.parse_args()
     assert args.trials >= 3
     assert 0 <= args.io_delay_us <= 10000
+    assert 0 <= args.baseline_workers <= 16 and 0 <= args.candidate_workers <= 16
     args.output.mkdir(parents=True, exist_ok=False)
     samples = {"baseline": [], "candidate": []}
     reference = None
@@ -58,6 +61,7 @@ def main():
         for name in order:
             path = (args.output / f"{name}-{trial}.bin").resolve()
             env = dict(os.environ, HERMES_TEST_REPORT=str(path), HERMES_TEST_PROMPT=args.prompt)
+            env["HERMES_TEST_WORKERS"] = str(getattr(args, f"{name}_workers"))
             for key in ("HERMES_TEST_PUMP", "HERMES_TEST_IO_US"):
                 env.pop(key, None)
             pump = getattr(args, f"{name}_pump")
@@ -77,6 +81,7 @@ def main():
                      for key in ("first_ns", "last_ns", "decode_ns", "total_ns")}
                for name, values in samples.items()}
     result = {"boundary": "controlled native ARM64 host; not installed guest timing",
+              "workers": {"baseline": args.baseline_workers, "candidate": args.candidate_workers},
               "scheduler_experiment": {"baseline": args.baseline_pump, "candidate": args.candidate_pump,
                                        "injected_event_delay_us": args.io_delay_us},
               "trials": args.trials, "samples": samples, "medians": medians,
