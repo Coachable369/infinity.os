@@ -592,7 +592,9 @@ impl super::DisplayDevice {
         let mut start = 0usize;
         let mut line = 0usize;
         while start < text.len() && line < max_lines {
-            while start < text.len() && text[start] == b' ' {
+            while start < text.len()
+                && matches!(text[start], b' ' | b'\t' | b'\r' | b'\n')
+            {
                 start += 1;
             }
             if start >= text.len() {
@@ -608,7 +610,10 @@ impl super::DisplayDevice {
                 blue,
                 1,
             );
-            start = end.saturating_add((end < text.len() && text[end] == b' ') as usize);
+            start = end;
+            if start < text.len() && text[start] == b' ' {
+                start += 1;
+            }
             line += 1;
         }
     }
@@ -626,17 +631,74 @@ impl super::DisplayDevice {
         let mut start = 0usize;
         let mut lines = 0usize;
         while start < text.len() && lines < max_lines {
-            while start < text.len() && text[start] == b' ' {
+            while start < text.len()
+                && matches!(text[start], b' ' | b'\t' | b'\r' | b'\n')
+            {
                 start += 1;
             }
             if start >= text.len() {
                 break;
             }
             let end = self.ui_text_wrap_line_end(text, start, max_width);
-            start = end.saturating_add((end < text.len() && text[end] == b' ') as usize);
+            start = end;
+            if start < text.len() && text[start] == b' ' {
+                start += 1;
+            }
             lines += 1;
         }
         lines
+    }
+
+    // ------------------------=
+    // FUNC: ui_text_wrapped_compact_clipped
+    // DESC: Draws a compact wrapped line stream inside a vertical viewport while collapsing duplicate blank response rows.
+    // ------------------=
+    pub(super) fn ui_text_wrapped_compact_clipped(
+        &mut self,
+        x: usize,
+        y: i32,
+        max_width: usize,
+        text: &[u8],
+        red: u8,
+        green: u8,
+        blue: u8,
+        line_height: usize,
+        clip_top: usize,
+        clip_bottom: usize,
+    ) {
+        let mut start = 0usize;
+        let mut line = 0usize;
+        while start < text.len() {
+            while start < text.len()
+                && matches!(text[start], b' ' | b'\t' | b'\r' | b'\n')
+            {
+                start += 1;
+            }
+            if start >= text.len() {
+                break;
+            }
+            let end = self.ui_text_wrap_line_end(text, start, max_width);
+            let line_y = y.saturating_add((line.saturating_mul(line_height)) as i32);
+            if line_y.saturating_add(UI_FONT_CELL_HEIGHT as i32) > clip_top as i32
+                && line_y < clip_bottom as i32
+                && line_y >= 0
+            {
+                self.ui_text(
+                    x,
+                    line_y as usize,
+                    &text[start..end],
+                    red,
+                    green,
+                    blue,
+                    1,
+                );
+            }
+            start = end;
+            if start < text.len() && text[start] == b' ' {
+                start += 1;
+            }
+            line += 1;
+        }
     }
 
     // ------------------------=
@@ -647,6 +709,9 @@ impl super::DisplayDevice {
         let mut end = start + 1;
         let mut last_space = None;
         while end <= text.len() {
+            if end < text.len() && matches!(text[end], b'\r' | b'\n') {
+                return end;
+            }
             if end < text.len() && text[end] == b' ' {
                 last_space = Some(end);
             }

@@ -114,6 +114,8 @@ pub struct ChatRuntime {
     memory: AiMemory,
     memory_dirty: bool,
     last_memory_response: Option<MemoryResponseKind>,
+    timeline_scroll_offset: usize,
+    timeline_maximum_scroll: usize,
 }
 
 impl ChatRuntime {
@@ -139,7 +141,65 @@ impl ChatRuntime {
             memory: AiMemory::new(),
             memory_dirty: false,
             last_memory_response: None,
+            timeline_scroll_offset: 0,
+            timeline_maximum_scroll: 0,
         }
+    }
+
+    // ------------------------=
+    // FUNC: timeline_scroll_offset
+    // DESC: Returns the bounded pixel offset used by the desktop conversation viewport.
+    // ------------------=
+    pub const fn timeline_scroll_offset(&self) -> usize {
+        self.timeline_scroll_offset
+    }
+
+    // ------------------------=
+    // FUNC: timeline_maximum_scroll
+    // DESC: Returns the most recently measured scroll extent for the rendered conversation.
+    // ------------------=
+    pub const fn timeline_maximum_scroll(&self) -> usize {
+        self.timeline_maximum_scroll
+    }
+
+    // ------------------------=
+    // FUNC: set_timeline_scroll_metrics
+    // DESC: Publishes a measured extent, preserving bottom-following while respecting deliberate history review.
+    // ------------------=
+    pub fn set_timeline_scroll_metrics(&mut self, maximum: usize) -> usize {
+        let followed_end = self.timeline_scroll_offset >= self.timeline_maximum_scroll;
+        self.timeline_maximum_scroll = maximum;
+        self.timeline_scroll_offset = if followed_end {
+            maximum
+        } else {
+            self.timeline_scroll_offset.min(maximum)
+        };
+        self.timeline_scroll_offset
+    }
+
+    // ------------------------=
+    // FUNC: scroll_timeline
+    // DESC: Moves the desktop conversation viewport within its last measured content extent.
+    // ------------------=
+    pub fn scroll_timeline(&mut self, delta: isize) -> bool {
+        let previous = self.timeline_scroll_offset;
+        self.timeline_scroll_offset = if delta < 0 {
+            self.timeline_scroll_offset
+                .saturating_sub(delta.unsigned_abs())
+        } else {
+            self.timeline_scroll_offset
+                .saturating_add(delta as usize)
+                .min(self.timeline_maximum_scroll)
+        };
+        self.timeline_scroll_offset != previous
+    }
+
+    // ------------------------=
+    // FUNC: scroll_timeline_to_end
+    // DESC: Restores automatic following when the user submits a new turn.
+    // ------------------=
+    pub fn scroll_timeline_to_end(&mut self) {
+        self.timeline_scroll_offset = self.timeline_maximum_scroll;
     }
 
     // ------------------------=
@@ -215,6 +275,7 @@ impl ChatRuntime {
         self.input.fill(0);
         self.input_length = 0;
         self.input_cursor = 0;
+        self.scroll_timeline_to_end();
     }
     // ------------------------=
     // FUNC: update_native_response
@@ -489,6 +550,7 @@ impl ChatRuntime {
             return false;
         }
         self.turn_id = self.turn_id.wrapping_add(1);
+        self.scroll_timeline_to_end();
         self.push(ChatMessage::new(ChatRole::User, trimmed));
         let mut response = [0u8; MAX_GENERATED_BYTES];
         self.last_memory_response = None;
@@ -520,6 +582,7 @@ impl ChatRuntime {
             ^ ((self.minimized as u64) << 63)
             ^ ((self.enabled as u64) << 62);
         value ^= (self.count as u64) << 48;
+        value ^= (self.timeline_scroll_offset as u64).rotate_left(19);
         value ^= self
             .last_response_kind
             .map(|kind| (kind as u64) << 32)

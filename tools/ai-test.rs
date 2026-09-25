@@ -555,6 +555,14 @@ fn services_and_events() {
 // ------------------=
 fn desktop_chat() {
     let mut turns = ChatRuntime::new();
+    assert_eq!(turns.set_timeline_scroll_metrics(600), 600);
+    assert_eq!(turns.timeline_maximum_scroll(), 600);
+    assert!(turns.scroll_timeline(-87));
+    assert_eq!(turns.timeline_scroll_offset(), 513);
+    assert_eq!(turns.set_timeline_scroll_metrics(900), 513);
+    assert!(turns.scroll_timeline(2_000));
+    assert_eq!(turns.timeline_scroll_offset(), 900);
+    assert_eq!(turns.set_timeline_scroll_metrics(120), 120);
     let initial_turn = turns.turn_id();
     assert!(!turns.submit(b""));
     assert_eq!(turns.turn_id(), initial_turn);

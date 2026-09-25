@@ -80,6 +80,13 @@ pub struct AiChatGeometry {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AiChatScrollGeometry {
+    pub track: Rect,
+    pub thumb: Rect,
+    pub maximum_scroll: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AppLauncherTarget {
     Search,
     App(usize),
@@ -599,7 +606,7 @@ impl SystemLayout {
         let model_top = top + header_height + 8 * self.scale;
         let model_height = 42 * self.scale;
         let composer_height = 46 * self.scale;
-        let send_width = 70 * self.scale;
+        let send_width = 86 * self.scale;
         let composer_top = top + height.saturating_sub(composer_height + 12 * self.scale);
         AiChatGeometry {
             panel: rect(left, top, width, height),
@@ -640,6 +647,51 @@ impl SystemLayout {
                 20 * self.scale,
                 20 * self.scale,
             ),
+        }
+    }
+
+    // ------------------------=
+    // FUNC: ai_chat_scroll_geometry
+    // DESC: Returns a proportional conversation scrollbar derived from the rendered content height.
+    // ------------------=
+    pub fn ai_chat_scroll_geometry(
+        self,
+        minimized: bool,
+        content_height: usize,
+        scroll_offset: usize,
+    ) -> AiChatScrollGeometry {
+        let timeline = self.ai_chat_geometry(minimized).timeline;
+        let inset = 7 * self.scale;
+        let track_height = (timeline.height as usize).saturating_sub(inset * 2);
+        let track = rect(
+            timeline.right().max(0) as usize - 9 * self.scale,
+            timeline.y.max(0) as usize + inset,
+            5 * self.scale,
+            track_height,
+        );
+        let viewport_height = timeline.height as usize;
+        let maximum_scroll = content_height.saturating_sub(viewport_height);
+        let thumb_height = if maximum_scroll == 0 || content_height == 0 {
+            track_height
+        } else {
+            (track_height.saturating_mul(viewport_height) / content_height)
+                .clamp(24 * self.scale, track_height)
+        };
+        let travel = track_height.saturating_sub(thumb_height);
+        let thumb_top = if maximum_scroll == 0 {
+            0
+        } else {
+            travel.saturating_mul(scroll_offset.min(maximum_scroll)) / maximum_scroll
+        };
+        AiChatScrollGeometry {
+            track,
+            thumb: rect(
+                track.x.max(0) as usize,
+                track.y.max(0) as usize + thumb_top,
+                track.width as usize,
+                thumb_height,
+            ),
+            maximum_scroll,
         }
     }
 

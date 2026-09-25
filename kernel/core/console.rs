@@ -6503,6 +6503,32 @@ impl ConsoleRuntime {
             self.redraw();
             return true;
         }
+        if self.mode == ConsoleMode::Desktop {
+            let layout = SystemLayout::new(
+                self.system.framebuffer_width,
+                self.system.framebuffer_height,
+            );
+            let chat = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat);
+            let point = layout.point(self.pointer_x, self.pointer_y);
+            let covered = self
+                .assistant_owner()
+                .is_some_and(|(_, window)| window.contains(point));
+            if chat.enabled()
+                && !chat.minimized()
+                && !covered
+                && layout.ai_chat_geometry(false).timeline.contains(point)
+            {
+                let amount = crate::ui::input_preferences::current().wheel(vertical) as isize;
+                let distance = amount.saturating_mul((87 * layout.scale()) as isize);
+                let changed = crate::runtime::ai::with_ai_runtime(|runtime| {
+                    runtime.chat.scroll_timeline(distance)
+                });
+                if changed {
+                    self.redraw();
+                }
+                return true;
+            }
+        }
         if self.mode == ConsoleMode::Desktop && self.desktop_app == DesktopAppKind::TextEditor {
             self.scroll_editor(vertical);
             self.redraw();
@@ -7223,7 +7249,30 @@ impl ConsoleRuntime {
                             });
                         }
                         AiChatTarget::Close => self.set_ai_chat_enabled(false),
-                        AiChatTarget::Timeline => self.ai_chat_focus = 0,
+                        AiChatTarget::Timeline => {
+                            self.ai_chat_focus = 0;
+                            let timeline = layout.ai_chat_geometry(false).timeline;
+                            let (offset, maximum) = crate::runtime::ai::with_ai_runtime(|runtime| {
+                                (
+                                    runtime.chat.timeline_scroll_offset(),
+                                    runtime.chat.timeline_maximum_scroll(),
+                                )
+                            });
+                            let scrollbar = layout.ai_chat_scroll_geometry(
+                                false,
+                                maximum.saturating_add(timeline.height as usize),
+                                offset,
+                            );
+                            let point = layout.point(self.pointer_x, self.pointer_y);
+                            if maximum != 0 && scrollbar.track.contains(point) {
+                                let direction = if point.y < scrollbar.thumb.y { -1 } else { 1 };
+                                let distance = direction
+                                    * (timeline.height as isize * 4 / 5).max(1);
+                                crate::runtime::ai::with_ai_runtime(|runtime| {
+                                    runtime.chat.scroll_timeline(distance)
+                                });
+                            }
+                        }
                     }
                     self.redraw();
                     return;

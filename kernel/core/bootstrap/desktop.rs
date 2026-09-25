@@ -9630,6 +9630,9 @@ impl super::DisplayDevice {
             190,
         );
         if chat.message_count() == 0 {
+            crate::runtime::ai::with_ai_runtime(|runtime| {
+                runtime.chat.set_timeline_scroll_metrics(0)
+            });
             self.ui_text_strong(
                 timeline_left + 14 * scale,
                 timeline_top + 18 * scale,
@@ -9658,60 +9661,105 @@ impl super::DisplayDevice {
                 1,
             );
         } else {
-            let bubble_width = timeline_width.saturating_sub(35 * scale);
+            let bubble_width = timeline_width.saturating_sub(43 * scale);
             let text_width = bubble_width.saturating_sub(20 * scale);
-            let line_height = (UI_FONT_CELL_HEIGHT + 4) * scale;
-            let max_lines = (timeline_height.saturating_sub(27 * scale) / line_height).max(1);
-            let mut start = chat.message_count();
-            let mut used_height = 7 * scale;
-            while start > 0 {
-                let Some(message) = chat.message(start - 1) else {
-                    break;
-                };
+            let line_height = (UI_FONT_CELL_HEIGHT + 1) * scale;
+            let vertical_padding = 12 * scale;
+            let message_gap = 7 * scale;
+            let viewport_padding = 7 * scale;
+            let mut content_height = viewport_padding * 2;
+            for index in 0..chat.message_count() {
+                let Some(message) = chat.message(index) else { continue; };
                 let lines = self
-                    .ui_text_wrapped_line_count(text_width, message.text(), max_lines)
+                    .ui_text_wrapped_line_count(text_width, message.text(), usize::MAX)
                     .max(1);
-                let bubble_height = lines * line_height + 12 * scale;
-                let row_height = bubble_height + 8 * scale;
-                if used_height + row_height > timeline_height && start < chat.message_count() {
-                    break;
-                }
-                used_height += row_height;
-                start -= 1;
+                content_height = content_height
+                    .saturating_add(lines * line_height + vertical_padding + message_gap);
             }
-            let mut row_top = timeline_top + 7 * scale;
-            for index in start..chat.message_count() {
+            content_height = content_height.saturating_sub(message_gap);
+            let maximum_scroll = content_height.saturating_sub(timeline_height);
+            let scroll_offset = crate::runtime::ai::with_ai_runtime(|runtime| {
+                runtime.chat.set_timeline_scroll_metrics(maximum_scroll)
+            });
+            let viewport_bottom = timeline_top.saturating_add(timeline_height);
+            let mut row_top = timeline_top as i32 + viewport_padding as i32
+                - scroll_offset as i32;
+            let previous_clip = self.render_clip;
+            self.intersect_render_clip(
+                timeline_left,
+                timeline_top,
+                timeline_width,
+                timeline_height,
+            );
+            for index in 0..chat.message_count() {
                 let Some(message) = chat.message(index) else {
                     continue;
                 };
                 let user = message.role == crate::runtime::ai::chat::ChatRole::User;
                 let inset = if user { 28 * scale } else { 7 * scale };
                 let lines = self
-                    .ui_text_wrapped_line_count(text_width, message.text(), max_lines)
+                    .ui_text_wrapped_line_count(text_width, message.text(), usize::MAX)
                     .max(1);
-                let bubble_height = lines * line_height + 12 * scale;
+                let bubble_height = lines * line_height + vertical_padding;
+                let row_bottom = row_top.saturating_add(bubble_height as i32);
+                if row_bottom > timeline_top as i32 && row_top < viewport_bottom as i32 {
+                    let visible_top = row_top.max(timeline_top as i32) as usize;
+                    let visible_bottom = row_bottom.min(viewport_bottom as i32) as usize;
+                    self.fill_rounded_rect_alpha(
+                        timeline_left + inset,
+                        visible_top,
+                        bubble_width,
+                        visible_bottom.saturating_sub(visible_top),
+                        8 * scale,
+                        if user { accent_r / 3 } else { 8 },
+                        if user { accent_g / 3 } else { 27 },
+                        if user { accent_b / 3 } else { 42 },
+                        224,
+                    );
+                    self.ui_text_wrapped_compact_clipped(
+                        timeline_left + inset + 10 * scale,
+                        row_top + 6 * scale as i32,
+                        text_width,
+                        message.text(),
+                        218,
+                        231,
+                        240,
+                        line_height,
+                        timeline_top,
+                        viewport_bottom,
+                    );
+                }
+                row_top = row_bottom.saturating_add(message_gap as i32);
+            }
+            self.render_clip = previous_clip;
+            let scrollbar = layout.ai_chat_scroll_geometry(
+                false,
+                content_height,
+                scroll_offset,
+            );
+            if scrollbar.maximum_scroll != 0 {
                 self.fill_rounded_rect_alpha(
-                    timeline_left + inset,
-                    row_top,
-                    bubble_width,
-                    bubble_height,
-                    8 * scale,
-                    if user { accent_r / 3 } else { 8 },
-                    if user { accent_g / 3 } else { 27 },
-                    if user { accent_b / 3 } else { 42 },
-                    224,
+                    scrollbar.track.x.max(0) as usize,
+                    scrollbar.track.y.max(0) as usize,
+                    scrollbar.track.width as usize,
+                    scrollbar.track.height as usize,
+                    2 * scale,
+                    31,
+                    57,
+                    74,
+                    176,
                 );
-                self.ui_text_wrapped(
-                    timeline_left + inset + 10 * scale,
-                    row_top + 8 * scale,
-                    text_width,
-                    message.text(),
-                    218,
-                    231,
-                    240,
-                    max_lines,
+                self.fill_rounded_rect_alpha(
+                    scrollbar.thumb.x.max(0) as usize,
+                    scrollbar.thumb.y.max(0) as usize,
+                    scrollbar.thumb.width as usize,
+                    scrollbar.thumb.height as usize,
+                    2 * scale,
+                    accent_r,
+                    accent_g,
+                    accent_b,
+                    238,
                 );
-                row_top += bubble_height + 8 * scale;
             }
         }
         let composer_left = geometry.composer.x.max(0) as usize;
@@ -9759,25 +9807,84 @@ impl super::DisplayDevice {
             true,
             3,
         );
+        let send_left = geometry.send.x.max(0) as usize;
+        let send_top = geometry.send.y.max(0) as usize;
+        let send_width = geometry.send.width as usize;
+        let send_height = geometry.send.height as usize;
+        let send_ready = !composer_text.is_empty()
+            && chat.selected_model_ready()
+            && chat.generation_state != crate::runtime::ai::chat::GenerationState::Running;
         self.fill_rounded_rect_alpha(
-            geometry.send.x.max(0) as usize,
-            geometry.send.y.max(0) as usize,
+            send_left,
+            send_top + 2 * scale,
+            send_width,
+            send_height,
+            11 * scale,
+            0,
+            6,
+            13,
+            180,
+        );
+        self.fill_rounded_rect_alpha(
+            send_left,
+            send_top,
             geometry.send.width as usize,
             geometry.send.height as usize,
-            9 * scale,
-            accent_r / 2,
-            accent_g / 2,
-            accent_b / 2,
-            238,
+            11 * scale,
+            if send_ready { accent_r } else { accent_r / 3 },
+            if send_ready { accent_g } else { accent_g / 3 },
+            if send_ready { accent_b } else { accent_b / 3 },
+            if send_ready { 248 } else { 190 },
         );
-        self.ui_text_strong(
-            geometry.send.x.max(0) as usize + 16 * scale,
-            geometry.send.y.max(0) as usize + 15 * scale,
+        self.outline_rounded_rect(
+            send_left,
+            send_top,
+            send_width,
+            send_height,
+            11 * scale,
+            if send_ready { 171 } else { 73 },
+            if send_ready { 228 } else { 107 },
+            if send_ready { 255 } else { 126 },
+        );
+        self.ui_text_centered_strong(
+            send_left,
+            send_width.saturating_sub(15 * scale),
+            send_top + send_height.saturating_sub(UI_FONT_CELL_HEIGHT) / 2,
             b"Send",
-            239,
-            247,
-            252,
+            if send_ready { 250 } else { 158 },
+            if send_ready { 253 } else { 177 },
+            if send_ready { 255 } else { 190 },
             1,
+        );
+        let arrow_x = send_left.saturating_add(send_width).saturating_sub(17 * scale) as i32;
+        let arrow_y = send_top.saturating_add(send_height / 2) as i32;
+        let arrow_color = if send_ready { (250, 253, 255) } else { (120, 145, 160) };
+        self.line(
+            arrow_x - 4 * scale as i32,
+            arrow_y,
+            arrow_x + 3 * scale as i32,
+            arrow_y,
+            arrow_color.0,
+            arrow_color.1,
+            arrow_color.2,
+        );
+        self.line(
+            arrow_x,
+            arrow_y - 3 * scale as i32,
+            arrow_x + 3 * scale as i32,
+            arrow_y,
+            arrow_color.0,
+            arrow_color.1,
+            arrow_color.2,
+        );
+        self.line(
+            arrow_x,
+            arrow_y + 3 * scale as i32,
+            arrow_x + 3 * scale as i32,
+            arrow_y,
+            arrow_color.0,
+            arrow_color.1,
+            arrow_color.2,
         );
     }
 

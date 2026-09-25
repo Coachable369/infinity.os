@@ -384,6 +384,24 @@ fn desktop_ai_chat_layout_test() {
     assert!(geometry.panel.height > 300);
     assert!(geometry.panel.bottom() <= foreground.widgets.bottom());
     assert!(geometry.timeline.bottom() <= geometry.composer.y);
+    assert!(geometry.send.width >= 86);
+    let scroll = layout.ai_chat_scroll_geometry(
+        false,
+        geometry.timeline.height as usize * 3,
+        geometry.timeline.height as usize,
+    );
+    assert!(scroll.maximum_scroll > 0);
+    assert!(scroll.thumb.height < scroll.track.height);
+    assert!(scroll.track.contains(crate::ui::geometry::Point {
+        x: scroll.thumb.x,
+        y: scroll.thumb.y,
+    }));
+    let at_end = layout.ai_chat_scroll_geometry(
+        false,
+        geometry.timeline.height as usize * 3,
+        usize::MAX,
+    );
+    assert_eq!(at_end.thumb.bottom(), at_end.track.bottom());
 
     let normalized = |rect: Rect| {
         (
