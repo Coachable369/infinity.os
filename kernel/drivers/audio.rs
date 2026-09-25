@@ -38,9 +38,12 @@ pub fn capture(owner: crate::runtime::execution::SecurityIdentity, capability: u
     let started = unsafe {
         if let Some(device) = (&mut *(&raw mut DEVICE)).as_mut() {
             if device.start_capture().is_ok() {
+                let Some(started) = crate::ui::performance::monotonic_ns() else {
+                    device.stop_capture(); LOCK.store(false, Ordering::Release); return false;
+                };
                 (&mut *(&raw mut INPUT)).clear();
                 INPUT_STATUS = CaptureStatus { state: CaptureState::Recording, sample_rate: device.sample_rate, frames: 0, peak: 0 };
-                INPUT_LAST_POLL = now; INPUT_UNTIL = now + 3_000_000_000; INPUT_LEASE = lease; true
+                INPUT_LAST_POLL = started; INPUT_UNTIL = started.saturating_add(3_000_000_000); INPUT_LEASE = lease; true
             } else {
                 if !device.capturing { device.stop_capture(); }
                 false

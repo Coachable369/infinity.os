@@ -1,0 +1,37 @@
+{
+  "date_local": "2026-09-24",
+  "vm": "infinityos-4",
+  "architecture": "aarch64",
+  "controller": "Intel HDA",
+  "host_backend": "CoreAudio",
+  "iso_attached_during_runtime_tests": false,
+  "disk": "updated private copy of previously installed system",
+  "audible_tone_confirmed_by_user": true,
+  "capture": {
+    "state": "Complete",
+    "sample_rate_hz": 44100,
+    "stereo_frames": 130800,
+    "peak_s16": 1631
+  },
+  "cancellation": {
+    "state": "Cancelled",
+    "stereo_frames": 26400,
+    "peak_s16": 711,
+    "input_stream_control": 2097152,
+    "dma_run": false
+  },
+  "cold_reboot": {
+    "state": "Idle",
+    "frames": 0,
+    "peak": 0,
+    "input_stream_control": 0,
+    "output_stream_control": 0
+  },
+  "published_iso": "builds/InfinityOS-aarch64.iso",
+  "iso_bytes": 8590336000,
+  "installed_kernel_bytes": 208758480,
+  "loader_bytes": 24576,
+  "published_binary_parity": true,
+  "new_install_from_latest_iso_tested": false,
+  "stt_tts_conversation_verified": false
+}

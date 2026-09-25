@@ -91,15 +91,30 @@ Behavioral results for this follow-up:
   at 44.1 kHz stereo. First use produced only 0.300 seconds; the second invocation
   added 1.975 seconds. The source now starts the duration timer after hardware
   initialization, within the existing bounded capability lease. That latest
-  timing change still needs installed-system retesting.
-- Microphone initialization times out in VirtualBox's macOS input-permission
-  check. The guest reports expired authority and zero captured frames. This is
-  **not usable microphone proof**. Host permission must be resolved before a
-  real input test. Temporary PCM debug capture is disabled for the next VM boot.
+  timing change was subsequently tested on a cold boot; the user confirmed hearing
+  the approximately two-second tone through the VM speakers.
+- After macOS microphone access became available, the first capture overrun
+  check incorrectly included host device initialization. Capture now starts its
+  duration and polling clocks after DMA initialization, without extending its
+  capability lease. The rebuilt, disk-only installed system completed capture:
+  **130,800 stereo frames at 44,100 Hz, peak 1,631**, with nonzero real microphone
+  samples and no reported overrun. Captured PCM is erased on completion.
+- Temporary host PCM debug recording is disabled. Subsequent verification uses
+  the guest's counters and observed stream state, not recorded private speech.
+- Installed cancellation test: a second capture was cancelled at **26,400
+  frames**, peak **711**. The HDA input stream control register was **0x200000**
+  afterward (stream tag retained, DMA RUN cleared).
+- Another disk-only cold reboot returns capture to Idle, sample rate/frame/peak
+  counters to zero, and both HDA stream control registers to zero. No active
+  recording or playback survives reboot.
 
-These follow-up changes are **not yet in the published ISO**. The old parity
-result below applies only to the previous published increment. Full native STT,
-TTS, voice conversation, and the chat-header waveform remain unimplemented.
+These follow-up changes are now in `builds/InfinityOS-aarch64.iso`, rebuilt
+September 24 at 23:58 CDT, **8,590,336,000 bytes**. Published-artifact parity
+passes for the **208,758,480-byte** installed kernel and **24,576-byte** loader.
+Hermes and Ministral packaging assertions also pass. The runtime tests used an
+updated private installed disk, not a new destructive installation from this
+latest ISO. Full native STT, TTS, voice conversation, and the chat-header
+waveform remain unimplemented.
 
 ## Build handoff
 
