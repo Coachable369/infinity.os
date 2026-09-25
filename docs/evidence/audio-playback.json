@@ -11,6 +11,10 @@
   "rms_s16": 5788.1,
   "dma_progress_assertion": true,
   "pcm_and_capability_tests_passed": true,
+  "published_iso": "builds/InfinityOS-aarch64.iso",
+  "iso_bytes": 8590336000,
+  "installed_kernel_bytes": 208747744,
+  "published_iso_kernel_loader_parity": true,
   "installed_desktop_verified": false,
   "virtualbox_verified": false,
   "microphone_capture_verified": false

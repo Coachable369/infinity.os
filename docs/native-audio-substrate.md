@@ -66,6 +66,15 @@ than changing samples or accepting log messages as evidence.
 
 This increment does **not** claim the full audio substrate or voice interface is complete.
 
+## Build handoff
+
+`make aarch64` completed successfully on September 24, 2026. The published
+`builds/InfinityOS-aarch64.iso` is 8,590,336,000 bytes (21:55:53 CDT).
+Published-ISO parity passed against the 208,747,744-byte installed kernel and
+24,576-byte loader. ARM64 and x86_64 release checks pass; existing compiler
+warnings remain. x86/x86_64 ISOs and the running VirtualBox installation were
+not upgraded by this increment.
+
 Reference behavior: QEMU `hw/audio/intel-hda.c`, `hda-codec-common.h`; VirtualBox
 `src/VBox/Devices/Audio/DevHdaCodec.cpp`. Implementation is native Rust, not copied
 controller-emulator source.
