@@ -43,6 +43,18 @@ fn main() {
     assert!(AudioStream::authorize(&capture, owner, &caps, 10).is_err());
     caps.revoke(output).unwrap(); assert!(!lease.valid(&caps, 11));
     caps.retire_leaf(output, owner).unwrap();
+    let speech_cap = caps.grant(CapabilityType::AudioOutput, 0, 1, 0, owner, owner, Some(60), 0).unwrap();
+    let mut speech = IopMessage::request(OperationId::AudioPlaybackStart, 3, owner, speech_cap, 45, 3, &[]).unwrap();
+    let speech_lease = AudioStream::authorize(&speech, owner, &caps, 10).unwrap();
+    assert_eq!(speech_lease.route, AudioRoute::Playback);
+    assert!(speech_lease.valid(&caps, 44));
+    assert!(!speech_lease.valid(&caps, 45));
+    speech.header.deadline = 46;
+    assert!(matches!(AudioStream::authorize(&speech, owner, &caps, 10), Err(AudioError::Expired)));
+    speech.header.deadline = 45; speech.header.capability_ref = input;
+    assert!(matches!(AudioStream::authorize(&speech, owner, &caps, 10), Err(AudioError::Denied)));
+    caps.revoke(speech_cap).unwrap();
+    assert!(!speech_lease.valid(&caps, 11));
     let mut pcm = [0; hda::SAMPLES]; hda::tone(&mut pcm);
     let mut crossings = 0;
     for frame in 0..hda::FRAMES {

@@ -10,6 +10,8 @@ pub mod qwen;
 pub mod types;
 pub mod voice;
 pub mod voice_pcm;
+#[cfg(target_os = "none")]
+pub mod voice_output;
 pub mod voice_vad;
 
 use agent::AgentManager;

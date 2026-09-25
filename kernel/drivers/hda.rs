@@ -403,6 +403,54 @@ impl Hda {
         Ok(self.r32(self.output + 4))
     }
     // ------------------------=
+    // FUNC: start_resident
+    // DESC: Plays a kernel-owned prefilled phrase and silence tail without scheduling-sensitive refills.
+    // ------------------=
+    /// Caller keeps coherent, DMA-addressable samples resident and immutable until stop.
+    pub unsafe fn start_resident(&mut self, samples: &'static [i16]) -> Result<(), Error> {
+        if self.playing { return Err(Error::Busy); }
+        if samples.is_empty() || samples.len() % 2 != 0 || samples.len() > 48_000 * 2 * 32 { return Err(Error::Invalid); }
+        let r = self.output;
+        self.stop(); self.w8(r, 1); self.wait(r, 1, 1)?;
+        self.w8(r, 0); self.wait(r, 1, 0)?;
+        let address = samples.as_ptr() as u64;
+        let bytes = samples.len() as u64 * 2;
+        let bdl = core::ptr::addr_of_mut!((*self.dma).descriptors) as u64;
+        // VirtualBox requires nonzero LVI; use two resident extents, neither needs refilling.
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[0]), [address, bytes / 2]);
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[1]), [address + bytes / 2, bytes / 2]);
+        fence(Ordering::SeqCst);
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!("dsb sy", options(nostack));
+        self.w32(r + 8, bytes as u32); self.w16(r + 0x0c, 1);
+        self.w16(r + 0x12, if self.sample_rate == 48000 { 0x11 } else { 0x4011 });
+        self.w32(r + 0x18, bdl as u32); self.w32(r + 0x1c, (bdl >> 32) as u32);
+        self.verb(self.dac, if self.sample_rate == 48000 { 0x20011 } else { 0x24011 })?;
+        self.verb(self.dac, 0x70610)?;
+        self.w8(r + 3, 0x1c); self.w32(r, (1 << 20) | 2); self.playing = true;
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: refill_playback_half
+    // DESC: Replaces only a consumed DMA half with the next 50 ms of interleaved PCM; never writes the active half.
+    // ------------------=
+    pub unsafe fn refill_playback_half(&mut self, half: usize, samples: &[i16]) -> Result<(), Error> {
+        let count = self.sample_rate as usize / 10;
+        if !self.playing || half > 1 || samples.len() != count { return Err(Error::Invalid); }
+        let position = self.position()? as usize;
+        if position >= count * 4 { return Err(Error::Dma); }
+        if position / (count * 2) == half { return Err(Error::Busy); }
+        for (index, &sample) in samples.iter().enumerate() {
+            write_volatile(core::ptr::addr_of_mut!((*self.dma).playback[half * count + index]), sample);
+        }
+        fence(Ordering::SeqCst);
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!("dsb sy", options(nostack));
+        // A missed deadline is reported, not concealed as a successful refill.
+        if self.position()? as usize / (count * 2) == half { return Err(Error::Dma); }
+        Ok(())
+    }
+    // ------------------------=
     // FUNC: stop
     // DESC: Stops output DMA without enabling capture.
     // ------------------=

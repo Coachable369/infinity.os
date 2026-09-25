@@ -13,6 +13,8 @@ pub enum AudioError { Invalid, Denied, Expired }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureState { Idle, Recording, Complete, Cancelled, Denied, DeviceLost, Overrun }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlaybackState { Idle, Playing, Complete, Cancelled, Denied, DeviceLost, Underrun }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CaptureStatus {
     pub state: CaptureState,
     pub sample_rate: u32,
@@ -76,8 +78,9 @@ impl AudioStream {
         let h = &message.header;
         if h.protocol_version != IOP_VERSION || h.schema_version != 1 || h.message_type != MessageType::Request
             || h.caller_identity != caller || h.payload_length != 0 { return Err(AudioError::Invalid); }
-        if h.deadline <= now || h.deadline - now > 5 { return Err(AudioError::Expired); }
-        let route = if h.operation_type_id == OperationId::AudioTone as u32 { AudioRoute::Playback }
+        let maximum = if h.operation_type_id == OperationId::AudioPlaybackStart as u32 { 35 } else { 5 };
+        if h.deadline <= now || h.deadline - now > maximum { return Err(AudioError::Expired); }
+        let route = if h.operation_type_id == OperationId::AudioTone as u32 || h.operation_type_id == OperationId::AudioPlaybackStart as u32 { AudioRoute::Playback }
             else if h.operation_type_id == OperationId::AudioCaptureStart as u32 { AudioRoute::Capture }
             else { return Err(AudioError::Invalid); };
         let stream = Self { owner: caller, capability: h.capability_ref, route, deadline: h.deadline };

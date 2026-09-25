@@ -39,6 +39,8 @@ pub fn initialize(_info: &crate::boot_info::BootInfo) {
 // DESC: Services at most four RX and four TX descriptors once per millisecond; never spins or waits for hardware.
 // ------------------=
 pub fn poll() {
+    #[cfg(target_os = "none")]
+    crate::runtime::ai::voice_output::poll();
     super::audio::poll();
     #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
     {

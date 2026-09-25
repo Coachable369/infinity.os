@@ -41,7 +41,7 @@ rate conversion and driver-to-voice-service polling are still required.
 
 1. Real native offline STT model/runtime, bounded asynchronous requests and text
    results; the current speech provider honestly returns ProviderUnavailable.
-2. Real native TTS and a general incremental playback stream (not diagnostic tone).
+2. Installed-desktop validation of native TTS and incremental playback (implementation below).
 3. Capture/resampling/VAD/STT → existing AI service → safe typed actions → TTS
    integration, shared Console/GUI session state, barge-in and resource cleanup.
 4. Audio-reactive chat-header waveform and all requested voice Console commands.
@@ -75,11 +75,76 @@ build also pass. These remain host tests and a cross-build, **not installed
 STT/TTS or voice-conversation acceptance**. The converter is not yet connected
 to live driver polling. No refreshed ISO is claimed for this increment.
 
-Flite v2.2 (upstream commit `e9e2e37c329dbe98bfeb27a1828ef9a71fa84f88`)
-was fetched into the ignored build cache for native TTS feasibility inspection.
-It is not linked, registered, installed, or a verified speech backend. Its C
-runtime dependencies still need a bounded native integration; host synthesis
-would not satisfy the requirement.
+## September 25: real native speech synthesis and streamed playback
+
+Flite v2.2 (pinned commit `e9e2e37c329dbe98bfeb27a1828ef9a71fa84f88`) now
+cross-compiles as a freestanding compact English diphone voice. The native port
+excludes upstream audio, files, sockets, and dynamic model loaders. Its complete
+license is retained in `tools/voice-flite/COPYING` and linked into the kernel.
+It is a compact intelligible voice, not a neural/naturalness claim.
+
+The C-only failure boundary uses an 8 MiB fixed arena, checks cancellation and
+deadline at allocator/free checkpoints, and erases private storage after every
+request. Input is currently limited to 160 printable ASCII characters; output
+is bounded to 30 seconds of 8 kHz mono PCM. There is no host synthesis dependency.
+
+`kernel/runtime/ai/voice_output.rs` queues synthesis on one available AP using
+the existing speech-provider interface. Busy/missing workers fail explicitly;
+there is no synchronous UI fallback. Matrix jobs exclude the reserved worker.
+`voice say TEXT`, `voice stop`, and `voice status` expose output testing through
+authenticated Console sessions. These commands do not enable microphone capture.
+
+`AudioPlaybackStart` uses typed IOP and AudioOutput authority with a bounded
+deadline. An initial 50 ms refill implementation exposed a real installed-VM
+underrun: desktop polling sometimes takes longer than a DMA half. The bounded
+reply path now prepares negotiated-rate PCM on the AP into a resident 6,144,000
+byte maximum buffer, with a silence tail. HDA reads that directly, independently
+of UI frame timing. The BSP observes hardware progress to finish and releases
+the buffer only after DMA stops. Cancellation/revocation stop playback. The
+short-ring refill API remains available, but is not the desktop reply path.
+Both live and installed kernel link rules include the same voice archive.
+
+Evidence (not full conversation acceptance):
+
+- Host C tests execute real synthesis, deterministic repeated requests, small
+  arena/output failures, cancellation, and actual private-arena erasure.
+- Two Rust PCM tests verify chunk invariance, extreme samples, stereo equality,
+  tail silence, and rejection without output mutation.
+- Audio behavioral harness verifies output-only authority, 35-second playback
+  deadline bounds, expiry, and revocation.
+- Hermes `concurrent_rows_and_cancellation` test passes while a real worker is
+  held by a background job; remaining workers still compute quantized matrices.
+- Freestanding AArch64 QEMU **TCG** probe synthesizes 37,507 frames (4.688375 s)
+  in 74.487 ms, peak arena 445,360 bytes, and plays native HDA PCM while deliberately
+  polling only every 120 ms (39 polls), beyond the former 50 ms refill deadline.
+  The WAV sink contains real stereo speech PCM. This is neither Linux nor a
+  host synthesis service, but also **not an installed InfinityOS desktop test**.
+- QEMU/HVF probe encounters a QEMU assertion in `hvf_handle_exception`; it is
+  not reported as passing or used as a performance measurement.
+- AArch64 installed-kernel cross-build passes. No refreshed ISO or complete
+  fresh-install voice acceptance is claimed for this increment.
+- Initial installed desktop synthesis of `Hello from Infinity` generated 12,992
+  samples in 1 ms with 160,176 arena bytes, but that first playback attempt
+  underrran. It is not counted as successful installed playback evidence.
+- The corrected resident-buffer path additionally uses **two** descriptors:
+  VirtualBox rejects LVI=0 (one descriptor), although QEMU accepts it. The hardware
+  probe now asserts LVI=1. Installed VirtualBox retest reached Complete (state 7),
+  error 0, 12,992 speech frames, 2 ms synthesis including output preparation,
+  160,176 peak arena bytes. HDA advanced to byte 286,728 at 44.1 kHz stereo and
+  cleared RUN. A second request followed by `voice stop` reached Cancelled (state
+  6), error 0. These were live UI/state inspections, not prose-matching tests.
+  The private installed disk booted without an ISO. Human confirmation of speech
+  audibility is pending; the earlier confirmed 440 Hz tone is separate evidence.
+
+Reproduce with `make voice-synthesis-test`, `make audio-test`, and
+`make voice-synthesis-hardware-test`. Native metrics and WAV artifacts are in
+`build/voice-flite/aarch64/`.
+
+The user's updated acceptance is **always-listening interactive desktop voice**,
+not push-to-talk-only. Real offline STT, continuous capture integration, echo
+suppression/barge-in, Hermes conversation orchestration, waveform widget states,
+and fresh-installed end-to-end proof remain unfinished. Listening must remain
+visible and stoppable, and must end on session lock/revocation.
 
 No host speech command, cloud API or fabricated transcript substitutes for these
 requirements. The VAD change alone does not complete the voice milestone.

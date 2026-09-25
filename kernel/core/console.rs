@@ -11477,6 +11477,32 @@ impl ConsoleRuntime {
                 .write_line(b"remote       SCAFFOLDED  disabled by policy");
             return true;
         }
+        #[cfg(target_os = "none")]
+        if command.starts_with(b"voice say ") {
+            use crate::runtime::{capability::CapabilityType, execution::SecurityIdentity};
+            let owner = SecurityIdentity(self.current_session.0);
+            let now = crate::runtime::ai::qwen::workers::clock_ns() / 1_000_000_000;
+            let capability = crate::runtime::with_runtime(|runtime| {
+                let active = (0..crate::runtime::identity::MAX_SESSIONS)
+                    .filter_map(|i| runtime.identity.session_nth(i))
+                    .any(|s| s.id == self.current_session && s.user == self.current_user &&
+                        s.state == crate::runtime::identity::SessionState::Active);
+                if !active { return None; }
+                runtime.capabilities.grant(CapabilityType::AudioOutput, 0, 1, 0,
+                    owner, owner, Some(now + 40), 0).ok()
+            }).flatten();
+            let started = capability.map(|cap| crate::runtime::ai::voice_output::submit(owner, cap, &command[10..]).is_ok()).unwrap_or(false);
+            if !started { if let Some(cap) = capability { crate::runtime::with_runtime(|r| { let _ = r.capabilities.retire_leaf(cap, owner); }); } }
+            self.output.write_line(if started { b"Native speech queued. voice stop cancels; voice status shows progress." }
+                else { b"Speech rejected: requires an active session, a free worker, and 1-160 printable English characters." });
+            return true;
+        }
+        #[cfg(target_os = "none")]
+        if command == b"voice stop" {
+            crate::runtime::ai::voice_output::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0));
+            self.output.write_line(b"Voice output cancellation requested.");
+            return true;
+        }
         if command == b"voice status" {
             crate::output_text(b"[operation] Voice.Status\n");
             crate::runtime::ai::with_ai_runtime(|ai| {
@@ -11489,10 +11515,16 @@ impl ConsoleRuntime {
                     },
                 ]);
             });
-            self.output
-                .write_line(b"Push-to-talk capability boundary: TESTED");
-            self.output
-                .write_line(b"Audio capture and offline speech model: UNSUPPORTED");
+            #[cfg(target_os = "none")]
+            {
+                let status = crate::runtime::ai::voice_output::status();
+                self.output.write_number(b"Native speech state: ", status.state as u64);
+                self.output.write_number(b"Speech frames (8 kHz): ", status.frames as u64);
+                self.output.write_number(b"Synthesis milliseconds: ", status.synthesis_ns / 1_000_000);
+                self.output.write_number(b"Synthesis arena peak bytes: ", status.peak_bytes as u64);
+                self.output.write_number(b"Speech error: ", status.error as u64);
+            }
+            self.output.write_line(b"Native HDA capture available via audio capture; automatic speech recognition is not yet connected.");
             return true;
         }
         if command == b"agent list" {

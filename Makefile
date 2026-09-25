@@ -8,6 +8,17 @@ audio-test:
 audio-hardware-test:
 	sh tools/audio-probe/run.sh
 
+.PHONY: voice-synthesis-test voice-synthesis-hardware-test
+voice-synthesis-test:
+	python3 tools/voice-flite/build.py --target host
+	$(CLANG) -O2 tools/voice-flite/host-test.c build/voice-flite/host/libflite.a -Wl,-dead_strip -o build/voice-flite/host/test
+	build/voice-flite/host/test build/voice-flite/host/native-voice.wav
+	$(RUSTC) --test kernel/drivers/speech_pcm.rs -o build/voice-flite/speech-pcm-test
+	build/voice-flite/speech-pcm-test
+
+voice-synthesis-hardware-test:
+	sh tools/voice-flite/probe/run.sh tcg
+
 BUILD := build
 BOOT_IMAGE_SIZE_MB := 1024
 LLVM := /opt/homebrew/opt/llvm/bin
@@ -261,8 +272,14 @@ $(BUILD)/x86_64/installed-kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUN
 	cp $(BUILD)/cargo-installed/x86_64-unknown-none/release/libinfinity_kernel.a $(BUILD)/x86_64/libinstalled-kernel.a
 	touch $@
 
-$(BUILD)/x86_64/installed-kernel.elf: $(BUILD)/x86_64/installed-kernel.o linker/x86_64.ld
-	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libinstalled-kernel.a
+
+FLITE_PORT_SOURCES := $(wildcard tools/voice-flite/include/*.h) tools/voice-flite/port.c tools/voice-flite/jump.S tools/voice-flite/build.py tools/voice-flite/COPYING
+
+$(BUILD)/voice-flite/%/libflite.a: $(FLITE_PORT_SOURCES)
+	python3 tools/voice-flite/build.py --target $*
+
+$(BUILD)/x86_64/installed-kernel.elf: $(BUILD)/x86_64/installed-kernel.o linker/x86_64.ld $(BUILD)/voice-flite/x86_64/libflite.a
+	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libinstalled-kernel.a $(BUILD)/voice-flite/x86_64/libflite.a
 
 $(BUILD)/x86_64/kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/x86_64/installed-esp.img $(BUILD)/x86_64/installed-kernel.elf
 	@mkdir -p $(@D)
@@ -271,8 +288,8 @@ $(BUILD)/x86_64/kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/x86_64/inst
 	cp $(BUILD)/cargo/x86_64-unknown-none/release/libinfinity_kernel.a $(BUILD)/x86_64/libkernel.a
 	touch $@
 
-$(BUILD)/x86_64/kernel.elf: $(BUILD)/x86_64/kernel.o linker/x86_64.ld
-	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libkernel.a
+$(BUILD)/x86_64/kernel.elf: $(BUILD)/x86_64/kernel.o linker/x86_64.ld $(BUILD)/voice-flite/x86_64/libflite.a
+	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libkernel.a $(BUILD)/voice-flite/x86_64/libflite.a
 
 $(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h
 	@mkdir -p $(@D)
@@ -616,8 +633,8 @@ $(BUILD)/aarch64/qwen-math.o: kernel/runtime/ai/qwen/cpu_math.c
 	@mkdir -p $(@D)
 	$(CLANG) --target=aarch64-none-elf -ffreestanding -fno-builtin -fno-stack-protector -ffp-contract=off -O3 -c $< -o $@
 
-$(BUILD)/aarch64/installed-kernel.elf: $(BUILD)/aarch64/installed-kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o
-	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a $(BUILD)/aarch64/qwen-math.o
+$(BUILD)/aarch64/installed-kernel.elf: $(BUILD)/aarch64/installed-kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a
+	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a
 
 $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(ICON_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS) $(NODE_ASSETS)
 	rm -rf $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Crash
@@ -648,11 +665,11 @@ $(BUILD)/aarch64/kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/aarch6
 	cp $(BUILD)/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a $(BUILD)/aarch64/libkernel.a
 	touch $@
 
-$(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o
-	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o
+$(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a
+	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a
 
-$(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o
-	$(LD_LLD) -nostdlib -static -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o
+$(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a
+	$(LD_LLD) -nostdlib -static -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a
 
 $(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/common/payload_loader.h boot/common/worker_bridge.h boot/common/psci_workers.h
 	@mkdir -p $(@D)

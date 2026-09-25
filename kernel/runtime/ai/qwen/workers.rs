@@ -16,6 +16,7 @@ static CANCELLED: AtomicBool = AtomicBool::new(false);
 // publish completion. No worker retains a pointer into engine-owned output.
 static mut MATRIX_OUTPUT: [f32; MATRIX_ROWS] = [0.0; MATRIX_ROWS];
 struct Job {
+    background: Option<unsafe fn()>,
     data: *const u8,
     kind: u32,
     width: usize,
@@ -40,6 +41,7 @@ impl Slot {
         Self {
             state: AtomicUsize::new(0),
             job: UnsafeCell::new(Job {
+                background: None,
                 data: core::ptr::null(),
                 kind: 0,
                 width: 0,
@@ -161,8 +163,31 @@ pub unsafe fn stop_host_workers() {
     drain();
     let ready = READY.load(Ordering::Acquire);
     for (i, slot) in SLOTS.iter().enumerate() {
-        if ready & (1 << i) != 0 { slot.state.store(3, Ordering::Release); }
+        if ready & (1 << i) != 0 {
+            while slot.state.load(Ordering::Acquire) == 4 { core::hint::spin_loop(); }
+            slot.state.store(3, Ordering::Release);
+        }
     }
+}
+
+// ------------------------=
+// FUNC: background
+// DESC: Submits one bounded non-rendering native task to an idle AP without occupying the UI thread.
+// ------------------=
+/// Safety: BSP-only; task must own its static buffers, honor cancellation and
+/// deadlines, and never access UI, firmware, runtime locks, or matrix mailboxes.
+pub unsafe fn background(task: unsafe fn()) -> bool {
+    let ready = READY.load(Ordering::Acquire);
+    for (index, slot) in SLOTS.iter().enumerate() {
+        if ready & (1 << index) != 0 && slot.state.load(Ordering::Acquire) == 0 {
+            (*slot.job.get()).background = Some(task);
+            slot.state.store(4, Ordering::Release);
+            #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+            core::arch::asm!("sev", options(nomem, nostack));
+            return true;
+        }
+    }
+    false
 }
 
 // ------------------------=
@@ -252,6 +277,11 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
                 READY.fetch_and(!(1 << index), Ordering::Release);
                 return;
             }
+            4 => {
+                if let Some(task) = (*slot.job.get()).background { task(); }
+                (*slot.job.get()).background = None;
+                slot.state.store(0, Ordering::Release);
+            }
             _ => {
                 #[cfg(all(target_arch = "aarch64", target_os = "none"))]
                 core::arch::asm!("wfe", options(nomem, nostack));
@@ -336,7 +366,7 @@ pub unsafe fn rows(
         CANCELLED.store(false, Ordering::Release);
         let mut mask = 0;
         for (i, slot) in SLOTS.iter().enumerate() {
-            if ready & (1 << i) == 0 {
+            if ready & (1 << i) == 0 || slot.state.load(Ordering::Acquire) != 0 {
                 continue;
             }
             let job = &mut *slot.job.get();
@@ -348,6 +378,7 @@ pub unsafe fn rows(
             mask |= 1 << i;
             slot.state.store(1, Ordering::Release);
         }
+        if mask == 0 { return None; }
         PENDING = (mask, *cursor, false);
         #[cfg(all(target_arch = "aarch64", target_os = "none"))]
         core::arch::asm!("sev", options(nomem, nostack));
@@ -378,6 +409,16 @@ pub fn drain() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    static BACKGROUND_STARTED: AtomicBool = AtomicBool::new(false);
+    static BACKGROUND_RELEASE: AtomicBool = AtomicBool::new(false);
+    // ------------------------=
+    // FUNC: held_background
+    // DESC: Occupies one AP while the production matrix scheduler uses the remaining workers.
+    // ------------------=
+    unsafe fn held_background() {
+        BACKGROUND_STARTED.store(true, Ordering::Release);
+        while !BACKGROUND_RELEASE.load(Ordering::Acquire) { std::thread::yield_now(); }
+    }
     extern "C" {
         fn infinity_qwen_dot(
             kind: u32,
@@ -416,6 +457,11 @@ mod tests {
             .collect();
         let deadline = std::time::Instant::now();
         while online() != 6 {
+            assert!(deadline.elapsed().as_secs() < 5);
+            std::thread::yield_now();
+        }
+        assert!(unsafe { background(held_background) });
+        while !BACKGROUND_STARTED.load(Ordering::Acquire) {
             assert!(deadline.elapsed().as_secs() < 5);
             std::thread::yield_now();
         }
@@ -499,9 +545,8 @@ mod tests {
             assert!(outputs_match(kind, &wide_expected, &wide_actual));
         }
         assert!(completed() >= 10);
-        for slot in &SLOTS[..6] {
-            slot.state.store(3, Ordering::Release);
-        }
+        BACKGROUND_RELEASE.store(true, Ordering::Release);
+        unsafe { stop_host_workers(); }
         for thread in threads {
             thread.join().unwrap();
         }

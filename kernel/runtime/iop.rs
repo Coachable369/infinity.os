@@ -83,6 +83,7 @@ pub enum OperationId {
     VoiceStatus = 0xa401,
     AudioTone = 0xa410,
     AudioCaptureStart = 0xa411,
+    AudioPlaybackStart = 0xa412,
     ModelList = 0x9001,
     ModelInspect = 0x9002,
     ModelLoad = 0x9003,
