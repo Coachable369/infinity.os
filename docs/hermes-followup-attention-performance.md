@@ -1,0 +1,67 @@
+# Hermes follow-up slowdown: context-dependent ARM attention
+
+## Scope and finding
+
+Fix the work that grows across subsequent chat prompts without discarding conversation history, changing the model/quantization, limiting responses, or redesigning the AI boundary.
+
+The native service already resumes its completed KV prefix. A four-turn real-model run reused 0, 17, 36 and 55 tokens; new prefill was 15 tokens initially and 17 on each follow-up. It was not re-prefilling the complete history.
+
+However, `transformer::attend` performed every 128-dimensional key dot and weighted value accumulation in Rust floating-point loops. The installed ARM kernel uses `aarch64-unknown-none-softfloat`. Unlike the existing C matrix kernels, these loops require software floating-point arithmetic, and their work grows with every retained KV position, for every attention head and layer. This is a concrete context-dependent bottleneck; it is not a verified explanation of all installed-desktop latency.
+
+### Installed VM diagnostic observation before upgrade
+
+The existing `infinityos-4` VM was unlocked and inspected through its real Command Window. Its last completed user response reported **68.239406 seconds total**, 43 output tokens, TTFT 14.772037 seconds and BSP compute 34.557337 seconds. Attention alone consumed **30.672786 seconds** (88.8% of BSP compute). The remaining reported top phases were SiLU 2.265271 seconds, residual/RMS 0.289210 seconds, RoPE/KV writes 0.202542 seconds and RMSNorm 0.195526 seconds.
+
+The installed counters confirmed 98 cached prompt tokens, only 15 new prompt tokens, seven online workers, and 3,361,605,504 fixed high-water inference bytes. Thus attention is an observed dominant BSP hotspot in the slow installed response, not only a microbenchmark hypothesis. There is also substantial elapsed time outside BSP compute; this patch does not claim to explain all of it.
+
+These are manually inspected numeric diagnostics from an already completed user conversation, **not** a controlled before/after acceptance test. The prompt/history were not reset or modified. The older guest's widget-visible counter (14.788742 seconds) precedes its total-response counter, so it cannot be treated as final-text latency. The VM remains on its previous installed kernel.
+
+## Change
+
+- `kernel/runtime/ai/qwen/cpu_math.c`: pointer-ABI native attention key dots and NEON value accumulation, with IRQ protection around each bounded hardware-FP call.
+- `kernel/runtime/ai/qwen/transformer.rs`: ARM dispatch through those kernels. Keep causal bounds checks, original softmax, original reduction order, original one-head cooperative step and non-ARM fallback.
+- No reassociation or fused multiply-add rounding (`-ffp-contract=off`); no new runtime buffers, allocations, model loading, or copies of KV history.
+- Existing provider selection, cancellation, 4K context, model packaging, resource boundaries and final-response-only presentation remain unchanged. The shared runtime improvement applies to Hermes and Ministral.
+
+## Measurements — boundaries matter
+
+### Actual ARM hardware, isolated arithmetic probe
+
+`ATTENTION_ACCEL=hvf sh tools/attention-softfloat-probe.sh` boots a standalone bare-metal QEMU/HVF test. The baseline invokes the installed kernel archive's actual soft-float compiler builtins using its integer-register ABI. The candidate invokes the production native attention functions. Both paths must produce identical result bits; only success invokes PSCI shutdown. A timeout or numerical mismatch fails the probe.
+
+Five runs, median combined key-dot and value-accumulation time for **one head**:
+
+| Retained positions | Software FP | Native FP/NEON | Component speed ratio |
+| ---: | ---: | ---: | ---: |
+| 16 | 0.093791 ms | 0.005166 ms | 18.16x |
+| 128 | 0.867500 ms | 0.011249 ms | 77.12x |
+| 512 | 3.012666 ms | 0.045874 ms | 65.67x |
+| 2048 | 14.187874 ms | 0.596124 ms | 23.80x |
+| 4096 | 27.308750 ms | 0.791083 ms | 34.52x |
+
+These are **not whole-response speedups or installed InfinityOS measurements**. The probe excludes softmax, transformer matrix work, tokenization, event-loop delays and final UI presentation. It runs baseline before candidate, which can favor the candidate's cache state. The host also had the user's VM running and installer packaging active, so scheduling/cache effects cause variation. An additional TCG instruction-emulation run passed numerical checks, but is not hardware performance evidence.
+
+Raw [probe receipts](evidence/hermes-followup-attention/) use CSV columns `positions,software_scores_ns,native_scores_ns,software_values_ns,native_values_ns`.
+
+### Real-model repeated-turn native-host comparison
+
+`tools/hermes-multiturn-perf.py` alternated three baseline/candidate pairs, four turns each, same Q4_K_M Hermes model, no host AP workers, prompt `Reply with only the word Hello.`. Each response completed naturally within the harness's 32-token safety limit. All 24 responses had matching generated bytes and token counts for the corresponding turn; follow-ups asserted nonzero KV reuse.
+
+| Turn | Baseline complete request | Candidate complete request |
+| ---: | ---: | ---: |
+| 1 | 1.946 s | 2.008 s |
+| 2 | 2.194 s | 2.213 s |
+| 3 | 2.332 s | 2.259 s |
+| 4 | 2.236 s | 2.273 s |
+
+**No meaningful host end-to-end improvement is demonstrated.** Host Rust already uses hardware FP; this benchmark verifies real-model numerical compatibility and retained conversation behavior, not the guest's soft-float improvement. Early runs overlapped AI tests. Full per-trial TTFT, total latency, token counts and response hashes are in [the structured receipt](evidence/hermes-followup-attention/host-multiturn.json).
+
+## Verification and delivery
+
+- `make ai-test`: passed, including new bit-exact causal attention tests at 1–4096 positions, 24/32 query heads, layer offset, head output boundaries and untouched score tails.
+- QEMU TCG and five QEMU/HVF arithmetic probes: exit status 0, numerical checks passed.
+- Four-turn real Hermes inference: identical complete outputs across baseline/candidate; retained prefix reused.
+- `make aarch64`: exit status 0. `builds/InfinityOS-aarch64.iso` rebuilt September 24, 2026 at 20:46:59 CDT, 8,590,336,000 bytes. Reassembled installed-kernel byte equality and both Hermes/Ministral payload parity checks passed before publication. The optimization is included in both installed and live ARM kernels; x86 installers were not rebuilt because their runtime path is unchanged.
+- Installed VirtualBox input-to-final-text latency and desktop responsiveness: **not yet verified**. Do not label the reported follow-up slowdown fully resolved or claim the prior 75% end-to-end target from these component measurements. Existing longer responses and growing context can still add work.
+
+The next installed comparison should use the same four prompts in sequence, record `ai bench timing`, `ai compute`, `ai profile` and `ai status` after each response, and compare final displayed response time, output tokens, reused/new-prefill tokens and attention phase cost. The existing installed VM has not been upgraded by rebuilding the ISO. Keyboard-only access worked by pressing Escape then `/`, typing `command`, and pressing Enter; the Ctrl+Shift+T chord did not work through automated input.

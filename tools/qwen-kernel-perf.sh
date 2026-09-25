@@ -9,6 +9,8 @@ git show "$baseline:kernel/runtime/ai/qwen/cpu_math.c" > "$bench_dir/baseline.c"
 clang -O3 -ffp-contract=off -Dinfinity_qwen_dot=baseline_dot \
     -Dinfinity_qwen_dot_rows=baseline_dot_rows \
     -Dinfinity_qwen_dot_rows_cached=baseline_dot_rows_cached \
+    -Dinfinity_attention_scores=baseline_attention_scores \
+    -Dinfinity_attention_values=baseline_attention_values \
     -c "$bench_dir/baseline.c" -o "$bench_dir/baseline.o"
 clang -O3 -ffp-contract=off tools/qwen-kernel-perf.c \
     kernel/runtime/ai/qwen/cpu_math.c "$bench_dir/baseline.o" -o "$bench_dir/compare"

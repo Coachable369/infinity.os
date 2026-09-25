@@ -1,0 +1,214 @@
+{
+  "boundary": "native host; not installed guest or final UI presentation",
+  "prompt": "Reply with only the word Hello.",
+  "workers": 0,
+  "model": "Hermes-3-Llama-3.2-3B.Q4_K_M",
+  "samples": {
+    "baseline": [
+      [
+        {
+          "tokens": 2,
+          "ttft_ns": 1747875625,
+          "total_ns": 2037061625,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1934590500,
+          "total_ns": 2194279458,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 2044614500,
+          "total_ns": 2331852416,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1969088834,
+          "total_ns": 2235956750,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        }
+      ],
+      [
+        {
+          "tokens": 2,
+          "ttft_ns": 1652971541,
+          "total_ns": 1945705166,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1907080084,
+          "total_ns": 2182500250,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1976663291,
+          "total_ns": 2282790041,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1957374041,
+          "total_ns": 2223691041,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        }
+      ],
+      [
+        {
+          "tokens": 2,
+          "ttft_ns": 1682407625,
+          "total_ns": 1935034125,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1970162833,
+          "total_ns": 2258201750,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 2278486833,
+          "total_ns": 2713572166,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 2051085709,
+          "total_ns": 2337318375,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        }
+      ]
+    ],
+    "candidate": [
+      [
+        {
+          "tokens": 2,
+          "ttft_ns": 1730564084,
+          "total_ns": 2008191417,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1913709084,
+          "total_ns": 2201945792,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1939777084,
+          "total_ns": 2200781750,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1965189583,
+          "total_ns": 2249397625,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        }
+      ],
+      [
+        {
+          "tokens": 2,
+          "ttft_ns": 1770655042,
+          "total_ns": 2011284833,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1940166667,
+          "total_ns": 2213362959,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 2009050083,
+          "total_ns": 2259272041,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 2016642333,
+          "total_ns": 2272739250,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        }
+      ],
+      [
+        {
+          "tokens": 2,
+          "ttft_ns": 1702993375,
+          "total_ns": 1935674125,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 1971370583,
+          "total_ns": 2225954875,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 2045188125,
+          "total_ns": 2297458375,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        },
+        {
+          "tokens": 2,
+          "ttft_ns": 2037083875,
+          "total_ns": 2327629500,
+          "output_sha256": "2d8bd7d9bb5f85ba643f0110d50cb506a1fe439e769a22503193ea6046bb87f7"
+        }
+      ]
+    ]
+  },
+  "turn_medians": [
+    {
+      "baseline": {
+        "ttft_ns": 1682407625,
+        "total_ns": 1945705166
+      },
+      "candidate": {
+        "ttft_ns": 1730564084,
+        "total_ns": 2008191417
+      },
+      "total_reduction_percent": -3.2114963814615205
+    },
+    {
+      "baseline": {
+        "ttft_ns": 1934590500,
+        "total_ns": 2194279458
+      },
+      "candidate": {
+        "ttft_ns": 1940166667,
+        "total_ns": 2213362959
+      },
+      "total_reduction_percent": -0.8696932804262758
+    },
+    {
+      "baseline": {
+        "ttft_ns": 2044614500,
+        "total_ns": 2331852416
+      },
+      "candidate": {
+        "ttft_ns": 2009050083,
+        "total_ns": 2259272041
+      },
+      "total_reduction_percent": 3.112562977913602
+    },
+    {
+      "baseline": {
+        "ttft_ns": 1969088834,
+        "total_ns": 2235956750
+      },
+      "candidate": {
+        "ttft_ns": 2016642333,
+        "total_ns": 2272739250
+      },
+      "total_reduction_percent": -1.6450452362283041
+    }
+  ]
+}

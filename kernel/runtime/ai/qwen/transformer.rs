@@ -685,6 +685,22 @@ fn attend(
     let kv_head = head / (query.len() / KV_WIDTH);
     let base = layer * CONTEXT * KV_WIDTH * 2 + kv_head * 128;
     let mut max = f32::NEG_INFINITY;
+    #[cfg(target_arch = "aarch64")]
+    {
+        // Validate the last causal value before crossing the pointer-only ABI.
+        // One head remains one cooperative step; no allocation or history reset.
+        let causal = &kv[base..base + position * KV_WIDTH * 2 + KV_WIDTH + 128];
+        let scores = &mut scores[..=position];
+        unsafe {
+            extern "C" {
+                fn infinity_attention_scores(query: *const f32, keys: *const f32,
+                    count: usize, stride: usize, scores: *mut f32, maximum: *mut f32);
+            }
+            infinity_attention_scores(q.as_ptr(), causal.as_ptr(), scores.len(),
+                KV_WIDTH * 2, scores.as_mut_ptr(), &mut max);
+        }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
     for time in 0..=position {
         let start = base + time * KV_WIDTH * 2;
         scores[time] = q
@@ -701,12 +717,83 @@ fn attend(
         sum += *score;
     }
     let out = &mut output[head * 128..head * 128 + 128];
-    out.fill(0.0);
-    for time in 0..=position {
-        let start = base + time * KV_WIDTH * 2 + KV_WIDTH;
-        let weight = scores[time] / sum;
-        for i in 0..128 {
-            out[i] += weight * kv[start + i];
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        extern "C" {
+            fn infinity_attention_values(values: *const f32, scores: *const f32,
+                sum: *const f32, count: usize, stride: usize, output: *mut f32);
+        }
+        infinity_attention_values(kv.as_ptr().add(base + KV_WIDTH), scores.as_ptr(),
+            &sum, position + 1, KV_WIDTH * 2, out.as_mut_ptr());
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        out.fill(0.0);
+        for time in 0..=position {
+            let start = base + time * KV_WIDTH * 2 + KV_WIDTH;
+            let weight = scores[time] / sum;
+            for i in 0..128 {
+                out[i] += weight * kv[start + i];
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod attention_tests {
+    use super::*;
+    // ------------------------=
+    // FUNC: reference
+    // DESC: Retains the original scalar causal attention as an independent numerical oracle.
+    // ------------------=
+    fn reference(query: &[f32], kv: &[f32], position: usize, head: usize) -> [f32; 128] {
+        let base = CONTEXT * KV_WIDTH * 2 + head / (query.len() / KV_WIDTH) * 128;
+        let q = &query[head * 128..head * 128 + 128];
+        let mut scores = vec![0.0f32; position + 1];
+        let mut maximum = f32::NEG_INFINITY;
+        for time in 0..=position {
+            let start = base + time * KV_WIDTH * 2;
+            scores[time] = q.iter().zip(&kv[start..start+128])
+                .map(|(a,b)| a*b).sum::<f32>() * 0.08838834764831845;
+            maximum = maximum.max(scores[time]);
+        }
+        let mut sum = 0.0;
+        for score in &mut scores { *score = libm::expf(*score - maximum); sum += *score; }
+        let mut output = [0.0; 128];
+        for time in 0..=position {
+            let start = base + time * KV_WIDTH * 2 + KV_WIDTH;
+            let weight = scores[time] / sum;
+            for i in 0..128 { output[i] += weight * kv[start+i]; }
+        }
+        output
+    }
+    // ------------------------=
+    // FUNC: causal_attention_preserves_bits_and_head_boundaries
+    // DESC: Checks real head mapping, long context, causal reads and exact output against the old arithmetic.
+    // ------------------=
+    #[test]
+    fn causal_attention_preserves_bits_and_head_boundaries() {
+        let mut kv = vec![0.0; 2 * CONTEXT * KV_WIDTH * 2];
+        for (i, value) in kv.iter_mut().enumerate() { *value = ((i * 17 % 251) as f32 - 125.0) / 127.0; }
+        for heads in [24,32] {
+            let query: Vec<f32> = (0..heads*128).map(|i| ((i*31%127) as f32-63.0)/63.0).collect();
+            for position in [0,1,31,255,1023,4095] {
+                for head in [0,heads/2,heads-1] {
+                    let expected = reference(&query, &kv, position, head);
+                    let mut output = vec![12345.0; query.len()];
+                    let mut scores = vec![f32::NAN; CONTEXT];
+                    // The input ends exactly at the last initialized value head.
+                    let end = CONTEXT*KV_WIDTH*2 + position*KV_WIDTH*2 + KV_WIDTH
+                        + head/(query.len()/KV_WIDTH)*128 + 128;
+                    attend(&query, &kv[..end], &mut scores, &mut output, 1, position, head);
+                    for (actual, expected) in output[head*128..head*128+128].iter().zip(expected) {
+                        assert_eq!(actual.to_bits(), expected.to_bits());
+                    }
+                    assert!(output[..head*128].iter().all(|v| *v==12345.0));
+                    assert!(output[head*128+128..].iter().all(|v| *v==12345.0));
+                    assert!(scores[position+1..].iter().all(|v| v.is_nan()));
+                }
+            }
         }
     }
 }

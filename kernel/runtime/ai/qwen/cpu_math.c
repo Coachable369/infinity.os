@@ -4,6 +4,85 @@
 #include <arm_neon.h>
 #endif
 #define QWEN_MAX_WIDTH 12288
+#ifndef QWEN_SCALAR
+// ------------------------=
+// FUNC: attention_fp_enter
+// DESC: Protects each bounded hardware-FP call from firmware IRQ handlers in the soft-float kernel.
+// ------------------=
+static uint64_t attention_fp_enter(void) {
+#if defined(__aarch64__) && (!defined(__STDC_HOSTED__) || !__STDC_HOSTED__)
+    uint64_t saved, level, control;
+    __asm__ volatile("mrs %0, daif\nmsr daifset, #2\nmrs %1, CurrentEL"
+                     : "=r"(saved), "=r"(level) :: "memory");
+    if (level == 4) {
+        __asm__ volatile("mrs %0, cpacr_el1" : "=r"(control));
+        control |= 3ull << 20;
+        __asm__ volatile("msr cpacr_el1, %0\nisb" :: "r"(control) : "memory");
+    } else if (level == 8) {
+        __asm__ volatile("mrs %0, cptr_el2" : "=r"(control));
+        control &= ~(1ull << 10);
+        __asm__ volatile("msr cptr_el2, %0\nisb" :: "r"(control) : "memory");
+    }
+    return saved;
+#else
+    return 0;
+#endif
+}
+// ------------------------=
+// FUNC: attention_fp_leave
+// DESC: Restores the caller's interrupt mask after a bounded native attention operation.
+// ------------------=
+static void attention_fp_leave(uint64_t saved) {
+#if defined(__aarch64__) && (!defined(__STDC_HOSTED__) || !__STDC_HOSTED__)
+    __asm__ volatile("msr daif, %0" :: "r"(saved) : "memory");
+#else
+    (void)saved;
+#endif
+}
+// ------------------------=
+// FUNC: infinity_attention_scores
+// DESC: Computes initialized causal key dots with hardware FP and the original reduction order; pointer-only ABI.
+// ------------------=
+void infinity_attention_scores(const float *query, const float *keys,
+                               size_t count, size_t stride, float *scores,
+                               float *maximum) {
+    uint64_t saved = attention_fp_enter();
+    float max = -__builtin_inff();
+    for (size_t time = 0; time < count; ++time) {
+        float dot = -0.0f;
+        for (size_t i = 0; i < 128; ++i) dot += query[i] * keys[time * stride + i];
+        float score = dot * 0.08838834764831845f;
+        scores[time] = score;
+        if (score > max) max = score;
+    }
+    *maximum = max;
+    attention_fp_leave(saved);
+}
+// ------------------------=
+// FUNC: infinity_attention_values
+// DESC: Accumulates one causal value head using independent NEON lanes without reassociation or fused rounding.
+// ------------------=
+void infinity_attention_values(const float *values, const float *scores,
+                               const float *sum, size_t count, size_t stride,
+                               float *output) {
+    uint64_t saved = attention_fp_enter();
+    for (size_t i = 0; i < 128; ++i) output[i] = 0.0f;
+    for (size_t time = 0; time < count; ++time) {
+        float weight = scores[time] / *sum;
+        const float *value = values + time * stride;
+        for (size_t i = 0; i < 128; i += 4) {
+#if defined(__aarch64__)
+            float32x4_t product = vmulq_n_f32(vld1q_f32(value + i), weight);
+            vst1q_f32(output + i, vaddq_f32(vld1q_f32(output + i), product));
+#else
+            for (size_t lane = 0; lane < 4; ++lane)
+                output[i + lane] += weight * value[i + lane];
+#endif
+        }
+    }
+    attention_fp_leave(saved);
+}
+#endif
 // ------------------------=
 // FUNC: qwen_half
 // DESC: Decodes unaligned little-endian half precision values.

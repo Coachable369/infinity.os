@@ -416,6 +416,7 @@ boot-media-test:
 
 ai-test:
 	@tools/ai-test.sh
+	@cargo test --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-native-test causal_attention
 	@mkdir -p build/behavior-tests
 	@rustc --edition=2021 --test kernel/runtime/ai/qwen/pump.rs -o build/behavior-tests/qwen-pump-test
 	@build/behavior-tests/qwen-pump-test

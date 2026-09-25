@@ -25,61 +25,104 @@ fn main() {
     service.cancel();
     assert!(!service.busy());
     service.clear_conversation();
-    let workers = std::env::var("HERMES_TEST_WORKERS").ok()
-        .map(|value| value.parse::<usize>().unwrap()).unwrap_or(0);
+    let workers = std::env::var("HERMES_TEST_WORKERS")
+        .ok()
+        .map(|value| value.parse::<usize>().unwrap())
+        .unwrap_or(0);
     assert!(workers <= 16);
-    let threads: Vec<_> = (0..workers).map(|index|
-        std::thread::spawn(move || unsafe { qwen::workers::run_host_worker(index) })).collect();
+    let threads: Vec<_> = (0..workers)
+        .map(|index| std::thread::spawn(move || unsafe { qwen::workers::run_host_worker(index) }))
+        .collect();
     let ready_started = std::time::Instant::now();
     while qwen::workers::online() != workers {
         assert!(ready_started.elapsed().as_secs() < 10);
         std::thread::yield_now();
     }
     if std::env::args().any(|arg| arg == "--forward") {
-        let start = std::time::Instant::now();
-        service.submit(forward_prompt.as_bytes()).unwrap();
-        let mut tokens = 0;
-        let mut token_times = Vec::new();
-        // Optional real-model scheduler experiment. The delay represents host
-        // event/firmware work, not measured guest latency. Default stays unpaced.
-        let pump = std::env::var("HERMES_TEST_PUMP").unwrap_or_default();
-        assert!(matches!(pump.as_str(), "" | "legacy" | "deadline"));
-        let io_us = std::env::var("HERMES_TEST_IO_US").ok()
-            .map(|v| v.parse::<u64>().unwrap()).unwrap_or(0);
-        while service.busy() && tokens < 32 {
-            let mut budget = qwen::pump::PumpBudget::new(Some(start.elapsed().as_nanos() as u64));
-            let mut polls = 0;
+        let turns = std::env::var("HERMES_TEST_TURNS")
+            .ok()
+            .map(|v| v.parse::<usize>().unwrap())
+            .unwrap_or(1);
+        assert!((1..=16).contains(&turns));
+        for turn in 0..turns {
+            let start = std::time::Instant::now();
+            service.submit(forward_prompt.as_bytes()).unwrap();
+            if turn > 0 {
+                assert!(service.reused_tokens > 0);
+            }
+            let reused = service.reused_tokens;
+            let prefill = service.prefill_tokens;
+            let mut tokens = 0;
+            let mut token_times = Vec::new();
+            // Optional real-model scheduler experiment. The delay represents host
+            // event/firmware work, not measured guest latency. Default stays unpaced.
+            let pump = std::env::var("HERMES_TEST_PUMP").unwrap_or_default();
+            assert!(matches!(pump.as_str(), "" | "legacy" | "deadline"));
+            let io_us = std::env::var("HERMES_TEST_IO_US")
+                .ok()
+                .map(|v| v.parse::<u64>().unwrap())
+                .unwrap_or(0);
             while service.busy() && tokens < 32 {
-                if pump == "legacy" && polls >= 256 { break; }
-                if !pump.is_empty() && !budget.next(Some(start.elapsed().as_nanos() as u64)) { break; }
-                polls += 1;
-                if service.poll().unwrap() {
-                    tokens += 1;
-                    token_times.push(start.elapsed().as_nanos() as u64);
-                    if !pump.is_empty() { break; }
+                let mut budget =
+                    qwen::pump::PumpBudget::new(Some(start.elapsed().as_nanos() as u64));
+                let mut polls = 0;
+                while service.busy() && tokens < 32 {
+                    if pump == "legacy" && polls >= 256 {
+                        break;
+                    }
+                    if !pump.is_empty() && !budget.next(Some(start.elapsed().as_nanos() as u64)) {
+                        break;
+                    }
+                    polls += 1;
+                    if service.poll().unwrap() {
+                        tokens += 1;
+                        token_times.push(start.elapsed().as_nanos() as u64);
+                        if !pump.is_empty() {
+                            break;
+                        }
+                    }
+                }
+                if !pump.is_empty() && service.busy() && io_us != 0 {
+                    std::thread::sleep(std::time::Duration::from_micros(io_us));
                 }
             }
-            if !pump.is_empty() && service.busy() && io_us != 0 {
-                std::thread::sleep(std::time::Duration::from_micros(io_us));
+            assert!(tokens > 0);
+            assert!(
+                !service.busy(),
+                "Timing requires a complete response, not the token limit"
+            );
+            assert!(!service.output().is_empty());
+            if let Some(mut path) = std::env::var_os("HERMES_TEST_REPORT") {
+                // Binary timing and generated-byte evidence avoids using formatted
+                // console output or a particular answer as the test oracle.
+                let mut report = Vec::new();
+                for value in [
+                    1,
+                    tokens as u64,
+                    start.elapsed().as_nanos() as u64,
+                    service.output().len() as u64,
+                ] {
+                    report.extend_from_slice(&value.to_le_bytes());
+                }
+                for time in token_times {
+                    report.extend_from_slice(&time.to_le_bytes());
+                }
+                report.extend_from_slice(service.output());
+                if turns > 1 {
+                    path.push(format!(".turn{turn}"));
+                }
+                std::fs::write(path, report).unwrap();
             }
+            println!(
+                "turn={turn} reused={reused} prefill={prefill} tokens={tokens} complete_ms={:.3}",
+                start.elapsed().as_secs_f64() * 1000.0
+            );
         }
-        assert!(tokens > 0);
-        assert!(!service.busy(), "Timing requires a complete response, not the token limit");
-        assert!(!service.output().is_empty());
-        if let Some(path) = std::env::var_os("HERMES_TEST_REPORT") {
-            // Binary timing and generated-byte evidence avoids using formatted
-            // console output or a particular answer as the test oracle.
-            let mut report = Vec::new();
-            for value in [1, tokens as u64, start.elapsed().as_nanos() as u64,
-                          service.output().len() as u64] {
-                report.extend_from_slice(&value.to_le_bytes());
-            }
-            for time in token_times { report.extend_from_slice(&time.to_le_bytes()); }
-            report.extend_from_slice(service.output());
-            std::fs::write(path, report).unwrap();
-        }
-        service.cancel();
     }
-    unsafe { qwen::workers::stop_host_workers(); }
-    for thread in threads { thread.join().unwrap(); }
+    unsafe {
+        qwen::workers::stop_host_workers();
+    }
+    for thread in threads {
+        thread.join().unwrap();
+    }
 }
