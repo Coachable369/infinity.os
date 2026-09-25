@@ -9,6 +9,7 @@ pub mod provider;
 pub mod qwen;
 pub mod types;
 pub mod voice;
+pub mod voice_pcm;
 pub mod voice_vad;
 
 use agent::AgentManager;

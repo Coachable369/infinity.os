@@ -422,6 +422,11 @@ boot-media-test:
 	@clang -O2 -fshort-wchar -Wno-ignored-attributes tools/boot-media-test.c -o build/behavior-tests/boot-media-test
 	@build/behavior-tests/boot-media-test
 
+.PHONY: voice-pcm-test
+voice-pcm-test:
+	CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --manifest-path tools/behavior-harness/Cargo.toml --bin voice-pcm-test
+	CARGO_TARGET_DIR=build/behavior-harness cargo test --quiet --manifest-path tools/behavior-harness/Cargo.toml --bin voice-pcm-test
+
 .PHONY: voice-vad-test
 voice-vad-test:
 	mkdir -p build/tools

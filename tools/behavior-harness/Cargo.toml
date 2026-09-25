@@ -7,6 +7,10 @@ edition = "2021"
 cc = "1"
 
 [[bin]]
+name = "voice-pcm-test"
+path = "../voice-pcm-test.rs"
+
+[[bin]]
 name = "audio-test"
 path = "../audio-test.rs"
 
