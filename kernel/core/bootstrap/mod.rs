@@ -30,7 +30,7 @@ use self::primitives::*;
 
 pub use self::bootstrap::{animation_tick, console_present, note_pointer_activity, show_splash};
 pub use self::crash::show_fatal_crash;
-pub use self::desktop::{system_ui_authentication_success, system_ui_cursor, system_ui_editor_blink,
+pub use self::desktop::{system_ui_authentication_success, system_ui_authentication_opacity, system_ui_cursor, system_ui_editor_blink,
     system_ui_present, thinking_animation_tick};
 pub use self::installer::{installer_progress_update, installer_reboot_countdown};
 
@@ -43,6 +43,7 @@ pub struct DisplayDevice {
     pub stride: usize,
     format: u32,
     back_buffered: bool,
+    presentation_opacity: u8,
     dirty_regions: [PresentRegion; MAX_PRESENT_REGIONS],
     dirty_count: u8,
     presented_frames: u64,
@@ -128,6 +129,7 @@ impl DisplayDevice {
             stride: info.framebuffer_stride as usize,
             format: info.framebuffer_format,
             back_buffered,
+            presentation_opacity: 255,
             dirty_regions: [PresentRegion::default(); MAX_PRESENT_REGIONS],
             dirty_count: 0,
             presented_frames: 0,
@@ -272,11 +274,19 @@ impl DisplayDevice {
                 for y in region.top..region.bottom {
                     if y & 31 == 0 { crate::ui::input_capture::poll(); }
                     unsafe {
-                        core::ptr::copy_nonoverlapping(
+                        if self.presentation_opacity == 255 {
+                            core::ptr::copy_nonoverlapping(
                             self.buffer.add(y * self.stride + region.left),
                             self.front_buffer.add(y * self.stride + region.left),
                             width,
-                        );
+                            );
+                        } else {
+                            for x in region.left..region.right {
+                                let pixel = core::ptr::read(self.buffer.add(y * self.stride + x));
+                                core::ptr::write_volatile(self.front_buffer.add(y * self.stride + x),
+                                    crate::ui::authentication_motion::fade_pixel(pixel, self.presentation_opacity));
+                            }
+                        }
                     }
                 }
             }

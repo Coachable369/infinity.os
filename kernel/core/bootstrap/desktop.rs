@@ -11202,6 +11202,32 @@ pub fn system_ui_present(
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 // ------------------------=
+// FUNC: system_ui_authentication_opacity
+// DESC: Fades the persistent composed scene without darkening its backing pixels or repainting application contents.
+// ------------------=
+pub fn system_ui_authentication_opacity(opacity: u8, present: bool) {
+    unsafe {
+        if let Some(console) = (*(&raw mut CONSOLE)).as_mut() {
+            let display = &mut console.display;
+            display.clear_render_clip();
+            if display.presentation_opacity != opacity {
+                display.presentation_opacity = opacity;
+                display.mark_dirty_rect(0, 0, display.width, display.height);
+            }
+            if present { display.present_damage(); }
+        }
+    }
+}
+
+#[cfg(target_arch = "x86")]
+// ------------------------=
+// FUNC: system_ui_authentication_opacity
+// DESC: Preserves the legacy text-mode interface where framebuffer fading is unavailable.
+// ------------------=
+pub fn system_ui_authentication_opacity(_opacity: u8, _present: bool) {}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
 // FUNC: system_ui_authentication_success
 // DESC: Presents one bounded authentication-success frame while preserving coherent cursor backing pixels.
 // ------------------=

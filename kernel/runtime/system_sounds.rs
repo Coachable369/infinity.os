@@ -23,6 +23,49 @@ static LOGIN_PCM: AlignedPcm<LOGIN_PCM_BYTES> =
     AlignedPcm(*include_bytes!("../../assets/sounds/login.pcm"));
 static BOOT_PLAYED: AtomicBool = AtomicBool::new(false);
 
+#[repr(C, align(128))]
+struct LoginResident([i16; 48_000 * 2 * 32]);
+static mut LOGIN_RESIDENT: LoginResident = LoginResident([0; 48_000 * 2 * 32]);
+#[path = "../drivers/speech_pcm.rs"]
+mod login_pcm;
+
+// ------------------------=
+// FUNC: play_login_resident
+// DESC: Prepares the entire login cue before animation so rendering stalls cannot starve a 100-ms refill stream.
+// ------------------=
+pub fn play_login_resident() -> bool {
+    let Some(rate) = crate::drivers::audio::playback_rate() else { return false; };
+    let Some(now_ns) = crate::ui::performance::monotonic_ns() else { return false; };
+    // Only this kernel-owned cue may reuse the resident buffer. Stop its prior
+    // DMA lease before touching the samples, never another user's playback.
+    let _ = crate::drivers::audio::stop_playback(SYSTEM_SOUND_OWNER);
+    if matches!(crate::drivers::audio::playback_state(), Some(crate::runtime::audio::PlaybackState::Playing) | None) {
+        return false;
+    }
+    let samples = LOGIN_PCM.samples();
+    let length = samples.len().saturating_mul(rate as usize).div_ceil(16_000) * 2;
+    let capacity = rate as usize * 2 * 32;
+    if length == 0 || length > capacity || capacity > 48_000 * 2 * 32 { return false; }
+    let now = now_ns / 1_000_000_000;
+    let capability = crate::runtime::with_runtime(|runtime| runtime.capabilities.grant(
+        CapabilityType::AudioOutput, 0, 1, 0, SYSTEM_SOUND_OWNER,
+        SYSTEM_SOUND_OWNER, Some(now + 35), 0)).and_then(Result::ok);
+    let Some(capability) = capability else { return false; };
+    let started = unsafe {
+        let output = &mut (&mut *(&raw mut LOGIN_RESIDENT.0))[..capacity];
+        output.fill(0);
+        login_pcm::fill(samples, &mut output[..length], 0, rate)
+            && crate::drivers::audio::play_resident_speech(SYSTEM_SOUND_OWNER, capability,
+                &(&*(&raw const LOGIN_RESIDENT.0))[..capacity], length, rate)
+    };
+    if !started {
+        crate::runtime::with_runtime(|runtime| {
+            let _ = runtime.capabilities.retire_leaf(capability, SYSTEM_SOUND_OWNER);
+        });
+    }
+    started
+}
+
 impl<const N: usize> AlignedPcm<N> {
     // ------------------------=
     // FUNC: samples
