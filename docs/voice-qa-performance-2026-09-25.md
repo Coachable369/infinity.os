@@ -3,6 +3,14 @@
 Status: **partial acceptance**. Live microphone → Hermes → audible reply and
 the requested 25% installed-desktop latency reduction are not demonstrated.
 
+Updated ARM64 installer: `builds/InfinityOS-aarch64.iso`, 8,590,336,000 bytes,
+SHA-256 `239d931acc729c423cca146b44397ab6c238b7d2b4680b3d24173ba3072e0815`.
+`sh tools/build-hermes.sh` completed with binary installed/live payload parity:
+249,854,144-byte kernel, 24,576-byte loader, 33,722,129 speech-resource bytes.
+Other architecture/test ISOs were not rebuilt. A separate copy of the configured
+private test disk was upgraded and its installed kernel verified byte-for-byte
+against this artifact; the fresh-install disk remains untouched.
+
 ## Audio corrections
 
 1. The speech worker could skip PCM conversion after its synthesis deadline,
@@ -32,10 +40,26 @@ Passing commands:
 
 The native recognizer fixture still misrecognizes “ten meters” as “ten years”,
 matching the upstream reference. This remains an accuracy limitation, not a
-successful real-user conversation. The installed VM remains at new-account
-password setup; no credential was created by automation. Earlier tone audibility
-does not establish speech audibility. Whole-turn GUI/capture acceptance remains
-blocked on completing setup and testing a live utterance.
+successful real-user conversation. The separate fresh-install disk remains at
+new-account password setup; no credential was created by automation. The upgraded
+copy of the previously configured private disk booted without the ISO and reached
+the desktop. Native `voice say hello from infinity` playback was confirmed audible
+by the user. `voice listen` reached the visible LISTEN state. Live utterance
+recognition and the complete Hermes spoken-response loop did not pass: during
+LISTEN, the guest clock fell behind and command handling became severely delayed.
+The last captured status had microphone level 0 and no recognition work. This is
+not evidence that a live utterance reached the recognizer.
+
+The stop command eventually completed and the widget returned to VOICE OFF.
+VirtualBox input was temporarily disabled with `controlvm audioin off`; output
+remained enabled. Do not treat that diagnostic workaround as an audio fix.
+The VM process consumed approximately 790% host CPU; its log reported a 92-second
+catch-up failure. A two-second host sample is retained at
+`/tmp/voice-qa-vbox-capture.sample`. BSP register samples were in firmware-address
+code rather than the kernel image. These observations do not yet isolate the
+cause to the HDA driver, firmware callbacks, or the host backend. No speculative
+driver change was made based on these samples. Installed LLM timing is therefore
+not a clean comparison environment.
 
 ## Hermes experiment
 
