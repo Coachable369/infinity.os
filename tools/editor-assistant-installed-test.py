@@ -107,7 +107,12 @@ def panel_click(guest, control):
     width = min(max(w * 336 // 1000, 320 * scale), 480 * scale, w - 280 * scale)
     left, top, bottom = x + w - width - scale, y + 48 * scale, y + h - scale
     if control == "toggle":
-        click(guest, x + w - 18 * scale, top + 24 * scale if p[13] else y + max(h // 3, 64 * scale) + 24 * scale)
+        tab_width = 40 * scale
+        tab_height = (44 if p[13] else 88) * scale
+        tab_left = display[11] - (x + w) < tab_width and x >= tab_width
+        offset = min(max(h // 4, 48 * scale), max(h - tab_height - 12 * scale, 8 * scale))
+        tab_x = x - tab_width + scale if tab_left else x + w - scale
+        click(guest, tab_x + tab_width // 2, y + offset + tab_height // 2)
     elif control == "apply":
         click(guest, left + 12 * scale + (width - 32 * scale) // 4, bottom - 80 * scale)
     elif control == "composer":

@@ -11,13 +11,19 @@ impl super::DisplayDevice {
     // ------------------=
     pub(super) fn window_assistant(&mut self, id: usize, window: Rect, s: usize) {
         let panel = assistant::read(id);
-        let g = assistant::geometry(window, s, panel.expanded);
+        let g = assistant::geometry_in_viewport(window, self.width, s, panel.expanded);
         let clip = self.render_clip;
+        let footprint = window.union(g.toggle).union(Rect {
+            x: g.toggle.x - 4 * s as i32,
+            y: g.toggle.y - 4 * s as i32,
+            width: g.toggle.width.saturating_add(8 * s as u32),
+            height: g.toggle.height.saturating_add(8 * s as u32),
+        });
         self.intersect_render_clip(
-            window.x.max(0) as usize,
-            window.y.max(0) as usize,
-            window.width as usize,
-            window.height as usize,
+            footprint.x.max(0) as usize,
+            footprint.y.max(0) as usize,
+            footprint.width as usize,
+            footprint.height as usize,
         );
         if panel.expanded {
             let p = g.panel;
@@ -186,23 +192,58 @@ impl super::DisplayDevice {
             self.app_symbol(g.send, b'^', CYAN, s);
         }
         let t = g.toggle;
+        let shadow_x = if g.tab_left {
+            t.x - 3 * s as i32
+        } else {
+            t.x + 3 * s as i32
+        };
+        self.fill_rounded_rect_alpha(
+            shadow_x.max(0) as usize,
+            (t.y + 3 * s as i32).max(0) as usize,
+            t.width as usize,
+            t.height as usize,
+            13 * s,
+            0,
+            6,
+            14,
+            150,
+        );
+        self.app_card(
+            t,
+            if panel.expanded { (10, 27, 43) } else { (9, 34, 54) },
+            if panel.expanded { (56, 125, 158) } else { (42, 184, 219) },
+            s,
+        );
+        let seam_x = if g.tab_left {
+            t.right() - 2 * s as i32
+        } else {
+            t.x
+        };
+        self.fill_rect(
+            seam_x.max(0) as usize,
+            (t.y + 10 * s as i32).max(0) as usize,
+            2 * s,
+            t.height.saturating_sub(20 * s as u32) as usize,
+            67,
+            210,
+            241,
+        );
         if panel.expanded {
             self.app_symbol(t, b'x', TEXT, s);
         } else {
-            self.app_card(t, (15, 39, 59), (34, 157, 187), s);
             self.app_ai_mark(Rect {
-                x: t.x + 2 * s as i32,
-                y: t.y + 8 * s as i32,
+                x: t.x + 8 * s as i32,
+                y: t.y + 10 * s as i32,
                 width: 24 * s as u32,
-                height: 28 * s as u32,
+                height: 30 * s as u32,
             });
             self.app_label(
                 Rect {
-                    y: t.y + 40 * s as i32,
+                    y: t.y + 54 * s as i32,
                     height: 24 * s as u32,
                     ..t
                 },
-                b" AI",
+                b"AI",
                 CYAN,
                 true,
                 s,

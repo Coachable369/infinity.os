@@ -178,6 +178,9 @@ fn panels() {
     assert_eq!(geometry.composer.height, 40);
     assert_eq!(geometry.panel.right(), reference.right() - 1);
     assert_eq!(geometry.panel.bottom(), reference.bottom() - 1);
+    assert_eq!(geometry.toggle.x, reference.right() - 1);
+    assert_eq!(geometry.toggle.width, ai::TAB_WIDTH as u32);
+    assert!(geometry.toggle.right() > reference.right());
     for scale in 1..=2 {
         for width in [480, 800, 1200] {
             let window = Rect {
@@ -188,11 +191,9 @@ fn panels() {
             };
             for expanded in [false, true] {
                 let g = ai::geometry(window, scale as usize, expanded);
-                assert!(window.contains(Point {
-                    x: g.toggle.x,
-                    y: g.toggle.y
-                }));
-                assert!(g.toggle.right() <= window.right());
+                assert_eq!(g.toggle.x, window.right() - scale as i32);
+                assert!(g.toggle.right() > window.right());
+                assert!(!g.tab_left);
                 assert_eq!(
                     ai::hit(
                         g,
@@ -228,6 +229,27 @@ fn panels() {
             }
         }
     }
+    let edge_window = Rect {
+        x: 760,
+        y: 30,
+        width: 240,
+        height: 600,
+    };
+    let edge_geometry = ai::geometry_in_viewport(edge_window, 1000, 1, false);
+    assert!(edge_geometry.tab_left);
+    assert_eq!(edge_geometry.toggle.right(), edge_window.x + 1);
+    assert!(edge_geometry.toggle.x < edge_window.x);
+    assert_eq!(
+        ai::hit(
+            edge_geometry,
+            false,
+            Point {
+                x: edge_geometry.toggle.x + 2,
+                y: edge_geometry.toggle.y + 2,
+            },
+        ),
+        Some(Target::Toggle)
+    );
     let mut p = ai::Panel::new();
     p.input[..12].copy_from_slice(b"insert hello");
     p.length = 12;
@@ -278,6 +300,42 @@ fn panels() {
         .unwrap()
         .assistant_geometry(1, false)
         .is_some());
+    let floating = server
+        .create(
+            owner,
+            ui::window::SurfaceId(2),
+            Rect {
+                x: 30,
+                y: 40,
+                width: 600,
+                height: 400,
+            },
+            ui::window::ZOrderClass::Floating,
+        )
+        .unwrap();
+    assert!(server
+        .inspect(floating)
+        .unwrap()
+        .assistant_geometry(1, false)
+        .is_some());
+    let desktop = server
+        .create(
+            owner,
+            ui::window::SurfaceId(3),
+            Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+            ui::window::ZOrderClass::Desktop,
+        )
+        .unwrap();
+    assert!(server
+        .inspect(desktop)
+        .unwrap()
+        .assistant_geometry(1, false)
+        .is_none());
 }
 // ------------------------=
 // FUNC: main

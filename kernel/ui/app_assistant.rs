@@ -1,6 +1,8 @@
 //! Shared app-window assistant contract. No ambient file access or command execution.
 use super::geometry::{Point, Rect};
 pub const PANEL_SLOTS: usize = 16;
+pub const TAB_WIDTH: usize = 40;
+pub const TAB_HEIGHT: usize = 88;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     None,
@@ -146,6 +148,7 @@ impl Panel {
 pub struct Geometry {
     pub panel: Rect,
     pub toggle: Rect,
+    pub tab_left: bool,
     pub composer: Rect,
     pub send: Rect,
     pub apply: Rect,
@@ -153,9 +156,33 @@ pub struct Geometry {
 }
 // ------------------------=
 // FUNC: geometry
-// DESC: Places the collapse tab at the upper-middle right edge and docks the expanded panel inside window bounds.
+// DESC: Places the default assistant tab outside the window's usable right edge and docks the expanded panel inside bounds.
 // ------------------=
 pub fn geometry(window: Rect, scale: usize, expanded: bool) -> Geometry {
+    geometry_on_side(window, scale, expanded, false)
+}
+
+// ------------------------=
+// FUNC: geometry_in_viewport
+// DESC: Keeps the external assistant tab visible by moving it to the left edge only when the right screen edge has no room.
+// ------------------=
+pub fn geometry_in_viewport(
+    window: Rect,
+    viewport_width: usize,
+    scale: usize,
+    expanded: bool,
+) -> Geometry {
+    let tab_width = (TAB_WIDTH * scale.max(1)) as i32;
+    let right_space = viewport_width as i32 - window.right();
+    let tab_left = right_space < tab_width && window.x >= tab_width;
+    geometry_on_side(window, scale, expanded, tab_left)
+}
+
+// ------------------------=
+// FUNC: geometry_on_side
+// DESC: Builds one assistant panel and attached external tab without reducing collapsed app content geometry.
+// ------------------=
+fn geometry_on_side(window: Rect, scale: usize, expanded: bool, tab_left: bool) -> Geometry {
     let s = scale.max(1) as u32;
     let width = (window.width * 336 / 1000)
         .max(320 * s)
@@ -168,15 +195,19 @@ pub fn geometry(window: Rect, scale: usize, expanded: bool) -> Geometry {
         width,
         height: window.height.saturating_sub(49 * s),
     };
+    let tab_width = TAB_WIDTH as u32 * s;
+    let tab_height = if expanded { 44 * s } else { TAB_HEIGHT as u32 * s };
+    let preferred_offset = (window.height / 4).max(48 * s);
+    let maximum_offset = window.height.saturating_sub(tab_height + 12 * s).max(8 * s);
     let toggle = Rect {
-        x: window.right() - 32 * s as i32,
-        y: if expanded {
-            panel.y + 8 * s as i32
+        x: if tab_left {
+            window.x - tab_width as i32 + s as i32
         } else {
-            window.y + (window.height / 3).max(64 * s) as i32
+            window.right() - s as i32
         },
-        width: 28 * s,
-        height: if expanded { 32 * s } else { 72 * s },
+        y: window.y + preferred_offset.min(maximum_offset) as i32,
+        width: tab_width,
+        height: tab_height,
     };
     let composer = Rect {
         x: panel.x + 12 * s as i32,
@@ -205,6 +236,7 @@ pub fn geometry(window: Rect, scale: usize, expanded: bool) -> Geometry {
     Geometry {
         panel,
         toggle,
+        tab_left,
         composer,
         send,
         apply,

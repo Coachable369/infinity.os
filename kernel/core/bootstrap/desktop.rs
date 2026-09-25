@@ -10468,7 +10468,7 @@ pub fn system_ui_present(
                     previous,
                     current,
                     display_rect,
-                    (16 * layout.scale()) as u32,
+                    ((crate::ui::app_assistant::TAB_WIDTH + 12) * layout.scale()) as u32,
                 );
                 console.display.set_render_clip(
                     damage.x.max(0) as usize,
@@ -10605,7 +10605,11 @@ pub fn system_ui_present(
                             previous.width == current.width && previous.height == current.height,
                         )
                     };
-                let padding = if command_input_only { 0 } else { (16 * layout.scale()) as u32 };
+                let padding = if command_input_only {
+                    0
+                } else {
+                    ((crate::ui::app_assistant::TAB_WIDTH + 12) * layout.scale()) as u32
+                };
                 let mut damages = [
                     crate::ui::system_layout::window_transition_damage(
                         previous_damage_window,

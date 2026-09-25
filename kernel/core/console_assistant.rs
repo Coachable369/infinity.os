@@ -145,7 +145,12 @@ impl ConsoleRuntime {
             y: self.system.framebuffer_height as i32 * self.pointer_y / 1000,
         };
         let Some(target) = assistant::hit(
-            assistant::geometry(window, scale, panel.expanded),
+            assistant::geometry_in_viewport(
+                window,
+                self.system.framebuffer_width,
+                scale,
+                panel.expanded,
+            ),
             panel.expanded,
             p,
         ) else {

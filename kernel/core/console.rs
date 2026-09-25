@@ -2584,15 +2584,60 @@ impl ConsoleRuntime {
 
     // ------------------------=
     // FUNC: inactive_file_navigator_at_pointer
-    // DESC: Finds the topmost non-active navigator whose complete window contains the pointer.
+    // DESC: Finds the topmost non-active navigator whose window or attached assistant tab contains the pointer.
     // ------------------=
     fn inactive_file_navigator_at_pointer(&self) -> Option<usize> {
         crate::runtime::with_runtime(|runtime| {
             let active = runtime.file_navigators.active_index();
-            runtime
+            if let Some(index) = runtime
                 .file_navigators
                 .topmost_at(self.pointer_x, self.pointer_y)
                 .filter(|index| Some(*index) != active)
+            {
+                return Some(index);
+            }
+            let layout = SystemLayout::new(
+                self.system.framebuffer_width,
+                self.system.framebuffer_height,
+            );
+            let point = crate::ui::geometry::Point {
+                x: self.system.framebuffer_width as i32 * self.pointer_x / 1000,
+                y: self.system.framebuffer_height as i32 * self.pointer_y / 1000,
+            };
+            for layer in (0..crate::runtime::object_navigation::MAX_FILE_NAVIGATOR_INSTANCES).rev()
+            {
+                let Some((index, navigator)) = runtime.file_navigators.back_to_front(layer) else {
+                    continue;
+                };
+                if Some(index) == active || !navigator.visible {
+                    continue;
+                }
+                let (x, y, width, height) = layout.home_window_geometry_sized(
+                    navigator.x,
+                    navigator.y,
+                    navigator.width,
+                    navigator.height,
+                    navigator.maximized,
+                );
+                let window = crate::ui::geometry::Rect {
+                    x: x as i32,
+                    y: y as i32,
+                    width: width as u32,
+                    height: height as u32,
+                };
+                let panel = crate::ui::app_assistant::read(5 + index);
+                let toggle = crate::ui::app_assistant::geometry_in_viewport(
+                    window,
+                    self.system.framebuffer_width,
+                    layout.scale(),
+                    panel.expanded,
+                )
+                .toggle;
+                if toggle.contains(point) {
+                    return Some(index);
+                }
+            }
+            None
         })
         .flatten()
     }
@@ -3134,7 +3179,15 @@ impl ConsoleRuntime {
             y:self.system.framebuffer_height as i32*self.pointer_y/1000};
         let navigator=self.inactive_file_navigator_at_pointer();
         if navigator.is_some() {home=crate::ui::geometry::Rect{x:point.x,y:point.y,width:1,height:1};}
-        let Some(id)=stack.hit([home,app_rect(c),app_rect(e),app_rect(t),layout.settings_window_geometry(self.settings_window).window],point) else{return false;};
+        let mut bounds=[home,app_rect(c),app_rect(e),app_rect(t),layout.settings_window_geometry(self.settings_window).window];
+        let active_navigator=crate::runtime::with_runtime(|r|r.file_navigators.active_index()).flatten().unwrap_or(0);
+        for (id,panel_id) in [(0,5+active_navigator),(1,1),(2,2),(3,3),(4,4)] {
+            let panel=crate::ui::app_assistant::read(panel_id);
+            let toggle=crate::ui::app_assistant::geometry_in_viewport(bounds[id],self.system.framebuffer_width,
+                layout.scale(),panel.expanded).toggle;
+            bounds[id]=bounds[id].union(toggle);
+        }
+        let Some(id)=stack.hit(bounds,point) else{return false;};
         if id==stack.active && !(id==0 && navigator.is_some()) {return false;}
         self.title_clicks.cancel();
         if self.mode==ConsoleMode::Settings && self.settings_editing {return false;}
