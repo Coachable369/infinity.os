@@ -32,7 +32,16 @@ pub fn thinking_animation_tick(visible: bool) -> bool {
 
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const AUTHENTICATION_BMP: &[u8] =
-    include_bytes!("../../../assets/desktop/infinity-default-dark-wallpaper-v2.bmp");
+    include_bytes!("../../../assets/desktop/infinity-auth-success-stage-v1.bmp");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const AUTHENTICATION_ORB_BMP: &[u8] =
+    include_bytes!("../../../assets/desktop/infinity-auth-success-orb-v1.bmp");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const AUTHENTICATION_RIPPLE_BMP: &[u8] =
+    include_bytes!("../../../assets/desktop/infinity-auth-success-ripple-v1.bmp");
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+pub(super) const AUTHENTICATION_SPLASH_BMP: &[u8] =
+    include_bytes!("../../../assets/desktop/infinity-auth-success-splash-v1.bmp");
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub(super) const DESKTOP_BMP: &[u8] =
     include_bytes!("../../../assets/desktop/infinity-shell-wallpaper-v3.bmp");
@@ -414,7 +423,10 @@ impl super::DisplayDevice {
         match self.skin_visual_mode() {
             1 => self.fill_rect(0, 0, self.width, self.height, 232, 237, 243),
             2 => self.fill_rect(0, 0, self.width, self.height, 0, 0, 0),
-            _ => self.paint_bitmap_cover_rect(AUTHENTICATION_BMP, 0, 0, self.width, self.height),
+            _ => {
+                self.paint_bitmap_cover_rect(AUTHENTICATION_BMP, 0, 0, self.width, self.height);
+                self.authentication_ambient_art();
+            }
         }
     }
 
@@ -434,6 +446,189 @@ impl super::DisplayDevice {
             1 => self.fill_rect(left, top, width, height, 232, 237, 243),
             2 => self.fill_rect(left, top, width, height, 0, 0, 0),
             _ => self.paint_bitmap_cover_rect(AUTHENTICATION_BMP, left, top, width, height),
+        }
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: authentication_art_geometry
+    // DESC: Maps authored 1920x1080 animation coordinates through the authentication background's aspect-fill transform.
+    // ------------------=
+    fn authentication_art_geometry(&self) -> (i32, i32, usize) {
+        let scale = (self.width.saturating_mul(1_000) / 1_920)
+            .max(self.height.saturating_mul(1_000) / 1_080)
+            .max(1);
+        let rendered_width = 1_920usize.saturating_mul(scale) / 1_000;
+        let rendered_height = 1_080usize.saturating_mul(scale) / 1_000;
+        (
+            (self.width as i32 - rendered_width as i32) / 2,
+            (self.height as i32 - rendered_height as i32) / 2,
+            scale,
+        )
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: authentication_ambient_art
+    // DESC: Reconstructs the resting orb over the generated stage plate whose water rings are already composited.
+    // ------------------=
+    fn authentication_ambient_art(&mut self) {
+        let (offset_x, offset_y, scale) = self.authentication_art_geometry();
+        let center_x = offset_x + 1_335 * scale as i32 / 1_000;
+        let orb_y = offset_y + 783 * scale as i32 / 1_000;
+        let orb_size = (155 * scale / 1_000).max(1);
+        self.paint_bitmap_alpha_fit_rect(
+            AUTHENTICATION_ORB_BMP,
+            center_x.saturating_sub((orb_size / 2) as i32).max(0) as usize,
+            orb_y.saturating_sub((orb_size / 2) as i32).max(0) as usize,
+            orb_size,
+            orb_size,
+        );
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: authentication_integer_sqrt
+    // DESC: Resolves one bounded integer square root for the low-cost water ellipse rasterizer.
+    // ------------------=
+    fn authentication_integer_sqrt(value: u64) -> u32 {
+        if value == 0 {
+            return 0;
+        }
+        let mut estimate = value;
+        let mut next = (estimate + value / estimate) / 2;
+        while next < estimate {
+            estimate = next;
+            next = (estimate + value / estimate) / 2;
+        }
+        estimate as u32
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: authentication_ripple_vector
+    // DESC: Draws three luminous elliptical water crests without alpha-resampling a full rectangular sprite.
+    // ------------------=
+    fn authentication_ripple_vector(
+        &mut self,
+        center_x: i32,
+        center_y: i32,
+        width: usize,
+        height: usize,
+        opacity: u8,
+    ) {
+        if width < 8 || height < 4 || opacity == 0 {
+            return;
+        }
+        for inset in [0usize, 10, 22] {
+            let ring_width = width.saturating_sub(inset * 2).max(8);
+            let ring_height = height.saturating_sub(inset).max(4);
+            let radius_x = (ring_width / 2).max(1) as i32;
+            let radius_y = (ring_height / 2).max(1) as i32;
+            let ring_opacity = opacity.saturating_sub((inset * 5) as u8);
+            let radius_x_squared = (radius_x as i64 * radius_x as i64) as u64;
+            for x in -radius_x..=radius_x {
+                let remaining = radius_x_squared.saturating_sub((x as i64 * x as i64) as u64);
+                let root = Self::authentication_integer_sqrt(remaining) as i64;
+                let y = (root * radius_y as i64 / radius_x as i64) as i32;
+                for thickness in -1..=1 {
+                    for point_y in [center_y - y + thickness, center_y + y + thickness] {
+                        self.blend_color(
+                            center_x + x,
+                            point_y,
+                            84,
+                            213,
+                            255,
+                            ring_opacity,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: authentication_success_frame
+    // DESC: Composites one bounded orb-drop, impact-crown, and dual-ripple success keyframe over clean water.
+    // ------------------=
+    fn authentication_success_frame(
+        &mut self,
+        presentation: crate::ui::authentication_motion::Presentation,
+    ) {
+        if self.skin_visual_mode() != 0 {
+            return;
+        }
+        let (offset_x, offset_y, scale) = self.authentication_art_geometry();
+        // Only the orb's narrow travel lane needs reconstruction. Expanding
+        // vector crests intentionally remain as a short-lived luminous wake
+        // until the desktop transition replaces the authentication scene.
+        let source_left = offset_x + 1_235 * scale as i32 / 1_000;
+        let source_top = offset_y + 680 * scale as i32 / 1_000;
+        let source_right = offset_x + 1_435 * scale as i32 / 1_000;
+        let source_bottom = offset_y + 900 * scale as i32 / 1_000;
+        let left = source_left.max(0) as usize;
+        let top = source_top.max(0) as usize;
+        let right = source_right.max(0).min(self.width as i32) as usize;
+        let bottom = source_bottom.max(0).min(self.height as i32) as usize;
+        self.paint_authentication_background_rect(
+            left,
+            top,
+            right.saturating_sub(left),
+            bottom.saturating_sub(top),
+        );
+
+        let center_x = offset_x + 1_335 * scale as i32 / 1_000;
+        let water_y = offset_y + 865 * scale as i32 / 1_000;
+        let base_ripple_width = (760 * scale / 1_000).max(1);
+        let base_ripple_height = (220 * scale / 1_000).max(1);
+        for (wave_scale, opacity) in [
+            (
+                presentation.primary_ripple_scale,
+                presentation.primary_ripple_opacity,
+            ),
+            (
+                presentation.secondary_ripple_scale,
+                presentation.secondary_ripple_opacity,
+            ),
+        ] {
+            if opacity == 0 {
+                continue;
+            }
+            let width = (base_ripple_width * wave_scale as usize / 1_000).max(1);
+            let height = (base_ripple_height * wave_scale as usize / 1_000).max(1);
+            self.authentication_ripple_vector(center_x, water_y, width, height, opacity);
+        }
+
+        if presentation.orb_opacity != 0 {
+            let base_orb = (155 * scale / 1_000).max(1);
+            let width = (base_orb * presentation.orb_width_per_mille as usize / 1_000).max(1);
+            let height = (base_orb * presentation.orb_height_per_mille as usize / 1_000).max(1);
+            let orb_y = offset_y
+                + presentation.orb_y_per_mille as i32 * 1_080 * scale as i32 / 1_000_000;
+            self.paint_bitmap_alpha_fit_rect_opacity(
+                AUTHENTICATION_ORB_BMP,
+                center_x.saturating_sub((width / 2) as i32).max(0) as usize,
+                orb_y.saturating_sub((height / 2) as i32).max(0) as usize,
+                width,
+                height,
+                presentation.orb_opacity,
+            );
+        }
+
+        if presentation.splash_opacity != 0 {
+            let base_width = (270 * scale / 1_000).max(1);
+            let base_height = (165 * scale / 1_000).max(1);
+            let width = (base_width * presentation.splash_scale as usize / 1_000).max(1);
+            let height = (base_height * presentation.splash_scale as usize / 1_000).max(1);
+            self.paint_bitmap_alpha_fit_rect_opacity(
+                AUTHENTICATION_SPLASH_BMP,
+                center_x.saturating_sub((width / 2) as i32).max(0) as usize,
+                water_y.saturating_sub((height * 3 / 5) as i32).max(0) as usize,
+                width,
+                height,
+                presentation.splash_opacity,
+            );
         }
     }
 
@@ -10982,6 +11177,36 @@ pub fn system_ui_present(
             console.display.present_damage();
         }
     }
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+// ------------------------=
+// FUNC: system_ui_authentication_success
+// DESC: Presents one bounded authentication-success frame while preserving coherent cursor backing pixels.
+// ------------------=
+pub fn system_ui_authentication_success(
+    presentation: crate::ui::authentication_motion::Presentation,
+) {
+    unsafe {
+        if let Some(console) = (*(&raw mut CONSOLE)).as_mut() {
+            console.display.frame_started_ns = crate::ui::performance::monotonic_ns();
+            console.display.clear_render_clip();
+            console.restore_cursor();
+            console.display.authentication_success_frame(presentation);
+            console.save_and_draw_cursor(console.cursor_x, console.cursor_y);
+            console.display.present_damage();
+        }
+    }
+}
+
+#[cfg(target_arch = "x86")]
+// ------------------------=
+// FUNC: system_ui_authentication_success
+// DESC: Keeps the authentication-success presentation API available on the legacy text architecture.
+// ------------------=
+pub fn system_ui_authentication_success(
+    _presentation: crate::ui::authentication_motion::Presentation,
+) {
 }
 
 #[cfg(target_arch = "x86")]

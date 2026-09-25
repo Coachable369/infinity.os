@@ -248,7 +248,9 @@ class Guest:
     def key(self, *codes):
         before = self.state()
         self.qmp("send-key", {"keys": [{"type": "qcode", "data": code} for code in codes], "hold-time": 150})
-        if before is not None and not (before[4] == 3 and before[5] == 6 and codes == ("ret",)):
+        animation_submission = (before is not None and before[4] in (9, 10)
+                                and before[8] == 1 and codes == ("ret",))
+        if before is not None and not animation_submission and not (before[4] == 3 and before[5] == 6 and codes == ("ret",)):
             self.wait(lambda state: state[2] >= before[2] + 4, "guest input-loop progress", timeout=30)
         else:
             time.sleep(.5)

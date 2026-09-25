@@ -1985,6 +1985,23 @@ impl super::DisplayDevice {
         width: usize,
         height: usize,
     ) {
+        self.paint_bitmap_alpha_fit_rect_opacity(bitmap, left, top, width, height, 255);
+    }
+
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    // ------------------------=
+    // FUNC: paint_bitmap_alpha_fit_rect_opacity
+    // DESC: Alpha-blends a 32-bit BGRA bitmap through one additional bounded layer opacity.
+    // ------------------=
+    pub(super) fn paint_bitmap_alpha_fit_rect_opacity(
+        &mut self,
+        bitmap: &[u8],
+        left: usize,
+        top: usize,
+        width: usize,
+        height: usize,
+        opacity: u8,
+    ) {
         if bitmap.len() < 54 || &bitmap[0..2] != b"BM" || le16(bitmap, 28) != 32 {
             return;
         }
@@ -2012,7 +2029,7 @@ impl super::DisplayDevice {
                 if index + 3 >= bitmap.len() {
                     return;
                 }
-                let alpha = bitmap[index + 3];
+                let alpha = (bitmap[index + 3] as u16 * opacity as u16 / 255) as u8;
                 if alpha != 0 {
                     self.blend_color(
                         (left + x) as i32,

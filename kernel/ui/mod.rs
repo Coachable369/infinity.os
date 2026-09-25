@@ -8,6 +8,7 @@ pub mod app_assistant;
 pub mod thinking;
 pub mod app_features;
 pub mod app_launcher;
+pub mod authentication_motion;
 pub mod async_model;
 pub mod bitmap;
 pub mod clipboard;

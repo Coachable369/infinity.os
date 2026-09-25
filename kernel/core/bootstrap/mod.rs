@@ -30,7 +30,8 @@ use self::primitives::*;
 
 pub use self::bootstrap::{animation_tick, console_present, note_pointer_activity, show_splash};
 pub use self::crash::show_fatal_crash;
-pub use self::desktop::{system_ui_cursor, system_ui_editor_blink, system_ui_present, thinking_animation_tick};
+pub use self::desktop::{system_ui_authentication_success, system_ui_cursor, system_ui_editor_blink,
+    system_ui_present, thinking_animation_tick};
 pub use self::installer::{installer_progress_update, installer_reboot_countdown};
 
 #[derive(Clone, Copy)]

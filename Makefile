@@ -46,7 +46,11 @@ QEMU_X64 := qemu-system-x86_64
 QEMU_AARCH64 := qemu-system-aarch64
 OVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-x86_64-code.fd /opt/homebrew/share/qemu/edk2-x86_64-code.fd))
 AAVMF_CODE := $(firstword $(wildcard /opt/homebrew/share/qemu/edk2-aarch64-code.fd))
-KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern assets/desktop/spatial-world-*.bmp assets/desktop/worldshift-hero-v1.bmp assets/cursors/*.rgba assets/cursors/hotspots.rs) sdk/c/examples/hello.c
+AUTHENTICATION_MOTION_ASSETS := assets/desktop/infinity-auth-success-stage-v1.bmp \
+	assets/desktop/infinity-auth-success-orb-v1.bmp \
+	assets/desktop/infinity-auth-success-ripple-v1.bmp \
+	assets/desktop/infinity-auth-success-splash-v1.bmp
+KERNEL_SOURCES := $(shell find kernel -type d -name target -prune -o -type f -print) Cargo.toml Cargo.lock $(wildcard assets/fonts/*.atlas assets/fonts/*.metrics assets/fonts/*.kern assets/desktop/spatial-world-*.bmp assets/desktop/worldshift-hero-v1.bmp assets/cursors/*.rgba assets/cursors/hotspots.rs) $(AUTHENTICATION_MOTION_ASSETS) sdk/c/examples/hello.c
 FONT_ASSETS := $(wildcard assets/fonts/*.ttf) $(wildcard assets/fonts/OFL-*.txt)
 ICON_ASSETS := $(shell find assets/icons -type f)
 ICON_RUNTIME_ASSETS := assets/icons/runtime/crystal-blue-glass-base.bmp assets/icons/runtime/crystal-blue-glass-actions.bmp \
@@ -406,7 +410,7 @@ object-vm-test:
 
 .PHONY: installer-entropy-test
 .PHONY: editor-window-test
-.PHONY: editor-assistant-test authentication-logo-test
+.PHONY: editor-assistant-test authentication-logo-test authentication-motion-test
 editor-assistant-test:
 	@mkdir -p build/behavior-tests
 	rustc --edition=2021 tools/editor-assistant-test.rs -o build/behavior-tests/editor-assistant-test
@@ -415,6 +419,12 @@ editor-assistant-test:
 authentication-logo-test: x86_64
 	@work=$$(mktemp -d /tmp/infinity-auth-logo.XXXXXX); rmdir "$$work"; \
 		python3 tools/authentication-logo-installed-test.py "$$work"
+
+authentication-motion-test:
+	@mkdir -p build/behavior-tests
+	$(RUSTC) --edition=2021 --test kernel/ui/authentication_motion.rs \
+		-o build/behavior-tests/authentication-motion-test
+	build/behavior-tests/authentication-motion-test
 
 editor-window-test:
 	@mkdir -p build/behavior-tests

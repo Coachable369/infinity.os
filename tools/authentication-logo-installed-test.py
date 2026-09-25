@@ -3,6 +3,7 @@ import importlib.util
 import pathlib
 import shutil
 import sys
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("installed_guest", ROOT / "tools/ms9-installed-acceptance.py")
@@ -64,6 +65,28 @@ def assert_illuminated_logo(path):
 
 
 # ------------------------=
+# FUNC: assert_success_motion
+# DESC: Requires a real lower-right framebuffer transition between the resting orb and water-impact keyframes.
+# ------------------=
+def assert_success_motion(resting_path, impact_path):
+    resting_width, resting_height, resting = ppm_pixels(resting_path)
+    impact_width, impact_height, impact = ppm_pixels(impact_path)
+    assert (resting_width, resting_height) == (impact_width, impact_height)
+    changed = brightened = 0
+    for y in range(resting_height * 52 // 100, resting_height * 97 // 100):
+        for x in range(resting_width * 48 // 100, resting_width * 98 // 100):
+            at = (y * resting_width + x) * 3
+            before = resting[at:at + 3]
+            after = impact[at:at + 3]
+            difference = sum(abs(int(after[index]) - int(before[index])) for index in range(3))
+            changed += difference >= 42
+            brightened += max(after) >= max(before) + 36 and after[2] >= after[0]
+    scale_area = max(1, resting_width * resting_height // (1536 * 1024))
+    assert changed >= 4_500 * scale_area, (impact_path, changed)
+    assert brightened >= 700 * scale_area, (impact_path, brightened)
+
+
+# ------------------------=
 # FUNC: open_system_action
 # DESC: Uses the native keyboard menu to execute one indexed session action and verifies its resulting mode.
 # ------------------=
@@ -76,6 +99,30 @@ def open_system_action(guest, index, expected_mode):
         state = guest.wait(lambda value: value[4] == 7 and value[8] != previous, "system menu focus advanced")
     guest.key("ret")
     return guest.wait(lambda value: value[4] == expected_mode, "authentication surface opened")
+
+
+# ------------------------=
+# FUNC: submit_authentication_animation
+# DESC: Enters the real password, captures the gated impact frame, and waits for the animation-owned desktop commit.
+# ------------------=
+def submit_authentication_animation(guest, expected_mode, resting_path, capture_name):
+    state = guest.wait(lambda value: value[3] == 1 and value[4] == expected_mode,
+                       "authentication ready")
+    for _ in range(11):
+        if state[8] == 1:
+            break
+        guest.key("tab")
+        state = guest.wait(lambda value: value[8] != state[8], "password focus")
+    assert state[8] == 1
+    guest.text("MeshProof901")
+    guest.key("ret")
+    guest.wait(lambda value: value[4] == expected_mode and value[9] & 3 == 3,
+               "success animation retained authentication surface")
+    time.sleep(0.68)
+    impact_path = guest.screenshot(capture_name)
+    assert_success_motion(resting_path, impact_path)
+    return guest.wait(lambda value: value[4] == 5 and value[9] & 3 == 3,
+                      "success animation committed desktop")
 
 
 # ------------------------=
@@ -110,11 +157,16 @@ def main():
         open_system_action(guest, 7, 9)
         signed_out = guest.screenshot("login-canonical-logo")
         assert_illuminated_logo(signed_out)
-        guest.authenticate()
+        submit_authentication_animation(
+            guest, 9, signed_out, "login-success-water-impact"
+        )
         open_system_action(guest, 6, 10)
         locked = guest.screenshot("resume-canonical-logo")
         assert_illuminated_logo(locked)
-        print("Installed login and resume surfaces render the canonical InfinityOS logo")
+        submit_authentication_animation(
+            guest, 10, locked, "resume-success-water-impact"
+        )
+        print("Installed login and resume surfaces render the canonical logo and water-impact success motion")
     finally:
         guest.stop()
 

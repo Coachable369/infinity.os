@@ -465,6 +465,9 @@ struct ConsoleRuntime {
     onboarding_secret_length: usize,
     current_user: crate::runtime::identity::StableId,
     current_session: crate::runtime::identity::StableId,
+    authentication_success: crate::ui::authentication_motion::Timeline,
+    authentication_tick_ns: Option<u64>,
+    authentication_restore_locked_layout: bool,
     settings_editing: bool,
     selected_node_id: Option<crate::runtime::node::types::NodeId>,
     node_input_lease: Option<crate::ui::trusted::SecureInputLease>,
@@ -618,6 +621,9 @@ impl ConsoleRuntime {
             onboarding_secret_length: 0,
             current_user: crate::runtime::identity::StableId::zero(),
             current_session: crate::runtime::identity::StableId::zero(),
+            authentication_success: crate::ui::authentication_motion::Timeline::new(),
+            authentication_tick_ns: None,
+            authentication_restore_locked_layout: false,
             settings_editing: false,
             selected_node_id: None,
             node_input_lease: None,
@@ -1283,6 +1289,9 @@ impl ConsoleRuntime {
     // DESC: Implements the input operation.
     // ------------------=
     fn input(&mut self, key: ConsoleKey) {
+        if self.authentication_success.active() {
+            return;
+        }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if matches!(key,ConsoleKey::Escape) && crate::ui::app_launcher::shortcuts::current().drag.is_some() {
             let mut state=crate::ui::app_launcher::shortcuts::current();state.drag=None;
@@ -2280,6 +2289,36 @@ impl ConsoleRuntime {
         self.refresh_desktop_items();
         self.reset_input();
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
+    }
+
+    // ------------------------=
+    // FUNC: begin_authentication_success
+    // DESC: Gates input and starts the shared sign-in or resume success choreography before desktop entry.
+    // ------------------=
+    fn begin_authentication_success(&mut self, restore_locked_layout: bool) {
+        self.authentication_restore_locked_layout = restore_locked_layout;
+        self.authentication_tick_ns = crate::ui::performance::monotonic_ns();
+        self.authentication_success.begin();
+    }
+
+    // ------------------------=
+    // FUNC: finish_authentication_success
+    // DESC: Commits the authenticated desktop only after the final water-ripple keyframe.
+    // ------------------=
+    fn finish_authentication_success(&mut self) {
+        let restore_locked_layout = core::mem::replace(
+            &mut self.authentication_restore_locked_layout,
+            false,
+        );
+        self.authentication_tick_ns = None;
+        self.enter_desktop();
+        if restore_locked_layout {
+            if let Some(layout) = self.locked_desktop_layout.restore() {
+                self.restore_desktop_layout(layout);
+            }
+        } else {
+            let _ = self.restore_persisted_desktop_layout();
+        }
     }
 
     // ------------------------=
@@ -5458,10 +5497,7 @@ impl ConsoleRuntime {
             .unwrap_or(Err(crate::runtime::identity::IdentityError::InvalidState));
             self.reset_input();
             if result.is_ok() {
-                self.enter_desktop();
-                if let Some(layout) = self.locked_desktop_layout.restore() {
-                    self.restore_desktop_layout(layout);
-                }
+                self.begin_authentication_success(true);
             } else {
                 crate::output_text(b"[authentication] verification failed\n");
             }
@@ -5485,8 +5521,7 @@ impl ConsoleRuntime {
             self.current_user = user.id;
             self.current_session = session.id;
             crate::ui::app_launcher::minimized_shelf::publish(crate::ui::app_launcher::minimized_shelf::State::new());
-            self.enter_desktop();
-            let _ = self.restore_persisted_desktop_layout();
+            self.begin_authentication_success(false);
         } else {
             crate::output_text(b"[authentication] verification failed\n");
         }
@@ -6453,6 +6488,9 @@ impl ConsoleRuntime {
     // DESC: Implements the pointer operation.
     // ------------------=
     fn pointer(&mut self, delta_x: i16, delta_y: i16, buttons: u8) {
+        if self.authentication_success.active() {
+            return;
+        }
         if matches!(self.mode, ConsoleMode::Console | ConsoleMode::Repair) {
             return;
         }
@@ -6530,6 +6568,9 @@ impl ConsoleRuntime {
     // DESC: Consumes wheel motion inside Settings as content scrolling instead of changing the selected navigation section.
     // ------------------=
     fn pointer_scroll(&mut self, vertical: i8) -> bool {
+        if self.authentication_success.active() {
+            return true;
+        }
         self.spatial_finish_arrival();
         if self.spatial.open {return self.spatial_scroll(vertical);}
         if self.minimized_shelf_scroll(vertical) { return true; }
@@ -8566,6 +8607,9 @@ impl ConsoleRuntime {
     // DESC: Handles pointer absolute input or state transitions.
     // ------------------=
     fn pointer_absolute(&mut self, x: i32, y: i32, buttons: u8) {
+        if self.authentication_success.active() {
+            return;
+        }
         if matches!(self.mode, ConsoleMode::Console | ConsoleMode::Repair) {
             return;
         }
@@ -13039,6 +13083,27 @@ pub fn ui_animation_tick() -> bool {
         let Some(runtime) = (*slot).as_mut() else {
             return false;
         };
+        if runtime.authentication_success.active() {
+            let now = crate::ui::performance::monotonic_ns();
+            let elapsed_ms = now
+                .zip(runtime.authentication_tick_ns)
+                .map(|(current, previous)| current.saturating_sub(previous) / 1_000_000)
+                .unwrap_or(16)
+                .clamp(1, crate::ui::authentication_motion::DURATION_MS as u64)
+                as u16;
+            runtime.authentication_tick_ns = now;
+            match runtime.authentication_success.advance(elapsed_ms) {
+                crate::ui::authentication_motion::Advance::Frame(presentation) => {
+                    crate::bootstrap::system_ui_authentication_success(presentation);
+                }
+                crate::ui::authentication_motion::Advance::Finished => {
+                    runtime.finish_authentication_success();
+                    runtime.redraw();
+                }
+                crate::ui::authentication_motion::Advance::Idle => {}
+            }
+            return true;
+        }
         let motion_frame = runtime.continuous_motion_frames.take_for_tick();
         if runtime.spatial.arriving { return runtime.spatial_arrival_tick(); }
         if runtime.spatial.open { return runtime.spatial_tick(); }
