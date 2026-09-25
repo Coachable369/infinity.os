@@ -2,7 +2,8 @@
 set -eu
 
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-temp_base=${TMPDIR:-/tmp}
+temp_base=${TMPDIR:-$project_root/build/tmp}
+mkdir -p "$temp_base"
 test_root=$(mktemp -d "${temp_base%/}/infinity-reprovision-test.XXXXXX")
 test_root=$(CDPATH= cd -- "$test_root" && pwd -P)
 trap 'rm -rf "$test_root"' EXIT HUP INT TERM

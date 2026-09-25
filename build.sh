@@ -3,8 +3,14 @@ set -eu
 
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 output_dir="$project_root/builds"
+temporary_dir="$project_root/build/tmp"
 
 cd "$project_root"
+mkdir -p "$temporary_dir"
+TMPDIR="$temporary_dir"
+TMP="$temporary_dir"
+TEMP="$temporary_dir"
+export TMPDIR TMP TEMP
 
 # Catch provisioning contract failures before expensive builds or cleanup.
 sh tools/select-install-iso-test.sh
@@ -15,6 +21,7 @@ make install-boot-handoff-test
 
 echo "==> Building InfinityOS for x86_64 and AArch64"
 make clean
+mkdir -p "$temporary_dir"
 
 # The legacy BIOS loader must place its complete 32-bit payload below the
 # conventional-memory/video boundary. The current graphical kernel is larger
@@ -74,7 +81,7 @@ cp tools/configure-virtualbox-arm64.sh "$output_dir/configure-virtualbox-arm64.s
 cp tools/start-virtualbox-arm64.sh "$output_dir/start-virtualbox-arm64.sh"
 chmod +x "$output_dir/configure-virtualbox-arm64.sh" "$output_dir/start-virtualbox-arm64.sh"
 
-verification_dir=$(mktemp -d)
+verification_dir=$(mktemp -d "$temporary_dir/release-verification.XXXXXX")
 trap 'rm -rf "$verification_dir"' EXIT HUP INT TERM
 for image in "$output_dir"/*.iso; do
     test -s "$image" || { echo "ERROR: missing image: $image" >&2; exit 1; }

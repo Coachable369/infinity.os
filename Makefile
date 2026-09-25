@@ -43,7 +43,6 @@ voice-indicator-test:
 	build/voice-indicator-test
 
 BUILD := build
-BOOT_IMAGE_SIZE_MB := 1024
 LLVM := /opt/homebrew/opt/llvm/bin
 LLD := /opt/homebrew/opt/lld/bin
 CLANG := $(LLVM)/clang
@@ -357,11 +356,8 @@ $(BUILD)/x86_64/installed-esp.img: $(BUILD)/x86_64/BOOTX64.EFI $(FONT_ASSETS) $(
 	cp $(CRASH_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Mesh/
 	cp $(APPLICATION_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/Applications/
-	@payload_kib=$$(du -sk $(BUILD)/installed-fat | awk '{print $$1}'); \
-	capacity_mib=$$(( (payload_kib + 65535) / 65536 * 64 + 64 )); \
-	test $$capacity_mib -ge 256 || capacity_mib=256; \
-	dd if=/dev/zero of=$@ bs=1M count=$$capacity_mib status=none
-	mformat -i $@ -v INFINITYEFI ::
+	python3 tools/iso-staging.py allocate $(BUILD)/installed-fat $@
+	mformat -F -i $@ -v INFINITYEFI ::
 	mcopy -i $@ -s $(BUILD)/installed-fat/EFI ::
 
 $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel.elf $(FONT_ASSETS) $(UI_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS) $(NODE_ASSETS)
@@ -378,8 +374,8 @@ $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel
 	cp $(CRASH_ASSETS) $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Mesh/
 	cp $(APPLICATION_ASSETS) $(BUILD)/fat/EFI/INFINITY/APPLICATIONS/
-	dd if=/dev/zero of=$@ bs=1M count=$(BOOT_IMAGE_SIZE_MB) status=none
-	mformat -i $@ ::
+	python3 tools/iso-staging.py allocate $(BUILD)/fat $@
+	mformat -F -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat/EFI ::
 
 builds/InfinityOS-x86_64.iso: $(BUILD)/infinity-x86_64.img
@@ -434,7 +430,7 @@ editor-assistant-test:
 	build/behavior-tests/editor-assistant-test
 
 authentication-logo-test: x86_64
-	@work=$$(mktemp -d /tmp/infinity-auth-logo.XXXXXX); rmdir "$$work"; \
+	@mkdir -p $(BUILD)/tmp; work=$$(mktemp -d $(BUILD)/tmp/infinity-auth-logo.XXXXXX); rmdir "$$work"; \
 		python3 tools/authentication-logo-installed-test.py "$$work"
 
 authentication-motion-test:
@@ -700,11 +696,8 @@ $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS)
 	cp $(CRASH_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Mesh/
 	cp $(APPLICATION_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Applications/
-	@payload_kib=$$(du -sk $(BUILD)/installed-fat-aarch64 | awk '{print $$1}'); \
-	capacity_mib=$$(( (payload_kib + 65535) / 65536 * 64 + 64 )); \
-	test $$capacity_mib -ge 256 || capacity_mib=256; \
-	dd if=/dev/zero of=$@ bs=1M count=$$capacity_mib status=none
-	mformat -i $@ -v INFINITYEFI ::
+	python3 tools/iso-staging.py allocate $(BUILD)/installed-fat-aarch64 $@
+	mformat -F -i $@ -v INFINITYEFI ::
 	mcopy -i $@ -s $(BUILD)/installed-fat-aarch64/EFI ::
 
 $(BUILD)/aarch64/kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/aarch64/installed-esp.img $(BUILD)/aarch64/installed-kernel.elf
@@ -745,8 +738,8 @@ $(BUILD)/infinity-aarch64.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/ke
 	cp -R $(INSTALLER_IMAGE_ASSET_DIR) $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Installer/
 	cp $(CRASH_ASSETS) $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Mesh/
-	dd if=/dev/zero of=$@ bs=1M count=$(BOOT_IMAGE_SIZE_MB) status=none
-	mformat -i $@ ::
+	python3 tools/iso-staging.py allocate $(BUILD)/fat-aarch64 $@
+	mformat -F -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat-aarch64/EFI ::
 
 builds/InfinityOS-aarch64-bootstrap-test.iso: $(BUILD)/infinity-aarch64.img
@@ -770,8 +763,8 @@ $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch
 	cp -R $(INSTALLER_IMAGE_ASSET_DIR) $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Installer/
 	cp $(CRASH_ASSETS) $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Mesh/
-	dd if=/dev/zero of=$@ bs=1M count=$(BOOT_IMAGE_SIZE_MB) status=none
-	mformat -i $@ ::
+	python3 tools/iso-staging.py allocate $(BUILD)/fat-aarch64-qemu $@
+	mformat -F -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat-aarch64-qemu/EFI ::
 
 builds/InfinityOS-aarch64-qemu-test.iso: $(BUILD)/infinity-aarch64-qemu.img

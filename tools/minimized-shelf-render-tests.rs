@@ -57,7 +57,7 @@ fn gravity_collections_render_circular_glass() {
     let secondary = pixels[350*width+620];
     assert!(((primary >> 8) & 255) > ((secondary >> 8) & 255) + 80);
     use std::io::Write;
-    let mut file=std::io::BufWriter::new(std::fs::File::create("/tmp/infinity-gravity-controls.ppm").unwrap());
+    let mut file=std::io::BufWriter::new(std::fs::File::create("build/infinity-gravity-controls.ppm").unwrap());
     write!(file,"P6\n{width} {height}\n255\n").unwrap();
     for pixel in pixels { file.write_all(&[(pixel&255)as u8,((pixel>>8)&255)as u8,((pixel>>16)&255)as u8]).unwrap(); }
 }

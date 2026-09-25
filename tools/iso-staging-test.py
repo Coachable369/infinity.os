@@ -25,11 +25,10 @@ class StagingTests(unittest.TestCase):
             data = bytes(range(256)) * 4096
             source = folder / 'BOOTAA64.EFI'
             source.write_bytes(data)
-            size = staging.image_size(tree)
-            self.assertLess(size, 256 * staging.MIB)
             image = root / 'fat.img'
-            with image.open('wb') as file:
-                file.truncate(size)
+            size = staging.allocate(tree, image)
+            self.assertEqual(image.stat().st_size, size)
+            self.assertGreaterEqual(size - len(data), 128 * staging.MIB)
             subprocess.run(['mformat', '-F', '-i', str(image), '::'], check=True)
             staging.consume(tree, image)
             self.assertFalse(source.exists())
