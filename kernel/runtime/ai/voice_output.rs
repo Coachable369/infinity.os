@@ -3,7 +3,7 @@
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::runtime::{audio::PlaybackState, capability::CapabilityType, execution::SecurityIdentity};
 use super::{types::AiError, voice::SpeechSynthesisProvider};
-const CAPACITY: usize = 240000;
+const CAPACITY: usize = 480000;
 static STATE: AtomicUsize = AtomicUsize::new(0);
 static CANCEL: AtomicBool = AtomicBool::new(false);
 static mut OWNER: SecurityIdentity = SecurityIdentity([0; 16]);
@@ -66,7 +66,7 @@ unsafe fn worker() {
     let result = Flite.synthesize(&(&*(&raw const TEXT))[..LENGTH], &mut *(&raw mut PCM));
     FRAMES = result.unwrap_or(0);
     if result.is_ok() && cancelled() == 0 {
-        OUTPUT_SAMPLES = ((FRAMES * RATE as usize + 7999) / 8000) * 2;
+        OUTPUT_SAMPLES = ((FRAMES * RATE as usize + 15999) / 16000) * 2;
         (&mut *(&raw mut RESIDENT.0)).fill(0);
         speech_pcm::fill(&(&*(&raw const PCM))[..FRAMES], &mut (&mut *(&raw mut RESIDENT.0))[..OUTPUT_SAMPLES], 0, RATE);
     }

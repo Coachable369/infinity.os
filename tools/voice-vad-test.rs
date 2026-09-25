@@ -14,8 +14,8 @@ fn main() {
     clip.push(&[i16::MIN; FRAME * 3]);
     assert_eq!(clip.state(), VadState::Speech);
     assert_eq!(clip.push(&[i16::MAX; MAX_SAMPLES]), MAX_SAMPLES - FRAME * 3);
-    assert_eq!(clip.state(), VadState::Limit);
-    assert_eq!(clip.segment(), None);
+    assert_eq!(clip.state(), VadState::Complete);
+    assert_eq!(clip.segment(), Some(Segment { start: 0, end: MAX_SAMPLES }));
     let mut transient = Detector::new(300);
     transient.push(&[1000; FRAME * 2]); transient.push(&[0; FRAME]);
     assert_eq!(transient.state(), VadState::Waiting);
@@ -41,5 +41,12 @@ fn main() {
     assert_eq!(utterance.speech(), None); assert_eq!(utterance.push(&input), 0);
     utterance.clear(300); assert_eq!(utterance.state(), VadState::Waiting);
     utterance.push(&[0; MAX_SAMPLES]); assert_eq!(utterance.state(), VadState::NoSpeech);
+    utterance.clear(300);
+    for _ in 0..1000 { utterance.push(&[0; FRAME]); }
+    assert_eq!(utterance.state(), VadState::Waiting);
+    for _ in 0..100 { utterance.push(&[1000; FRAME]); }
+    for _ in 0..40 { utterance.push(&[0; FRAME]); }
+    assert_eq!(utterance.state(), VadState::Complete);
+    assert_eq!(utterance.speech().unwrap().iter().filter(|&&s| s == 1000).count(), FRAME * 100);
     println!("Voice PCM segmentation: PASS");
 }

@@ -11547,7 +11547,7 @@ impl ConsoleRuntime {
             {
                 let status = crate::runtime::ai::voice_output::status();
                 self.output.write_number(b"Native speech state: ", status.state as u64);
-                self.output.write_number(b"Speech frames (8 kHz): ", status.frames as u64);
+                self.output.write_number(b"Speech frames (16 kHz): ", status.frames as u64);
                 self.output.write_number(b"Synthesis milliseconds: ", status.synthesis_ns / 1_000_000);
                 self.output.write_number(b"Synthesis arena peak bytes: ", status.peak_bytes as u64);
                 self.output.write_number(b"Speech error: ", status.error as u64);

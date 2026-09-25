@@ -16,8 +16,8 @@ static int (*cancelled)(void);
 static jmp_buf recovery;
 jmp_buf *cst_errjmp;
 FILE *stdin, *stdout, *stderr;
-extern cst_voice *cmu_us_kal_diphone;
-extern cst_voice *register_cmu_us_kal(const char *);
+extern cst_voice *cmu_us_kal16_diphone;
+extern cst_voice *register_cmu_us_kal16(const char *);
 
 // ------------------------=
 // FUNC: fail
@@ -308,23 +308,23 @@ int infinity_flite_synthesize(const unsigned char *text,size_t length,int16_t *p
     for(size_t i=0;i<length;i++)if(text[i]<32||text[i]>126)return 1;
     char input[161];memcpy(input,text,length);input[length]=0;
     used=0;peak=0;budget=memory_limit<ARENA_BYTES?memory_limit:ARENA_BYTES;
-    cmu_us_kal_diphone=NULL;
+    cmu_us_kal16_diphone=NULL;
     noise_state=1;
     failure=0;cancelled=cancel;active=1;cst_errjmp=&recovery;
     if(setjmp(recovery)==0){
         checkpoint();
-        flite_init();register_cmu_us_kal(NULL);
-        cst_utterance *utterance=flite_synth_text(input,cmu_us_kal_diphone);
+        flite_init();register_cmu_us_kal16(NULL);
+        cst_utterance *utterance=flite_synth_text(input,cmu_us_kal16_diphone);
         if(!utterance)fail(4);
         cst_wave *wave=utt_wave(utterance);
-        if(!wave||wave->sample_rate!=8000||wave->num_channels!=1||wave->num_samples<0)fail(4);
+        if(!wave||wave->sample_rate!=16000||wave->num_channels!=1||wave->num_samples<0)fail(4);
         if((size_t)wave->num_samples>capacity)fail(3);
         checkpoint();
         memcpy(pcm,wave->samples,(size_t)wave->num_samples*sizeof(int16_t));
         *frames=(size_t)wave->num_samples;
     } else if(!failure) failure=4;
     *high_water=peak;
-    cmu_us_kal_diphone=NULL;
+    cmu_us_kal16_diphone=NULL;
     for(size_t i=0;i<used;i++)((volatile unsigned char *)arena)[i]=0;
     for(size_t i=0;i<sizeof(input);i++)((volatile char *)input)[i]=0;
     used=0;active=0;cancelled=NULL;cst_errjmp=NULL;

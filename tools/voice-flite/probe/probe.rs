@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 #[path = "../../../kernel/drivers/hda.rs"] mod hda;
 static mut DMA: hda::Dma = hda::Dma::new();
-static mut SPEECH: [i16; 240000] = [0; 240000];
+static mut SPEECH: [i16; 480000] = [0; 480000];
 static mut PCM: [i16; hda::SAMPLES] = [0; hda::SAMPLES];
 unsafe extern "C" {
     fn infinity_flite_synthesize(text: *const u8, length: usize, pcm: *mut i16, capacity: usize,
@@ -43,7 +43,7 @@ fn finish(code: u64) -> ! {unsafe{if code!=0{report(&[0,code,0,0,0,0]);}core::ar
 fn panic(_: &core::panic::PanicInfo) -> ! {finish(99)}
 // ------------------------=
 // FUNC: fill
-// DESC: Converts 8-kHz speech to the HDA output rate using bounded interpolation and silence padding.
+// DESC: Converts 16-kHz speech to the HDA output rate using bounded interpolation and silence padding.
 // ------------------=
 unsafe fn fill(output: &mut [i16], start: usize, frames: usize, rate: u32) {
     assert!(speech_pcm::fill(&(&*(&raw const SPEECH))[..frames], output, start, rate));
@@ -70,16 +70,16 @@ pub unsafe extern "C" fn probe() -> ! {
     let text=b"Hello. I am the native voice of Infinity OS. How can I help you?";
     let frequency:u64;core::arch::asm!("mrs {}, cntfrq_el0",out(reg)frequency);
     let mut frames=0;let mut peak=0;let started=ticks();
-    assert_eq!(infinity_flite_synthesize(text.as_ptr(),text.len(),(&raw mut SPEECH).cast(),240000,&mut frames,&mut peak,0,8*1024*1024),0);
+    assert_eq!(infinity_flite_synthesize(text.as_ptr(),text.len(),(&raw mut SPEECH).cast(),480000,&mut frames,&mut peak,0,8*1024*1024),0);
     let synthesis=ticks()-started;
-    assert!(frames>8000&&frames<240000);assert!(peak<8*1024*1024);
+    assert!(frames>16000&&frames<480000);assert!(peak<8*1024*1024);
     assert_eq!(infinity_flite_clean(),1);
     let mut base=0;
     for slot in 0..32usize {let cfg=(0x4010000000usize+(slot<<15)) as *mut u32;if read_volatile(cfg)==0x26688086 {write_volatile(cfg.add(4),0x10000000);write_volatile((cfg as usize+4) as *mut u16,6);base=0x10000000;}}
     assert_ne!(base,0);
     let mut device=hda::Hda::initialize(base,&raw mut DMA).unwrap();
     static mut RESIDENT: [i16; 48_000*2*32] = [0;48_000*2*32];
-    let count = (frames*device.sample_rate as usize+7999)/8000*2;
+    let count = (frames*device.sample_rate as usize+15999)/16000*2;
     fill(&mut (&mut *(&raw mut RESIDENT))[..count],0,frames,device.sample_rate);
     device.start_resident(&(&*(&raw const RESIDENT))[..device.sample_rate as usize*2*32]).unwrap();
     let output_stream = 0x80 + ((read_volatile(base as *const u16) >> 8) as usize & 15) * 0x20;

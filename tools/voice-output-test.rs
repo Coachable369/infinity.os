@@ -51,7 +51,7 @@ mod drivers { pub mod audio {
     // DESC: Records hardware submission only after validating converted PCM dimensions.
     // ------------------=
     pub fn play_resident_speech(_: SecurityIdentity, _: u64, pcm: &[i16], count: usize, rate: u32) -> bool {
-        assert_eq!(rate, 48000); assert_eq!(count, 960);
+        assert_eq!(rate, 48000); assert_eq!(count, 480);
         assert!(pcm[..count].iter().any(|v| *v != 0));
         PLAYED.fetch_add(1, Ordering::SeqCst); true
     }

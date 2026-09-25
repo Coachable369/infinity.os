@@ -47,7 +47,7 @@ def main():
     flags += ["-include", str(ROOT / "tools/voice-flite/include/prefix.h")]
     sources = []
     directories = [source / "src" / d for d in ["hrg", "stats", "lexicon", "regex", "synth", "speech", "wavesynth", "utils"]]
-    directories += [source / "lang" / d for d in ["cmu_us_kal", "cmulex", "usenglish"]]
+    directories += [source / "lang" / d for d in ["cmu_us_kal16", "cmulex", "usenglish"]]
     for directory in directories:
         makefile = (directory / "Makefile").read_text().replace("\\\n", " ")
         names = re.search(r"^SRCS\s*=\s*(.*)$", makefile, re.MULTILINE).group(1).split()

@@ -1,12 +1,12 @@
 //! Allocation-free compact-voice output conversion shared by native HDA and its hardware probe.
 // ------------------------=
 // FUNC: fill
-// DESC: Converts bounded 8-kHz mono speech to negotiated HDA stereo, padding only the final DMA block with silence.
+// DESC: Converts bounded 16-kHz mono speech to negotiated HDA stereo, padding only the final DMA block with silence.
 // ------------------=
 pub fn fill(input: &[i16], output: &mut [i16], start: usize, rate: u32) -> bool {
-    if !matches!(rate, 44_100 | 48_000) || output.len() % 2 != 0 || input.len() > 240_000 || start > 1_500_000 { return false; }
+    if !matches!(rate, 44_100 | 48_000) || output.len() % 2 != 0 || input.len() > 480_000 || start > 1_500_000 { return false; }
     for (i, pair) in output.chunks_exact_mut(2).enumerate() {
-        let phase = (start + i) as u64 * 8000;
+        let phase = (start + i) as u64 * 16000;
         let index = (phase / rate as u64) as usize;
         let fraction = (phase % rate as u64) as i64;
         let a = input.get(index).copied().unwrap_or(0) as i64;

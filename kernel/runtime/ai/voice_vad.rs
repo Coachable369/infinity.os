@@ -77,7 +77,12 @@ impl Detector {
                 }
             }
             if self.samples >= MAX_SAMPLES && self.state != VadState::Complete {
-                self.state = if self.state == VadState::Waiting { VadState::NoSpeech } else { VadState::Limit };
+                if self.state == VadState::Speech {
+                    self.segment.end = self.samples;
+                    self.state = VadState::Complete;
+                } else {
+                    self.state = VadState::NoSpeech;
+                }
             }
         }
         consumed
@@ -109,7 +114,18 @@ impl Utterance {
     pub fn push(&mut self, pcm: &[i16]) -> usize {
         let offset = self.detector.samples();
         let count = self.detector.push(pcm);
-        self.pcm[offset..offset + count].copy_from_slice(&pcm[..count]); count
+        self.pcm[offset..offset + count].copy_from_slice(&pcm[..count]);
+        // Waiting time must not consume the speech budget. Preserve onset and
+        // partial-frame history, but discard old silence before the next chunk.
+        if self.detector.state == VadState::Waiting && self.detector.samples >= RATE {
+            let keep = PRE_ROLL + self.detector.frame_samples;
+            let end = self.detector.samples;
+            self.pcm.copy_within(end - keep..end, 0);
+            self.pcm[keep..end].fill(0);
+            self.detector.samples = keep;
+            self.detector.last_voice = self.detector.last_voice.saturating_sub(end - keep);
+        }
+        count
     }
     // ------------------------=
     // FUNC: state

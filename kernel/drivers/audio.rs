@@ -11,7 +11,7 @@ static mut LEASE: Option<crate::runtime::audio::AudioStream> = None;
 static mut PCM: [i16; hda::SAMPLES] = [0; hda::SAMPLES];
 use crate::runtime::audio::{AudioBuffer, CaptureState, CaptureStatus};
 use crate::runtime::audio::PlaybackState;
-static mut SPEECH_PCM: [i16; 240000] = [0; 240000];
+static mut SPEECH_PCM: [i16; 480000] = [0; 480000];
 static mut SPEECH_LENGTH: usize = 0;
 static mut SPEECH_NEXT: usize = 0;
 static mut SPEECH_PLAYED: usize = 0;
@@ -193,10 +193,10 @@ pub fn playback_state() -> Option<PlaybackState> {
 }
 // ------------------------=
 // FUNC: play_speech
-// DESC: Copies bounded 8-kHz mono speech into an authorized native output stream; no application supplies DMA pointers.
+// DESC: Copies bounded 16-kHz mono speech into an authorized native output stream; no application supplies DMA pointers.
 // ------------------=
 pub fn play_speech(owner: crate::runtime::execution::SecurityIdentity, capability: u64, samples: &[i16]) -> bool {
-    if samples.is_empty() || samples.len() > 240000 { return false; }
+    if samples.is_empty() || samples.len() > 480000 { return false; }
     let Some(now) = crate::ui::performance::monotonic_ns() else { return false; };
     let Ok(request) = crate::runtime::iop::IopMessage::request(crate::runtime::iop::OperationId::AudioPlaybackStart,
         now, owner, capability, now / 1_000_000_000 + 35, now, &[]) else { return false; };
@@ -321,7 +321,7 @@ pub fn poll() {
                         if half > 1 { finish_playback(device, PlaybackState::DeviceLost); }
                         else if half != SPEECH_HALF {
                             SPEECH_PLAYED += count / 2;
-                            let total = (SPEECH_LENGTH * device.sample_rate as usize + 7999) / 8000;
+                            let total = (SPEECH_LENGTH * device.sample_rate as usize + 15999) / 16000;
                             if SPEECH_PLAYED >= total { finish_playback(device, PlaybackState::Complete); }
                             else {
                                 speech_pcm::fill(&(&*(&raw const SPEECH_PCM))[..SPEECH_LENGTH], &mut (&mut *(&raw mut PCM))[..count], SPEECH_NEXT, device.sample_rate);
