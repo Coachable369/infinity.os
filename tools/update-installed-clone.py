@@ -42,8 +42,11 @@ def main():
     parser.add_argument('clone')
     parser.add_argument('kernel')
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--verify-only', action='store_true', help='Read-only: require the installed kernel to exactly match the supplied artifact')
     parser.add_argument('--export-dir', help='Export validated sector patches for an offline backed-up image')
     args = parser.parse_args()
+    if args.verify_only and (args.apply or args.export_dir):
+        parser.error('--verify-only cannot apply or export patches')
     with open(args.kernel, 'rb') as stream:
         kernel = stream.read()
     assert kernel[:6] == b'\x7fELF\x02\x01' and integer(kernel, 18, 2) in (62, 183)
@@ -121,6 +124,12 @@ def main():
                 put(components, offset + 40, len(kernel))
                 references += 1
         assert references
+        if args.verify_only:
+            assert old_kernel == kernel, 'Installed kernel differs from the supplied build artifact'
+            print(json.dumps(dict(installed_kernel_matches=True, kernel_bytes=old_size,
+                kernel_sha256=hashlib.sha256(old_kernel).hexdigest(),
+                references=references, container_lba=first)))
+            return
         padded = kernel + bytes((-len(kernel)) % 512)
         assert relative + len(padded) // 512 <= kernel_limit
         assert first + relative + len(padded) // 512 <= last

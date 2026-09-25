@@ -40,6 +40,15 @@ Implemented for AArch64:
 
 Evidence collected:
 
+- A blank 16 GiB private VirtualBox disk completed the actual GUI installation
+  from the September 25 ISO. With the ISO detached, it cold-booted into first-run
+  configuration. Read-only extraction validated the disk structures and all
+  eleven kernel references; its 249,854,016-byte kernel exactly matches the
+  packaged artifact, SHA-256
+  `e1f6df185aa8f16d0873eec6baff5dc03b395730b85d7eeab1ccbda3a2a42a2a`.
+  The same verifier rejects a different valid ELF (exit 1) and conflicting
+  verification/write flags (exit 2). This is installation/boot evidence, not
+  completed first-run setup or voice-conversation evidence.
 - Six freestanding AArch64 decoder cases pass with QEMU HVF and TCG: repeated
   real recorded speech, mid-utterance cancellation, output bounds, silence,
   and pre-start cancellation. These are native bare-metal probes, **not**
@@ -69,9 +78,9 @@ Remaining acceptance / limitations:
    Hermes response, and an audible synthesized reply in the installed desktop
    has **not yet been demonstrated**. Earlier audible tone confirmation is not
    speech confirmation.
-2. Cold installation from the newly packaged ISO, no-ISO installed retest,
-   GUI microphone toggle reliability, and whole-turn cancellation/restart
-   still need end-to-end verification.
+2. Cold installation and no-ISO first-run boot pass. Completing that fresh
+   system's account setup, installed voice retest, GUI microphone toggle
+   reliability, and whole-turn cancellation/restart still need verification.
 3. Current conversation is turn-taking: capture pauses during recognition,
    thinking, and playback and resumes between replies. There is no acoustic
    echo cancellation, spoken barge-in, or wake word. Speech begins after the
