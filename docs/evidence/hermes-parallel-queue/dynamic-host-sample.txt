@@ -1,0 +1,272 @@
+Analysis of sampling dynamic (pid 32838) every 1 millisecond
+Process:         dynamic [32838]
+Path:            /opt/codebase/*/dynamic
+Load Address:    0x100b1c000
+Identifier:      dynamic
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  zsh [32837]
+Target Type:     live task
+
+Date/Time:       2026-09-24 19:47:42.267 -0500
+Launch Time:     2026-09-24 19:47:39.990 -0500
+OS Version:      macOS 26.4.1 (25E253)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+----
+
+Call graph:
+    1352 Thread_52128981   DispatchQueue_1: com.apple.main-thread  (serial)
+    + 1352 start  (in dyld) + 6992  [0x188d03da4]
+    +   1352 main  (in dynamic) + 52  [0x100b1f69c]
+    +     1352 _RNvNtCs8nMiDB8lWwf_3std2rt19lang_start_internal  (in dynamic) + 952  [0x100b4a808]
+    +       1352 _RNCINvNtCs8nMiDB8lWwf_3std2rt10lang_startuE0Csjyr7TgMMLg8_18hermes_native_test  (in dynamic) + 16  [0x100b2b0ac]
+    +         1352 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceFEuuECsjyr7TgMMLg8_18hermes_native_test  (in dynamic) + 12  [0x100b2a500]
+    +           1308 _RNvCsjyr7TgMMLg8_18hermes_native_test4main  (in dynamic) + 2904  [0x100b1dfc4]
+    +           ! 1257 _RNvMNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7serviceNtB2_7Service4poll  (in dynamic) + 68  [0x100b25024]
+    +           ! : 321 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 360,320,...  [0x100b21ca4,0x100b21c7c,...]
+    +           ! : 243 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 536  [0x100b21d54]
+    +           ! : | 229 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+    +           ! : | + 228 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 344,364,...  [0x100b29d6c,0x100b29d80,...]
+    +           ! : | + 1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1152  [0x100b2a094]
+    +           ! : | +   1 _platform_memmove  (in libsystem_platform.dylib) + 88  [0x1890c9418]
+    +           ! : | 7 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 536  [0x100b21d54]
+    +           ! : | + 7 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 80,168,...  [0x100b23b18,0x100b23b70,...]
+    +           ! : | 6 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 316,336,...  [0x100b23c04,0x100b23c18,...]
+    +           ! : | 1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1272  [0x100b2a10c]
+    +           ! : 136 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1300  [0x100b22050]
+    +           ! : | 123 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+    +           ! : | + 120 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 344,364,...  [0x100b29d6c,0x100b29d80,...]
+    +           ! : | + 3 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1152  [0x100b2a094]
+    +           ! : | +   3 _platform_memmove  (in libsystem_platform.dylib) + 180,196  [0x1890c9474,0x1890c9484]
+    +           ! : | 7 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1300  [0x100b22050]
+    +           ! : | + 7 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 80,168,...  [0x100b23b18,0x100b23b70,...]
+    +           ! : | 4 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 0,8,...  [0x100b23ac8,0x100b23ad0,...]
+    +           ! : | 2 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1272,1276  [0x100b2a10c,0x100b2a110]
+    +           ! : 126 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1608  [0x100b22184]
+    +           ! : | 117 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+    +           ! : | + 114 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 344,364,...  [0x100b29d6c,0x100b29d80,...]
+    +           ! : | + 2 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+    +           ! : | + 1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1152  [0x100b2a094]
+    +           ! : | +   1 _platform_memmove  (in libsystem_platform.dylib) + 180  [0x1890c9474]
+    +           ! : | 5 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1608  [0x100b22184]
+    +           ! : | + 5 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 48,80  [0x100b23af8,0x100b23b18]
+    +           ! : | 4 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 0,8,...  [0x100b23ac8,0x100b23ad0,...]
+    +           ! : 116 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1036  [0x100b21f48]
+    +           ! : | 105 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+    +           ! : | + 102 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 344,364,...  [0x100b29d6c,0x100b29d80,...]
+    +           ! : | + 2 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1152  [0x100b2a094]
+    +           ! : | + ! 2 _platform_memmove  (in libsystem_platform.dylib) + 180  [0x1890c9474]
+    +           ! : | + 1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+    +           ! : | 6 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 316,336,...  [0x100b23c04,0x100b23c18,...]
+    +           ! : | 5 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1036  [0x100b21f48]
+    +           ! : |   5 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 48,80,...  [0x100b23af8,0x100b23b18,...]
+    +           ! : 116 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1776  [0x100b2222c]
+    +           ! : | 107 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+    +           ! : | + 106 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 344,364,...  [0x100b29d6c,0x100b29d80,...]
+    +           ! : | + 1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1152  [0x100b2a094]
+    +           ! : | +   1 _platform_memmove  (in libsystem_platform.dylib) + 180  [0x1890c9474]
+    +           ! : | 6 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 8,20,...  [0x100b23ad0,0x100b23adc,...]
+    +           ! : | 2 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1272,1276  [0x100b2a10c,0x100b2a110]
+    +           ! : | 1 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1776  [0x100b2222c]
+    +           ! : |   1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 48  [0x100b23af8]
+    +           ! : 105 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 984  [0x100b21f14]
+    +           ! : | 89 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+    +           ! : | + 88 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 364,344,...  [0x100b29d80,0x100b29d6c,...]
+    +           ! : | + 1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1152  [0x100b2a094]
+    +           ! : | +   1 _platform_memmove  (in libsystem_platform.dylib) + 180  [0x1890c9474]
+    +           ! : | 9 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 984  [0x100b21f14]
+    +           ! : | + 9 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 80,48,...  [0x100b23b18,0x100b23af8,...]
+    +           ! : | 5 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 36,344,...  [0x100b23aec,0x100b23c20,...]
+    +           ! : | 2 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1276  [0x100b2a110]
+    +           ! : 68 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1088  [0x100b21f7c]
+    +           ! : | 63 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+    +           ! : | + 63 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 364,344,...  [0x100b29d80,0x100b29d6c,...]
+    +           ! : | 3 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 308,328  [0x100b23bfc,0x100b23c10]
+    +           ! : | 1 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1088  [0x100b21f7c]
+    +           ! : | + 1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 48  [0x100b23af8]
+    +           ! : | 1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1276  [0x100b2a110]
+    +           ! : 9 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1688  [0x100b221d4]
+    +           ! : | 9 _RNvNtNtCs39xj3cNX7Py_4libm4math4expf4expf  (in dynamic) + 52,128,...  [0x100b2eb24,0x100b2eb70,...]
+    +           ! : 8 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1472  [0x100b220fc]
+    +           ! : | 8 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+    +           ! : |   8 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1044,344,...  [0x100b2a028,0x100b29d6c,...]
+    +           ! : 6 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1368  [0x100b22094]
+    +           ! : | 6 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer6attend  (in dynamic) + 200,208,...  [0x100b237b4,0x100b237bc,...]
+    +           ! : 1 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 464  [0x100b21d0c]
+    +           ! : | 1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer11rms_epsilon  (in dynamic) + 56  [0x100b23410]
+    +           ! : |   1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen5quant3row  (in dynamic) + 2244  [0x100b297a0]
+    +           ! : 1 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 588  [0x100b21d88]
+    +           ! : | 1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer13adjacent_rope  (in dynamic) + 12  [0x100b236a4]
+    +           ! : 1 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 1244  [0x100b22018]
+    +           ! :   1 _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer11rms_epsilon  (in dynamic) + 188  [0x100b23494]
+    +           ! 31 _RNvMNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7serviceNtB2_7Service4poll  (in dynamic) + 68,40,...  [0x100b25024,0x100b25008,...]
+    +           ! 20 _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic) + 104,116,...  [0x100b21ba4,0x100b21bb0,...]
+    +           35 _RNvCsjyr7TgMMLg8_18hermes_native_test4main  (in dynamic) + 3028,2904,...  [0x100b1e040,0x100b1dfc4,...]
+    +           9 _RNvMNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7serviceNtB2_7Service4poll  (in dynamic) + 184  [0x100b25098]
+    1352 Thread_52129047
+    + 1352 thread_start  (in libsystem_pthread.dylib) + 8  [0x1890bac1c]
+    +   1352 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x1890bfc58]
+    +     1352 _RNvNvMs0_NtNtNtCs8nMiDB8lWwf_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in dynamic) + 392  [0x100b503f0]
+    +       1352 _RNSNvYNCINvNtNtCs8nMiDB8lWwf_3std6thread9lifecycle15spawn_uncheckedNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEs_0INtNtNtCsf0LoT3TAtAe_4core3ops8function6FnOnceuE9call_once6vtableB19_  (in dynamic) + 56  [0x100b1d378]
+    +         1291 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 216,204,...  [0x100b2a608,0x100b2a5fc,...]
+    +         61 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 180  [0x100b2a5e4]
+    +           39 infinity_qwen_dot_rows  (in dynamic) + 184  [0x100b2c170]
+    +           : 35 infinity_qwen_dot_rows  (in dynamic) + 5920,5592,...  [0x100b2d7d8,0x100b2d690,...]
+    +           : 4 qwen_quantize_q8  (in dynamic) + 820,544,...  [0x100b2bc1c,0x100b2bb08,...]
+    +           22 infinity_qwen_dot_rows  (in dynamic) + 220  [0x100b2c194]
+    +             22 qwen_q6_q8_rows  (in dynamic) + 736,216,...  [0x100b2c044,0x100b2be3c,...]
+    1352 Thread_52129048
+    + 1352 thread_start  (in libsystem_pthread.dylib) + 8  [0x1890bac1c]
+    +   1352 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x1890bfc58]
+    +     1352 _RNvNvMs0_NtNtNtCs8nMiDB8lWwf_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in dynamic) + 392  [0x100b503f0]
+    +       1352 _RNSNvYNCINvNtNtCs8nMiDB8lWwf_3std6thread9lifecycle15spawn_uncheckedNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEs_0INtNtNtCsf0LoT3TAtAe_4core3ops8function6FnOnceuE9call_once6vtableB19_  (in dynamic) + 56  [0x100b1d378]
+    +         1293 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 216,204,...  [0x100b2a608,0x100b2a5fc,...]
+    +         59 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 180  [0x100b2a5e4]
+    +           37 infinity_qwen_dot_rows  (in dynamic) + 184  [0x100b2c170]
+    +           : 37 infinity_qwen_dot_rows  (in dynamic) + 5920,5680,...  [0x100b2d7d8,0x100b2d6e8,...]
+    +           22 infinity_qwen_dot_rows  (in dynamic) + 220  [0x100b2c194]
+    +             22 qwen_q6_q8_rows  (in dynamic) + 444,684,...  [0x100b2bf20,0x100b2c010,...]
+    1352 Thread_52129049
+    + 1352 thread_start  (in libsystem_pthread.dylib) + 8  [0x1890bac1c]
+    +   1352 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x1890bfc58]
+    +     1352 _RNvNvMs0_NtNtNtCs8nMiDB8lWwf_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in dynamic) + 392  [0x100b503f0]
+    +       1352 _RNSNvYNCINvNtNtCs8nMiDB8lWwf_3std6thread9lifecycle15spawn_uncheckedNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEs_0INtNtNtCsf0LoT3TAtAe_4core3ops8function6FnOnceuE9call_once6vtableB19_  (in dynamic) + 56  [0x100b1d378]
+    +         1288 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 216,204,...  [0x100b2a608,0x100b2a5fc,...]
+    +         64 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 180  [0x100b2a5e4]
+    +           46 infinity_qwen_dot_rows  (in dynamic) + 184  [0x100b2c170]
+    +           : 43 infinity_qwen_dot_rows  (in dynamic) + 5920,5872,...  [0x100b2d7d8,0x100b2d7a8,...]
+    +           : 3 qwen_quantize_q8  (in dynamic) + 792  [0x100b2bc00]
+    +           18 infinity_qwen_dot_rows  (in dynamic) + 220  [0x100b2c194]
+    +             18 qwen_q6_q8_rows  (in dynamic) + 444,260,...  [0x100b2bf20,0x100b2be68,...]
+    1352 Thread_52129050
+    + 1352 thread_start  (in libsystem_pthread.dylib) + 8  [0x1890bac1c]
+    +   1352 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x1890bfc58]
+    +     1352 _RNvNvMs0_NtNtNtCs8nMiDB8lWwf_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in dynamic) + 392  [0x100b503f0]
+    +       1352 _RNSNvYNCINvNtNtCs8nMiDB8lWwf_3std6thread9lifecycle15spawn_uncheckedNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEs_0INtNtNtCsf0LoT3TAtAe_4core3ops8function6FnOnceuE9call_once6vtableB19_  (in dynamic) + 56  [0x100b1d378]
+    +         1296 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 216,204,...  [0x100b2a608,0x100b2a5fc,...]
+    +         56 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 180  [0x100b2a5e4]
+    +           43 infinity_qwen_dot_rows  (in dynamic) + 184  [0x100b2c170]
+    +           : 40 infinity_qwen_dot_rows  (in dynamic) + 5920,5752,...  [0x100b2d7d8,0x100b2d730,...]
+    +           : 3 qwen_quantize_q8  (in dynamic) + 792,828,...  [0x100b2bc00,0x100b2bc24,...]
+    +           13 infinity_qwen_dot_rows  (in dynamic) + 220  [0x100b2c194]
+    +             13 qwen_q6_q8_rows  (in dynamic) + 296,572,...  [0x100b2be8c,0x100b2bfa0,...]
+    1352 Thread_52129051
+    + 1352 thread_start  (in libsystem_pthread.dylib) + 8  [0x1890bac1c]
+    +   1352 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x1890bfc58]
+    +     1352 _RNvNvMs0_NtNtNtCs8nMiDB8lWwf_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in dynamic) + 392  [0x100b503f0]
+    +       1352 _RNSNvYNCINvNtNtCs8nMiDB8lWwf_3std6thread9lifecycle15spawn_uncheckedNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEs_0INtNtNtCsf0LoT3TAtAe_4core3ops8function6FnOnceuE9call_once6vtableB19_  (in dynamic) + 56  [0x100b1d378]
+    +         1236 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 216,204,...  [0x100b2a608,0x100b2a5fc,...]
+    +         116 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 180  [0x100b2a5e4]
+    +           98 infinity_qwen_dot_rows  (in dynamic) + 184  [0x100b2c170]
+    +           : 95 infinity_qwen_dot_rows  (in dynamic) + 5920,5872,...  [0x100b2d7d8,0x100b2d7a8,...]
+    +           : 3 qwen_quantize_q8  (in dynamic) + 704,768  [0x100b2bba8,0x100b2bbe8]
+    +           18 infinity_qwen_dot_rows  (in dynamic) + 220  [0x100b2c194]
+    +             18 qwen_q6_q8_rows  (in dynamic) + 316,444,...  [0x100b2bea0,0x100b2bf20,...]
+    1352 Thread_52129052
+    + 1352 thread_start  (in libsystem_pthread.dylib) + 8  [0x1890bac1c]
+    +   1352 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x1890bfc58]
+    +     1352 _RNvNvMs0_NtNtNtCs8nMiDB8lWwf_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in dynamic) + 392  [0x100b503f0]
+    +       1352 _RNSNvYNCINvNtNtCs8nMiDB8lWwf_3std6thread9lifecycle15spawn_uncheckedNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEs_0INtNtNtCsf0LoT3TAtAe_4core3ops8function6FnOnceuE9call_once6vtableB19_  (in dynamic) + 56  [0x100b1d378]
+    +         1192 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 216,220,...  [0x100b2a608,0x100b2a60c,...]
+    +         160 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 180  [0x100b2a5e4]
+    +           124 infinity_qwen_dot_rows  (in dynamic) + 184  [0x100b2c170]
+    +           : 119 infinity_qwen_dot_rows  (in dynamic) + 5920,5944,...  [0x100b2d7d8,0x100b2d7f0,...]
+    +           : 5 qwen_quantize_q8  (in dynamic) + 464  [0x100b2bab8]
+    +           36 infinity_qwen_dot_rows  (in dynamic) + 220  [0x100b2c194]
+    +             36 qwen_q6_q8_rows  (in dynamic) + 432,88,...  [0x100b2bf14,0x100b2bdbc,...]
+    1352 Thread_52129053
+      1352 thread_start  (in libsystem_pthread.dylib) + 8  [0x1890bac1c]
+        1352 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x1890bfc58]
+          1352 _RNvNvMs0_NtNtNtCs8nMiDB8lWwf_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in dynamic) + 392  [0x100b503f0]
+            1352 _RNSNvYNCINvNtNtCs8nMiDB8lWwf_3std6thread9lifecycle15spawn_uncheckedNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEs_0INtNtNtCsf0LoT3TAtAe_4core3ops8function6FnOnceuE9call_once6vtableB19_  (in dynamic) + 56  [0x100b1d378]
+              1017 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 216,204,...  [0x100b2a608,0x100b2a5fc,...]
+              335 _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 180  [0x100b2a5e4]
+                250 infinity_qwen_dot_rows  (in dynamic) + 184  [0x100b2c170]
+                : 242 infinity_qwen_dot_rows  (in dynamic) + 5920,5780,...  [0x100b2d7d8,0x100b2d74c,...]
+                : 8 qwen_quantize_q8  (in dynamic) + 820  [0x100b2bc1c]
+                85 infinity_qwen_dot_rows  (in dynamic) + 220  [0x100b2c194]
+                  85 qwen_q6_q8_rows  (in dynamic) + 252,296,...  [0x100b2be60,0x100b2be8c,...]
+
+Total number in stack (recursive counted multiple, when >=5):
+        16       _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 0  [0x100b23ac8]
+        13       _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 0  [0x100b29c14]
+        8       _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic) + 172  [0x100b23b74]
+        7       _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 0  [0x100b2a530]
+        7       _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic) + 180  [0x100b2a5e4]
+        7       _RNSNvYNCINvNtNtCs8nMiDB8lWwf_3std6thread9lifecycle15spawn_uncheckedNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEs_0INtNtNtCsf0LoT3TAtAe_4core3ops8function6FnOnceuE9call_once6vtableB19_  (in dynamic) + 56  [0x100b1d378]
+        7       _RNvNvMs0_NtNtNtCs8nMiDB8lWwf_3std3sys6thread4unixNtB7_6Thread3new12thread_start  (in dynamic) + 392  [0x100b503f0]
+        7       _pthread_start  (in libsystem_pthread.dylib) + 136  [0x1890bfc58]
+        7       infinity_qwen_dot_rows  (in dynamic) + 0  [0x100b2c0b8]
+        7       infinity_qwen_dot_rows  (in dynamic) + 184  [0x100b2c170]
+        7       infinity_qwen_dot_rows  (in dynamic) + 220  [0x100b2c194]
+        7       qwen_q6_q8_rows  (in dynamic) + 0  [0x100b2bd64]
+        7       thread_start  (in libsystem_pthread.dylib) + 8  [0x1890bac1c]
+        6       _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic) + 1152  [0x100b2a094]
+        6       _platform_memmove  (in libsystem_platform.dylib) + 0  [0x1890c93c0]
+        6       qwen_quantize_q8  (in dynamic) + 0  [0x100b2b8e8]
+
+Sort by top of stack, same collapsed (when >= 5):
+        _RINvNtNtCs8nMiDB8lWwf_3std3sys9backtrace28___rust_begin_short_backtraceNCNCNvCsjyr7TgMMLg8_18hermes_native_test4mains0_00uEB1d_  (in dynamic)        8613
+        _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7workers4rows  (in dynamic)        837
+        infinity_qwen_dot_rows  (in dynamic)        611
+        _RNvMs0_NtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformerNtB5_6Engine4step  (in dynamic)        341
+        qwen_q6_q8_rows  (in dynamic)        214
+        _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer8mat_rows  (in dynamic)        72
+        _RNvMNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen7serviceNtB2_7Service4poll  (in dynamic)        40
+        _RNvCsjyr7TgMMLg8_18hermes_native_test4main  (in dynamic)        35
+        qwen_quantize_q8  (in dynamic)        26
+        _RNvNtNtCs39xj3cNX7Py_4libm4math4expf4expf  (in dynamic)        9
+        _platform_memmove  (in libsystem_platform.dylib)        9
+        _RNvNtNtCsjyr7TgMMLg8_18hermes_native_test4qwen11transformer6attend  (in dynamic)        6
+
+Binary Images:
+       0x100b1c000 -        0x100b79627 +dynamic (0) <3ED22B7D-C378-33F5-9BAC-B26FE6C3D0AA> /opt/codebase/*/dynamic
+       0x188c5c000 -        0x188caeb4b  libobjc.A.dylib (951.7) <2E858E25-1FF6-3DA6-84F6-911630620512> /usr/lib/libobjc.A.dylib
+       0x188caf000 -        0x188ce3b34  libdyld.dylib (1376.6) <2C3C5F75-3686-39A1-9202-BD4D2133379D> /usr/lib/system/libdyld.dylib
+       0x188ce4000 -        0x188d89ec7  dyld (1.0.0 - 1376.6) <9F682DCF-340C-3BFA-BCDD-DD702F30313E> /usr/lib/dyld
+       0x188d8a000 -        0x188d8d228  libsystem_blocks.dylib (96) <2EA73169-CF76-3DD1-9869-F23C8B338022> /usr/lib/system/libsystem_blocks.dylib
+       0x188d8e000 -        0x188de251f  libxpc.dylib (3102.100.102) <618039C8-9965-3782-A7D2-90FD4C3DD66F> /usr/lib/system/libxpc.dylib
+       0x188de3000 -        0x188e039bf  libsystem_trace.dylib (1861.100.19) <08629650-54FC-3AA6-910E-EACA563804D0> /usr/lib/system/libsystem_trace.dylib
+       0x188e04000 -        0x188eb1daf  libcorecrypto.dylib (1922.101.2) <D1EC203E-9B2E-391B-8DE3-7C58F0589437> /usr/lib/system/libcorecrypto.dylib
+       0x188eb2000 -        0x188f021d7  libsystem_malloc.dylib (812.100.31) <2AD21BE3-FFDB-31D5-A3D7-2F7F672D6E92> /usr/lib/system/libsystem_malloc.dylib
+       0x188f03000 -        0x188f4a23f  libdispatch.dylib (1542.100.32) <E17AA23F-DB2A-3302-B14C-F6B08C540FCF> /usr/lib/system/libdispatch.dylib
+       0x188f4b000 -        0x188f4dffb  libsystem_featureflags.dylib (103) <0DE01F76-4B36-35A2-98F9-43DD147EDD95> /usr/lib/system/libsystem_featureflags.dylib
+       0x188f4e000 -        0x188fceef7  libsystem_c.dylib (1752.100.10) <66EBD321-6899-3863-BA24-5CFC3076A0CB> /usr/lib/system/libsystem_c.dylib
+       0x188fcf000 -        0x18905fae7  libc++.1.dylib (2100.43) <1E9541EC-C564-38CB-BED6-46F708E8D863> /usr/lib/libc++.1.dylib
+       0x189060000 -        0x18907a75f  libc++abi.dylib (2100.43) <E8D325ED-3B97-325E-B494-B1B0FF93D133> /usr/lib/libc++abi.dylib
+       0x18907b000 -        0x1890b828f  libsystem_kernel.dylib (12377.101.15) <51565B39-F595-3E96-A217-FEF29815057A> /usr/lib/system/libsystem_kernel.dylib
+       0x1890b9000 -        0x1890c5b3b  libsystem_pthread.dylib (539.100.4) <E7A73008-0C09-31E3-9DD9-0C61652F0E85> /usr/lib/system/libsystem_pthread.dylib
+       0x1890c6000 -        0x1890ce8f3  libsystem_platform.dylib (375.100.10) <D93EC420-F465-3A3A-916D-A04AF9B023EB> /usr/lib/system/libsystem_platform.dylib
+       0x1890cf000 -        0x1890fe6eb  libsystem_info.dylib (600) <201FD67C-3DF6-3788-B132-A69CAA2AA3D7> /usr/lib/system/libsystem_info.dylib
+       0x18d094000 -        0x18d09de5f  libsystem_darwin.dylib (1752.100.10) <D5BA0CAB-F283-3620-AAA9-1EEB718E1BA8> /usr/lib/system/libsystem_darwin.dylib
+       0x18d4ff000 -        0x18d510f5b  libsystem_notify.dylib (348.100.7) <9F46F30B-B7C0-3DD7-AC38-57B78C7971FF> /usr/lib/system/libsystem_notify.dylib
+       0x18f7c9000 -        0x18f7e3f5b  libsystem_networkextension.dylib (2226.101.1) <85169C7B-48DD-3542-AD38-F1B88EA2A95A> /usr/lib/system/libsystem_networkextension.dylib
+       0x18f866000 -        0x18f87dfdf  libsystem_asl.dylib (406) <6427D987-7938-3278-8C14-10FB9C06BBD5> /usr/lib/system/libsystem_asl.dylib
+       0x191421000 -        0x191429387  libsystem_symptoms.dylib (2169.100.30) <28B6E34E-9C7D-3437-A3F1-A3C979DE579A> /usr/lib/system/libsystem_symptoms.dylib
+       0x1956bc000 -        0x1956f425f  libsystem_containermanager.dylib (725.100.37) <14750F95-BB3A-3654-8610-A05A454643A8> /usr/lib/system/libsystem_containermanager.dylib
+       0x196acc000 -        0x196ad05d7  libsystem_configuration.dylib (1405.100.8) <634F597D-F8BD-3C00-B967-86047FC15D14> /usr/lib/system/libsystem_configuration.dylib
+       0x196ad1000 -        0x196ad78cf  libsystem_sandbox.dylib (2680.100.174) <AF76231D-EADC-3399-9414-6AD90FB4EA89> /usr/lib/system/libsystem_sandbox.dylib
+       0x198117000 -        0x19811a1fb  libquarantine.dylib (196.100.8) <268FEB6E-A237-3050-BFFF-AE3A66B7EAD4> /usr/lib/system/libquarantine.dylib
+       0x1988b6000 -        0x1988bcd03  libsystem_coreservices.dylib (191.4.5) <7129349D-04F9-3C3C-BF37-3082C1468654> /usr/lib/system/libsystem_coreservices.dylib
+       0x198e3b000 -        0x198e78a77  libsystem_m.dylib (3312.100.1) <83B173CD-7F32-3901-8E67-C0B2676BE015> /usr/lib/system/libsystem_m.dylib
+       0x198e79000 -        0x198e79c9b  libcharset.1.dylib (115.100.1) <994633BA-AA7A-31BF-94C5-E31A08CA6243> /usr/lib/libcharset.1.dylib
+       0x198e7a000 -        0x198e7d527  libmacho.dylib (1376.6) <9729ECEA-0A08-32E3-8BDB-B42FC15FF258> /usr/lib/system/libmacho.dylib
+       0x198e97000 -        0x198ea43a7  libcommonCrypto.dylib (600035) <710EC5FA-F77C-3646-A9E3-C037C42E1539> /usr/lib/system/libcommonCrypto.dylib
+       0x198ea5000 -        0x198eaeca3  libunwind.dylib (2100.2) <FB0518B9-DF0F-3A03-A74B-AF1B21C26F8B> /usr/lib/system/libunwind.dylib
+       0x198eb7000 -        0x198ec17ff  libcopyfile.dylib (240) <0B7FF027-5579-3CBF-A12B-68A4FD36641C> /usr/lib/system/libcopyfile.dylib
+       0x198ec2000 -        0x198ec5987  libcompiler_rt.dylib (103.3) <65E29E6E-7042-3F73-A1D2-F2C4EBCD7524> /usr/lib/system/libcompiler_rt.dylib
+       0x198ec6000 -        0x198eca78b  libsystem_collections.dylib (1752.100.10) <B81193DE-3BEC-3340-86D0-DB7F3683D135> /usr/lib/system/libsystem_collections.dylib
+       0x198ecb000 -        0x198ece4cf  libsystem_secinit.dylib (168.100.7) <A6B77B36-195D-33F8-8058-FE0B5BFA9D37> /usr/lib/system/libsystem_secinit.dylib
+       0x198ecf000 -        0x198ed1bf7  libremovefile.dylib (85.100.6) <BD89B1A3-0D06-3881-B5E1-EFC6CFBDFCC1> /usr/lib/system/libremovefile.dylib
+       0x198ed2000 -        0x198ed2f27  libkeymgr.dylib (31) <DE8F8219-0072-35C2-8932-C065491ED15D> /usr/lib/system/libkeymgr.dylib
+       0x198ed3000 -        0x198edbe3f  libsystem_dnssd.dylib (2881.100.56.0.1) <DEC8BDD2-366C-3BF9-A123-35744DB06354> /usr/lib/system/libsystem_dnssd.dylib
+       0x198edc000 -        0x198ee109b  libcache.dylib (95) <4D6833A3-C910-3A76-AA8A-303F698B36BF> /usr/lib/system/libcache.dylib
+       0x198ee2000 -        0x198ee3ce3  libSystem.B.dylib (1356) <E05F5341-06B7-365E-8014-E9CD64C352FE> /usr/lib/libSystem.B.dylib
+       0x198f1c000 -        0x198f231cb  libiconv.2.dylib (115.100.1) <E384E5FE-DFF5-36ED-88C8-0EEF2FBF89CE> /usr/lib/libiconv.2.dylib
+       0x28b7c5000 -        0x28b7cc349  libRosetta.dylib (367.5) <2FC1EF06-04C4-35FC-8DC3-BEA1E9FBD63F> /usr/lib/libRosetta.dylib
+       0x28d4a2000 -        0x28d4a5a4b  libsystem_darwindirectory.dylib (122) <CCAA2170-32DD-34BD-A927-32DF30893969> /usr/lib/system/libsystem_darwindirectory.dylib
+       0x28d4a6000 -        0x28d4af5a7  libsystem_eligibility.dylib (319.101.1) <2D19994A-87BB-34B8-A343-CB8DD47FF110> /usr/lib/system/libsystem_eligibility.dylib
+       0x28d4b0000 -        0x28d4b78db  libsystem_sanitizers.dylib (26) <FCB93D2F-4437-3089-A43F-A19BC23DD65B> /usr/lib/system/libsystem_sanitizers.dylib
+       0x28d4b8000 -        0x28d4b8bb7  libsystem_trial.dylib (474.2.18) <5BB81430-4E33-3160-94D2-1FFB2B614DB2> /usr/lib/system/libsystem_trial.dylib

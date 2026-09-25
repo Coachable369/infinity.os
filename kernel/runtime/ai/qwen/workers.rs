@@ -1,11 +1,20 @@
 //! Bounded AP jobs. Only the BSP submits/polls; APs touch immutable weights and
-//! private activation/output buffers, never the engine, framebuffer or services.
+//! private activations and disjoint staging rows, never the engine, framebuffer or services.
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 // One mailbox per secondary CPU; BSP remains dedicated to input/services.
 const COUNT: usize = 64;
+#[cfg(test)]
 const ROWS: usize = 4096;
 const WIDTH: usize = 12288;
+const CACHE_FLOATS: usize = (WIDTH + WIDTH / 256 * 9 * 4) / 4;
+const MATRIX_ROWS: usize = 131072;
+const CHUNK_ROWS: usize = 128;
+static NEXT_ROW: AtomicUsize = AtomicUsize::new(0);
+static CANCELLED: AtomicBool = AtomicBool::new(false);
+// Exclusive row ranges are assigned by NEXT_ROW; BSP reads only after all APs
+// publish completion. No worker retains a pointer into engine-owned output.
+static mut MATRIX_OUTPUT: [f32; MATRIX_ROWS] = [0.0; MATRIX_ROWS];
 struct Job {
     data: *const u8,
     kind: u32,
@@ -14,7 +23,7 @@ struct Job {
     finished: u64,
     elapsed: u64,
     input: [f32; WIDTH],
-    output: [f32; ROWS],
+    cache: [f32; CACHE_FLOATS],
 }
 struct Slot {
     state: AtomicUsize,
@@ -38,7 +47,7 @@ impl Slot {
                 finished: 0,
                 elapsed: 0,
                 input: [0.0; WIDTH],
-                output: [0.0; ROWS],
+                cache: [0.0; CACHE_FLOATS],
             }),
         }
     }
@@ -210,23 +219,28 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
                 let job = &mut *slot.job.get();
                 let started = counter();
                 extern "C" {
-                    fn infinity_qwen_dot_rows(
+                    fn infinity_qwen_dot_rows_cached(
                         kind: u32,
                         data: *const u8,
                         input: *const f32,
                         width: usize,
                         rows: usize,
                         output: *mut f32,
+                        scratch: *mut f32,
+                        refresh: i32,
                     );
                 }
-                infinity_qwen_dot_rows(
-                    job.kind,
-                    job.data,
-                    job.input.as_ptr(),
-                    job.width,
-                    job.rows,
-                    job.output.as_mut_ptr(),
-                );
+                let stride = job.width / 256 * if job.kind == 12 { 144 } else { 210 };
+                let mut refresh = 1;
+                while !CANCELLED.load(Ordering::Acquire) {
+                    let at = NEXT_ROW.fetch_add(CHUNK_ROWS, Ordering::Relaxed);
+                    if at >= job.rows { break; }
+                    infinity_qwen_dot_rows_cached(job.kind, job.data.add(at * stride),
+                        job.input.as_ptr(), job.width, CHUNK_ROWS.min(job.rows - at),
+                        (&raw mut MATRIX_OUTPUT).cast::<f32>().add(at),
+                        job.cache.as_mut_ptr(), refresh);
+                    refresh = 0;
+                }
                 job.finished = counter();
                 job.elapsed = job.finished.saturating_sub(started);
                 COMPLETED.fetch_add(1, Ordering::Relaxed);
@@ -253,6 +267,7 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
 // DESC: Invalidates pending results without reclaiming buffers still owned by workers.
 // ------------------=
 pub fn discard() {
+    CANCELLED.store(true, Ordering::Release);
     unsafe {
         PENDING.2 = true;
     }
@@ -260,7 +275,7 @@ pub fn discard() {
 
 // ------------------------=
 // FUNC: rows
-// DESC: Enqueues or collects bounded row batches; None selects the single-core fallback.
+// DESC: Publishes one matrix queue to all APs and collects disjoint staging rows; unsupported shapes fall back.
 // ------------------=
 /// Safety: BSP-only, one engine; weights must remain alive until collection or
 /// drain. While pending, callers must keep the same destination geometry unless
@@ -275,12 +290,10 @@ pub unsafe fn rows(
     unsafe {
         let (mask, start, discarded) = PENDING;
         if mask != 0 {
-            if (0..COUNT)
-                .any(|i| mask & (1 << i) != 0 && SLOTS[i].state.load(Ordering::Acquire) != 2)
-            {
+            if (0..COUNT).any(|i| mask & (1 << i) != 0
+                && SLOTS[i].state.load(Ordering::Acquire) != 2) {
                 return Some(false);
             }
-            let mut at = start;
             for (i, slot) in SLOTS.iter().enumerate() {
                 if mask & (1 << i) == 0 {
                     continue;
@@ -293,16 +306,15 @@ pub unsafe fn rows(
                     Q6_TICKS.fetch_add(job.elapsed, Ordering::Relaxed);
                 }
                 IDLE_TICKS.fetch_add(counter().saturating_sub(job.finished), Ordering::Relaxed);
-                if !discarded {
-                    output[at..at + job.rows].copy_from_slice(&job.output[..job.rows]);
-                }
-                at += job.rows;
                 slot.state.store(0, Ordering::Relaxed);
             }
             PENDING = (0, 0, false);
             if !discarded {
-                *cursor = if at == output.len() { 0 } else { at };
-                return Some(at == output.len());
+                core::ptr::copy_nonoverlapping(
+                    (&raw const MATRIX_OUTPUT).cast::<f32>().add(start),
+                    output.as_mut_ptr().add(start), output.len() - start);
+                *cursor = 0;
+                return Some(true);
             }
         }
         let ready = READY.load(Ordering::Acquire);
@@ -312,6 +324,7 @@ pub unsafe fn rows(
             || input.len() > WIDTH
             || input.len() % 256 != 0
             || *cursor >= output.len()
+            || output.len() > MATRIX_ROWS
         {
             return None;
         }
@@ -319,24 +332,19 @@ pub unsafe fn rows(
         if data.len() < output.len().checked_mul(stride)? {
             return None;
         }
-        let mut at = *cursor;
+        NEXT_ROW.store(*cursor, Ordering::Relaxed);
+        CANCELLED.store(false, Ordering::Release);
         let mut mask = 0;
-        // Balance even small GQA projections across available cores, while
-        // amortizing firmware/input-loop round trips for large matrices.
-        let batch = (output.len() - at)
-            .div_ceil(ready.count_ones() as usize)
-            .min(ROWS);
         for (i, slot) in SLOTS.iter().enumerate() {
-            if ready & (1 << i) == 0 || at == output.len() {
+            if ready & (1 << i) == 0 {
                 continue;
             }
             let job = &mut *slot.job.get();
-            job.rows = batch.min(output.len() - at);
+            job.rows = output.len();
             job.width = input.len();
             job.kind = kind;
-            job.data = data.as_ptr().add(at * stride);
+            job.data = data.as_ptr();
             job.input[..input.len()].copy_from_slice(input);
-            at += job.rows;
             mask |= 1 << i;
             slot.state.store(1, Ordering::Release);
         }
@@ -460,6 +468,35 @@ mod tests {
             }
             assert!(outputs_match(kind, &expected, &actual));
             drain();
+            // A partial matrix must preserve rows before the starting cursor.
+            let prefix = 17;
+            cursor = prefix;
+            actual.fill(f32::NAN);
+            let deadline = std::time::Instant::now();
+            while unsafe { rows(kind, &data, &input, &mut actual, &mut cursor) } != Some(true) {
+                assert!(deadline.elapsed().as_secs() < 5);
+                std::thread::yield_now();
+            }
+            assert!(actual[..prefix].iter().all(|value| value.is_nan()));
+            assert!(outputs_match(kind, &expected[prefix..], &actual[prefix..]));
+            let mut oversized = vec![0.0; MATRIX_ROWS + 1];
+            assert_eq!(unsafe { rows(kind, &[], &input, &mut oversized, &mut cursor) }, None);
+            // Exercise the compact per-worker cache with the largest activation.
+            let wide_input = vec![0.125f32; WIDTH];
+            let wide_rows = CHUNK_ROWS * 7 + 3;
+            let wide_data = data[..stride].repeat(wide_rows * WIDTH / 256);
+            let mut wide_expected = vec![0.0; wide_rows];
+            for (row, out) in wide_expected.iter_mut().enumerate() {
+                unsafe { infinity_qwen_dot(kind, wide_data.as_ptr().add(row * WIDTH / 256 * stride),
+                    wide_input.as_ptr(), WIDTH, out); }
+            }
+            let mut wide_actual = vec![f32::NAN; wide_rows];
+            let deadline = std::time::Instant::now();
+            while unsafe { rows(kind, &wide_data, &wide_input, &mut wide_actual, &mut cursor) } != Some(true) {
+                assert!(deadline.elapsed().as_secs() < 5);
+                std::thread::yield_now();
+            }
+            assert!(outputs_match(kind, &wide_expected, &wide_actual));
         }
         assert!(completed() >= 10);
         for slot in &SLOTS[..6] {

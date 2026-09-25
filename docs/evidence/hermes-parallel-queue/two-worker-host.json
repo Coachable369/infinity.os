@@ -1,0 +1,88 @@
+{
+  "boundary": "controlled native ARM64 host; not installed guest timing",
+  "workers": {
+    "baseline": 2,
+    "candidate": 2
+  },
+  "scheduler_experiment": {
+    "baseline": null,
+    "candidate": null,
+    "injected_event_delay_us": 0
+  },
+  "trials": 3,
+  "samples": {
+    "baseline": [
+      {
+        "tokens": 9,
+        "first_ns": 1617281792,
+        "last_ns": 3094843542,
+        "total_ns": 3238692000,
+        "decode_ns": 1477561750,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 1315815917,
+        "last_ns": 2597571917,
+        "total_ns": 2781091250,
+        "decode_ns": 1281756000,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 1573787417,
+        "last_ns": 2654596292,
+        "total_ns": 2801191792,
+        "decode_ns": 1080808875,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      }
+    ],
+    "candidate": [
+      {
+        "tokens": 9,
+        "first_ns": 896578542,
+        "last_ns": 1710155750,
+        "total_ns": 1828779208,
+        "decode_ns": 813577208,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 884122250,
+        "last_ns": 2029887833,
+        "total_ns": 2107656708,
+        "decode_ns": 1145765583,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 859065209,
+        "last_ns": 1898878459,
+        "total_ns": 2084142250,
+        "decode_ns": 1039813250,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      }
+    ]
+  },
+  "medians": {
+    "baseline": {
+      "first_ns": 1573787417,
+      "last_ns": 2654596292,
+      "decode_ns": 1281756000,
+      "total_ns": 2801191792
+    },
+    "candidate": {
+      "first_ns": 884122250,
+      "last_ns": 1898878459,
+      "decode_ns": 1039813250,
+      "total_ns": 2084142250
+    }
+  },
+  "identical_generated_bytes": true,
+  "speedups": {
+    "first_ns": 1.78005634062484,
+    "last_ns": 1.3979811500931878,
+    "decode_ns": 1.2326790411643629,
+    "total_ns": 1.3440501923513137
+  }
+}

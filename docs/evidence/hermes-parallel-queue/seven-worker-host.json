@@ -1,0 +1,120 @@
+{
+  "boundary": "controlled native ARM64 host; not installed guest timing",
+  "workers": {
+    "baseline": 7,
+    "candidate": 7
+  },
+  "scheduler_experiment": {
+    "baseline": null,
+    "candidate": null,
+    "injected_event_delay_us": 0
+  },
+  "trials": 5,
+  "samples": {
+    "baseline": [
+      {
+        "tokens": 9,
+        "first_ns": 3407670000,
+        "last_ns": 7229110375,
+        "total_ns": 7649665708,
+        "decode_ns": 3821440375,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 3889961917,
+        "last_ns": 7123925000,
+        "total_ns": 7422192875,
+        "decode_ns": 3233963083,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 3154039458,
+        "last_ns": 6112789292,
+        "total_ns": 6744131792,
+        "decode_ns": 2958749834,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 3461426666,
+        "last_ns": 7085774250,
+        "total_ns": 7549263458,
+        "decode_ns": 3624347584,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 3489085750,
+        "last_ns": 6652565042,
+        "total_ns": 7029559250,
+        "decode_ns": 3163479292,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      }
+    ],
+    "candidate": [
+      {
+        "tokens": 9,
+        "first_ns": 2669650500,
+        "last_ns": 4653588083,
+        "total_ns": 4952998208,
+        "decode_ns": 1983937583,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 2307466333,
+        "last_ns": 4906165583,
+        "total_ns": 5229591667,
+        "decode_ns": 2598699250,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 2598374959,
+        "last_ns": 4472924000,
+        "total_ns": 4886022417,
+        "decode_ns": 1874549041,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 2310189750,
+        "last_ns": 4679086083,
+        "total_ns": 5013970625,
+        "decode_ns": 2368896333,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      },
+      {
+        "tokens": 9,
+        "first_ns": 1967835916,
+        "last_ns": 4197312500,
+        "total_ns": 4528567791,
+        "decode_ns": 2229476584,
+        "sha256": "cd153d3c18e782c4f4b3ceec574adccc8e68bc557110b0bc263b01e09bfcc8ef"
+      }
+    ]
+  },
+  "medians": {
+    "baseline": {
+      "first_ns": 3461426666,
+      "last_ns": 7085774250,
+      "decode_ns": 3233963083,
+      "total_ns": 7422192875
+    },
+    "candidate": {
+      "first_ns": 2310189750,
+      "last_ns": 4653588083,
+      "decode_ns": 2229476584,
+      "total_ns": 4952998208
+    }
+  },
+  "identical_generated_bytes": true,
+  "speedups": {
+    "first_ns": 1.498330025055301,
+    "last_ns": 1.5226474977200941,
+    "decode_ns": 1.4505481269499623,
+    "total_ns": 1.4985252494159593
+  }
+}
