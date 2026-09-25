@@ -599,7 +599,7 @@ impl super::DisplayDevice {
             let top_height = sw(64).max(38);
             self.fill_rect_alpha(0, 0, self.width, top_height, 1, 6, 13, 238);
             self.outline_rect(0, top_height.saturating_sub(1), self.width, 1, 15, 31, 48);
-            self.small_infinity_mark(sx(57), top_height / 2, sw(48));
+            self.top_bar_infinity_icon(sx(57), top_height / 2, sw(64));
             self.ui_text(
                 sx(92),
                 top_height / 2 - UI_FONT_CELL_HEIGHT / 2,
@@ -626,7 +626,7 @@ impl super::DisplayDevice {
         let card_w = sw(521);
         let card_h = sw(754);
         self.glass_panel(card_x, card_y, card_w, card_h, true);
-        self.small_infinity_mark(card_x + card_w / 2, card_y + sw(91), sw(122));
+        self.top_bar_infinity_icon(card_x + card_w / 2, card_y + sw(91), sw(156));
         self.ui_text_centered(
             card_x,
             card_w,

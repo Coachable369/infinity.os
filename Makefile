@@ -406,11 +406,15 @@ object-vm-test:
 
 .PHONY: installer-entropy-test
 .PHONY: editor-window-test
-.PHONY: editor-assistant-test
+.PHONY: editor-assistant-test authentication-logo-test
 editor-assistant-test:
 	@mkdir -p build/behavior-tests
 	rustc --edition=2021 tools/editor-assistant-test.rs -o build/behavior-tests/editor-assistant-test
 	build/behavior-tests/editor-assistant-test
+
+authentication-logo-test: x86_64
+	@work=$$(mktemp -d /tmp/infinity-auth-logo.XXXXXX); rmdir "$$work"; \
+		python3 tools/authentication-logo-installed-test.py "$$work"
 
 editor-window-test:
 	@mkdir -p build/behavior-tests
