@@ -87,10 +87,22 @@ a single-worker synchronization contract. `mapping.cpp` borrows resource bytes;
 PCM and structured return values for repeat synthesis, cancellation and input
 bounds. The native guest uses 2 GiB RAM for this initial bounded prototype; its
 private heap is capped at 1 GiB and measured committed allocation reaches about
-539 MiB. Synthesis currently takes roughly 15 seconds for 1.25 seconds of audio,
-incompatible with the production two-second deadline. x86-64 is not implemented
+539 MiB. The original prototype took roughly 15 seconds for 1.25 seconds of
+audio. September 26 measurements isolated matrix multiplication as the dominant
+cost: checked alignment specialization reduced a same-session 12.3-second warm
+run to 4.3 seconds, and four-row activation reuse reduced it further to about
+3.3 seconds, preserving the full PCM hash. This still exceeds the production
+two-second deadline. These are `Hi.` probe measurements, not full-response or
+installed-desktop latency claims. x86-64 is not implemented
 by these scripts. QEMU HVF requires an ARM64 Mac for this test harness, not for
 the native synthesis implementation.
+
+The matrix changes preserve upstream FP32 accumulation and reduction order.
+They use wider reads only after checking alignment and retain upstream handling
+for unsupported types, lengths, and boundary rows. The guest additionally checks
+8,448 aligned/fallback dot cases and 165 four-row tile/rejection cases against
+the single-row implementation. A separate experiment with the upstream tinyBLAS
+backend provided no measurable speedup and was removed.
 
 Next implementation gates remain:
 

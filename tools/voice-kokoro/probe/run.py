@@ -71,10 +71,18 @@ def main():
     offset += notice_length
     profile = struct.unpack_from("<256Q", data, offset)
     offset += 256 * 8
+    dot_cases, = struct.unpack_from("<Q", data, offset)
+    offset += 8
+    assert dot_cases == 66 * 8 * 8 * 2
+    tile_cases, = struct.unpack_from("<Q", data, offset)
+    offset += 8
+    assert tile_cases == 5 * 3 * 11
     operations = [dict(operation=i, seconds=profile[i*2]/frequency, calls=profile[i*2+1])
                   for i in range(128) if profile[i*2+1]]
     assert offset==len(data)
     evidence=dict(environment="freestanding ARM64 guest",installed_verified=False,cases=rows,
+                  dot_alignment_cases=dot_cases,
+                  dot_tile_cases=tile_cases,
                   operation_profile=sorted(operations, key=lambda row: row["seconds"], reverse=True),
                   dependency_notices_sha256=hashlib.sha256(notice).hexdigest())
     (output / "probe-evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")

@@ -80,6 +80,39 @@ def main():
         replacement = ROOT / "tools/voice-kokoro/overrides" / source.name
         if replacement.exists():
             source = replacement
+        if source.name == "ggml-cpu.c":
+            original = source.read_text()
+            anchor = "                    vec_dot(ne00, &tmp[ir0 - iir0], (num_rows_per_vec_dot > 1 ? 16 : 0),"
+            if original.count(anchor) != 1:
+                raise RuntimeError("Unreviewed matrix tile boundary")
+            original = original.replace(anchor,
+                "                    if (num_rows_per_vec_dot == 1 && ir0 + 4 <= MIN(iir0 + blck_0, ir0_end) &&\n"
+                "                        native_dot4(type, ne00, &tmp[ir0 - iir0], src0_row + ir0 * nb01, nb01, src1_col)) {\n"
+                "                        ir0 += 3; continue;\n                    }\n" + anchor)
+            source = output / "ggml-cpu.c"
+            source.write_text('#include <stddef.h>\nextern int native_dot4(int, int, float *, const void *, size_t, const void *);\n' + original)
+        if source.name == "vec.cpp":
+            original = source.read_text()
+            for kind, alignment in (("f16", 8), ("f32", 16)):
+                name = "ggml_vec_dot_" + kind
+                start = original.index("void " + name + "(")
+                body = original.index("{", start)
+                end = original.index("\n}\n", body) + 3
+                signature = original[start:body]
+                implementation = signature.replace("void " + name, "static inline __attribute__((always_inline)) void native_" + name)
+                implementation = ("// ------------------------=\n// FUNC: native_" + name +
+                    "\n// DESC: Specializes the upstream dot product for checked row alignment without changing arithmetic.\n// ------------------=\n"
+                    "template<bool Aligned>\n" + implementation + "{\n"
+                    f"    if constexpr (Aligned) {{ x = (__typeof__(x))__builtin_assume_aligned(x, {alignment}); "
+                    f"y = (__typeof__(y))__builtin_assume_aligned(y, {alignment}); }}\n" + original[body+1:end])
+                wrapper = ("\n// ------------------------=\n// FUNC: " + name +
+                    "\n// DESC: Uses aligned vector loads only when both pointers satisfy the contract, retaining the general fallback.\n// ------------------=\n" +
+                    signature + "{\n" + f"    if ((((uintptr_t)x | (uintptr_t)y) & {alignment-1}) == 0) " +
+                    f"native_{name}<true>(n, s, bs, x, bx, y, by, nrc);\n" +
+                    f"    else native_{name}<false>(n, s, bs, x, bx, y, by, nrc);\n}}\n")
+                original = original[:start] + implementation + wrapper + original[end:]
+            source = output / "aligned-vec.cpp"
+            source.write_text(original)
         if source.name == "ggml-cpu.c" and os.environ.get("INFINITY_KOKORO_PROFILE") == "1":
             original = source.read_text()
             begin = "        const int n_fused = ggml_cpu_try_fuse_ops(cgraph, node_n, &params, cplan);"

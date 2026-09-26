@@ -1,4 +1,5 @@
 #![no_std]
+mod dot;
 static mut PCM: [i16; 720000] = [0; 720000];
 static mut CANCEL_CALLS: usize = 0;
 #[repr(C, align(4096))]
@@ -189,5 +190,7 @@ pub unsafe extern "C" fn probe() -> ! {
     let mut profile = [0u64; 256];
     native_profile_read(profile.as_mut_ptr());
     for value in profile { bytes(&value.to_le_bytes()); }
+    bytes(&dot::verify().to_le_bytes());
+    bytes(&dot::verify_tiles().to_le_bytes());
     finish()
 }
