@@ -69,8 +69,13 @@ def main():
     notice = data[offset:offset + notice_length]
     assert notice == (output / "THIRD-PARTY-NOTICES.txt").read_bytes()
     offset += notice_length
+    profile = struct.unpack_from("<256Q", data, offset)
+    offset += 256 * 8
+    operations = [dict(operation=i, seconds=profile[i*2]/frequency, calls=profile[i*2+1])
+                  for i in range(128) if profile[i*2+1]]
     assert offset==len(data)
     evidence=dict(environment="freestanding ARM64 guest",installed_verified=False,cases=rows,
+                  operation_profile=sorted(operations, key=lambda row: row["seconds"], reverse=True),
                   dependency_notices_sha256=hashlib.sha256(notice).hexdigest())
     (output / "probe-evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
     print(json.dumps(evidence,indent=2))

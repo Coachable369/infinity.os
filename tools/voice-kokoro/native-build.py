@@ -3,6 +3,7 @@
 from pathlib import Path
 import hashlib
 import json
+import os
 import shlex
 import subprocess
 
@@ -79,6 +80,17 @@ def main():
         replacement = ROOT / "tools/voice-kokoro/overrides" / source.name
         if replacement.exists():
             source = replacement
+        if source.name == "ggml-cpu.c" and os.environ.get("INFINITY_KOKORO_PROFILE") == "1":
+            original = source.read_text()
+            begin = "        const int n_fused = ggml_cpu_try_fuse_ops(cgraph, node_n, &params, cplan);"
+            end = "        if (state->ith == 0 && cplan->abort_callback &&"
+            if original.count(begin) != 1 or original.count(end) != 1:
+                raise RuntimeError("Unreviewed GGML profiling boundary")
+            original = original.replace(begin, "        const uint64_t native_start = native_profile_clock();\n" + begin)
+            original = original.replace(end, "        if (state->ith == 0) native_profile_record(node->op, native_start);\n\n" + end)
+            source = output / "profiled-ggml-cpu.c"
+            source.write_text('#include <stdint.h>\nextern uint64_t native_profile_clock(void);\n'
+                              'extern void native_profile_record(unsigned, uint64_t);\n' + original)
         if source.name == "cpu.cpp" and "CMakeFiles/kokopop.dir/" in row["command"]:
             original = source.read_text()
             anchor = "            ggml_backend_cpu_set_n_threads(backend_, std::max<int32_t>(1, n_threads));"

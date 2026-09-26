@@ -73,6 +73,14 @@ Rebuild and native-probe verification through the repository build lock:
 The lock spans dependency preparation through guest verification. Stage logs
 are written under `build/logs/kokoro-*.log`. Do not bypass a live build lock.
 
+For operation-level native timing, use
+`INFINITY_KOKORO_PROFILE=1 ./build-kit run python3 tools/voice-kokoro/build.py`.
+The guest evidence includes numeric GGML operation IDs, call counts, and elapsed
+seconds accumulated across the probe cases. This instrumentation is opt-in and
+does not record text or tensor contents. Rebuild without that environment
+variable before measuring release latency. The source-signature cache and fresh
+archive construction keep instrumented objects out of the normal engine.
+
 `port.c` exposes only immutable packaged resources, a bounded private heap, and
 a single-worker synchronization contract. `mapping.cpp` borrows resource bytes;
 `registry.cpp` refuses dynamic backend loading. The guest probe checks actual

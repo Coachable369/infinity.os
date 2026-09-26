@@ -5,6 +5,8 @@ static mut CANCEL_CALLS: usize = 0;
 struct TranslationTable([u64; 512]);
 static mut TRANSLATIONS: TranslationTable = TranslationTable([0; 512]);
 unsafe extern "C" {
+    #[link_name = "infinity_kokoro_native_profile_read"]
+    fn native_profile_read(out: *mut u64);
     #[link_name = "infinity_kokoro_native_resource"]
     fn native_resource(name: *const u8, length: *mut usize) -> *const u8;
     #[link_name = "infinity_kokoro_native_diagnostics"]
@@ -184,5 +186,8 @@ pub unsafe extern "C" fn probe() -> ! {
     assert!(!notice.is_null() && notice_length > 0 && notice_length <= 1_048_576);
     bytes(&(notice_length as u64).to_le_bytes());
     bytes(core::slice::from_raw_parts(notice, notice_length));
+    let mut profile = [0u64; 256];
+    native_profile_read(profile.as_mut_ptr());
+    for value in profile { bytes(&value.to_le_bytes()); }
     finish()
 }

@@ -61,7 +61,7 @@ def main():
              "-isystem", str(newlib / "targ-include"),
              "-isystem", str(ROOT / "build/newlib-4.6.0.20260123/newlib/libc/include")]
     objects = []
-    paths = [ROOT / "tools/voice-kokoro" / name for name in ("entry.cpp", "mapping.cpp", "registry.cpp", "port.c", "memory.c")]
+    paths = [ROOT / "tools/voice-kokoro" / name for name in ("entry.cpp", "mapping.cpp", "registry.cpp", "port.c", "memory.c", "profile.c")]
     paths += [ROOT / "sdk/compiler" / name for name in ("pthread.c", "serial_sync.c", "serial_tls.c")]
     paths += [output / "resources.S", output / "resources.c"]
     for path in paths:
@@ -79,6 +79,7 @@ def main():
         objects.append(obj)
     native = output / "native.o"
     run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_synthesize", "--undefined=native_diagnostics",
+        "--undefined=native_profile_read",
         "-T", ROOT / "tools/voice-kokoro/private.ld",
         "--wrap=_malloc_r", "--wrap=_calloc_r", "--wrap=_realloc_r", "--wrap=_free_r",
         "-o", native, *objects, "--start-group", output / "libkokoro-engine.a",
