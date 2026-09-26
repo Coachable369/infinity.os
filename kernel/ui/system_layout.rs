@@ -2596,8 +2596,9 @@ impl SystemLayout {
                     ),
                     UI_COMPACT_ACTION_HEIGHT * self.scale,
                 );
-                let has_action = matches!((section, index),
-                    (0, 0) | (1, 0) | (3, 0..=2) | (8, 0..=7));
+                let has_action = section == usize::MAX
+                    || matches!((section, index),
+                        (0, 0) | (1, 0) | (3, 0..=2) | (8, 0..=7));
                 if has_action && action.contains(point) {
                     return Some(SettingsTarget::ExpandedAction);
                 }

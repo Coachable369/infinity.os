@@ -1483,7 +1483,19 @@ fn installed_system_hit_geometry_test() {
         (network_scroll * compact.scale()) as i32
     );
     assert!(network_at_bottom.sidebar.bottom() <= network_at_top.sidebar.bottom());
-    let picker = square.settings_primary_geometry(expanded);
+    let reveal_color = |mut state: SettingsWindowState, row: usize| {
+        let window = square.settings_window_geometry_for_section(state, 1);
+        let detail = square.settings_row_geometry_for_section(state, row, 1).detail;
+        state.scroll_offset = (detail
+            .bottom()
+            .saturating_sub(window.viewport.bottom())
+            .max(0) as usize)
+            .div_ceil(square.scale())
+            .min(window.maximum_scroll);
+        state
+    };
+    let primary_expanded = reveal_color(expanded, 2);
+    let picker = square.settings_primary_geometry(primary_expanded);
     let picker_point = |rect: Rect| {
         (
             (rect.x + rect.width as i32 / 2) * 1000 / 1600,
@@ -1492,19 +1504,19 @@ fn installed_system_hit_geometry_test() {
     };
     let (spectrum_x, spectrum_y) = picker_point(picker.spectrum);
     assert!(matches!(
-        square.settings_primary_target(spectrum_x, spectrum_y, expanded),
+        square.settings_primary_target(spectrum_x, spectrum_y, primary_expanded),
         Some(SettingsAccentTarget::Spectrum { saturation, value })
             if (120..=135).contains(&saturation) && (120..=135).contains(&value)
     ));
     let (hue_x, hue_y) = picker_point(picker.hue);
     assert!(matches!(
-        square.settings_primary_target(hue_x, hue_y, expanded),
+        square.settings_primary_target(hue_x, hue_y, primary_expanded),
         Some(SettingsAccentTarget::Hue(hue)) if (165..=185).contains(&hue)
     ));
-    let accent_expanded = SettingsWindowState {
+    let accent_expanded = reveal_color(SettingsWindowState {
         expanded_row: Some(3),
         ..expanded
-    };
+    }, 3);
     let accent_picker = square.settings_accent_geometry(accent_expanded);
     let (accent_x, accent_y) = picker_point(accent_picker.spectrum);
     assert!(matches!(

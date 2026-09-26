@@ -18,6 +18,21 @@ paths, and run manifests. Adding a new build entrypoint requires adding a named
 profile to `build-kit.toml` or invoking it through `build-kit run`. No build may
 write project data outside `/opt/codebase/infinity.os`.
 
+## Deprecation removal
+
+A file marked or declared deprecated must be removed in the same change that
+migrates its consumers. Do not retain deprecated source, assets, templates,
+scripts, generated payloads, compatibility copies, or renamed backups in the
+repository or build packages.
+
+- Verify that runtime, build, installer, fresh-install parity, and test consumers
+  have migrated before deletion.
+- Delete the deprecated file and remove its packaging, manifest, dependency, and
+  test references.
+- If compatibility requires retention, the file is not yet deprecated; document
+  the active compatibility contract and its removal gate instead.
+- Deprecation warnings must not be silenced to preserve dead files.
+
 ## Correction-loop limit
 
 Stop and report remaining acceptance failures after six unsuccessful correction
