@@ -21,6 +21,7 @@ use runtime::network::NetworkRuntime;
 use runtime::service::*;
 use ui::system_layout::{
     NetworkSettingsTarget, OnboardingTarget, SettingsWindowState, SystemLayout,
+    SETTINGS_NETWORK_SECTION,
 };
 
 // ------------------------=
@@ -283,7 +284,7 @@ fn firmware_network_discovery_behavior() {
 
 // ------------------------=
 // FUNC: settings_dashboard_behavior
-// DESC: Verifies that every responsive Network settings page and control remains bounded, non-overlapping, and directly interactive.
+// DESC: Verifies that every responsive Network page remains bounded and every control is interactive after scrolling into view.
 // ------------------=
 fn settings_dashboard_behavior() {
     for (width, height) in [(1280usize, 800usize), (1920, 1080), (2560, 1440)] {
@@ -299,33 +300,61 @@ fn settings_dashboard_behavior() {
             control_focus: 0,
             row_count: 8,
         };
-        let window = layout.settings_window_geometry(state);
+        let window = layout.settings_window_geometry_for_section(state, SETTINGS_NETWORK_SECTION);
         let dashboard = layout.network_settings_geometry(state);
         for panel in [dashboard.summary, dashboard.main, dashboard.sidebar] {
-            assert!(window.content.contains(ui::geometry::Point { x: panel.x, y: panel.y }));
+            assert!(panel.x >= window.content.x);
             assert!(panel.right() <= window.content.right());
-            assert!(panel.bottom() <= window.content.bottom());
         }
         assert!(dashboard.summary.bottom() <= dashboard.main.y);
-        assert!(dashboard.main.right() <= dashboard.sidebar.x);
+        if dashboard.sidebar.y >= dashboard.main.bottom() {
+            assert_eq!(dashboard.sidebar.x, dashboard.main.x);
+            assert_eq!(dashboard.sidebar.width, dashboard.main.width);
+        } else {
+            assert!(dashboard.main.right() <= dashboard.sidebar.x);
+        }
         for (index, card) in dashboard.tabs.iter().enumerate() {
             assert!(card.width > 0 && card.height > 0);
             let normalized_x = (card.x + card.width as i32 / 2) * 1000 / width as i32;
             let normalized_y = (card.y + card.height as i32 / 2) * 1000 / height as i32;
+            assert!(window.viewport.contains(ui::geometry::Point {
+                x: card.x + card.width as i32 / 2,
+                y: card.y + card.height as i32 / 2,
+            }));
             assert_eq!(
                 layout.network_settings_target(normalized_x, normalized_y, state),
                 Some(NetworkSettingsTarget::Page(index))
             );
         }
+        let bottom_state = SettingsWindowState {
+            scroll_offset: window.maximum_scroll,
+            ..state
+        };
+        let bottom = layout.network_settings_geometry(bottom_state);
+        assert!(bottom.sidebar.bottom() <= window.viewport.bottom());
         for (index, card) in dashboard.controls.iter().enumerate() {
             assert!(card.width > 0 && card.height > 0);
             assert!(dashboard.main.contains(ui::geometry::Point { x: card.x, y: card.y }));
             assert!(card.right() <= dashboard.main.right());
             assert!(card.bottom() <= dashboard.main.bottom());
-            let normalized_x = (card.x + card.width as i32 / 2) * 1000 / width as i32;
-            let normalized_y = (card.y + card.height as i32 / 2) * 1000 / height as i32;
+            let center_y = card.y + card.height as i32 / 2;
+            let reveal = center_y
+                .saturating_sub(window.viewport.y + window.viewport.height as i32 / 2)
+                .max(0) as usize;
+            let visible_state = SettingsWindowState {
+                scroll_offset: reveal.div_ceil(layout.scale()).min(window.maximum_scroll),
+                ..state
+            };
+            let visible = layout.network_settings_geometry(visible_state).controls[index];
+            let point = ui::geometry::Point {
+                x: visible.x + visible.width as i32 / 2,
+                y: visible.y + visible.height as i32 / 2,
+            };
+            assert!(window.viewport.contains(point));
+            let normalized_x = point.x * 1000 / width as i32;
+            let normalized_y = point.y * 1000 / height as i32;
             assert_eq!(
-                layout.network_settings_target(normalized_x, normalized_y, state),
+                layout.network_settings_target(normalized_x, normalized_y, visible_state),
                 Some(NetworkSettingsTarget::Control(index))
             );
         }
