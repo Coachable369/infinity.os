@@ -16,15 +16,24 @@ root_crash_globs = ["rustc-ice-*.txt"]
 
 [profiles.full]
 command = ["sh", "build.sh"]
+clean = true
+
+[profiles.incremental]
+command = ["sh", "build.sh"]
+clean = false
 
 [profiles.x86_64]
 command = ["make", "x86_64"]
+clean = false
 
 [profiles.aarch64]
 command = ["make", "aarch64-bootstrap"]
+clean = false
 
 [profiles.tests]
 command = ["make", "test"]
+clean = false
 
 [profiles.studio]
 command = ["sh", "tools/installer-designer/build.sh"]
+clean = false

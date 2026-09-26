@@ -7,7 +7,7 @@ temporary_dir="$project_root/build/tmp"
 
 cd "$project_root"
 if [ "${INFINITY_BUILD_KIT_ACTIVE:-0}" != "1" ]; then
-    exec "$project_root/build-kit" full "$@"
+    exec "$project_root/build-kit" incremental "$@"
 fi
 test "${INFINITY_PROJECT_ROOT:-}" = "$project_root"
 test "${TMPDIR:-}" = "$temporary_dir"

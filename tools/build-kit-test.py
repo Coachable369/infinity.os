@@ -37,7 +37,8 @@ class BuildKitTests(unittest.TestCase):
             "logs = \"build/logs\"\n"
             "[log_retention]\nremove_empty_release_logs = true\n"
             "root_crash_globs = [\"rustc-ice-*.txt\"]\n"
-            "[profiles.probe]\ncommand = [\"true\"]\n")
+            "[profiles.clean_probe]\ncommand = [\"true\"]\nclean = true\n"
+            "[profiles.incremental_probe]\ncommand = [\"true\"]\nclean = false\n")
 
     # ------------------------=
     # FUNC: tearDown
@@ -74,8 +75,10 @@ class BuildKitTests(unittest.TestCase):
             "'cargo':os.environ['CARGO_TARGET_DIR'],"
             "'active':os.environ['INFINITY_BUILD_KIT_ACTIVE']}))")
 
-        result = build_kit.execute(
-            "run", [sys.executable, "-c", probe], self.root, self.config)
+        self.config.write_text(self.config.read_text().replace(
+            "command = [\"true\"]\nclean = true",
+            f"command = [{json.dumps(sys.executable)}, \"-c\", {json.dumps(probe)}]\nclean = true"))
+        result = build_kit.execute("clean_probe", [], self.root, self.config)
 
         state = json.loads(observed.read_text())
         manifests = tuple((self.root / "builds/manifests").glob("*.json"))
@@ -91,9 +94,42 @@ class BuildKitTests(unittest.TestCase):
         self.assertEqual(state["cargo"], str(self.root / "build/cargo"))
         self.assertEqual(state["active"], "1")
         self.assertEqual(len(manifests), 1)
-        self.assertEqual(json.loads(manifests[0].read_text())["result"], "passed")
-        self.assertEqual(json.loads(manifests[0].read_text())["pruned_logs"], 2)
+        record = json.loads(manifests[0].read_text())
+        self.assertEqual(record["result"], "passed")
+        self.assertTrue(record["cleaned"])
+        self.assertEqual(record["pruned_logs"], 2)
         self.assertFalse((self.root / "builds/.build-kit.lock").exists())
+
+    # ------------------------=
+    # FUNC: test_incremental_run_preserves_cache_and_observes_changed_input
+    # DESC: Verifies incremental builds retain prior products while processing newly changed inputs.
+    # ------------------=
+    def test_incremental_run_preserves_cache_and_observes_changed_input(self):
+        source = self.root / "source.txt"
+        result_path = self.root / "build/result.txt"
+        cache = self.root / "build/compiler-cache.bin"
+        source.write_text("first")
+        cache.parent.mkdir(parents=True)
+        cache.write_bytes(b"compiled cache")
+        probe = (
+            "from pathlib import Path;"
+            f"Path({str(result_path)!r}).write_text(Path({str(source)!r}).read_text())")
+
+        first = build_kit.execute(
+            "run", [sys.executable, "-c", probe], self.root, self.config)
+        source.write_text("second")
+        second = build_kit.execute(
+            "run", [sys.executable, "-c", probe], self.root, self.config)
+
+        manifests = tuple((self.root / "builds/manifests").glob("*.json"))
+        self.assertEqual((first, second), (0, 0))
+        self.assertEqual(cache.read_bytes(), b"compiled cache")
+        self.assertEqual(result_path.read_text(), "second")
+        self.assertEqual(len(manifests), 2)
+        for manifest in manifests:
+            record = json.loads(manifest.read_text())
+            self.assertFalse(record["cleaned"])
+            self.assertEqual(record["removed_bytes"], 0)
 
     # ------------------------=
     # FUNC: test_live_lock_rejects_concurrent_build
@@ -105,7 +141,7 @@ class BuildKitTests(unittest.TestCase):
         (releases / ".build-kit.lock").write_text(json.dumps({
             "build_id": "active-fixture", "pid": os.getpid(), "root": str(self.root)}))
         with self.assertRaises(RuntimeError):
-            build_kit.execute("probe", [], self.root, self.config)
+            build_kit.execute("incremental_probe", [], self.root, self.config)
 
     # ------------------------=
     # FUNC: test_subordinate_builds_reject_unmanaged_execution

@@ -178,15 +178,26 @@ def command_for(config, selection, arguments):
 
 
 # ------------------------=
+# FUNC: clean_before_run
+# DESC: Selects clean release builds while preserving caches for incremental and custom work.
+# ------------------=
+def clean_before_run(config, selection):
+    if selection == "run":
+        return False
+    return bool(config["profiles"][selection].get("clean", False))
+
+
+# ------------------------=
 # FUNC: execute
-# DESC: Cleans once, locks the project, runs one contained build, and records its outcome.
+# DESC: Applies the selected cleanup policy, runs one contained build, and records its outcome.
 # ------------------=
 def execute(selection, arguments, root=PROJECT_ROOT, config_path=CONFIG_PATH):
     root = root.resolve()
     config = load_config(config_path)
     layout = resolve_layout(root, config)
     command = command_for(config, selection, arguments)
-    build_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + f"-{os.getpid()}"
+    clean_requested = clean_before_run(config, selection)
+    build_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + f"-{os.getpid()}"
     lock = acquire_lock(root, layout, build_id)
     started = datetime.now(timezone.utc)
     removed = []
@@ -194,7 +205,8 @@ def execute(selection, arguments, root=PROJECT_ROOT, config_path=CONFIG_PATH):
     returncode = 1
     manifest = None
     try:
-        removed = load_workspace_module(root).clean(root)
+        if clean_requested:
+            removed = load_workspace_module(root).clean(root)
         pruned_logs = load_log_retention_module(root).prune(root, config.get("log_retention", {}))
         environment = build_environment(root, layout, build_id)
         returncode = subprocess.run(command, cwd=root, env=environment, check=False).returncode
@@ -203,6 +215,7 @@ def execute(selection, arguments, root=PROJECT_ROOT, config_path=CONFIG_PATH):
         record = {
             "build_id": build_id,
             "build_kit_version": config["version"],
+            "cleaned": clean_requested,
             "command": command,
             "duration_seconds": round((finished - started).total_seconds(), 3),
             "finished_at": finished.isoformat(),

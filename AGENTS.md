@@ -7,16 +7,20 @@ build, and agent-performed verification build must run through the repository
 build kit. Do not invoke `make`, `cargo build`, `swift build`, or subordinate
 build scripts directly.
 
-- Full release: `./build-kit full`
+- Normal dependency-aware build: `./build-kit incremental` or `./build.sh`
+- Clean release build: `./build-kit full`
 - Focused profiles: `./build-kit x86_64`, `./build-kit aarch64`,
   `./build-kit tests`, or `./build-kit studio`
 - Other bounded commands: `./build-kit run <executable> [arguments...]`
 - Workspace inspection: `./build-kit audit`
 
-The build kit owns cleanup, serialization, repository-local temporary/cache
-paths, and run manifests. Adding a new build entrypoint requires adding a named
-profile to `build-kit.toml` or invoking it through `build-kit run`. No build may
-write project data outside `/opt/codebase/infinity.os`.
+The build kit owns cleanup policy, serialization, repository-local
+temporary/cache paths, and run manifests. Incremental, focused, and custom runs
+retain valid build products; full builds and explicit `clean` remove them. A
+release or fresh-build claim requires `./build-kit full`. Adding a new build
+entrypoint requires adding a named profile to `build-kit.toml` or invoking it
+through `build-kit run`. No build may write project data outside
+`/opt/codebase/infinity.os`.
 
 ## Deprecation removal
 
