@@ -3,6 +3,7 @@ from pathlib import Path
 import array
 import argparse
 import json
+import hashlib
 import os
 import shutil
 import struct
@@ -20,20 +21,26 @@ def main():
     parser.add_argument("--dots-only", action="store_true")
     parser.add_argument("--clock", choices=("deterministic", "realtime"), default="deterministic")
     parser.add_argument("--cpu", choices=("qemu64", "max"), default="max")
+    parser.add_argument("--mode", choices=("deadline", "correctness"), default="deadline",
+                        help="Correctness bounds graph checkpoints instead of asserting emulator latency")
     args = parser.parse_args()
     if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
         raise SystemExit("Use the repository build kit")
-    work = ROOT / "build/voice-kokoro/x86-runtime"
+    # Numerical-only checks must not erase completed synthesis evidence.
+    directory = "x86-dots-" + args.cpu if args.dots_only else "x86-runtime"
+    work = ROOT / "build/voice-kokoro" / directory
     esp = work / "esp"
     (esp / "EFI/BOOT").mkdir(parents=True, exist_ok=True)
     # A failed rerun must never leave a previous successful audio/evidence result.
     (work / "native-hi.wav").unlink(missing_ok=True)
     (work / "evidence.json").unlink(missing_ok=True)
+    (work / "reference-comparison.json").unlink(missing_ok=True)
     (esp / "EFI/INFINITY").mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(work / "target"))
+    features = (["dot-only"] if args.dots_only else []) + (["correctness"] if args.mode == "correctness" else [])
     subprocess.run(["cargo", "build", "--release", "-Z", "build-std=core", "--target", "x86_64-unknown-none",
                     "--manifest-path", "tools/voice-kokoro/probe/x86/Cargo.toml",
-                    *(["--features", "dot-only"] if args.dots_only else [])], cwd=ROOT, env=env, check=True)
+                    *(["--features", ",".join(features)] if features else [])], cwd=ROOT, env=env, check=True)
     subprocess.run(["/opt/homebrew/opt/lld/bin/ld.lld", "--gc-sections", "-nostdlib", "-T",
                     str(ROOT / "linker/x86_64.ld"), "-o", str(esp / "EFI/INFINITY/KERNEL.ELF"),
                     str(work / "target/x86_64-unknown-none/release/libinfinity_kokoro_x86_probe.a"),
@@ -51,14 +58,17 @@ def main():
                             "-drive", "if=pflash,format=raw,file=" + str(work / "vars.fd"),
                             "-drive", "format=raw,file=fat:rw:" + str(esp), "-display", "none", "-monitor", "none",
                             "-serial", "file:" + str(work / "serial.log"), "-debugcon", "file:" + str(work / "result.bin"),
-                            "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-no-reboot"], timeout=210)
+                            "-chardev", "file,id=checkpoints,path=" + str(work / "checkpoints.bin"),
+                            "-device", "isa-debugcon,iobase=0x505,chardev=checkpoints",
+                            "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-no-reboot"],
+                            timeout=900 if args.mode == "correctness" else 210)
     data = (work / "result.bin").read_bytes()
     if result.returncode != 33:
         values = list(struct.unpack("<" + "Q" * (len(data) // 8), data)) if len(data) % 8 == 0 else []
         profile = {i: values[8 + i*2:10 + i*2] for i in range(128)
                    if len(values) >= 264 and values[9 + i*2]}
         (work / "evidence.json").write_text(json.dumps(dict(
-            completed=False, cpu=args.cpu, guest_exit=result.returncode, clock=args.clock,
+            completed=False, mode=args.mode, cpu=args.cpu, guest_exit=result.returncode, clock=args.clock,
             native_latency_verified=False, installed_verified=False,
             synthesis_result=values[:8], operation_profile=profile), indent=2) + "\n")
         raise RuntimeError(f"Native synthesis guest exit status {result.returncode}; binary result {values[:8]}; profile {profile}")
@@ -68,7 +78,9 @@ def main():
         return
     version, status, frames, elapsed, heap, allocation_failure, phase, heartbeat = struct.unpack_from("<8Q", data)
     assert version == 1 and status == 0 and 2400 <= frames <= 720000
-    assert 0 < elapsed < 180_000_000_000 and heartbeat > 1000
+    assert elapsed > 0 and heartbeat > 1000
+    if args.mode == "deadline":
+        assert elapsed < 180_000_000_000
     assert 0 < heap <= 1024**3 and allocation_failure == 0
     assert phase == 4 and len(data) == 2112 + frames * 2
     pcm = data[2112:]
@@ -77,9 +89,11 @@ def main():
     with wave.open(str(work / "native-hi.wav"), "wb") as output:
         output.setparams((1, 2, 24000, frames, "NONE", "not compressed"))
         output.writeframes(pcm)
-    evidence = dict(completed=True, cpu=args.cpu, environment=args.clock + " x86-64 TCG guest, production loader and AP scheduler",
+    evidence = dict(completed=True, mode=args.mode, cpu=args.cpu, environment=args.clock + " x86-64 TCG guest, production loader and AP scheduler",
                     installed_verified=False, native_latency_verified=False, dot_product_cases=205,
-                    frames=frames, virtual_synthesis_ns=elapsed, heap_bytes=heap, bsp_heartbeat=heartbeat)
+                    production_deadline_enforced=args.mode == "deadline",
+                    frames=frames, pcm_sha256=hashlib.sha256(pcm).hexdigest(),
+                    virtual_synthesis_ns=elapsed, heap_bytes=heap, bsp_heartbeat=heartbeat)
     (work / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
     print(json.dumps(evidence))
 

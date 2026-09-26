@@ -45,9 +45,18 @@ store locations remain mountable without migration.
   completion of its current graph operation, zero PCM frames, no failed
   allocation). No native-hardware speedup is claimed. The production deadline
   remains 90 seconds and is checked at graph-operation boundaries.
-- Complete x86 PCM synthesis, audible HDA playback/capture, and detached-media
-  installed acceptance remain unverified. Deterministic instruction-time probes
-  are correctness checks, not hardware latency claims.
+- Complete x86 PCM synthesis now passes in a separate bounded correctness
+  probe: 30,000 mono samples at 24 kHz, 534,749,184 committed heap bytes, no
+  allocation failure, and 205 exact dot/guard checks after synthesis. Immediate
+  cancellation followed by synthesis also passes. Reference waveform
+  correlation is 0.998685 with relative RMS error 0.051279 (same tolerance as
+  ARM). Emulated synthesis took 795.68 seconds, so this is explicitly NOT a
+  production-deadline or native-hardware latency pass.
+- The diagnostic correctness feature is compiled only into the probe. It
+  bounds callback work to 8,192 checkpoints and the emulator to 900 wall-clock
+  seconds, independent of production's unchanged 90-second policy. Default
+  probe/build verification still uses deadline mode. Audible HDA playback,
+  capture, and detached-media installed acceptance remain unverified.
 - Model-payload loading and packaging now share the architecture-selected build.
   Cache bounds and reads after firmware exit are guest-tested; actual model
   inference after detached-media installed boot remains a separate acceptance gate.
@@ -65,11 +74,21 @@ All commands run through the build kit:
 ./build-kit run python3 tools/voice-kokoro/probe/run-x86.py --dots-only --cpu max
 ./build-kit run python3 tools/voice-kokoro/probe/run-x86.py
 ./build-kit run python3 tools/voice-kokoro/probe/run-x86.py --clock realtime
+./build-kit run python3 tools/voice-kokoro/probe/run-x86.py --clock realtime --mode correctness
+./build-kit run python3 tools/voice-kokoro/compare-reference.py --target x86_64
+./build-kit run python3 tools/voice-kokoro/build.py --target x86_64 --x86-probe-mode correctness
 ./build-kit run make voice-output-test
 ./build-kit run make payload-cache-test
 ./build-kit x86_64-models
 ./build-kit x86_64
 ```
+
+The shared build command now routes x86 verification to the actual x86 probe
+instead of rejecting it as unimplemented. Routing tests cover both architecture
+choices, both x86 verification modes, and build-only execution. The audio and
+structured evidence are under `build/voice-kokoro/x86-runtime/`; the existing
+model-inclusive ISO already contains this engine. These changes affect the
+verification harness, not the shipped runtime or its deadline.
 
 On a disposable installed x86 machine with native HDA, `voice devices`,
 `voice say Hi.`, `voice status`, and `voice stop` exercise standalone speech.

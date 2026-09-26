@@ -7,6 +7,7 @@ path = "../x86.rs"
 crate-type = ["staticlib"]
 [features]
 dot-only = []
+correctness = []
 [profile.release]
 opt-level = 3
 panic = "abort"

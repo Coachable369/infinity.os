@@ -35,6 +35,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", choices=("aarch64", "x86_64"), default="aarch64")
     parser.add_argument("--build-only", action="store_true")
+    parser.add_argument("--x86-probe-mode", choices=("deadline", "correctness"), default="deadline",
+                        help="Correctness verifies emulated PCM, not production latency")
     args = parser.parse_args()
     os.environ["INFINITY_VOICE_TARGET"] = args.target
     build_only = args.build_only
@@ -47,10 +49,12 @@ def main():
                          ("link", "link-native.py")]:
         stage(name, "tools/voice-kokoro/" + script)
     if not build_only:
-        if args.target != "aarch64":
-            raise RuntimeError("x86-64 native guest verification is not implemented yet")
-        stage("guest", "tools/voice-kokoro/probe/run.py")
-        stage("comparison", "tools/voice-kokoro/compare-reference.py")
+        if args.target == "x86_64":
+            stage("guest-x86", "tools/voice-kokoro/probe/run-x86.py",
+                  "--clock", "realtime", "--mode", args.x86_probe_mode)
+        else:
+            stage("guest", "tools/voice-kokoro/probe/run.py")
+        stage("comparison", "tools/voice-kokoro/compare-reference.py", "--target", args.target)
 
 
 if __name__ == "__main__":

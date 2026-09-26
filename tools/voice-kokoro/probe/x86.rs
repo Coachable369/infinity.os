@@ -8,6 +8,8 @@ static DONE: AtomicUsize = AtomicUsize::new(0);
 static mut PCM: [i16; 720000] = [0; 720000];
 static mut RESULT: [u64; 7] = [0; 7];
 static mut START: u64 = 0;
+#[cfg(feature = "correctness")]
+static mut CHECKPOINTS: u64 = 0;
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 struct Gate { low: u16, selector: u16, flags: u32, high: u32, zero: u32 }
@@ -55,9 +57,22 @@ fn panic(_: &core::panic::PanicInfo) -> ! { finish(1) }
 extern "C" fn cancel(_: usize) -> i32 { 1 }
 // ------------------------=
 // FUNC: deadline
-// DESC: Enforces the same bounded synthesis deadline as the production provider.
+// DESC: Enforces the production deadline or a separately selected, bounded emulation-correctness work budget.
 // ------------------=
 extern "C" fn deadline(_: usize) -> i32 {
+    // Cross-ISA correctness is deliberately separate from deadline acceptance.
+    // Bound work and expose binary checkpoints; the host also bounds wall time.
+    #[cfg(feature = "correctness")]
+    unsafe {
+        CHECKPOINTS += 1;
+        if CHECKPOINTS % 64 == 0 {
+            for byte in CHECKPOINTS.to_le_bytes() {
+                core::arch::asm!("out dx, al", in("dx") 0x505u16, in("al") byte);
+            }
+        }
+        return (CHECKPOINTS >= 8192) as i32;
+    }
+    #[cfg(not(feature = "correctness"))]
     unsafe { (workers::clock_ns() - START >= 90_000_000_000) as i32 }
 }
 // ------------------------=
@@ -185,6 +200,7 @@ pub unsafe extern "C" fn infinity_kernel_entry(info: &boot_info::BootInfo) -> ! 
     let mut heartbeat = 0u64;
     while DONE.load(Ordering::Acquire) == 0 {
         heartbeat += 1;
+        #[cfg(not(feature = "correctness"))]
         assert!(workers::clock_ns() - begin < 180_000_000_000);
         core::hint::spin_loop();
     }
