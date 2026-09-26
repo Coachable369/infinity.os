@@ -81,7 +81,11 @@ browser as installed before gate 6 passes.
   and reached SpiderMonkey's allocation-size reporting hook.
   Subsequent native allocator, opaque stream/integer ABI and navigator platform
   corrections pass the full minimal-feature AArch64 metadata check, manifest
-  `20260926T191902704731Z-18582.json`. Real code generation is the next gate.
+  `20260926T191902704731Z-18582.json`. Actual native archive generation also passes,
+  manifest `20260926T192356360339Z-22363.json`. Executable link diagnostics now
+  expose missing stdc++/zlib linkage (`20260926T193439702091Z-26580.json`). Select
+  the native libc++ ABI consistently and propagate native dependency search paths
+  before resolving service symbols. Never boot the link-only diagnostic entry.
   Native mapping/protection and production C++ synchronization remain unproved.
   Platform enums, image-reader stdin compilation, native clock selection and
   filesystem URL rejection now pass the Rust compiler stage. Configure uses

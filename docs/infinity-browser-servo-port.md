@@ -27,6 +27,20 @@ These fixes do not establish engine linkage, rendering or installed browsing.
 The probe now has an explicit `--codegen` mode to build real native archives;
 even successful archive production is not executable or installed acceptance.
 
+Actual AArch64 archive generation **passes**, manifest
+`builds/manifests/20260926T192356360339Z-22363.json` (7m 14s, debug profile).
+`link-engine.py` now retains real `ServoBuilder::build` initialization and attempts
+an executable link using the matching custom Rust core/panic archives and host
+proc-macro search path. It is diagnostic-only and must never be booted: native
+providers are not initialized by its entry point.
+
+The link fails, manifest `20260926T193439702091Z-26580.json`, on missing
+`-lstdc++` and `-lz`. Next: select libc++ consistently in all native C++ dependency
+builds (including mozjs's global CXXSTDLIB handling), propagate actual Cargo native
+library search paths, then resolve the native allocator/thread/mapping/service
+symbols. Do not substitute host libraries or fabricate successful implementations.
+No engine execution, page render, installed browser or new ISO was produced.
+
 ## Memory advice follow-through, September 26
 
 The `MADV_NORMAL` compile blocker is resolved in the shared native mapping header.
