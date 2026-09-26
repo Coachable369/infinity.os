@@ -17,6 +17,14 @@ pub enum Error {
     ResolutionFailed,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Readiness {
+    /// Includes EOF and errors: a read can complete without waiting.
+    pub readable: bool,
+    /// Includes terminal errors: a write can complete without waiting.
+    pub writable: bool,
+}
+
 /// One outbound stream, with caller-owned storage and a hard transaction deadline.
 pub struct Transport<'a> {
     interface: Interface,
@@ -263,6 +271,22 @@ impl<'a> Transport<'a> {
     // ------------------=
     pub fn state(&self) -> State {
         self.sockets.get::<Socket>(self.handle).state()
+    }
+
+    // ------------------------=
+    // FUNC: readiness
+    // DESC: Reports nonblocking operation readiness without consuming data or waking idle connections.
+    // ------------------=
+    pub fn readiness(&self) -> Readiness {
+        if self.failure.is_some() {
+            return Readiness { readable: true, writable: true };
+        }
+        let socket = self.sockets.get::<Socket>(self.handle);
+        let connecting = matches!(socket.state(), State::SynSent | State::SynReceived);
+        Readiness {
+            readable: socket.can_recv() || (!socket.may_recv() && !connecting),
+            writable: socket.can_send() || (!socket.may_send() && !connecting),
+        }
     }
 
     // ------------------------=

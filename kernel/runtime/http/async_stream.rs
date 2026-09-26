@@ -35,14 +35,18 @@ impl<'a> Session<'a> {
     }
     // ------------------------=
     // FUNC: poll
-    // DESC: Advances the bounded native stack and wakes suspended TLS IO from the service's normal pump.
+    // DESC: Advances the bounded native stack and wakes only IO that can complete or fail, not every timer tick.
     // ------------------=
     pub fn poll(&self, device: &mut impl Device, now: Instant) {
         self.transport.borrow_mut().poll(device, now);
-        if let Some(waker) = self.reader.borrow_mut().take() {
+        let readiness = self.transport.borrow().readiness();
+        let reader = if readiness.readable { self.reader.borrow_mut().take() } else { None };
+        let writer = if readiness.writable { self.writer.borrow_mut().take() } else { None };
+        // Invoke callbacks after releasing RefCell guards; waking can re-enter an executor.
+        if let Some(waker) = reader {
             waker.wake();
         }
-        if let Some(waker) = self.writer.borrow_mut().take() {
+        if let Some(waker) = writer {
             waker.wake();
         }
     }
@@ -52,10 +56,12 @@ impl<'a> Session<'a> {
     // ------------------=
     pub fn cancel(&self) {
         self.transport.borrow_mut().cancel();
-        if let Some(waker) = self.reader.borrow_mut().take() {
+        let reader = self.reader.borrow_mut().take();
+        let writer = self.writer.borrow_mut().take();
+        if let Some(waker) = reader {
             waker.wake();
         }
-        if let Some(waker) = self.writer.borrow_mut().take() {
+        if let Some(waker) = writer {
             waker.wake();
         }
     }

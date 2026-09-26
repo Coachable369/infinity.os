@@ -10,6 +10,119 @@ struct Ethernet {
 struct Receive(Vec<u8>);
 struct Transmit<'a>(&'a mut VecDeque<Vec<u8>>);
 
+struct WakeCount(core::sync::atomic::AtomicUsize);
+impl std::task::Wake for WakeCount {
+    // ------------------------=
+    // FUNC: wake
+    // DESC: Counts actual executor notifications independently of network pump calls.
+    // ------------------=
+    fn wake(self: std::sync::Arc<Self>) {
+        self.0.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[test]
+// ------------------------=
+// FUNC: async_readiness_wakes_only_for_progress_and_terminal_events
+// DESC: Exercises native TCP handshake, idle polls, data, full send queues and cancellation without host sockets.
+// ------------------=
+fn async_readiness_wakes_only_for_progress_and_terminal_events() {
+    async_readiness_case(true);
+    async_readiness_case(false);
+}
+
+// ------------------------=
+// FUNC: async_readiness_case
+// DESC: Runs identical packet-based readiness checks with cancellation or clean FIN termination.
+// ------------------=
+fn async_readiness_case(cancel: bool) {
+    use core::{future::Future, task::{Context, Poll}, sync::atomic::Ordering};
+    use embedded_io_async::{Read, Write};
+    use std::{sync::Arc, task::Waker};
+    let (mut a, mut b) = (Ethernet::default(), Ethernet::default());
+    let (mut ar, mut at, mut br, mut bt) = ([0; 1024], [0; 1024], [0; 1024], [0; 1024]);
+    let (mut sa, mut sb) = ([SocketStorage::EMPTY], [SocketStorage::EMPTY]);
+    let mut client = Transport::new(&mut a, [2,0,0,0,0,1], [10,0,0,1], 24, None,
+        1, Instant::from_millis(0), &mut sa, &mut ar, &mut at).unwrap();
+    let mut server = Transport::new(&mut b, [2,0,0,0,0,2], [10,0,0,2], 24, None,
+        2, Instant::from_millis(0), &mut sb, &mut br, &mut bt).unwrap();
+    server.sockets.get_mut::<Socket>(server.handle).listen(80).unwrap();
+    client.connect([10,0,0,2], 80, 49152, Instant::from_millis(0), Instant::from_millis(10000)).unwrap();
+    assert_eq!(client.readiness(), Readiness { readable: false, writable: false });
+    for tick in 0..100 {
+        client.poll(&mut a, Instant::from_millis(tick));
+        b.rx.extend(a.tx.drain(..));
+        server.poll(&mut b, Instant::from_millis(tick));
+        a.rx.extend(b.tx.drain(..));
+    }
+    assert_eq!(client.state(), State::Established);
+    assert_eq!(client.readiness(), Readiness { readable: false, writable: true });
+    let mut session = crate::async_stream::Session::new(client);
+    let mut stream = session.stream();
+    let pump = stream.session();
+    let wakes = Arc::new(WakeCount(core::sync::atomic::AtomicUsize::new(0)));
+    let waker = Waker::from(wakes.clone());
+    let mut cx = Context::from_waker(&waker);
+    let mut output = [0; 4];
+    {
+        let mut read = core::pin::pin!(stream.read(&mut output));
+        assert!(read.as_mut().poll(&mut cx).is_pending());
+        for tick in 100..200 { pump.poll(&mut a, Instant::from_millis(tick)); }
+        assert_eq!(wakes.0.load(Ordering::SeqCst), 0);
+        assert_eq!(server.send(&[9, 8, 7, 6]), Ok(4));
+        server.poll(&mut b, Instant::from_millis(201));
+        a.rx.extend(b.tx.drain(..));
+        pump.poll(&mut a, Instant::from_millis(202));
+        assert_eq!(wakes.0.load(Ordering::SeqCst), 1);
+        pump.poll(&mut a, Instant::from_millis(203));
+        assert_eq!(wakes.0.load(Ordering::SeqCst), 1);
+        assert!(matches!(read.as_mut().poll(&mut cx), Poll::Ready(Ok(4))));
+    }
+    assert_eq!(output, [9,8,7,6]);
+    {
+        let bytes = [42; 1024];
+        let mut write = core::pin::pin!(stream.write(&bytes));
+        assert!(matches!(write.as_mut().poll(&mut cx), Poll::Ready(Ok(1024))));
+    }
+    {
+        let mut write = core::pin::pin!(stream.write(&[5]));
+        assert!(write.as_mut().poll(&mut cx).is_pending());
+        for tick in 204..210 { pump.poll(&mut a, Instant::from_millis(tick)); }
+        assert_eq!(wakes.0.load(Ordering::SeqCst), 1);
+        for tick in 210..300 {
+            b.rx.extend(a.tx.drain(..));
+            server.poll(&mut b, Instant::from_millis(tick));
+            a.rx.extend(b.tx.drain(..));
+            pump.poll(&mut a, Instant::from_millis(tick));
+        }
+        assert_eq!(wakes.0.load(Ordering::SeqCst), 2);
+        assert!(matches!(write.as_mut().poll(&mut cx), Poll::Ready(Ok(1))));
+    }
+    {
+        let mut read = core::pin::pin!(stream.read(&mut output));
+        assert!(read.as_mut().poll(&mut cx).is_pending());
+        if cancel {
+            pump.cancel();
+        } else {
+            server.close();
+            for tick in 300..400 {
+                b.rx.extend(a.tx.drain(..));
+                server.poll(&mut b, Instant::from_millis(tick));
+                a.rx.extend(b.tx.drain(..));
+                pump.poll(&mut a, Instant::from_millis(tick));
+            }
+        }
+        assert_eq!(wakes.0.load(Ordering::SeqCst), 3);
+        if cancel {
+            assert!(matches!(read.as_mut().poll(&mut cx), Poll::Ready(Err(_))));
+        } else {
+            assert!(matches!(read.as_mut().poll(&mut cx), Poll::Ready(Ok(0))));
+        }
+        pump.cancel();
+        assert_eq!(wakes.0.load(Ordering::SeqCst), 3);
+    }
+}
+
 // ------------------------=
 // FUNC: dns_answer
 // DESC: Builds a checksummed DNS A response from the actual emitted query, optionally with a mismatched transaction ID.

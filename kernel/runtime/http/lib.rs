@@ -13,6 +13,7 @@ pub mod geturl;
 pub mod https;
 pub mod request;
 pub mod response;
+pub mod selector;
 mod rsa;
 pub mod task;
 pub mod tls;

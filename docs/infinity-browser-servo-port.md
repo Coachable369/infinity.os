@@ -2,6 +2,32 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Native event-layer continuation
+
+`Transport::readiness` now reflects whether reads/writes can complete, including
+EOF and terminal failures. `async_stream::Session` wakes only ready operations,
+and releases its internal borrow guards before invoking executor callbacks.
+Packet-based tests use two native TCP stacks (no host sockets) to verify idle
+polls do not wake blocked reads/writes, received data wakes once, acknowledged
+send capacity wakes once, and clean FIN/cancellation complete waiting reads.
+
+`http::selector` adds bounded edge-triggered bookkeeping: generation-tagged
+registrations, interest replacement/rearming, event coalescing, control wakes,
+stale-event rejection and round-robin delivery under output backpressure.
+Registration identities are selector-local, not capabilities. The owner must
+serialize access, check network authority, and publish readiness after both NIC
+progress and operations that drain readiness. The selector does not itself wait,
+own sockets, or grant access.
+
+This is **not yet the Mio target backend**. Mio socket types, native service
+handles, and real thread park/wake still require integration. No engine compile
+success, browser execution, fresh-install acceptance, or new ISO is claimed.
+
+Evidence under `builds/manifests/`: behavioral suite 27/27 passed in
+`20260926T090024298874Z-47977.json`; shared native HTTP library compilation
+passed for AArch64 in `20260926T085927150902Z-47831.json` and x86_64 in
+`20260926T090004048925Z-47921.json`. These compile gates are not guest execution.
+
 ## Latest continuation: native response metadata and shared compiler gates
 
 The native HTTP service now exposes `client::get_with_headers` and
