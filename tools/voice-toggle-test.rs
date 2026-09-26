@@ -4,6 +4,14 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static BUSY: AtomicBool = AtomicBool::new(false);
 static CAPTURES: AtomicUsize = AtomicUsize::new(0);
 static ACTIVE: AtomicBool = AtomicBool::new(true);
+static FLOW: AtomicBool = AtomicBool::new(false);
+static READY: AtomicBool = AtomicBool::new(false);
+static OUTPUT: AtomicUsize = AtomicUsize::new(0);
+static NOW: AtomicUsize = AtomicUsize::new(1);
+static TURNS: AtomicUsize = AtomicUsize::new(0);
+static MICROPHONE: std::sync::Mutex<std::collections::VecDeque<i16>> = std::sync::Mutex::new(std::collections::VecDeque::new());
+static PHRASES: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
+static RECOGNIZED: std::sync::Mutex<Vec<i16>> = std::sync::Mutex::new(Vec::new());
 // ------------------------=
 // FUNC: main
 // DESC: Directs callers to the behavioral test harness rather than reporting an unexecuted test as success.
@@ -62,12 +70,12 @@ mod drivers {pub mod audio {
     // FUNC: capture_status
     // DESC: Supplies a supported native capture format.
     // ------------------=
-    pub fn capture_status()->Option<Status>{Some(Status{sample_rate:48000,state:CaptureState::Recording})}
+    pub fn capture_status()->Option<Status>{Some(Status{sample_rate:16000,state:CaptureState::Recording})}
     // ------------------------=
     // FUNC: stop_capture
     // DESC: Closes the deterministic capture seam.
     // ------------------=
-    pub fn stop_capture(_:SecurityIdentity){}
+    pub fn stop_capture(_:SecurityIdentity){crate::MICROPHONE.lock().unwrap().clear();}
     // ------------------------=
     // FUNC: capture_available
     // DESC: Declares the fixture capture device ready.
@@ -82,7 +90,12 @@ mod drivers {pub mod audio {
     // FUNC: read_capture
     // DESC: Supplies silence without advancing recognition in toggle tests.
     // ------------------=
-    pub fn read_capture(_:SecurityIdentity,_:&mut[i16])->usize{0}
+    pub fn read_capture(_:SecurityIdentity,out:&mut[i16])->usize{
+        let mut input=crate::MICROPHONE.lock().unwrap();
+        let count=out.len().min(input.len());
+        for sample in &mut out[..count] {*sample=input.pop_front().unwrap();}
+        count
+    }
 }}
 mod chat {
     #[derive(PartialEq)] pub enum ChatRole {Assistant}
@@ -93,7 +106,7 @@ mod chat {
         // FUNC: text
         // DESC: Supplies no fabricated assistant speech.
         // ------------------=
-        pub fn text(&self)->&[u8]{b""}
+        pub fn text(&self)->&[u8]{if crate::TURNS.load(crate::Ordering::SeqCst)>1 {b"New response."} else {b"Hi. This is the next phrase of the response. This old remainder must never play after interruption."}}
     }
     pub struct Chat {pub generation_state:GenerationState}
     impl Chat {
@@ -131,12 +144,12 @@ mod chat {
         // FUNC: message_count
         // DESC: Reports no completed messages during lifecycle tests.
         // ------------------=
-        pub fn message_count(&self)->usize{0}
+        pub fn message_count(&self)->usize{1}
         // ------------------------=
         // FUNC: message
         // DESC: Returns no fabricated assistant message.
         // ------------------=
-        pub fn message(&self,_:usize)->Option<Message>{None}
+        pub fn message(&self,_:usize)->Option<Message>{Some(Message{role:ChatRole::Assistant})}
     }
 }
 struct Ai {chat:chat::Chat}
@@ -160,7 +173,7 @@ impl Ai {
     // FUNC: submit_chat
     // DESC: Rejects unused generation in lifecycle-only tests.
     // ------------------=
-    fn submit_chat(&mut self)->bool{false}
+    fn submit_chat(&mut self)->bool{TURNS.fetch_add(1,Ordering::SeqCst); FLOW.load(Ordering::SeqCst)}
 }
 // ------------------------=
 // FUNC: with_ai_runtime
@@ -172,7 +185,7 @@ mod qwen {pub mod workers {
     // FUNC: clock_ns
     // DESC: Uses fixed time to isolate toggle transitions.
     // ------------------=
-    pub fn clock_ns()->u64{1}
+    pub fn clock_ns()->u64{crate::NOW.load(crate::Ordering::SeqCst) as u64}
 }}
 mod voice_input {
     use crate::runtime::execution::SecurityIdentity;
@@ -182,22 +195,28 @@ mod voice_input {
     // FUNC: status
     // DESC: Models asynchronous cancellation drain without running a recognizer.
     // ------------------=
-    pub fn status()->Status{Status{state:if crate::BUSY.load(crate::Ordering::SeqCst){InputState::Recognizing}else{InputState::Cancelled},error:0}}
+    pub fn status()->Status{Status{state:if crate::READY.load(crate::Ordering::SeqCst){InputState::Ready}else if crate::BUSY.load(crate::Ordering::SeqCst){InputState::Recognizing}else{InputState::Cancelled},error:0}}
     // ------------------------=
     // FUNC: stop
     // DESC: Leaves the simulated worker busy until the test acknowledges cancellation.
     // ------------------=
-    pub fn stop(_:SecurityIdentity){}
+    pub fn stop(_:SecurityIdentity){crate::READY.store(false,crate::Ordering::SeqCst);}
     // ------------------------=
     // FUNC: submit
     // DESC: Rejects unused recognition jobs during lifecycle tests.
     // ------------------=
-    pub fn submit(_:SecurityIdentity,_:u64,_:&[i16])->Result<(),()>{Err(())}
+    pub fn submit(_:SecurityIdentity,_:u64,pcm:&[i16])->Result<(),()>{
+        if !crate::FLOW.load(crate::Ordering::SeqCst){return Err(());}
+        *crate::RECOGNIZED.lock().unwrap()=pcm.to_vec();
+        crate::READY.store(true,crate::Ordering::SeqCst);Ok(())
+    }
     // ------------------------=
     // FUNC: take
     // DESC: Provides no fabricated transcript.
     // ------------------=
-    pub fn take(_:SecurityIdentity,_:&mut[u8])->Result<usize,()>{Err(())}
+    pub fn take(_:SecurityIdentity,out:&mut[u8])->Result<usize,()>{
+        crate::READY.store(false,crate::Ordering::SeqCst);out[..4].copy_from_slice(b"test");Ok(4)
+    }
 }
 mod voice_output {
     pub const OUTPUT_LEASE_SECONDS: u64 = 130;
@@ -208,17 +227,22 @@ mod voice_output {
     // FUNC: status
     // DESC: Models an acknowledged playback stop.
     // ------------------=
-    pub fn status()->Status{Status{state:OutputState::Cancelled}}
+    pub fn status()->Status{Status{state:match crate::OUTPUT.load(crate::Ordering::SeqCst){1=>OutputState::Speaking,2=>OutputState::Complete,_=>OutputState::Cancelled}}}
     // ------------------------=
     // FUNC: stop
     // DESC: Supplies the audio-output cancellation seam.
     // ------------------=
-    pub fn stop(_:SecurityIdentity){}
+    pub fn stop(_:SecurityIdentity){crate::OUTPUT.store(0,crate::Ordering::SeqCst);}
     // ------------------------=
     // FUNC: submit
     // DESC: Rejects unused synthesis jobs during lifecycle testing.
     // ------------------=
-    pub fn submit(_:SecurityIdentity,_:u64,_:&[u8])->Result<(),()>{Err(())}
+    pub fn submit(_:SecurityIdentity,_:u64,text:&[u8])->Result<(),()>{
+        if !crate::FLOW.load(crate::Ordering::SeqCst){return Err(());}
+        assert!(text.len()<=44);
+        crate::PHRASES.lock().unwrap().push(text.to_vec());
+        crate::OUTPUT.store(1,crate::Ordering::SeqCst);Ok(())
+    }
 }
 #[path = "../kernel/runtime/ai/voice_pcm.rs"] mod voice_pcm;
 #[path = "../kernel/runtime/ai/voice_vad.rs"] mod voice_vad;
@@ -246,4 +270,51 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert!(conversation::toggle(owner));assert!(conversation::toggle(owner));assert!(conversation::toggle(owner));
     ACTIVE.store(false,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Failed);
+    ACTIVE.store(true,Ordering::SeqCst);FLOW.store(true,Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    MICROPHONE.lock().unwrap().extend([1000;1600]);
+    MICROPHONE.lock().unwrap().extend([0;12000]);
+    for _ in 0..10 {conversation::poll();}
+    assert_eq!(conversation::state().0,State::Speaking);
+    assert_eq!(*PHRASES.lock().unwrap(),vec![b"Hi.".to_vec()]);
+    // A playing phrase cannot reopen capture or submit the next phrase.
+    let captures=CAPTURES.load(Ordering::SeqCst);
+    conversation::poll();assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    // Residual speaker tail is discarded; checked silence permits the next phrase.
+    MICROPHONE.lock().unwrap().extend([2000;3200]);
+    MICROPHONE.lock().unwrap().extend([0;9600]);
+    for _ in 0..3 {conversation::poll();}
+    assert_eq!(conversation::state().0,State::Speaking);
+    assert_eq!(PHRASES.lock().unwrap().len(),2);
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    MICROPHONE.lock().unwrap().extend([0;3200]);
+    MICROPHONE.lock().unwrap().extend([1700;1600]);
+    MICROPHONE.lock().unwrap().extend([0;12000]);
+    for _ in 0..4 {conversation::poll();if conversation::state().0==State::Recognizing {break;}}
+    assert_eq!(conversation::state().0,State::Recognizing);
+    assert_eq!(PHRASES.lock().unwrap().len(),2);
+    assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==1700));
+    conversation::poll();conversation::poll();
+    assert_eq!(PHRASES.lock().unwrap()[2],b"New response.");
+    // Restart a multi-phrase reply and prove missing input never counts as silence.
+    conversation::stop(owner);conversation::poll();TURNS.store(0,Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    MICROPHONE.lock().unwrap().extend([1000;1600]);MICROPHONE.lock().unwrap().extend([0;12000]);
+    for _ in 0..10 {conversation::poll();}
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    let phrases=PHRASES.lock().unwrap().len();
+    NOW.store(3_000_000_002,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Stopping);
+    assert_eq!(PHRASES.lock().unwrap().len(),phrases);
+    conversation::poll();assert_eq!(conversation::state().0,State::Off);
+    TURNS.store(0,Ordering::SeqCst);assert!(conversation::start(owner));
+    MICROPHONE.lock().unwrap().extend([1000;1600]);MICROPHONE.lock().unwrap().extend([0;12000]);
+    for _ in 0..10 {conversation::poll();}
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    let phrases=PHRASES.lock().unwrap().len();
+    ACTIVE.store(false,Ordering::SeqCst);conversation::poll();conversation::poll();
+    assert_eq!(conversation::state().0,State::Off);
+    assert_eq!(PHRASES.lock().unwrap().len(),phrases);
 }

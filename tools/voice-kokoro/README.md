@@ -146,6 +146,27 @@ Remaining acceptance gates:
 There is no silent Flite fallback on ARM64. A synthesis error is surfaced as a
 failed native speech job; it does not substitute a different voice.
 
+## Conversational phrase playback and microphone interruption
+
+The conversation controller now submits one phrase of at most 44 characters,
+preferring a sentence boundary. It does not wait for all 160 characters to be
+synthesized before beginning playback. This is phrase-wise playback after LLM
+generation, not simultaneous synthesis/playback or token-streamed generation.
+
+After each completed phrase the controller opens fresh authorized capture,
+discards 200 ms of samples for the speaker's acoustic tail, then checks 600 ms
+of actual microphone samples before allowing another phrase. Confirmed VAD
+speech discards the remaining assistant reply and preserves the utterance for
+recognition. Missing microphone samples do not count as silence; a three-second
+capture watchdog stops the reply. Logout, mute and cancellation close capture.
+The final phrase also gets the acoustic-tail guard before normal listening.
+
+This is a half-duplex boundary check, not acoustic echo cancellation: speech
+during playback or the 200 ms tail guard is not captured. Long room reverberation
+may still trigger VAD. Installed-device microphone/speaker testing is required
+before claiming acoustic interruption quality. The behavioral controller test
+uses real resampling/VAD with deterministic audio and playback seams.
+
 Unfinished upstream modifications are preserved as reviewable patches in
 `third_party/patches/voice-kokoro`. Generated clones, dependency checkouts and
 objects remain disposable under `build/` and may be removed before every full
