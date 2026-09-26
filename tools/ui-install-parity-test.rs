@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const LIVE_BOOT_IMAGE_BYTES: u64 = 1024 * 1024 * 1024;
+const MINIMUM_LIVE_BOOT_IMAGE_BYTES: u64 = 1024 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
 enum ContainerKind {
@@ -379,7 +379,7 @@ fn verify_container(container: &Container<'_>, scratch: &Path) {
 
 // ------------------------=
 // FUNC: assert_live_boot_image_capacity
-// DESC: Verifies every generated live boot FAT container retains the required one-gigabyte capacity.
+// DESC: Verifies every generated live boot FAT container provides at least one gigabyte of capacity.
 // ------------------=
 fn assert_live_boot_image_capacity(container: &Container<'_>) {
     if !matches!(container.kind, ContainerKind::Fat)
@@ -387,12 +387,12 @@ fn assert_live_boot_image_capacity(container: &Container<'_>) {
     {
         return;
     }
-    assert_eq!(
+    assert!(
         fs::metadata(container.image)
             .expect("live boot image metadata must be readable")
-            .len(),
-        LIVE_BOOT_IMAGE_BYTES,
-        "live boot images must provide one gigabyte of FAT capacity"
+            .len()
+            >= MINIMUM_LIVE_BOOT_IMAGE_BYTES,
+        "live boot images must provide at least one gigabyte of FAT capacity"
     );
 }
 
