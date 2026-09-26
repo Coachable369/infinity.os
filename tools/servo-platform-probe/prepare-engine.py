@@ -23,6 +23,34 @@ def main():
     text = helper.native_body(text, 'pub fn from_file_path<P:', 'let _ = path; Err(UrlError::FromFilePath)')
     (servo / relative).write_text(text)
 
+    # The beta owns session storage in memory. Do not manufacture a Unix temp
+    # directory before selecting the upstream memory implementations.
+    for component, handle, engine, thread_body in (
+        ("client_storage", "ClientStorageThreadHandle", "SqliteEngine::memory().expect(\"Native session registry initialization failed\")",
+         "ClientStorageThread::new(sender_clone, generic_receiver, engine).start();"),
+        ("cache_storage", "CacheStorageThreadHandle", "MemCacheStorageEngine { name_to_cache_map: Default::default() }",
+         "let mut worker = CacheStorageThread::new(sender_clone, generic_receiver, engine); worker.start();"),
+    ):
+        relative = "components/storage/" + component + ".rs"
+        text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+        signature = "fn new(config_dir: Option<PathBuf>, temporary_storage: bool) -> " + handle
+        body = '''assert!(config_dir.is_none(), "Native persistent profile storage is not available");
+            let _ = temporary_storage;
+            let (generic_sender, generic_receiver) = generic_channel::channel().unwrap();
+            let sender_clone = generic_sender.clone();
+            thread::Builder::new().name("NativeSessionStorage".to_owned()).spawn(move || {
+                let engine = ''' + engine + ''';
+                ''' + thread_body + '''
+            }).expect("Native session storage thread unavailable");
+            ''' + handle + '''::new(generic_sender)'''
+        text = helper.native_body(text, signature, body)
+        (servo / relative).write_text(text)
+
+    relative = "components/net/disk_cache.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = helper.native_body(text, "fn storage_dir()", "None")
+    (servo / relative).write_text(text)
+
     relative = "components/script/dom/navigator/navigatorinfo.rs"
     text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
     text += '''

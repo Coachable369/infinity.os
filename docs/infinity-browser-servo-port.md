@@ -2,6 +2,24 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Native Servo initialization passed, September 26
+
+Real `ServoBuilder::build` now returns successfully in the freestanding AArch64
+guest. The native storage overlay selects upstream in-memory SQLite client
+storage and memory Cache Storage directly, without creating Unix temporary
+directories; disk caching is disabled. Persistent profiles remain unsupported.
+
+- Archive build: `builds/manifests/20260926T213044288386Z-42269.json`.
+- Native engine boot: `builds/manifests/20260926T213351397323Z-46022.json`.
+- Governed allocation at the initialization checkpoint: 36,580,096 bytes
+  (not a measured peak or complete browser memory budget).
+
+This supersedes the startup failures recorded below. It is not page-rendering
+or installed-system proof. The next rendering blocker is that upstream
+`SoftwareRenderingContext` still creates a Surfman OpenGL connection. The native
+port deliberately rejects unavailable GPU contexts. Investigate WebRender's
+matching SWGL software implementation, not a replacement HTML renderer.
+
 ## Executable linkage and session storage, September 26 (latest)
 
 Subsequent startup diagnosis found SpiderMonkey's Unix random-device fallback
