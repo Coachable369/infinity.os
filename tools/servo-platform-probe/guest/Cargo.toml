@@ -9,6 +9,8 @@ context-probe = []
 executor-probe = ["context-probe"]
 std-probe = ["executor-probe", "infinity-servo-runtime-primitives/native-abi"]
 mio-probe = ["std-probe", "dep:mio"]
+socket-probe = ["mio-probe", "mio/net", "dep:infinity-http"]
+async-probe = ["socket-probe", "dep:tokio", "dep:getrandom2", "dep:getrandom3", "dep:getrandom4"]
 
 [workspace]
 
@@ -19,6 +21,11 @@ crate-type = ["staticlib"]
 [dependencies]
 infinity-servo-runtime-primitives = { path = "../../../sdk/servo-runtime-primitives" }
 mio = { path = "../../../build/servo-native-deps/mio-1.2.3", optional = true, default-features = false, features = ["os-poll"] }
+infinity-http = { path = "../../../kernel/runtime/http", optional = true }
+tokio = { path = "../../../build/servo-native-deps/tokio-1.53.1", optional = true, default-features = false, features = ["rt", "time", "net", "io-util"] }
+getrandom2 = { package = "getrandom", path = "../../../build/servo-native-deps/getrandom-0.2.17", optional = true }
+getrandom3 = { package = "getrandom", path = "../../../build/servo-native-deps/getrandom-0.3.4", optional = true }
+getrandom4 = { package = "getrandom", path = "../../../build/servo-native-deps/getrandom-0.4.1", optional = true }
 
 [profile.release]
 panic = "abort"

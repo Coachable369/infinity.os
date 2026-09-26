@@ -8,6 +8,19 @@ Real std thread and synchronization programs execute in disposable guests on
 both architectures. Production worker/service integration is still required.
 No host fallback or simulated service is provided.
 
+Native outbound IPv4 TCP now backs std streams, Mio readiness and Tokio's
+current-thread async network runtime. DNS, UDP/listen, raw descriptors and tuning
+options are not supplied by this std adapter; unsupported calls reject explicitly.
+The native reactor separately supports bounded TCP/UDP with authority and deadline
+checks. A production service must bind the provider and enforce queued-frame egress
+authority; the guest's paired packet stacks are not that production binding.
+
+Run `./build-kit run python3 tools/servo-platform-probe/run-memory-guest.py
+--async-probe --arch aarch64` (or `x86_64`) for the combined real-thread, TCP,
+readiness, async timer/cancellation and getrandom success/denial guest tests.
+The pinned getrandom 0.2/0.3/0.4 adapters share the C entropy ABI without a
+predictable fallback or cross-version Rust ABI symbol collision.
+
 Run only via the build kit:
 
 ```

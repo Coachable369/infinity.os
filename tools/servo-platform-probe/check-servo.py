@@ -20,6 +20,10 @@ def main():
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
     options = parser.parse_args()
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-mio.py")), "--engine"], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-async-net.py")), "--engine"], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-entropy.py"))], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-fonts.py"))], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-style.py"))], check=True)
     arch = options.arch
     target = "aarch64-unknown-none-softfloat" if arch == "aarch64" else "x86_64-unknown-none"
     target_key = target.replace("-", "_")
@@ -63,8 +67,17 @@ def main():
     if native_libc.is_dir():
         command += ["--config", 'patch.crates-io.libc.path="' + str(native_libc) + '"']
     command += ["--config", 'patch.crates-io.mio.path="' + str(root / "build/servo-native-deps/mio-1.2.3") + '"']
+    for name, version in (("tokio", "1.53.1"), ("hyper-util", "0.1.20")):
+        command += ["--config", 'patch.crates-io.' + name + '.path="' + str(root / "build/servo-native-deps" / (name + "-" + version)) + '"']
+    for name, path in json.loads((root / "build/servo-native-deps/stylo/native-patches.json").read_text()).items():
+        command += ["--config", 'patch."https://github.com/servo/stylo".' + name + '.path="' + path + '"']
+    command += ["--config", 'patch.crates-io.wr_glyph_rasterizer.path="' + str(root / "build/servo-native-deps/wr_glyph_rasterizer-0.70.0") + '"']
+    command += ["--config", 'patch.crates-io.freetype-sys.path="' + str(root / "build/servo-native-deps/freetype-sys-0.23.0") + '"']
+    for index, version in enumerate(("0.2.17", "0.3.4", "0.4.1")):
+        key = 'patch.crates-io.getrandom_native_' + str(index)
+        command += ["--config", key + '.package="getrandom"', "--config", key + '.path="' + str(root / "build/servo-native-deps" / ("getrandom-" + version)) + '"']
     if options.package == "servo":
-        command += ["--no-default-features", "--features", "bundled"]
+        command += ["--no-default-features", "--features", "bundled,ipc-channel/force-inprocess"]
     else:
         command += ["-p", options.package]
     prefix = options.package + "-" + arch + "-check"

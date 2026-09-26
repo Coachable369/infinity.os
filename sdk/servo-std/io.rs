@@ -20,6 +20,7 @@ pub fn decode_error_kind(code: i32) -> ErrorKind {
         11 => ErrorKind::WouldBlock, 12 => ErrorKind::OutOfMemory,
         13 => ErrorKind::PermissionDenied, 17 => ErrorKind::AlreadyExists,
         22 => ErrorKind::InvalidInput, 38 | 95 => ErrorKind::Unsupported,
+        107 => ErrorKind::NotConnected, 104 => ErrorKind::ConnectionReset,
         110 => ErrorKind::TimedOut, _ => ErrorKind::Other,
     }
 }

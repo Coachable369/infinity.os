@@ -14,6 +14,7 @@ pub mod https;
 pub mod request;
 pub mod response;
 pub mod selector;
+pub mod sockets;
 mod rsa;
 pub mod task;
 pub mod tls;

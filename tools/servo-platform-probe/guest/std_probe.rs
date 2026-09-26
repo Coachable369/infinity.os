@@ -21,7 +21,7 @@ std::thread_local! { static LOCAL: Guard = Guard(std::vec![42; 128]); }
 // FUNC: cpu
 // DESC: Reads actual hardware CPU identity used to enforce single-owner native ABI access.
 // ------------------=
-fn cpu() -> u64 {
+pub(super) fn cpu() -> u64 {
     #[cfg(target_arch = "aarch64")]
     unsafe { let v: u64; core::arch::asm!("mrs {}, mpidr_el1", out(reg) v); v & 0xff00ffffff }
     #[cfg(target_arch = "x86_64")]
@@ -31,7 +31,7 @@ fn cpu() -> u64 {
 // FUNC: monotonic
 // DESC: Reads native architectural counter or HPET with hardware-reported frequency.
 // ------------------=
-fn monotonic() -> u64 {
+pub(super) fn monotonic() -> u64 {
     #[cfg(target_arch = "aarch64")]
     unsafe {
         let ticks: u64; let frequency: u64;
@@ -54,12 +54,40 @@ fn utc() -> Option<(u64, u32)> { None }
 // FUNC: entropy
 // DESC: Explicitly denies entropy not provisioned in this thread-only fixture.
 // ------------------=
-fn entropy(_: &mut [u8]) -> bool { false }
+fn entropy(bytes: &mut [u8]) -> bool {
+    if ENTROPY_DENIED.load(core::sync::atomic::Ordering::Relaxed) { return false; }
+    #[cfg(feature = "async-probe")]
+    { super::entropy_probe::fill(bytes) }
+    #[cfg(not(feature = "async-probe"))]
+    { let _ = bytes; false }
+}
+static ENTROPY_DENIED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+// ------------------------=
+// FUNC: entropy_roundtrip
+// DESC: Exercises all pinned entropy adapters with success and service denial in the guest.
+// ------------------=
+#[cfg(feature = "async-probe")]
+fn entropy_roundtrip() {
+    let mut bytes = [0u8; 37];
+    assert!(getrandom2::getrandom(&mut bytes).is_ok());
+    assert!(getrandom3::fill(&mut bytes).is_ok());
+    assert!(getrandom4::fill(&mut bytes).is_ok());
+    ENTROPY_DENIED.store(true, core::sync::atomic::Ordering::Relaxed);
+    assert!(getrandom2::getrandom(&mut bytes).is_err());
+    assert!(getrandom3::fill(&mut bytes).is_err());
+    assert!(getrandom4::fill(&mut bytes).is_err());
+    ENTROPY_DENIED.store(false, core::sync::atomic::Ordering::Relaxed);
+}
 // ------------------------=
 // FUNC: pump
 // DESC: Yields a processor hint in the disposable no-device fixture; production must service real events.
 // ------------------=
-fn pump() { core::hint::spin_loop(); }
+fn pump() {
+    #[cfg(feature = "socket-probe")]
+    super::socket_probe::pump();
+    core::hint::spin_loop();
+}
 // ------------------------=
 // FUNC: initialize
 // DESC: Installs the native provider before the first std allocation.
@@ -79,6 +107,10 @@ pub unsafe fn initialize() {
 // ------------------=
 pub fn run() {
     abi_limits();
+    #[cfg(feature = "async-probe")]
+    entropy_roundtrip();
+    #[cfg(feature = "socket-probe")]
+    super::socket_probe::run();
     #[cfg(feature = "mio-probe")]
     mio_roundtrip();
     let pair = Arc::new((Mutex::new(false), Condvar::new()));

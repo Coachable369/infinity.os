@@ -53,6 +53,12 @@ browser as installed before gate 6 passes.
 - Real thread lifecycle, join/detach, TLS teardown, std mutex/condvar and sleeps
   pass guest tests. Production worker/service integration and preemption are not
   implemented. The runtime remains opt-in, not installed.
-- Mio control and native-source readiness now use the existing bounded selector.
-  Next: finish native socket adapters for the engine build; then production
-  off-desktop worker integration and installed runtime roundtrip.
+- Native std/Mio/Tokio TCP and fail-closed entropy now pass in both architecture
+  guests. Nineteen HTTP/reactor regression tests pass. These use two packet
+  stacks in a disposable guest, not a production NIC or installed browser.
+- The engine correction loop stopped after six failed attempts. Current failures:
+  bundled FreeType/libpng cannot locate target zlib headers; servo-allocator lacks
+  native malloc/free/realloc and allocation-size bindings. The memory-font backend
+  staging is not yet compile-verified. Resume at these failures, not UI work.
+- Production governed worker, network grants/event pump, C/C++ runtime linkage,
+  actual engine execution, rendering and installed acceptance remain required.

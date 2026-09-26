@@ -17,7 +17,8 @@ const NONE: Readiness = Readiness { readable: false, writable: false };
 #[derive(Clone, Copy, Debug)]
 pub struct Event { token: Token, ready: Readiness }
 pub type Events = Vec<Event>;
-struct State { waker: bool, core: core_selector::Selector<32> }
+struct State { waker: bool, core: core_selector::Selector<32>,
+    sockets: [Option<(core_selector::Registration, Arc<std::net::TcpStream>)>; 32] }
 struct Shared { state: Mutex<State>, changed: Condvar }
 pub struct Selector { shared: Arc<Shared> }
 impl fmt::Debug for Selector {
@@ -33,7 +34,7 @@ impl Selector {
     // DESC: Creates bounded control-event storage backed by the native std wait provider.
     // ------------------=
     pub fn new() -> io::Result<Self> {
-        Ok(Self { shared: Arc::new(Shared { state: Mutex::new(State { waker: false, core: core_selector::Selector::new() }), changed: Condvar::new() }) })
+        Ok(Self { shared: Arc::new(Shared { state: Mutex::new(State { waker: false, core: core_selector::Selector::new(), sockets: core::array::from_fn(|_| None) }), changed: Condvar::new() }) })
     }
     // ------------------------=
     // FUNC: try_clone
@@ -50,6 +51,12 @@ impl Selector {
         let deadline = timeout.and_then(|duration| Instant::now().checked_add(duration));
         let mut state = self.shared.state.lock().map_err(|_| io::Error::other("native selector poisoned"))?;
         loop {
+            let State { core, sockets, .. } = &mut *state;
+            let mut has_sockets = false;
+            for (id, socket) in sockets.iter().flatten() {
+                has_sockets = true;
+                core.observe(*id, socket_readiness(socket)).map_err(error)?;
+            }
             let mut batch = [core_selector::Event { token: 0, ready: NONE }; 32];
             let count = state.core.drain(&mut batch[..events.capacity().min(32)]);
             if count != 0 {
@@ -59,7 +66,11 @@ impl Selector {
             if let Some(deadline) = deadline {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() { return Ok(()); }
-                let (next, _) = self.shared.changed.wait_timeout(state, remaining).map_err(|_| io::Error::other("native selector poisoned"))?;
+                let wait = if has_sockets { remaining.min(Duration::from_millis(1)) } else { remaining };
+                let (next, _) = self.shared.changed.wait_timeout(state, wait).map_err(|_| io::Error::other("native selector poisoned"))?;
+                state = next;
+            } else if has_sockets {
+                let (next, _) = self.shared.changed.wait_timeout(state, Duration::from_millis(1)).map_err(|_| io::Error::other("native selector poisoned"))?;
                 state = next;
             } else {
                 state = self.shared.changed.wait(state).map_err(|_| io::Error::other("native selector poisoned"))?;
@@ -112,7 +123,8 @@ fn error(value: core_selector::Error) -> io::Error {
     io::Error::new(match value { core_selector::Error::Full => io::ErrorKind::OutOfMemory, _ => io::ErrorKind::InvalidInput }, "native readiness registration rejected")
 }
 /// Readiness bridge for a native service. Ownership alone grants no network access.
-pub struct NativeSource { binding: Option<(Arc<Shared>, core_selector::Registration)>, ready: Readiness }
+pub struct NativeSource { binding: Option<(Arc<Shared>, core_selector::Registration)>, ready: Readiness,
+    socket: Option<Arc<std::net::TcpStream>> }
 impl fmt::Debug for NativeSource {
     // ------------------------=
     // FUNC: fmt
@@ -126,14 +138,21 @@ impl NativeSource {
     // DESC: Creates a service readiness source without allocating a socket or authority.
     // ------------------=
     /// Starts unregistered with the supplied service state.
-    pub fn new(ready: Readiness) -> Self { Self { binding: None, ready } }
+    pub fn new(ready: Readiness) -> Self { Self { binding: None, ready, socket: None } }
+    // ------------------------=
+    // FUNC: tcp
+    // DESC: Associates readiness with an owned stream clone, not a forgeable raw descriptor.
+    // ------------------=
+    pub(crate) fn tcp(socket: std::net::TcpStream) -> Self {
+        Self { binding: None, ready: socket_readiness(&socket), socket: Some(Arc::new(socket)) }
+    }
     // ------------------------=
     // FUNC: observe
     // DESC: Publishes transitions including not-ready after draining IO so future edges are not lost.
     // ------------------=
     /// The native service must report not-ready after draining an operation.
     pub fn observe(&mut self, ready: Readiness) -> io::Result<()> {
-        if ready == self.ready { return Ok(()); }
+        if ready == self.ready && self.socket.is_none() { return Ok(()); }
         self.ready = ready;
         if let Some((shared, id)) = &self.binding {
             let mut state = shared.state.lock().map_err(|_| io::Error::other("native selector poisoned"))?;
@@ -154,6 +173,13 @@ impl crate::event::Source for NativeSource {
         let shared = &registry.selector().shared;
         let mut state = shared.state.lock().map_err(|_| io::Error::other("native selector poisoned"))?;
         let id = state.core.register(token.0, Readiness { readable: interest.is_readable(), writable: interest.is_writable() }, self.ready).map_err(error)?;
+        if let Some(socket) = &self.socket {
+            let Some(slot) = state.sockets.iter_mut().find(|slot| slot.is_none()) else {
+                state.core.deregister(id).map_err(error)?;
+                return Err(io::Error::from(io::ErrorKind::OutOfMemory));
+            };
+            *slot = Some((id, socket.clone()));
+        }
         self.binding = Some((shared.clone(), id)); shared.changed.notify_one(); Ok(())
     }
     // ------------------------=
@@ -175,7 +201,10 @@ impl crate::event::Source for NativeSource {
     fn deregister(&mut self, registry: &Registry) -> io::Result<()> {
         let Some((shared, id)) = &self.binding else { return Err(io::Error::from(io::ErrorKind::NotFound)); };
         if !Arc::ptr_eq(shared, &registry.selector().shared) { return Err(io::Error::from(io::ErrorKind::InvalidInput)); }
-        shared.state.lock().map_err(|_| io::Error::other("native selector poisoned"))?.core.deregister(*id).map_err(error)?;
+        let mut state = shared.state.lock().map_err(|_| io::Error::other("native selector poisoned"))?;
+        state.core.deregister(*id).map_err(error)?;
+        for socket in &mut state.sockets { if socket.as_ref().is_some_and(|(found,_)| found == id) { *socket = None; } }
+        drop(state);
         self.binding = None; Ok(())
     }
 }
@@ -184,7 +213,18 @@ impl Drop for NativeSource {
     // FUNC: drop
     // DESC: Withdraws pending source events even if its service closes without explicit deregistration.
     // ------------------=
-    fn drop(&mut self) { if let Some((shared, id)) = &self.binding { if let Ok(mut state) = shared.state.lock() { let _ = state.core.deregister(*id); } } }
+    fn drop(&mut self) { if let Some((shared, id)) = &self.binding { if let Ok(mut state) = shared.state.lock() {
+        let _ = state.core.deregister(*id);
+        for socket in &mut state.sockets { if socket.as_ref().is_some_and(|(found,_)| found == id) { *socket = None; } }
+    } } }
+}
+// ------------------------=
+// FUNC: socket_readiness
+// DESC: Converts real TCP readiness and terminal failures into selector completion edges.
+// ------------------=
+pub(crate) fn socket_readiness(socket: &std::net::TcpStream) -> Readiness {
+    let (readable, writable) = std::os::infinity_net::readiness(socket).unwrap_or((true, true));
+    Readiness { readable, writable }
 }
 pub mod event {
     use super::*;

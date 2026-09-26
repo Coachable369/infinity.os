@@ -8,6 +8,8 @@ pub mod context;
 pub mod executor;
 #[cfg(all(feature = "native-abi", target_os = "none"))]
 pub mod native;
+#[cfg(all(feature = "native-abi", target_os = "none"))]
+pub mod network;
 
 pub type Destructor = unsafe extern "C" fn(*mut u8);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

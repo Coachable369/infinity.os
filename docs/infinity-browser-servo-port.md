@@ -2,6 +2,42 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Latest checkpoint: native TCP and async runtime, September 26
+
+Added a fixed-capacity smoltcp reactor with generation handles, endpoint grants,
+deadlines, backpressure, TCP EOF/reset, UDP datagram boundaries and revocation.
+Native owner-local callbacks bind real std TCP streams; Mio observes those
+streams through the bounded selector. Tokio and Hyper use that path without
+socket2/raw descriptors. Unsupported bind/tuning/signal APIs reject explicitly.
+All three pinned getrandom versions delegate to the existing entropy ABI and
+fail closed when the provider refuses a fill.
+
+Behavioral evidence:
+
+- ARM64 std/Mio/Tokio TCP plus entropy success/denial:
+  `builds/manifests/20260926T164507979288Z-3403.json` (exit 0).
+- x86_64 equivalent:
+  `builds/manifests/20260926T164551905660Z-3507.json` (exit 0).
+- Full HTTP/reactor library suite: 19 passed, 0 failed:
+  `builds/manifests/20260926T165046464193Z-4156.json`.
+
+Guest assertions cover repeated TCP readiness, partial I/O, shared stream
+lifetime, timeout cancellation, async echo, and entropy refusal. Packets travel
+between two independent stacks inside the guest. There is no host TCP helper,
+but this is also **not real NIC, internet, or installed-system evidence**.
+
+Engine compile attempt `20260926T164930203585Z-3870.json` still exits 101:
+FreeType/libpng lacks the target zlib include path; servo-allocator cannot find
+native C allocation and usable-size bindings. Source staging now selects
+memory-backed FreeType, in-process IPC, and Stylo opaque native thread IDs;
+those changes do not establish a linked or executing engine. The six-attempt
+correction limit was reached. Resume from these exact compiler failures.
+
+Production worker isolation/preemption, C/C++ runtime binding, NIC/service grants,
+queued-frame egress revalidation, DNS integration, engine linkage/rendering,
+shell and installed acceptance remain open. No fresh browser ISO was generated.
+Older sections below are historical checkpoints, not current completion claims.
+
 ## Native event-layer continuation
 
 `Transport::readiness` now reflects whether reads/writes can complete, including

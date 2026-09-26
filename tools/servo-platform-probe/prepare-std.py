@@ -34,6 +34,25 @@ def main():
     path.write_text(text)
     system = destination / "std/src/sys"
     adapters = root / "sdk/servo-std"
+    path = destination / "std/src/os/mod.rs"
+    path.write_text(path.read_text() + '''
+#[cfg(all(target_os = "none", infinity_native))]
+#[stable(feature = "infinity_native_net", since = "1.98.0")]
+#[path = "infinity_net.rs"]
+pub mod infinity_net;
+''')
+    shutil.copyfile(adapters / "os-net.rs", destination / "std/src/os/infinity_net.rs")
+    path = system / "net/connection/mod.rs"
+    path.write_text(path.read_text().replace("cfg_select! {", '''cfg_select! {
+    all(target_os = "none", infinity_native) => {
+        mod infinity;
+        pub use infinity::*;
+    }
+''', 1))
+    shutil.copyfile(adapters / "net.rs", system / "net/connection/infinity.rs")
+    unsupported = (system / "net/connection/unsupported.rs").read_text()
+    unsupported = unsupported.replace("io::Result<(TcpStream, SocketAddr)>", "io::Result<(super::TcpStream, SocketAddr)>")
+    (system / "net/connection/infinity_unsupported.rs").write_text(unsupported)
     for relative, exports in (
         ("alloc/mod.rs", ""),
         ("io/error/mod.rs", "pub use infinity::*;"),

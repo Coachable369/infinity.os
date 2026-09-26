@@ -9,6 +9,10 @@ mod context_probe;
 mod executor_probe;
 #[cfg(feature = "std-probe")]
 mod std_probe;
+#[cfg(feature = "socket-probe")]
+mod socket_probe;
+#[cfg(feature = "async-probe")]
+mod entropy_probe;
 
 #[repr(align(4096))]
 struct Memory([u8; 4096]);
@@ -41,7 +45,7 @@ fn finish(status: u64, allocations: u64, capacity: u64) -> ! {
     unsafe {
         #[cfg(target_arch = "aarch64")]
         {
-        let version = if cfg!(feature = "mio-probe") { 5 } else if cfg!(feature = "std-probe") { 4 } else if cfg!(feature = "executor-probe") { 3 } else if cfg!(feature = "context-probe") { 2 } else { 1 };
+        let version = if cfg!(feature = "async-probe") { 7 } else if cfg!(feature = "socket-probe") { 6 } else if cfg!(feature = "mio-probe") { 5 } else if cfg!(feature = "std-probe") { 4 } else if cfg!(feature = "executor-probe") { 3 } else if cfg!(feature = "context-probe") { 2 } else { 1 };
         for value in [version, status, allocations, capacity] {
             for byte in value.to_le_bytes() {
                 while core::ptr::read_volatile(0x09000018 as *const u32) & 32 != 0 {}

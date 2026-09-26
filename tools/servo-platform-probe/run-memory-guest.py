@@ -21,12 +21,20 @@ def main():
     parser.add_argument("--executor-probe", action="store_true")
     parser.add_argument("--std-probe", action="store_true")
     parser.add_argument("--mio-probe", action="store_true")
+    parser.add_argument("--socket-probe", action="store_true")
+    parser.add_argument("--async-probe", action="store_true")
     parser.add_argument("--arch", choices=["aarch64", "x86_64"], default="aarch64")
     options = parser.parse_args()
+    if options.async_probe:
+        options.socket_probe = True
+    if options.socket_probe:
+        options.mio_probe = True
     if options.mio_probe:
         options.std_probe = True
     # Cargo resolves optional path dependencies even when their feature is disabled.
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-mio.py"))], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-async-net.py"))], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-entropy.py"))], check=True)
     if options.std_probe:
         options.executor_probe = True
     if options.executor_probe:
@@ -38,6 +46,10 @@ def main():
         output = root / "build/servo-std-guest"
     if options.mio_probe:
         output = root / "build/servo-mio-guest"
+    if options.socket_probe:
+        output = root / "build/servo-socket-guest"
+    if options.async_probe:
+        output = root / "build/servo-async-guest"
     output = output / options.arch
     output.mkdir(parents=True, exist_ok=True)
     target = output / "target"
@@ -48,9 +60,19 @@ def main():
     if options.std_probe:
         environment["__CARGO_TESTS_ONLY_SRC_ROOT"] = str(root / "build/servo-rust-src/library")
         environment["RUSTFLAGS"] = "--cfg infinity_native --check-cfg=cfg(infinity_native)"
+        if options.socket_probe:
+            # The socket proof does not exercise TLS. Keep linked HTTP crypto
+            # dependencies on their reviewed software paths for freestanding
+            # targets which do not enable vector instruction ABI support.
+            environment["RUSTFLAGS"] += " --cfg aes_force_soft --cfg polyval_force_soft"
     command = ["cargo", "build", "--manifest-path", str(Path(__file__).with_name("guest") / "Cargo.toml"),
                     "--release", "-Z", "build-std=std,panic_abort" if options.std_probe else "build-std=core", "--target", triple]
-    if options.mio_probe:
+    command += ["--config", 'patch.crates-io.mio.path="' + str(root / "build/servo-native-deps/mio-1.2.3") + '"']
+    if options.async_probe:
+        command += ["--features", "async-probe"]
+    elif options.socket_probe:
+        command += ["--features", "socket-probe"]
+    elif options.mio_probe:
         command += ["--features", "mio-probe"]
     elif options.std_probe:
         command += ["--features", "std-probe"]
@@ -73,6 +95,10 @@ def main():
         expected = (4, 0, 2002, 4096)
     if options.mio_probe:
         expected = (5, 0, 2002, 4096)
+    if options.socket_probe:
+        expected = (6, 0, 2002, 4096)
+    if options.async_probe:
+        expected = (7, 0, 2002, 4096)
     if options.arch == "aarch64":
         subprocess.run(["qemu-system-aarch64", "-machine", "virt", "-accel", "tcg", "-cpu", "max",
                         "-m", "128M", "-display", "none", "-serial", "file:" + str(result),
@@ -85,7 +111,7 @@ def main():
         shutil.copyfile(root / "build/x86_64/BOOTX64.EFI", volume / "EFI/BOOT/BOOTX64.EFI")
         shutil.copyfile(executable, volume / "EFI/INFINITY/KERNEL.ELF")
         with (output / "qemu.log").open("wb") as log:
-            guest = subprocess.run(["qemu-system-x86_64", "-machine", "pc", "-accel", "tcg",
+            guest = subprocess.run(["qemu-system-x86_64", "-machine", "pc", "-cpu", "max", "-accel", "tcg",
                 "-drive", "if=pflash,format=raw,readonly=on,file=/opt/homebrew/share/qemu/edk2-x86_64-code.fd",
                 "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04", "-m", "512M",
                 "-drive", "format=raw,file=fat:rw:" + str(volume), "-boot", "order=c",
@@ -98,6 +124,7 @@ def main():
         raise RuntimeError("Guest memory assertions failed: " + repr(record))
     evidence = dict(environment="freestanding QEMU guest", architecture=options.arch, operations=record[2], context_probe=options.context_probe,
                     executor_probe=options.executor_probe, std_probe=options.std_probe, mio_probe=options.mio_probe,
+                    socket_probe=options.socket_probe, async_probe=options.async_probe,
                     arena_bytes=record[3], passed=True, installed_os=False, servo_executed=False)
     (output / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
     print(json.dumps(evidence, indent=2))
