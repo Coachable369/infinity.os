@@ -227,7 +227,7 @@ unsafe fn speak_next() -> bool {
             }
         }
     }
-    let Some(cap) = grant(OWNER, CapabilityType::AudioOutput, 40) else {
+    let Some(cap) = grant(OWNER, CapabilityType::AudioOutput, voice_output::OUTPUT_LEASE_SECONDS) else {
         return false;
     };
     if voice_output::submit(OWNER, cap, &remaining[..count]).is_err() {

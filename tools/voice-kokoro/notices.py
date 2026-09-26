@@ -11,6 +11,8 @@ import json
 def assemble(root, output):
     deps = root / "build/voice-kokoro/reference/_deps"
     sources = {
+        "kokoro-model-attribution": root / "tools/voice-kokoro/MODEL-NOTICE.txt",
+        "kokoro-model-apache-2.0": root / "docs/licenses/Ministral-Apache-2.0.txt",
         "kokopop": root / "build/kokopop-port-audit/LICENSE",
         "ggml": deps / "ggml-src/LICENSE",
         "yyjson": deps / "yyjson-src/LICENSE",

@@ -65,8 +65,9 @@ cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - build/aarch64/
 # invocation's disposable ESP before allocating another full EFI image.
 rm -- "${payload_build}/installed-esp.img"
 RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target aarch64-unknown-none-softfloat --features streamed-payload
-/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/aarch64.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a build/aarch64/qwen-math.o build/voice-flite/aarch64/libflite.a build/voice-pocketsphinx-arm/private-native.o
+/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/aarch64.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a build/aarch64/qwen-math.o build/voice-kokoro/aarch64/private-native.o build/voice-pocketsphinx-arm/private-native.o
 rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
+python3 tools/voice-kokoro/install-parity.py build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
 build/tools/cursor-install-parity build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
 cp build/aarch64/BOOTAA64.EFI ${payload_build}/live/EFI/BOOT/
 rm -r -- "${payload_build}/cargo"

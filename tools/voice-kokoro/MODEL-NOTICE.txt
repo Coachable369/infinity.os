@@ -1,0 +1,10 @@
+Kokoro v1.0 / Kokoro-82M model
+Upstream: https://huggingface.co/hexgrad/Kokoro-82M
+License: Apache License, Version 2.0 (full text follows in the dependency notices).
+GGUF conversion: https://huggingface.co/tterrasson/Kokoro-GGUF
+Pinned conversion revision: b7958cdedd0efa56e8756895e739fbe2852f635d
+File: kokoro-v1_0.gguf
+SHA-256: e8242a1321e580599c26981692adf088ebfdc4c7b7555959b13f4d6667d0d206
+InfinityOS uses the embedded af_heart voice with the native Kokopop CPU backend.
+The immutable model is embedded unchanged. Native port modifications are
+separate from the model and are distributed with their corresponding sources.

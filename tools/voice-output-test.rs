@@ -3,6 +3,8 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 static NOW: AtomicU64 = AtomicU64::new(1);
 static EXPIRE: AtomicBool = AtomicBool::new(false);
+static INVALID: AtomicBool = AtomicBool::new(false);
+static REVOKED: AtomicBool = AtomicBool::new(false);
 static PLAYED: AtomicUsize = AtomicUsize::new(0);
 static mut TASK: Option<unsafe fn()> = None;
 mod runtime {
@@ -22,7 +24,7 @@ mod runtime {
         // ------------------=
         pub fn validate(&self, cap: u64, owner: execution::SecurityIdentity, _: capability::CapabilityType,
                         _: u64, _: u64, _: u64, _: u64) -> Result<(), ()> {
-            if cap == 1 && owner.0 == [1; 16] { Ok(()) } else { Err(()) }
+            if cap == 1 && owner.0 == [1; 16] && !crate::REVOKED.load(crate::Ordering::SeqCst) { Ok(()) } else { Err(()) }
         }
         // ------------------------=
         // FUNC: retire_leaf
@@ -51,7 +53,7 @@ mod drivers { pub mod audio {
     // DESC: Records hardware submission only after validating converted PCM dimensions.
     // ------------------=
     pub fn play_resident_speech(_: SecurityIdentity, _: u64, pcm: &[i16], count: usize, rate: u32) -> bool {
-        assert_eq!(rate, 48000); assert_eq!(count, 480);
+        assert_eq!(rate, 48000); assert_eq!(count, 320);
         assert!(pcm[..count].iter().any(|v| *v != 0));
         PLAYED.fetch_add(1, Ordering::SeqCst); true
     }
@@ -89,18 +91,28 @@ mod qwen { pub mod workers {
     pub fn background(task: unsafe fn()) -> bool { unsafe { crate::TASK = Some(task); } true }
 } }
 #[path = "../kernel/runtime/ai/voice_output.rs"] mod voice_output;
-#[no_mangle] static infinity_flite_license: u8 = 1;
 // ------------------------=
-// FUNC: infinity_flite_synthesize
+// FUNC: infinity_kokoro_native_synthesize
 // DESC: Deterministic provider can finish after deadline without returning a provider error.
 // ------------------=
 #[no_mangle]
-unsafe extern "C" fn infinity_flite_synthesize(_: *const u8, _: usize, pcm: *mut i16, _: usize,
-    frames: *mut usize, peak: *mut usize, _: extern "C" fn() -> i32, _: usize) -> i32 {
+unsafe extern "C" fn infinity_kokoro_native_synthesize(_: *const u8, _: usize, pcm: *mut i16, capacity: usize,
+    frames: *mut usize, cancel: extern "C" fn(*mut core::ffi::c_void) -> i32, context: *mut core::ffi::c_void) -> i32 {
+    assert_eq!(capacity, 720000);
+    if cancel(context) != 0 { *frames = 0; return 2; }
     for i in 0..80 { *pcm.add(i) = 100; }
-    *frames = 80; *peak = 160;
-    if EXPIRE.load(Ordering::SeqCst) { NOW.fetch_add(3_000_000_000, Ordering::SeqCst); }
+    *frames = if INVALID.load(Ordering::SeqCst) { capacity + 1 } else { 80 };
+    if EXPIRE.load(Ordering::SeqCst) { NOW.fetch_add((voice_output::SYNTHESIS_SECONDS + 1) * 1_000_000_000, Ordering::SeqCst); }
     0
+}
+// ------------------------=
+// FUNC: infinity_kokoro_native_diagnostics
+// DESC: Supplies bounded provider accounting through the real native ABI.
+// ------------------=
+#[no_mangle]
+unsafe extern "C" fn infinity_kokoro_native_diagnostics(out: *mut usize) {
+    for i in 0..12 { *out.add(i) = 0; }
+    *out.add(1) = 564940256;
 }
 // ------------------------=
 // FUNC: deadline_and_cancellation_do_not_publish_stale_pcm
@@ -138,4 +150,18 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     assert!(stop(owner));
     poll(); assert_eq!(status().state, S::Cancelled);
     assert_eq!(PLAYED.load(Ordering::SeqCst), 1);
+    INVALID.store(true, Ordering::SeqCst);
+    submit(owner, 1, b"invalid frames").unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    assert_eq!(status().state, S::Failed);
+    assert_eq!(status().error, 6);
+    poll(); assert_eq!(PLAYED.load(Ordering::SeqCst), 1);
+    INVALID.store(false, Ordering::SeqCst);
+    submit(owner, 1, b"revoked").unwrap();
+    REVOKED.store(true, Ordering::SeqCst);
+    poll();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll(); assert_eq!(status().state, S::Cancelled);
+    assert_eq!(PLAYED.load(Ordering::SeqCst), 1);
+    REVOKED.store(false, Ordering::SeqCst);
 }

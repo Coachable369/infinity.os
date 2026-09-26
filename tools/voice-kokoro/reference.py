@@ -63,6 +63,7 @@ def inspect_pcm(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--text", default="Hi.")
+    parser.add_argument("--build-only", action="store_true")
     args = parser.parse_args()
     if not args.text.strip() or len(args.text) > 160:
         parser.error("Reference text must contain 1 to 160 characters")
@@ -95,6 +96,8 @@ def main():
         "-DKOKOPOP_ENABLE_OPUS=OFF", "-DKOKOPOP_BUILD_TOOLS=ON",
         "-DGGML_NATIVE=OFF", *architecture)
     run("cmake", "--build", output, "--target", "kokopop_say", "-j4")
+    if args.build_only:
+        return
     audio = output / "hello.wav"
     audio.unlink(missing_ok=True)
     run(output / "kokopop_say", "--model", model, "--backend", "cpu", "--threads", "1",

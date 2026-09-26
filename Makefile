@@ -315,6 +315,9 @@ $(BUILD)/x86_64/installed-kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUN
 
 FLITE_PORT_SOURCES := $(wildcard tools/voice-flite/include/*.h) tools/voice-flite/port.c tools/voice-flite/jump.S tools/voice-flite/build.py tools/voice-flite/COPYING
 
+$(BUILD)/voice-kokoro/aarch64/private-native.o: $(wildcard tools/voice-kokoro/*.py tools/voice-kokoro/*.c tools/voice-kokoro/*.cpp tools/voice-kokoro/*.ld tools/voice-kokoro/*.txt) $(wildcard sdk/compiler/*.c sdk/compiler/*.h sdk/compiler/*.patch) $(BUILD)/voice-pocketsphinx-arm/private-native.o
+	python3 tools/voice-kokoro/build.py --build-only
+
 $(BUILD)/voice-pocketsphinx-arm/private-native.o: $(wildcard tools/voice-pocketsphinx/*.py) tools/voice-pocketsphinx/port.c tools/voice-pocketsphinx/include/sys/mman.h
 	python3 tools/voice-pocketsphinx/build.py
 
@@ -683,8 +686,8 @@ $(BUILD)/aarch64/qwen-math.o: kernel/runtime/ai/qwen/cpu_math.c
 	@mkdir -p $(@D)
 	$(CLANG) --target=aarch64-none-elf -ffreestanding -fno-builtin -fno-stack-protector -ffp-contract=off -O3 -c $< -o $@
 
-$(BUILD)/aarch64/installed-kernel.elf: $(BUILD)/aarch64/installed-kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a $(BUILD)/voice-pocketsphinx-arm/private-native.o
-	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a $(BUILD)/voice-pocketsphinx-arm/private-native.o
+$(BUILD)/aarch64/installed-kernel.elf: $(BUILD)/aarch64/installed-kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
+	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
 
 $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(ICON_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS) $(NODE_ASSETS)
 	rm -rf $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Crash
@@ -712,11 +715,11 @@ $(BUILD)/aarch64/kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/aarch6
 	cp $(BUILD)/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a $(BUILD)/aarch64/libkernel.a
 	touch $@
 
-$(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a $(BUILD)/voice-pocketsphinx-arm/private-native.o
-	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a $(BUILD)/voice-pocketsphinx-arm/private-native.o
+$(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
+	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
 
-$(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a $(BUILD)/voice-pocketsphinx-arm/private-native.o
-	$(LD_LLD) -nostdlib -static -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-flite/aarch64/libflite.a $(BUILD)/voice-pocketsphinx-arm/private-native.o
+$(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
+	$(LD_LLD) -nostdlib -static -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
 
 $(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/common/payload_loader.h boot/common/worker_bridge.h boot/common/psci_workers.h
 	@mkdir -p $(@D)

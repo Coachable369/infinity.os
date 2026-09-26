@@ -1,9 +1,30 @@
-# Kokoro native migration: incomplete
+# Kokoro native ARM64 integration
 
 `reference.py` builds and runs an isolated **host CPU reference**. It is not
 linked into InfinityOS, not a host service used by the OS, and not installed
-acceptance. The existing installed default remains Flite/KAL16. Recognition
-remains PocketSphinx; Kokoro does not implement speech recognition.
+acceptance. ARM64 live and installed kernels now link the private native Kokoro
+backend by default, including the streamed installer build. x86-64 still uses
+Flite/KAL16 under an active compatibility contract until its native Kokoro port
+is available. Recognition remains PocketSphinx; Kokoro does not implement speech
+recognition. Installed playback and perceptual quality remain separate gates.
+
+The production worker uses 24 kHz PCM, band-limited device-rate conversion,
+single-owner cancellation, a bounded 90-second asynchronous synthesis deadline,
+and a 130-second output lease covering synthesis plus finite playback. This
+provider-specific budget replaces the Flite-only two-second deadline; it is not
+a speed improvement. The UI thread never performs inference. Invalid/empty
+provider results cannot reach DMA. The existing 1 GiB private heap is unchanged.
+Long replies are synthesized in at most 44-character, word-boundary phrases;
+the bounded PCM is concatenated before playback. A single word exceeding this
+bound is rejected, not cut into unrelated pronunciations. This avoids a proven
+paragraph-sized graph allocation failure (a 259,560,528-byte request with
+952,663,520 bytes already committed). A 158-character paragraph now produces
+278,400 frames (11.6 seconds) in about 31 seconds using 904,048,096 committed bytes.
+
+`build.py --build-only` prepares and links dependencies without running host or
+guest synthesis. `install-parity.py` checks the actual loadable model, phonemizer,
+notices, and constructor data in both installed and live ELF images. The ISO
+packager additionally verifies byte-identical installed kernel payload shards.
 
 Run:
 
@@ -30,7 +51,7 @@ The default reference phrase is `Hi.`. The reference uses baseline ARMv8-A
 instructions on ARM64 and one CPU thread, matching the native prototype. Its
 evidence records the input and output metrics. This is not a listening test.
 
-## Native boundary still outstanding
+## Native boundary and verification
 
 The private freestanding ARM64 libc++, libc++abi, GGML CPU, phonemizer, and
 Kokoro objects now compile and link into the native guest probe. The only
@@ -104,29 +125,26 @@ for unsupported types, lengths, and boundary rows. The guest additionally checks
 the single-row implementation. A separate experiment with the upstream tinyBLAS
 backend provided no measurable speedup and was removed.
 
-Next implementation gates remain:
+Remaining acceptance gates:
 
 1. Complete distribution materials before release integration. GPLv3-compatible
    distribution was explicitly approved on September 25, 2026. The current
    prototype statically links GPLv3-licensed eSpeak NG. Kokopop's MIT license
    does not remove dependency obligations. Dependency notices are embedded.
    `./build-kit run python3 tools/voice-kokoro/source-bundle.py` preserves the
-   dependency sources and port recipes under `builds/voice-kokoro`. This is not
-   yet the complete corresponding source for a combined OS binary: release
-   packaging must include the applicable OS integration/build source and model
-   attribution too. Approval alone is not packaging verification.
-2. Reduce synthesis latency and integrate the production worker, including
-   cancellation, deadlines, and memory budget.
-   Validate production memory mapping, not only the disposable probe mapping.
-3. Connect real 24-kHz output to Audio Service and verify voice off/on recovery.
-   Add the x86-64 native backend.
-4. Package the backend, model, voice and phonemizer in the installed System
-   Generation. Verify audio on a cold-installed node with ISO detached before
-   declaring the replacement complete.
+   dependency sources, current tracked OS integration/build source and artwork
+   under `builds/voice-kokoro/infinityos-kokoro-sources.tar.gz`. Model attribution
+   and the full Apache 2.0 text are embedded with dependency notices. This source
+   archive is release preparation, not a legal certification of whole-OS source
+   completeness. Approval alone is not packaging verification.
+2. Verify production worker execution and actual audio on an installed node,
+   including cancellation, UI responsiveness and voice off/on recovery.
+3. Add the x86-64 native backend.
+4. Verify audio on a cold-installed node with ISO detached before declaring
+   installed acceptance complete.
 
-No Kokoro availability flag, fake provider or silent Flite fallback has been
-added. The reference workflow is a migration prerequisite, not the requested
-completed native replacement.
+There is no silent Flite fallback on ARM64. A synthesis error is surfaced as a
+failed native speech job; it does not substitute a different voice.
 
 Unfinished upstream modifications are preserved as reviewable patches in
 `third_party/patches/voice-kokoro`. Generated clones, dependency checkouts and

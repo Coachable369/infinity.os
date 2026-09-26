@@ -11737,7 +11737,7 @@ impl ConsoleRuntime {
                         s.state == crate::runtime::identity::SessionState::Active);
                 if !active { return None; }
                 runtime.capabilities.grant(CapabilityType::AudioOutput, 0, 1, 0,
-                    owner, owner, Some(now + 40), 0).ok()
+                    owner, owner, Some(now + crate::runtime::ai::voice_output::OUTPUT_LEASE_SECONDS), 0).ok()
             }).flatten();
             let started = capability.map(|cap| crate::runtime::ai::voice_output::submit(owner, cap, &command[10..]).is_ok()).unwrap_or(false);
             if !started { if let Some(cap) = capability { crate::runtime::with_runtime(|r| { let _ = r.capabilities.retire_leaf(cap, owner); }); } }
@@ -11774,8 +11774,12 @@ impl ConsoleRuntime {
             #[cfg(target_os = "none")]
             {
                 let status = crate::runtime::ai::voice_output::status();
+                #[cfg(target_arch = "aarch64")]
+                self.output.write_line(b"Speech provider: native Kokoro / af_heart / 24 kHz");
+                #[cfg(not(target_arch = "aarch64"))]
+                self.output.write_line(b"Speech provider: native Flite / KAL16 / 16 kHz");
                 self.output.write_number(b"Native speech state: ", status.state as u64);
-                self.output.write_number(b"Speech frames (16 kHz): ", status.frames as u64);
+                self.output.write_number(b"Speech source frames: ", status.frames as u64);
                 self.output.write_number(b"Synthesis milliseconds: ", status.synthesis_ns / 1_000_000);
                 self.output.write_number(b"Synthesis arena peak bytes: ", status.peak_bytes as u64);
                 self.output.write_number(b"Speech error: ", status.error as u64);

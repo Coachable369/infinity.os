@@ -25,10 +25,10 @@ extern "C" void native_initialize(void) {
 }
 
 // ------------------------=
-// FUNC: native_run
-// DESC: Produces genuine Kokoro PCM from bounded English text using only the private native CPU model.
+// FUNC: synthesize_phrase
+// DESC: Produces one bounded phrase using the persistent private CPU model and releases its transient audio.
 // ------------------=
-extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t capacity, size_t *frames) {
+static int synthesize_phrase(const char *text, size_t length, int16_t *pcm, size_t capacity, size_t *frames) {
     native_initialize();
     std::string error;
     native_phase = 1;
@@ -60,4 +60,31 @@ extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t 
     }
     std::free(audio.samples);
     return result;
+}
+
+// ------------------------=
+// FUNC: native_run
+// DESC: Keeps paragraph inference inside the fixed arena by synthesizing word-boundary phrases into bounded PCM.
+// ------------------=
+extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t capacity, size_t *frames) {
+    size_t position = 0, written = 0;
+    while (position < length) {
+        if (native_cancelled()) return 2;
+        size_t count = std::min(size_t(44), length - position);
+        if (count < length - position) {
+            size_t boundary = count;
+            while (boundary && text[position + boundary - 1] != ' ') --boundary;
+            // Do not split a single long word into unrelated spoken fragments.
+            if (!boundary) return 1;
+            count = boundary;
+        }
+        if (written >= capacity) return 6;
+        size_t produced = 0;
+        int result = synthesize_phrase(text + position, count, pcm + written, capacity - written, &produced);
+        if (result) return result;
+        written += produced;
+        position += count;
+    }
+    *frames = written;
+    return 0;
 }

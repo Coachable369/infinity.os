@@ -135,13 +135,20 @@ unsafe fn normal_memory() {
 #[no_mangle]
 pub unsafe extern "C" fn probe() -> ! {
     normal_memory();
-    for case in 0..6 {
+    let guard = core::slice::from_raw_parts_mut((0xbe000000usize - 65536 - 4096) as *mut u8, 4096);
+    guard.fill(0xa5);
+    for case in 0..10 {
         let mut frames = 0;
         let (start, end, frequency): (u64, u64, u64);
         core::arch::asm!("mrs {},cntvct_el0",out(reg)start);
+        let text: &[u8] = match case {
+            6 => b"Hello, I am Infinity. How can I help you today?",
+            7 | 9 => b"Welcome to Infinity. Your assistant runs entirely on this computer. You can ask questions, work on your projects, and explore your ideas with a natural voice.",
+            _ => b"Hi.",
+        };
         let result = native_synthesize(
-            b"Hi.".as_ptr(),
-            if case == 3 { 0 } else { 3 },
+            text.as_ptr(),
+            if case == 3 { 0 } else { text.len() },
             (&raw mut PCM).cast(),
             720000,
             &mut frames,
@@ -178,9 +185,10 @@ pub unsafe extern "C" fn probe() -> ! {
             (&raw const PCM).cast(),
             frames * 2,
         ));
-        if result != [0, 0, 2, 1, 2, 0][case as usize] {
+        if result != [0, 0, 2, 1, 2, 0, 0, 0, 0, 0][case as usize] {
             finish();
         }
+        assert!(guard.iter().all(|byte| *byte == 0xa5));
     }
     let mut notice_length = 0;
     let notice = native_resource(b"/licenses/kokoro-dependencies.txt\0".as_ptr(), &mut notice_length);

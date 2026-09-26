@@ -200,6 +200,7 @@ mod voice_input {
     pub fn take(_:SecurityIdentity,_:&mut[u8])->Result<usize,()>{Err(())}
 }
 mod voice_output {
+    pub const OUTPUT_LEASE_SECONDS: u64 = 130;
     use crate::runtime::execution::SecurityIdentity;
     pub enum OutputState {Queued,Synthesizing,Ready,Speaking,Complete,Failed,Cancelled}
     pub struct Status {pub state:OutputState}
