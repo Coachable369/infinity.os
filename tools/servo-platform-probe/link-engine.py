@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import subprocess
 import json
+import argparse
 
 # ------------------------=
 # FUNC: main
@@ -12,12 +13,25 @@ def main():
     if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
         raise SystemExit("Run through build-kit")
     root = Path(__file__).resolve().parents[2]
-    target = root / "build/cargo/aarch64-unknown-none-softfloat/debug"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
+    arch = parser.parse_args().arch
+    triple = "aarch64-unknown-none-softfloat" if arch == "aarch64" else "x86_64-unknown-none"
+    target = root / "build/cargo" / triple / "debug"
     output = root / "build/servo-platform-probe"
+    codegen = json.loads((output / ("servo-" + arch + "-codegen.json")).read_text())
+    if codegen["compiler_exit_status"] != 0 or codegen["target"] != triple:
+        raise SystemExit("Successful matching native code generation required")
+    native_search = ["-L", "native=" + str(root / ("build/voice-kokoro/cxx-" + arch + "/lib"))]
+    for entry in codegen["native_search_paths"]:
+        path = Path(entry.removeprefix("native=")).resolve()
+        # Cargo reports host build-script paths too; never link a host archive.
+        if path.is_relative_to(target.resolve()) and path.is_dir():
+            native_search += ["-L", "native=" + str(path)]
     flags = ["--cfg", "infinity_native", "--check-cfg=cfg(infinity_native)",
              "--check-cfg=cfg(infinity_certificate_test)"]
     native_externs = []
-    for name in ("core", "panic_abort"):
+    for name in ("core", "panic_abort", "compiler_builtins"):
         archives = []
         for fingerprint in (target / ".fingerprint").glob(name + "-*/lib-" + name + ".json"):
             archive = target / "deps" / ("lib" + fingerprint.parent.name + ".rlib")
@@ -26,12 +40,29 @@ def main():
         if len(archives) != 1:
             raise SystemExit("Expected one native code-generated " + name + " archive")
         native_externs += ["--extern", name + "=" + str(archives[0])]
-    command = ["rustc", "--edition=2021", "--target", "aarch64-unknown-none-softfloat",
+    runtime = output / ("libnative_runtime_" + arch + ".rlib")
+    newlib = root / ("build/voice-newlib-" + arch) / (arch + "-none-elf/newlib")
+    allocator = output / ("c-reentrant-allocator-" + arch + ".o")
+    subprocess.run(["/opt/homebrew/opt/llvm/bin/clang", "--target=" + arch + "-none-elf",
+                    "-ffreestanding", "-fno-builtin", "-isystem", str(newlib / "targ-include"),
+                    "-isystem", str(root / "build/newlib-4.6.0.20260123/newlib/libc/include"),
+                    "-c", str(root / "sdk/servo-std/c-reentrant-allocator.c"), "-o", str(allocator)], check=True)
+    subprocess.run(["rustc", "--edition=2021", "--target", triple,
+                    "--crate-name", "infinity_servo_runtime_primitives", "--crate-type", "rlib",
+                    "--cfg", 'feature="native-abi"', "--cfg", 'feature="c-allocator-abi"', "-C", "panic=abort",
+                    *native_externs, "-L", "dependency=" + str(target / "deps"),
+                    str(root / "sdk/servo-runtime-primitives/lib.rs"), "-o", str(runtime)], check=True)
+    command = ["rustc", "--edition=2021", "--target", triple,
                "--cfg", "infinity_native", "-C", "panic=abort",
                "-C", "linker=/opt/homebrew/opt/lld/bin/ld.lld",
                "-C", "link-arg=--entry=infinity_browser_link_probe",
                "-C", "link-arg=--error-limit=0",
+               *native_search,
+               "-l", "static=c++abi",
+               "-C", "link-arg=" + str(allocator),
+               "-L", "native=" + str(newlib), "-l", "static=c", "-l", "static=m",
                "--extern", "servo=" + str(target / "libservo.rlib"),
+               "--extern", "infinity_servo_runtime_primitives=" + str(runtime),
                *native_externs,
                "-L", "dependency=" + str(target / "deps"),
                "-L", "dependency=" + str(root / "build/cargo/debug/deps"),

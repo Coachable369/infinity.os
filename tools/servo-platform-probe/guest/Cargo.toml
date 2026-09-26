@@ -7,7 +7,7 @@ publish = false
 [features]
 context-probe = []
 executor-probe = ["context-probe"]
-std-probe = ["executor-probe", "infinity-servo-runtime-primitives/native-abi"]
+std-probe = ["executor-probe", "infinity-servo-runtime-primitives/c-allocator-abi"]
 mio-probe = ["std-probe", "dep:mio"]
 socket-probe = ["mio-probe", "mio/net", "dep:infinity-http"]
 async-probe = ["socket-probe", "dep:tokio", "dep:getrandom2", "dep:getrandom3", "dep:getrandom4"]

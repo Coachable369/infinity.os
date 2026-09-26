@@ -73,6 +73,9 @@ def main():
     if not (cxx_headers / "__config_site").is_file():
         raise SystemExit("Native libc++ headers unavailable; prepare native toolchain through build-kit")
     environment[f"CXX_{target_key}"] = "/opt/homebrew/opt/llvm/bin/clang++"
+    # mozjs reads the global spelling; cc-rs reads the target-qualified one.
+    environment["CXXSTDLIB"] = "c++"
+    environment[f"CXXSTDLIB_{target_key}"] = "c++"
     environment[f"CXXFLAGS_{target_key}"] = (
         "-nostdinc++ -isystem " + str(cxx_headers) + " " + cflags)
     subprocess.run([environment[f"CC_{target_key}"],
@@ -80,7 +83,7 @@ def main():
                     str(Path(__file__).with_name("c-abi-probe.c"))], check=True, env=environment)
     command = ["cargo", "build" if options.codegen else "check", "-j", "4", "-Z", "build-std=std,panic_abort",
                "--target", target, "--manifest-path",
-               str(source / "components/servo/Cargo.toml"), "--locked"]
+               str(source / "components/servo/Cargo.toml"), "--locked", "--message-format=json-render-diagnostics"]
     native_libc = root / "build/servo-native-deps/libc-0.2.189"
     if native_libc.is_dir():
         command += ["--config", 'patch.crates-io.libc.path="' + str(native_libc) + '"']
@@ -105,14 +108,27 @@ def main():
     else:
         command += ["-p", options.package]
     prefix = options.package + "-" + arch + ("-codegen" if options.codegen else "-check")
+    native_paths = set()
     with (output / (prefix + ".log")).open("w") as log:
-        result = subprocess.run(command, cwd=root, env=environment, stdout=log,
-                                stderr=subprocess.STDOUT, check=False)
+        process = subprocess.Popen(command, cwd=root, env=environment, stdout=subprocess.PIPE,
+                                   stderr=log, text=True)
+        for line in process.stdout:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                log.write(line)
+                continue
+            if event.get("reason") == "build-script-executed":
+                native_paths.update(event.get("linked_paths", []))
+            if event.get("reason") == "compiler-message":
+                log.write(event["message"].get("rendered") or "")
+            log.flush()
+        status = process.wait()
     report = {"servo_revision": revision, "package": options.package, "target": target, "command": command,
-              "compiler_exit_status": result.returncode, "executed": False}
+              "compiler_exit_status": status, "native_search_paths": sorted(native_paths), "executed": False}
     (output / (prefix + ".json")).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
-    return result.returncode
+    return status
 
 
 if __name__ == "__main__":

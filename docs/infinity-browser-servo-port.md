@@ -2,6 +2,40 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Native library and allocation checkpoint, September 26
+
+The stdc++/zlib lookup blocker below is resolved. Both mozjs and cc-rs now
+select libc++, matching the existing native headers. Cargo's structured
+build-script events supply exact native library paths; host build directories
+are excluded from the executable's native library search. Native AArch64 archive
+generation passes: `builds/manifests/20260926T202443378345Z-27832.json`.
+
+The link probe now includes the real native runtime primitives, not replacements
+that return fabricated success. New opt-in `c-allocator-abi` symbols route
+malloc/free/realloc/calloc through the same granted heap as Rust. The newlib
+reentrant variants also use this heap and record ENOMEM in the caller's state.
+Existing serial-only compiler pthread adapters are deliberately not linked.
+
+Behavioral proof: C calls execute inside both disposable native guests. Tests
+cover zeroing, overflow, alignment, failed-realloc preservation, reentrant errno,
+and full heap reclamation, alongside the existing thread/TLS/wait tests:
+
+- AArch64: `builds/manifests/20260926T203422344965Z-31766.json`, passed.
+- x86_64: `builds/manifests/20260926T203438923006Z-31815.json`, passed.
+
+The current full engine link still fails:
+`builds/manifests/20260926T203455445992Z-31857.json`. Newlib archive members conflict
+with the governed allocator's malloc/calloc/free/realloc and reentrant variants;
+newlib abort also conflicts with SpiderMonkey mozalloc_abort. Next correction
+must ensure a single provider through correct archive selection/order, not allow
+duplicate definitions or silently select a second heap. Earlier links also
+exposed outstanding pthread, mapping, SQLite native VFS, C++ exception and crypto
+CPU-initialization dependencies. Their execution remains unproved.
+
+Stopped after six unsuccessful correction/verification attempts in this pass.
+The allocation adapter is opt-in development infrastructure, not installed or
+packaged. No real page, engine execution, fresh-install proof or ISO update.
+
 ## Binding traversal correction, September 26
 
 The previously blocking bindgen panic is resolved without disabling JavaScript.

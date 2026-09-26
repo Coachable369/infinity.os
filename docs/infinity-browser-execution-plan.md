@@ -43,6 +43,12 @@ browser as installed before gate 6 passes.
 
 ## Current checkpoint
 
+- Latest link pass resolves C++/zlib lookup and includes real native primitives.
+  C and reentrant allocation ABI tests pass in both architecture guests. The
+  engine link now fails on duplicate newlib/native allocator and abort providers
+  (`20260926T203455445992Z-31857.json`). Correct archive selection/order next;
+  do not permit duplicate providers. Native threading/mapping/storage and
+  installed-browser acceptance remain open. See the port readout for evidence.
 - Native HTTP metadata/readiness improvements tested; bounded selector exists.
 - Runtime std bindings now execute through an opt-in single-owner provider in
   both native guests; AArch64 Servo metadata compilation passes, but executable

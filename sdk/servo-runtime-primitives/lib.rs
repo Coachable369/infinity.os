@@ -10,6 +10,8 @@ pub mod executor;
 pub mod native;
 #[cfg(all(feature = "native-abi", target_os = "none"))]
 pub mod network;
+#[cfg(all(feature = "c-allocator-abi", target_os = "none"))]
+mod c_allocator;
 
 pub type Destructor = unsafe extern "C" fn(*mut u8);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

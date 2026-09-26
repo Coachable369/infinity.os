@@ -82,10 +82,20 @@ def main():
         command += ["--features", "context-probe"]
     subprocess.run(command, env=environment, check=True)
     executable = output / "probe.elf"
+    native_objects = []
+    if options.std_probe:
+        for source in (Path(__file__).with_name("c-allocator-test.c"), root / "sdk/servo-std/c-reentrant-allocator.c"):
+            obj = output / (source.stem + ".o")
+            subprocess.run(["/opt/homebrew/opt/llvm/bin/clang", "--target=" + options.arch + "-none-elf",
+                        "-ffreestanding", "-fno-builtin", "-O2", "-c",
+                        "-isystem", str(root / ("build/voice-newlib-" + options.arch) / (options.arch + "-none-elf/newlib/targ-include")),
+                        "-isystem", str(root / "build/newlib-4.6.0.20260123/newlib/libc/include"),
+                        str(source), "-o", str(obj)], check=True)
+            native_objects.append(str(obj))
     linker = Path(__file__).with_name("guest") / "link.ld" if options.arch == "aarch64" else root / "linker/x86_64.ld"
     subprocess.run(["/opt/homebrew/opt/lld/bin/ld.lld", "--gc-sections", "-nostdlib", "-T",
                     str(linker), "-o", str(executable),
-                    str(target / triple / "release/libinfinity_servo_memory_probe.a")], check=True)
+                    str(target / triple / "release/libinfinity_servo_memory_probe.a"), *native_objects], check=True)
     result = output / "result.bin"
     result.unlink(missing_ok=True)
     expected = (2, 0, 2002, 4096) if options.context_probe else (1, 0, 65, 4096)

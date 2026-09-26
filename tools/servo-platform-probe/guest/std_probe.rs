@@ -181,6 +181,9 @@ fn probe_stack_bounds() -> (usize, usize) {
 fn allocation_roundtrip() { unsafe {
     use infinity_servo_runtime_primitives::native::*;
     let baseline = Runtime::allocated();
+    extern "C" { fn infinity_c_allocator_test() -> i32; }
+    assert_eq!(infinity_c_allocator_test(), 0);
+    assert_eq!(Runtime::allocated(), baseline);
     for align in [1, 8, 16, 64, 4096] {
         let pointer = infinity_std_allocate(97, align);
         assert!(!pointer.is_null());
