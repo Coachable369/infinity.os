@@ -2,6 +2,9 @@
 """Build a private freestanding C++ runtime from pinned sources, never host libraries."""
 from pathlib import Path
 import subprocess
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from voice_target import ARCH, TRIPLE, FLAGS
 
 ROOT = Path(__file__).resolve().parents[2]
 WORK = ROOT / "build/voice-kokoro"
@@ -42,25 +45,25 @@ def main():
     if subprocess.run(["git", "-C", str(source), "apply", "--reverse", "--check", str(patch)],
                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
         run("git", "-C", source, "apply", patch)
-    newlib = ROOT / "build/voice-newlib-aarch64/aarch64-none-elf/newlib"
+    newlib = ROOT / "build" / ("voice-newlib-" + ARCH) / TRIPLE / "newlib"
     if not (newlib / "libc.a").exists():
         raise RuntimeError("Build pinned newlib first with tools/voice-pocketsphinx/build.py")
-    flags = " ".join(["-O2 -mstrict-align -ffunction-sections -fdata-sections",
+    flags = " ".join(["-O2 -ffunction-sections -fdata-sections", *FLAGS,
         "-include " + str(ROOT / "sdk/compiler/target.h"),
         "-I" + str(ROOT / "sdk/compiler/include"),
         "-isystem " + str(newlib / "targ-include"),
         "-isystem " + str(ROOT / "build/newlib-4.6.0.20260123/newlib/libc/include")])
-    output = WORK / "cxx-aarch64"
+    output = WORK / ("cxx-" + ARCH)
     run("cmake", "-G", "Ninja", "-S", source / "runtimes", "-B", output,
         "-C", ROOT / "sdk/compiler/cmake/runtime-options.cmake",
         "-DLLVM_ENABLE_RUNTIMES=libcxx;libcxxabi", "-DLIBCXXABI_USE_LLVM_UNWINDER=OFF",
-        "-DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-none-elf", "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY",
+        "-DLLVM_DEFAULT_TARGET_TRIPLE=" + TRIPLE, "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY",
         "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_SYSTEM_NAME=InfinityOS",
         "-DCMAKE_MODULE_PATH=" + str(ROOT / "sdk/compiler/cmake"),
         "-DCMAKE_C_COMPILER=" + str(LLVM / "clang"), "-DCMAKE_CXX_COMPILER=" + str(LLVM / "clang++"),
         "-DCMAKE_ASM_COMPILER=" + str(LLVM / "clang"),
-        "-DCMAKE_C_COMPILER_TARGET=aarch64-none-elf", "-DCMAKE_CXX_COMPILER_TARGET=aarch64-none-elf",
-        "-DCMAKE_ASM_COMPILER_TARGET=aarch64-none-elf", "-DCMAKE_AR=" + str(LLVM / "llvm-ar"),
+        "-DCMAKE_C_COMPILER_TARGET=" + TRIPLE, "-DCMAKE_CXX_COMPILER_TARGET=" + TRIPLE,
+        "-DCMAKE_ASM_COMPILER_TARGET=" + TRIPLE, "-DCMAKE_AR=" + str(LLVM / "llvm-ar"),
         "-DCMAKE_RANLIB=" + str(LLVM / "llvm-ranlib"),
         "-DCMAKE_LINKER=/opt/homebrew/opt/lld/bin/ld.lld",
         "-DCMAKE_INSTALL_PREFIX=" + str(WORK / "sysroot"),

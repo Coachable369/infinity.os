@@ -6,6 +6,9 @@ import json
 import os
 import shlex
 import subprocess
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from voice_target import ARCH, TRIPLE, FLAGS
 
 ROOT = Path(__file__).resolve().parents[2]
 WORK = ROOT / "build/voice-kokoro"
@@ -32,26 +35,30 @@ def compile_signature(arguments, source, dependencies):
 
 # ------------------------=
 # FUNC: main
-# DESC: Reuses upstream source selection but replaces all platform flags with the native ARM64 ABI.
+# DESC: Reuses upstream sources with the selected native target ABI and CPU kernels.
 # ------------------=
 def main():
-    output = WORK / "aarch64"
+    output = WORK / ARCH
     output.mkdir(parents=True, exist_ok=True)
     include = ROOT / "tools/voice-kokoro/include"
-    base = ["--target=aarch64-none-elf", "-O2", "-mstrict-align", "-ffreestanding",
+    base = ["--target=" + TRIPLE, "-O2", *FLAGS, "-ffreestanding",
             "-fno-stack-protector", "-ffunction-sections", "-fdata-sections", "-fno-builtin",
             "-include", str(ROOT / "sdk/compiler/target.h"), "-I" + str(include),
             "-I" + str(ROOT / "sdk/compiler/include"),
-            "-isystem", str(ROOT / "build/voice-newlib-aarch64/aarch64-none-elf/newlib/targ-include"),
+            "-isystem", str(ROOT / "build" / ("voice-newlib-" + ARCH) / TRIPLE / "newlib/targ-include"),
             "-isystem", str(ROOT / "build/newlib-4.6.0.20260123/newlib/libc/include")]
     cxx = ["-std=c++17", "-nostdinc++", "-fno-exceptions", "-fignore-exceptions", "-fno-rtti", "-femulated-tls", "-include", "cstdlib",
-           "-I" + str(WORK / "cxx-aarch64/include/c++/v1")]
+           "-I" + str(WORK / ("cxx-" + ARCH) / "include/c++/v1")]
     commands = json.loads((WORK / "reference/compile_commands.json").read_text())
     objects = []
     failures = []
     seen = set()
     for row in commands:
         source = Path(row["file"])
+        if ARCH == "x86_64" and "/ggml-cpu/arch/arm/" in str(source):
+            source = Path(str(source).replace("/arch/arm/", "/arch/x86/"))
+            if not source.exists():
+                raise RuntimeError("Missing x86 CPU source counterpart")
         command = shlex.split(row["command"])
         if not any(part in row["command"] for part in (
                 "CMakeFiles/kokopop.dir/", "CMakeFiles/ggml-base.dir/", "CMakeFiles/ggml-cpu.dir/",
@@ -80,7 +87,7 @@ def main():
         replacement = ROOT / "tools/voice-kokoro/overrides" / source.name
         if replacement.exists():
             source = replacement
-        if source.name == "ggml-cpu.c":
+        if source.name == "ggml-cpu.c" and ARCH == "aarch64":
             original = source.read_text()
             anchor = "                    vec_dot(ne00, &tmp[ir0 - iir0], (num_rows_per_vec_dot > 1 ? 16 : 0),"
             if original.count(anchor) != 1:
@@ -91,7 +98,7 @@ def main():
                 "                        ir0 += 3; continue;\n                    }\n" + anchor)
             source = output / "ggml-cpu.c"
             source.write_text('#include <stddef.h>\nextern int native_dot4(int, int, float *, const void *, size_t, const void *);\n' + original)
-        if source.name == "vec.cpp":
+        if source.name == "vec.cpp" and ARCH == "aarch64":
             original = source.read_text()
             for kind, alignment in (("f16", 8), ("f32", 16)):
                 name = "ggml_vec_dot_" + kind

@@ -1,5 +1,14 @@
 # InfinityOS Repository Rules
 
+## Shared architecture ports
+
+Maintain one shared implementation for each feature across aarch64 and x86_64.
+Select target-specific code through the build target/compiler configuration.
+Keep CPU instructions, timers, worker startup, and device interfaces behind small
+native adapters; do not fork application logic or introduce host-OS services.
+Apply this rule to future ports as well as the speech stack. Verify both live and
+freshly installed paths for each target before claiming that target complete.
+
 ## Build authority
 
 Every build, test build, focused architecture build, compiler probe, Studio

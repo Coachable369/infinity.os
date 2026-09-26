@@ -315,10 +315,10 @@ $(BUILD)/x86_64/installed-kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUN
 
 FLITE_PORT_SOURCES := $(wildcard tools/voice-flite/include/*.h) tools/voice-flite/port.c tools/voice-flite/jump.S tools/voice-flite/build.py tools/voice-flite/COPYING
 
-$(BUILD)/voice-kokoro/aarch64/private-native.o: $(wildcard tools/voice-kokoro/*.py tools/voice-kokoro/*.c tools/voice-kokoro/*.cpp tools/voice-kokoro/*.ld tools/voice-kokoro/*.txt) $(wildcard sdk/compiler/*.c sdk/compiler/*.h sdk/compiler/*.patch) $(BUILD)/voice-pocketsphinx-arm/private-native.o
+$(BUILD)/voice-kokoro/aarch64/private-native.o: tools/voice_target.py $(wildcard tools/voice-kokoro/*.py tools/voice-kokoro/*.c tools/voice-kokoro/*.cpp tools/voice-kokoro/*.ld tools/voice-kokoro/*.txt) $(wildcard sdk/compiler/*.c sdk/compiler/*.h sdk/compiler/*.patch) $(BUILD)/voice-pocketsphinx-arm/private-native.o
 	python3 tools/voice-kokoro/build.py --build-only
 
-$(BUILD)/voice-pocketsphinx-arm/private-native.o: $(wildcard tools/voice-pocketsphinx/*.py) tools/voice-pocketsphinx/port.c tools/voice-pocketsphinx/include/sys/mman.h
+$(BUILD)/voice-pocketsphinx-arm/private-native.o: tools/voice_target.py $(wildcard tools/voice-pocketsphinx/*.py) tools/voice-pocketsphinx/port.c tools/voice-pocketsphinx/include/sys/mman.h
 	python3 tools/voice-pocketsphinx/build.py
 
 $(BUILD)/voice-flite/%/libflite.a: $(FLITE_PORT_SOURCES)

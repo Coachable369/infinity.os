@@ -1,4 +1,4 @@
-"""Link the experimental ARM64 recognizer against private native C libraries.
+"""Link the shared recognizer against target-specific private native C libraries.
 
 This is not an installer integration or a passing speech acceptance test.
 The libraries are cross-built, never run as a host recognition service.
@@ -6,6 +6,10 @@ The libraries are cross-built, never run as a host recognition service.
 from pathlib import Path
 import subprocess
 import json
+import os
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from voice_target import ARCH, TRIPLE, FLAGS, syscall_aliases
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -14,13 +18,15 @@ ROOT = Path(__file__).resolve().parents[2]
 # DESC: Packages exact immutable model resources and privately namespaces the bounded recognition provider.
 # ------------------=
 def main():
+    arch = ARCH
+    triple = TRIPLE
     source = ROOT / "build/voice-pocketsphinx-src"
     revision = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
     assert revision == "511126b492dcb267cf30d49d631946d7b61a9530"
-    output = ROOT / "build/voice-pocketsphinx-arm"
+    output = ROOT / "build" / ("voice-pocketsphinx-arm" if arch == "aarch64" else "voice-pocketsphinx-x86_64")
     llvm = Path("/opt/homebrew/opt/llvm/bin")
-    newlib = ROOT / "build/voice-newlib-aarch64/aarch64-none-elf/newlib"
-    flags = ["--target=aarch64-none-elf", "-O2", "-mstrict-align", "-fno-builtin",
+    newlib = ROOT / "build" / ("voice-newlib-" + arch) / triple / "newlib"
+    flags = ["--target=" + triple, "-O2", *FLAGS, "-fno-builtin",
              "-ffunction-sections", "-fdata-sections", "-fno-stack-protector",
              "-I" + str(source / "include"), "-I" + str(output / "include"),
              "-I" + str(newlib / "targ-include"),
@@ -58,6 +64,8 @@ def main():
         objects.append(str(obj))
     native = output / "native.o"
     subprocess.run(["/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_recognize", "--undefined=native_memory_state",
+                    *syscall_aliases("close", "fstat", "getpid", "gettimeofday", "isatty", "kill",
+                                     "lseek", "open", "read", "sbrk", "write"),
                     "--wrap=_malloc_r", "--wrap=_calloc_r", "--wrap=_realloc_r", "--wrap=_free_r",
                     "-o", str(native), *objects, "--start-group", str(output / "libpocketsphinx.a"),
                     str(newlib / "libm.a"), str(newlib / "libc.a"), "--end-group"], check=True)

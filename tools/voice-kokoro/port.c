@@ -262,7 +262,12 @@ const InfinityCompilerHost *infinity_compiler_get_host(void){static const Infini
 // ------------------=
 int clock_gettime(clockid_t id,struct timespec*t){
     if(!t||(id!=CLOCK_MONOTONIC&&id!=CLOCK_REALTIME)){errno=EINVAL;return -1;}
+#if defined(__aarch64__)
     uint64_t ticks,frequency;__asm__ volatile("mrs %0,cntvct_el0":"=r"(ticks));__asm__ volatile("mrs %0,cntfrq_el0":"=r"(frequency));
+#else
+    extern uint64_t infinity_speech_clock_ns(void);
+    uint64_t ticks=infinity_speech_clock_ns(),frequency=1000000000ull;
+#endif
     if(!frequency){errno=ENOSYS;return -1;}t->tv_sec=ticks/frequency;t->tv_nsec=(ticks%frequency)*1000000000ull/frequency;return 0;
 }
 // ------------------------=

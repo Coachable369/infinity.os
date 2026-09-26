@@ -4,6 +4,7 @@ from pathlib import Path
 import os
 import subprocess
 import sys
+import argparse
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -31,7 +32,12 @@ def stage(name, script, *arguments):
 def main():
     if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
         raise SystemExit("Use ./build-kit run python3 tools/voice-kokoro/build.py")
-    build_only = "--build-only" in sys.argv
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--target", choices=("aarch64", "x86_64"), default="aarch64")
+    parser.add_argument("--build-only", action="store_true")
+    args = parser.parse_args()
+    os.environ["INFINITY_VOICE_TARGET"] = args.target
+    build_only = args.build_only
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(stage, "reference", "tools/voice-kokoro/reference.py", *(["--build-only"] if build_only else [])),
                 pool.submit(stage, "newlib", "tools/voice-pocketsphinx/build.py")]
@@ -41,6 +47,8 @@ def main():
                          ("link", "link-native.py")]:
         stage(name, "tools/voice-kokoro/" + script)
     if not build_only:
+        if args.target != "aarch64":
+            raise RuntimeError("x86-64 native guest verification is not implemented yet")
         stage("guest", "tools/voice-kokoro/probe/run.py")
         stage("comparison", "tools/voice-kokoro/compare-reference.py")
 

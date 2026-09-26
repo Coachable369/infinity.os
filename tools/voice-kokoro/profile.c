@@ -9,9 +9,15 @@ static uint64_t calls[128];
 // DESC: Reads the guest architectural timer without a host timing service.
 // ------------------=
 uint64_t native_profile_clock(void) {
+#if defined(__aarch64__)
     uint64_t value;
     __asm__ volatile("mrs %0,cntvct_el0" : "=r"(value));
     return value;
+#else
+    unsigned low,high;
+    __asm__ volatile("lfence; rdtsc" : "=a"(low), "=d"(high) :: "memory");
+    return ((uint64_t)high<<32)|low;
+#endif
 }
 
 // ------------------------=
