@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import subprocess
 from reference import checksum, MODEL_SHA256
+from notices import assemble
 
 ROOT = Path(__file__).resolve().parents[2]
 WORK = ROOT / "build/voice-kokoro"
@@ -34,7 +35,8 @@ def main():
     data = deps / "espeak-build/espeak-ng-data"
     if not (data / "phontab").is_file():
         raise RuntimeError("Missing pinned phonemizer resources")
-    resources = [("/kokoro.gguf", model), ("/espeak-ng-data", None)]
+    notice = assemble(ROOT, output)
+    resources = [("/kokoro.gguf", model), ("/licenses/kokoro-dependencies.txt", notice), ("/espeak-ng-data", None)]
     resources += [("/espeak-ng-data/" + str(p.relative_to(data)), p if p.is_file() else None)
                   for p in sorted(data.rglob("*"))]
     assembly = ['.section .rodata.native_models,"a"\n']
@@ -59,7 +61,7 @@ def main():
              "-isystem", str(newlib / "targ-include"),
              "-isystem", str(ROOT / "build/newlib-4.6.0.20260123/newlib/libc/include")]
     objects = []
-    paths = [ROOT / "tools/voice-kokoro" / name for name in ("entry.cpp", "mapping.cpp", "registry.cpp", "port.c")]
+    paths = [ROOT / "tools/voice-kokoro" / name for name in ("entry.cpp", "mapping.cpp", "registry.cpp", "port.c", "memory.c")]
     paths += [ROOT / "sdk/compiler" / name for name in ("pthread.c", "serial_sync.c", "serial_tls.c")]
     paths += [output / "resources.S", output / "resources.c"]
     for path in paths:
@@ -77,11 +79,17 @@ def main():
         objects.append(obj)
     native = output / "native.o"
     run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_synthesize", "--undefined=native_diagnostics",
+        "-T", ROOT / "tools/voice-kokoro/private.ld",
         "--wrap=_malloc_r", "--wrap=_calloc_r", "--wrap=_realloc_r", "--wrap=_free_r",
         "-o", native, *objects, "--start-group", output / "libkokoro-engine.a",
         WORK / "cxx-aarch64/lib/libc++.a", WORK / "cxx-aarch64/lib/libc++abi.a",
         newlib / "libm.a", newlib / "libc.a", "--end-group")
     run(LLVM / "llvm-nm", "--undefined-only", native)
+    private = output / "private-native.o"
+    run(LLVM / "llvm-objcopy", "--prefix-symbols=infinity_kokoro_", native, private)
+    run(LLVM / "llvm-objcopy",
+        "--redefine-sym", "infinity_kokoro___extenddftf2=__extenddftf2",
+        "--redefine-sym", "infinity_kokoro___trunctfdf2=__trunctfdf2", private)
 
 
 if __name__ == "__main__":

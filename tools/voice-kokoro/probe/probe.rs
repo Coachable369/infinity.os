@@ -5,7 +5,11 @@ static mut CANCEL_CALLS: usize = 0;
 struct TranslationTable([u64; 512]);
 static mut TRANSLATIONS: TranslationTable = TranslationTable([0; 512]);
 unsafe extern "C" {
+    #[link_name = "infinity_kokoro_native_resource"]
+    fn native_resource(name: *const u8, length: *mut usize) -> *const u8;
+    #[link_name = "infinity_kokoro_native_diagnostics"]
     fn native_diagnostics(out: *mut usize);
+    #[link_name = "infinity_kokoro_native_synthesize"]
     fn native_synthesize(
         text: *const u8,
         length: usize,
@@ -15,8 +19,6 @@ unsafe extern "C" {
         cancel: usize,
         context: usize,
     ) -> i32;
-    static native_init_start: usize;
-    static native_init_end: usize;
 }
 core::arch::global_asm!(
     ".section .text.entry",
@@ -130,12 +132,6 @@ unsafe fn normal_memory() {
 #[no_mangle]
 pub unsafe extern "C" fn probe() -> ! {
     normal_memory();
-    let mut init = &raw const native_init_start;
-    while init < &raw const native_init_end {
-        let function: unsafe extern "C" fn() = core::mem::transmute(*init);
-        function();
-        init = init.add(1);
-    }
     for case in 0..6 {
         let mut frames = 0;
         let (start, end, frequency): (u64, u64, u64);
@@ -183,5 +179,10 @@ pub unsafe extern "C" fn probe() -> ! {
             finish();
         }
     }
+    let mut notice_length = 0;
+    let notice = native_resource(b"/licenses/kokoro-dependencies.txt\0".as_ptr(), &mut notice_length);
+    assert!(!notice.is_null() && notice_length > 0 && notice_length <= 1_048_576);
+    bytes(&(notice_length as u64).to_le_bytes());
+    bytes(core::slice::from_raw_parts(notice, notice_length));
     finish()
 }

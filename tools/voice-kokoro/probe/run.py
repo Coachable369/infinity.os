@@ -29,7 +29,7 @@ def main():
     subprocess.run(["/opt/homebrew/opt/lld/bin/ld.lld", "--gc-sections", "-nostdlib", "-T",
         str(ROOT / "tools/voice-kokoro/probe/link.ld"), "-o", str(output / "probe.elf"),
         str(target / "aarch64-unknown-none-softfloat/release/libinfinity_kokoro_probe.a"),
-        str(output / "native.o")], check=True)
+        str(output / "private-native.o")], check=True)
     result = output / ("probe-" + args.accel + ".bin")
     result.unlink(missing_ok=True)
     subprocess.run(["qemu-system-aarch64", "-machine", "virt", "-accel", args.accel, "-cpu",
@@ -63,8 +63,15 @@ def main():
         rows.append(dict(case=case,status=status,frames=count,seconds=ticks/frequency,heap_bytes=heap,
                          pcm_sha256=hashlib.sha256(pcm).hexdigest()))
     assert rows[0]["pcm_sha256"] == rows[1]["pcm_sha256"] == rows[5]["pcm_sha256"]
+    assert len(data) - offset >= 8
+    notice_length, = struct.unpack_from("<Q", data, offset)
+    offset += 8
+    notice = data[offset:offset + notice_length]
+    assert notice == (output / "THIRD-PARTY-NOTICES.txt").read_bytes()
+    offset += notice_length
     assert offset==len(data)
-    evidence=dict(environment="freestanding ARM64 guest",installed_verified=False,cases=rows)
+    evidence=dict(environment="freestanding ARM64 guest",installed_verified=False,cases=rows,
+                  dependency_notices_sha256=hashlib.sha256(notice).hexdigest())
     (output / "probe-evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")
     print(json.dumps(evidence,indent=2))
 

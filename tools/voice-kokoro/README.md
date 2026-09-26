@@ -39,6 +39,12 @@ conversion helpers supplied by Rust compiler-builtins during final probe link.
 No host runtime library is linked. Native synthesis now passes in a freestanding
 ARM64 guest; this is not installed-system acceptance.
 
+The probe links `private-native.o`, with all library symbols prefixed except the
+two compiler-builtins above. Its private constructor table is initialized once
+by the single speech worker; it does not depend on the kernel constructor list.
+Full dependency notices are embedded as an immutable resource and compared
+byte-for-byte with the build inputs through the running guest API.
+
 The first HVF guest run failed on `ldxr` in `ggml_graph_next_uid`, with
 ESR `0x96000035`, before producing PCM. The probe had left the MMU disabled,
 which does not give RAM the normal-memory attributes required for exclusive
@@ -80,12 +86,17 @@ the native synthesis implementation.
 
 Next implementation gates remain:
 
-1. Resolve distribution licensing before release integration. The current
+1. Complete distribution materials before release integration. GPLv3-compatible
+   distribution was explicitly approved on September 25, 2026. The current
    prototype statically links GPLv3-licensed eSpeak NG. Kokopop's MIT license
-   does not remove dependency obligations. Approval of a licensing/packaging
-   approach, notices, and required corresponding source remain outstanding.
+   does not remove dependency obligations. Dependency notices are embedded.
+   `./build-kit run python3 tools/voice-kokoro/source-bundle.py` preserves the
+   dependency sources and port recipes under `builds/voice-kokoro`. This is not
+   yet the complete corresponding source for a combined OS binary: release
+   packaging must include the applicable OS integration/build source and model
+   attribution too. Approval alone is not packaging verification.
 2. Reduce synthesis latency and integrate the production worker, including
-   initialization, symbol isolation, cancellation, deadlines, and memory budget.
+   cancellation, deadlines, and memory budget.
    Validate production memory mapping, not only the disposable probe mapping.
 3. Connect real 24-kHz output to Audio Service and verify voice off/on recovery.
    Add the x86-64 native backend.

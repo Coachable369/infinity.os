@@ -10,12 +10,26 @@
 static std::unique_ptr<kokopop::Model> model;
 extern "C" int native_cancelled(void);
 extern "C" unsigned int native_phase;
+extern "C" void (*native_init_start[])(void);
+extern "C" void (*native_init_end[])(void);
+
+// ------------------------=
+// FUNC: native_initialize
+// DESC: Initializes the private C++ image once on the single owning speech worker, never the kernel global constructor list.
+// ------------------=
+extern "C" void native_initialize(void) {
+    static bool initialized = false;
+    if (initialized) return;
+    for (auto constructor = native_init_start; constructor != native_init_end; ++constructor) (*constructor)();
+    initialized = true;
+}
 
 // ------------------------=
 // FUNC: native_run
 // DESC: Produces genuine Kokoro PCM from bounded English text using only the private native CPU model.
 // ------------------=
 extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t capacity, size_t *frames) {
+    native_initialize();
     std::string error;
     native_phase = 1;
     if (!model) {

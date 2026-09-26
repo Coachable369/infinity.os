@@ -56,22 +56,6 @@ char *empty_environment[] = { NULL };
 char **environ = empty_environment;
 
 // ------------------------=
-// FUNC: memset
-// DESC: Supports unaligned private storage even before the native MMU enables normal-memory accesses.
-// ------------------=
-void *memset(void*p,int value,size_t count){volatile unsigned char*out=p;for(size_t i=0;i<count;i++)out[i]=(unsigned char)value;return p;}
-// ------------------------=
-// FUNC: memcpy
-// DESC: Copies model bytes without unaligned vector loads or host libc instructions.
-// ------------------=
-void *memcpy(void*out,const void*input,size_t count){volatile unsigned char*d=out;const volatile unsigned char*s=input;for(size_t i=0;i<count;i++)d[i]=s[i];return out;}
-// ------------------------=
-// FUNC: memmove
-// DESC: Preserves overlapping regions using alignment-safe native byte operations.
-// ------------------=
-void *memmove(void*out,const void*input,size_t count){volatile unsigned char*d=out;const volatile unsigned char*s=input;if((uintptr_t)d>(uintptr_t)s){while(count){count--;d[count]=s[count];}}else{for(size_t i=0;i<count;i++)d[i]=s[i];}return out;}
-
-// ------------------------=
 // FUNC: lookup
 // DESC: Resolves only exact immutable packaged model names.
 // ------------------=
