@@ -8,8 +8,8 @@ remains PocketSphinx; Kokoro does not implement speech recognition.
 Run:
 
 ```sh
-python3 tools/voice-kokoro/reference.py
-python3 -m unittest discover -s tools/voice-kokoro -p 'test_*.py'
+./build-kit run python3 tools/voice-kokoro/build.py
+./build-kit run python3 -m unittest discover -s tools/voice-kokoro -p 'test_*.py'
 ```
 
 The reference pins kokopop revision
@@ -26,9 +26,9 @@ Outputs under `build/voice-kokoro/reference`:
   marking native execution, installed execution, perceptual quality and
   recognition as unverified.
 
-On September 25, the default phrase produced 98,280 WAV frames (4.095 seconds),
-peak 12,556, and no saturated samples. This establishes synthesis and container
-behavior only, not intelligibility or native execution.
+The default reference phrase is `Hi.`. The reference uses baseline ARMv8-A
+instructions on ARM64 and one CPU thread, matching the native prototype. Its
+evidence records the input and output metrics. This is not a listening test.
 
 ## Native boundary still outstanding
 
@@ -36,16 +36,27 @@ The private freestanding ARM64 libc++, libc++abi, GGML CPU, phonemizer, and
 Kokoro objects now compile and link into the native guest probe. The only
 remaining external symbols in the intermediate object are the two quad-float
 conversion helpers supplied by Rust compiler-builtins during final probe link.
-No host runtime library is linked. This is build evidence, not synthesis or
-installed-system acceptance.
+No host runtime library is linked. Native synthesis now passes in a freestanding
+ARM64 guest; this is not installed-system acceptance.
 
 The first HVF guest run failed on `ldxr` in `ggml_graph_next_uid`, with
 ESR `0x96000035`, before producing PCM. The probe had left the MMU disabled,
 which does not give RAM the normal-memory attributes required for exclusive
-accesses. A probe-only identity mapping of RAM as normal memory has been added.
-Its retry is **unverified**: the shared `build/` tree was removed while Cargo
-was compiling, causing a missing temporary-directory error. Do not report the
-mapping change as a successful fix or enable the provider from this evidence.
+accesses. A probe-only identity mapping of RAM as normal memory fixes that gate.
+A subsequent allocation failure came from sizing the GGML scheduler using
+reserved graph capacity rather than populated nodes and leaves. The native CPU
+backend now uses populated counts with the existing margin and default floor.
+The heap limit and timeout were not increased to make these tests pass.
+
+Six behavioral cases now pass: real synthesis, repeated synthesis, immediate
+cancellation, empty-input rejection, cancellation during inference, and synthesis
+after cancellation. All successful cases produce identical 30,000-frame, 24-kHz
+mono PCM with SHA-256
+`1b4fcddf4574e017ba17be8b56972b666319f8bc54c9987e796738880b9d0694`.
+Comparison against the independently synthesized reference, accounting for its
+trailing-silence trim, gives correlation 0.9996 and relative RMS error 0.02785.
+Evidence and WAV files are under `build/voice-kokoro/aarch64`. These measurements
+do not establish perceptual quality or installed-system behavior.
 
 Rebuild and native-probe verification through the repository build lock:
 
@@ -60,21 +71,24 @@ are written under `build/logs/kokoro-*.log`. Do not bypass a live build lock.
 a single-worker synchronization contract. `mapping.cpp` borrows resource bytes;
 `registry.cpp` refuses dynamic backend loading. The guest probe checks actual
 PCM and structured return values for repeat synthesis, cancellation and input
-bounds. These new runtime paths still require successful execution, cleanup
-and cancellation validation. The native guest needs 2 GiB RAM for this initial
-bounded prototype; its private heap is capped at 1 GiB, not a measured product
-memory requirement. x86-64 is not implemented by these scripts.
+bounds. The native guest uses 2 GiB RAM for this initial bounded prototype; its
+private heap is capped at 1 GiB and measured committed allocation reaches about
+539 MiB. Synthesis currently takes roughly 15 seconds for 1.25 seconds of audio,
+incompatible with the production two-second deadline. x86-64 is not implemented
+by these scripts. QEMU HVF requires an ARM64 Mac for this test harness, not for
+the native synthesis implementation.
 
 Next implementation gates remain:
 
-1. Pass native ARM64 GGML execution; verify bounded allocation, cleanup,
-   worker cancellation and deadlines. Validate the production memory mapping,
-   not only the disposable probe's mapping.
-2. Replace model/data filesystem mapping and phonemizer resource access with
-   native immutable resources. Do not mount a host filesystem or call a host
-   synthesizer. Include redistribution notices and required source material.
-3. Run actual Kokoro synthesis in a freestanding guest and compare its audio
-   against the reference; then connect its 24-kHz output to the Audio Service.
+1. Resolve distribution licensing before release integration. The current
+   prototype statically links GPLv3-licensed eSpeak NG. Kokopop's MIT license
+   does not remove dependency obligations. Approval of a licensing/packaging
+   approach, notices, and required corresponding source remain outstanding.
+2. Reduce synthesis latency and integrate the production worker, including
+   initialization, symbol isolation, cancellation, deadlines, and memory budget.
+   Validate production memory mapping, not only the disposable probe mapping.
+3. Connect real 24-kHz output to Audio Service and verify voice off/on recovery.
+   Add the x86-64 native backend.
 4. Package the backend, model, voice and phonemizer in the installed System
    Generation. Verify audio on a cold-installed node with ISO detached before
    declaring the replacement complete.

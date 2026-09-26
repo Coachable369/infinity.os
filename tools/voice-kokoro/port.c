@@ -32,6 +32,26 @@ static int poisoned;
 static int (*cancel_callback)(void *);
 static void *cancel_context;
 static size_t erased_bytes;
+static uintptr_t fatal_address;
+static size_t failed_allocation;
+static uintptr_t allocation_callers[8];
+unsigned int native_phase;
+// ------------------------=
+// FUNC: allocation_failure
+// DESC: Records bounded frame addresses for native probe diagnosis without copying stack contents or speech data.
+// ------------------=
+static void allocation_failure(size_t n){
+    failed_allocation=n;
+    uintptr_t *frame=__builtin_frame_address(0);
+    uintptr_t limit=(uintptr_t)frame+65536;
+    for(size_t i=0;i<8;i++){
+        allocation_callers[i]=0;
+        if(!frame)continue;
+        allocation_callers[i]=frame[1];
+        uintptr_t next=frame[0];
+        frame=next>(uintptr_t)frame&&next<limit&&!(next&15)?(uintptr_t*)next:NULL;
+    }
+}
 char *empty_environment[] = { NULL };
 char **environ = empty_environment;
 
@@ -144,7 +164,7 @@ int _kill(int p,int s){(void)p;(void)s;errno=ENOSYS;return -1;}
 // FUNC: _exit
 // DESC: Quarantines fatal library errors inside the native C boundary.
 // ------------------=
-__attribute__((noreturn)) void _exit(int code){(void)code;if(active)longjmp(failure,1);__builtin_trap();}
+__attribute__((noreturn)) void _exit(int code){(void)code;fatal_address=(uintptr_t)__builtin_return_address(0);if(active)longjmp(failure,1);__builtin_trap();}
 void *__dso_handle;
 // ------------------------=
 // FUNC: __cxa_allocate_exception
@@ -184,7 +204,12 @@ extern size_t _malloc_usable_size_r(struct _reent *,void *);
 // FUNC: __wrap__malloc_r
 // DESC: Allocates only from the private bounded native heap.
 // ------------------=
-void *__wrap__malloc_r(struct _reent *r,size_t n){if(poisoned||n>sizeof(heap)){errno=ENOMEM;return NULL;}return __real__malloc_r(r,n);}
+void *__wrap__malloc_r(struct _reent *r,size_t n){if(poisoned||n>sizeof(heap)){allocation_failure(n);errno=ENOMEM;return NULL;}void*p=__real__malloc_r(r,n);if(!p)allocation_failure(n);return p;}
+// ------------------------=
+// FUNC: native_diagnostics
+// DESC: Reports numeric failure stage, heap commitment and fault site without exposing speech text or model content.
+// ------------------=
+void native_diagnostics(size_t*out){out[0]=native_phase;out[1]=heap_used;out[2]=failed_allocation;out[3]=fatal_address;for(size_t i=0;i<8;i++)out[4+i]=allocation_callers[i];}
 // ------------------------=
 // FUNC: __wrap__free_r
 // DESC: Erases complete speech-derived allocations before reuse, including aligned allocations.

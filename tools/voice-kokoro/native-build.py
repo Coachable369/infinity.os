@@ -84,8 +84,14 @@ def main():
             anchor = "            ggml_backend_cpu_set_n_threads(backend_, std::max<int32_t>(1, n_threads));"
             if original.count(anchor) != 1:
                 raise RuntimeError("Unreviewed CPU cancellation boundary")
+            capacity = "            backend_graph_capacity(graph));"
+            if original.count(capacity) != 1:
+                raise RuntimeError("Unreviewed CPU graph capacity boundary")
+            original = original.replace(capacity,
+                "            static_cast<size_t>(graph->n_nodes) + static_cast<size_t>(graph->n_leafs) + 1024);")
+            flags.append("-I" + str(WORK / "reference/_deps/ggml-src/src"))
             source = output / "cpu.cpp"
-            source.write_text('extern "C" bool native_abort_callback(void *);\n' + original.replace(anchor,
+            source.write_text('#include <ggml-impl.h>\nextern "C" bool native_abort_callback(void *);\n' + original.replace(anchor,
                 anchor + "\n            ggml_backend_cpu_set_abort_callback(backend_, native_abort_callback, nullptr);"))
         if source.name == "audio_utils.cpp":
             original = source.read_text()
@@ -94,7 +100,7 @@ def main():
             if original.count(start) != 1 or original.count(end) != 1:
                 raise RuntimeError("Unreviewed scratch allocation boundary")
             source = output / "audio_utils.cpp"
-            source.write_text(original.replace(start, "    mem = arena.data(mem_size);\n    if (mem == nullptr) {").replace(end, end))
+            source.write_text(original.replace(start, "    mem = arena.data(mem_size);\n    if (mem == nullptr) {"))
         name = hashlib.sha256(str(source).encode()).hexdigest()[:12] + "-" + source.name + ".o"
         obj = output / name
         dependencies = obj.with_suffix(".d")

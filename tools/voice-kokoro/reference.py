@@ -4,6 +4,7 @@ import argparse
 import array
 import hashlib
 import json
+import platform
 from pathlib import Path
 import subprocess
 import sys
@@ -61,7 +62,7 @@ def inspect_pcm(path):
 # ------------------=
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--text", default="Hi. I am the voice of Infinity OS. How can I help you today?")
+    parser.add_argument("--text", default="Hi.")
     args = parser.parse_args()
     if not args.text.strip() or len(args.text) > 160:
         parser.error("Reference text must contain 1 to 160 characters")
@@ -88,16 +89,19 @@ def main():
         temporary.replace(model)
     if checksum(model) != MODEL_SHA256:
         raise RuntimeError("Kokoro model checksum mismatch")
+    architecture = ["-DGGML_CPU_ARM_ARCH=armv8-a"] if platform.machine().lower() in ("arm64", "aarch64") else []
     run("cmake", "-S", source, "-B", output, "-DCMAKE_BUILD_TYPE=Release",
         "-DKOKOPOP_ENABLE_METAL=OFF", "-DKOKOPOP_BUILD_TESTS=OFF",
-        "-DKOKOPOP_ENABLE_OPUS=OFF", "-DKOKOPOP_BUILD_TOOLS=ON")
+        "-DKOKOPOP_ENABLE_OPUS=OFF", "-DKOKOPOP_BUILD_TOOLS=ON",
+        "-DGGML_NATIVE=OFF", *architecture)
     run("cmake", "--build", output, "--target", "kokopop_say", "-j4")
     audio = output / "hello.wav"
     audio.unlink(missing_ok=True)
-    run(output / "kokopop_say", "--model", model, "--backend", "cpu", "--threads", "4",
+    run(output / "kokopop_say", "--model", model, "--backend", "cpu", "--threads", "1",
         "--voice", "af_heart", "--text", args.text, "--out", audio)
     evidence = {"environment": "host CPU reference only", "source_revision": REVISION,
-                "model_sha256": MODEL_SHA256, "voice": "af_heart", "pcm": inspect_pcm(audio),
+                "model_sha256": MODEL_SHA256, "voice": "af_heart", "text": args.text,
+                "host_native_optimizations": False, "threads": 1, "pcm": inspect_pcm(audio),
                 "native_verified": False, "installed_verified": False,
                 "perceptual_quality_verified": False, "recognition_verified": False}
     (output / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")

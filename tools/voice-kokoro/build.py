@@ -37,7 +37,8 @@ def main():
         for job in jobs:
             job.result()
     for name, script in [("cxx", "prepare-native.py"), ("engine", "native-build.py"),
-                         ("link", "link-native.py"), ("guest", "probe/run.py")]:
+                         ("link", "link-native.py"), ("guest", "probe/run.py"),
+                         ("comparison", "compare-reference.py")]:
         stage(name, "tools/voice-kokoro/" + script)
 
 

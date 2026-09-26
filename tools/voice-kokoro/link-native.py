@@ -76,7 +76,7 @@ def main():
         run(LLVM / "clang", *flags, "-Os", "-DPREFER_SIZE_OVER_SPEED", "-c", string_source / (name + ".c"), "-o", obj)
         objects.append(obj)
     native = output / "native.o"
-    run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_synthesize",
+    run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_synthesize", "--undefined=native_diagnostics",
         "--wrap=_malloc_r", "--wrap=_calloc_r", "--wrap=_realloc_r", "--wrap=_free_r",
         "-o", native, *objects, "--start-group", output / "libkokoro-engine.a",
         WORK / "cxx-aarch64/lib/libc++.a", WORK / "cxx-aarch64/lib/libc++abi.a",

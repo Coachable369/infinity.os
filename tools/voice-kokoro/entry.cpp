@@ -9,6 +9,7 @@
 
 static std::unique_ptr<kokopop::Model> model;
 extern "C" int native_cancelled(void);
+extern "C" unsigned int native_phase;
 
 // ------------------------=
 // FUNC: native_run
@@ -16,6 +17,7 @@ extern "C" int native_cancelled(void);
 // ------------------=
 extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t capacity, size_t *frames) {
     std::string error;
+    native_phase = 1;
     if (!model) {
         const kokopop_model_options options{1, KOKOPOP_BACKEND_CPU};
         if (!kokopop::load_model_from_gguf("/kokoro.gguf", &options, model, error)) return 3;
@@ -23,12 +25,15 @@ extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t 
     }
     if (native_cancelled()) return 2;
     std::string phonemes;
+    native_phase = 2;
     if (!kokopop::phonemize_text(std::string(text, length), "en-us", 'a', phonemes, error)) return 4;
     if (native_cancelled()) return 2;
     kokopop_audio audio{};
+    native_phase = 3;
     if (!kokopop::synthesize_phonemes(*model, phonemes, "af_heart", 1.0f, audio, error))
         return native_cancelled() ? 2 : 5;
     int result = 0;
+    native_phase = 4;
     if (audio.sample_rate != 24000 || !audio.n_samples || audio.n_samples > capacity) result = 6;
     else if (native_cancelled()) result = 2;
     else {

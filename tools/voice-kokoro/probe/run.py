@@ -39,25 +39,30 @@ def main():
     data = result.read_bytes()
     offset = 0
     rows = []
-    for case in range(4):
-        if len(data)-offset < 48:
+    for case in range(6):
+        if len(data)-offset < 144:
             raise RuntimeError("Incomplete guest result: " + data[offset:offset+48].hex())
-        version, index, status, count, ticks, frequency = struct.unpack_from("<6Q", data, offset)
-        offset += 48
-        assert (version,index,status)==(1,case,[0,0,2,1][case]), (version,index,status,count,ticks,frequency)
+        version, index, status, count, ticks, frequency, stage, heap, failed_allocation, fatal_address = struct.unpack_from("<10Q", data, offset)
+        offset += 80
+        callers=struct.unpack_from("<8Q",data,offset)
+        offset += 64
+        assert (version,index,status)==(2,case,[0,0,2,1,2,0][case]), dict(version=version,case=index,status=status,frames=count,
+            seconds=ticks/frequency,stage=stage,heap=heap,failed_allocation=failed_allocation,fatal_address=hex(fatal_address),callers=[hex(v) for v in callers])
         assert frequency>0 and count<=720000 and len(data)-offset>=count*2
+        assert 0 < heap <= 1024*1024*1024 and failed_allocation == 0
         pcm = data[offset:offset+count*2]
         offset += len(pcm)
         samples = array.array("h",pcm)
-        if case<2:
+        if case in (0,1,5):
             assert count>=2400 and any(samples)
             assert sum(abs(v)>=32767 for v in samples)<count//100
             with wave.open(str(output / f"native-{case}.wav"),"wb") as wav:
                 wav.setparams((1,2,24000,count,"NONE","not compressed"));wav.writeframes(pcm)
         else:
             assert count==0
-        rows.append(dict(case=case,status=status,frames=count,seconds=ticks/frequency,
+        rows.append(dict(case=case,status=status,frames=count,seconds=ticks/frequency,heap_bytes=heap,
                          pcm_sha256=hashlib.sha256(pcm).hexdigest()))
+    assert rows[0]["pcm_sha256"] == rows[1]["pcm_sha256"] == rows[5]["pcm_sha256"]
     assert offset==len(data)
     evidence=dict(environment="freestanding ARM64 guest",installed_verified=False,cases=rows)
     (output / "probe-evidence.json").write_text(json.dumps(evidence,indent=2)+"\n")

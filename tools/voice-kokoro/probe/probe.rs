@@ -1,9 +1,11 @@
 #![no_std]
 static mut PCM: [i16; 720000] = [0; 720000];
+static mut CANCEL_CALLS: usize = 0;
 #[repr(C, align(4096))]
 struct TranslationTable([u64; 512]);
 static mut TRANSLATIONS: TranslationTable = TranslationTable([0; 512]);
 unsafe extern "C" {
+    fn native_diagnostics(out: *mut usize);
     fn native_synthesize(
         text: *const u8,
         length: usize,
@@ -92,6 +94,14 @@ unsafe extern "C" fn cancel(_: usize) -> i32 {
     1
 }
 // ------------------------=
+// FUNC: cancel_inference
+// DESC: Cancels after model loading and phonemization have entered neural graph execution.
+// ------------------=
+unsafe extern "C" fn cancel_inference(_: usize) -> i32 {
+    CANCEL_CALLS += 1;
+    (CANCEL_CALLS >= 8) as i32
+}
+// ------------------------=
 // FUNC: normal_memory
 // DESC: Maps guest RAM as normal cacheable memory so native CPU atomics have architectural support.
 // ------------------=
@@ -126,7 +136,7 @@ pub unsafe extern "C" fn probe() -> ! {
         function();
         init = init.add(1);
     }
-    for case in 0..4 {
+    for case in 0..6 {
         let mut frames = 0;
         let (start, end, frequency): (u64, u64, u64);
         core::arch::asm!("mrs {},cntvct_el0",out(reg)start);
@@ -138,6 +148,8 @@ pub unsafe extern "C" fn probe() -> ! {
             &mut frames,
             if case == 2 {
                 cancel as *const () as usize
+            } else if case == 4 {
+                cancel_inference as *const () as usize
             } else {
                 0
             },
@@ -145,22 +157,29 @@ pub unsafe extern "C" fn probe() -> ! {
         );
         core::arch::asm!("mrs {},cntvct_el0",out(reg)end);
         core::arch::asm!("mrs {},cntfrq_el0",out(reg)frequency);
+        let mut diagnostics = [0usize;12];
+        native_diagnostics(diagnostics.as_mut_ptr());
         for value in [
-            1,
+            2,
             case,
             result as u64,
             frames as u64,
             end - start,
             frequency,
+            diagnostics[0] as u64,
+            diagnostics[1] as u64,
+            diagnostics[2] as u64,
+            diagnostics[3] as u64,
         ] {
             bytes(&value.to_le_bytes());
         }
+        for value in &diagnostics[4..] { bytes(&(*value as u64).to_le_bytes()); }
         assert!(frames <= 720000);
         bytes(core::slice::from_raw_parts(
             (&raw const PCM).cast(),
             frames * 2,
         ));
-        if result != [0, 0, 2, 1][case as usize] {
+        if result != [0, 0, 2, 1, 2, 0][case as usize] {
             finish();
         }
     }
