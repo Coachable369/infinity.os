@@ -2,6 +2,7 @@
 set -eu
 
 cd "$(dirname "$0")/.."
+. tools/require-build-kit.sh
 
 sizes="24 32 48 64 96 128 256"
 families="crystal-blue-glass luminous-obsidian frosted-quartz aurora-harmony"

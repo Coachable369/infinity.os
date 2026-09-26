@@ -1,5 +1,10 @@
 SHELL := /bin/sh
 .DEFAULT_GOAL := all
+
+ifndef INFINITY_BUILD_KIT_ACTIVE
+$(error Direct Make invocation is disabled; use ./build-kit with a named profile or ./build-kit run make TARGET)
+endif
+
 SYSTEM_SOUND_SOURCES := assets/sounds/boot.mp3 assets/sounds/login.mp3
 SYSTEM_SOUND_ASSETS := assets/sounds/boot.pcm assets/sounds/login.pcm
 

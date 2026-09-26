@@ -1,0 +1,30 @@
+version = 1
+project = "InfinityOS"
+
+[paths]
+scratch = "build"
+temporary = "build/tmp"
+releases = "builds"
+manifests = "builds/manifests"
+models = "model-cache"
+patches = "third_party/patches"
+logs = "build/logs"
+
+[log_retention]
+remove_empty_release_logs = true
+root_crash_globs = ["rustc-ice-*.txt"]
+
+[profiles.full]
+command = ["sh", "build.sh"]
+
+[profiles.x86_64]
+command = ["make", "x86_64"]
+
+[profiles.aarch64]
+command = ["make", "aarch64-bootstrap"]
+
+[profiles.tests]
+command = ["make", "test"]
+
+[profiles.studio]
+command = ["sh", "tools/installer-designer/build.sh"]

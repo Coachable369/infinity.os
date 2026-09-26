@@ -6,14 +6,16 @@ output_dir="$project_root/builds"
 temporary_dir="$project_root/build/tmp"
 
 cd "$project_root"
-python3 tools/build-workspace.py clean
-TMPDIR="$temporary_dir"
-TMP="$temporary_dir"
-TEMP="$temporary_dir"
-export TMPDIR TMP TEMP
+if [ "${INFINITY_BUILD_KIT_ACTIVE:-0}" != "1" ]; then
+    exec "$project_root/build-kit" full "$@"
+fi
+test "${INFINITY_PROJECT_ROOT:-}" = "$project_root"
+test "${TMPDIR:-}" = "$temporary_dir"
 
 # Catch workspace and provisioning contract failures before expensive builds.
+python3 tools/build-kit-test.py
 python3 tools/build-workspace-test.py
+python3 tools/log-retention-test.py
 sh tools/select-install-iso-test.sh
 python3 tools/installer-output-test.py
 python3 tools/iso-staging-test.py

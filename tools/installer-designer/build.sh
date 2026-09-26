@@ -3,6 +3,7 @@ set -euo pipefail
 
 script_dir="${0:A:h}"
 repo_dir="${script_dir:h:h}"
+source "$repo_dir/tools/require-build-kit.sh"
 app_dir="$repo_dir/builds/InfinityOS Installer Studio.app"
 contents_dir="$app_dir/Contents"
 binary_dir="$(swift build --package-path "$script_dir" -c release --show-bin-path)"

@@ -3,6 +3,7 @@
 set -eu
 
 cd "$(dirname "$0")/.."
+. tools/require-build-kit.sh
 repo=$PWD
 target=x86_64-unknown-elf
 work=$repo/build/native-c

@@ -2,6 +2,7 @@
 # Cross-compilation bootstrap only. This is not an on-device cc implementation.
 set -eu
 cd "$(dirname "$0")/../.."
+. tools/require-build-kit.sh
 clang_path=${INFINITY_CLANG:-/opt/homebrew/opt/llvm/bin/clang}
 linker_path=${INFINITY_LLD:-/opt/homebrew/opt/lld/bin/ld.lld}
 mkdir -p build/native-c

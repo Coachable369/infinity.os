@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/../.."
+. tools/require-build-kit.sh
 mkdir -p build/native-c
 for architecture in x86_64 aarch64; do
   /opt/homebrew/opt/llvm/bin/clang --target="$architecture-none-elf" \

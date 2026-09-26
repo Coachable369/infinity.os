@@ -2,6 +2,7 @@
 # Builds the first ARM64 streamed-payload ISO; the ordinary ISO remains unchanged.
 set -eu
 cd "$(dirname "$0")/.."
+. tools/require-build-kit.sh
 ministral=model-cache/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
 hermes=${INFINITY_HERMES_MODEL:-}
 if test -z "$hermes"; then exec sh tools/build-hermes.sh; fi

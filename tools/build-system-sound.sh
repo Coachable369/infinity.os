@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$project_root/tools/require-build-kit.sh"
+
 test "$#" -eq 2 || {
     echo "usage: $0 INPUT.mp3 OUTPUT.pcm" >&2
     exit 2

@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/../.."
+. tools/require-build-kit.sh
 for unit in serial_sync serial_tls pthread; do
   /opt/homebrew/opt/llvm/bin/clang --target=x86_64-unknown-elf \
     --sysroot=build/native-c/sysroot/x86_64-unknown-elf -include sdk/compiler/target.h \

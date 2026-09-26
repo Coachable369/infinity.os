@@ -2,6 +2,7 @@
 # Builds the native service bridge objects consumed by the Clang and LLD links.
 set -eu
 cd "$(dirname "$0")/../.."
+. tools/require-build-kit.sh
 compiler=${LLVM_BIN:-/opt/homebrew/opt/llvm/bin}/clang
 sysroot=${INFINITY_COMPILER_SYSROOT:-build/native-c/sysroot/x86_64-unknown-elf}
 if test ! -f "$sysroot/lib/libc.a"; then
