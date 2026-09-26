@@ -1,0 +1,17 @@
+[package]
+name = "infinity-servo-runtime-prerequisite"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "runtime.rs"
+crate-type = ["rlib"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

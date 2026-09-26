@@ -29,6 +29,32 @@ contains behavioral assertions for eventual guest execution; the script does
 not execute them. Build-kit serialization initially prevented running this gate
 because another incremental build was active. No build lock was bypassed.
 
+### September 26 compiler evidence
+
+The lock cleared and the probe ran through the build kit. Both current targets
+returned exit status 1 for the prebuilt-std compile gate (E0463: std unavailable).
+Added an isolated Cargo manifest and `--build-std` probe mode to test whether
+rebuilding the standard library resolves this without a platform port.
+
+`./build-kit run python3 tools/servo-platform-probe/run.py --build-std`
+returned status 101 for both targets. Rust 1.98.0 standard-library compilation
+fails on missing allocator and I/O-error platform selections, TLS key operations,
+and random-byte support. This confirms that installing a precompiled library or
+merely adding `build-std=std` is insufficient. No unsupported-service stubs were
+added to make compilation appear successful.
+
+Structured evidence: `build/servo-platform-probe/build-std-result.json`.
+Per-target diagnostics: `build/servo-platform-probe/*-build-std.log`.
+Build manifest: `builds/manifests/20260926T062036189443Z-74686.json`.
+These are failed prerequisite builds, not passing behavioral tests or Servo
+execution. The existing AP matrix workers are bounded compute jobs, not proof
+of general Rust threads with blocking/wakeup and independent TLS.
+
+Next implementation gate remains a native Rust standard-library platform port:
+allocator, native error translation, entropy, TLS and real thread/wait support,
+followed by guest execution of `runtime_roundtrip`. Do not modify the host
+toolchain in place or reuse the serial compiler shim as a threaded runtime.
+
 ## Narrow integration sequence after runtime support
 
 1. Compile and execute the runtime roundtrip inside InfinityOS, then build
