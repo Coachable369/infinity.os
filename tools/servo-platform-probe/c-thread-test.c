@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <errno.h>
+#include "../../sdk/servo-std/include/infinity-limits.h"
 static pthread_once_t once=PTHREAD_ONCE_INIT;
 static int count;
 static pthread_rwlock_t rw=PTHREAD_RWLOCK_INITIALIZER;
@@ -53,5 +54,15 @@ int infinity_c_thread_test(void) {
     if (pthread_rwlock_unlock(&rw) || pthread_rwlock_unlock(&rw) || pthread_join(first,&one)) return 12;
     if ((uintptr_t)one!=31 || written!=1 || pthread_rwlock_destroy(&rw)) return 13;
     if (pthread_rwlock_rdlock(&rw)!=EINVAL) return 14;
+    pthread_t handles[INFINITY_NATIVE_THREADS], rejected;
+    for (unsigned i=0;i<INFINITY_NATIVE_THREADS;++i)
+        if (pthread_create(&handles[i],&a,c_worker,(void *)(uintptr_t)(i+1))) return 15;
+    if (pthread_create(&rejected,&a,c_worker,0)!=EAGAIN) return 16;
+    for (unsigned i=0;i<INFINITY_NATIVE_THREADS;++i) {
+        void *value=0;
+        if (pthread_join(handles[i],&value) || (uintptr_t)value!=i+1) return 17;
+    }
+    if (pthread_create(&first,&a,c_worker,(void *)(uintptr_t)41) ||
+        pthread_join(first,&one) || (uintptr_t)one!=41) return 18;
     return pthread_attr_destroy(&a);
 }

@@ -89,9 +89,16 @@ not a declaration of platform support.
 `sdk/servo-runtime-primitives/executor.rs` owns independent native stacks,
 round-robin cooperative dispatch, sleep/wait, join/detach, stale-handle rejection,
 and bounded TLS destruction. `native.rs` binds the std ABI to that executor and
-an explicitly granted reclaiming arena. It permits 16 live handles, reclaims
+an explicitly granted reclaiming arena. It permits 32 live handles, reclaims
 joined/detached stacks only after execution leaves them, and rejects calls from
 a CPU other than its bound owner. It reports **one** CPU of parallelism.
+
+The C thread table and RW-lock reader table use the same 32-worker budget (plus
+the root reader). Native C `getentropy` accepts at most 256 bytes and routes only
+to the granted source; invalid requests and provider denial fail closed.
+The expanded exhaustion/reuse tests and C entropy denial tests pass in the
+combined guests: AArch64 manifest `20260926T221926907349Z-63022`, x86_64 manifest
+`20260926T221954594046Z-63100` under `builds/manifests/`.
 
 The provider is cooperative, not preemptive. It must run on a separately granted
 worker, never on the desktop event path. Kernel worker reservation, event pumping,

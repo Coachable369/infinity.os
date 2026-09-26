@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <time.h>
 #include "include/infinity-error.h"
+#include "include/infinity-limits.h"
 extern uint64_t infinity_std_thread_id(void);
 extern int infinity_std_wait(const uint32_t *, uint32_t, uint64_t, bool);
 extern int infinity_std_wake(const uint32_t *, bool);
@@ -15,7 +16,7 @@ typedef struct { uint32_t generation, sequence, waiters; int active; clockid_t c
 static Mutex mutexes[CAPACITY];
 static Condition conditions[CAPACITY];
 typedef struct { uint64_t id; uint32_t depth; } Reader;
-typedef struct { uint32_t generation, sequence, waiters, writers; int active; uint64_t writer; Reader readers[17]; } Rwlock;
+typedef struct { uint32_t generation, sequence, waiters, writers; int active; uint64_t writer; Reader readers[INFINITY_NATIVE_READERS]; } Rwlock;
 static Rwlock rwlocks[CAPACITY];
 
 // ------------------------=
@@ -53,7 +54,7 @@ static int rwlock_acquire(pthread_rwlock_t *handle,int write,int try_only) {
     for (;;) {
         uint32_t sequence=__atomic_load_n(&r->sequence,__ATOMIC_ACQUIRE);
         Reader *mine=0,*empty=0; int occupied=0;
-        for (unsigned i=0;i<17;++i) {
+        for (unsigned i=0;i<INFINITY_NATIVE_READERS;++i) {
             Reader *reader=&r->readers[i];
             if (reader->depth) { occupied=1; if (reader->id==id) mine=reader; }
             else if (!empty) empty=reader;
@@ -100,7 +101,7 @@ int pthread_rwlock_unlock(pthread_rwlock_t *handle) {
     Rwlock *r=rwlock_lookup(handle); if (!r) return EINVAL;
     uint64_t id=infinity_std_thread_id(); int released=0;
     if (r->writer==id) { r->writer=0; released=1; }
-    else for (unsigned i=0;i<17;++i) if (r->readers[i].id==id && r->readers[i].depth) { --r->readers[i].depth; released=1; break; }
+    else for (unsigned i=0;i<INFINITY_NATIVE_READERS;++i) if (r->readers[i].id==id && r->readers[i].depth) { --r->readers[i].depth; released=1; break; }
     if (!released) return EPERM;
     __atomic_add_fetch(&r->sequence,1,__ATOMIC_RELEASE); infinity_std_wake(&r->sequence,true); return 0;
 }
@@ -111,7 +112,7 @@ int pthread_rwlock_unlock(pthread_rwlock_t *handle) {
 int pthread_rwlock_destroy(pthread_rwlock_t *handle) {
     Rwlock *r=rwlock_lookup(handle); if (!r) return EINVAL;
     if (r->writer || r->waiters) return EBUSY;
-    for (unsigned i=0;i<17;++i) if (r->readers[i].depth) return EBUSY;
+    for (unsigned i=0;i<INFINITY_NATIVE_READERS;++i) if (r->readers[i].depth) return EBUSY;
     r->active=0; return 0;
 }
 

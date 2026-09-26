@@ -75,11 +75,17 @@ static ENTROPY_DENIED: core::sync::atomic::AtomicBool = core::sync::atomic::Atom
 // ------------------=
 #[cfg(feature = "async-probe")]
 fn entropy_roundtrip() {
+    unsafe extern "C" { fn getentropy(bytes: *mut u8, length: usize) -> i32; }
     let mut bytes = [0u8; 37];
+    assert_eq!(unsafe { getentropy(bytes.as_mut_ptr(), bytes.len()) }, 0);
+    assert_eq!(unsafe { getentropy(core::ptr::null_mut(), 0) }, 0);
+    assert_eq!(unsafe { getentropy(core::ptr::null_mut(), 1) }, -1);
+    assert_eq!(unsafe { getentropy(bytes.as_mut_ptr(), 257) }, -1);
     assert!(getrandom2::getrandom(&mut bytes).is_ok());
     assert!(getrandom3::fill(&mut bytes).is_ok());
     assert!(getrandom4::fill(&mut bytes).is_ok());
     ENTROPY_DENIED.store(true, core::sync::atomic::Ordering::Relaxed);
+    assert_eq!(unsafe { getentropy(bytes.as_mut_ptr(), bytes.len()) }, -1);
     assert!(getrandom2::getrandom(&mut bytes).is_err());
     assert!(getrandom3::fill(&mut bytes).is_err());
     assert!(getrandom4::fill(&mut bytes).is_err());
@@ -278,7 +284,7 @@ fn allocation_roundtrip() { unsafe {
 // DESC: Records execution only for callbacks whose ownership was successfully transferred.
 // ------------------=
 extern "C" fn abi_entry(argument: *mut u8) {
-    assert!((argument as usize) < 16);
+    assert!((argument as usize) < infinity_servo_runtime_primitives::native::MAX_THREADS);
     ABI_COMPLETED.fetch_add(1, Ordering::SeqCst);
 }
 // ------------------------=
@@ -289,7 +295,7 @@ fn abi_limits() { unsafe {
     use infinity_servo_runtime_primitives::native::*;
     let baseline = Runtime::allocated();
     assert!(infinity_std_allocate(usize::MAX, 16).is_null());
-    let mut ids = [0; 16];
+    let mut ids = [0; infinity_servo_runtime_primitives::native::MAX_THREADS];
     for (index, id) in ids.iter_mut().enumerate() {
         assert_eq!(infinity_std_thread_create(65536, abi_entry, index as *mut u8, id), 0);
     }
@@ -297,7 +303,7 @@ fn abi_limits() { unsafe {
     assert_eq!(infinity_std_thread_create(65536, abi_entry, 99 as *mut u8, &mut rejected), 11);
     assert_eq!(rejected, 0);
     for id in ids { assert_eq!(infinity_std_thread_join(id), 0); }
-    assert_eq!(ABI_COMPLETED.load(Ordering::SeqCst), 16);
+    assert_eq!(ABI_COMPLETED.load(Ordering::SeqCst), MAX_THREADS);
     assert_eq!(Runtime::allocated(), baseline);
 } }
 

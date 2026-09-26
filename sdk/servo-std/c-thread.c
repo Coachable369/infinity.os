@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "include/infinity-error.h"
+#include "include/infinity-limits.h"
 extern int infinity_std_thread_create(size_t,void (*)(void *),void *,uint64_t *);
 extern int infinity_std_thread_join(uint64_t);
 extern void infinity_std_thread_detach(uint64_t);
@@ -14,7 +15,7 @@ extern void infinity_std_thread_name(const unsigned char *,size_t);
 extern int infinity_std_wait(const uint32_t *,uint32_t,uint64_t,bool);
 extern int infinity_std_wake(const uint32_t *,bool);
 typedef struct { int used, detached, done, joining; uint64_t id; void *(*start)(void *); void *argument, *result; } Thread;
-static Thread threads[16];
+static Thread threads[INFINITY_NATIVE_THREADS];
 // ------------------------=
 // FUNC: thread_entry
 // DESC: Captures the C return value before the native executor performs TLS teardown.
@@ -29,7 +30,7 @@ static void thread_entry(void *data) {
 // ------------------=
 static Thread *thread_lookup(pthread_t id) {
     if (!infinity_std_thread_id()) return 0;
-    for (unsigned i=0;i<16;++i) if (threads[i].used && threads[i].id==id) return &threads[i];
+    for (unsigned i=0;i<INFINITY_NATIVE_THREADS;++i) if (threads[i].used && threads[i].id==id) return &threads[i];
     return 0;
 }
 // ------------------------=
@@ -68,7 +69,7 @@ int pthread_attr_setdetachstate(pthread_attr_t *a,int state) {
 int pthread_create(pthread_t *out,const pthread_attr_t *a,void *(*start)(void *),void *argument) {
     if (!out || !start || !infinity_std_thread_id()) return EINVAL;
     if (a && (!a->is_initialized || a->stackaddr || a->stacksize<16384 || a->stacksize>8*1024*1024 || (a->detachstate!=PTHREAD_CREATE_JOINABLE && a->detachstate!=PTHREAD_CREATE_DETACHED))) return EINVAL;
-    for (unsigned i=0;i<16;++i) {
+    for (unsigned i=0;i<INFINITY_NATIVE_THREADS;++i) {
         Thread *t=&threads[i]; if (t->used) continue;
         *t=(Thread){.used=1,.detached=a && a->detachstate==PTHREAD_CREATE_DETACHED,.start=start,.argument=argument};
         int status=infinity_std_thread_create(a ? (size_t)a->stacksize : 262144,thread_entry,t,&t->id);

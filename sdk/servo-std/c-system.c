@@ -5,6 +5,19 @@
 #include <sys/time.h>
 #include <time.h>
 #include <errno.h>
+#include "include/infinity-error.h"
+extern int infinity_std_entropy(unsigned char *, size_t);
+// ------------------------=
+// FUNC: getentropy
+// DESC: Serves bounded C entropy requests from the granted native source, failing closed on denial.
+// ------------------=
+int getentropy(void *output,size_t length) {
+    if (length>256 || (!output && length)) { errno=EIO; return -1; }
+    if (!length) return 0;
+    int result=infinity_std_entropy(output,length);
+    if (result) { errno=infinity_native_error(result); return -1; }
+    return 0;
+}
 // ------------------------=
 // FUNC: sysconf
 // DESC: Reports the native page geometry and single-owner executor width; rejects other host queries.
