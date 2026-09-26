@@ -42,11 +42,16 @@ def main():
         native_externs += ["--extern", name + "=" + str(archives[0])]
     runtime = output / ("libnative_runtime_" + arch + ".rlib")
     newlib = root / ("build/voice-newlib-" + arch) / (arch + "-none-elf/newlib")
-    allocator = output / ("c-reentrant-allocator-" + arch + ".o")
-    subprocess.run(["/opt/homebrew/opt/llvm/bin/clang", "--target=" + arch + "-none-elf",
+    c_objects = []
+    for name in ("c-reentrant-allocator", "c-thread-time", "c-sync", "c-thread"):
+        obj = output / (name + "-" + arch + ".o")
+        subprocess.run(["/opt/homebrew/opt/llvm/bin/clang", "--target=" + arch + "-none-elf",
+                    "-mstrict-align" if arch == "aarch64" else "-mno-red-zone",
                     "-ffreestanding", "-fno-builtin", "-isystem", str(newlib / "targ-include"),
                     "-isystem", str(root / "build/newlib-4.6.0.20260123/newlib/libc/include"),
-                    "-c", str(root / "sdk/servo-std/c-reentrant-allocator.c"), "-o", str(allocator)], check=True)
+                    "-include", str(root / "sdk/servo-std/c-target.h"),
+                    "-c", str(root / "sdk/servo-std" / (name + ".c")), "-o", str(obj)], check=True)
+        c_objects += ["-C", "link-arg=" + str(obj)]
     subprocess.run(["rustc", "--edition=2021", "--target", triple,
                     "--crate-name", "infinity_servo_runtime_primitives", "--crate-type", "rlib",
                     "--cfg", 'feature="native-abi"', "--cfg", 'feature="c-allocator-abi"', "-C", "panic=abort",
@@ -59,8 +64,10 @@ def main():
                "-C", "link-arg=--error-limit=0",
                *native_search,
                "-l", "static=c++abi",
-               "-C", "link-arg=" + str(allocator),
-               "-L", "native=" + str(newlib), "-l", "static=c", "-l", "static=m",
+               *c_objects,
+               # Provider objects and engine archives must precede fallback libc.
+               "-C", "link-arg=" + str(newlib / "libc.a"),
+               "-C", "link-arg=" + str(newlib / "libm.a"),
                "--extern", "servo=" + str(target / "libservo.rlib"),
                "--extern", "infinity_servo_runtime_primitives=" + str(runtime),
                *native_externs,

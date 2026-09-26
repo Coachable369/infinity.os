@@ -13,11 +13,11 @@ pub struct Hooks {
     pub pump: fn(),
 }
 #[derive(Clone, Copy)]
-struct Record { id: u64, pointer: *mut u8, size: usize, entry: Option<extern "C" fn(*mut u8)>, data: *mut u8, error: i32, name: [u8; 32] }
-const EMPTY: Record = Record { id: 0, pointer: ptr::null_mut(), size: 0, entry: None, data: ptr::null_mut(), error: 0, name: [0; 32] };
+struct Record { id: u64, pointer: *mut u8, size: usize, entry: Option<extern "C" fn(*mut u8)>, data: *mut u8, error: i32, c_error: i32, name: [u8; 32] }
+const EMPTY: Record = Record { id: 0, pointer: ptr::null_mut(), size: 0, entry: None, data: ptr::null_mut(), error: 0, c_error: 0, name: [0; 32] };
 pub struct Runtime {
     executor: Executor<LIMIT>, arena: Arena<'static>, hooks: Hooks, cpu: u64,
-    records: [Record; LIMIT], root_error: i32, root_wait: usize, root_woken: bool,
+    records: [Record; LIMIT], root_error: i32, root_c_error: i32, root_wait: usize, root_woken: bool,
 }
 static ACTIVE: AtomicPtr<Runtime> = AtomicPtr::new(ptr::null_mut());
 impl Runtime {
@@ -27,7 +27,7 @@ impl Runtime {
     // ------------------=
     pub fn new(bytes: &'static mut [u8], hooks: Hooks) -> Option<Self> {
         Some(Self { executor: Executor::new(), arena: Arena::new(bytes)?, cpu: (hooks.cpu)(), hooks,
-            records: [EMPTY; LIMIT], root_error: 0, root_wait: 0, root_woken: false })
+            records: [EMPTY; LIMIT], root_error: 0, root_c_error: 0, root_wait: 0, root_woken: false })
     }
     // ------------------------=
     // FUNC: install
@@ -301,6 +301,16 @@ pub unsafe extern "C" fn infinity_std_tls_create(dtor: Option<Destructor>, key: 
 #[no_mangle]
 pub unsafe extern "C" fn infinity_std_tls_destroy(key: usize) { let p = active(); assert!(!p.is_null()); (*p).executor.key_destroy(key).unwrap(); }
 // ------------------------=
+// FUNC: infinity_c_tls_destroy
+// DESC: Returns an error for invalid C keys rather than panicking on caller input.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_c_tls_destroy(key: usize) -> i32 {
+    let p = active();
+    if p.is_null() { return 22; }
+    if (*p).executor.key_destroy(key).is_ok() { 0 } else { 22 }
+}
+// ------------------------=
 // FUNC: infinity_std_tls_get
 // DESC: Gets the active independent stack's TLS value.
 // ------------------=
@@ -336,6 +346,16 @@ pub unsafe extern "C" fn infinity_std_last_error() -> i32 {
     let p = active(); if p.is_null() { return 22; }
     let Some(id) = (*p).executor.current_id() else { return (*p).root_error; };
     (*p).records.iter().find(|r| r.id == id).map_or(22, |r| r.error)
+}
+// ------------------------=
+// FUNC: infinity_c_errno_location
+// DESC: Exposes stable errno storage for the current native identity, rejecting an absent or foreign owner.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_c_errno_location() -> *mut i32 {
+    let p = active(); if p.is_null() { return ptr::null_mut(); }
+    let Some(id) = (*p).executor.current_id() else { return &mut (*p).root_c_error; };
+    (*p).records.iter_mut().find(|r| r.id == id).map_or(ptr::null_mut(), |r| &mut r.c_error)
 }
 // ------------------------=
 // FUNC: infinity_std_clock

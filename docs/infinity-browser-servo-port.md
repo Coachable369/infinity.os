@@ -2,6 +2,28 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Native C runtime checkpoint, September 26 (current)
+
+Fixed archive ordering so the governed allocation providers precede newlib.
+Added native C TLS, separate C errno storage with explicit newlib error mapping,
+monotonic/UTC clock adapters, scheduler sleep, bounded generation-tagged mutexes,
+conditions and reader/writer locks. Added C thread creation/join/detach and once
+initialization over the existing independent-stack native executor. These are
+single-owner cooperative primitives, not multicore pthread support.
+
+Behavioral guest tests exercise C-created threads, return values, yielding once
+initializers, TLS isolation/destruction, timed condition waits, recursive locks,
+reader/writer exclusion, stale handles, and allocation:
+
+- AArch64 passed: `builds/manifests/20260926T205905999893Z-32784.json`.
+- x86_64 passed: `builds/manifests/20260926T205923525802Z-32825.json`.
+
+The engine link still needs virtual-memory, SQLite, C++ exception-runtime,
+crypto CPU initialization and native libc service boundaries. No engine execution,
+page rendering, installed proof or new ISO is claimed. The user explicitly
+removed the correction-loop stopping limit; the historical stop below no longer
+governs continuation.
+
 ## Native library and allocation checkpoint, September 26
 
 The stdc++/zlib lookup blocker below is resolved. Both mozjs and cc-rs now

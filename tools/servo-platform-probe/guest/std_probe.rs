@@ -8,6 +8,12 @@ static mut HEAP: Heap = Heap([0; 16777216]);
 static mut RUNTIME: MaybeUninit<Runtime> = MaybeUninit::uninit();
 static DROPS: AtomicUsize = AtomicUsize::new(0);
 static ABI_COMPLETED: AtomicUsize = AtomicUsize::new(0);
+// ------------------------=
+// FUNC: abort
+// DESC: Reports a failed guest test if a C adapter encounters an unrecoverable contract violation.
+// ------------------=
+#[no_mangle]
+pub extern "C" fn abort() -> ! { super::finish(1, 0, 0) }
 struct Guard(Vec<u8>);
 impl Drop for Guard {
     // ------------------------=
@@ -108,6 +114,10 @@ pub unsafe fn initialize() {
 pub fn run() {
     abi_limits();
     allocation_roundtrip();
+    c_tls_roundtrip();
+    c_sync_roundtrip();
+    extern "C" { fn infinity_c_thread_test() -> i32; }
+    verify_c_sync(6, unsafe { infinity_c_thread_test() });
     stack_bounds_roundtrip();
     #[cfg(feature = "async-probe")]
     entropy_roundtrip();
@@ -140,6 +150,50 @@ pub fn run() {
     let (_guard, outcome) = pair.1.wait_timeout(locked, Duration::from_millis(1)).unwrap();
     assert!(outcome.timed_out());
     assert_eq!(thread::available_parallelism().unwrap().get(), 1);
+}
+// ------------------------=
+// FUNC: c_tls_roundtrip
+// DESC: Runs the real C TLS/clock adapters on independent native guest stacks.
+// ------------------=
+fn c_tls_roundtrip() {
+    extern "C" {
+        fn infinity_c_tls_begin() -> i32;
+        fn infinity_c_tls_worker(value: usize) -> i32;
+        fn infinity_c_tls_end() -> i32;
+    }
+    assert_eq!(unsafe { infinity_c_tls_begin() }, 0);
+    let a = thread::spawn(|| unsafe { infinity_c_tls_worker(17) });
+    let b = thread::spawn(|| unsafe { infinity_c_tls_worker(23) });
+    assert_eq!(a.join().unwrap(), 0);
+    assert_eq!(b.join().unwrap(), 0);
+    assert_eq!(unsafe { infinity_c_tls_end() }, 0);
+}
+// ------------------------=
+// FUNC: c_sync_roundtrip
+// DESC: Exercises C condition broadcast, mutex ownership and timeout reacquisition on native stacks.
+// ------------------=
+fn c_sync_roundtrip() {
+    extern "C" {
+        fn infinity_c_sync_begin() -> i32;
+        fn infinity_c_sync_consumer() -> i32;
+        fn infinity_c_sync_producer() -> i32;
+        fn infinity_c_sync_end() -> i32;
+    }
+    verify_c_sync(1, unsafe { infinity_c_sync_begin() });
+    let a = thread::spawn(|| unsafe { infinity_c_sync_consumer() });
+    let b = thread::spawn(|| unsafe { infinity_c_sync_consumer() });
+    let c = thread::spawn(|| unsafe { infinity_c_sync_producer() });
+    verify_c_sync(2, c.join().unwrap());
+    verify_c_sync(3, a.join().unwrap());
+    verify_c_sync(4, b.join().unwrap());
+    verify_c_sync(5, unsafe { infinity_c_sync_end() });
+}
+// ------------------------=
+// FUNC: verify_c_sync
+// DESC: Preserves the failing C test phase and numeric result in binary guest diagnostics.
+// ------------------=
+fn verify_c_sync(phase: u64, status: i32) {
+    if status != 0 { super::finish(1, phase, status as u64); }
 }
 
 // ------------------------=

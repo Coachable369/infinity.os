@@ -84,10 +84,15 @@ def main():
     executable = output / "probe.elf"
     native_objects = []
     if options.std_probe:
-        for source in (Path(__file__).with_name("c-allocator-test.c"), root / "sdk/servo-std/c-reentrant-allocator.c"):
+        for source in (Path(__file__).with_name("c-allocator-test.c"), root / "sdk/servo-std/c-reentrant-allocator.c",
+                       Path(__file__).with_name("c-thread-time-test.c"), root / "sdk/servo-std/c-thread-time.c",
+                       root / "sdk/servo-std/c-sync.c", Path(__file__).with_name("c-sync-test.c"),
+                       root / "sdk/servo-std/c-thread.c", Path(__file__).with_name("c-thread-test.c")):
             obj = output / (source.stem + ".o")
             subprocess.run(["/opt/homebrew/opt/llvm/bin/clang", "--target=" + options.arch + "-none-elf",
+                        "-mstrict-align" if options.arch == "aarch64" else "-mno-red-zone",
                         "-ffreestanding", "-fno-builtin", "-O2", "-c",
+                        "-include", str(root / "sdk/servo-std/c-target.h"),
                         "-isystem", str(root / ("build/voice-newlib-" + options.arch) / (options.arch + "-none-elf/newlib/targ-include")),
                         "-isystem", str(root / "build/newlib-4.6.0.20260123/newlib/libc/include"),
                         str(source), "-o", str(obj)], check=True)
