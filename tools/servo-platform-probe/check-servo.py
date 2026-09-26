@@ -16,9 +16,10 @@ def main():
         raise SystemExit("Run via ./build-kit run python3 tools/servo-platform-probe/check-servo.py")
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--package", choices=("servo", "fontsan", "aws-lc-sys"), default="servo")
+    parser.add_argument("--package", choices=("servo", "fontsan", "aws-lc-sys", "swgl"), default="servo")
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
     parser.add_argument("--codegen", action="store_true", help="Build native engine archives, not just metadata; does not link a browser")
+    parser.add_argument("--resolve-lock", action="store_true", help="Explicitly resolve dependency changes before subsequent locked runs")
     options = parser.parse_args()
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-deps.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-mio.py")), "--engine"], check=True)
@@ -31,9 +32,13 @@ def main():
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-mozjs.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-certificates.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-engine.py"))], check=True)
+    if options.package == "servo":
+        subprocess.run(["python3", str(Path(__file__).with_name("prepare-software-renderer.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-bindgen.py"))], check=True)
     arch = options.arch
-    target = "aarch64-unknown-none-softfloat" if arch == "aarch64" else "x86_64-unknown-none"
+    # The engine calls C/C++ APIs with floating arguments. Match AAPCS64's
+    # hardware-float ABI; the native executor preserves FP/SIMD register state.
+    target = "aarch64-unknown-none" if arch == "aarch64" else "x86_64-unknown-none"
     target_key = target.replace("-", "_")
     source = root / "build/servo-port-audit"
     revision = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
@@ -86,10 +91,18 @@ def main():
     command = ["cargo", "build" if options.codegen else "check", "-j", "4", "-Z", "build-std=std,panic_abort",
                "--target", target, "--manifest-path",
                str(source / "components/servo/Cargo.toml"), "--locked", "--message-format=json-render-diagnostics"]
+    if options.package == "swgl":
+        manifest = Path(__file__).with_name("swgl") / "Cargo.toml"
+        command[command.index("--manifest-path") + 1] = str(manifest)
+        if not manifest.with_name("Cargo.lock").is_file():
+            command.remove("--locked")
+    if options.resolve_lock and "--locked" in command:
+        command.remove("--locked")
     native_libc = root / "build/servo-native-deps/libc-0.2.189"
     if native_libc.is_dir():
         command += ["--config", 'patch.crates-io.libc.path="' + str(native_libc) + '"']
     command += ["--config", 'patch.crates-io.mio.path="' + str(root / "build/servo-native-deps/mio-1.2.3") + '"']
+    command += ["--config", 'patch.crates-io.aws-lc-sys.path="' + str(root / "build/servo-native-deps/aws-lc-sys-0.45.0") + '"']
     command += ["--config", 'patch.crates-io.webdriver.path="' + str(root / "build/servo-native-deps/webdriver-0.54.0") + '"']
     command += ["--config", 'patch.crates-io.imsz.path="' + str(root / "build/servo-native-deps/imsz-0.4.1") + '"']
     command += ["--config", 'patch.crates-io.surfman.path="' + str(root / "build/servo-native-deps/surfman-0.14.0") + '"']
@@ -105,9 +118,13 @@ def main():
     for index, version in enumerate(("0.2.17", "0.3.4", "0.4.1")):
         key = 'patch.crates-io.getrandom_native_' + str(index)
         command += ["--config", key + '.package="getrandom"', "--config", key + '.path="' + str(root / "build/servo-native-deps" / ("getrandom-" + version)) + '"']
+    if options.package == "swgl":
+        # This focused rasterizer has no Servo dependency graph. Avoid unused
+        # engine patches changing its independent lockfile on each staging pass.
+        command = command[:command.index("--config")]
     if options.package == "servo":
         command += ["--no-default-features", "--features", "bundled,ipc-channel/force-inprocess"]
-    else:
+    elif options.package != "swgl":
         command += ["-p", options.package]
     prefix = options.package + "-" + arch + ("-codegen" if options.codegen else "-check")
     native_paths = set()

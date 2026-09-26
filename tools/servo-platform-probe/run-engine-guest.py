@@ -5,6 +5,7 @@ from pathlib import Path
 import struct
 import subprocess
 import socket
+import argparse
 
 # ------------------------=
 # FUNC: main
@@ -14,7 +15,13 @@ def main():
     if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
         raise SystemExit("Run through build-kit")
     root = Path(__file__).resolve().parents[2]
-    subprocess.run(["python3",str(Path(__file__).with_name("link-engine.py")),"--boot-probe"],check=True)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--swgl-probe", action="store_true")
+    parser.add_argument("--page-probe", action="store_true")
+    options = parser.parse_args()
+    subprocess.run(["python3",str(Path(__file__).with_name("link-engine.py")),"--boot-probe"] +
+                   (["--swgl-probe"] if options.swgl_probe else []) +
+                   (["--page-probe"] if options.page_probe else []),check=True)
     output=root / "build/servo-platform-probe"
     result=output / "engine-boot.bin"
     result.unlink(missing_ok=True)
@@ -50,8 +57,15 @@ def main():
     data=result.read_bytes()
     records=[list(struct.unpack("<4Q",data[i:i+32])) for i in range(0,len(data)-31,32)]
     passed=not timed_out and bool(records) and records[-1][:3]==[9,0,5]
+    raster_passed = [9,2,8,1] in records
+    if options.swgl_probe:
+        passed = passed and raster_passed
+    page_passed = [9,2,9,1] in records
+    if options.page_probe:
+        passed = passed and page_passed
     diagnostics={str(kind):b"".join(struct.pack("<Q",r[3]) for r in records if r[:3]==[9,4,kind]).rstrip(b"\0").decode(errors="replace") for kind in (6,7)}
-    report={"passed":passed,"timed_out":timed_out,"records":[r for r in records if r[1]!=4],"diagnostics":diagnostics,"registers":registers,"installed_os":False,"page_rendered":False}
+    report={"passed":passed,"timed_out":timed_out,"records":[r for r in records if r[1]!=4],"diagnostics":diagnostics,"registers":registers,"installed_os":False,"page_rendered":page_passed}
+    report["software_raster_verified"] = raster_passed
     (output / "engine-boot.json").write_text(json.dumps(report,indent=2)+"\n")
     print(json.dumps(report,indent=2))
     return 0 if passed else 1

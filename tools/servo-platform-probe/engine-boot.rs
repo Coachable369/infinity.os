@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 extern crate std;
+#[cfg(infinity_page_probe)]
+#[path = "engine-page.rs"] mod engine_page;
 use core::mem::MaybeUninit;
 use infinity_servo_runtime_primitives::native::{Runtime,Hooks};
 #[path="guest/entropy_probe.rs"] mod entropy_probe;
@@ -97,6 +99,18 @@ pub unsafe extern "C" fn engine_boot()->! {
         record(2,4,0);
         let engine=servo::ServoBuilder::default().build();
         record(2,5,unsafe {Runtime::allocated()} as u64);
+        #[cfg(infinity_swgl_probe)]
+        {
+            let failure = infinity_swgl_probe::verify_clear();
+            if failure != 0 { finish(1,8,failure); }
+            record(2,8,1);
+        }
+        #[cfg(infinity_page_probe)]
+        {
+            let failure = engine_page::verify(&engine);
+            if failure != 0 { finish(1,9,failure); }
+            record(2,9,1);
+        }
         core::mem::forget(engine);
     }).unwrap().join().unwrap();
     finish(0,5,Runtime::allocated() as u64)
@@ -109,5 +123,45 @@ fn diagnostic(kind:u64,text:&str) {
     for chunk in text.as_bytes()[..text.len().min(512)].chunks(8) {
         let mut bytes=[0u8;8]; bytes[..chunk.len()].copy_from_slice(chunk);
         record(4,kind,u64::from_le_bytes(bytes));
+    }
+}
+// ------------------------=
+// FUNC: infinity_probe_fatal
+// DESC: Records bounded native C failure diagnostics, then powers down the failed fixture.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_probe_fatal(line:u64,file:*const u8,condition:*const u8,caller:u64)->! {
+    for (kind, pointer) in [(6,file),(7,condition)] {
+        if !pointer.is_null() {
+            let mut length=0;
+            while length<512 && pointer.add(length).read()!=0 { length+=1; }
+            if let Ok(text)=core::str::from_utf8(core::slice::from_raw_parts(pointer,length)) {
+                diagnostic(kind,text);
+            }
+        }
+    }
+    record(2,10,caller);
+    finish(1,10,line)
+}
+// ------------------------=
+// FUNC: infinity_probe_diagnostic
+// DESC: Emits bounded C diagnostics separately from the structured acceptance result.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_probe_diagnostic(pointer:*const u8) {
+    if pointer.is_null() { return; }
+    let mut length=0;
+    while length<512 && pointer.add(length).read()!=0 { length+=1; }
+    if let Ok(text)=core::str::from_utf8(core::slice::from_raw_parts(pointer,length)) { diagnostic(7,text); }
+}
+// ------------------------=
+// FUNC: infinity_probe_bytes
+// DESC: Reports bounded C diagnostic byte slices without requiring a terminating NUL.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_probe_bytes(pointer:*const u8,length:usize) {
+    if pointer.is_null() { return; }
+    if let Ok(text)=core::str::from_utf8(core::slice::from_raw_parts(pointer,length.min(512))) {
+        diagnostic(7,text);
     }
 }

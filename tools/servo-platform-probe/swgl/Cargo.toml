@@ -1,0 +1,14 @@
+[package]
+name = "infinity-swgl-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+swgl = "=0.70.0"
+gleam = "=0.15.1"

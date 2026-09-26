@@ -56,6 +56,17 @@ pub fn ''' + name + '''(dest: &mut [MaybeUninit<u8>]) -> Result<(), Error> {
         header = 'name = "getrandom"\nversion = "' + version + '"\n'
         entry = header + 'source = "' + package["source"] + '"\nchecksum = "' + package["checksum"] + '"\n'
         locked = locked.replace(entry, header)
+    directory, package = helper.stage(root, packages, "aws-lc-sys", "0.45.0")
+    path = directory / "aws-lc/crypto/rand_extra/internal.h"
+    text = path.read_text()
+    marker = "#if defined(BORINGSSL_UNSAFE_DETERMINISTIC_MODE)"
+    if text.count(marker) != 1:
+        raise SystemExit("Unexpected AWS-LC entropy selector")
+    text = text.replace(marker, "#if defined(__INFINITYOS__)\n#define OPENSSL_RAND_GETENTROPY\n#elif defined(BORINGSSL_UNSAFE_DETERMINISTIC_MODE)", 1)
+    path.write_text(text)
+    header = 'name = "aws-lc-sys"\nversion = "0.45.0"\n'
+    entry = header + 'source = "' + package["source"] + '"\nchecksum = "' + package["checksum"] + '"\n'
+    locked = locked.replace(entry, header)
     lock.write_text(locked)
 
 if __name__ == "__main__":

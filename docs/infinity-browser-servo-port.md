@@ -2,7 +2,40 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Native HTML/CSS and JavaScript pixels passed, September 26
+
+This checkpoint supersedes the older rendering/startup blockers below.
+`builds/manifests/20260926T222800003418Z-67530.json` passes a real Servo
+WebView in the freestanding AArch64 guest: all 128x128 pixels are red, actual
+SpiderMonkey evaluates an expression to 42 and mutates the DOM, and all pixels
+then become blue. The embedder handles frame-ready notifications and paints
+outside callbacks. No host rendering or JavaScript runtime participates.
+
+The native software rendering context uses SWGL through Servo's existing
+RenderingContext interface, with bounded persistent viewport backing. The
+native AWS-LC entropy path fails closed through the governed entropy ABI.
+SpiderMonkey's JavaScript preprocessor no longer injects the forced C target
+header into self-hosted JavaScript; C/C++ compilation retains that header.
+Full engine archive build: `20260926T222028395038Z-63161.json`.
+
+Allocation checkpoints are 36,580,096 bytes after engine initialization and
+67,722,496 after the page test, not measured peak RAM. This proves inline page
+rendering and DOM mutation only. Network pages, input/navigation, the native
+shell, System Generation packaging and cold-installed proof remain open.
+
 ## Native Servo initialization passed, September 26
+
+The subsequent SWGL pixel test exposed an AArch64 FFI ABI mismatch: Rust's
+soft-float target passed `ClearColor` arguments in integer registers, while
+native C++ read FP registers. The browser build/link target now uses
+`aarch64-unknown-none`, matching the C/C++ AAPCS64 ABI. This is specific to the
+browser port; it does not change unrelated kernel build targets.
+
+- Corrected full engine archive: `builds/manifests/20260926T214607778075Z-47772.json`.
+- Corrected native startup and all 2,048 SWGL color pixels pass:
+  `builds/manifests/20260926T215651622071Z-54187.json`.
+- The test links actual SWGL 0.70.0 and runs in the guest, without host GL.
+  This establishes raster operations, **not a rendered web page**.
 
 Real `ServoBuilder::build` now returns successfully in the freestanding AArch64
 guest. The native storage overlay selects upstream in-memory SQLite client

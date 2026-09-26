@@ -16,17 +16,26 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
     parser.add_argument("--boot-probe", action="store_true")
+    parser.add_argument("--swgl-probe", action="store_true")
+    parser.add_argument("--page-probe", action="store_true")
     options = parser.parse_args()
     arch = options.arch
     if options.boot_probe and arch != "aarch64":
         raise SystemExit("Engine boot fixture currently supports AArch64 only")
-    triple = "aarch64-unknown-none-softfloat" if arch == "aarch64" else "x86_64-unknown-none"
+    triple = "aarch64-unknown-none" if arch == "aarch64" else "x86_64-unknown-none"
     target = root / "build/cargo" / triple / "debug"
     output = root / "build/servo-platform-probe"
     codegen = json.loads((output / ("servo-" + arch + "-codegen.json")).read_text())
     if codegen["compiler_exit_status"] != 0 or codegen["target"] != triple:
         raise SystemExit("Successful matching native code generation required")
     native_search = ["-L", "native=" + str(root / ("build/voice-kokoro/cxx-" + arch + "/lib"))]
+    if options.swgl_probe:
+        if not options.boot_probe:
+            raise SystemExit("SWGL execution requires the native boot fixture")
+        raster = json.loads((output / ("swgl-" + arch + "-codegen.json")).read_text())
+        if raster["compiler_exit_status"] != 0:
+            raise SystemExit("Successful native SWGL code generation required")
+        codegen["native_search_paths"] += raster["native_search_paths"]
     for entry in codegen["native_search_paths"]:
         path = Path(entry.removeprefix("native=")).resolve()
         # Cargo reports host build-script paths too; never link a host archive.
@@ -57,6 +66,16 @@ def main():
                     "-include", str(root / "sdk/servo-std/c-target.h"),
                     "-c", str(root / "sdk/servo-std" / (name + ".c")), "-o", str(obj)], check=True)
         c_objects += ["-C", "link-arg=" + str(obj)]
+    if options.boot_probe:
+        fatal = output / "guest-fatal.o"
+        subprocess.run(["/opt/homebrew/opt/llvm/bin/clang", "--target=" + arch + "-none-elf",
+                        "-isystem", str(newlib / "targ-include"),
+                        "-isystem", str(root / "build/newlib-4.6.0.20260123/newlib/libc/include"),
+                        "-ffreestanding", "-c", str(Path(__file__).with_name("guest") / "fatal.c"),
+                        "-o", str(fatal)], check=True)
+        c_objects += ["-C", "link-arg=" + str(fatal), "-C", "link-arg=--wrap=abort",
+                      "-C", "link-arg=--wrap=__assert_func", "-C", "link-arg=--wrap=fprintf",
+                      "-C", "link-arg=--wrap=fputs", "-C", "link-arg=--wrap=fwrite"]
     subprocess.run(["rustc", "--edition=2021", "--target", triple,
                     "--crate-name", "infinity_servo_runtime_primitives", "--crate-type", "rlib",
                     "--cfg", 'feature="native-abi"', "--cfg", 'feature="c-allocator-abi"', "-C", "panic=abort",
@@ -64,6 +83,10 @@ def main():
                     str(root / "sdk/servo-runtime-primitives/lib.rs"), "-o", str(runtime)], check=True)
     command = ["rustc", "--edition=2021", "--target", triple,
                "--cfg", "infinity_native", "-C", "panic=abort",
+               *(["--cfg", "infinity_page_probe"] if options.page_probe else []),
+               *(["--cfg", "infinity_swgl_probe", "--extern",
+                  "infinity_swgl_probe=" + str(target / "libinfinity_swgl_probe.rlib")]
+                 if options.swgl_probe else []),
                "-C", "linker=/opt/homebrew/opt/lld/bin/ld.lld",
                "-C", "link-arg=--entry=" + ("_start" if options.boot_probe else "infinity_browser_link_probe"),
                *(["-C", "link-arg=-T" + str(Path(__file__).with_name("engine-boot.ld"))] if options.boot_probe else []),
@@ -84,7 +107,8 @@ def main():
     with (output / "engine-link.log").open("w") as log:
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
     report = {"link_exit_status": result.returncode, "executed": False,
-              "purpose": "link diagnostics only; native providers are not initialized"}
+              "purpose": "native boot fixture; execution is a separate gate" if options.boot_probe else
+                         "link diagnostics only; native providers are not initialized"}
     (output / "engine-link.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
     return result.returncode

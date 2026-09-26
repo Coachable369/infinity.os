@@ -8,7 +8,7 @@ import tomllib
 
 # ------------------------=
 # FUNC: main
-# DESC: Normalizes Rust's float-ABI suffix only for configure and adds the explicit Infinity OS identity.
+# DESC: Adds the explicit Infinity OS identity while preserving the shared native C and Rust ABI.
 # ------------------=
 def main():
     if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
@@ -21,7 +21,7 @@ def main():
     original = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:Cargo.lock"], text=True)
     directory, package = helper.stage(root, tomllib.loads(original)["package"], "mozjs_sys", "153.3.0-0")
     path = directory / "makefile.cargo"
-    text = path.read_text().replace('CONFIGURE_FLAGS += --target=$(TARGET)', 'CONFIGURE_FLAGS += --target=$(subst -none-softfloat,-none,$(TARGET))', 1)
+    text = path.read_text()
     # Configure probes the compiler before applying CFLAGS; carry the native
     # identity in the target compiler command, never in HOST_CC/HOST_CXX.
     revision = hashlib.sha256(Path(__file__).read_bytes() +
@@ -36,6 +36,27 @@ def main():
     text = text.replace('CONFIGURE_INPUTS := "', 'CONFIGURE_INPUTS := "$(NATIVE_PORT_REVISION)$(NATIVE_CC_FLAGS)$(NATIVE_CXX_FLAGS)', 1)
     text = text.replace('if [[ $(JSSRC)/configure -nt config.status ]] ; then',
                         'if [[ $(JSSRC)/configure -nt config.status || ! -f Makefile ]] ; then', 1)
+    path.write_text(text)
+    # Self-hosted JavaScript uses the C preprocessor, but is not C++. The
+    # native forced C header contains typedefs/extern blocks that must never
+    # become JavaScript source. Keep every actual C/C++ compilation unchanged.
+    path = directory / "mozjs/js/src/builtin/embedjs.py"
+    text = path.read_text()
+    marker = '    cxx = shlex.split(buildconfig.substs["CXX"])'
+    if text.count(marker) != 1:
+        raise SystemExit("Unexpected self-hosted JavaScript preprocessor")
+    text = text.replace(marker, marker + '''
+    filtered = []
+    index = 0
+    while index < len(cxx):
+        if cxx[index] == "-include" and index + 1 < len(cxx) and cxx[index + 1].endswith("/servo-std/c-target.h"):
+            filtered.append("-D__INFINITYOS__=1")
+            index += 2
+        else:
+            filtered.append(cxx[index])
+            index += 1
+    cxx = filtered
+''', 1)
     path.write_text(text)
     path = directory / "mozjs/build/moz.configure/init.configure"
     text = path.read_text()

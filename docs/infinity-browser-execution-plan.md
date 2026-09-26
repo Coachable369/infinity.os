@@ -36,12 +36,18 @@ acceptance. Preserve existing OS behavior and unrelated working changes.
 
 For each gate: implement the smallest real missing path, run behavioral tests
 through build-kit, inspect only failures, correct and rerun. After six
-unsuccessful correction loops, report exact remaining failures per repository
-rules. Keep bounded resources/cancellation and preserve authority checks.
+unsuccessful correction loops, continue with evidence-led corrections per the
+user's explicit override of the limit. Keep bounded resources/cancellation and
+preserve authority checks.
 Do not rebuild ISOs for compile-only prerequisite changes or advertise the
 browser as installed before gate 6 passes.
 
 ## Current checkpoint
+
+- Native AArch64 inline HTML/CSS rendering and JavaScript DOM mutation now pass
+  actual pixel/value assertions: `20260926T222800003418Z-67530.json`. This
+  supersedes older compile/startup/rendering blockers below. Next verify native
+  input/navigation, network service wiring, shell and installed packaging.
 
 - Latest link pass resolves C++/zlib lookup and includes real native primitives.
   C and reentrant allocation ABI tests pass in both architecture guests. The
