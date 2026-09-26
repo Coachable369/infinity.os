@@ -28,6 +28,8 @@ def main():
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-webdriver.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-surfman.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-mozjs.py"))], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-certificates.py"))], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-engine.py"))], check=True)
     arch = options.arch
     target = "aarch64-unknown-none-softfloat" if arch == "aarch64" else "x86_64-unknown-none"
     target_key = target.replace("-", "_")
@@ -38,9 +40,11 @@ def main():
     output = root / "build/servo-platform-probe"
     output.mkdir(parents=True, exist_ok=True)
     environment = os.environ.copy()
+    for name in ("CPPFLAGS", "CFLAGS", "CXXFLAGS", "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "LIBRARY_PATH"):
+        environment.pop(name, None)
     environment.update({"RUSTC_BOOTSTRAP": "1", "CARGO_HOME": str(root / "build/servo-cargo-home"),
                         "__CARGO_TESTS_ONLY_SRC_ROOT": str(root / "build/servo-rust-src/library"),
-                        "RUSTFLAGS": "--cfg infinity_native --check-cfg=cfg(infinity_native)"})
+                        "RUSTFLAGS": "--cfg infinity_native --check-cfg=cfg(infinity_native) --check-cfg=cfg(infinity_certificate_test)"})
     # Native VFS and mutex callbacks are mandatory at linkage/initialization.
     # Do not select SQLite's Unix filesystem or pthread backend for this target.
     environment["LIBSQLITE3_FLAGS"] = "-DSQLITE_OS_OTHER=1 -DSQLITE_MUTEX_APPDEF=1 -DSQLITE_OMIT_LOAD_EXTENSION=1"
@@ -51,6 +55,9 @@ def main():
     if not all(path.is_dir() for path in includes):
         raise SystemExit("Native target C headers unavailable; prepare the native toolchain through build-kit")
     environment[f"CC_{target_key}"] = "/opt/homebrew/opt/llvm/bin/clang"
+    environment[f"AR_{target_key}"] = "/opt/homebrew/opt/llvm/bin/llvm-ar"
+    environment[f"CPP_{target_key}"] = f"/opt/homebrew/opt/llvm/bin/clang --target={arch}-none-elf -E"
+    environment[f"CPPFLAGS_{target_key}"] = ""
     cflags = (
         f"--target={arch}-none-elf -ffreestanding " +
         ("-mstrict-align " if arch == "aarch64" else "-mno-red-zone ") +
@@ -75,8 +82,10 @@ def main():
         command += ["--config", 'patch.crates-io.libc.path="' + str(native_libc) + '"']
     command += ["--config", 'patch.crates-io.mio.path="' + str(root / "build/servo-native-deps/mio-1.2.3") + '"']
     command += ["--config", 'patch.crates-io.webdriver.path="' + str(root / "build/servo-native-deps/webdriver-0.54.0") + '"']
+    command += ["--config", 'patch.crates-io.imsz.path="' + str(root / "build/servo-native-deps/imsz-0.4.1") + '"']
     command += ["--config", 'patch.crates-io.surfman.path="' + str(root / "build/servo-native-deps/surfman-0.14.0") + '"']
     command += ["--config", 'patch.crates-io.mozjs_sys.path="' + str(root / "build/servo-native-deps/mozjs_sys-153.3.0-0") + '"']
+    command += ["--config", 'patch.crates-io.rustls-platform-verifier.path="' + str(root / "build/servo-native-deps/rustls-platform-verifier-0.7.0") + '"']
     for name, version in (("tokio", "1.53.1"), ("hyper-util", "0.1.20")):
         command += ["--config", 'patch.crates-io.' + name + '.path="' + str(root / "build/servo-native-deps" / (name + "-" + version)) + '"']
     for name, path in json.loads((root / "build/servo-native-deps/stylo/native-patches.json").read_text()).items():

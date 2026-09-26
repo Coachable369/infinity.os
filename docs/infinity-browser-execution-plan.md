@@ -61,8 +61,13 @@ browser as installed before gate 6 passes.
   The engine build has advanced into SpiderMonkey's native platform configuration.
   GPU context creation explicitly rejects unsupported requests; a software page
   rendering context is still required, not implied by the Surfman type adapter.
-- Resumed six-attempt gate remains failed: SpiderMonkey `Kernel` enum rejects
-  `Infinity`; `imsz` has no native stdin implementation. Cross-build inherited
-  CPPFLAGS/AR/CPP need isolation before any hermetic target-build claim.
+- Latest six-attempt gate remains failed at SpiderMonkey's native linker probe:
+  missing startup object, compiler builtins and C-library link configuration.
+  Platform enums, image-reader stdin compilation, native clock selection and
+  filesystem URL rejection now pass the Rust compiler stage. Configure uses
+  explicit target headers/tools rather than accidental host header detection.
+- Native-root WebPKI adapter: four host behavioral tests pass (valid public
+  chain, wrong hostname, expiry and malformed data). No guest TLS handshake or
+  installed browser is implied. See `tools/servo-certificate-test/run.py`.
 - Production governed worker, network grants/event pump, C/C++ runtime linkage,
   actual engine execution, rendering and installed acceptance remain required.

@@ -1,5 +1,8 @@
 #ifndef INFINITY_SERVO_C_TARGET_H
 #define INFINITY_SERVO_C_TARGET_H
+#define __INFINITYOS__ 1
+/* ICU must consume packaged memory data, never host/filesystem ICU paths. */
+#define UCONFIG_NO_FILE_IO 1
 /* Declaration selection for the isolated native port, not a libc implementation.
  * Native pthread/time/entropy symbols remain required at executable link time. */
 #define _GNU_SOURCE 1

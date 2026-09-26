@@ -1,0 +1,15 @@
+[package]
+name = "infinity-servo-certificate-test"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "probe.rs"
+
+[dependencies]
+rustls = { version = "=0.23.45", default-features = false, features = ["std", "ring"] }
+webpki-roots = "=1.0.9"
+log = "0.4"

@@ -31,6 +31,19 @@ def main():
     header = 'name = "webdriver"\nversion = "0.54.0"\n'
     entry = header + 'source = "' + package["source"] + '"\nchecksum = "' + package["checksum"] + '"\n'
     lock.write_text(lock.read_text().replace(entry, header))
+    directory, package = modules["stage"].stage(root, tomllib.loads(original)["package"], "imsz", "0.4.1")
+    path = directory / "src/lib.rs"
+    text = path.read_text()
+    marker = '        return (&self).imsz();'
+    if text.count(marker) != 1:
+        raise SystemExit("Unexpected stdin adapter")
+    path.write_text(text.replace(marker, '''        #[cfg(all(target_os = "none", infinity_native))]
+        { return Err(ImError::IO(std::io::Error::from(std::io::ErrorKind::Unsupported))); }
+        #[cfg(not(all(target_os = "none", infinity_native)))]
+''' + marker, 1))
+    header = 'name = "imsz"\nversion = "0.4.1"\n'
+    entry = header + 'source = "' + package["source"] + '"\nchecksum = "' + package["checksum"] + '"\n'
+    lock.write_text(lock.read_text().replace(entry, header))
 
 if __name__ == "__main__":
     main()

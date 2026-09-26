@@ -2,6 +2,41 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Current correction checkpoint, September 26
+
+Six further engine attempts ended at manifest
+`builds/manifests/20260926T174500552737Z-44932.json` (exit 101).
+The immediate failure is SpiderMonkey's linker response-file probe: the native
+compiler cannot find `crt0.o`, target `libclang_rt.builtins.a`, or `-lc`.
+Do not force the probe to succeed or link macOS libraries. Supply the actual
+native executable/toolchain contract, then continue the C/C++ port.
+
+Changes in this pass:
+
+- Added Infinity OS/kernel compiler detection, explicit target AR/CPP, removed
+  inherited include flags, and applied target flags to early configure probes.
+  Configure input invalidation now accounts for those command changes.
+- Disabled ICU filesystem data access; packaged memory data remains required.
+- `imsz` native stdin returns Unsupported; its byte/reader decoding is preserved.
+- Servo's monotonic timer uses the existing native clock ABI. Filesystem URL
+  conversion returns an error rather than inventing host paths.
+- Rustls platform verification uses WebPKI with the same pinned 1.0.9 Mozilla
+  trust roots as native HTTPS. Signature, chain, hostname and time checks remain.
+
+Behavioral evidence: `./build-kit run python3 tools/servo-certificate-test/run.py`
+passed all four tests (valid recorded public chain, wrong hostname, expired chain,
+malformed certificate), manifest
+`builds/manifests/20260926T174335463695Z-44266.json` (exit 0).
+This compiles the staged verifier's native-root branch on the host; it is not
+guest networking or installed-system evidence. Earlier guest primitive results
+below were not rerun in this pass.
+
+The six-correction limit has been reached. No new ISO was produced and no browser
+was installed. Remaining gates include native C/C++ runtime and memory services,
+software page rendering, production service/worker integration, shell, packaging
+and cold-installed HTTPS/JS/navigation/download proof. This supersedes the
+immediate compile failures recorded in the historical checkpoints below.
+
 ## Binding follow-through, September 26
 
 Native C malloc/free/realloc and Rust System allocation share the granted heap.
