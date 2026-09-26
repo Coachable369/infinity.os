@@ -41,6 +41,7 @@ make x86_64
 make aarch64-bootstrap
 make system-sound-test
 make system-sound-install-parity-test
+make authentication-motion-test
 make installer-capacity-test
 make installer-entropy-test
 make editor-window-test

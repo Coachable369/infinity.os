@@ -134,6 +134,24 @@ def assert_success_motion(resting_path, impact_path, wake_path):
 
 
 # ------------------------=
+# FUNC: assert_desktop_revealed
+# DESC: Requires the completed transition to expose a materially visible desktop rather than remaining black or frozen on an authentication frame.
+# ------------------=
+def assert_desktop_revealed(wake_path, desktop_path):
+    wake_width, wake_height, wake = ppm_pixels(wake_path)
+    width, height, desktop = ppm_pixels(desktop_path)
+    assert (wake_width, wake_height) == (width, height)
+    visible = changed = 0
+    for offset in range(0, len(desktop), 3):
+        pixel = desktop[offset:offset + 3]
+        visible += max(pixel) >= 28
+        changed += sum(abs(int(pixel[index]) - int(wake[offset + index])) for index in range(3)) >= 42
+    pixels = width * height
+    assert visible >= pixels // 5, (desktop_path, visible, pixels)
+    assert changed >= pixels // 12, (desktop_path, changed, pixels)
+
+
+# ------------------------=
 # FUNC: open_system_action
 # DESC: Uses the native keyboard menu to execute one indexed session action and verifies its resulting mode.
 # ------------------=
@@ -150,7 +168,7 @@ def open_system_action(guest, index, expected_mode):
 
 # ------------------------=
 # FUNC: submit_authentication_animation
-# DESC: Enters the real password, captures the gated impact frame, and waits for the animation-owned desktop commit.
+# DESC: Enters the real password and proves impact, expanding ripples, desktop commit, and completed fade-in.
 # ------------------=
 def submit_authentication_animation(guest, expected_mode, capture_name):
     state = guest.wait(lambda value: value[3] == 1 and value[4] == expected_mode,
@@ -174,8 +192,13 @@ def submit_authentication_animation(guest, expected_mode, capture_name):
     assert_success_motion(focused_path, impact_path, wake_path)
     state = guest.wait(lambda value: value[4] == 5 and value[9] & 3 == 3,
                        "success animation committed desktop")
+    time.sleep(1.0)
+    completed = guest.wait(lambda value: value[4] == 5 and value[9] & 3 == 3,
+                           "success animation completed desktop fade")
+    desktop_path = guest.screenshot(f"{capture_name}-desktop-revealed")
+    assert_desktop_revealed(wake_path, desktop_path)
     assert time.monotonic() - started < 8.0
-    return state
+    return completed
 
 
 # ------------------------=

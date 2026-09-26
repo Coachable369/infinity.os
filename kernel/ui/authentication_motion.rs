@@ -3,6 +3,9 @@
 pub const SCENE_MS: u16 = 1_500;
 pub const COMMIT_MS: u16 = 1_600;
 pub const DURATION_MS: u16 = 2_200;
+const IMPACT_FRAME_MS: u16 = 550;
+const RIPPLE_FRAME_MS: u16 = 1_000;
+const FADE_FRAME_MS: u16 = 1_300;
 
 pub const ARTWORK_CENTER_X: u16 = 1_335;
 pub const ARTWORK_WATER_Y: u16 = 865;
@@ -38,8 +41,11 @@ pub enum Advance {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Timeline {
     elapsed_ms: u16,
+    presented_ms: u16,
     active: bool,
     committed: bool,
+    checkpoint: u8,
+    desktop_frame_presented: bool,
 }
 
 impl Timeline {
@@ -50,8 +56,11 @@ impl Timeline {
     pub const fn new() -> Self {
         Self {
             elapsed_ms: 0,
+            presented_ms: 0,
             active: false,
             committed: false,
+            checkpoint: 0,
+            desktop_frame_presented: false,
         }
     }
 
@@ -61,8 +70,11 @@ impl Timeline {
     // ------------------=
     pub fn begin(&mut self) {
         self.elapsed_ms = 0;
+        self.presented_ms = 0;
         self.active = true;
         self.committed = false;
+        self.checkpoint = 0;
+        self.desktop_frame_presented = false;
     }
 
     // ------------------------=
@@ -78,14 +90,16 @@ impl Timeline {
     // DESC: Returns the current deterministic visual keyframe without advancing time.
     // ------------------=
     pub fn presentation(&self) -> Presentation {
-        presentation_at(self.elapsed_ms)
+        presentation_at(self.presented_ms)
     }
 
     // ------------------------=
     // FUNC: opacity
     // DESC: Returns the scene fade independently of the orb choreography.
     // ------------------=
-    pub const fn opacity(&self) -> u8 { scene_opacity(self.elapsed_ms) }
+    pub const fn opacity(&self) -> u8 {
+        scene_opacity(self.presented_ms)
+    }
 
     // ------------------------=
     // FUNC: advance
@@ -95,21 +109,46 @@ impl Timeline {
         if !self.active {
             return Advance::Idle;
         }
-        // A stalled frame must not skip the entire impact/ripple sequence.
-        self.elapsed_ms = self.elapsed_ms.saturating_add(elapsed_ms.min(50));
+        // Follow real elapsed time so software-rendering stalls cannot turn the
+        // authored 2.2-second transition into a long apparent freeze. Crossing
+        // a checkpoint still emits its keyframe once before catching up.
+        self.elapsed_ms = self.elapsed_ms.saturating_add(elapsed_ms);
+        if !self.committed {
+            let checkpoint_ms = match self.checkpoint {
+                0 => IMPACT_FRAME_MS,
+                1 => RIPPLE_FRAME_MS,
+                2 => FADE_FRAME_MS,
+                _ => 0,
+            };
+            if checkpoint_ms != 0 && self.elapsed_ms >= checkpoint_ms {
+                self.checkpoint += 1;
+                self.presented_ms = checkpoint_ms;
+                return Advance::Frame(self.presentation());
+            }
+        }
         if self.elapsed_ms >= COMMIT_MS && !self.committed {
             self.elapsed_ms = COMMIT_MS;
+            self.presented_ms = COMMIT_MS;
             self.committed = true;
             return Advance::CommitDesktop;
         }
         if self.elapsed_ms >= DURATION_MS {
+            if self.committed && !self.desktop_frame_presented {
+                self.presented_ms = COMMIT_MS + (DURATION_MS - COMMIT_MS) / 2;
+                self.desktop_frame_presented = true;
+                return Advance::DesktopFrame(scene_opacity(self.presented_ms));
+            }
             self.elapsed_ms = DURATION_MS;
+            self.presented_ms = DURATION_MS;
             self.active = false;
             return Advance::Finished;
         }
         if self.committed {
-            return Advance::DesktopFrame(scene_opacity(self.elapsed_ms));
+            self.presented_ms = self.elapsed_ms;
+            self.desktop_frame_presented = true;
+            return Advance::DesktopFrame(scene_opacity(self.presented_ms));
         }
+        self.presented_ms = self.elapsed_ms;
         Advance::Frame(self.presentation())
     }
 }
@@ -132,7 +171,8 @@ pub const fn scene_opacity(elapsed_ms: u16) -> u8 {
 // ------------------=
 pub const fn fade_pixel(pixel: u32, opacity: u8) -> u32 {
     let a = opacity as u32;
-    (pixel & 0xff000000) | ((pixel & 255) * a / 255)
+    (pixel & 0xff000000)
+        | ((pixel & 255) * a / 255)
         | ((((pixel >> 8) & 255) * a / 255) << 8)
         | ((((pixel >> 16) & 255) * a / 255) << 16)
 }
@@ -265,30 +305,55 @@ mod tests {
         assert_eq!(presentation_at(300).primary_ripple_opacity, 0);
         assert!(wake.primary_ripple_scale > impact.primary_ripple_scale);
         assert!(wake.orb_opacity < impact.orb_opacity);
-        for _ in 0..31 { assert!(matches!(timeline.advance(50), Advance::Frame(_))); }
+        for _ in 0..31 {
+            assert!(matches!(timeline.advance(50), Advance::Frame(_)));
+        }
         assert_eq!(timeline.advance(50), Advance::CommitDesktop);
         assert!(timeline.active());
-        for _ in 0..11 { assert!(matches!(timeline.advance(50), Advance::DesktopFrame(_))); }
+        for _ in 0..11 {
+            assert!(matches!(timeline.advance(50), Advance::DesktopFrame(_)));
+        }
         assert_eq!(timeline.advance(50), Advance::Finished);
         assert!(!timeline.active());
     }
 
     // ------------------------=
     // FUNC: fade_is_continuous_and_stalls_do_not_skip_ripples
-    // DESC: Verifies black handoff, monotonic fades, pixel endpoints and bounded delayed-frame progression.
+    // DESC: Verifies black handoff, monotonic fades, pixel endpoints and checkpoint-preserving delayed-frame catch-up.
     // ------------------=
     #[test]
     fn fade_is_continuous_and_stalls_do_not_skip_ripples() {
-        assert_eq!(scene_opacity(900),255);
+        assert_eq!(scene_opacity(900), 255);
         assert!(presentation_at(900).primary_ripple_opacity > 0);
-        assert_eq!(scene_opacity(COMMIT_MS),0);
-        assert_eq!(scene_opacity(DURATION_MS),255);
-        for t in 951..COMMIT_MS { assert!(scene_opacity(t) <= scene_opacity(t-1)); }
-        for t in COMMIT_MS+1..=DURATION_MS { assert!(scene_opacity(t) >= scene_opacity(t-1)); }
-        assert_eq!(fade_pixel(0xff987654,255),0xff987654);
-        assert_eq!(fade_pixel(0xff987654,0),0xff000000);
-        let mut timeline=Timeline::new(); timeline.begin();
-        assert!(matches!(timeline.advance(u16::MAX),Advance::Frame(_)));
-        assert!(timeline.active());
+        assert_eq!(scene_opacity(COMMIT_MS), 0);
+        assert_eq!(scene_opacity(DURATION_MS), 255);
+        for t in 951..COMMIT_MS {
+            assert!(scene_opacity(t) <= scene_opacity(t - 1));
+        }
+        for t in COMMIT_MS + 1..=DURATION_MS {
+            assert!(scene_opacity(t) >= scene_opacity(t - 1));
+        }
+        assert_eq!(fade_pixel(0xff987654, 255), 0xff987654);
+        assert_eq!(fade_pixel(0xff987654, 0), 0xff000000);
+        let mut timeline = Timeline::new();
+        timeline.begin();
+        assert_eq!(
+            timeline.advance(u16::MAX),
+            Advance::Frame(presentation_at(IMPACT_FRAME_MS))
+        );
+        assert_eq!(
+            timeline.advance(1),
+            Advance::Frame(presentation_at(RIPPLE_FRAME_MS))
+        );
+        assert_eq!(
+            timeline.advance(1),
+            Advance::Frame(presentation_at(FADE_FRAME_MS))
+        );
+        assert_eq!(timeline.advance(1), Advance::CommitDesktop);
+        assert!(
+            matches!(timeline.advance(u16::MAX),Advance::DesktopFrame(opacity) if opacity > 0 && opacity < 255)
+        );
+        assert_eq!(timeline.advance(1), Advance::Finished);
+        assert!(!timeline.active());
     }
 }

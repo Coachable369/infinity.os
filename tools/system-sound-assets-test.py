@@ -61,6 +61,7 @@ def main() -> None:
     assert stored_samples(ROOT / "assets/sounds/boot.pcm") != stored_samples(
         ROOT / "assets/sounds/login.pcm"
     )
+    assert observed["login"]["duration_ms"] > 2_200
     print(observed)
 
 

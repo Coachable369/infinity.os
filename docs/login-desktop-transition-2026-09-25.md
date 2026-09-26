@@ -3,9 +3,10 @@
 The authentication scene now retains the orb drop and water ripples before a
 650 ms fade-out beginning at 950 ms. At 1600 ms the desktop is composed while
 presentation is black, followed by a 600 ms fade-in. Input stays gated until
-2200 ms. Advancement is capped at 50 ms per displayed frame so a rendering
-stall cannot skip straight past the ripple stage; wall-clock duration may grow
-under load.
+2200 ms. Advancement follows real elapsed time so a slow software renderer
+cannot stretch the transition until its audio ends. Mandatory impact, expanded
+ripple, fade-out, and mid-fade desktop checkpoints remain visible even when a
+delayed frame crosses more than one authored keyframe.
 
 Opacity is applied only when presenting the persistent back buffer. It does
 not destructively darken cached pixels, rescale text, or rebuild application
