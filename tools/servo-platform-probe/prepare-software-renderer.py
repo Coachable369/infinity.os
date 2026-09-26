@@ -30,6 +30,17 @@ pub use native_software_context::SoftwareRenderingContext;
     (servo / relative).write_text(source)
     (servo / relative).with_name("native_software_context.rs").write_bytes(
         (root / "sdk/servo-std/software_rendering_context.rs").read_bytes())
+    relative = "components/paint/painter.rs"
+    source = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    marker = "webrender::WebRenderOptions {"
+    if source.count(marker) != 1:
+        raise SystemExit("Pinned renderer options changed")
+    # SWGL supports scissored clears directly, not GL_ALWAYS depth quad clears.
+    source = source.replace(marker, marker + '''
+                #[cfg(all(target_os = "none", infinity_native))]
+                clear_caches_with_quads: false,
+''')
+    (servo / relative).write_text(source)
     relative = "components/shared/paint/Cargo.toml"
     source = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
     source += '\n[target.\'cfg(target_os = "none")\'.dependencies.swgl]\nversion = "=0.70.0"\n'

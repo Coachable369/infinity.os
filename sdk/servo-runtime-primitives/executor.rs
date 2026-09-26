@@ -5,6 +5,7 @@
 //! No mutable borrow of shared executor state survives a context switch/callback.
 use core::{cell::UnsafeCell, marker::PhantomData, ptr, sync::atomic::AtomicU32};
 use crate::{context::{Context, switch}, wait::{Waits, Outcome}, Keys, Values, Teardown, Destructor};
+pub const MAX_TLS_KEYS: usize = 128;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Full, Invalid, Busy, NoCurrent, Stack, Exhausted }
@@ -13,7 +14,7 @@ enum State { Vacant, Runnable, Running, Waiting, Sleeping(u64), Joining(u64), Co
 struct Thread {
     context: Context, owner: usize, id: u64, state: State, detached: bool,
     entry: Option<extern "C" fn(usize)>, argument: usize, low: usize, high: usize,
-    result: Option<Outcome>, values: Values<32>, joiner: Option<u64>,
+    result: Option<Outcome>, values: Values<MAX_TLS_KEYS>, joiner: Option<u64>,
 }
 impl Thread {
     // ------------------------=
@@ -26,7 +27,7 @@ impl Thread {
 }
 struct Inner<const N: usize> {
     threads: [Thread; N], root: Context, current: Option<usize>, cursor: usize,
-    next_id: u64, waits: Waits<N>, keys: Keys<32>, root_values: Values<32>,
+    next_id: u64, waits: Waits<N>, keys: Keys<MAX_TLS_KEYS>, root_values: Values<MAX_TLS_KEYS>,
 }
 pub struct Executor<const N: usize> { inner: UnsafeCell<Inner<N>>, owner_only: PhantomData<*mut ()> }
 impl<const N: usize> Executor<N> {

@@ -86,7 +86,19 @@ unsafe fn stack(index: usize) -> &'static mut [u8] {
 // DESC: Verifies lifecycle, bounds, stale handles, blocking waits and TLS teardown using actual context execution.
 // ------------------=
 pub unsafe fn run() {
-    let e = executor(); KEY = e.key_create(Some(destructor)).unwrap(); e.tls_set(KEY, 99).unwrap();
+    let e = executor();
+    let mut keys = [0; infinity_servo_runtime_primitives::executor::MAX_TLS_KEYS];
+    for (index, key) in keys.iter_mut().enumerate() {
+        *key = e.key_create(None).unwrap();
+        e.tls_set(*key, index + 1).unwrap();
+    }
+    assert_eq!(e.key_create(None), Err(infinity_servo_runtime_primitives::Error::Full));
+    for (index, key) in keys.into_iter().enumerate() {
+        assert_eq!(e.tls_get(key), Ok(index + 1));
+        e.key_destroy(key).unwrap();
+        assert!(e.tls_get(key).is_err());
+    }
+    KEY = e.key_create(Some(destructor)).unwrap(); e.tls_set(KEY, 99).unwrap();
     A = e.spawn(stack(0), first, 11).unwrap();
     let b = e.spawn(stack(1), second, 22).unwrap();
     let c = e.spawn(stack(2), joiner, 0).unwrap();

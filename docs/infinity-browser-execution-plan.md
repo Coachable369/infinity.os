@@ -44,6 +44,11 @@ browser as installed before gate 6 passes.
 
 ## Current checkpoint
 
+- Expanded native page proof now passes pointer/keyboard, navigation/reload,
+  history and scrolling: `20260926T224911285190Z-76406.json`. Shared bounded
+  TLS exhaustion/reuse passes on both CPU guests. External network and installed
+  integration are still open; no beta ISO has been produced.
+
 - Native AArch64 inline HTML/CSS rendering and JavaScript DOM mutation now pass
   actual pixel/value assertions: `20260926T222800003418Z-67530.json`. This
   supersedes older compile/startup/rendering blockers below. Next verify native

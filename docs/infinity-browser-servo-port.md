@@ -4,6 +4,20 @@ Status: **not implemented or packaged; acceptance remains open**.
 
 ## Native HTML/CSS and JavaScript pixels passed, September 26
 
+Expanded guest acceptance now also passes pointer focus, native keyboard entry,
+navigation, reload, back/forward and scrolling with actual pixel/DOM assertions:
+`builds/manifests/20260926T224911285190Z-76406.json`. The final allocation
+checkpoint is 96,855,488 bytes (not peak). This remains a disposable native
+guest, not the installed desktop browser.
+
+Form rendering required disabling WebRender's GPU quad cache clear option for
+native SWGL, selecting its supported scissored clear path. Navigation exposed
+32-slot TLS exhaustion; the shared executor now has 128 bounded keys. Exhaustion,
+stale-key rejection, reuse and existing thread/TCP regressions pass on AArch64
+(`20260926T224744152185Z-76255.json`) and x86_64
+(`20260926T224842654346Z-76332.json`). The full engine archive with the clear
+selection passes `20260926T223452898854Z-71788.json`.
+
 This checkpoint supersedes the older rendering/startup blockers below.
 `builds/manifests/20260926T222800003418Z-67530.json` passes a real Servo
 WebView in the freestanding AArch64 guest: all 128x128 pixels are red, actual

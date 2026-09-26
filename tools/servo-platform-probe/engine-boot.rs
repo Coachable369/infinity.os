@@ -40,8 +40,9 @@ fn finish(status:u64,phase:u64,detail:u64)->! {
 // ------------------=
 #[no_mangle]
 pub extern "C" fn engine_fault()->! {
-    let pc:u64;let esr:u64;
-    unsafe { core::arch::asm!("mrs {}, elr_el1","mrs {}, esr_el1",out(reg) pc,out(reg) esr); }
+    let pc:u64;let esr:u64;let caller:u64;
+    unsafe { core::arch::asm!("mrs {}, elr_el1","mrs {}, esr_el1","mov {}, x30",out(reg) pc,out(reg) esr,out(reg) caller); }
+    record(2, 15, caller);
     finish(1,pc,esr)
 }
 // ------------------------=
