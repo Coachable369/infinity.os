@@ -32,16 +32,46 @@ behavior only, not intelligibility or native execution.
 
 ## Native boundary still outstanding
 
-An attempted freestanding AArch64 compile of upstream `src/audio/istft.cpp`
-against the existing ARM64 newlib and host libc++ headers failed in libc++
-platform configuration (`availability.h` and missing thread API). Host C++
-headers/libraries cannot simply be linked into the OS. This is the first
-observed compile failure, not proof that later dependencies work.
+The private freestanding ARM64 libc++, libc++abi, GGML CPU, phonemizer, and
+Kokoro objects now compile and link into the native guest probe. The only
+remaining external symbols in the intermediate object are the two quad-float
+conversion helpers supplied by Rust compiler-builtins during final probe link.
+No host runtime library is linked. This is build evidence, not synthesis or
+installed-system acceptance.
+
+The first HVF guest run failed on `ldxr` in `ggml_graph_next_uid`, with
+ESR `0x96000035`, before producing PCM. The probe had left the MMU disabled,
+which does not give RAM the normal-memory attributes required for exclusive
+accesses. A probe-only identity mapping of RAM as normal memory has been added.
+Its retry is **unverified**: the shared `build/` tree was removed while Cargo
+was compiling, causing a missing temporary-directory error. Do not report the
+mapping change as a successful fix or enable the provider from this evidence.
+
+Rebuild sequence (requires exclusive use of the build tree; no concurrent clean):
+
+```sh
+python3 tools/voice-pocketsphinx/build.py
+python3 tools/voice-kokoro/reference.py
+python3 tools/voice-kokoro/prepare-native.py
+python3 tools/voice-kokoro/native-build.py
+python3 tools/voice-kokoro/link-native.py
+python3 tools/voice-kokoro/probe/run.py
+```
+
+`port.c` exposes only immutable packaged resources, a bounded private heap, and
+a single-worker synchronization contract. `mapping.cpp` borrows resource bytes;
+`registry.cpp` refuses dynamic backend loading. The guest probe checks actual
+PCM and structured return values for repeat synthesis, cancellation and input
+bounds. These new runtime paths still require successful execution, cleanup
+and cancellation validation. The native guest needs 2 GiB RAM for this initial
+bounded prototype; its private heap is capped at 1 GiB, not a measured product
+memory requirement. x86-64 is not implemented by these scripts.
 
 Next implementation gates remain:
 
-1. Build a compatible freestanding ARM64 C++ runtime and native GGML execution;
-   preserve bounded allocation, worker cancellation, and deadlines.
+1. Pass native ARM64 GGML execution; verify bounded allocation, cleanup,
+   worker cancellation and deadlines. Validate the production memory mapping,
+   not only the disposable probe's mapping.
 2. Replace model/data filesystem mapping and phonemizer resource access with
    native immutable resources. Do not mount a host filesystem or call a host
    synthesizer. Include redistribution notices and required source material.
