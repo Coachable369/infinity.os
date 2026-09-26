@@ -1,5 +1,6 @@
 //! Bounded native TLS bookkeeping. The scheduler owns per-thread values and locking.
 #![no_std]
+pub mod arena;
 
 pub type Destructor = unsafe extern "C" fn(*mut u8);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

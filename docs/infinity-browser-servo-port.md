@@ -145,6 +145,49 @@ TLS, and proves cleanup terminates. All three tests passed in
 `builds/manifests/20260926T071010885646Z-96659.json`.
 No new browser ISO was produced; concurrent voice-build ISOs are not browser proof.
 
+### Resumed native dependency and memory work
+
+The previous font/C-header blockers are now resolved for the ARM64 compiler gate:
+
+- `fontsan`: compile exit 0, manifest
+  `builds/manifests/20260926T073554340711Z-33744.json`.
+- `aws-lc-sys`: compile exit 0, manifest
+  `builds/manifests/20260926T073453907584Z-32775.json`.
+- Native C offset/lock-handle sizes and atomic support are checked by C static
+  assertions before each dependency check. These are ABI compile checks, not
+  behavioral thread or crypto tests.
+- Byte-order code executes as both C and C++ on the host, checking wire bytes,
+  single evaluation and all 65,536 16-bit roundtrips. Manifest
+  `builds/manifests/20260926T073004516591Z-30441.json` contains those passing
+  commands followed by an earlier, subsequently repaired staging failure.
+
+`prepare-deps.py` verifies the upstream libc archive against the pinned Servo
+lockfile, extracts it into a separate native overlay and supplies basic C scalar,
+size and offset aliases only under `infinity_native`. It leaves Cargo's registry
+cache untouched and preserves all other upstream lock resolutions. The temporary
+per-zlib overlay was removed after consumers migrated to this common ABI.
+
+`c-target.h` selects native Newlib declarations and disables AWS-LC's own socket,
+filesystem and terminal access with its supported `OPENSSL_NO_SOCK`,
+`OPENSSL_NO_FILESYSTEM` and `OPENSSL_NO_TTY` options. Native services must own those
+operations. Cryptography, certificate checks, entropy and threading are not
+disabled. Passing compilation does not prove entropy/thread symbols link or work.
+
+The new reclaiming buddy arena in `sdk/servo-runtime-primitives/arena.rs` uses only
+an explicitly granted mutable region. Five total host primitive tests pass
+(`builds/manifests/20260926T072455531003Z-869.json`). A disposable freestanding
+ARM64 QEMU guest also executed 65 allocations, payload checks, exhaustion, and
+full reclamation of a 4 KiB arena. Structured result:
+`build/servo-memory-guest/evidence.json`; manifest
+`builds/manifests/20260926T073909758111Z-34504.json`.
+This is real freestanding execution, **not an installed InfinityOS runtime or
+Servo execution**. The allocator is not yet connected to the native std ABI.
+
+The full engine still fails because `mio` and `socket2` lack this target's I/O
+backend (`builds/manifests/20260926T072127728217Z-408.json`). Do not define Linux
+target flags to bypass that failure. Actual native scheduler/waits/TLS providers,
+network transport integration and further engine/platform dependencies remain.
+
 1. Compile and execute the runtime roundtrip inside InfinityOS, then build
    pinned Servo with default features disabled. Initially omit multiprocess,
    native clipboard, JIT, WebGL/WebGPU and GStreamer. Disabling JIT does not

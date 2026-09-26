@@ -1,0 +1,18 @@
+[package]
+name = "infinity-servo-memory-probe"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "probe.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+infinity-servo-runtime-primitives = { path = "../../../sdk/servo-runtime-primitives" }
+
+[profile.release]
+panic = "abort"
+opt-level = 2

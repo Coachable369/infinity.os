@@ -16,3 +16,15 @@ Verification:
 `./build-kit run cargo test --manifest-path sdk/servo-runtime-primitives/Cargo.toml`
 
 Three behavioral host tests pass. No installed-system execution is claimed.
+
+`Arena` owns an explicitly granted buffer, trims it to an aligned power-of-two
+region, splits allocations by size/alignment and coalesces released buddies.
+Its metadata lives only in free storage; it never discovers or takes global
+memory. Calls require exclusive access. The eventual runtime must serialize
+access, grant a service-governed arena, and bind accounting to its owner. This
+is not yet the `infinity_std_allocate` provider. Two additional host tests cover
+alignment, payload independence, exhaustion, reclamation and guard bytes.
+
+`./build-kit run python3 tools/servo-platform-probe/run-memory-guest.py` also
+executes the allocator in a disposable ARM64 guest. It is not an installed OS or
+browser test.
