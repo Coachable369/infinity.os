@@ -1,0 +1,187 @@
+//! Real staged Rust std execution on native runtime callbacks; no host runtime.
+use core::{mem::MaybeUninit, sync::atomic::{AtomicUsize, Ordering}};
+use infinity_servo_runtime_primitives::native::{Runtime, Hooks};
+use std::{sync::{Arc, Mutex, Condvar}, time::Duration, thread, vec::Vec};
+#[repr(align(16777216))]
+struct Heap([u8; 16777216]);
+static mut HEAP: Heap = Heap([0; 16777216]);
+static mut RUNTIME: MaybeUninit<Runtime> = MaybeUninit::uninit();
+static DROPS: AtomicUsize = AtomicUsize::new(0);
+static ABI_COMPLETED: AtomicUsize = AtomicUsize::new(0);
+struct Guard(Vec<u8>);
+impl Drop for Guard {
+    // ------------------------=
+    // FUNC: drop
+    // DESC: Makes real std thread-local destruction observable after joining.
+    // ------------------=
+    fn drop(&mut self) { assert_eq!(self.0.len(), 128); DROPS.fetch_add(1, Ordering::SeqCst); }
+}
+std::thread_local! { static LOCAL: Guard = Guard(std::vec![42; 128]); }
+// ------------------------=
+// FUNC: cpu
+// DESC: Reads actual hardware CPU identity used to enforce single-owner native ABI access.
+// ------------------=
+fn cpu() -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    unsafe { let v: u64; core::arch::asm!("mrs {}, mpidr_el1", out(reg) v); v & 0xff00ffffff }
+    #[cfg(target_arch = "x86_64")]
+    { (core::arch::x86_64::__cpuid(1).ebx >> 24) as u64 }
+}
+// ------------------------=
+// FUNC: monotonic
+// DESC: Reads native architectural counter or HPET with hardware-reported frequency.
+// ------------------=
+fn monotonic() -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let ticks: u64; let frequency: u64;
+        core::arch::asm!("isb", "mrs {}, cntvct_el0", "mrs {}, cntfrq_el0", out(reg) ticks, out(reg) frequency);
+        ((ticks as u128 * 1_000_000_000) / frequency as u128) as u64
+    }
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let period = core::ptr::read_volatile(0xfed00000 as *const u64) >> 32;
+        let ticks = core::ptr::read_volatile(0xfed000f0 as *const u64);
+        ((ticks as u128 * period as u128) / 1_000_000) as u64
+    }
+}
+// ------------------------=
+// FUNC: utc
+// DESC: Explicitly denies unavailable wall clock in this minimal fixture.
+// ------------------=
+fn utc() -> Option<(u64, u32)> { None }
+// ------------------------=
+// FUNC: entropy
+// DESC: Explicitly denies entropy not provisioned in this thread-only fixture.
+// ------------------=
+fn entropy(_: &mut [u8]) -> bool { false }
+// ------------------------=
+// FUNC: pump
+// DESC: Yields a processor hint in the disposable no-device fixture; production must service real events.
+// ------------------=
+fn pump() { core::hint::spin_loop(); }
+// ------------------------=
+// FUNC: initialize
+// DESC: Installs the native provider before the first std allocation.
+// ------------------=
+pub unsafe fn initialize() {
+    #[cfg(target_arch = "x86_64")]
+    { let config = 0xfed00010 as *mut u64; config.write_volatile(config.read_volatile() | 1); }
+    let heap = core::slice::from_raw_parts_mut(core::ptr::addr_of_mut!(HEAP.0).cast::<u8>(), 16777216);
+    let runtime = core::ptr::addr_of_mut!(RUNTIME).cast::<Runtime>();
+    runtime.write(Runtime::new(heap, Hooks { cpu, monotonic, utc, entropy, pump }).unwrap());
+    assert!(Runtime::install(runtime));
+    std::panic::set_hook(std::boxed::Box::new(|_| super::finish(1, 0, 0)));
+}
+// ------------------------=
+// FUNC: run
+// DESC: Executes std threads, TLS, mutex/condvar, sleeps and joins entirely on native guest stacks.
+// ------------------=
+pub fn run() {
+    abi_limits();
+    #[cfg(feature = "mio-probe")]
+    mio_roundtrip();
+    let pair = Arc::new((Mutex::new(false), Condvar::new()));
+    let first_pair = pair.clone();
+    let first = thread::Builder::new().name("consumer".into()).stack_size(65536).spawn(move || {
+        LOCAL.with(|g| assert_eq!(g.0[0], 42));
+        let (lock, cv) = &*first_pair;
+        let guard = cv.wait_while(lock.lock().unwrap(), |ready| !*ready).unwrap();
+        assert!(*guard); 123u64
+    }).unwrap();
+    let second_pair = pair.clone();
+    let second = thread::Builder::new().name("producer".into()).stack_size(65536).spawn(move || {
+        LOCAL.with(|g| assert_eq!(g.0[127], 42));
+        thread::sleep(Duration::from_millis(2));
+        *second_pair.0.lock().unwrap() = true;
+        second_pair.1.notify_one();
+        456u64
+    }).unwrap();
+    assert_eq!(first.join().unwrap(), 123);
+    assert_eq!(second.join().unwrap(), 456);
+    assert_eq!(DROPS.load(Ordering::SeqCst), 2);
+    let before = std::time::Instant::now(); thread::sleep(Duration::from_millis(1));
+    assert!(before.elapsed() >= Duration::from_millis(1));
+    let locked = pair.0.lock().unwrap();
+    let (_guard, outcome) = pair.1.wait_timeout(locked, Duration::from_millis(1)).unwrap();
+    assert!(outcome.timed_out());
+    assert_eq!(thread::available_parallelism().unwrap().get(), 1);
+}
+
+// ------------------------=
+// FUNC: abi_entry
+// DESC: Records execution only for callbacks whose ownership was successfully transferred.
+// ------------------=
+extern "C" fn abi_entry(argument: *mut u8) {
+    assert!((argument as usize) < 16);
+    ABI_COMPLETED.fetch_add(1, Ordering::SeqCst);
+}
+// ------------------------=
+// FUNC: abi_limits
+// DESC: Verifies slot exhaustion and invalid allocations preserve ownership and all joined stacks are reclaimed.
+// ------------------=
+fn abi_limits() { unsafe {
+    use infinity_servo_runtime_primitives::native::*;
+    let baseline = Runtime::allocated();
+    assert!(infinity_std_allocate(usize::MAX, 16).is_null());
+    let mut ids = [0; 16];
+    for (index, id) in ids.iter_mut().enumerate() {
+        assert_eq!(infinity_std_thread_create(65536, abi_entry, index as *mut u8, id), 0);
+    }
+    let mut rejected = 0;
+    assert_eq!(infinity_std_thread_create(65536, abi_entry, 99 as *mut u8, &mut rejected), 11);
+    assert_eq!(rejected, 0);
+    for id in ids { assert_eq!(infinity_std_thread_join(id), 0); }
+    assert_eq!(ABI_COMPLETED.load(Ordering::SeqCst), 16);
+    assert_eq!(Runtime::allocated(), baseline);
+} }
+
+// ------------------------=
+// FUNC: mio_roundtrip
+// DESC: Exercises the actual Mio Poll/Waker API on native std threads with timeout and coalescing checks.
+// ------------------=
+#[cfg(feature = "mio-probe")]
+fn mio_roundtrip() {
+    let mut poll = mio::Poll::new().unwrap();
+    let registry = poll.registry().try_clone().unwrap();
+    let wake = Arc::new(mio::Waker::new(&registry, mio::Token(73)).unwrap());
+    let sender = wake.clone();
+    let worker = thread::Builder::new().stack_size(65536).spawn(move || {
+        thread::sleep(Duration::from_millis(1)); sender.wake().unwrap(); sender.wake().unwrap();
+    }).unwrap();
+    let mut events = mio::Events::with_capacity(4);
+    poll.poll(&mut events, Some(Duration::from_secs(1))).unwrap();
+    assert_eq!(events.iter().count(), 1);
+    let event = events.iter().next().unwrap(); assert_eq!(event.token(), mio::Token(73));
+    assert!(event.is_readable()); assert!(!event.is_writable());
+    worker.join().unwrap();
+    poll.poll(&mut events, Some(Duration::ZERO)).unwrap(); assert!(events.is_empty());
+    let before = std::time::Instant::now();
+    poll.poll(&mut events, Some(Duration::from_millis(1))).unwrap();
+    assert!(events.is_empty()); assert!(before.elapsed() >= Duration::from_millis(1));
+    use mio::infinity::{NativeSource, Readiness};
+    let none = Readiness { readable: false, writable: false };
+    let read = Readiness { readable: true, writable: false };
+    let write = Readiness { readable: false, writable: true };
+    let mut source = NativeSource::new(write);
+    registry.register(&mut source, mio::Token(9), mio::Interest::READABLE | mio::Interest::WRITABLE).unwrap();
+    poll.poll(&mut events, Some(Duration::ZERO)).unwrap();
+    let event = events.iter().next().unwrap(); assert_eq!(event.token(), mio::Token(9)); assert!(event.is_writable());
+    source.observe(write).unwrap(); poll.poll(&mut events, Some(Duration::ZERO)).unwrap(); assert!(events.is_empty());
+    source.observe(none).unwrap(); source.observe(read).unwrap();
+    poll.poll(&mut events, Some(Duration::ZERO)).unwrap(); assert!(events.iter().next().unwrap().is_readable());
+    registry.reregister(&mut source, mio::Token(10), mio::Interest::READABLE).unwrap();
+    poll.poll(&mut events, Some(Duration::ZERO)).unwrap(); assert_eq!(events.iter().next().unwrap().token(), mio::Token(10));
+    let foreign = mio::Poll::new().unwrap(); assert!(foreign.registry().deregister(&mut source).is_err());
+    source.observe(none).unwrap(); source.observe(read).unwrap(); registry.deregister(&mut source).unwrap();
+    poll.poll(&mut events, Some(Duration::ZERO)).unwrap(); assert!(events.is_empty());
+    let mut sources = Vec::new();
+    for index in 0..31 {
+        let mut source = NativeSource::new(none);
+        registry.register(&mut source, mio::Token(index), mio::Interest::READABLE).unwrap(); sources.push(source);
+    }
+    let mut overflow = NativeSource::new(none);
+    assert_eq!(registry.register(&mut overflow, mio::Token(99), mio::Interest::READABLE).unwrap_err().kind(), std::io::ErrorKind::OutOfMemory);
+    drop(sources);
+    registry.register(&mut overflow, mio::Token(99), mio::Interest::READABLE).unwrap();
+}

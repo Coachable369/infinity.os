@@ -4,6 +4,10 @@ pub mod arena;
 pub mod wait;
 #[cfg(all(target_os = "none", any(target_arch = "aarch64", target_arch = "x86_64")))]
 pub mod context;
+#[cfg(all(target_os = "none", any(target_arch = "aarch64", target_arch = "x86_64")))]
+pub mod executor;
+#[cfg(all(feature = "native-abi", target_os = "none"))]
+pub mod native;
 
 pub type Destructor = unsafe extern "C" fn(*mut u8);
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

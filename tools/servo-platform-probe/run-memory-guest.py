@@ -18,9 +18,26 @@ def main():
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--context-probe", action="store_true")
+    parser.add_argument("--executor-probe", action="store_true")
+    parser.add_argument("--std-probe", action="store_true")
+    parser.add_argument("--mio-probe", action="store_true")
     parser.add_argument("--arch", choices=["aarch64", "x86_64"], default="aarch64")
     options = parser.parse_args()
+    if options.mio_probe:
+        options.std_probe = True
+    # Cargo resolves optional path dependencies even when their feature is disabled.
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-mio.py"))], check=True)
+    if options.std_probe:
+        options.executor_probe = True
+    if options.executor_probe:
+        options.context_probe = True
     output = root / ("build/servo-context-guest" if options.context_probe else "build/servo-memory-guest")
+    if options.executor_probe:
+        output = root / "build/servo-executor-guest"
+    if options.std_probe:
+        output = root / "build/servo-std-guest"
+    if options.mio_probe:
+        output = root / "build/servo-mio-guest"
     output = output / options.arch
     output.mkdir(parents=True, exist_ok=True)
     target = output / "target"
@@ -28,9 +45,18 @@ def main():
     if options.arch == "x86_64":
         triple = "x86_64-unknown-none"
     environment = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(target))
+    if options.std_probe:
+        environment["__CARGO_TESTS_ONLY_SRC_ROOT"] = str(root / "build/servo-rust-src/library")
+        environment["RUSTFLAGS"] = "--cfg infinity_native --check-cfg=cfg(infinity_native)"
     command = ["cargo", "build", "--manifest-path", str(Path(__file__).with_name("guest") / "Cargo.toml"),
-                    "--release", "-Z", "build-std=core", "--target", triple]
-    if options.context_probe:
+                    "--release", "-Z", "build-std=std,panic_abort" if options.std_probe else "build-std=core", "--target", triple]
+    if options.mio_probe:
+        command += ["--features", "mio-probe"]
+    elif options.std_probe:
+        command += ["--features", "std-probe"]
+    elif options.executor_probe:
+        command += ["--features", "executor-probe"]
+    elif options.context_probe:
         command += ["--features", "context-probe"]
     subprocess.run(command, env=environment, check=True)
     executable = output / "probe.elf"
@@ -41,9 +67,15 @@ def main():
     result = output / "result.bin"
     result.unlink(missing_ok=True)
     expected = (2, 0, 2002, 4096) if options.context_probe else (1, 0, 65, 4096)
+    if options.executor_probe:
+        expected = (3, 0, 2002, 4096)
+    if options.std_probe:
+        expected = (4, 0, 2002, 4096)
+    if options.mio_probe:
+        expected = (5, 0, 2002, 4096)
     if options.arch == "aarch64":
         subprocess.run(["qemu-system-aarch64", "-machine", "virt", "-accel", "tcg", "-cpu", "max",
-                        "-m", "32M", "-display", "none", "-serial", "file:" + str(result),
+                        "-m", "128M", "-display", "none", "-serial", "file:" + str(result),
                         "-monitor", "none", "-kernel", str(executable)], check=True, timeout=30)
         record = struct.unpack("<4Q", result.read_bytes())
     else:
@@ -65,6 +97,7 @@ def main():
     if record != expected:
         raise RuntimeError("Guest memory assertions failed: " + repr(record))
     evidence = dict(environment="freestanding QEMU guest", architecture=options.arch, operations=record[2], context_probe=options.context_probe,
+                    executor_probe=options.executor_probe, std_probe=options.std_probe, mio_probe=options.mio_probe,
                     arena_bytes=record[3], passed=True, installed_os=False, servo_executed=False)
     (output / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
     print(json.dumps(evidence, indent=2))

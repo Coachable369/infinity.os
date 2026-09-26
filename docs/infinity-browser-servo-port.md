@@ -273,6 +273,52 @@ network transport integration and further engine/platform dependencies remain.
 
 ## Evidence and acceptance
 
+### Native std execution and Mio readiness, September 26 follow-up
+
+The opt-in `native-abi` provider now executes real Rust standard-library threads
+on independent native stacks. Shared `executor.rs` implements bounded creation,
+fair cooperative dispatch, sleep, compare/wait/wake, join/detach, stale handles,
+and per-thread TLS teardown. `native.rs` supplies the staged std ABI using an
+explicitly granted heap and native callbacks; it binds to one owner CPU and
+reports one CPU of parallelism. No Linux/POSIX runtime or serial pthread shim
+is used in the guest execution.
+
+Both guest targets pass actual `std::thread::Builder`, Mutex/Condvar, sleep,
+join and thread-local destructor tests. A 16-thread exhaustion test verifies
+rejected callbacks do not run and all joined stacks return to the initial heap
+allocation count. The fixture uses real ARM architectural counters / x86 HPET;
+it explicitly denies UTC and entropy, which these tests do not require.
+
+Pinned Mio 1.2.3 is staged from checksum-verified bytes without changing the
+registry cache. Its native Poll/Waker/Source bridge shares
+`kernel/runtime/http/selector.rs`; guest tests cover control wake coalescing,
+timeouts, read/write readiness edges, rearming, foreign-registry rejection,
+deregistration with pending events, exhaustion and capacity recovery.
+
+- Combined AArch64 std/runtime/Mio guest:
+  `builds/manifests/20260926T160435306035Z-94773.json`.
+- Combined x86_64 std/runtime/Mio guest:
+  `builds/manifests/20260926T160500012164Z-94818.json`.
+- Six host primitive regression tests:
+  `builds/manifests/20260926T160314929560Z-94712.json`.
+- Full pinned engine attempt:
+  `builds/manifests/20260926T155913083171Z-91144.json`, exit 101.
+  Selector definitions now compile; Mio TCP/UDP wrappers and socket2's missing
+  native backend still prevent the engine build (29 Mio errors remain).
+
+Run the combined fixture with `./build-kit run python3
+tools/servo-platform-probe/run-memory-guest.py --mio-probe --arch aarch64`
+(or `x86_64`). Evidence lives under `build/servo-mio-guest/<arch>/`.
+
+**Not production or installed-browser acceptance:** the executor is cooperative
+and needs a dedicated governed worker, native event/service wiring, C/C++ TLS
+integration and stack protection. A non-yielding script can monopolize that
+worker. The std fixture's idle callback is only a processor hint, not the
+production service event pump. TCP socket binding, full engine linkage,
+rendering, native shell and installed browsing tests remain unfinished. The
+existing typed connection service supports loopback/datagrams; it must not be
+misrepresented as the missing outbound TCP socket backend.
+
 ### Native execution prerequisite, September 26
 
 `sdk/servo-runtime-primitives/context.rs` now provides ABI-preserved stack

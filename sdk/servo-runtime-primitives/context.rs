@@ -6,6 +6,23 @@ pub struct Context { words: [u64; 24] }
 
 impl Context {
     // ------------------------=
+    // FUNC: initialize_argument
+    // DESC: Starts a native entry with one pointer-sized argument using an ABI-specific trampoline.
+    // ------------------=
+    /// # Safety
+    /// Same exclusive, stationary stack and non-unwinding requirements as initialize.
+    pub unsafe fn initialize_argument(&mut self, stack: &mut [u8], entry: extern "C" fn(usize) -> !, argument: usize) -> bool {
+        unsafe extern "C" { fn infinity_context_enter() -> !; }
+        // The assembly entry never returns and has the same no-argument ABI.
+        let trampoline: extern "C" fn() -> ! = core::mem::transmute(infinity_context_enter as unsafe extern "C" fn() -> !);
+        if !self.initialize(stack, trampoline) { return false; }
+        #[cfg(target_arch = "aarch64")]
+        { self.words[0] = argument as u64; self.words[1] = entry as usize as u64; }
+        #[cfg(target_arch = "x86_64")]
+        { self.words[1] = argument as u64; self.words[3] = entry as usize as u64; }
+        true
+    }
+    // ------------------------=
     // FUNC: empty
     // DESC: Reserves a context which becomes resumable only after initialization or its first save.
     // ------------------=
@@ -62,6 +79,10 @@ core::arch::global_asm!(r#"
 .arch_extension fp
 .section .text.infinity_context_swap,"ax"
 .global infinity_context_swap
+.global infinity_context_enter
+infinity_context_enter:
+    mov x0, x19
+    br x20
 infinity_context_swap:
     stp x19, x20, [x0, #0]
     stp x21, x22, [x0, #16]
@@ -100,6 +121,10 @@ infinity_context_swap:
 core::arch::global_asm!(r#"
 .section .text.infinity_context_swap,"ax"
 .global infinity_context_swap
+.global infinity_context_enter
+infinity_context_enter:
+    mov rdi, rbx
+    jmp r12
 infinity_context_swap:
     mov [rdi], rsp
     mov [rdi + 8], rbx

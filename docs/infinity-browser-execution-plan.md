@@ -44,11 +44,15 @@ browser as installed before gate 6 passes.
 ## Current checkpoint
 
 - Native HTTP metadata/readiness improvements tested; bounded selector exists.
-- Runtime std bindings remain unresolved; complete Servo build still fails.
+- Runtime std bindings now execute through an opt-in single-owner provider in
+  both native guests; complete Servo build still fails.
 - Browser shell, engine execution and installed browsing remain unaccepted.
 - Executable context-switch prerequisite passes on both architectures: 2,002
   resumptions, independent stack canaries and FP controls, 2,000 wait/wake
   roundtrips. Six host primitive tests pass. See the port readout for manifests.
-- Next action: connect these primitives to actual governed thread lifecycle,
-  TLS activation/destruction and off-desktop scheduling. The single-owner wait
-  table is not a cross-CPU futex service or a complete std thread provider.
+- Real thread lifecycle, join/detach, TLS teardown, std mutex/condvar and sleeps
+  pass guest tests. Production worker/service integration and preemption are not
+  implemented. The runtime remains opt-in, not installed.
+- Mio control and native-source readiness now use the existing bounded selector.
+  Next: finish native socket adapters for the engine build; then production
+  off-desktop worker integration and installed runtime roundtrip.

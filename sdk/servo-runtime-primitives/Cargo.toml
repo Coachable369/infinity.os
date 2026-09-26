@@ -6,5 +6,8 @@ publish = false
 
 [workspace]
 
+[features]
+native-abi = []
+
 [lib]
 path = "lib.rs"

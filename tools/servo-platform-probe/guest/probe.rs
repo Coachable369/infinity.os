@@ -1,8 +1,14 @@
 #![no_std]
+#[cfg(feature = "std-probe")]
+extern crate std;
 use core::{alloc::Layout, ptr::NonNull};
 use infinity_servo_runtime_primitives::arena::Arena;
 #[cfg(feature = "context-probe")]
 mod context_probe;
+#[cfg(feature = "executor-probe")]
+mod executor_probe;
+#[cfg(feature = "std-probe")]
+mod std_probe;
 
 #[repr(align(4096))]
 struct Memory([u8; 4096]);
@@ -11,7 +17,7 @@ static mut MEMORY: Memory = Memory([0; 4096]);
 #[cfg(target_arch = "aarch64")]
 core::arch::global_asm!(
     ".section .text.entry", ".global _start", "_start:",
-    "ldr x0, =0x41f00000", "mov sp, x0", "mov x0, #(3 << 20)",
+    "ldr x0, =0x47f00000", "mov sp, x0", "mov x0, #(3 << 20)",
     "msr cpacr_el1, x0", "isb", "bl probe", "b ."
 );
 
@@ -35,7 +41,7 @@ fn finish(status: u64, allocations: u64, capacity: u64) -> ! {
     unsafe {
         #[cfg(target_arch = "aarch64")]
         {
-        let version = if cfg!(feature = "context-probe") { 2 } else { 1 };
+        let version = if cfg!(feature = "mio-probe") { 5 } else if cfg!(feature = "std-probe") { 4 } else if cfg!(feature = "executor-probe") { 3 } else if cfg!(feature = "context-probe") { 2 } else { 1 };
         for value in [version, status, allocations, capacity] {
             for byte in value.to_le_bytes() {
                 while core::ptr::read_volatile(0x09000018 as *const u32) & 32 != 0 {}
@@ -60,6 +66,8 @@ fn finish(status: u64, allocations: u64, capacity: u64) -> ! {
 // ------------------=
 #[no_mangle]
 pub unsafe extern "C" fn probe() -> ! {
+    #[cfg(feature = "std-probe")]
+    std_probe::initialize();
     let bytes = core::slice::from_raw_parts_mut(core::ptr::addr_of_mut!(MEMORY.0).cast::<u8>(), 4096);
     let mut arena = Arena::new(bytes).unwrap();
     let layout = Layout::from_size_align(23, 64).unwrap();
@@ -83,6 +91,10 @@ pub unsafe extern "C" fn probe() -> ! {
     assert_eq!(arena.allocated(), 0);
     #[cfg(feature = "context-probe")]
     let operations = context_probe::run();
+    #[cfg(feature = "executor-probe")]
+    executor_probe::run();
+    #[cfg(feature = "std-probe")]
+    std_probe::run();
     #[cfg(not(feature = "context-probe"))]
     let operations = 65;
     finish(0, operations, arena.capacity() as u64)
@@ -93,6 +105,7 @@ pub unsafe extern "C" fn probe() -> ! {
 // DESC: Makes a failed runtime assertion observable as a non-success binary result.
 // ------------------=
 #[panic_handler]
+#[cfg(not(feature = "std-probe"))]
 fn panic(_: &core::panic::PanicInfo<'_>) -> ! { finish(1, 0, 0) }
 
 // ------------------------=
