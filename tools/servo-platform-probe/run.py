@@ -17,6 +17,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-std", action="store_true",
                         help="Compile Rust std from source instead of requiring a prebuilt std")
+    parser.add_argument("--native-overlay", action="store_true",
+                        help="Use the staged Infinity std source adapters (compile only)")
     options = parser.parse_args()
     output = root / "build/servo-platform-probe"
     output.mkdir(parents=True, exist_ok=True)
@@ -29,12 +31,16 @@ def main():
         ]
         environment = os.environ.copy()
         mode = "prebuilt"
-        if options.build_std:
+        if options.build_std or options.native_overlay:
             mode = "build-std"
             environment["RUSTC_BOOTSTRAP"] = "1"
             command = ["cargo", "build", "-Z", "build-std=std,panic_abort",
                        "--target", target, "--manifest-path",
                        str(Path(__file__).with_name("Cargo.toml"))]
+        if options.native_overlay:
+            mode = "native-overlay"
+            environment["__CARGO_TESTS_ONLY_SRC_ROOT"] = str(root / "build/servo-rust-src")
+            environment["RUSTFLAGS"] = "--cfg infinity_native"
         result = subprocess.run(command, cwd=root, env=environment,
                                 capture_output=True, text=True, check=False)
         (output / f"{target}-{mode}.log").write_text(result.stdout + result.stderr)

@@ -55,6 +55,17 @@ allocator, native error translation, entropy, TLS and real thread/wait support,
 followed by guest execution of `runtime_roundtrip`. Do not modify the host
 toolchain in place or reuse the serial compiler shim as a threaded runtime.
 
+### Initial port code
+
+`sdk/servo-std` now contains isolated std allocator, error translation, entropy,
+and OS-key TLS adapters. A pinned project-local Rust source staging script and
+`--native-overlay` compile mode were added. Native service symbols deliberately
+remain required at link time; their implementations are not yet supplied.
+This is incomplete port code, not a fix for thread execution or a working Servo
+runtime. Verification is pending because build-kit session
+`20260926T062125727600Z-74866` holds an interactive `/bin/zsh -f` shell. It had no
+child process at inspection; the session was not terminated or bypassed.
+
 ## Narrow integration sequence after runtime support
 
 1. Compile and execute the runtime roundtrip inside InfinityOS, then build
