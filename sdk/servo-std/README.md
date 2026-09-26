@@ -1,6 +1,6 @@
 # Infinity Rust std port: initial adapter sources
 
-Unverified work in progress, **not an operational runtime**. These files replace
+Compile-verified work in progress, **not an operational runtime**. These files replace
 the missing std platform selections in a repository-local copy of Rust 1.98.0.
 They intentionally require unresolved `infinity_std_*` native symbols until a
 real runtime provider exists. No host fallback or simulated service is provided.

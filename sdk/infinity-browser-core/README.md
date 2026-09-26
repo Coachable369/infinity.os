@@ -1,0 +1,26 @@
+# Infinity Browser core — not yet integrated
+
+Allocation-free lifecycle and bounded input/download staging for the future
+native shell. This is not Servo, a network client, a permission grant, or a
+browser implementation. No launcher entry or installed browser is advertised.
+
+The shell must serialize Session access on its event loop. Navigation IDs label
+all callbacks; supersession/close invalidates older results. The caller must
+also cancel the corresponding engine/network work and release its resources.
+Rejecting stale results does not itself interrupt a worker. Drive `tick` from
+the monotonic clock and drain a bounded number of inputs per UI iteration.
+Backpressure is explicit: the caller must not discard key releases on Full.
+
+Viewport coordinates use compositor pixels; a Servo device-pixel ratio conversion
+must be applied consistently by the eventual renderer adapter.
+
+Download staging must be allocated off the UI stack with a service-governed
+capacity. Validate a response-derived basename and normalized media type, strip
+MIME parameters first, and never decode/reinterpret the accepted name as a path.
+After successful finish, revalidate native ObjectWrite/namespace authority and
+commit through the object service with collision-safe naming. Report completion
+only after a durable object/namespace commit, not after Download::finish.
+Native storage wiring and metadata persistence remain unimplemented.
+
+Focused behavioral tests (no engine simulation):
+`./build-kit run cargo test --manifest-path sdk/infinity-browser-core/Cargo.toml`

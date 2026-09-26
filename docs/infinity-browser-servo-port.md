@@ -66,6 +66,31 @@ runtime. Verification is pending because build-kit session
 `20260926T062125727600Z-74866` holds an interactive `/bin/zsh -f` shell. It had no
 child process at inspection; the session was not terminated or bypassed.
 
+### Browser core and resumed compilation
+
+Added `sdk/infinity-browser-core`, a standalone no_std crate with no engine or
+OS-service dependencies. It implements navigation generations and deadlines,
+terminal close state, a 32-entry input queue with explicit backpressure,
+viewport pointer clipping, bounded download staging and filename/media-type
+validation. Download staging is not an object write; native authorization,
+durable storage and metadata integration are still required.
+
+Five behavioral unit tests passed via
+`./build-kit run cargo test --manifest-path sdk/infinity-browser-core/Cargo.toml`.
+Evidence: `builds/manifests/20260926T064004393125Z-76997.json`.
+
+After the lock cleared, `--native-overlay` compilation passed for both ARM64 and
+x86_64. The probe explicitly opts into Rust's experimental `restricted_std` only
+with the isolated overlay flag. This does not remove or implement unsupported
+services. Native ABI symbols are still unresolved until executable linking;
+threads, waits and clocks still need platform implementations and guest proof.
+The library compile is not Servo compilation or runtime acceptance.
+Evidence: `builds/manifests/20260926T064112083671Z-77475.json` and
+`build/servo-platform-probe/native-overlay-result.json`.
+
+No production runtime consumers, installer packages or ISOs were changed by
+this step. Fresh-install browser acceptance remains entirely outstanding.
+
 ## Narrow integration sequence after runtime support
 
 1. Compile and execute the runtime roundtrip inside InfinityOS, then build

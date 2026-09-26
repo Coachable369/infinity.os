@@ -1,4 +1,7 @@
 //! Compile gate only; passing does not prove Servo or installed-system support.
+// Opt into the experimental port only in the isolated overlay probe. This is
+// not evidence that unsupported std services have runtime implementations.
+#![cfg_attr(infinity_native, feature(restricted_std))]
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Instant;
 
