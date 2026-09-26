@@ -1,11 +1,11 @@
-# Kokoro native ARM64 integration
+# Kokoro shared native integration
 
 `reference.py` builds and runs an isolated **host CPU reference**. It is not
 linked into InfinityOS, not a host service used by the OS, and not installed
-acceptance. ARM64 live and installed kernels now link the private native Kokoro
-backend by default, including the streamed installer build. x86-64 still uses
-Flite/KAL16 under an active compatibility contract until its native Kokoro port
-is available. Recognition remains PocketSphinx; Kokoro does not implement speech
+acceptance. ARM64 and x86-64 live and installed kernels link the private native
+Kokoro backend, including architecture-selected streamed installer builds.
+The x86-64 integration and its still-open installed acceptance gates are tracked
+in `docs/x86-native-speech-status.md`. Recognition remains PocketSphinx; Kokoro does not implement speech
 recognition. Installed playback and perceptual quality remain separate gates.
 
 The production worker uses 24 kHz PCM, band-limited device-rate conversion,

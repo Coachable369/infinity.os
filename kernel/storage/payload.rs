@@ -10,7 +10,7 @@ pub struct Image {
 static mut BRIDGE: u64 = 0;
 // ------------------------=
 // FUNC: initialize
-// DESC: Retains the bootloader's ARM64 payload read capability.
+// DESC: Retains the bootloader's target-specific bounded payload read capability.
 // ------------------=
 pub fn initialize(address: u64) {
     unsafe {
@@ -67,7 +67,7 @@ impl Image {
             output.copy_from_slice(&self.bytes[offset..offset + output.len()]);
             return Ok(());
         }
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
         unsafe {
             if BRIDGE == 0 {
                 return Err(());

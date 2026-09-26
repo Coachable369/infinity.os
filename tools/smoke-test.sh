@@ -28,7 +28,7 @@ case "$arch" in
     set +e
     timeout 25 qemu-system-x86_64 -machine q35 -m 4096M \
       -drive if=pflash,format=raw,readonly=on,file="$firmware" \
-      -cdrom builds/InfinityOS-x86_64.iso \
+      -cdrom builds/InfinityOS-x86_64-bootstrap-test.iso \
       -serial stdio -display none -no-reboot >"$log" 2>&1
     status=$?
     set -e

@@ -16,6 +16,10 @@ def main():
     work = ROOT / "build/voice-kokoro/x86-workers"
     esp = work / "esp/EFI/BOOT"
     esp.mkdir(parents=True, exist_ok=True)
+    payload = work / "esp/EFI/INFINITY/PAYLOAD"
+    payload.mkdir(parents=True, exist_ok=True)
+    (payload / "P0-000.BIN").write_bytes(bytes(i % 251 for i in range(4099)))
+    (payload / "P1-000.BIN").write_bytes(bytes(255 - i for i in range(32)))
     subprocess.run(["/opt/homebrew/opt/llvm/bin/clang", "--target=x86_64-pc-windows-msvc",
                     "-ffreestanding", "-fshort-wchar", "-fno-stack-protector", "-mno-red-zone",
                     "-O2", "-Wall", "-Wextra", "-Werror", "-c",

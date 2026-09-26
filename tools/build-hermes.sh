@@ -9,4 +9,4 @@ if ! test -f "$INFINITY_HERMES_MODEL"; then
     curl -fL --retry 3 -o "$INFINITY_HERMES_MODEL.part" 'https://huggingface.co/NousResearch/Hermes-3-Llama-3.2-3B-GGUF/resolve/3cd927095d8cbab12c743f932aa63b6f7bbfa141/Hermes-3-Llama-3.2-3B.Q4_K_M.gguf'
     mv "$INFINITY_HERMES_MODEL.part" "$INFINITY_HERMES_MODEL"
 fi
-exec sh tools/build-qwen.sh
+exec sh tools/build-qwen.sh "$@"

@@ -13,10 +13,8 @@ const KERNEL_IMAGE: Image = Image::embedded(include_bytes!("../../build/x86_64/i
 const ESP_IMAGE: Image = Image::embedded(include_bytes!("../../build/aarch64/installed-esp.img"));
 #[cfg(all(target_arch = "aarch64",not(feature="streamed-payload")))]
 const KERNEL_IMAGE: Image = Image::embedded(include_bytes!("../../build/aarch64/installed-kernel.elf"));
-#[cfg(all(target_arch="aarch64",feature="streamed-payload"))]
+#[cfg(feature="streamed-payload")]
 include!("../../build/qwen/payload-manifest.rs");
-#[cfg(all(not(target_arch="aarch64"),feature="streamed-payload"))]
-compile_error!("streamed-payload currently requires the ARM64 firmware storage bridge");
 const ESP_FIRST: u64 = 2048;
 const ESP_BLOCKS: u64 = (ESP_IMAGE.len() / 512) as u64;
 const ALIGNMENT_BLOCKS: u64 = 2048;

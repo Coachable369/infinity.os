@@ -1,28 +1,36 @@
 #!/bin/sh
-# Builds the first ARM64 streamed-payload ISO; the ordinary ISO remains unchanged.
+# Builds the shared native model image for the selected architecture.
 set -eu
 cd "$(dirname "$0")/.."
 . tools/require-build-kit.sh
+arch=aarch64
+if test "$#" -eq 2 && test "$1" = --target; then arch=$2; elif test "$#" -ne 0; then exit 2; fi
+case "$arch" in
+    aarch64) triple=aarch64-unknown-none-softfloat; boot=BOOTAA64.EFI; installed_fat=build/installed-fat-aarch64; stt=arm ;;
+    x86_64) triple=x86_64-unknown-none; boot=BOOTX64.EFI; installed_fat=build/installed-fat; stt=x86_64 ;;
+    *) echo 'Unsupported native model target' >&2; exit 2 ;;
+esac
 ministral=model-cache/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
 hermes=${INFINITY_HERMES_MODEL:-}
-if test -z "$hermes"; then exec sh tools/build-hermes.sh; fi
+if test -z "$hermes"; then exec sh tools/build-hermes.sh --target "$arch"; fi
 test -f "$hermes"
 mkdir -p model-cache build/qwen build/hermes build/tools builds
-installer_output=builds/InfinityOS-aarch64.iso
+installer_output=builds/InfinityOS-$arch.iso
 if test -n "${QWEN_ISO_OUTPUT:-}" && test "$QWEN_ISO_OUTPUT" != "$installer_output"; then
-    echo 'ERROR: installer output is fixed at builds/InfinityOS-aarch64.iso' >&2
+    echo "ERROR: installer output is fixed at $installer_output" >&2
     exit 1
 fi
 # A fresh staging tree cannot inherit removed model shards from an older build.
-if ! mkdir builds/.aarch64-build-lock 2>/dev/null; then
-    echo 'ERROR: ARM64 ISO build already active (builds/.aarch64-build-lock).' >&2
+lock=builds/.$arch-build-lock
+if ! mkdir "$lock" 2>/dev/null; then
+    echo "ERROR: $arch ISO build already active ($lock)." >&2
     exit 1
 fi
-trap 'rmdir builds/.aarch64-build-lock' EXIT
+trap 'rmdir "$lock"' EXIT
 payload_build=$(mktemp -d build/hermes/payload.XXXXXX)
 # This private staging tree is disposable; keep published ISOs and model-cache
 # files, but do not retain tens of GiB after every successful or failed build.
-trap 'test ! -d "$payload_build" || rm -r -- "$payload_build"; rm -f -- builds/InfinityOS-aarch64.iso.partial; rmdir builds/.aarch64-build-lock' EXIT
+trap 'test ! -d "$payload_build" || rm -r -- "$payload_build"; rm -f -- "$installer_output.partial"; rmdir "$lock"' EXIT
 trap 'exit 130' HUP INT TERM
 if ! test -f "$ministral"; then
     curl -fL --retry 3 -o "$ministral.part" https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-GGUF/resolve/eb599d408350ea2bb60452cb86be7c7b2fc28227/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
@@ -31,12 +39,12 @@ fi
 model_bytes=$(wc -c < "$hermes")
 secondary_bytes=$(wc -c < "$ministral")
 python3 tools/iso-staging.py check build "$((2 * (model_bytes + secondary_bytes) + 3221225472))"
-make build/aarch64/BOOTAA64.EFI build/aarch64/installed-kernel.elf build/aarch64/installed-esp.img
+make build/$arch/$boot build/$arch/installed-kernel.elf build/$arch/installed-esp.img
 CARGO_TARGET_DIR=build/behavior-harness cargo build --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin qwen-pack
 mkdir -p ${payload_build}/installed/EFI/INFINITY/PAYLOAD ${payload_build}/live/EFI/BOOT ${payload_build}/live/EFI/INFINITY/PAYLOAD ${payload_build}/iso
 mkdir -p ${payload_build}/iso/EFI/BOOT
-cp build/aarch64/BOOTAA64.EFI ${payload_build}/iso/EFI/BOOT/
-cp -R build/installed-fat-aarch64/EFI/. ${payload_build}/installed/EFI/
+cp build/$arch/$boot ${payload_build}/iso/EFI/BOOT/
+cp -R "$installed_fat/EFI/." ${payload_build}/installed/EFI/
 build/behavior-harness/release/qwen-pack ministral "$ministral" ${payload_build}/installed/EFI/INFINITY/PAYLOAD
 if test -n "$hermes"; then
     build/behavior-harness/release/qwen-pack hermes "$hermes" ${payload_build}/installed/EFI/INFINITY/PAYLOAD
@@ -57,19 +65,19 @@ if test -n "$hermes"; then
     CARGO_TARGET_DIR=build/behavior-harness cargo run --quiet --release --manifest-path tools/behavior-harness/Cargo.toml --bin hermes-install-parity -- ${payload_build}/installed-esp.img
 fi
 python3 tools/iso-staging.py check "$payload_build" "$((esp_size + 1073741824))"
-build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.img build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/PAYLOAD build/qwen/payload-manifest.rs
+build/behavior-harness/release/qwen-pack install ${payload_build}/installed-esp.img build/$arch/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/PAYLOAD build/qwen/payload-manifest.rs
 # Behavioral fresh-install parity: the reassembled kernel payload must be byte
 # identical to the installed kernel, including native UI and transport changes.
-cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - build/aarch64/installed-kernel.elf
+cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - build/$arch/installed-kernel.elf
 # Its validated bytes now belong to the payload shards. Release only this
 # invocation's disposable ESP before allocating another full EFI image.
 rm -- "${payload_build}/installed-esp.img"
-RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target aarch64-unknown-none-softfloat --features streamed-payload
-/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/aarch64.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a build/aarch64/qwen-math.o build/voice-kokoro/aarch64/private-native.o build/voice-pocketsphinx-arm/private-native.o
+RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target "$triple" --features streamed-payload
+/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/$arch.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/$triple/release/libinfinity_kernel.a build/$arch/qwen-math.o build/voice-kokoro/$arch/private-native.o build/voice-pocketsphinx-$stt/private-native.o
 rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
-python3 tools/voice-kokoro/install-parity.py build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
-build/tools/cursor-install-parity build/aarch64/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
-cp build/aarch64/BOOTAA64.EFI ${payload_build}/live/EFI/BOOT/
+python3 tools/voice-kokoro/install-parity.py build/$arch/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
+build/tools/cursor-install-parity build/$arch/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
+cp build/$arch/$boot ${payload_build}/live/EFI/BOOT/
 rm -r -- "${payload_build}/cargo"
 iso_size=$(python3 tools/iso-staging.py size "${payload_build}/live")
 python3 tools/iso-staging.py check "$payload_build" 1073741824
@@ -82,6 +90,6 @@ rm -r -- "${payload_build}/live"
 # Publish only after model and installed-kernel parity have passed. Keep a failed
 # image out of the canonical filename used by provisioning.
 python3 tools/iso-staging.py check builds "$((iso_size + 1073741824))"
-xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o builds/InfinityOS-aarch64.iso.partial ${payload_build}/iso
-python3 tools/audio-install-parity.py builds/InfinityOS-aarch64.iso.partial
-mv builds/InfinityOS-aarch64.iso.partial "$installer_output"
+xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o "$installer_output.partial" ${payload_build}/iso
+python3 tools/audio-install-parity.py "$installer_output.partial" "$arch"
+mv "$installer_output.partial" "$installer_output"

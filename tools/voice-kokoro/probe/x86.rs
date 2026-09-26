@@ -29,6 +29,9 @@ unsafe extern "C" {
     fn infinity_kokoro_native_synthesize(text: *const u8, length: usize, pcm: *mut i16,
         capacity: usize, frames: *mut usize, cancel: usize, context: usize) -> i32;
     fn infinity_kokoro_native_diagnostics(out: *mut usize);
+    fn infinity_kokoro_native_profile_read(out: *mut u64);
+    fn infinity_kokoro_native_dot4(kind: i32, n: i32, out: *mut f32,
+        x: *const u8, stride: usize, y: *const u8) -> i32;
 }
 // ------------------------=
 // FUNC: finish
@@ -67,6 +70,42 @@ unsafe fn verify_dots() {
         half[i] = if i % 2 == 0 { 0x3c00 } else { 0xc000 };
         float[i] = if i % 2 == 0 { 1.0 } else { -2.0 };
     }
+    #[repr(align(16))]
+    struct Aligned<T>(T);
+    let mut tiled_half = Aligned([0u16; 5 * 512]);
+    let mut tiled_float = Aligned([0f32; 5 * 512]);
+    for i in 0..5 * 512 {
+        tiled_half.0[i] = 0x3000 + ((i * 173) % 0x1800) as u16;
+        tiled_float.0[i] = ((i * 173 % 1024) as f32 - 512.0) / 73.0;
+    }
+    for n in [32usize, 64, 128, 256, 512] {
+        for kind in [0, 1] {
+            let width = if kind == 1 { 2 } else { 4 };
+            let x = if kind == 1 { tiled_half.0.as_ptr().cast::<u8>() } else { tiled_float.0.as_ptr().cast::<u8>() };
+            let y = x.add(4 * 512 * width);
+            let mut actual = [0f32; 4];
+            assert_eq!(infinity_kokoro_native_dot4(kind, n as i32, actual.as_mut_ptr(), x, 512 * width, y), 1);
+            for row in 0..4 {
+                let mut expected = 0.0;
+                if kind == 1 {
+                    infinity_kokoro_ggml_vec_dot_f16(n as i32, &mut expected, 0,
+                        x.add(row * 512 * width).cast(), 0, y.cast(), 0, 1);
+                } else {
+                    infinity_kokoro_ggml_vec_dot_f32(n as i32, &mut expected, 0,
+                        x.add(row * 512 * width).cast(), 0, y.cast(), 0, 1);
+                }
+                assert_eq!(actual[row].to_bits(), expected.to_bits());
+            }
+        }
+    }
+    let x = tiled_half.0.as_ptr().cast::<u8>();
+    let mut untouched = [123.0f32; 4];
+    for (kind, length, offset, stride) in [(1, 16, 0, 1024), (1, 31, 0, 1024),
+        (2, 32, 0, 1024), (1, 32, 2, 1024), (1, 32, 0, 1026)] {
+        assert_eq!(infinity_kokoro_native_dot4(kind, length, untouched.as_mut_ptr(),
+            x.add(offset), stride, x), 0);
+        assert_eq!(untouched, [123.0; 4]);
+    }
     for length in [1usize, 7, 31, 32, 33, 63, 64, 65, 127, 256] {
         for offset in 0..8 {
             let mut expected = 0.0;
@@ -103,7 +142,7 @@ unsafe fn speech_job() {
         while cursor != end { (*cursor)(); cursor = cursor.add(1); }
         infinity_kokoro_ggml_cpu_init();
         verify_dots();
-        for byte in 160u64.to_le_bytes() {
+        for byte in 205u64.to_le_bytes() {
             core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") byte);
         }
         finish(16);
@@ -147,6 +186,13 @@ pub unsafe extern "C" fn infinity_kernel_entry(info: &boot_info::BootInfo) -> ! 
     }
     let result = RESULT;
     for value in result.into_iter().chain([heartbeat]) {
+        for byte in value.to_le_bytes() {
+            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") byte);
+        }
+    }
+    let mut profile = [0u64; 256];
+    infinity_kokoro_native_profile_read(profile.as_mut_ptr());
+    for value in profile {
         for byte in value.to_le_bytes() {
             core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") byte);
         }

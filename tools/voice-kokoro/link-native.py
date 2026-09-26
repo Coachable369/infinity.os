@@ -65,8 +65,6 @@ def main():
              "-isystem", str(ROOT / "build/newlib-4.6.0.20260123/newlib/libc/include")]
     objects = []
     paths = [ROOT / "tools/voice-kokoro" / name for name in ("entry.cpp", "mapping.cpp", "registry.cpp", "port.c", "memory.c", "profile.c", "dot4.cpp")]
-    if ARCH == "x86_64":
-        paths = [p for p in paths if p.name != "dot4.cpp"]
     paths += [ROOT / "sdk/compiler" / name for name in ("pthread.c", "serial_sync.c", "serial_tls.c")]
     paths += [output / "resources.S", output / "resources.c"]
     for path in paths:

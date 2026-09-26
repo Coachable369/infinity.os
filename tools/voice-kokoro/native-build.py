@@ -87,7 +87,7 @@ def main():
         replacement = ROOT / "tools/voice-kokoro/overrides" / source.name
         if replacement.exists():
             source = replacement
-        if source.name == "ggml-cpu.c" and ARCH == "aarch64":
+        if source.name == "ggml-cpu.c":
             original = source.read_text()
             anchor = "                    vec_dot(ne00, &tmp[ir0 - iir0], (num_rows_per_vec_dot > 1 ? 16 : 0),"
             if original.count(anchor) != 1:

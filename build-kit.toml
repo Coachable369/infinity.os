@@ -30,6 +30,10 @@ clean = false
 command = ["make", "aarch64-bootstrap"]
 clean = false
 
+[profiles.x86_64-models]
+command = ["sh", "tools/build-hermes.sh", "--target", "x86_64"]
+clean = false
+
 [profiles.tests]
 command = ["make", "test"]
 clean = false

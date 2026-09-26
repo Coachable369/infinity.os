@@ -11,15 +11,20 @@ fn main() {
     let image = std::env::args()
         .nth(1)
         .expect("ESP image, or disk.raw@@1048576");
-    let boot = Command::new("mtype")
-        .args(["-i", &image, "::/EFI/BOOT/BOOTAA64.EFI"])
-        .output()
-        .unwrap();
-    assert!(boot.status.success());
-    assert_eq!(
-        boot.stdout,
-        std::fs::read("build/aarch64/BOOTAA64.EFI").unwrap()
-    );
+    let mut loaders = 0;
+    for (arch, name, machine) in [("aarch64", "BOOTAA64.EFI", 0xaa64u16),
+                                  ("x86_64", "BOOTX64.EFI", 0x8664u16)] {
+        let boot = Command::new("mtype")
+            .args(["-i", &image, &format!("::/EFI/BOOT/{name}")])
+            .output().unwrap();
+        if !boot.status.success() { continue; }
+        loaders += 1;
+        assert_eq!(boot.stdout, std::fs::read(format!("build/{arch}/{name}")).unwrap());
+        let pe = u32::from_le_bytes(boot.stdout[60..64].try_into().unwrap()) as usize;
+        assert_eq!(&boot.stdout[pe..pe + 4], b"PE\0\0");
+        assert_eq!(u16::from_le_bytes(boot.stdout[pe + 4..pe + 6].try_into().unwrap()), machine);
+    }
+    assert_eq!(loaders, 1);
     let mut buffer = [0u8; 65536];
     for part in 0..10 {
         let path = format!("::/EFI/INFINITY/PAYLOAD/P2-{part:03}.BIN");

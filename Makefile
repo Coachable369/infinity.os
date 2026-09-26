@@ -36,6 +36,12 @@ voice-synthesis-hardware-test:
 	sh tools/voice-flite/probe/run.sh tcg
 
 .PHONY: voice-recognition-test voice-indicator-test voice-output-test
+
+.PHONY: payload-cache-test
+payload-cache-test:
+	@mkdir -p $(BUILD)/tools
+	$(CLANG) -std=c11 -Wall -Wextra -Werror tools/payload-cache-test.c -o $(BUILD)/tools/payload-cache-test
+	$(BUILD)/tools/payload-cache-test
 voice-output-test:
 	$(RUSTC) --edition=2021 --test tools/voice-output-test.rs -o build/voice-output-test
 	build/voice-output-test
@@ -347,7 +353,7 @@ $(BUILD)/x86_64/kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/x86_64/inst
 $(BUILD)/x86_64/kernel.elf: $(BUILD)/x86_64/kernel.o linker/x86_64.ld $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
 	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libkernel.a $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
 
-$(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/x86_64/workers.h
+$(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/x86_64/workers.h boot/common/payload_loader.h boot/common/payload_cache.h
 	@mkdir -p $(@D)
 	$(CLANG) --target=x86_64-pc-windows-msvc -ffreestanding -fshort-wchar -fno-stack-protector \
 		-mno-red-zone -O2 -Wall -Wextra -Werror -c $< -o $@
@@ -400,8 +406,11 @@ $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel
 	mformat -F -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat/EFI ::
 
-builds/InfinityOS-x86_64.iso: $(BUILD)/infinity-x86_64.img
+.PHONY: x86-native-speech-parity
+x86-native-speech-parity: $(BUILD)/x86_64/installed-kernel.elf $(BUILD)/x86_64/kernel.elf
 	python3 tools/voice-kokoro/install-parity.py --embedded-install $(BUILD)/x86_64/installed-kernel.elf $(BUILD)/x86_64/kernel.elf
+
+builds/InfinityOS-x86_64-bootstrap-test.iso: $(BUILD)/infinity-x86_64.img x86-native-speech-parity
 	@mkdir -p builds
 	@mkdir -p $(BUILD)/iso/EFI
 	cp $< $(BUILD)/iso/efi.img
@@ -409,11 +418,12 @@ builds/InfinityOS-x86_64.iso: $(BUILD)/infinity-x86_64.img
 	xorriso -as mkisofs -R -V INFINITYOS -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso
 	mv $@.partial $@
 
-x86_64: check-tools builds/InfinityOS-x86_64.iso
+x86_64: check-tools builds/InfinityOS-x86_64-bootstrap-test.iso
+	sh tools/build-hermes.sh --target x86_64
 	@echo "Built VMware/QEMU boot image: builds/InfinityOS-x86_64.iso"
 
 run-x86_64: x86_64
-	$(QEMU_X64) -machine q35 -m 4096M -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
+	$(QEMU_X64) -machine q35 -smp 4 -m 16384M -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-cdrom builds/InfinityOS-x86_64.iso -serial stdio -display none -no-reboot
 
 test-x86_64: x86_64

@@ -11,7 +11,7 @@ import tempfile
 def main():
     root = Path(__file__).resolve().parent.parent
     cases = (
-        ("x86_64", "InfinityOS-x86_64.iso"),
+        ("x86_64", "InfinityOS-x86_64-bootstrap-test.iso"),
         ("aarch64", "InfinityOS-aarch64-bootstrap-test.iso"),
         ("aarch64-qemu", "InfinityOS-aarch64-qemu-test.iso"),
     )
@@ -26,7 +26,10 @@ def main():
             image = f"build/infinity-{architecture}.img"
             (work / image).write_bytes(bytes(range(256)) * 16)
             subprocess.run(
-                ["make", "-f", str(root / "Makefile"), "-o", image, f"builds/{name}"],
+                # This fixture tests ISO packaging only. Native model parity is
+                # exercised separately against actual linked kernel artifacts.
+                ["make", "-f", str(root / "Makefile"), "-o", image,
+                 "-o", "x86-native-speech-parity", f"builds/{name}"],
                 cwd=work, check=True, stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
