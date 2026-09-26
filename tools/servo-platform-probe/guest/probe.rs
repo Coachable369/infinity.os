@@ -1,11 +1,14 @@
 #![no_std]
 use core::{alloc::Layout, ptr::NonNull};
 use infinity_servo_runtime_primitives::arena::Arena;
+#[cfg(feature = "context-probe")]
+mod context_probe;
 
 #[repr(align(4096))]
 struct Memory([u8; 4096]);
 static mut MEMORY: Memory = Memory([0; 4096]);
 
+#[cfg(target_arch = "aarch64")]
 core::arch::global_asm!(
     ".section .text.entry", ".global _start", "_start:",
     "ldr x0, =0x41f00000", "mov sp, x0", "mov x0, #(3 << 20)",
@@ -13,18 +16,40 @@ core::arch::global_asm!(
 );
 
 // ------------------------=
+// FUNC: infinity_kernel_entry
+// DESC: Runs the shared probe on the native x86 UEFI handoff stack with floating-point state enabled.
+// ------------------=
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "C" fn infinity_kernel_entry(_: *const u8) -> ! {
+    core::arch::asm!("mov rax, cr0", "and rax, -13", "or rax, 2", "mov cr0, rax",
+        "mov rax, cr4", "or rax, 1536", "mov cr4, rax", "fninit", out("rax") _);
+    probe()
+}
+
+// ------------------------=
 // FUNC: finish
 // DESC: Emits a structured result and powers down only this disposable test guest.
 // ------------------=
 fn finish(status: u64, allocations: u64, capacity: u64) -> ! {
     unsafe {
-        for value in [1u64, status, allocations, capacity] {
+        #[cfg(target_arch = "aarch64")]
+        {
+        let version = if cfg!(feature = "context-probe") { 2 } else { 1 };
+        for value in [version, status, allocations, capacity] {
             for byte in value.to_le_bytes() {
                 while core::ptr::read_volatile(0x09000018 as *const u32) & 32 != 0 {}
                 core::ptr::write_volatile(0x09000000 as *mut u32, byte as u32);
             }
         }
         core::arch::asm!("hvc #0", in("x0") 0x84000008u64);
+        }
+        #[cfg(target_arch = "x86_64")]
+        {
+            let expected = if cfg!(feature = "context-probe") { 2002 } else { 65 };
+            let code = if status == 0 && allocations == expected && capacity == 4096 { 0x10u32 } else { 0x12 };
+            core::arch::asm!("out dx, eax", in("dx") 0xf4u16, in("eax") code);
+        }
     }
     loop { core::hint::spin_loop(); }
 }
@@ -56,7 +81,11 @@ pub unsafe extern "C" fn probe() -> ! {
     assert_eq!(pointer.as_ptr() as usize % 4096, 0);
     arena.release(pointer, whole);
     assert_eq!(arena.allocated(), 0);
-    finish(0, 65, arena.capacity() as u64)
+    #[cfg(feature = "context-probe")]
+    let operations = context_probe::run();
+    #[cfg(not(feature = "context-probe"))]
+    let operations = 65;
+    finish(0, operations, arena.capacity() as u64)
 }
 
 // ------------------------=

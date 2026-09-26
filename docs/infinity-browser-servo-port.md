@@ -273,6 +273,33 @@ network transport integration and further engine/platform dependencies remain.
 
 ## Evidence and acceptance
 
+### Native execution prerequisite, September 26
+
+`sdk/servo-runtime-primitives/context.rs` now provides ABI-preserved stack
+switching for AArch64 and x86_64, including floating-point control state.
+`wait.rs` adds bounded single-owner registration, wake-one/all, monotonic deadline
+evaluation and cancellation. It must be serialized with scheduler transitions;
+it is not a general cross-CPU futex or a native std thread provider.
+
+The shared freestanding guest performs 2,002 resumptions on two independent
+32 KiB stacks, checks private stack canaries and distinct FP rounding modes,
+and performs 2,000 prepare/suspend/wake/resume roundtrips. Both guests pass:
+
+- AArch64: `builds/manifests/20260926T153031275297Z-88877.json`.
+- x86_64 UEFI handoff: `builds/manifests/20260926T153056832778Z-88958.json`.
+- Six host primitive tests: `builds/manifests/20260926T153007238065Z-88826.json`.
+
+Run via `./build-kit run python3 tools/servo-platform-probe/run-memory-guest.py
+--context-probe --arch aarch64` (or `x86_64`). Evidence is stored under
+`build/servo-context-guest/<arch>/evidence.json`. The x86 probe uses the existing
+native UEFI loader and an assertion-controlled QEMU exit status; ARM emits a
+binary result record. Neither uses console wording as its test oracle.
+
+These are disposable native guests, **not installed-system browser proof**.
+General thread lifecycle, preemption/off-desktop execution, machine TLS and the
+native std ABI remain unwired. The execution plan is in
+`docs/infinity-browser-execution-plan.md`.
+
 No HTTPS URL, JavaScript result, download, timings, RAM or installed-browser
 proof exists yet. No browser launcher item, simulated renderer, host-browser
 fallback, new ISO or passing browser acceptance is claimed. Existing MS9–MS12
