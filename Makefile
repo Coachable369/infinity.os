@@ -792,4 +792,4 @@ run-aarch64: aarch64
 		-device scsi-cd,drive=cd,bootindex=0 -serial stdio -display none -no-reboot
 
 clean:
-	rm -rf $(BUILD)
+	python3 tools/build-workspace.py clean

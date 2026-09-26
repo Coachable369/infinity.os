@@ -1,0 +1,47 @@
+diff --git a/src/include/espeak-ng/speak_lib.h b/src/include/espeak-ng/speak_lib.h
+index 9c0e2739..ebadf097 100644
+--- a/src/include/espeak-ng/speak_lib.h
++++ b/src/include/espeak-ng/speak_lib.h
+@@ -518,6 +518,11 @@ ESPEAK_API void espeak_SetPhonemeTrace(int phonememode, FILE *stream);
+ extern "C"
+ #endif
+ ESPEAK_API const char *espeak_TextToPhonemes(const void **textptr, int textmode, int phonememode);
++
++#ifdef __cplusplus
++extern "C"
++#endif
++ESPEAK_API const char *espeak_TextToPhonemesWithTerminator(const void **textptr, int textmode, int phonememode, int *terminator);
+ /* Translates text into phonemes.  Call espeak_SetVoiceByName() first, to select a language.
+ 
+    It returns a pointer to a character string which contains the phonemes for the text up to
+diff --git a/src/libespeak-ng/speech.c b/src/libespeak-ng/speech.c
+index 9f90d105..f2616355 100644
+--- a/src/libespeak-ng/speech.c
++++ b/src/libespeak-ng/speech.c
+@@ -870,6 +870,26 @@ ESPEAK_API const char *espeak_TextToPhonemes(const void **textptr, int textmode,
+ 	return GetTranslatedPhonemeString(phonememode);
+ }
+ 
++ESPEAK_API const char *espeak_TextToPhonemesWithTerminator(const void **textptr, int textmode, int phonememode, int *terminator)
++{
++	/* phoneme_mode
++	    bit 1:   0=eSpeak's ascii phoneme names, 1= International Phonetic Alphabet (as UTF-8 characters).
++	    bit 7:   use (bits 8-23) as a tie within multi-letter phonemes names
++	    bits 8-23:  separator character, between phoneme names
++	 */
++
++	if (p_decoder == NULL)
++		p_decoder = create_text_decoder();
++
++	if (text_decoder_decode_string_multibyte(p_decoder, *textptr, translator->encoding, textmode) != ENS_OK)
++		return NULL;
++
++	TranslateClauseWithTerminator(translator, NULL, NULL, terminator);
++	*textptr = text_decoder_get_buffer(p_decoder);
++
++	return GetTranslatedPhonemeString(phonememode);
++}
++
+ ESPEAK_NG_API espeak_ng_STATUS espeak_ng_Cancel(void)
+ {
+ #if USE_ASYNC

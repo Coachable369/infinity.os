@@ -6,13 +6,14 @@ output_dir="$project_root/builds"
 temporary_dir="$project_root/build/tmp"
 
 cd "$project_root"
-mkdir -p "$temporary_dir"
+python3 tools/build-workspace.py clean
 TMPDIR="$temporary_dir"
 TMP="$temporary_dir"
 TEMP="$temporary_dir"
 export TMPDIR TMP TEMP
 
-# Catch provisioning contract failures before expensive builds or cleanup.
+# Catch workspace and provisioning contract failures before expensive builds.
+python3 tools/build-workspace-test.py
 sh tools/select-install-iso-test.sh
 python3 tools/installer-output-test.py
 python3 tools/iso-staging-test.py
@@ -20,8 +21,6 @@ python3 tools/re-provision-tpm-test.py
 make install-boot-handoff-test
 
 echo "==> Building InfinityOS for x86_64 and AArch64"
-make clean
-mkdir -p "$temporary_dir"
 
 # The legacy BIOS loader must place its complete 32-bit payload below the
 # conventional-memory/video boundary. The current graphical kernel is larger

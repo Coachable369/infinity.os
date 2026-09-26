@@ -1,4 +1,10 @@
 /build/
 /builds/
 /model-cache/
+**/target/
+**/.build/
+**/__pycache__/
+.DS_Store
+*~
+rustc-ice-*.txt
 *.log

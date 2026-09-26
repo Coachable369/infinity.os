@@ -54,3 +54,8 @@ Next implementation gates remain:
 No Kokoro availability flag, fake provider or silent Flite fallback has been
 added. The reference workflow is a migration prerequisite, not the requested
 completed native replacement.
+
+Unfinished upstream modifications are preserved as reviewable patches in
+`third_party/patches/voice-kokoro`. Generated clones, dependency checkouts and
+objects remain disposable under `build/` and may be removed before every full
+build.

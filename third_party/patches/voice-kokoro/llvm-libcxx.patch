@@ -1,0 +1,33 @@
+diff --git a/libcxx/include/__config b/libcxx/include/__config
+index d6caacef..ad55083d 100644
+--- a/libcxx/include/__config
++++ b/libcxx/include/__config
+@@ -96,7 +96,7 @@
+ #  if defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) ||                     \
+       defined(__DragonFly__)
+ #    define _LIBCPP_USING_ARC4_RANDOM
+-#  elif defined(__wasi__) || defined(__EMSCRIPTEN__)
++#  elif defined(__wasi__) || defined(__EMSCRIPTEN__) || defined(__INFINITY__)
+ #    define _LIBCPP_USING_GETENTROPY
+ #  elif defined(__Fuchsia__)
+ #    define _LIBCPP_USING_FUCHSIA_CPRNG
+diff --git a/libcxx/src/regex.cpp b/libcxx/src/regex.cpp
+index 9d7d1699..dff6b2ba 100644
+--- a/libcxx/src/regex.cpp
++++ b/libcxx/src/regex.cpp
+@@ -309,13 +309,13 @@ struct classnames {
+ const classnames ClassNames[] = {
+     {"alnum", ctype_base::alnum},
+     {"alpha", ctype_base::alpha},
+-    {"blank", ctype_base::blank},
++    {"blank", static_cast<make_unsigned<ctype_base::mask>::type>(ctype_base::blank)},
+     {"cntrl", ctype_base::cntrl},
+     {"d", ctype_base::digit},
+     {"digit", ctype_base::digit},
+     {"graph", ctype_base::graph},
+     {"lower", ctype_base::lower},
+-    {"print", ctype_base::print},
++    {"print", static_cast<make_unsigned<ctype_base::mask>::type>(ctype_base::print)},
+     {"punct", ctype_base::punct},
+     {"s", ctype_base::space},
+     {"space", ctype_base::space},
