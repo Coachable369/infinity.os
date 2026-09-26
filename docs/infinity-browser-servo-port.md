@@ -4,6 +4,14 @@ Status: **not implemented or packaged; acceptance remains open**.
 
 ## Executable linkage and session storage, September 26 (latest)
 
+Subsequent startup diagnosis found SpiderMonkey's Unix random-device fallback
+retrying indefinitely. The native overlay now calls the granted entropy ABI;
+denial is fatal rather than an endless GC-address probe. Archive build passes
+`builds/manifests/20260926T212455177134Z-38327.json`. Real boot then advances
+without timeout to a distinct `std::env::temp_dir` failure, manifest
+`builds/manifests/20260926T212856936528Z-42198.json`. Native storage-thread
+construction must select upstream in-memory engines without temporary directories.
+
 Actual AArch64 Servo executable linkage now passes:
 `builds/manifests/20260926T211343651810Z-37875.json`. C++ wrappers now match the
 native no-exceptions libc++ ABI; JavaScript exceptions remain engine values.

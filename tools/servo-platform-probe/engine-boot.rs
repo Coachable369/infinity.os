@@ -79,6 +79,9 @@ pub unsafe extern "C" fn engine_boot()->! {
     if !Runtime::install(runtime) { finish(1,2,0); }
     std::panic::set_hook(std::boxed::Box::new(|info| {
         let line=info.location().map_or(0,|location| location.line());
+        if let Some(location)=info.location() { diagnostic(6,location.file()); }
+        if let Some(message)=info.payload().downcast_ref::<&str>() { diagnostic(7,message); }
+        if let Some(message)=info.payload().downcast_ref::<std::string::String>() { diagnostic(7,message); }
         finish(1,3,line as u64);
     }));
     record(2,2,0);
@@ -97,4 +100,14 @@ pub unsafe extern "C" fn engine_boot()->! {
         core::mem::forget(engine);
     }).unwrap().join().unwrap();
     finish(0,5,Runtime::allocated() as u64)
+}
+// ------------------------=
+// FUNC: diagnostic
+// DESC: Emits bounded panic context without allocation; it is diagnostic data, not a pass oracle.
+// ------------------=
+fn diagnostic(kind:u64,text:&str) {
+    for chunk in text.as_bytes()[..text.len().min(512)].chunks(8) {
+        let mut bytes=[0u8;8]; bytes[..chunk.len()].copy_from_slice(chunk);
+        record(4,kind,u64::from_le_bytes(bytes));
+    }
 }

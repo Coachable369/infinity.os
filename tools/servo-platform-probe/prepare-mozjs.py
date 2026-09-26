@@ -155,6 +155,37 @@ def malloc_h(target, detected):
     body = text[start:end].replace('#elif defined(__wasi__)', '''#elif defined(__wasi__) || defined(__INFINITYOS__)
   // Upstream's unavailable-statistic sentinel, not a measured native fault count.''', 1)
     path.write_text(text[:start] + body + text[end:])
+    path = directory / "mozjs/mfbt/RandomNum.cpp"
+    text = path.read_text().replace('#include "mozilla/RandomNum.h"', '''#include "mozilla/RandomNum.h"
+#if defined(__INFINITYOS__)
+// ------------------------=
+// FUNC: infinity_std_entropy
+// DESC: Obtains entropy through the granted native service instead of Unix device files.
+// ------------------=
+extern "C" int infinity_std_entropy(unsigned char*, size_t);
+#endif''', 1)
+    marker = '#if defined(XP_WIN)\n  return !!RtlGenRandom(aBuffer, aLength);'
+    if text.count(marker) != 1:
+        raise SystemExit("Unexpected native entropy entry point")
+    text = text.replace(marker, '''#if defined(__INFINITYOS__)
+  return infinity_std_entropy(static_cast<unsigned char*>(aBuffer), aLength) == 0;
+#elif defined(XP_WIN)
+  return !!RtlGenRandom(aBuffer, aLength);''', 1)
+    path.write_text(text)
+    path = directory / "mozjs/js/src/gc/Memory.cpp"
+    text = path.read_text()
+    marker = '''    do {
+      result = mozilla::RandomUint64();
+    } while (!result);'''
+    if text.count(marker) != 1:
+        raise SystemExit("Unexpected GC entropy retry loop")
+    text = text.replace(marker, '''#if defined(__INFINITYOS__)
+    // A denied native entropy grant is not a transient Unix device condition.
+    // Fail closed rather than monopolizing the executor in an infinite retry.
+    result = mozilla::Some(mozilla::RandomUint64OrDie());
+#else
+''' + marker + '\n#endif', 1)
+    path.write_text(text)
     path = directory / "src/jsglue.cpp"
     text = path.read_text()
     text = text.replace('#if defined(__linux__) || defined(__wasi__)\n#  include <malloc.h>', '''#if defined(__INFINITYOS__)

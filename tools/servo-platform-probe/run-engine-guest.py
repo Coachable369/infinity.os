@@ -50,7 +50,8 @@ def main():
     data=result.read_bytes()
     records=[list(struct.unpack("<4Q",data[i:i+32])) for i in range(0,len(data)-31,32)]
     passed=not timed_out and bool(records) and records[-1][:3]==[9,0,5]
-    report={"passed":passed,"timed_out":timed_out,"records":records,"registers":registers,"installed_os":False,"page_rendered":False}
+    diagnostics={str(kind):b"".join(struct.pack("<Q",r[3]) for r in records if r[:3]==[9,4,kind]).rstrip(b"\0").decode(errors="replace") for kind in (6,7)}
+    report={"passed":passed,"timed_out":timed_out,"records":[r for r in records if r[1]!=4],"diagnostics":diagnostics,"registers":registers,"installed_os":False,"page_rendered":False}
     (output / "engine-boot.json").write_text(json.dumps(report,indent=2)+"\n")
     print(json.dumps(report,indent=2))
     return 0 if passed else 1
