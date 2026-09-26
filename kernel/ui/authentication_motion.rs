@@ -2,10 +2,10 @@
 
 pub const SCENE_MS: u16 = 1_500;
 pub const COMMIT_MS: u16 = 1_600;
-pub const DURATION_MS: u16 = 2_200;
+pub const DURATION_MS: u16 = COMMIT_MS;
 const IMPACT_FRAME_MS: u16 = 550;
 const RIPPLE_FRAME_MS: u16 = 1_000;
-const FADE_FRAME_MS: u16 = 1_300;
+const FINAL_RIPPLE_FRAME_MS: u16 = 1_300;
 
 pub const ARTWORK_CENTER_X: u16 = 1_335;
 pub const ARTWORK_WATER_Y: u16 = 865;
@@ -34,7 +34,6 @@ pub enum Advance {
     Idle,
     Frame(Presentation),
     CommitDesktop,
-    DesktopFrame(u8),
     Finished,
 }
 
@@ -45,7 +44,6 @@ pub struct Timeline {
     active: bool,
     committed: bool,
     checkpoint: u8,
-    desktop_frame_presented: bool,
 }
 
 impl Timeline {
@@ -60,7 +58,6 @@ impl Timeline {
             active: false,
             committed: false,
             checkpoint: 0,
-            desktop_frame_presented: false,
         }
     }
 
@@ -74,7 +71,6 @@ impl Timeline {
         self.active = true;
         self.committed = false;
         self.checkpoint = 0;
-        self.desktop_frame_presented = false;
     }
 
     // ------------------------=
@@ -95,7 +91,7 @@ impl Timeline {
 
     // ------------------------=
     // FUNC: opacity
-    // DESC: Returns the scene fade independently of the orb choreography.
+    // DESC: Keeps the authentication scene fully opaque through the direct desktop handoff.
     // ------------------=
     pub const fn opacity(&self) -> u8 {
         scene_opacity(self.presented_ms)
@@ -117,7 +113,7 @@ impl Timeline {
             let checkpoint_ms = match self.checkpoint {
                 0 => IMPACT_FRAME_MS,
                 1 => RIPPLE_FRAME_MS,
-                2 => FADE_FRAME_MS,
+                2 => FINAL_RIPPLE_FRAME_MS,
                 _ => 0,
             };
             if checkpoint_ms != 0 && self.elapsed_ms >= checkpoint_ms {
@@ -133,20 +129,10 @@ impl Timeline {
             return Advance::CommitDesktop;
         }
         if self.elapsed_ms >= DURATION_MS {
-            if self.committed && !self.desktop_frame_presented {
-                self.presented_ms = COMMIT_MS + (DURATION_MS - COMMIT_MS) / 2;
-                self.desktop_frame_presented = true;
-                return Advance::DesktopFrame(scene_opacity(self.presented_ms));
-            }
             self.elapsed_ms = DURATION_MS;
             self.presented_ms = DURATION_MS;
             self.active = false;
             return Advance::Finished;
-        }
-        if self.committed {
-            self.presented_ms = self.elapsed_ms;
-            self.desktop_frame_presented = true;
-            return Advance::DesktopFrame(scene_opacity(self.presented_ms));
         }
         self.presented_ms = self.elapsed_ms;
         Advance::Frame(self.presentation())
@@ -155,14 +141,10 @@ impl Timeline {
 
 // ------------------------=
 // FUNC: scene_opacity
-// DESC: Holds visible ripples before fading out, then reveals the already-composed desktop from black.
+// DESC: Keeps both authentication and desktop presentation fully opaque across the direct handoff.
 // ------------------=
-pub const fn scene_opacity(elapsed_ms: u16) -> u8 {
-    if elapsed_ms < COMMIT_MS {
-        (255 * (1000 - segment(elapsed_ms, 950, COMMIT_MS)) as u32 / 1000) as u8
-    } else {
-        (255 * segment(elapsed_ms, COMMIT_MS, DURATION_MS) as u32 / 1000) as u8
-    }
+pub const fn scene_opacity(_elapsed_ms: u16) -> u8 {
+    255
 }
 
 // ------------------------=
@@ -310,29 +292,21 @@ mod tests {
         }
         assert_eq!(timeline.advance(50), Advance::CommitDesktop);
         assert!(timeline.active());
-        for _ in 0..11 {
-            assert!(matches!(timeline.advance(50), Advance::DesktopFrame(_)));
-        }
-        assert_eq!(timeline.advance(50), Advance::Finished);
+        assert_eq!(timeline.advance(1), Advance::Finished);
         assert!(!timeline.active());
     }
 
     // ------------------------=
-    // FUNC: fade_is_continuous_and_stalls_do_not_skip_ripples
-    // DESC: Verifies black handoff, monotonic fades, pixel endpoints and checkpoint-preserving delayed-frame catch-up.
+    // FUNC: direct_handoff_preserves_checkpoints_when_frames_stall
+    // DESC: Verifies full opacity, pixel endpoints, and checkpoint-preserving delayed-frame catch-up.
     // ------------------=
     #[test]
-    fn fade_is_continuous_and_stalls_do_not_skip_ripples() {
+    fn direct_handoff_preserves_checkpoints_when_frames_stall() {
+        assert_eq!(scene_opacity(0), 255);
         assert_eq!(scene_opacity(900), 255);
         assert!(presentation_at(900).primary_ripple_opacity > 0);
-        assert_eq!(scene_opacity(COMMIT_MS), 0);
+        assert_eq!(scene_opacity(COMMIT_MS), 255);
         assert_eq!(scene_opacity(DURATION_MS), 255);
-        for t in 951..COMMIT_MS {
-            assert!(scene_opacity(t) <= scene_opacity(t - 1));
-        }
-        for t in COMMIT_MS + 1..=DURATION_MS {
-            assert!(scene_opacity(t) >= scene_opacity(t - 1));
-        }
         assert_eq!(fade_pixel(0xff987654, 255), 0xff987654);
         assert_eq!(fade_pixel(0xff987654, 0), 0xff000000);
         let mut timeline = Timeline::new();
@@ -347,12 +321,9 @@ mod tests {
         );
         assert_eq!(
             timeline.advance(1),
-            Advance::Frame(presentation_at(FADE_FRAME_MS))
+            Advance::Frame(presentation_at(FINAL_RIPPLE_FRAME_MS))
         );
         assert_eq!(timeline.advance(1), Advance::CommitDesktop);
-        assert!(
-            matches!(timeline.advance(u16::MAX),Advance::DesktopFrame(opacity) if opacity > 0 && opacity < 255)
-        );
         assert_eq!(timeline.advance(1), Advance::Finished);
         assert!(!timeline.active());
     }

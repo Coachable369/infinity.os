@@ -13176,13 +13176,10 @@ pub fn ui_animation_tick() -> bool {
                     crate::bootstrap::system_ui_authentication_success(presentation);
                 }
                 crate::ui::authentication_motion::Advance::CommitDesktop => {
-                    crate::bootstrap::system_ui_authentication_opacity(0, true);
+                    crate::bootstrap::system_ui_authentication_opacity(255, true);
                     runtime.finish_authentication_success();
                     runtime.redraw();
                     runtime.authentication_tick_ns = crate::ui::performance::monotonic_ns();
-                }
-                crate::ui::authentication_motion::Advance::DesktopFrame(opacity) => {
-                    crate::bootstrap::system_ui_authentication_opacity(opacity, true);
                 }
                 crate::ui::authentication_motion::Advance::Finished => {
                     crate::bootstrap::system_ui_authentication_opacity(255, true);

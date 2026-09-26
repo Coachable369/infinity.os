@@ -168,7 +168,7 @@ def open_system_action(guest, index, expected_mode):
 
 # ------------------------=
 # FUNC: submit_authentication_animation
-# DESC: Enters the real password and proves impact, expanding ripples, desktop commit, and completed fade-in.
+# DESC: Enters the real password and proves impact, expanding ripples, and the direct desktop handoff.
 # ------------------=
 def submit_authentication_animation(guest, expected_mode, capture_name):
     state = guest.wait(lambda value: value[3] == 1 and value[4] == expected_mode,
@@ -192,9 +192,9 @@ def submit_authentication_animation(guest, expected_mode, capture_name):
     assert_success_motion(focused_path, impact_path, wake_path)
     state = guest.wait(lambda value: value[4] == 5 and value[9] & 3 == 3,
                        "success animation committed desktop")
-    time.sleep(1.0)
+    time.sleep(0.1)
     completed = guest.wait(lambda value: value[4] == 5 and value[9] & 3 == 3,
-                           "success animation completed desktop fade")
+                           "success animation completed direct desktop handoff")
     desktop_path = guest.screenshot(f"{capture_name}-desktop-revealed")
     assert_desktop_revealed(wake_path, desktop_path)
     assert time.monotonic() - started < 8.0
