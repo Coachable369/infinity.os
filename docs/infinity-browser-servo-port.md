@@ -2,6 +2,31 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Binding traversal correction, September 26
+
+The previously blocking bindgen panic is resolved without disabling JavaScript.
+The failing compound was libc++'s recursive variadic `std::__union`, which has
+no bitfields. Bindgen unnecessarily resolved its layout while temporarily
+removing the item from its registry. The checksum-pinned source overlay now asks
+for layout only when real bitfields require allocation units. Real bitfield
+normalization remains upstream code; no ABI size or padding is guessed.
+
+`tools/servo-bindgen-test/run.py` passes through build-kit: generated compile-time
+size/alignment/offset assertions plus one runtime Rust-to-C++ roundtrip for
+normal and packed bitfields. Manifest
+`builds/manifests/20260926T190626642567Z-7129.json`. This is host ABI evidence only.
+
+The native SpiderMonkey allocation-size hook now queries the existing governed
+allocator instead of selecting a host malloc API. Opaque C stream and
+pointer-sized integer declarations are supplied by the native libc overlay.
+The native navigator platform identifies InfinityOS in pages and web workers.
+The complete minimal-feature AArch64 Servo metadata check now passes, manifest
+`builds/manifests/20260926T191902704731Z-18582.json`. The locked ABI regression
+also passes again, manifest `20260926T192336471107Z-22251.json`.
+These fixes do not establish engine linkage, rendering or installed browsing.
+The probe now has an explicit `--codegen` mode to build real native archives;
+even successful archive production is not executable or installed acceptance.
+
 ## Memory advice follow-through, September 26
 
 The `MADV_NORMAL` compile blocker is resolved in the shared native mapping header.

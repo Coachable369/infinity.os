@@ -1,0 +1,13 @@
+[package]
+name = "infinity-servo-bindgen-test"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+bindgen = { path = "../../build/servo-native-deps/bindgen-0.72.1" }
+
+[[bin]]
+name = "binding-test"
+path = "main.rs"

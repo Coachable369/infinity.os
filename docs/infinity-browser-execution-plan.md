@@ -45,7 +45,8 @@ browser as installed before gate 6 passes.
 
 - Native HTTP metadata/readiness improvements tested; bounded selector exists.
 - Runtime std bindings now execute through an opt-in single-owner provider in
-  both native guests; complete Servo build still fails.
+  both native guests; AArch64 Servo metadata compilation passes, but executable
+  linking and engine execution remain outstanding.
 - Browser shell, engine execution and installed browsing remain unaccepted.
 - Executable context-switch prerequisite passes on both architectures: 2,002
   resumptions, independent stack canaries and FP controls, 2,000 wait/wake
@@ -72,9 +73,15 @@ browser as installed before gate 6 passes.
 - `MADV_NORMAL` is now declared; unsupported advice still fails explicitly and
   its boundary tests pass. Packaged font catalog and memory-backed FreeType paths
   type-check. Native file-access scope rejection passes a host behavior test.
-- Latest sixth attempt stops inside bindgen 0.72.1's bitfield-layout traversal:
-  `Not an item: ItemId(57186)`, manifest `20260926T183456290484Z-92976.json`, exit 101.
-  Fix the unresolved-type traversal with ABI validation before linking an engine.
+- The bindgen bitfield-layout panic is corrected: non-bitfield compounds no
+  longer resolve recursive libc++ template layouts while their item is loaned.
+  Actual bitfield allocation is unchanged. Host generated-layout assertions and
+  C++ observation of Rust-written normal/packed bitfields pass, manifest
+  `20260926T190626642567Z-7129.json`. Engine compilation passed binding generation
+  and reached SpiderMonkey's allocation-size reporting hook.
+  Subsequent native allocator, opaque stream/integer ABI and navigator platform
+  corrections pass the full minimal-feature AArch64 metadata check, manifest
+  `20260926T191902704731Z-18582.json`. Real code generation is the next gate.
   Native mapping/protection and production C++ synchronization remain unproved.
   Platform enums, image-reader stdin compilation, native clock selection and
   filesystem URL rejection now pass the Rust compiler stage. Configure uses

@@ -18,6 +18,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", choices=("servo", "fontsan", "aws-lc-sys"), default="servo")
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
+    parser.add_argument("--codegen", action="store_true", help="Build native engine archives, not just metadata; does not link a browser")
     options = parser.parse_args()
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-deps.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-mio.py")), "--engine"], check=True)
@@ -30,6 +31,7 @@ def main():
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-mozjs.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-certificates.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-engine.py"))], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-bindgen.py"))], check=True)
     arch = options.arch
     target = "aarch64-unknown-none-softfloat" if arch == "aarch64" else "x86_64-unknown-none"
     target_key = target.replace("-", "_")
@@ -76,7 +78,7 @@ def main():
     subprocess.run([environment[f"CC_{target_key}"],
                     *shlex.split(cflags), "-std=c11", "-fsyntax-only",
                     str(Path(__file__).with_name("c-abi-probe.c"))], check=True, env=environment)
-    command = ["cargo", "check", "-j", "4", "-Z", "build-std=std,panic_abort",
+    command = ["cargo", "build" if options.codegen else "check", "-j", "4", "-Z", "build-std=std,panic_abort",
                "--target", target, "--manifest-path",
                str(source / "components/servo/Cargo.toml"), "--locked"]
     native_libc = root / "build/servo-native-deps/libc-0.2.189"
@@ -87,6 +89,7 @@ def main():
     command += ["--config", 'patch.crates-io.imsz.path="' + str(root / "build/servo-native-deps/imsz-0.4.1") + '"']
     command += ["--config", 'patch.crates-io.surfman.path="' + str(root / "build/servo-native-deps/surfman-0.14.0") + '"']
     command += ["--config", 'patch.crates-io.mozjs_sys.path="' + str(root / "build/servo-native-deps/mozjs_sys-153.3.0-0") + '"']
+    command += ["--config", 'patch.crates-io.bindgen.path="' + str(root / "build/servo-native-deps/bindgen-0.72.1") + '"']
     command += ["--config", 'patch.crates-io.rustls-platform-verifier.path="' + str(root / "build/servo-native-deps/rustls-platform-verifier-0.7.0") + '"']
     for name, version in (("tokio", "1.53.1"), ("hyper-util", "0.1.20")):
         command += ["--config", 'patch.crates-io.' + name + '.path="' + str(root / "build/servo-native-deps" / (name + "-" + version)) + '"']
@@ -101,7 +104,7 @@ def main():
         command += ["--no-default-features", "--features", "bundled,ipc-channel/force-inprocess"]
     else:
         command += ["-p", options.package]
-    prefix = options.package + "-" + arch + "-check"
+    prefix = options.package + "-" + arch + ("-codegen" if options.codegen else "-check")
     with (output / (prefix + ".log")).open("w") as log:
         result = subprocess.run(command, cwd=root, env=environment, stdout=log,
                                 stderr=subprocess.STDOUT, check=False)

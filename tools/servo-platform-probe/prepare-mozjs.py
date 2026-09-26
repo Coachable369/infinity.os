@@ -155,6 +155,20 @@ def malloc_h(target, detected):
     body = text[start:end].replace('#elif defined(__wasi__)', '''#elif defined(__wasi__) || defined(__INFINITYOS__)
   // Upstream's unavailable-statistic sentinel, not a measured native fault count.''', 1)
     path.write_text(text[:start] + body + text[end:])
+    path = directory / "src/jsglue.cpp"
+    text = path.read_text()
+    text = text.replace('#if defined(__linux__) || defined(__wasi__)\n#  include <malloc.h>', '''#if defined(__INFINITYOS__)
+// ------------------------=
+// FUNC: infinity_std_usable_size
+// DESC: Queries the same governed allocator used by native C and Rust allocations.
+// ------------------=
+extern "C" size_t infinity_std_usable_size(const void*);
+#elif defined(__linux__) || defined(__wasi__)
+#  include <malloc.h>''', 1)
+    text = text.replace('#if defined(__linux__) || defined(__wasi__) || defined(__FreeBSD__)', '''#if defined(__INFINITYOS__)
+  return infinity_std_usable_size(aPtr);
+#elif defined(__linux__) || defined(__wasi__) || defined(__FreeBSD__)''', 1)
+    path.write_text(text)
     lock = servo / "Cargo.lock"
     header = 'name = "mozjs_sys"\nversion = "153.3.0-0"\n'
     entry = header + 'source = "' + package["source"] + '"\nchecksum = "' + package["checksum"] + '"\n'

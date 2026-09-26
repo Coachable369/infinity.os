@@ -22,6 +22,21 @@ def main():
     text = helper.native_body(text, 'pub fn to_file_path(&self)', 'Err(UrlError::ToFilePath)')
     text = helper.native_body(text, 'pub fn from_file_path<P:', 'let _ = path; Err(UrlError::FromFilePath)')
     (servo / relative).write_text(text)
+
+    relative = "components/script/dom/navigator/navigatorinfo.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text += '''
+#[cfg(all(target_os = "none", infinity_native))]
+#[expect(non_snake_case)]
+// ------------------------=
+// FUNC: Platform
+// DESC: Identifies the native platform consistently in windows and web workers.
+// ------------------=
+pub(crate) fn Platform() -> DOMString {
+    DOMString::from_static("InfinityOS")
+}
+'''
+    (servo / relative).write_text(text)
     relative = "components/shared/base/cross_process_instant.rs"
     text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
     text += '''

@@ -45,7 +45,12 @@ def main():
         pub use crate::primitives::*;
         pub type size_t = usize;
         pub type ssize_t = isize;
+        pub type uintptr_t = usize;
+        pub type intptr_t = isize;
         pub type off_t = c_long;
+        // Pointer-only C stream ABI: no libc-specific FILE layout is exposed.
+        // Rust must not construct or inspect native stream handles.
+        pub enum FILE {}
         pub const ENOSPC: c_int = 28;
         extern "C" {
             #[link_name = "infinity_c_malloc"]
