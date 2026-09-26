@@ -25,11 +25,15 @@ def main():
     source = WORK / "llvm-src"
     WORK.mkdir(parents=True, exist_ok=True)
     if not source.exists():
-        run("git", "clone", "--filter=blob:none", "--no-checkout",
-            "https://github.com/llvm/llvm-project.git", source)
+        run("git", "init", source)
+        run("git", "-C", source, "remote", "add", "origin", "https://github.com/llvm/llvm-project.git")
+        run("git", "-C", source, "config", "remote.origin.promisor", "true")
+        run("git", "-C", source, "config", "remote.origin.partialclonefilter", "blob:none")
+        run("git", "-C", source, "fetch", "--depth=1", "--filter=blob:none", "origin", REVISION)
     run("git", "-C", source, "sparse-checkout", "set", "libcxx", "libcxxabi", "runtimes",
         "cmake", "llvm/cmake", "llvm/utils/llvm-lit", "llvm/utils/lit", "libc")
-    head = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    head = subprocess.run(["git", "-C", str(source), "rev-parse", "--verify", "HEAD"],
+                          text=True, capture_output=True).stdout.strip()
     if head != REVISION:
         if subprocess.check_output(["git", "-C", str(source), "diff", "--name-only"]):
             raise RuntimeError("Refusing to replace modified runtime sources")

@@ -47,16 +47,14 @@ Its retry is **unverified**: the shared `build/` tree was removed while Cargo
 was compiling, causing a missing temporary-directory error. Do not report the
 mapping change as a successful fix or enable the provider from this evidence.
 
-Rebuild sequence (requires exclusive use of the build tree; no concurrent clean):
+Rebuild and native-probe verification through the repository build lock:
 
 ```sh
-python3 tools/voice-pocketsphinx/build.py
-python3 tools/voice-kokoro/reference.py
-python3 tools/voice-kokoro/prepare-native.py
-python3 tools/voice-kokoro/native-build.py
-python3 tools/voice-kokoro/link-native.py
-python3 tools/voice-kokoro/probe/run.py
+./build-kit run python3 tools/voice-kokoro/build.py
 ```
+
+The lock spans dependency preparation through guest verification. Stage logs
+are written under `build/logs/kokoro-*.log`. Do not bypass a live build lock.
 
 `port.c` exposes only immutable packaged resources, a bounded private heap, and
 a single-worker synchronization contract. `mapping.cpp` borrows resource bytes;

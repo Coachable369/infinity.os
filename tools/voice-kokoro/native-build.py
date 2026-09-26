@@ -12,6 +12,24 @@ LLVM = Path("/opt/homebrew/opt/llvm/bin")
 
 
 # ------------------------=
+# FUNC: compile_signature
+# DESC: Invalidates native objects when their command, source or included headers change.
+# ------------------=
+def compile_signature(arguments, source, dependencies):
+    digest = hashlib.sha256(json.dumps(arguments).encode())
+    paths = {source}
+    if dependencies.exists():
+        content = dependencies.read_text().replace("\\\n", "")
+        paths.update(Path(name) for name in shlex.split(content.split(":", 1)[1]))
+    for path in sorted(paths):
+        digest.update(str(path).encode())
+        if not path.is_file():
+            return None
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+# ------------------------=
 # FUNC: main
 # DESC: Reuses upstream source selection but replaces all platform flags with the native ARM64 ABI.
 # ------------------=
@@ -79,21 +97,22 @@ def main():
             source.write_text(original.replace(start, "    mem = arena.data(mem_size);\n    if (mem == nullptr) {").replace(end, end))
         name = hashlib.sha256(str(source).encode()).hexdigest()[:12] + "-" + source.name + ".o"
         obj = output / name
+        dependencies = obj.with_suffix(".d")
         compiler = LLVM / ("clang++" if source.suffix == ".cpp" else "clang")
         # GGUF catches allocation/length failures. The private native fatal
         # boundary quarantines these instead of unwinding across the Rust ABI.
         exception_flags = ["-fexceptions", "-fignore-exceptions", "-include", "cerrno"] if source.name == "gguf.cpp" else []
         arguments = [str(compiler), *base, *(cxx if source.suffix == ".cpp" else ["-std=gnu11"]),
-                     *flags, *exception_flags, "-c", str(source), "-o", str(obj)]
-        signature = hashlib.sha256((json.dumps(arguments) + hashlib.sha256(source.read_bytes()).hexdigest()).encode()).hexdigest()
+                     *flags, *exception_flags, "-MD", "-MF", str(dependencies), "-c", str(source), "-o", str(obj)]
+        signature = compile_signature(arguments, source, dependencies)
         stamp = obj.with_suffix(".stamp")
-        if not (obj.exists() and stamp.exists() and stamp.read_text() == signature):
+        if not (obj.exists() and dependencies.exists() and stamp.exists() and signature and stamp.read_text() == signature):
             print(source, flush=True)
             result = subprocess.run(arguments)
             if result.returncode:
                 failures.append(str(source))
                 continue
-            stamp.write_text(signature)
+            stamp.write_text(compile_signature(arguments, source, dependencies))
         objects.append(str(obj))
     if failures:
         raise RuntimeError("Native compile failures: " + ", ".join(failures))
