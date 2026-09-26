@@ -1,8 +1,12 @@
 #if defined(__aarch64__)
 #include <arm_neon.h>
 #else
+#if defined(NATIVE_FAST_F16C)
+#include <immintrin.h>
+#else
 #include <xmmintrin.h>
 extern "C" float ggml_table_f32_f16[65536];
+#endif
 #endif
 #include <stddef.h>
 #include <stdint.h>
@@ -19,13 +23,17 @@ template<bool Half> static inline float32x4_t load(const unsigned char *p) {
 #else
 // ------------------------=
 // FUNC: load
-// DESC: Uses initialized IEEE half conversion tables and baseline SSE without requiring AVX or F16C.
+// DESC: Converts half lanes through baseline tables or the separately guarded F16C variant.
 // ------------------=
 template<bool Half> static inline __m128 load(const unsigned char *p) {
     if constexpr (Half) {
+#if defined(NATIVE_FAST_F16C)
+        return _mm_cvtph_ps(_mm_loadl_epi64((const __m128i *)p));
+#else
         const uint16_t *h = (const uint16_t *)p;
         return _mm_set_ps(ggml_table_f32_f16[h[3]], ggml_table_f32_f16[h[2]],
                           ggml_table_f32_f16[h[1]], ggml_table_f32_f16[h[0]]);
+#endif
     } else return _mm_load_ps((const float *)p);
 }
 #endif
@@ -52,14 +60,20 @@ template<bool Half> static void dot4(int n, float *out, const unsigned char *x, 
         out[row] = vaddvq_f32(vaddq_f32(vaddq_f32(sums[row][0], sums[row][2]), vaddq_f32(sums[row][1], sums[row][3])));
 #else
     __m128 sums[4][8];
-    for (int row = 0; row < 4; ++row) for (int lane = 0; lane < 8; ++lane) sums[row][lane] = _mm_setzero_ps();
-    for (int i = 0; i < n; i += 32) {
-        for (int lane = 0; lane < 8; ++lane) {
+    // Four live accumulators fit SSE2's register file. Keeping all 32 live
+    // caused a load/store spill for every multiply-add in the previous loop.
+    #pragma clang loop unroll(disable)
+    for (int lane = 0; lane < 8; ++lane) {
+        __m128 acc[4] = {_mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps(), _mm_setzero_ps()};
+        #pragma clang loop unroll(disable)
+        for (int i = 0; i < n; i += 32) {
             const auto activation = load<Half>(y + (i + lane * 4) * width);
+            #pragma clang loop unroll(full)
             for (int row = 0; row < 4; ++row)
-                sums[row][lane] = _mm_add_ps(sums[row][lane],
+                acc[row] = _mm_add_ps(acc[row],
                     _mm_mul_ps(load<Half>(x + row * stride + (i + lane * 4) * width), activation));
         }
+        for (int row = 0; row < 4; ++row) sums[row][lane] = acc[row];
     }
     for (int row = 0; row < 4; ++row) {
         for (int offset = 4; offset; offset >>= 1)
@@ -72,17 +86,44 @@ template<bool Half> static void dot4(int n, float *out, const unsigned char *x, 
 #endif
 }
 
+#if defined(__x86_64__) && !defined(NATIVE_FAST_F16C)
+extern "C" int native_dot4_f16c(int, int, float *, const void *, size_t, const void *);
+// ------------------------=
+// FUNC: native_f16c_available
+// DESC: Requires both hardware capability and OS-enabled XMM/YMM state before dispatching optional instructions.
+// ------------------=
+extern "C" __attribute__((noinline)) int native_f16c_available(void) {
+    unsigned a, b, c, d;
+    __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
+    if ((c & 0x3c180201u) != 0x3c180201u) return 0;
+    __asm__ volatile("xgetbv" : "=a"(a), "=d"(d) : "c"(0));
+    return (a & 7) == 7;
+}
+#endif
+
 // ------------------------=
 // FUNC: native_dot4
 // DESC: Accepts only complete four-row FP32/FP16 tiles with verified alignment; all other tensors retain upstream execution.
 // ------------------=
-extern "C" int native_dot4(int type, int n, float *out, const void *x, size_t stride, const void *y) {
+extern "C" int
+#if defined(NATIVE_FAST_F16C)
+native_dot4_f16c
+#else
+native_dot4
+#endif
+(int type, int n, float *out, const void *x, size_t stride, const void *y) {
     if (n <= 0 || n % 16 || (type != 0 && type != 1)) return 0;
 #if defined(__x86_64__)
     if (n % 32) return 0;
 #endif
     const uintptr_t mask = type == 1 ? 7 : 15;
     if (((uintptr_t)x | (uintptr_t)y | stride) & mask) return 0;
+#if defined(__x86_64__) && !defined(NATIVE_FAST_F16C)
+    // One speech worker owns this engine for its lifetime.
+    static int accelerated = -1;
+    if (accelerated < 0) accelerated = native_f16c_available();
+    if (accelerated) return native_dot4_f16c(type, n, out, x, stride, y);
+#endif
     if (type == 1) dot4<true>(n, out, (const unsigned char *)x, stride, (const unsigned char *)y);
     else dot4<false>(n, out, (const unsigned char *)x, stride, (const unsigned char *)y);
     return 1;

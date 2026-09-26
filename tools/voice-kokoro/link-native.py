@@ -74,6 +74,13 @@ def main():
                  "-I" + str(WORK / ("cxx-" + ARCH) / "include/c++/v1")] if cxx else []
         run(LLVM / ("clang++" if cxx else "clang"), *flags, *extra, "-c", path, "-o", obj)
         objects.append(obj)
+        if ARCH == "x86_64" and path.name == "dot4.cpp":
+            fast = output / "dot4-f16c.o"
+            # Compile the same arithmetic source with optional ISA flags. The
+            # baseline entry checks CPUID and XCR0 before entering this object.
+            run(LLVM / "clang++", *flags, *extra, "-mavx", "-mf16c",
+                "-DNATIVE_FAST_F16C", "-c", path, "-o", fast)
+            objects.append(fast)
     string_source = ROOT / "build/newlib-4.6.0.20260123/newlib/libc/string"
     for name in ("strlen", "strnlen", "strcmp", "strncmp", "strcpy", "strncpy", "stpcpy", "stpncpy",
                  "strchr", "strrchr", "strchrnul", "memcmp", "memchr", "memrchr", "strcat", "strncat"):

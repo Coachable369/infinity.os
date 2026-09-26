@@ -112,10 +112,12 @@ private heap is capped at 1 GiB and measured committed allocation reaches about
 audio. September 26 measurements isolated matrix multiplication as the dominant
 cost: checked alignment specialization reduced a same-session 12.3-second warm
 run to 4.3 seconds, and four-row activation reuse reduced it further to about
-3.3 seconds, preserving the full PCM hash. This still exceeds the production
-two-second deadline. These are `Hi.` probe measurements, not full-response or
-installed-desktop latency claims. x86-64 is not implemented
-by these scripts. QEMU HVF requires an ARM64 Mac for this test harness, not for
+3.3 seconds, preserving the full PCM hash. These are `Hi.` probe measurements,
+not full-response or installed-desktop latency claims. x86-64 uses the same
+native build with architecture-selected workers and SIMD. Baseline SSE2 and
+feature-detected F16C tiles each pass 205 numerical/guard cases; complete x86
+PCM remains unverified because software emulation reaches the unchanged
+90-second production deadline. QEMU HVF requires an ARM64 Mac for the ARM test harness, not for
 the native synthesis implementation.
 
 The matrix changes preserve upstream FP32 accumulation and reduction order.
@@ -139,7 +141,7 @@ Remaining acceptance gates:
    completeness. Approval alone is not packaging verification.
 2. Verify production worker execution and actual audio on an installed node,
    including cancellation, UI responsiveness and voice off/on recovery.
-3. Add the x86-64 native backend.
+3. Complete x86-64 PCM and hardware playback acceptance for the linked native backend.
 4. Verify audio on a cold-installed node with ISO detached before declaring
    installed acceptance complete.
 

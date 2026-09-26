@@ -30,6 +30,7 @@ unsafe extern "C" {
         capacity: usize, frames: *mut usize, cancel: usize, context: usize) -> i32;
     fn infinity_kokoro_native_diagnostics(out: *mut usize);
     fn infinity_kokoro_native_profile_read(out: *mut u64);
+    fn infinity_kokoro_native_f16c_available() -> i32;
     fn infinity_kokoro_native_dot4(kind: i32, n: i32, out: *mut f32,
         x: *const u8, stride: usize, y: *const u8) -> i32;
 }
@@ -143,6 +144,9 @@ unsafe fn speech_job() {
         infinity_kokoro_ggml_cpu_init();
         verify_dots();
         for byte in 205u64.to_le_bytes() {
+            core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") byte);
+        }
+        for byte in (infinity_kokoro_native_f16c_available() as u64).to_le_bytes() {
             core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") byte);
         }
         finish(16);

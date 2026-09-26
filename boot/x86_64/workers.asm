@@ -46,6 +46,23 @@ times 0x200-($-infinity_ap_page) db 0
     sub rsp, 32
     fninit
     ldmxcsr [rbx+0x870]
+    ; Enable optional AVX state only on processors advertising XSAVE and AVX.
+    ; Workers remain non-preemptible; no interrupted task shares this FP state.
+    push rbx
+    mov eax, 1
+    cpuid
+    and ecx, 0x14000000
+    cmp ecx, 0x14000000
+    jne .no_avx
+    mov rax, cr4
+    or eax, 0x40000
+    mov cr4, rax
+    xor ecx, ecx
+    mov eax, 7
+    xor edx, edx
+    xsetbv
+.no_avx:
+    pop rbx
     mov rcx, [rbx+0x818]
     mov rax, [rbx+0x810]
     mov qword [rbx+0x820], 1

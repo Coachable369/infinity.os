@@ -22,7 +22,9 @@ store locations remain mountable without migration.
 - Native guest: three independent AP callbacks after firmware exit, floating
   point, separate stacks and repeat-start rejection passed.
 - Native guest: 205 float16/float32 dot-product and rejection cases across
-  unaligned rows, SIMD boundaries and bit-identical four-row tiles passed.
+  unaligned rows, SIMD boundaries and bit-identical four-row tiles passed on
+  both baseline SSE2 (`qemu64`) and optional F16C (`max`) CPUs. The binary
+  result also verifies which capability path is available.
 - Shared tests: five output and five conversation-toggle/interruption tests passed.
 - Both linked kernels contain all 366 Kokoro resources and three constructors.
 - Focused tests cover the larger kernel layout, object persistence/remount at the
@@ -35,6 +37,14 @@ store locations remain mountable without migration.
   completed matrix operations before cancellation. A normal wall-clock retry
   still returned cancellation and zero frames; the optimization is not proof
   of complete synthesis or usable native latency.
+- The x86 tile now keeps four accumulators live instead of spilling 32 to the
+  stack. CPUs with F16C use hardware half conversion from the same arithmetic
+  source, guarded by CPUID and XCR0. Dedicated, non-preemptible AP workers
+  enable XMM/YMM state when supported; older CPUs retain SSE2/table conversion.
+  The latest real-time emulated F16C run still cancelled (95.18 seconds including
+  completion of its current graph operation, zero PCM frames, no failed
+  allocation). No native-hardware speedup is claimed. The production deadline
+  remains 90 seconds and is checked at graph-operation boundaries.
 - Complete x86 PCM synthesis, audible HDA playback/capture, and detached-media
   installed acceptance remain unverified. Deterministic instruction-time probes
   are correctness checks, not hardware latency claims.
@@ -51,7 +61,8 @@ All commands run through the build kit:
 
 ```sh
 ./build-kit run python3 tools/voice-kokoro/probe/x86-workers.py
-./build-kit run python3 tools/voice-kokoro/probe/run-x86.py --dots-only
+./build-kit run python3 tools/voice-kokoro/probe/run-x86.py --dots-only --cpu qemu64
+./build-kit run python3 tools/voice-kokoro/probe/run-x86.py --dots-only --cpu max
 ./build-kit run python3 tools/voice-kokoro/probe/run-x86.py
 ./build-kit run python3 tools/voice-kokoro/probe/run-x86.py --clock realtime
 ./build-kit run make voice-output-test
