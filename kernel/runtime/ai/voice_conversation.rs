@@ -157,6 +157,21 @@ pub fn start(owner: SecurityIdentity) -> bool {
     }
 }
 // ------------------------=
+// FUNC: toggle
+// DESC: Treats a click during asynchronous stopping as a restart request, or cancels that request on the next click.
+// ------------------=
+pub fn toggle(owner: SecurityIdentity) -> bool {
+    unsafe {
+        if matches!(STATE, State::Off | State::Failed)
+            || (STATE == State::Stopping && !RESTART_LISTENING)
+        {
+            start(owner)
+        } else {
+            stop(owner)
+        }
+    }
+}
+// ------------------------=
 // FUNC: stop
 // DESC: Immediately closes the microphone and requests bounded worker, inference, and playback cancellation.
 // ------------------=
@@ -414,7 +429,9 @@ pub fn poll() -> bool {
                     STATE = State::Off;
                     if RESTART_LISTENING {
                         RESTART_LISTENING = false;
-                        start(OWNER);
+                        if !start(OWNER) {
+                            STATE = State::Failed;
+                        }
                     }
                 }
             }

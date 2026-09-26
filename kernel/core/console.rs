@@ -7381,12 +7381,12 @@ impl ConsoleRuntime {
             if clicked && chat_state.0 && !over_window && self.resize_pointer_shape().is_none() {
                 #[cfg(all(target_os="none",target_arch="aarch64"))]
                 {
-                    use crate::runtime::ai::voice_conversation::{self,State,indicator};
+                    use crate::runtime::ai::voice_conversation::{self,indicator};
                     let rect=indicator::control(layout.ai_chat_geometry(chat_state.1).panel,layout.scale());
                     let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
                     if rect.contains(point){
                         let owner=crate::runtime::execution::SecurityIdentity(self.current_session.0);
-                        if self.voice_microphone_allowed() && matches!(voice_conversation::state().0,State::Off|State::Failed){voice_conversation::start(owner);}else{voice_conversation::stop(owner);}
+                        if self.voice_microphone_allowed(){voice_conversation::toggle(owner);}else{voice_conversation::stop(owner);}
                         self.redraw();return;
                     }
                 }
