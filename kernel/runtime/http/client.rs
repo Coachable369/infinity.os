@@ -115,6 +115,26 @@ fn exchange(
 // DESC: Runs one cancellable bounded DNS/TCP/HTTPS transaction; the caller polls the future outside rendering and supplies genuine entropy and trusted time.
 // ------------------=
 pub async fn get<L: Link, R: rand_core::CryptoRngCore>(
+    link: L,
+    config: Configuration,
+    destination: Destination,
+    rng: R,
+    roots: &[rustls_pki_types::TrustAnchor<'_>],
+    unix_seconds: u64,
+    host: &str,
+    port: u16,
+    path: &str,
+    buffers: https::Buffers<'_>,
+) -> Result<https::Response, Error> {
+    get_with_headers(link, config, destination, rng, roots, unix_seconds, host,
+                     port, path, buffers, None).await
+}
+
+// ------------------------=
+// FUNC: get_with_headers
+// DESC: Runs the same capability-governed native transaction with optional bounded final-header retention.
+// ------------------=
+pub async fn get_with_headers<L: Link, R: rand_core::CryptoRngCore>(
     mut link: L,
     config: Configuration,
     destination: Destination,
@@ -125,6 +145,7 @@ pub async fn get<L: Link, R: rand_core::CryptoRngCore>(
     port: u16,
     path: &str,
     buffers: https::Buffers<'_>,
+    headers: Option<&mut [u8]>,
 ) -> Result<https::Response, Error> {
     let mut queue = EthernetQueue::new();
     let mut storage = [SocketStorage::EMPTY, SocketStorage::EMPTY];
@@ -225,14 +246,15 @@ pub async fn get<L: Link, R: rand_core::CryptoRngCore>(
     let mut session = Session::new(transport);
     let stream = session.stream();
     let handle = stream.session();
-    let mut request = core::pin::pin!(https::get(
+    let mut request = core::pin::pin!(https::get_with_headers(
         stream,
         rng,
         roots,
         unix_seconds,
         host,
         path,
-        buffers
+        buffers,
+        headers
     ));
     let result = poll_fn(|cx| {
         let now = match exchange(&mut link, &mut queue, address, port, config.deadline) {

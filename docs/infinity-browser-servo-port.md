@@ -2,6 +2,41 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Latest continuation: native response metadata and shared compiler gates
+
+The native HTTP service now exposes `client::get_with_headers` and
+`https::get_with_headers`. These use the existing capability/deadline-governed
+transaction, retain the final authenticated response head in caller-owned bounded
+storage, reject insufficient header capacity, and leave legacy body-only GET
+behavior intact. `response::Headers` validates framing and exposes repeated
+fields separately without allocation. This supplies metadata needed by a future
+browser adapter; it does not itself implement redirect policy, cookies, or Servo
+request interception.
+
+Behavioral checks exercise TLS 1.3 against an independent test server, interim
+103 followed by final 200, decoded chunked bytes, repeated Set-Cookie fields,
+header capacity failure, malformed framing, and capability/deadline cancellation.
+Host test sockets belong only to the fixture, not the native service.
+
+The shared dependency probe now accepts `--arch aarch64|x86_64`, selects native
+target headers/compiler flags, and keeps per-target evidence separate.
+
+Evidence (all under `builds/manifests/`):
+
+- HTTP behavioral suite: `20260926T080926800727Z-41682.json`, 22 tests passed.
+- Native HTTP AArch64 compile: `20260926T080646693289Z-39858.json`.
+- Native HTTP x86_64 compile: `20260926T080725779455Z-40116.json`.
+- x86_64 fontsan compile: `20260926T080758563455Z-40291.json`.
+- x86_64 aws-lc-sys compile: `20260926T080829577060Z-40732.json`.
+- Full AArch64 Servo check: `20260926T080857567635Z-41610.json`, exit 101;
+  mio 1.2.3 lacks the native socket/event backend (47 compiler errors).
+
+Remaining blockers are real native socket/event integration, executable std
+thread/wait/allocator bindings, complete engine compilation/linking, shell and
+surface integration, and installed-system acceptance. No browser ISO or installed
+runtime proof is produced by this continuation. Shared HTTP source changes will
+enter both kernel builds, but freshly installed behavior remains unverified.
+
 ## Pinned source inspection
 
 Servo upstream commit `d05154e2b4def11a9fefe412898a0a6c8925a9cd`, workspace

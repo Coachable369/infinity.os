@@ -128,6 +128,16 @@ impl Wake for Noop {
 // DESC: Interoperates with an independent TLS server and verifies decrypted, decoded response bytes.
 // ------------------=
 fn authenticated_tls13_get_returns_complete_chunked_body() {
+    authenticated_exchange(Some(8192));
+    authenticated_exchange(Some(1));
+    authenticated_exchange(None);
+}
+
+// ------------------------=
+// FUNC: authenticated_exchange
+// DESC: Checks header retention, insufficient capacity, and legacy body-only behavior against real TLS records.
+// ------------------=
+fn authenticated_exchange(header_capacity: Option<usize>) {
     let (root, leaf, key) = certificates();
     let provider = rustls::crypto::ring::default_provider();
     let mut config = rustls::ServerConfig::builder_with_provider(Arc::new(provider))
@@ -154,7 +164,7 @@ fn authenticated_tls13_get_returns_complete_chunked_body() {
         let mut request = [0; 512];
         let count = stream.read(&mut request).unwrap();
         assert!(count > 0);
-        stream.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n").unwrap();
+        stream.write_all(b"HTTP/1.1 103 Early Hints\r\nLink: </ignored>\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n").unwrap();
         stream.flush().unwrap();
     });
     let stream = TcpStream::connect(address).unwrap();
@@ -167,8 +177,9 @@ fn authenticated_tls13_get_returns_complete_chunked_body() {
     let roots = [webpki::anchor_from_trusted_cert(root.der()).unwrap()];
     let (mut read, mut write, mut request, mut response) =
         ([0; 16640], [0; 4096], [0; 512], [0; 4096]);
+    let mut headers = [0; 8192];
     let result = {
-        let mut future = std::pin::pin!(https::get(
+        let mut future = std::pin::pin!(https::get_with_headers(
             TestStream(stream),
             rand_chacha::ChaCha20Rng::from_seed([7; 32]),
             &roots,
@@ -180,19 +191,34 @@ fn authenticated_tls13_get_returns_complete_chunked_body() {
                 write_record: &mut write,
                 request: &mut request,
                 response: &mut response
-            }
+            },
+            header_capacity.map(|capacity| &mut headers[..capacity])
         ));
         let waker = Waker::from(Arc::new(Noop));
         let mut context = Context::from_waker(&waker);
         let Poll::Ready(result) = std::future::Future::poll(future.as_mut(), &mut context) else {
             panic!("fixture unexpectedly pending");
         };
-        result.unwrap()
+        result
     };
+    worker.join().unwrap();
+    if header_capacity == Some(1) {
+        assert!(matches!(result, Err(https::Error::Capacity)));
+        assert!(headers.iter().all(|byte| *byte == 0));
+        return;
+    }
+    let result = result.unwrap();
     assert_eq!(result.status, 200);
     assert_eq!(result.body_bytes, 11);
     assert_eq!(&response[..result.body_bytes], b"hello world");
-    worker.join().unwrap();
+    if header_capacity.is_some() {
+        let head = infinity_http::response::Headers::parse(&headers[..result.header_bytes]).unwrap();
+        assert_eq!(head.values("content-type").collect::<Vec<_>>(), vec![b"text/plain".as_slice()]);
+        assert_eq!(head.values("SET-cookie").collect::<Vec<_>>(), vec![b"a=1".as_slice(), b"b=2".as_slice()]);
+        assert_eq!(head.values("link").count(), 0);
+    } else {
+        assert_eq!(result.header_bytes, 0);
+    }
 }
 
 #[test]

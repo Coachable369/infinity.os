@@ -72,7 +72,8 @@ fn cancellation_case(timeout: bool, initial_denial: bool, destination: Destinati
     let mut write = [0; 2048];
     let mut request = [0; 1024];
     let mut response = [0; 4096];
-    let mut future = core::pin::pin!(get(
+    let mut headers = [0; 8192];
+    let mut future = core::pin::pin!(get_with_headers(
         TestLink(state.clone()),
         config,
         destination,
@@ -87,7 +88,8 @@ fn cancellation_case(timeout: bool, initial_denial: bool, destination: Destinati
             write_record: &mut write,
             request: &mut request,
             response: &mut response
-        }
+        },
+        Some(&mut headers)
     ));
     let mut context = Context::from_waker(Waker::noop());
     if !initial_denial {

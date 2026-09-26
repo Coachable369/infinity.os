@@ -21,6 +21,38 @@ pub struct Head {
     pub body: Body,
 }
 
+/// A borrowed, allocation-free view of the preserved wire head. Repeated fields
+/// remain separate (notably Set-Cookie); callers apply field-specific policy.
+pub struct Headers<'a> {
+    fields: [httparse::Header<'a>; 32],
+    length: usize,
+}
+
+impl<'a> Headers<'a> {
+    // ------------------------=
+    // FUNC: parse
+    // DESC: Validates framing before exposing a complete response's header fields.
+    // ------------------=
+    pub fn parse(bytes: &'a [u8]) -> Result<Self, Error> {
+        let head = parse(bytes, false)?.ok_or(Error::Invalid)?;
+        let mut fields = [httparse::EMPTY_HEADER; 32];
+        let mut response = httparse::Response::new(&mut fields);
+        response.parse(&bytes[..head.bytes]).map_err(|_| Error::Invalid)?;
+        let length = response.headers.len();
+        Ok(Self { fields, length })
+    }
+
+    // ------------------------=
+    // FUNC: values
+    // DESC: Enumerates case-insensitive field values without merging repeated fields or copying bytes.
+    // ------------------=
+    pub fn values<'b>(&'b self, name: &'b str) -> impl Iterator<Item = &'a [u8]> + 'b {
+        self.fields[..self.length].iter()
+            .filter(move |field| field.name.eq_ignore_ascii_case(name))
+            .map(|field| field.value)
+    }
+}
+
 // ------------------------=
 // FUNC: parse
 // DESC: Parses complete or fragmented response headers and rejects conflicting framing before body consumption.

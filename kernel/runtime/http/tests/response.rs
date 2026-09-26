@@ -2,6 +2,20 @@ use infinity_http::response::{parse, Body, Error, HEADER_LIMIT};
 
 #[test]
 // ------------------------=
+// FUNC: header_view_rejects_partial_and_ambiguous_responses
+// DESC: Prevents consumers from treating malformed response metadata as trusted fields.
+// ------------------=
+fn header_view_rejects_partial_and_ambiguous_responses() {
+    use infinity_http::response::Headers;
+    assert!(matches!(Headers::parse(b"HTTP/1.1 200 OK\r\nX-Test: 1"), Err(Error::Invalid)));
+    assert!(matches!(Headers::parse(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\n"), Err(Error::AmbiguousFraming)));
+    let head = Headers::parse(b"HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 0\r\n\r\n").unwrap();
+    assert_eq!(head.values("LOCATION").collect::<Vec<_>>(), vec![b"/next".as_slice()]);
+    assert_eq!(head.values("content-type").count(), 0);
+}
+
+#[test]
+// ------------------------=
 // FUNC: fragmented_headers_and_body_boundary
 // DESC: Verifies every split point remains incomplete until all headers arrive and leaves body bytes untouched.
 // ------------------=

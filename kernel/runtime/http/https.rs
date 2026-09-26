@@ -21,6 +21,8 @@ pub enum Error {
 pub struct Response {
     pub status: u16,
     pub body_bytes: usize,
+    /// Bytes copied into the optional caller-owned header buffer.
+    pub header_bytes: usize,
 }
 pub struct Buffers<'a> {
     pub read_record: &'a mut [u8],
@@ -44,6 +46,23 @@ pub async fn get<S: Read + Write, R: rand_core::CryptoRngCore>(
     host: &str,
     path: &str,
     buffers: Buffers<'_>,
+) -> Result<Response, Error> {
+    get_with_headers(stream, rng, roots, unix_seconds, host, path, buffers, None).await
+}
+
+// ------------------------=
+// FUNC: get_with_headers
+// DESC: Preserves the final authenticated response head in bounded caller storage before decoding its body.
+// ------------------=
+pub async fn get_with_headers<S: Read + Write, R: rand_core::CryptoRngCore>(
+    stream: S,
+    rng: R,
+    roots: &[TrustAnchor<'_>],
+    unix_seconds: u64,
+    host: &str,
+    path: &str,
+    buffers: Buffers<'_>,
+    mut headers: Option<&mut [u8]>,
 ) -> Result<Response, Error> {
     if buffers.read_record.len() < 16640
         || buffers.write_record.len() < 2048
@@ -78,6 +97,7 @@ pub async fn get<S: Read + Write, R: rand_core::CryptoRngCore>(
     let mut used = 0;
     let mut head = None;
     let mut interim = 0;
+    let mut header_bytes = 0;
     loop {
         if used == buffers.response.len() {
             return Err(Error::Capacity);
@@ -103,6 +123,13 @@ pub async fn get<S: Read + Write, R: rand_core::CryptoRngCore>(
                     buffers.response.copy_within(parsed.bytes..used, 0);
                     used -= parsed.bytes;
                 } else {
+                    if let Some(target) = headers.as_deref_mut() {
+                        if target.len() < parsed.bytes {
+                            return Err(Error::Capacity);
+                        }
+                        target[..parsed.bytes].copy_from_slice(&buffers.response[..parsed.bytes]);
+                        header_bytes = parsed.bytes;
+                    }
                     head = Some(parsed);
                     break;
                 }
@@ -122,6 +149,7 @@ pub async fn get<S: Read + Write, R: rand_core::CryptoRngCore>(
                 return Ok(Response {
                     status: head.status,
                     body_bytes: length,
+                    header_bytes,
                 });
             }
         }
