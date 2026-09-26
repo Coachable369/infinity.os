@@ -2,6 +2,41 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Binding follow-through, September 26
+
+Native C malloc/free/realloc and Rust System allocation share the granted heap.
+Checked metadata preserves original layouts and provides real payload-size
+reporting. Null/zero-size behavior, alignment through 4096 bytes, byte preservation
+across grow/shrink, failed resize preserving the old allocation, and complete
+reclamation are asserted inside both architecture guests:
+
+- ARM64: `builds/manifests/20260926T171041355901Z-7978.json`, exit 0.
+- x86_64: `builds/manifests/20260926T171149836879Z-11131.json`, exit 0.
+
+FreeType now uses authenticated target zlib headers; its memory-font rasterizer
+passes the compiler stage. WebDriver server startup is deliberately unsupported
+on native targets. Surfman's native GPU types are uninhabited and connection
+creation returns an error: this prevents pretending a working GPU context exists.
+The browser must use a real software rendering context, which is not implemented
+yet. Downloaded SWGL source is exploratory only, not an integrated renderer.
+
+SQLite now selects its custom-platform interface instead of Unix files and
+pthread mutexes. Native VFS/mutex linkage and execution remain unimplemented.
+SpiderMonkey is staged with an explicit Infinity OS/kernel identity and canonical
+C target spelling; this is configuration work, not proof that JavaScript runs.
+The full browser remains unlinked and uninstalled. Prior binding failures in
+the historical sections below have been superseded by this checkpoint.
+
+Sixth resumed compiler attempt:
+`builds/manifests/20260926T172018929566Z-22141.json`, exit 101.
+Remaining immediate failures are SpiderMonkey's configure `Kernel` enum rejecting
+`Infinity`, and `imsz` 0.4.1 moving `Stdin` from a shared reference because its
+platform-specific stdin implementation is absent. Also audit inherited build
+environment before claiming hermetic cross compilation: SpiderMonkey printed a
+host OpenSSL include path and an unavailable target-prefixed AR/CPP command.
+The six-correction limit stops this iteration here. No beta browser or new ISO
+is claimed; the requested installed-browser outcome has not been achieved.
+
 ## Latest checkpoint: native TCP and async runtime, September 26
 
 Added a fixed-capacity smoltcp reactor with generation handles, endpoint grants,

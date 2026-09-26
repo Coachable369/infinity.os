@@ -107,6 +107,7 @@ pub unsafe fn initialize() {
 // ------------------=
 pub fn run() {
     abi_limits();
+    allocation_roundtrip();
     #[cfg(feature = "async-probe")]
     entropy_roundtrip();
     #[cfg(feature = "socket-probe")]
@@ -139,6 +140,41 @@ pub fn run() {
     assert!(outcome.timed_out());
     assert_eq!(thread::available_parallelism().unwrap().get(), 1);
 }
+
+// ------------------------=
+// FUNC: allocation_roundtrip
+// DESC: Checks C/Rust heap sharing, alignment, resizing, exhaustion and full reclamation.
+// ------------------=
+fn allocation_roundtrip() { unsafe {
+    use infinity_servo_runtime_primitives::native::*;
+    let baseline = Runtime::allocated();
+    for align in [1, 8, 16, 64, 4096] {
+        let pointer = infinity_std_allocate(97, align);
+        assert!(!pointer.is_null());
+        assert_eq!(pointer as usize % align, 0);
+        assert_eq!(infinity_std_usable_size(pointer), 97);
+        pointer.write_bytes(0x5a, 97);
+        infinity_std_deallocate(pointer, 97, align);
+    }
+    let original = infinity_c_malloc(33);
+    assert!(!original.is_null());
+    assert_eq!(original as usize % 16, 0);
+    original.write_bytes(0x71, 33);
+    assert!(infinity_c_realloc(original, usize::MAX).is_null());
+    assert_eq!(infinity_std_usable_size(original), 33);
+    let grown = infinity_c_realloc(original, 200);
+    assert!(!grown.is_null());
+    assert!(core::slice::from_raw_parts(grown, 33).iter().all(|b| *b == 0x71));
+    let shrunk = infinity_c_realloc(grown, 7);
+    assert!(!shrunk.is_null());
+    assert!(core::slice::from_raw_parts(shrunk, 7).iter().all(|b| *b == 0x71));
+    assert!(infinity_c_realloc(shrunk, 0).is_null());
+    infinity_c_free(core::ptr::null_mut());
+    let zero = infinity_c_malloc(0);
+    assert!(!zero.is_null());
+    infinity_c_free(zero);
+    assert_eq!(Runtime::allocated(), baseline);
+} }
 
 // ------------------------=
 // FUNC: abi_entry

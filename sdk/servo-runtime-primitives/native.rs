@@ -92,9 +92,16 @@ extern "C" fn entry(index: usize) { unsafe {
 #[no_mangle]
 pub unsafe extern "C" fn infinity_std_allocate(size: usize, align: usize) -> *mut u8 {
     let p = active(); if p.is_null() { return ptr::null_mut(); }
-    let Ok(layout) = Layout::from_size_align(size, align) else { return ptr::null_mut(); };
-    (*p).arena.allocate(layout).map_or(ptr::null_mut(), |v| v.as_ptr())
+    let Ok(payload) = Layout::from_size_align(size, align) else { return ptr::null_mut(); };
+    let Ok((layout, offset)) = Layout::new::<AllocationHeader>().extend(payload) else { return ptr::null_mut(); };
+    let Some(base) = (*p).arena.allocate(layout) else { return ptr::null_mut(); };
+    let result = base.as_ptr().add(offset);
+    result.sub(core::mem::size_of::<AllocationHeader>()).cast::<AllocationHeader>().write_unaligned(
+        AllocationHeader { base: base.as_ptr(), layout, payload });
+    result
 }
+#[derive(Clone, Copy)]
+struct AllocationHeader { base: *mut u8, layout: Layout, payload: Layout }
 // ------------------------=
 // FUNC: infinity_std_deallocate
 // DESC: Returns a live allocation with its original layout on the owning CPU.
@@ -102,7 +109,55 @@ pub unsafe extern "C" fn infinity_std_allocate(size: usize, align: usize) -> *mu
 #[no_mangle]
 pub unsafe extern "C" fn infinity_std_deallocate(pointer: *mut u8, size: usize, align: usize) {
     let p = active(); assert!(!p.is_null());
-    (*p).arena.release(NonNull::new(pointer).expect("allocation"), Layout::from_size_align(size, align).expect("layout"));
+    let header = pointer.sub(core::mem::size_of::<AllocationHeader>()).cast::<AllocationHeader>().read_unaligned();
+    assert_eq!(header.payload, Layout::from_size_align(size, align).expect("layout"));
+    (*p).arena.release(NonNull::new(header.base).expect("allocation"), header.layout);
+}
+
+// ------------------------=
+// FUNC: infinity_std_usable_size
+// DESC: Reports the actual valid payload extent for a live native allocation.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_std_usable_size(pointer: *mut u8) -> usize {
+    if pointer.is_null() || active().is_null() { return 0; }
+    pointer.sub(core::mem::size_of::<AllocationHeader>()).cast::<AllocationHeader>().read_unaligned().payload.size()
+}
+// ------------------------=
+// FUNC: infinity_c_malloc
+// DESC: Provides C-aligned memory from the same governed native heap as Rust.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_c_malloc(size: usize) -> *mut u8 {
+    infinity_std_allocate(size.max(1), 16)
+}
+// ------------------------=
+// FUNC: infinity_c_free
+// DESC: Frees a live native C allocation and accepts null as a no-op.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_c_free(pointer: *mut u8) {
+    if pointer.is_null() { return; }
+    assert!(!active().is_null());
+    let header = pointer.sub(core::mem::size_of::<AllocationHeader>()).cast::<AllocationHeader>().read_unaligned();
+    infinity_std_deallocate(pointer, header.payload.size(), header.payload.align());
+}
+// ------------------------=
+// FUNC: infinity_c_realloc
+// DESC: Preserves original bytes and ownership on failure, with checked size and native accounting.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_c_realloc(pointer: *mut u8, size: usize) -> *mut u8 {
+    if pointer.is_null() { return infinity_c_malloc(size); }
+    if size == 0 { infinity_c_free(pointer); return ptr::null_mut(); }
+    if active().is_null() { return ptr::null_mut(); }
+    let old_size = infinity_std_usable_size(pointer);
+    let replacement = infinity_c_malloc(size);
+    if !replacement.is_null() {
+        ptr::copy_nonoverlapping(pointer, replacement, old_size.min(size));
+        infinity_c_free(pointer);
+    }
+    replacement
 }
 // ------------------------=
 // FUNC: infinity_std_thread_create

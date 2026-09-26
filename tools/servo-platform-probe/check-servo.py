@@ -19,11 +19,15 @@ def main():
     parser.add_argument("--package", choices=("servo", "fontsan", "aws-lc-sys"), default="servo")
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
     options = parser.parse_args()
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-deps.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-mio.py")), "--engine"], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-async-net.py")), "--engine"], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-entropy.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-fonts.py"))], check=True)
     subprocess.run(["python3", str(Path(__file__).with_name("prepare-style.py"))], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-webdriver.py"))], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-surfman.py"))], check=True)
+    subprocess.run(["python3", str(Path(__file__).with_name("prepare-mozjs.py"))], check=True)
     arch = options.arch
     target = "aarch64-unknown-none-softfloat" if arch == "aarch64" else "x86_64-unknown-none"
     target_key = target.replace("-", "_")
@@ -37,6 +41,9 @@ def main():
     environment.update({"RUSTC_BOOTSTRAP": "1", "CARGO_HOME": str(root / "build/servo-cargo-home"),
                         "__CARGO_TESTS_ONLY_SRC_ROOT": str(root / "build/servo-rust-src/library"),
                         "RUSTFLAGS": "--cfg infinity_native --check-cfg=cfg(infinity_native)"})
+    # Native VFS and mutex callbacks are mandatory at linkage/initialization.
+    # Do not select SQLite's Unix filesystem or pthread backend for this target.
+    environment["LIBSQLITE3_FLAGS"] = "-DSQLITE_OS_OTHER=1 -DSQLITE_MUTEX_APPDEF=1 -DSQLITE_OMIT_LOAD_EXTENSION=1"
     # Use actual freestanding target headers already built by the native toolchain,
     # never macOS headers. This compiler check does not link the serial voice libc.
     includes = [root / f"build/voice-newlib-{arch}/{arch}-none-elf/newlib/targ-include",
@@ -67,6 +74,9 @@ def main():
     if native_libc.is_dir():
         command += ["--config", 'patch.crates-io.libc.path="' + str(native_libc) + '"']
     command += ["--config", 'patch.crates-io.mio.path="' + str(root / "build/servo-native-deps/mio-1.2.3") + '"']
+    command += ["--config", 'patch.crates-io.webdriver.path="' + str(root / "build/servo-native-deps/webdriver-0.54.0") + '"']
+    command += ["--config", 'patch.crates-io.surfman.path="' + str(root / "build/servo-native-deps/surfman-0.14.0") + '"']
+    command += ["--config", 'patch.crates-io.mozjs_sys.path="' + str(root / "build/servo-native-deps/mozjs_sys-153.3.0-0") + '"']
     for name, version in (("tokio", "1.53.1"), ("hyper-util", "0.1.20")):
         command += ["--config", 'patch.crates-io.' + name + '.path="' + str(root / "build/servo-native-deps" / (name + "-" + version)) + '"']
     for name, path in json.loads((root / "build/servo-native-deps/stylo/native-patches.json").read_text()).items():

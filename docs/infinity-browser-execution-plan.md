@@ -56,9 +56,13 @@ browser as installed before gate 6 passes.
 - Native std/Mio/Tokio TCP and fail-closed entropy now pass in both architecture
   guests. Nineteen HTTP/reactor regression tests pass. These use two packet
   stacks in a disposable guest, not a production NIC or installed browser.
-- The engine correction loop stopped after six failed attempts. Current failures:
-  bundled FreeType/libpng cannot locate target zlib headers; servo-allocator lacks
-  native malloc/free/realloc and allocation-size bindings. The memory-font backend
-  staging is not yet compile-verified. Resume at these failures, not UI work.
+- FreeType/libpng target headers and native allocator bindings are now implemented;
+  the rasterizer and allocator compile. Allocation behavior passes both guest tests.
+  The engine build has advanced into SpiderMonkey's native platform configuration.
+  GPU context creation explicitly rejects unsupported requests; a software page
+  rendering context is still required, not implied by the Surfman type adapter.
+- Resumed six-attempt gate remains failed: SpiderMonkey `Kernel` enum rejects
+  `Infinity`; `imsz` has no native stdin implementation. Cross-build inherited
+  CPPFLAGS/AR/CPP need isolation before any hermetic target-build claim.
 - Production governed worker, network grants/event pump, C/C++ runtime linkage,
   actual engine execution, rendering and installed acceptance remain required.

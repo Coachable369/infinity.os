@@ -49,8 +49,11 @@ version = "0.2"
     entry = header + 'source = "' + package["source"] + '"\nchecksum = "' + package["checksum"] + '"\n'
     lock.write_text(lock.read_text().replace(entry, header))
     freetype, package = helper.stage(root, packages, "freetype-sys", "0.23.0")
+    zlib, _ = helper.stage(root, packages, "libz-sys", "1.1.29")
     path = freetype / "build.rs"
-    path.write_text(path.read_text().replace('if !cfg!(feature = "bundled") {', 'if !cfg!(feature = "bundled") && env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("none") {', 1))
+    text = path.read_text().replace('if !cfg!(feature = "bundled") {', 'if !cfg!(feature = "bundled") && env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("none") {', 1)
+    text = text.replace('.include("libz-sys/src/zlib")', '.include("' + str(zlib / "src/zlib") + '")')
+    path.write_text(text)
     header = 'name = "' + package["name"] + '"\nversion = "' + package["version"] + '"\n'
     entry = header + 'source = "' + package["source"] + '"\nchecksum = "' + package["checksum"] + '"\n'
     lock.write_text(lock.read_text().replace(entry, header))

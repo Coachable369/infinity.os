@@ -46,6 +46,16 @@ def main():
         pub type size_t = usize;
         pub type ssize_t = isize;
         pub type off_t = c_long;
+        extern "C" {
+            #[link_name = "infinity_c_malloc"]
+            pub fn malloc(size: size_t) -> *mut c_void;
+            #[link_name = "infinity_c_free"]
+            pub fn free(pointer: *mut c_void);
+            #[link_name = "infinity_c_realloc"]
+            pub fn realloc(pointer: *mut c_void, size: size_t) -> *mut c_void;
+            #[link_name = "infinity_std_usable_size"]
+            pub fn malloc_usable_size(pointer: *mut c_void) -> size_t;
+        }
     } else {
         // non-supported targets: empty...
     }'''
