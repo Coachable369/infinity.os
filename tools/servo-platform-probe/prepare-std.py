@@ -19,7 +19,10 @@ def main():
     sysroot = Path(subprocess.check_output(["rustc", "--print", "sysroot"], text=True).strip())
     source = sysroot / "lib/rustlib/src/rust/library"
     destination = root / "build/servo-rust-src/library"
-    shutil.copytree(source, destination, dirs_exist_ok=True)
+    for path in destination.rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            path.chmod(path.stat().st_mode | 0o200)
+    shutil.copytree(source, destination, dirs_exist_ok=True, copy_function=shutil.copyfile)
     system = destination / "std/src/sys"
     adapters = root / "sdk/servo-std"
     for relative, exports in (

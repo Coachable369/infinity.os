@@ -39,7 +39,7 @@ def main():
                        str(Path(__file__).with_name("Cargo.toml"))]
         if options.native_overlay:
             mode = "native-overlay"
-            environment["__CARGO_TESTS_ONLY_SRC_ROOT"] = str(root / "build/servo-rust-src")
+            environment["__CARGO_TESTS_ONLY_SRC_ROOT"] = str(root / "build/servo-rust-src/library")
             environment["RUSTFLAGS"] = "--cfg infinity_native"
         result = subprocess.run(command, cwd=root, env=environment,
                                 capture_output=True, text=True, check=False)
