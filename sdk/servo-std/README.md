@@ -31,6 +31,22 @@ applying selectors to a different Rust layout. The overlay is selected only by
   Destroy releases the key without invoking destructors. Thread exit must clear
   values before invoking registered destructors and support bounded destructor
   iterations. Key reuse must not expose values left by a previous key generation.
+- Thread creation either transfers ownership of the entry closure to a real
+  independently scheduled thread, or fails without consuming it. Join waits for
+  completion; detach releases the handle without stopping the thread. Thread exit
+  runs TLS destructors outside registry locks. A serial callback is not a thread.
+- Futex wait atomically compares and parks, preventing a wake between comparison
+  and registration from being lost. Timeouts use monotonic time. Wake reports the
+  number actually unparked. Upstream std mutex/condvar/once/rwlock algorithms use
+  this primitive; busy polling on the desktop thread is not an implementation.
+- Monotonic time cannot move backward. UTC is independently supplied by the native
+  wall clock. Both return normalized nanoseconds, and report unavailable clocks
+  instead of inventing a timestamp.
+
+The overlay opts the staged std crate out of its unsupported-target stability
+gate only under `infinity_native`. This avoids injecting std-only feature names
+into third-party no_std crates. It does not implement any missing service and is
+not a declaration of platform support.
 
 The native symbol implementations, general threads/waits/clocks and guest tests
 are still required. Compilation alone is not a runtime proof. The compiler's

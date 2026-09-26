@@ -93,6 +93,58 @@ this step. Fresh-install browser acceptance remains entirely outstanding.
 
 ## Narrow integration sequence after runtime support
 
+### Additional prerequisite work (September 26)
+
+- Added native thread, clock and compare/wait/wake ABI adapters. The overlay now
+  selects upstream futex-based mutex, condition-variable, once, rwlock and parking
+  code, rather than unsupported no-thread fallbacks. Both architecture library
+  compile gates passed in manifest
+  `builds/manifests/20260926T065703273765Z-89026.json`; **no native ABI provider has
+  been linked or executed**.
+- Added `sdk/servo-runtime-primitives`: bounded, generation-tagged TLS keys and
+  independent per-thread values. Two host behavioral tests verify revocation,
+  slot reuse, separation and clear-before-destructor behavior. Evidence:
+  `builds/manifests/20260926T065832159015Z-89483.json`. This is bookkeeping, not a
+  scheduler or working guest TLS.
+- Added native-shell layout geometry and hit testing to the browser core. Six
+  total host tests passed in
+  `builds/manifests/20260926T065732998094Z-89376.json`. The generated visual target
+  and its prompt are in `design/infinity-browser/README.md` and
+  `design/infinity-browser/idesign-kit-v1.png`. No browser screen is rendered yet.
+- `tools/servo-platform-probe/check-servo.py` records a real pinned engine check
+  with project-local dependency caches. The engine has not compiled. Diagnostic
+  output is in `build/servo-platform-probe/servo-check.log` and structured result
+  in `servo-check.json`; `executed` remains false.
+
+The actual engine check exposed AWS-LC's C platform dependency (including missing
+freestanding `stdlib.h`), beyond the std opt-in issue. AWS-LC is used not only by
+Servo's transport but by subresource integrity and script WebCrypto operations.
+Removing its networking consumer alone therefore does not solve this dependency.
+Do not use host system headers, silently omit integrity validation, or weaken TLS
+to get a successful compiler result. A native C/platform port or explicitly
+isolated native crypto integration remains necessary. SpiderMonkey, fonts and
+software renderer dependencies have not yet reached their verification gates.
+
+Latest combined check:
+`builds/manifests/20260926T070850871847Z-91921.json`.
+Both std library probes passed after isolating the stability opt-in in staged
+std itself. The Servo check exited 101. It now uses actual freestanding ARM
+Newlib headers, not host headers, and reaches these remaining failures:
+
+- `fontsan` cannot find C++ standard headers (`cstdarg`, `vector`, `new`).
+- AWS-LC/jitterentropy expects `pthread_rwlock_t` and C atomic integer types not
+  provided by the current cross-compilation environment. The existing serial
+  voice/compiler libc must not be linked as if it supplied real threading.
+- Native `infinity_std_*` symbols still need real allocation, scheduler, wait,
+  TLS, entropy and clock implementations plus guest execution. An rlib compile
+  cannot prove those symbols exist or behave correctly.
+
+The TLS primitive now also provides bounded four-pass teardown. A third host test
+executes callbacks, verifies cleared values before re-entry, repeatedly repopulates
+TLS, and proves cleanup terminates. All three tests passed in
+`builds/manifests/20260926T071010885646Z-96659.json`.
+No new browser ISO was produced; concurrent voice-build ISOs are not browser proof.
+
 1. Compile and execute the runtime roundtrip inside InfinityOS, then build
    pinned Servo with default features disabled. Initially omit multiprocess,
    native clipboard, JIT, WebGL/WebGPU and GStreamer. Disabling JIT does not

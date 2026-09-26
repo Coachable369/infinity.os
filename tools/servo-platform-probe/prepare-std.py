@@ -23,12 +23,23 @@ def main():
         if path.is_file() and not path.is_symlink():
             path.chmod(path.stat().st_mode | 0o200)
     shutil.copytree(source, destination, dirs_exist_ok=True, copy_function=shutil.copyfile)
+    # Opt-in only in this isolated port: do not inject feature attributes into
+    # every dependency (no_std dependencies cannot resolve std's feature name).
+    path = destination / "std/src/lib.rs"
+    text = path.read_text()
+    text = text.replace('not(restricted_std), stable',
+                        'any(not(restricted_std), infinity_native), stable', 1)
+    text = text.replace('    restricted_std,\n    unstable(',
+                        '    all(restricted_std, not(infinity_native)),\n    unstable(', 1)
+    path.write_text(text)
     system = destination / "std/src/sys"
     adapters = root / "sdk/servo-std"
     for relative, exports in (
         ("alloc/mod.rs", ""),
         ("io/error/mod.rs", "pub use infinity::*;"),
         ("random/mod.rs", "pub use infinity::fill_bytes;"),
+        ("thread/mod.rs", "pub use infinity::*;"),
+        ("time/mod.rs", "use infinity as imp;"),
     ):
         path = system / relative
         text = path.read_text()
@@ -50,6 +61,13 @@ def main():
 ''', 1)
     path.write_text(before + marker + after)
     shutil.copyfile(adapters / "tls.rs", system / "thread_local/key/infinity.rs")
+    path = system / "mod.rs"
+    path.write_text(path.read_text() + '\n#[cfg(all(target_os = "none", infinity_native))]\npub mod futex;\n')
+    shutil.copyfile(adapters / "futex.rs", system / "futex.rs")
+    for component in ("mutex", "condvar", "once", "rwlock", "thread_parking"):
+        path = system / "sync" / component / "mod.rs"
+        path.write_text(path.read_text().replace('    any(\n',
+            '    any(\n        all(target_os = "none", infinity_native),\n', 1))
     print(destination)
 
 

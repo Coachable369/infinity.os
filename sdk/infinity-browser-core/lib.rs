@@ -3,6 +3,7 @@
 
 const QUEUE_SIZE: usize = 32;
 pub mod download;
+pub mod layout;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Navigation(u64);
