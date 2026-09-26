@@ -126,6 +126,35 @@ def malloc_h(target, detected):
     return "stdlib.h" if target.kernel == "Infinity" else detected
 ''', 1)
     path.write_text(text)
+    path = directory / "mozjs/mozglue/misc/ConditionVariable_posix.cpp"
+    text = path.read_text().replace(
+        '#if defined(HAVE_CLOCK_MONOTONIC) && !defined(__APPLE__)',
+        '#if defined(__INFINITYOS__) || (defined(HAVE_CLOCK_MONOTONIC) && !defined(__APPLE__))', 1)
+    # The native C runtime must bind monotonic clock_gettime and timed waits.
+    # Do not fall through to the macOS-only relative timeout API.
+    path.write_text(text)
+    for name in ("MmapFaultHandler.h", "MmapFaultHandler.cpp"):
+        path = directory / "mozjs/mozglue/misc" / name
+        text = path.read_text()
+        if name.endswith(".h"):
+            text = text.replace('#elif defined(__wasi__)', '''#elif defined(__INFINITYOS__)
+// Native buffers are owned memory, not Unix file mappings. No SIGBUS recovery
+// is promised: faults remain fatal. File-backed mappings are unsupported.
+#  define MMAP_FAULT_HANDLER_BEGIN_HANDLE(fd) { if (false) {
+#  define MMAP_FAULT_HANDLER_BEGIN_BUFFER(buf, bufLen) { if (true) {
+#  define MMAP_FAULT_HANDLER_CATCH(retval) } else { return retval; } }
+
+#elif defined(__wasi__)''', 1)
+        else:
+            text = text.replace('!defined(__wasi__)', '!defined(__wasi__) && !defined(__INFINITYOS__)')
+        path.write_text(text)
+    path = directory / "mozjs/js/src/gc/Memory.cpp"
+    text = path.read_text()
+    start = text.index('size_t GetPageFaultCount() {')
+    end = text.index('\nvoid* AllocateMappedContent', start)
+    body = text[start:end].replace('#elif defined(__wasi__)', '''#elif defined(__wasi__) || defined(__INFINITYOS__)
+  // Upstream's unavailable-statistic sentinel, not a measured native fault count.''', 1)
+    path.write_text(text[:start] + body + text[end:])
     lock = servo / "Cargo.lock"
     header = 'name = "mozjs_sys"\nversion = "153.3.0-0"\n'
     entry = header + 'source = "' + package["source"] + '"\nchecksum = "' + package["checksum"] + '"\n'

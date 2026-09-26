@@ -2,6 +2,46 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Memory advice follow-through, September 26
+
+The `MADV_NORMAL` compile blocker is resolved in the shared native mapping header.
+The existing native C boundary still rejects unimplemented advice with ENOSYS;
+it does not falsely validate a mapped range. The directory/platform behavioral
+test passes, including normal advice and zero-length rejection, manifest
+`builds/manifests/20260926T181826201747Z-73261.json`.
+
+Further corrections in this pass:
+
+- SpiderMonkey native condition variables select monotonic timed waits instead
+  of falling into the macOS-only relative-wait API. Native C++ synchronization
+  linkage/execution remains required; this is not a working pthread claim.
+- Native mapped-file access scopes reject before executing their bodies. Owned
+  buffers execute without pretending to recover Unix SIGBUS faults. A test of
+  the actual staged macros passes: manifest
+  `builds/manifests/20260926T182653848720Z-85372.json`. This is a host behavior test,
+  not a guest fault-recovery test.
+- Optional page-fault statistics use the upstream unavailable sentinel. Zero
+  here must not be reported as a measured native fault count.
+- Added a packaged three-family font catalog (Fira Sans, EB Garamond, IBM Plex
+  Mono), memory-backed FreeType construction and raw-font paint registration.
+  No fontconfig, host path or native filesystem font lookup is enabled. Font
+  code type-checks; rendered glyphs and installed font parity are not yet proved.
+- Added the native ENOSPC value and pinned bindgen to the same LLVM installation
+  as target compilation. Preserved existing target-independent application code.
+
+Six engine passes were attempted. The final manifest is
+`builds/manifests/20260926T183456290484Z-92976.json`, exit 101. The remaining observed
+failure is bindgen 0.72.1 while generating SpiderMonkey Rust bindings:
+`Not an item: ItemId(57186)` at `ir/context.rs:1492`. The backtrace identifies
+`compute_bitfield_units -> Type::layout -> CompInfo::layout -> Type::layout ->
+resolve_type`; matching LLVM/libclang does not resolve it. Next correction must
+investigate the unresolved type during bitfield layout and validate resulting
+ABI layouts, not replace them with guessed padding or suppress the panic.
+
+Stopped at the six-correction limit. No engine executable, installed browser,
+new installer or successful HTTPS/JS/download proof was produced. This checkpoint
+supersedes the earlier immediate compile blockers below.
+
 ## Native clock and stack checkpoint, September 26
 
 The linker response-file probe now links an actual freestanding test ELF with

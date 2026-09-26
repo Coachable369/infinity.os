@@ -69,9 +69,13 @@ browser as installed before gate 6 passes.
   its checked conversion passes C/C++ host tests, not engine execution.
 - The current engine correction pass is still compile-only. Native C/C++ runtime,
   actual software rendering and installed-system acceptance remain outstanding.
-- Sixth attempt stops at SpiderMonkey `mfbt/Poison.cpp:125` (`MADV_NORMAL`
-  undeclared), manifest `20260926T180939707188Z-68952.json`, exit 101. Next work is
-  the native memory-advice/protection contract, not a fake successful Unix shim.
+- `MADV_NORMAL` is now declared; unsupported advice still fails explicitly and
+  its boundary tests pass. Packaged font catalog and memory-backed FreeType paths
+  type-check. Native file-access scope rejection passes a host behavior test.
+- Latest sixth attempt stops inside bindgen 0.72.1's bitfield-layout traversal:
+  `Not an item: ItemId(57186)`, manifest `20260926T183456290484Z-92976.json`, exit 101.
+  Fix the unresolved-type traversal with ABI validation before linking an engine.
+  Native mapping/protection and production C++ synchronization remain unproved.
   Platform enums, image-reader stdin compilation, native clock selection and
   filesystem URL rejection now pass the Rust compiler stage. Configure uses
   explicit target headers/tools rather than accidental host header detection.

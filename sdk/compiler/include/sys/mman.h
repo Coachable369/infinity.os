@@ -15,6 +15,7 @@
 #define MS_ASYNC 1
 #define MS_INVALIDATE 2
 #define MS_SYNC 4
+#define MADV_NORMAL 0
 #define MADV_DONTNEED 1
 #define MADV_WILLNEED 2
 #define MADV_RANDOM 3

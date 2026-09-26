@@ -46,6 +46,7 @@ def main():
         pub type size_t = usize;
         pub type ssize_t = isize;
         pub type off_t = c_long;
+        pub const ENOSPC: c_int = 28;
         extern "C" {
             #[link_name = "infinity_c_malloc"]
             pub fn malloc(size: size_t) -> *mut c_void;

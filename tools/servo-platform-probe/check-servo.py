@@ -43,6 +43,8 @@ def main():
     for name in ("CPPFLAGS", "CFLAGS", "CXXFLAGS", "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "LIBRARY_PATH"):
         environment.pop(name, None)
     environment.update({"RUSTC_BOOTSTRAP": "1", "CARGO_HOME": str(root / "build/servo-cargo-home"),
+                        "RUST_BACKTRACE": "1",
+                        "LIBCLANG_PATH": "/opt/homebrew/opt/llvm/lib",
                         "__CARGO_TESTS_ONLY_SRC_ROOT": str(root / "build/servo-rust-src/library"),
                         "RUSTFLAGS": "--cfg infinity_native --check-cfg=cfg(infinity_native) --check-cfg=cfg(infinity_certificate_test)"})
     # Native VFS and mutex callbacks are mandatory at linkage/initialization.

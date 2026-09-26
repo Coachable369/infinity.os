@@ -79,5 +79,8 @@ int main(void) {
     int status = 37;
     assert(wait4(1, &status, 0, 0) == -1 && errno == ENOSYS && status == 37);
     assert(madvise(0, 10, MADV_DONTNEED) == -1 && errno == ENOSYS);
+    /* Normal advice must not falsely certify an unmapped poison region. */
+    assert(madvise(0, 4096, MADV_NORMAL) == -1 && errno == ENOSYS);
+    assert(madvise(0, 0, MADV_NORMAL) == -1 && errno == EINVAL);
     return 0;
 }
