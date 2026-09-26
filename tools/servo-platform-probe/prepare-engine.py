@@ -27,6 +27,7 @@ def main():
     text += '''
 #[cfg(all(target_os = "none", infinity_native))]
 mod platform {
+    #[expect(unsafe_code)]
     unsafe extern "C" {
         fn infinity_std_clock(clock: u32, seconds: *mut u64, nanos: *mut u32) -> i32;
     }

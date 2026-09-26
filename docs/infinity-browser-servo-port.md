@@ -2,7 +2,50 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
-## Current correction checkpoint, September 26
+## Native clock and stack checkpoint, September 26
+
+The linker response-file probe now links an actual freestanding test ELF with
+the probe's main as entry; it no longer requires Unix startup libraries to test
+response-file consumption. This is not a production engine link.
+
+Added a SpiderMonkey timestamp backend using the existing native monotonic ABI.
+The provider must be installed before C++ engine static initialization. Checked
+nanosecond conversion rejects malformed fields, provider failures and overflow.
+Native worker stack bounds come from the executor's leased stack allocation,
+never pthread introspection or guessed frame addresses. Unknown root stacks are
+rejected. The provider remains single-owner and opt-in.
+
+Behavioral evidence through build-kit:
+
+- C and C++ clock conversion vectors pass: manifest
+  `builds/manifests/20260926T175721534245Z-56358.json`.
+- ARM64 guest std/runtime tests pass: manifest
+  `builds/manifests/20260926T180348658521Z-64389.json`.
+- x86_64 guest std/runtime tests pass: manifest
+  `builds/manifests/20260926T180418979952Z-64549.json`.
+
+Guest tests cover two disjoint live worker stacks, local-address containment,
+stable bounds across sleep and root-stack rejection, alongside existing std
+thread/allocation/TLS/wait coverage. They do not execute Servo or an installed OS.
+
+Build corrections also invalidate partial configure outputs, select native
+libc++ visibility flags without GCC system-header pragmas, and expose the native
+memory-map declarations. Declarations do not implement mapping/protection.
+
+The sixth engine attempt ended with exit 101, manifest
+`builds/manifests/20260926T180939707188Z-68952.json`. The remaining observed compile
+failure is `mfbt/Poison.cpp:125`: `MADV_NORMAL` is undeclared. The native
+memory-advice/protection contract needs implementation and behavioral tests;
+adding a constant alone would not establish working VM services. The previous
+allocator exception-specification conflict and Rust clock extern safety lint
+did not recur. Native allocation header selection now uses standard declarations
+instead of optional Unix allocator extensions.
+
+Stopped after six unsuccessful engine correction loops as required. No new ISO,
+linked engine or installed browser was produced. Software rendering, production
+worker integration and cold-installed HTTPS/JS/download acceptance remain open.
+
+## Previous correction checkpoint, September 26
 
 Six further engine attempts ended at manifest
 `builds/manifests/20260926T174500552737Z-44932.json` (exit 101).

@@ -61,8 +61,17 @@ browser as installed before gate 6 passes.
   The engine build has advanced into SpiderMonkey's native platform configuration.
   GPU context creation explicitly rejects unsupported requests; a software page
   rendering context is still required, not implied by the Surfman type adapter.
-- Latest six-attempt gate remains failed at SpiderMonkey's native linker probe:
-  missing startup object, compiler builtins and C-library link configuration.
+- SpiderMonkey's response-file probe now links a freestanding test ELF without
+  requiring Unix startup objects. This proves that probe only, not engine linkage.
+- Native worker stack-bound queries pass on both architectures, including local
+  addresses across sleep, disjoint stacks and refusal to guess the root stack.
+  A native SpiderMonkey timestamp backend uses the same clock provider as std;
+  its checked conversion passes C/C++ host tests, not engine execution.
+- The current engine correction pass is still compile-only. Native C/C++ runtime,
+  actual software rendering and installed-system acceptance remain outstanding.
+- Sixth attempt stops at SpiderMonkey `mfbt/Poison.cpp:125` (`MADV_NORMAL`
+  undeclared), manifest `20260926T180939707188Z-68952.json`, exit 101. Next work is
+  the native memory-advice/protection contract, not a fake successful Unix shim.
   Platform enums, image-reader stdin compilation, native clock selection and
   filesystem URL rejection now pass the Rust compiler stage. Configure uses
   explicit target headers/tools rather than accidental host header detection.

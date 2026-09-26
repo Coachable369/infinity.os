@@ -8,6 +8,14 @@ Real std thread and synchronization programs execute in disposable guests on
 both architectures. Production worker/service integration is still required.
 No host fallback or simulated service is provided.
 
+SpiderMonkey's native timestamp backend uses `infinity_std_clock`; install the
+provider before running engine C++ static initialization. Its nanosecond adapter
+fails closed on missing clocks, malformed fields and overflow. Native stack-base
+queries use `infinity_std_stack_bounds`, which reports the current executor
+worker's leased bounds and rejects the unknown root stack. Engine execution must
+therefore use a registered worker, not an arbitrary boot/UI stack. These adapters
+do not provide production scheduling, C++ thread linkage or virtual-memory support.
+
 Native outbound IPv4 TCP now backs std streams, Mio readiness and Tokio's
 current-thread async network runtime. DNS, UDP/listen, raw descriptors and tuning
 options are not supplied by this std adapter; unsupported calls reject explicitly.

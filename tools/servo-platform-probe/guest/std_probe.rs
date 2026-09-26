@@ -108,6 +108,7 @@ pub unsafe fn initialize() {
 pub fn run() {
     abi_limits();
     allocation_roundtrip();
+    stack_bounds_roundtrip();
     #[cfg(feature = "async-probe")]
     entropy_roundtrip();
     #[cfg(feature = "socket-probe")]
@@ -141,6 +142,38 @@ pub fn run() {
     assert_eq!(thread::available_parallelism().unwrap().get(), 1);
 }
 
+// ------------------------=
+// FUNC: stack_bounds_roundtrip
+// DESC: Verifies live local addresses, distinct worker stacks and fail-closed root-stack queries.
+// ------------------=
+fn stack_bounds_roundtrip() {
+    use infinity_servo_runtime_primitives::native::infinity_std_stack_bounds;
+    let (mut low, mut high) = (77, 88);
+    assert_eq!(unsafe { infinity_std_stack_bounds(&mut low, &mut high) }, 95);
+    assert_eq!((low, high), (77, 88));
+    let first = thread::Builder::new().stack_size(65536).spawn(probe_stack_bounds).unwrap();
+    let second = thread::Builder::new().stack_size(65536).spawn(probe_stack_bounds).unwrap();
+    let a = first.join().unwrap();
+    let b = second.join().unwrap();
+    assert!(a.1 <= b.0 || b.1 <= a.0);
+}
+// ------------------------=
+// FUNC: probe_stack_bounds
+// DESC: Requires the active stack range to contain an actual local value across a cooperative sleep.
+// ------------------=
+fn probe_stack_bounds() -> (usize, usize) {
+    use infinity_servo_runtime_primitives::native::infinity_std_stack_bounds;
+    let (mut low, mut high) = (0, 0);
+    assert_eq!(unsafe { infinity_std_stack_bounds(&mut low, &mut high) }, 0);
+    assert_eq!(high - low, 65536);
+    let local = &low as *const usize as usize;
+    assert!(local >= low && local < high);
+    thread::sleep(Duration::from_millis(1));
+    let (mut next_low, mut next_high) = (0, 0);
+    assert_eq!(unsafe { infinity_std_stack_bounds(&mut next_low, &mut next_high) }, 0);
+    assert_eq!((low, high), (next_low, next_high));
+    (low, high)
+}
 // ------------------------=
 // FUNC: allocation_roundtrip
 // DESC: Checks C/Rust heap sharing, alignment, resizing, exhaustion and full reclamation.

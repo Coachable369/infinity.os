@@ -160,6 +160,20 @@ pub unsafe extern "C" fn infinity_c_realloc(pointer: *mut u8, size: usize) -> *m
     replacement
 }
 // ------------------------=
+// FUNC: infinity_std_stack_bounds
+// DESC: Reports the current live worker's leased stack; rejects unknown root stacks instead of guessing.
+// ------------------=
+#[no_mangle]
+pub unsafe extern "C" fn infinity_std_stack_bounds(low: *mut usize, high: *mut usize) -> i32 {
+    let p = active();
+    if p.is_null() || low.is_null() || high.is_null() { return 22; }
+    let Some(id) = (*p).executor.current_id() else { return 95; };
+    let Some(record) = (*p).records.iter().find(|r| r.id == id) else { return 22; };
+    let start = record.pointer as usize;
+    let Some(end) = start.checked_add(record.size) else { return 75; };
+    low.write(start); high.write(end); 0
+}
+// ------------------------=
 // FUNC: infinity_std_thread_create
 // DESC: Allocates a bounded private stack and transfers the callback only after successful registration.
 // ------------------=
