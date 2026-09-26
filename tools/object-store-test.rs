@@ -234,6 +234,11 @@ impl ObjectCapabilityPolicy for Deny {
 // DESC: Runs the program entry point.
 // ------------------=
 fn main() {
+    if std::env::args().any(|arg| arg == "--large-kernel-only") {
+        large_kernel_store_mount();
+        legacy_store_mount(STORE_RELATIVE_LBA as usize + 32_768);
+        return;
+    }
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
     private_spatial_checkpoint(test_sectors);
     legacy_store_mount(test_sectors);
@@ -706,6 +711,26 @@ fn legacy_store_mount(sectors: usize) {
     let mounted = ObjectStore::mount(disk.clone(), 0).unwrap();
     assert_eq!(mounted.resolve(b"/home/default/legacy-link").unwrap(), documents);
     assert_eq!(disk.0.borrow()[new], [0; 512]);
+}
+
+// ------------------------=
+// FUNC: large_kernel_store_mount
+// DESC: Verifies the expanded location persists ordinary objects without touching the historical kernel/store area.
+// ------------------=
+fn large_kernel_store_mount() {
+    let offset = storage::layout::LARGE_STORE_RELATIVE_LBA;
+    let sectors = offset + 32_768;
+    let disk = MemoryDisk::new(sectors as usize);
+    disk.0.borrow_mut()[STORE_RELATIVE_LBA as usize] = [0xa5; 512];
+    let mut store = ObjectStore::format_with_progress_at(disk.clone(), 0, sectors, [0x71; 16],
+        offset, &mut |_, _| {}).unwrap();
+    let documents = store.resolve(b"/home/default/documents").unwrap();
+    store.attach(b"/home/default/large-kernel-link", documents).unwrap();
+    drop(store);
+    let mut mounted = ObjectStore::mount(disk.clone(), 0).unwrap();
+    assert!(mounted.runtime_bootstrap_valid());
+    assert_eq!(mounted.resolve(b"/home/default/large-kernel-link").unwrap(), documents);
+    assert_eq!(disk.0.borrow()[STORE_RELATIVE_LBA as usize], [0xa5; 512]);
 }
 
 // ------------------------=

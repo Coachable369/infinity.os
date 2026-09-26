@@ -179,6 +179,8 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     runtime::storage_initialized();
     drivers::network::initialize(info);
     drivers::audio::initialize(info);
+    // Native speech jobs need workers even before an optional LLM is loaded.
+    unsafe { runtime::ai::qwen::workers::initialize(info.worker_bridge); }
     let _ = system_sounds::play_boot_once();
     crash::set_phase(crash::CrashPhase::Services);
     runtime::announce_services();
@@ -212,7 +214,6 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
             output_text(if info.worker_bridge == 0 {
                 b"[AI] MP startup bridge unavailable; single-core fallback\n"
             } else { b"[AI] MP startup bridge discovered\n" });
-            unsafe { runtime::ai::qwen::workers::initialize(info.worker_bridge); }
         }
         output_text(if ready {
             b"[AI] native Qwen3-8B verified and ready\n"

@@ -3,17 +3,11 @@
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::runtime::{audio::PlaybackState, capability::CapabilityType, execution::SecurityIdentity};
 use super::{types::AiError, voice::SpeechSynthesisProvider};
-#[cfg(any(target_arch = "aarch64", test))]
 const SOURCE_RATE: u32 = 24000;
-#[cfg(not(any(target_arch = "aarch64", test)))]
-const SOURCE_RATE: u32 = 16000;
 const CAPACITY: usize = SOURCE_RATE as usize * 30;
 // Kokoro takes ~3.3 seconds for 1.25 seconds of speech on the native probe.
 // This is a bounded asynchronous execution budget, not a performance claim.
-#[cfg(any(target_arch = "aarch64", test))]
 pub const SYNTHESIS_SECONDS: u64 = 90;
-#[cfg(not(any(target_arch = "aarch64", test)))]
-pub const SYNTHESIS_SECONDS: u64 = 2;
 pub const OUTPUT_LEASE_SECONDS: u64 = SYNTHESIS_SECONDS + 40;
 static STATE: AtomicUsize = AtomicUsize::new(0);
 static CANCEL: AtomicBool = AtomicBool::new(false);
@@ -39,37 +33,13 @@ mod speech_pcm;
 pub enum OutputState { Idle, Queued, Synthesizing, Ready, Failed, Speaking, Cancelled, Complete }
 #[derive(Clone, Copy)]
 pub struct OutputStatus { pub state: OutputState, pub frames: usize, pub peak_bytes: usize, pub synthesis_ns: u64, pub error: i32 }
-#[cfg(not(any(target_arch = "aarch64", test)))]
-unsafe extern "C" {
-    static infinity_flite_license: u8;
-    fn infinity_flite_synthesize(text: *const u8, length: usize, pcm: *mut i16, capacity: usize,
-        frames: *mut usize, peak: *mut usize, cancel: extern "C" fn() -> i32, limit: usize) -> i32;
-}
 struct NativeSpeech;
-#[cfg(not(any(target_arch = "aarch64", test)))]
-impl SpeechSynthesisProvider for NativeSpeech {
-    // ------------------------=
-    // FUNC: synthesize
-    // DESC: Runs the pinned native voice behind the existing replaceable speech-provider contract.
-    // ------------------=
-    fn synthesize(&mut self, text: &[u8], output: &mut [i16]) -> Result<usize, AiError> {
-        unsafe {
-            let mut frames = 0; let mut peak = 0;
-            let error = infinity_flite_synthesize(text.as_ptr(), text.len(), output.as_mut_ptr(), output.len(),
-                &mut frames, &mut peak, cancelled, 8 * 1024 * 1024);
-            PEAK = peak; ERROR = error;
-            if error == 0 && frames > 0 && frames <= output.len() { Ok(frames) } else { Err(AiError::ProviderUnavailable) }
-        }
-    }
-}
-#[cfg(any(target_arch = "aarch64", test))]
 unsafe extern "C" {
     fn infinity_kokoro_native_synthesize(text: *const u8, length: usize, pcm: *mut i16,
         capacity: usize, frames: *mut usize,
         cancel: extern "C" fn(*mut core::ffi::c_void) -> i32, context: *mut core::ffi::c_void) -> i32;
     fn infinity_kokoro_native_diagnostics(out: *mut usize);
 }
-#[cfg(any(target_arch = "aarch64", test))]
 impl SpeechSynthesisProvider for NativeSpeech {
     // ------------------------=
     // FUNC: synthesize
@@ -92,7 +62,6 @@ impl SpeechSynthesisProvider for NativeSpeech {
 // FUNC: kokoro_cancelled
 // DESC: Adapts the private native provider callback without granting access to runtime locks.
 // ------------------=
-#[cfg(any(target_arch = "aarch64", test))]
 extern "C" fn kokoro_cancelled(_: *mut core::ffi::c_void) -> i32 { cancelled() }
 // ------------------------=
 // FUNC: cancelled
@@ -123,9 +92,6 @@ unsafe fn worker() {
 // DESC: Validates output authority and queues one native phrase; unavailable APs never force UI-thread synthesis.
 // ------------------=
 pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(), AiError> {
-    // Retain the complete upstream notices in every linked installed runtime.
-    #[cfg(not(any(target_arch = "aarch64", test)))]
-    unsafe { core::ptr::read_volatile(&raw const infinity_flite_license); }
     if text.is_empty() || text.len() > 160 || text.iter().any(|v| !(32..=126).contains(v)) { return Err(AiError::InvalidRequest); }
     if !matches!(STATE.load(Ordering::Acquire), 0 | 4 | 6 | 7) { return Err(AiError::QueueFull); }
     let now = super::qwen::workers::clock_ns();

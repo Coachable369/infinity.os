@@ -98,6 +98,27 @@ def main():
                 "                        ir0 += 3; continue;\n                    }\n" + anchor)
             source = output / "ggml-cpu.c"
             source.write_text('#include <stddef.h>\nextern int native_dot4(int, int, float *, const void *, size_t, const void *);\n' + original)
+        if source.name == "vec.cpp" and ARCH == "x86_64":
+            # The upstream SSE path only needs SSE3 for horizontal addition.
+            # Supply its exact pairwise operation using baseline SSE2 shuffles.
+            mappings = (source.parent / "simd-mappings.h").read_text()
+            anchor = "#elif defined(__SSE3__)"
+            if mappings.count(anchor) != 1:
+                raise RuntimeError("Unreviewed SSE mapping boundary")
+            mappings = mappings.replace(anchor, "#elif defined(__SSE2__)")
+            mappings = mappings.replace("_mm_hadd_ps(", "native_sse2_hadd(")
+            preamble = ('#include <xmmintrin.h>\n'
+                '// ------------------------=\n// FUNC: native_sse2_hadd\n'
+                '// DESC: Preserves SSE3 pairwise addition order on every baseline x86-64 CPU.\n'
+                '// ------------------=\n'
+                'static inline __m128 native_sse2_hadd(__m128 a, __m128 b) {\n'
+                ' return _mm_add_ps(_mm_shuffle_ps(a,b,_MM_SHUFFLE(2,0,2,0)),\n'
+                '                   _mm_shuffle_ps(a,b,_MM_SHUFFLE(3,1,3,1)));\n}\n')
+            (output / "simd-mappings.h").write_text(preamble + mappings)
+            (output / "vec.h").write_text((source.parent / "vec.h").read_text())
+            original = source.read_text()
+            source = output / "vec.cpp"
+            source.write_text(original)
         if source.name == "vec.cpp" and ARCH == "aarch64":
             original = source.read_text()
             for kind, alignment in (("f16", 8), ("f32", 16)):

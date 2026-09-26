@@ -2409,7 +2409,7 @@ impl ConsoleRuntime {
     // DESC: Enables or disables the desktop AI surface and persists the authenticated preference.
     // ------------------=
     fn set_ai_chat_enabled(&mut self, enabled: bool) {
-        #[cfg(all(target_os="none",target_arch="aarch64"))]
+        #[cfg(target_os="none")]
         if !enabled { crate::runtime::ai::voice_conversation::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0)); }
         let mut widgets=crate::ui::desktop_widgets::current();
         if enabled { widgets.visible |= 2; } else { widgets.visible &= !2; }
@@ -2465,7 +2465,7 @@ impl ConsoleRuntime {
     // DESC: Persists the user's desktop voice and microphone grant and stops capture when revoked.
     // ------------------=
     fn set_voice_microphone_enabled(&mut self, enabled: bool) {
-        #[cfg(all(target_os = "none", target_arch = "aarch64"))]
+        #[cfg(target_os = "none")]
         if !enabled {
             crate::runtime::ai::voice_conversation::stop(
                 crate::runtime::execution::SecurityIdentity(self.current_session.0),
@@ -7379,7 +7379,7 @@ impl ConsoleRuntime {
                     y: self.pointer_y * self.system.framebuffer_height as i32 / 1000,
                 })).unwrap_or(false);
             if clicked && chat_state.0 && !over_window && self.resize_pointer_shape().is_none() {
-                #[cfg(all(target_os="none",target_arch="aarch64"))]
+                #[cfg(target_os="none")]
                 {
                     use crate::runtime::ai::voice_conversation::{self,indicator};
                     let rect=indicator::control(layout.ai_chat_geometry(chat_state.1).panel,layout.scale());
@@ -11718,7 +11718,7 @@ impl ConsoleRuntime {
                 .write_line(b"remote       SCAFFOLDED  disabled by policy");
             return true;
         }
-        #[cfg(all(target_os = "none", target_arch = "aarch64"))]
+        #[cfg(target_os = "none")]
         if command == b"voice conversation start" || command == b"voice listen" {
             let started = crate::runtime::ai::voice_conversation::start(crate::runtime::execution::SecurityIdentity(self.current_session.0));
             self.output.write_line(if started { b"Local voice enabled. Microphone listens between replies. voice stop mutes." }
@@ -11747,7 +11747,6 @@ impl ConsoleRuntime {
         }
         #[cfg(target_os = "none")]
         if command == b"voice stop" || command == b"voice conversation stop" {
-            #[cfg(target_arch = "aarch64")]
             crate::runtime::ai::voice_conversation::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0));
             crate::runtime::ai::voice_output::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0));
             self.output.write_line(b"Voice output cancellation requested.");
@@ -11760,7 +11759,7 @@ impl ConsoleRuntime {
         }
         if command == b"voice status" {
             crate::output_text(b"[operation] Voice.Status\n");
-            #[cfg(not(all(target_os="none",target_arch="aarch64")))]
+            #[cfg(not(target_os="none"))]
             crate::runtime::ai::with_ai_runtime(|ai| {
                 self.output.write_segments(&[
                     b"Voice session: ",
@@ -11774,17 +11773,14 @@ impl ConsoleRuntime {
             #[cfg(target_os = "none")]
             {
                 let status = crate::runtime::ai::voice_output::status();
-                #[cfg(target_arch = "aarch64")]
                 self.output.write_line(b"Speech provider: native Kokoro / af_heart / 24 kHz");
-                #[cfg(not(target_arch = "aarch64"))]
-                self.output.write_line(b"Speech provider: native Flite / KAL16 / 16 kHz");
                 self.output.write_number(b"Native speech state: ", status.state as u64);
                 self.output.write_number(b"Speech source frames: ", status.frames as u64);
                 self.output.write_number(b"Synthesis milliseconds: ", status.synthesis_ns / 1_000_000);
                 self.output.write_number(b"Synthesis arena peak bytes: ", status.peak_bytes as u64);
                 self.output.write_number(b"Speech error: ", status.error as u64);
             }
-            #[cfg(all(target_os = "none", target_arch = "aarch64"))]
+            #[cfg(target_os = "none")]
             {
                 let (state, level) = crate::runtime::ai::voice_conversation::state();
                 use crate::runtime::ai::voice_conversation::State;
@@ -13025,7 +13021,7 @@ static mut RUNTIME: Option<ConsoleRuntime> = None;
 // DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
 // ------------------=
 pub fn poll_native_ai() {
-    #[cfg(all(target_os = "none", target_arch = "aarch64"))]
+    #[cfg(target_os = "none")]
     if crate::runtime::ai::voice_conversation::poll() {
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
     }

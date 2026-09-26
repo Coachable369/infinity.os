@@ -24,6 +24,11 @@ struct model_file { const char *name; const unsigned char *data; size_t length; 
 extern const struct model_file native_model_files[];
 extern const size_t native_model_file_count;
 static struct { const struct model_file *file; size_t offset; } files[32];
+/* Keep the large arena after ordinary data on x86, so PC-relative references
+ * to small objects remain within the native compiler's 2 GiB code model. */
+#if defined(__x86_64__)
+__attribute__((section(".speech_heap")))
+#endif
 static _Alignas(16) unsigned char heap[1024u*1024u*1024u];
 static size_t heap_used;
 static jmp_buf failure;

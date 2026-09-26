@@ -125,11 +125,14 @@ pub fn provision<D: BlockDevice, F: FnMut(u8, &[u8])>(
     progress(43, b"INSTALLING KERNEL, DRIVERS AND CORE COMPONENTS");
     write_kernel(device, plan, progress).map_err(|_| StorageError::WriteKernel)?;
     progress(56, b"KERNEL AND CORE COMPONENTS WRITTEN");
-    let mut object_store = super::object::ObjectStore::format_with_progress(
+    let store_offset = super::layout::store_relative_lba((KERNEL_IMAGE.len() as u64 + 511) / 512)
+        .map_err(|_| StorageError::InsufficientCapacity)?;
+    let mut object_store = super::object::ObjectStore::format_with_progress_at(
         &mut *device,
         plan.container_first_lba,
         plan.expected_pool_blocks,
         plan.container_uuid,
+        store_offset,
         progress,
     )
     .map_err(|_| StorageError::WriteContainer)?;

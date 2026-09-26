@@ -12,9 +12,9 @@ pub mod voice;
 pub mod voice_pcm;
 #[cfg(target_os = "none")]
 pub mod voice_output;
-#[cfg(all(target_os = "none", target_arch = "aarch64"))]
+#[cfg(target_os = "none")]
 pub mod voice_input;
-#[cfg(all(target_os = "none", target_arch = "aarch64"))]
+#[cfg(target_os = "none")]
 pub mod voice_conversation;
 pub mod voice_vad;
 

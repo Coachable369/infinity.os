@@ -200,6 +200,8 @@ typedef struct {
 
 #if defined(INFINITY_AARCH64)
 #include "worker_bridge.h"
+#else
+#include "../x86_64/workers.h"
 #endif
 
 typedef struct {
@@ -721,7 +723,7 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
          * can legitimately exceed 64 MiB as new CORE services are added. Keep
          * the bound explicit, but large enough for the architecture-neutral
          * installed image assembled by the current build. */
-        if (kernel_bytes < sizeof(Elf64Header) || kernel_bytes > UINT64_C(256) * 1024 * 1024) continue;
+        if (kernel_bytes < sizeof(Elf64Header) || kernel_bytes > UINT64_C(512) * 1024 * 1024) continue;
         size_t transfer_size = (size_t)((kernel_bytes + 511) & ~UINT64_C(511));
         void *buffer = NULL;
         if (boot->allocate_pool(EFI_LOADER_DATA, transfer_size, &buffer) != EFI_SUCCESS) continue;
@@ -1373,6 +1375,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     info->worker_bridge = 0;
 #if defined(INFINITY_AARCH64)
     info->worker_bridge = infinity_worker_bridge(system);
+#else
+    info->worker_bridge = x86_worker_bridge(system, page_tables);
 #endif
     info->architecture = INFINITY_ARCHITECTURE;
     info->memory_map_address = 0;

@@ -321,11 +321,21 @@ $(BUILD)/voice-kokoro/aarch64/private-native.o: tools/voice_target.py $(wildcard
 $(BUILD)/voice-pocketsphinx-arm/private-native.o: tools/voice_target.py $(wildcard tools/voice-pocketsphinx/*.py) tools/voice-pocketsphinx/port.c tools/voice-pocketsphinx/include/sys/mman.h
 	python3 tools/voice-pocketsphinx/build.py
 
+$(BUILD)/voice-kokoro/x86_64/private-native.o: tools/voice_target.py $(wildcard tools/voice-kokoro/*.py tools/voice-kokoro/*.c tools/voice-kokoro/*.cpp tools/voice-kokoro/*.ld tools/voice-kokoro/*.txt) $(wildcard sdk/compiler/*.c sdk/compiler/*.h sdk/compiler/*.patch) $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
+	python3 tools/voice-kokoro/build.py --target x86_64 --build-only
+
+$(BUILD)/voice-pocketsphinx-x86_64/private-native.o: tools/voice_target.py $(wildcard tools/voice-pocketsphinx/*.py) tools/voice-pocketsphinx/port.c tools/voice-pocketsphinx/include/sys/mman.h
+	INFINITY_VOICE_TARGET=x86_64 python3 tools/voice-pocketsphinx/build.py
+
+$(BUILD)/x86_64/qwen-math.o: kernel/runtime/ai/qwen/cpu_math.c
+	@mkdir -p $(@D)
+	$(CLANG) --target=x86_64-none-elf -mno-red-zone -mno-avx -ffreestanding -fno-builtin -fno-stack-protector -ffp-contract=off -O3 -c $< -o $@
+
 $(BUILD)/voice-flite/%/libflite.a: $(FLITE_PORT_SOURCES)
 	python3 tools/voice-flite/build.py --target $*
 
-$(BUILD)/x86_64/installed-kernel.elf: $(BUILD)/x86_64/installed-kernel.o linker/x86_64.ld $(BUILD)/voice-flite/x86_64/libflite.a
-	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libinstalled-kernel.a $(BUILD)/voice-flite/x86_64/libflite.a
+$(BUILD)/x86_64/installed-kernel.elf: $(BUILD)/x86_64/installed-kernel.o linker/x86_64.ld $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
+	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libinstalled-kernel.a $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
 
 $(BUILD)/x86_64/kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/x86_64/installed-esp.img $(BUILD)/x86_64/installed-kernel.elf
 	@mkdir -p $(@D)
@@ -334,10 +344,10 @@ $(BUILD)/x86_64/kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/x86_64/inst
 	cp $(BUILD)/cargo/x86_64-unknown-none/release/libinfinity_kernel.a $(BUILD)/x86_64/libkernel.a
 	touch $@
 
-$(BUILD)/x86_64/kernel.elf: $(BUILD)/x86_64/kernel.o linker/x86_64.ld $(BUILD)/voice-flite/x86_64/libflite.a
-	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libkernel.a $(BUILD)/voice-flite/x86_64/libflite.a
+$(BUILD)/x86_64/kernel.elf: $(BUILD)/x86_64/kernel.o linker/x86_64.ld $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
+	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libkernel.a $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
 
-$(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h
+$(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/x86_64/workers.h
 	@mkdir -p $(@D)
 	$(CLANG) --target=x86_64-pc-windows-msvc -ffreestanding -fshort-wchar -fno-stack-protector \
 		-mno-red-zone -O2 -Wall -Wextra -Werror -c $< -o $@
@@ -346,7 +356,11 @@ $(BUILD)/x86_64/handoff.obj: boot/x86_64/handoff.asm
 	@mkdir -p $(@D)
 	nasm -f win64 $< -o $@
 
-$(BUILD)/x86_64/BOOTX64.EFI: $(BUILD)/x86_64/loader.obj $(BUILD)/x86_64/handoff.obj
+$(BUILD)/x86_64/workers.obj: boot/x86_64/workers.asm
+	@mkdir -p $(@D)
+	nasm -f win64 $< -o $@
+
+$(BUILD)/x86_64/BOOTX64.EFI: $(BUILD)/x86_64/loader.obj $(BUILD)/x86_64/handoff.obj $(BUILD)/x86_64/workers.obj
 	$(LLD_LINK) /subsystem:efi_application /entry:efi_main /nodefaultlib /machine:x64 /out:$@ $^
 
 $(BUILD)/x86_64/installed-esp.img: $(BUILD)/x86_64/BOOTX64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(ICON_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS) $(NODE_ASSETS)
@@ -387,6 +401,7 @@ $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel
 	mcopy -i $@ -s $(BUILD)/fat/EFI ::
 
 builds/InfinityOS-x86_64.iso: $(BUILD)/infinity-x86_64.img
+	python3 tools/voice-kokoro/install-parity.py --embedded-install $(BUILD)/x86_64/installed-kernel.elf $(BUILD)/x86_64/kernel.elf
 	@mkdir -p builds
 	@mkdir -p $(BUILD)/iso/EFI
 	cp $< $(BUILD)/iso/efi.img

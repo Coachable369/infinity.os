@@ -17,7 +17,9 @@ ROOT = Path(__file__).resolve().parents[2]
 def verify(path):
     image = Path(path).read_bytes()
     assert image[:6] == b"\x7fELF\x02\x01"
-    assert struct.unpack_from("<H", image, 18)[0] == 183
+    machine = struct.unpack_from("<H", image, 18)[0]
+    assert machine in (62, 183)
+    arch = "aarch64" if machine == 183 else "x86_64"
     phoff, shoff = struct.unpack_from("<QQ", image, 32)
     phsize, phcount, shsize, shcount, names_index = struct.unpack_from("<5H", image, 54)
     loads = [struct.unpack_from("<II6Q", image, phoff + i * phsize) for i in range(phcount)]
@@ -35,7 +37,7 @@ def verify(path):
         assert any(p[1] & 1 and p[3] <= address < p[3] + p[5] for p in loads)
     model = ROOT / "model-cache/kokoro-v1_0.gguf"
     assert hashlib.sha256(model.read_bytes()).hexdigest() == MODEL_SHA256
-    resources = [model, ROOT / "build/voice-kokoro/aarch64/THIRD-PARTY-NOTICES.txt"]
+    resources = [model, ROOT / "build/voice-kokoro" / arch / "THIRD-PARTY-NOTICES.txt"]
     resources += sorted(p for p in (ROOT / "build/voice-kokoro/reference/_deps/espeak-build/espeak-ng-data").rglob("*") if p.is_file())
     total = 0
     for resource in resources:
@@ -55,9 +57,17 @@ def verify(path):
 # DESC: Fails packaging if either runtime omits real speech model, phonemizer, notices or constructor data.
 # ------------------=
 def main():
-    if len(sys.argv) < 2:
+    arguments = sys.argv[1:]
+    embedded = "--embedded-install" in arguments
+    arguments = [argument for argument in arguments if argument != "--embedded-install"]
+    if not arguments:
         raise SystemExit("Provide linked kernel ELF paths")
-    print(json.dumps([verify(path) for path in sys.argv[1:]], indent=2))
+    results = [verify(path) for path in arguments]
+    if embedded:
+        assert len(arguments) == 2
+        installed, live = [Path(path).read_bytes() for path in arguments]
+        assert live.find(installed) >= 0, "Live installer does not embed the verified installed kernel"
+    print(json.dumps(results, indent=2))
 
 
 if __name__ == "__main__":

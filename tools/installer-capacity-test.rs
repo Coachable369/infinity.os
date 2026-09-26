@@ -27,7 +27,9 @@ fn main() {
     let x86_kernel_blocks = image_blocks("build/x86_64/installed-kernel.elf");
     let arm_kernel_blocks = image_blocks("build/aarch64/installed-kernel.elf");
     // The loader's largest supported kernel must fit without touching the store.
-    let maximum_kernel_blocks = 256 * 1024 * 1024 / 512;
+    let maximum_kernel_blocks = layout::MAX_KERNEL_BLOCKS;
+    assert_eq!(layout::store_relative_lba(256 * 2048), Ok(layout::STORE_RELATIVE_LBA));
+    assert_eq!(layout::store_relative_lba(256 * 2048 + 1), Ok(layout::LARGE_STORE_RELATIVE_LBA));
     let maximum = layout::plan_entire_disk(
         REPROVISION_DISK_BLOCKS,
         arm_esp_blocks,
@@ -36,7 +38,7 @@ fn main() {
     .unwrap();
     assert_eq!(
         maximum.kernel_lba + maximum_kernel_blocks,
-        maximum.container_first + layout::STORE_RELATIVE_LBA
+        maximum.container_first + layout::LARGE_STORE_RELATIVE_LBA
     );
     assert_eq!(
         layout::plan_entire_disk(
@@ -73,7 +75,7 @@ fn main() {
         layout::plan_entire_disk(
             REPROVISION_DISK_BLOCKS,
             arm_esp_blocks,
-            layout::STORE_RELATIVE_LBA,
+            layout::MAX_KERNEL_BLOCKS + 1,
         ),
         Err(layout::LayoutError::InsufficientCapacity)
     ));

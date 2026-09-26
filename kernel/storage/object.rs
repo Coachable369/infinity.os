@@ -482,15 +482,27 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub fn format_with_progress<F: FnMut(u8, &[u8])>(device: D, container_lba: u64,
         container_blocks: u64, seed: [u8; 16], progress: &mut F) -> Result<Self, ObjectError> {
+        Self::format_with_progress_at(device, container_lba, container_blocks, seed, STORE_RELATIVE_LBA, progress)
+    }
+
+    // ------------------------=
+    // FUNC: format_with_progress_at
+    // DESC: Formats at a validated kernel-safe location while preserving existing store placement contracts.
+    // ------------------=
+    pub fn format_with_progress_at<F: FnMut(u8, &[u8])>(device: D, container_lba: u64,
+        container_blocks: u64, seed: [u8; 16], offset: u64, progress: &mut F) -> Result<Self, ObjectError> {
+        if offset != STORE_RELATIVE_LBA && offset != super::layout::LARGE_STORE_RELATIVE_LBA {
+            return Err(ObjectError::InsufficientCapacity);
+        }
         let available = container_blocks
-            .checked_sub(STORE_RELATIVE_LBA + CONTENT)
+            .checked_sub(offset + CONTENT)
             .ok_or(ObjectError::InsufficientCapacity)?
             / ALLOCATION_BLOCK_SECTORS;
         let mut state = State::empty(available.min((ALLOCATION_BYTES * 8) as u64) as u32);
         reserve_allocator_metadata(&mut state)?;
         let mut store = Self {
             device,
-            store_lba: container_lba.checked_add(STORE_RELATIVE_LBA).ok_or(ObjectError::InsufficientCapacity)?,
+            store_lba: container_lba.checked_add(offset).ok_or(ObjectError::InsufficientCapacity)?,
             state,
             mounted_root: 0,
             in_transaction: false,
@@ -511,7 +523,8 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub fn mount(mut device: D, container_lba: u64) -> Result<Self, ObjectError> {
         let mut unsupported = false;
-        for offset in [STORE_RELATIVE_LBA, super::layout::LEGACY_STORE_RELATIVE_LBA] {
+        for offset in [STORE_RELATIVE_LBA, super::layout::LEGACY_STORE_RELATIVE_LBA,
+                       super::layout::LARGE_STORE_RELATIVE_LBA] {
             let store_lba = container_lba
                 .checked_add(offset)
                 .ok_or(ObjectError::CorruptMetadata)?;

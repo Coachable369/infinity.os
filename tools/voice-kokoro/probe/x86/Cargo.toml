@@ -1,0 +1,13 @@
+[package]
+name = "infinity-kokoro-x86-probe"
+version = "0.1.0"
+edition = "2021"
+[lib]
+path = "../x86.rs"
+crate-type = ["staticlib"]
+[features]
+dot-only = []
+[profile.release]
+opt-level = 3
+panic = "abort"
+lto = true

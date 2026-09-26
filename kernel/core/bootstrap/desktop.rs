@@ -20,7 +20,7 @@ pub fn thinking_animation_tick(visible: bool) -> bool {
     let mut active = visible && crate::runtime::ai::with_ai_runtime(|ai|
         ai.chat.enabled() && !ai.chat.minimized()
         && ai.chat.generation_state == crate::runtime::ai::chat::GenerationState::Running);
-    #[cfg(all(target_os="none",target_arch="aarch64"))]
+    #[cfg(target_os="none")]
     { active |= visible && crate::runtime::ai::voice_conversation::state().0 == crate::runtime::ai::voice_conversation::State::Listening; }
     let now = crate::ui::performance::monotonic_ns().unwrap_or(0);
     unsafe {
@@ -9740,7 +9740,7 @@ impl super::DisplayDevice {
                 _ => b"LOCAL  READY".as_slice(),
             }
         };
-        #[cfg(all(target_os="none",target_arch="aarch64"))]
+        #[cfg(target_os="none")]
         let state = {
             use crate::runtime::ai::voice_conversation::{state,State};
             if !voice_enabled {
@@ -9758,7 +9758,7 @@ impl super::DisplayDevice {
             && !chat.minimized();
         let state_x = left + width.saturating_sub(state_width + 72 * scale);
         let frame = unsafe { THINKING_ANIMATION.frame as usize };
-        #[cfg(all(target_os="none",target_arch="aarch64"))]
+        #[cfg(target_os="none")]
         {
             use crate::runtime::ai::voice_conversation::{state,State,indicator};
             let region=indicator::control(geometry.panel,scale);
@@ -10377,7 +10377,7 @@ pub fn system_ui_present(
             console.system_ui_active = true;
             console.restore_cursor();
             let mut chat_content = crate::runtime::ai::with_ai_runtime(|runtime| runtime.chat.state_hash());
-            #[cfg(all(target_os="none",target_arch="aarch64"))]
+            #[cfg(target_os="none")]
             { chat_content ^= (crate::runtime::ai::voice_conversation::state().0 as u64).wrapping_mul(0x9e3779b97f4a7c15); }
             let chat_changed = console.last_chat_content != chat_content;
             let content = system_content_hash(

@@ -78,7 +78,7 @@ def main():
         assert len(found) == 1
         first, last = found[0]
         stores = []
-        for offset in (262144, 257 * 2048):
+        for offset in (262144, 257 * 2048, 513 * 2048):
             for slot in (0, 1):
                 root = read(first + offset + slot)
                 if root[:8] == b'INFOROOT':

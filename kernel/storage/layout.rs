@@ -1,7 +1,10 @@
 // Keep the historical object-store location readable for existing disks.
 pub const LEGACY_STORE_RELATIVE_LBA: u64 = 262_144;
-// Reserve 257 MiB: the loader accepts a 256 MiB kernel starting at 1 MiB.
+// Preserve the established reservation for kernels up to 256 MiB.
 pub const STORE_RELATIVE_LBA: u64 = 257 * 2048;
+// Larger native speech images use a separate location; existing disks stay put.
+pub const LARGE_STORE_RELATIVE_LBA: u64 = 513 * 2048;
+pub const MAX_KERNEL_BLOCKS: u64 = 512 * 2048;
 const MINIMUM_BLOCKS: u64 = 262_144;
 const ESP_FIRST: u64 = 2_048;
 const ALIGNMENT_BLOCKS: u64 = 2_048;
@@ -19,6 +22,15 @@ pub struct EntireDiskLayout {
     pub container_first: u64,
     pub container_last: u64,
     pub kernel_lba: u64,
+}
+
+// ------------------------=
+// FUNC: store_relative_lba
+// DESC: Selects a bounded non-overlapping store location without migrating existing disks.
+// ------------------=
+pub fn store_relative_lba(kernel_blocks: u64) -> Result<u64, LayoutError> {
+    if kernel_blocks > MAX_KERNEL_BLOCKS { return Err(LayoutError::InsufficientCapacity); }
+    Ok(if kernel_blocks <= 256 * 2048 { STORE_RELATIVE_LBA } else { LARGE_STORE_RELATIVE_LBA })
 }
 
 // ------------------------=
@@ -50,10 +62,11 @@ pub fn plan_entire_disk(
     let kernel_end = KERNEL_RELATIVE_LBA
         .checked_add(kernel_blocks)
         .ok_or(LayoutError::Arithmetic)?;
+    let store_offset = store_relative_lba(kernel_blocks)?;
     let store_lba = container_first
-        .checked_add(STORE_RELATIVE_LBA)
+        .checked_add(store_offset)
         .ok_or(LayoutError::Arithmetic)?;
-    if kernel_end > STORE_RELATIVE_LBA
+    if kernel_end > store_offset
         || kernel_lba
             .checked_add(kernel_blocks)
             .ok_or(LayoutError::Arithmetic)?

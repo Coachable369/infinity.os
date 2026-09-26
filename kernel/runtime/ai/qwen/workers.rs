@@ -60,6 +60,8 @@ static READY: AtomicUsize = AtomicUsize::new(0);
 static COMPLETED: AtomicUsize = AtomicUsize::new(0);
 static COMPUTE_TICKS: AtomicU64 = AtomicU64::new(0);
 static IDLE_TICKS: AtomicU64 = AtomicU64::new(0);
+#[cfg(all(target_arch = "x86_64", target_os = "none"))]
+static TSC_HZ: AtomicU64 = AtomicU64::new(0);
 static Q4_TICKS: AtomicU64 = AtomicU64::new(0);
 static Q6_TICKS: AtomicU64 = AtomicU64::new(0);
 
@@ -75,6 +77,13 @@ pub fn clock_ns() -> u64 {
 // DESC: Converts native counter ticks to nanoseconds; host harnesses return zero.
 // ------------------=
 fn ticks_ns(ticks: u64) -> u64 {
+    #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+    {
+        let frequency = TSC_HZ.load(Ordering::Acquire);
+        if frequency != 0 {
+            return ticks / frequency * 1_000_000_000 + ticks % frequency * 1_000_000_000 / frequency;
+        }
+    }
     #[cfg(all(target_arch = "aarch64", target_os = "none"))]
     unsafe {
         let frequency: u64;
@@ -100,32 +109,34 @@ pub fn kernel_profile_ns() -> [u64; 3] {
 // DESC: Reads the shared ARM counter without logging, allocation, or firmware calls.
 // ------------------=
 fn counter() -> u64 {
+    #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+    unsafe {
+        core::arch::x86_64::_mm_lfence();
+        return core::arch::x86_64::_rdtsc();
+    }
     #[cfg(all(target_arch = "aarch64", target_os = "none"))]
     unsafe {
         let value: u64;
         core::arch::asm!("mrs {0}, cntvct_el0", out(reg) value, options(nomem, nostack));
         return value;
     }
-    #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+    #[cfg(not(all(any(target_arch = "aarch64", target_arch = "x86_64"), target_os = "none")))]
     0
 }
+// ------------------------=
+// FUNC: infinity_speech_clock_ns
+// DESC: Supplies the shared native speech engine with the calibrated x86 monotonic counter.
+// ------------------=
+#[cfg(all(target_arch = "x86_64", target_os = "none"))]
+#[no_mangle]
+pub extern "C" fn infinity_speech_clock_ns() -> u64 { clock_ns() }
 // ------------------------=
 // FUNC: profile_ms
 // DESC: Reports cumulative summed worker compute and completed-result waiting time in milliseconds.
 // ------------------=
 pub fn profile_ms() -> (u64, u64) {
-    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
-    unsafe {
-        let frequency: u64;
-        core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) frequency, options(nomem, nostack));
-        if frequency != 0 {
-            return (
-                COMPUTE_TICKS.load(Ordering::Relaxed).saturating_mul(1000) / frequency,
-                IDLE_TICKS.load(Ordering::Relaxed).saturating_mul(1000) / frequency,
-            );
-        }
-    }
-    (0, 0)
+    (ticks_ns(COMPUTE_TICKS.load(Ordering::Relaxed)) / 1_000_000,
+     ticks_ns(IDLE_TICKS.load(Ordering::Relaxed)) / 1_000_000)
 }
 // BSP-only submission state. No pointers into movable engine memory are retained.
 static mut PENDING: (usize, usize, bool) = (0, 0, false);
@@ -193,10 +204,10 @@ pub unsafe fn background(task: unsafe fn()) -> bool {
 
 // ------------------------=
 // FUNC: initialize
-// DESC: Requests asynchronous AP startup through the versioned firmware bridge on ARM.
+// DESC: Starts native workers through the target's versioned bootstrap adapter.
 // ------------------=
 pub unsafe fn initialize(address: u64) {
-    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    #[cfg(target_os = "none")]
     if address != 0 {
         #[repr(C)]
         struct Bridge {
@@ -204,6 +215,14 @@ pub unsafe fn initialize(address: u64) {
             start: unsafe extern "efiapi" fn(unsafe extern "efiapi" fn(*mut u8), u64) -> u64,
         }
         let bridge = &*(address as *const Bridge);
+        #[cfg(target_arch = "x86_64")]
+        if bridge.version == 2 {
+            let frequency = *((address as *const u64).add(2));
+            if !(1_000_000..=10_000_000_000).contains(&frequency) { return; }
+            TSC_HZ.store(frequency, Ordering::Release);
+            (bridge.start)(worker_entry, COUNT as u64);
+        }
+        #[cfg(target_arch = "aarch64")]
         if bridge.version == 1 {
             (bridge.start)(worker_entry, COUNT as u64);
         }
