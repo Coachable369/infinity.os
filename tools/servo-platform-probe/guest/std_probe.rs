@@ -118,6 +118,13 @@ pub fn run() {
     c_sync_roundtrip();
     extern "C" { fn infinity_c_thread_test() -> i32; }
     verify_c_sync(6, unsafe { infinity_c_thread_test() });
+    extern "C" { fn infinity_c_memory_test() -> i32; }
+    verify_c_sync(7, unsafe { infinity_c_memory_test() });
+    #[cfg(feature = "async-probe")]
+    {
+        extern "C" { fn infinity_c_sqlite_test() -> i32; }
+        verify_c_sync(8, unsafe { infinity_c_sqlite_test() });
+    }
     stack_bounds_roundtrip();
     #[cfg(feature = "async-probe")]
     entropy_roundtrip();

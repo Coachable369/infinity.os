@@ -13,8 +13,20 @@ provider before running engine C++ static initialization. Its nanosecond adapter
 fails closed on missing clocks, malformed fields and overflow. Native stack-base
 queries use `infinity_std_stack_bounds`, which reports the current executor
 worker's leased bounds and rejects the unknown root stack. Engine execution must
-therefore use a registered worker, not an arbitrary boot/UI stack. These adapters
-do not provide production scheduling, C++ thread linkage or virtual-memory support.
+therefore use a registered worker, not an arbitrary boot/UI stack. C pthread
+creation, TLS, once, mutex/condition and reader/writer synchronization now use
+that executor. Production scheduling and hardware-backed virtual-memory
+protection are still missing.
+
+The C anonymous-memory adapter owns bounded private read/write regions from the
+granted heap (64 regions, at most 16 MiB each, also bounded by available heap).
+Subrange release retains physical backing until the last part is released; it
+does not revoke CPU access or constitute process isolation. Executable, fixed,
+shared, file-backed and protected mappings are rejected, never simulated.
+Discard zeroes anonymous pages without claiming physical decommit. Native C
+filesystem/descriptors/process calls fail explicitly: site storage and downloads
+must use the object-service boundary. None of these adapters is production
+packaged until installed-system acceptance passes.
 
 Native outbound IPv4 TCP now backs std streams, Mio readiness and Tokio's
 current-thread async network runtime. DNS, UDP/listen, raw descriptors and tuning

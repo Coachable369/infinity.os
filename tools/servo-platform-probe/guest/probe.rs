@@ -22,8 +22,10 @@ static mut MEMORY: Memory = Memory([0; 4096]);
 core::arch::global_asm!(
     ".section .text.entry", ".global _start", "_start:",
     "ldr x0, =0x47f00000", "mov sp, x0", "mov x0, #(3 << 20)",
-    "msr cpacr_el1, x0", "isb", "bl probe", "b ."
+    "msr cpacr_el1, x0", "isb", "bl probe_memory", "bl probe", "b ."
 );
+#[cfg(target_arch = "aarch64")]
+core::arch::global_asm!(include_str!("aarch64-memory.S"));
 
 // ------------------------=
 // FUNC: infinity_kernel_entry

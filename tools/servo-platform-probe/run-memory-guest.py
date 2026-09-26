@@ -84,19 +84,25 @@ def main():
     executable = output / "probe.elf"
     native_objects = []
     if options.std_probe:
+        sqlite = root / "build/servo-cargo-home/registry/src/index.crates.io-1949cf8c6b5b557f/libsqlite3-sys-0.36.0/sqlite3"
         for source in (Path(__file__).with_name("c-allocator-test.c"), root / "sdk/servo-std/c-reentrant-allocator.c",
                        Path(__file__).with_name("c-thread-time-test.c"), root / "sdk/servo-std/c-thread-time.c",
                        root / "sdk/servo-std/c-sync.c", Path(__file__).with_name("c-sync-test.c"),
-                       root / "sdk/servo-std/c-thread.c", Path(__file__).with_name("c-thread-test.c")):
+                       root / "sdk/servo-std/c-thread.c", Path(__file__).with_name("c-thread-test.c"),
+                       root / "sdk/servo-std/c-memory.c", Path(__file__).with_name("c-memory-test.c"),
+                       root / "sdk/servo-std/c-system.c", root / "sdk/servo-std/c-sqlite.c",
+                       Path(__file__).with_name("c-sqlite-test.c"), sqlite / "sqlite3.c"):
             obj = output / (source.stem + ".o")
             subprocess.run(["/opt/homebrew/opt/llvm/bin/clang", "--target=" + options.arch + "-none-elf",
                         "-mstrict-align" if options.arch == "aarch64" else "-mno-red-zone",
                         "-ffreestanding", "-fno-builtin", "-O2", "-c",
+                        "-I", str(sqlite), "-DSQLITE_OS_OTHER=1", "-DSQLITE_MUTEX_APPDEF=1", "-DSQLITE_OMIT_LOAD_EXTENSION=1",
                         "-include", str(root / "sdk/servo-std/c-target.h"),
                         "-isystem", str(root / ("build/voice-newlib-" + options.arch) / (options.arch + "-none-elf/newlib/targ-include")),
                         "-isystem", str(root / "build/newlib-4.6.0.20260123/newlib/libc/include"),
                         str(source), "-o", str(obj)], check=True)
             native_objects.append(str(obj))
+        native_objects += [str(root / ("build/voice-newlib-" + options.arch) / (options.arch + "-none-elf/newlib") / library) for library in ("libc.a", "libm.a")]
     linker = Path(__file__).with_name("guest") / "link.ld" if options.arch == "aarch64" else root / "linker/x86_64.ld"
     subprocess.run(["/opt/homebrew/opt/lld/bin/ld.lld", "--gc-sections", "-nostdlib", "-T",
                     str(linker), "-o", str(executable),

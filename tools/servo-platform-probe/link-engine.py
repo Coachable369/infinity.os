@@ -15,7 +15,11 @@ def main():
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
-    arch = parser.parse_args().arch
+    parser.add_argument("--boot-probe", action="store_true")
+    options = parser.parse_args()
+    arch = options.arch
+    if options.boot_probe and arch != "aarch64":
+        raise SystemExit("Engine boot fixture currently supports AArch64 only")
     triple = "aarch64-unknown-none-softfloat" if arch == "aarch64" else "x86_64-unknown-none"
     target = root / "build/cargo" / triple / "debug"
     output = root / "build/servo-platform-probe"
@@ -31,7 +35,7 @@ def main():
     flags = ["--cfg", "infinity_native", "--check-cfg=cfg(infinity_native)",
              "--check-cfg=cfg(infinity_certificate_test)"]
     native_externs = []
-    for name in ("core", "panic_abort", "compiler_builtins"):
+    for name in ("core", "panic_abort", "compiler_builtins", *(("std",) if options.boot_probe else ())):
         archives = []
         for fingerprint in (target / ".fingerprint").glob(name + "-*/lib-" + name + ".json"):
             archive = target / "deps" / ("lib" + fingerprint.parent.name + ".rlib")
@@ -43,11 +47,12 @@ def main():
     runtime = output / ("libnative_runtime_" + arch + ".rlib")
     newlib = root / ("build/voice-newlib-" + arch) / (arch + "-none-elf/newlib")
     c_objects = []
-    for name in ("c-reentrant-allocator", "c-thread-time", "c-sync", "c-thread"):
+    sqlite = root / "build/servo-cargo-home/registry/src/index.crates.io-1949cf8c6b5b557f/libsqlite3-sys-0.36.0/sqlite3"
+    for name in ("c-reentrant-allocator", "c-thread-time", "c-sync", "c-thread", "c-memory", "c-system", "c-sqlite"):
         obj = output / (name + "-" + arch + ".o")
         subprocess.run(["/opt/homebrew/opt/llvm/bin/clang", "--target=" + arch + "-none-elf",
                     "-mstrict-align" if arch == "aarch64" else "-mno-red-zone",
-                    "-ffreestanding", "-fno-builtin", "-isystem", str(newlib / "targ-include"),
+                    "-ffreestanding", "-fno-builtin", "-I", str(sqlite), "-isystem", str(newlib / "targ-include"),
                     "-isystem", str(root / "build/newlib-4.6.0.20260123/newlib/libc/include"),
                     "-include", str(root / "sdk/servo-std/c-target.h"),
                     "-c", str(root / "sdk/servo-std" / (name + ".c")), "-o", str(obj)], check=True)
@@ -60,7 +65,8 @@ def main():
     command = ["rustc", "--edition=2021", "--target", triple,
                "--cfg", "infinity_native", "-C", "panic=abort",
                "-C", "linker=/opt/homebrew/opt/lld/bin/ld.lld",
-               "-C", "link-arg=--entry=infinity_browser_link_probe",
+               "-C", "link-arg=--entry=" + ("_start" if options.boot_probe else "infinity_browser_link_probe"),
+               *(["-C", "link-arg=-T" + str(Path(__file__).with_name("engine-boot.ld"))] if options.boot_probe else []),
                "-C", "link-arg=--error-limit=0",
                *native_search,
                "-l", "static=c++abi",
@@ -73,8 +79,8 @@ def main():
                *native_externs,
                "-L", "dependency=" + str(target / "deps"),
                "-L", "dependency=" + str(root / "build/cargo/debug/deps"),
-               str(Path(__file__).with_name("engine-link.rs")),
-               "-o", str(output / "engine-link-only.elf")]
+               str(Path(__file__).with_name("engine-boot.rs" if options.boot_probe else "engine-link.rs")),
+               "-o", str(output / ("engine-boot.elf" if options.boot_probe else "engine-link-only.elf"))]
     with (output / "engine-link.log").open("w") as log:
         result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
     report = {"link_exit_status": result.returncode, "executed": False,

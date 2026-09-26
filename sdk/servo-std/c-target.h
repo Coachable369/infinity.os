@@ -16,6 +16,11 @@
 #define OPENSSL_NO_SOCK 1
 #define OPENSSL_NO_FILESYSTEM 1
 #define OPENSSL_NO_TTY 1
+#if defined(__aarch64__)
+/* Upstream static selection uses only compiler-guaranteed baseline ISA
+ * features. Do not probe Linux auxv or assume optional AES/SHA extensions. */
+#define OPENSSL_STATIC_ARMCAP 1
+#endif
 #ifndef __ASSEMBLER__
 #include <stdint.h>
 #endif

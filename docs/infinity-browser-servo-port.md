@@ -2,6 +2,34 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Executable linkage and session storage, September 26 (latest)
+
+Actual AArch64 Servo executable linkage now passes:
+`builds/manifests/20260926T211343651810Z-37875.json`. C++ wrappers now match the
+native no-exceptions libc++ ABI; JavaScript exceptions remain engine values.
+AWS-LC uses upstream compile-time baseline ARM capabilities without Unix CPU
+discovery or assuming optional crypto extensions. Archive generation passed
+`builds/manifests/20260926T210248927755Z-32983.json`.
+
+Added bounded anonymous RW backing, explicit denial of unsupported executable/
+protected/file mappings and Unix descriptors, plus SQLite native mutexes and an
+explicitly session-only VFS. Real SQL transactions, rollback, session isolation,
+entropy, and denied persistent paths pass with the existing async/network suite:
+
+- AArch64: `builds/manifests/20260926T211653929094Z-38016.json`.
+- x86_64: `builds/manifests/20260926T211852718762Z-38086.json`.
+
+The ARM guest now maps test RAM as normal cacheable memory, fixing an alignment
+fault in newlib strcmp. This is test-fixture identity mapping, not process
+isolation. Anonymous subrange release retains backing until all ranges release;
+no hardware access revocation or physical decommit is claimed.
+
+First real engine boot reaches native provider installation, constructors and
+SQLite initialization, then times out inside Servo startup:
+`builds/manifests/20260926T211934887126Z-38153.json`. The new boot fixture is
+separate from the non-bootable link diagnostic. No initialized Servo instance,
+page, installed-system proof, or fresh ISO yet. Next gate is startup execution.
+
 ## Native C runtime checkpoint, September 26 (current)
 
 Fixed archive ordering so the governed allocation providers precede newlib.

@@ -77,7 +77,9 @@ def main():
     environment["CXXSTDLIB"] = "c++"
     environment[f"CXXSTDLIB_{target_key}"] = "c++"
     environment[f"CXXFLAGS_{target_key}"] = (
-        "-nostdinc++ -isystem " + str(cxx_headers) + " " + cflags)
+        # Match the engine and native libc++ abort-on-failure ABI. JavaScript
+        # exceptions are engine values, not C++ unwinding across Rust frames.
+        "-fno-exceptions -nostdinc++ -isystem " + str(cxx_headers) + " " + cflags)
     subprocess.run([environment[f"CC_{target_key}"],
                     *shlex.split(cflags), "-std=c11", "-fsyntax-only",
                     str(Path(__file__).with_name("c-abi-probe.c"))], check=True, env=environment)
