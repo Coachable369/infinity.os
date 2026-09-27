@@ -1,14 +1,58 @@
-//! Native TCP facade. Unsupported listener/datagram/DNS APIs keep Rust's
-//! explicit unsupported implementation until their adapters are executable.
+//! Native TCP and bounded IPv4 resolver facades. Listener/datagram APIs remain
+//! explicitly unsupported. Network authority belongs to the installed providers.
 use crate::{fmt, io::{self, BorrowedCursor, IoSlice, IoSliceMut}, net::{SocketAddr, Shutdown, ToSocketAddrs},
     sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
 #[path = "infinity_unsupported.rs"]
 mod unsupported_net;
-pub use unsupported_net::{TcpListener, UdpSocket, LookupHost, lookup_host};
+pub use unsupported_net::{TcpListener, UdpSocket};
+#[derive(Debug)]
+pub struct LookupHost(Option<SocketAddr>);
+impl Iterator for LookupHost {
+    type Item = SocketAddr;
+    // ------------------------=
+    // FUNC: next
+    // DESC: Consumes the resolver's single bounded IPv4 endpoint.
+    // ------------------=
+    fn next(&mut self) -> Option<SocketAddr> { self.0.take() }
+}
+struct DnsQuery(u64);
+impl Drop for DnsQuery {
+    // ------------------------=
+    // FUNC: drop
+    // DESC: Releases native query state on every lookup exit path.
+    // ------------------=
+    fn drop(&mut self) { unsafe { infinity_dns_cancel(self.0); } }
+}
+// ------------------------=
+// FUNC: lookup_host
+// DESC: Resolves through a granted native service with a five-second bound and cooperative waits.
+// ------------------=
+pub fn lookup_host(host: &str, port: u16) -> io::Result<LookupHost> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let query = loop {
+        let mut id = 0;
+        let status = unsafe { infinity_dns_begin(host.as_ptr(), host.len(), &mut id) };
+        if status == 0 { break DnsQuery(id); }
+        if status != 11 { return Err(io::Error::from_raw_os_error(status)); }
+        if Instant::now() >= deadline { return Err(io::ErrorKind::TimedOut.into()); }
+        crate::thread::sleep(Duration::from_millis(1));
+    };
+    let mut address = [0; 4];
+    loop {
+        let status = unsafe { infinity_dns_poll(query.0, address.as_mut_ptr()) };
+        if status == 0 { return Ok(LookupHost(Some(SocketAddr::from((address, port))))); }
+        if status != 11 { return Err(io::Error::from_raw_os_error(status)); }
+        if Instant::now() >= deadline { return Err(io::ErrorKind::TimedOut.into()); }
+        crate::thread::sleep(Duration::from_millis(1));
+    }
+}
 #[repr(C)]
 #[derive(Default)]
 struct Status { flags: u32, local: [u8;4], remote: [u8;4], local_port: u16, remote_port: u16 }
 unsafe extern "C" {
+    fn infinity_dns_begin(bytes: *const u8, length: usize, output: *mut u64) -> i32;
+    fn infinity_dns_poll(id: u64, output: *mut u8) -> i32;
+    fn infinity_dns_cancel(id: u64);
     fn infinity_tcp_open(address: *const u8, port: u16, handle: *mut u64) -> i32;
     fn infinity_tcp_status(handle: u64, out: *mut Status) -> i32;
     fn infinity_tcp_read(handle: u64, bytes: *mut u8, length: usize, peek: bool, count: *mut usize) -> i32;

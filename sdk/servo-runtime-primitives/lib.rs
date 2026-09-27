@@ -10,6 +10,8 @@ pub mod executor;
 pub mod native;
 #[cfg(all(feature = "native-abi", target_os = "none"))]
 pub mod network;
+#[cfg(all(feature = "native-abi", target_os = "none"))]
+pub mod dns;
 #[cfg(all(feature = "c-allocator-abi", target_os = "none"))]
 mod c_allocator;
 

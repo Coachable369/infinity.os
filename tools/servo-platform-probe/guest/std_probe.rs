@@ -118,6 +118,7 @@ pub unsafe fn initialize() {
 // DESC: Executes std threads, TLS, mutex/condvar, sleeps and joins entirely on native guest stacks.
 // ------------------=
 pub fn run() {
+    super::dns_probe::run();
     abi_limits();
     allocation_roundtrip();
     c_tls_roundtrip();

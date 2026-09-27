@@ -9,6 +9,8 @@ mod context_probe;
 mod executor_probe;
 #[cfg(feature = "std-probe")]
 mod std_probe;
+#[cfg(feature = "std-probe")]
+mod dns_probe;
 #[cfg(feature = "socket-probe")]
 mod socket_probe;
 #[cfg(feature = "async-probe")]

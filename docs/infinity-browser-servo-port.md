@@ -2,6 +2,28 @@
 
 Status: **not implemented or packaged; acceptance remains open**.
 
+## Bounded native resolver adapter, September 26
+
+The staged Rust standard library now resolves IPv4 hostnames through an explicit
+owner-local service ABI, rather than an unsupported stub or host resolver.
+Submission and polling share a five-second deadline and yield while capacity or
+answers are pending. RAII cleanup releases queries after success, denial and
+timeout. Unsupported listeners, UDP and IPv6 remain explicit failures.
+
+`sdk/servo-runtime-primitives/dns.rs` validates bounded ASCII labels, rejects
+missing authority/cross-CPU/reentrant access, and never changes a result buffer
+on pending or failed queries. `sdk/servo-std/net.rs` preserves the requested port.
+Guest contract tests exercise validation, busy submission, pending completion,
+revocation, stale handles, timeout, cleanup and reuse on native stacks.
+AArch64 timeout/reuse proof: `20260927T010701066725Z-79374.json`.
+x86_64 timeout/reuse proof: `20260927T010746161776Z-79603.json`.
+
+These tests deliberately inject resolver answers. They do **not** establish wire
+DNS, external HTTPS, or installed browser support. Binding the adapter to the
+governed network service/NIC remains open, alongside the production engine worker,
+native window, download object commit and System Generation packaging. A normal
+OS ISO rebuild does not package these opt-in browser probes as a working browser.
+
 ## Native HTML/CSS and JavaScript pixels passed, September 26
 
 Expanded guest acceptance now also passes pointer focus, native keyboard entry,
@@ -34,8 +56,9 @@ Full engine archive build: `20260926T222028395038Z-63161.json`.
 
 Allocation checkpoints are 36,580,096 bytes after engine initialization and
 67,722,496 after the page test, not measured peak RAM. This proves inline page
-rendering and DOM mutation only. Network pages, input/navigation, the native
-shell, System Generation packaging and cold-installed proof remain open.
+rendering and DOM mutation only at that checkpoint. Input/navigation subsequently
+passed as recorded above. Network pages, the native shell, System Generation
+packaging and cold-installed proof remain open.
 
 ## Native Servo initialization passed, September 26
 

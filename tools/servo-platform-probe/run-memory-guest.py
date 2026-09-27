@@ -146,6 +146,7 @@ def main():
     evidence = dict(environment="freestanding QEMU guest", architecture=options.arch, operations=record[2], context_probe=options.context_probe,
                     executor_probe=options.executor_probe, std_probe=options.std_probe, mio_probe=options.mio_probe,
                     socket_probe=options.socket_probe, async_probe=options.async_probe,
+                    dns_contract_probe=options.std_probe, live_dns=False,
                     arena_bytes=record[3], passed=True, installed_os=False, servo_executed=False)
     (output / "evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
     print(json.dumps(evidence, indent=2))
