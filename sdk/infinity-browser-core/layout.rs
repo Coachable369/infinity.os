@@ -27,6 +27,16 @@ pub struct Layout {
 
 impl Layout {
     // ------------------------=
+    // FUNC: with_tab_count
+    // DESC: Keeps the add-tab control immediately after the last visible tab without moving window controls.
+    // ------------------=
+    pub fn with_tab_count(mut self,count:usize)->Self {
+        if let Some((last,_))=count.checked_sub(1).and_then(|index|self.tab(index,count)) {
+            self.new_tab.x=last.x+last.width as i32+(8*self.tabs.height/36) as i32;
+        }
+        self
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Lays out scalable shell chrome while preserving distinct hit targets and page bounds.
     // ------------------=
@@ -36,24 +46,24 @@ impl Layout {
         let gap = crate::skin::GAP * scale;
         let gutter = crate::skin::GUTTER * scale;
         let control = crate::skin::CONTROL_HEIGHT * scale;
-        let title_height = 40 * scale;
+        let title_height = 48 * scale;
         let toolbar_height = control + 2 * gap;
         let status_height = 24 * scale;
         let tab_height = 36 * scale;
-        let y = title_height + tab_height + gap;
+        let y = title_height + gap;
         let rect = |x: u32, y: u32, width, height| Viewport { x: x as i32, y: y as i32, width, height };
         let address_x = gutter + 3 * (control + gap);
-        let go_width = 72 * scale;
+        let go_width = 32 * scale;
         let menu_x = width - gutter - control;
         let downloads_x = menu_x - gap - control;
         let go_x = downloads_x - gap - go_width;
         let window_control = 32 * scale;
         let close_x = width - gutter - window_control;
-        let content_y = title_height + tab_height + toolbar_height;
+        let content_y = title_height + toolbar_height;
         Some(Self {
             title: rect(0, 0, width, title_height),
-            tabs: rect(gutter, title_height, width - 2 * gutter - 40 * scale, tab_height),
-            new_tab: rect(width - gutter - 32 * scale, title_height, 32 * scale, 32 * scale),
+            tabs: rect(104 * scale, 12 * scale, width - 264 * scale, tab_height),
+            new_tab: rect(width - 152 * scale, 12 * scale, 32 * scale, 32 * scale),
             back: rect(gutter, y, control, control),
             forward: rect(gutter + control + gap, y, control, control),
             reload: rect(gutter + 2 * (control + gap), y, control, control),
@@ -61,9 +71,9 @@ impl Layout {
             go: rect(go_x, y, go_width, control),
             downloads: rect(downloads_x, y, control, control),
             menu: rect(menu_x, y, control, control),
-            minimize: rect(close_x - 2 * (window_control + gap), 4 * scale, window_control, window_control),
-            maximize: rect(close_x - window_control - gap, 4 * scale, window_control, window_control),
-            close: rect(close_x, 4 * scale, window_control, window_control),
+            minimize: rect(close_x - 2 * (window_control + gap), 8 * scale, window_control, window_control),
+            maximize: rect(close_x - window_control - gap, 8 * scale, window_control, window_control),
+            close: rect(close_x, 8 * scale, window_control, window_control),
             content: rect(0, content_y, width, height - content_y - status_height),
             status: rect(0, height - status_height, width, status_height),
             download_card: rect(gutter,height-status_height-80*scale,width-2*gutter,72*scale),
@@ -76,6 +86,11 @@ impl Layout {
     // DESC: Routes page versus native chrome clicks without treating padding as a control.
     // ------------------=
     pub fn hit(&self, x: i32, y: i32) -> Option<Control> {
+        let scale=self.tabs.height/36;
+        for (index,control) in [Control::Close,Control::Minimize,Control::Maximize].into_iter().enumerate() {
+            let bounds=Viewport{x:((14+index as u32*22)*scale) as i32,y:(14*scale) as i32,width:20*scale,height:20*scale};
+            if bounds.local(x,y).is_some() {return Some(control);}
+        }
         for (bounds, control) in [
             (self.back, Control::Back), (self.forward, Control::Forward),
             (self.reload, Control::Reload), (self.address, Control::Address),
@@ -96,10 +111,11 @@ impl Layout {
     pub fn tab(&self, index: usize, count: usize) -> Option<(Viewport, Viewport)> {
         if count == 0 || count > 8 || index >= count {return None;}
         let scale = self.tabs.height / 36;
-        let slot = (self.tabs.width / count as u32).min(220 * scale);
+        let slot = (self.tabs.width / count as u32).min(232 * scale);
         let tab = Viewport { x: self.tabs.x + (index as u32 * slot) as i32,
             y: self.tabs.y, width: slot - 8 * scale, height: 36 * scale };
-        let close = Viewport { x: tab.x + tab.width as i32 - (36 * scale) as i32,
+        let close_inset = (44 * scale).min(tab.width / 2 + 12 * scale);
+        let close = Viewport { x: tab.x + tab.width as i32 - close_inset as i32,
             y: tab.y + (6 * scale) as i32, width: 24 * scale, height: 24 * scale };
         Some((tab, close))
     }
@@ -131,6 +147,9 @@ mod tests {
                     right=tab.x+tab.width as i32;
                 }
                 assert!(right<layout.new_tab.x);
+                let fitted=Layout::new(760*scale,240*scale,scale).unwrap().with_tab_count(count);
+                assert_eq!(fitted.new_tab.x,right+(8*scale) as i32);
+                assert_eq!(fitted.hit(fitted.new_tab.x,fitted.new_tab.y),Some(Control::NewTab));
             }
             assert_eq!(layout.hit(layout.new_tab.x,layout.new_tab.y),Some(Control::NewTab));
             assert!(layout.tab(0,0).is_none());

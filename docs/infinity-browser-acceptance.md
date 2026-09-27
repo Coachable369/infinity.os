@@ -55,13 +55,50 @@ The 30-minute TCG timeout changes no integrity checks.
 
 ## Current implementation batch and failure queue
 
+- Revised browser kit: shared 48px tab/window row, native Inter atlases at four
+  scales, 36px beveled tabs, bounded exterior glow, 8px tab gaps, 24px close
+  targets, trailing add-tab control and aligned compact address toolbar.
+  ARM installed interaction passes in `20260927T191738314582Z-68105.json`.
+  Final paint-only review, both native links and 27 behavioral core tests pass
+  in `20260927T192510242805Z-69676.json`. Screenshot:
+  `docs/design/infinity-browser/installed-kit-chrome-v2.png`.
+  Fonts are embedded in both installed kernels. Updated release media and
+  final x86 installed visual verification remain open, not implied by links.
+
+- 27 September x86 follow-up: the reused-install image/JavaScript checks passed
+  in `20260927T174428672056Z-62250.json`; scroll and second-tab checks failed.
+  Inspection found the scroll pixel probe directly under the software cursor,
+  fixed 900px content unsuitable for the 2048px firmware viewport, and a second
+  navigation attempted after the ten-minute lease during slow emulated typing.
+  The fixture now uses viewport-height sections, samples away from the cursor,
+  and uses a short real second-page URL. No network policy or pixel assertion
+  is relaxed. These corrections are not a passing scrolling result by themselves.
+- Updated x86 kernel link succeeded, but batch
+  `20260927T183420477372Z-65179.json` failed before Servo launch: rapid Console
+  input lost a portion of its command at 260 bytes. x86 verification now uses
+  individually acknowledged keys. The disposable updated disk is reused;
+  original cold-install disk and provenance remain untouched. Individually
+  acknowledged input succeeded in `20260927T184109832219Z-66103.json`.
+  HTTPS image and JS input passed; scrolling still failed and the dependent
+  tab scroll-preservation assertion consequently failed.
+- PS/2 wheel decoding inverted down into up, unlike the native positive-down
+  convention. The decoder now preserves the PS/2 sign and handles IntelliMouse's
+  full signed byte separately from Explorer's signed nibble. Behavioral packet
+  and USB/PS2 direction-parity tests pass, together with native x86 linkage,
+  in `20260927T185514949275Z-66522.json`. Installed run
+  `20260927T185647729669Z-66589.json` passes real HTTPS image/CSS, keyboard JS
+  mutation, scrolling, native tab create/select/close, background scroll
+  preservation and Ctrl+L replacement. Receipt:
+  `builds/evidence/browser-daily-driver/x86-wheel-corrected-interactions.json`.
+  This is an updated disposable installation, not unchanged-release ISO proof.
+
 - Browser random seeds previously repeated after engine restart within one boot.
   `browser_entropy.rs` now derives owner/launch-separated HKDF seeds from validated
   boot entropy, with a nonwrapping boot-lifetime counter. Two behavioral tests
   passed (`20260927T172648405631Z-60967.json`). Kernel rebuild and installed
   verification of this change are pending; it is not in the current ISOs.
-- Open: x86 HTTPS image missing despite completed requests. Determine whether
-  response bytes, decoding or rendering failed; do not weaken the pixel check.
+- Resolved: x86 HTTPS image check now waits for decoded image pixels. Both
+  subsequent batches passed the unchanged distinct-color assertion.
 - The interaction runner now records independent image, JavaScript and scrolling
   failures before returning failure. Infrastructure failures still abort safely.
   Preserve already-passing install phases and reuse their disk/provenance.

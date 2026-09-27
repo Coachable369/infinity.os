@@ -2,8 +2,6 @@
 use super::DisplayDevice;
 use infinity_browser_core::{layout::Layout,skin,Viewport,frames::Frame};
 use crate::ui::system_layout::DesktopAppWindowState;
-const ICON:&[u8]=include_bytes!("../../../assets/apps/infinity-browser-icon-v1.bmp");
-const NAV:&[u8]=include_bytes!("../../../assets/apps/infinity-browser-navigation-v1.bmp");
 static mut REVISION:Option<u64>=None;
 static mut PAGE_KEY:Option<infinity_browser_core::damage::PageKey>=None;
 static mut FRAME:Option<Frame<'static,16384000>>=None;
@@ -13,6 +11,31 @@ static mut FRAME:Option<Frame<'static,16384000>>=None;
 // DESC: Unpacks the shared sapphire design recipe without allocating.
 // ------------------=
 fn rgb(value:u32)->(u8,u8,u8) {((value>>16) as u8,(value>>8) as u8,value as u8)}
+
+// ------------------------=
+// FUNC: browser_font
+// DESC: Selects an authored Inter atlas at native device size, avoiding rescaled installer glyphs.
+// ------------------=
+fn browser_font(pixels:usize)->(&'static [u8],&'static [u8],&'static [u8],usize) {
+    macro_rules! face {($size:literal,$pixels:expr)=>{(
+        include_bytes!(concat!("../../../assets/fonts/InfinityBrowser-Regular-",$size,".atlas")).as_slice(),
+        include_bytes!(concat!("../../../assets/fonts/InfinityBrowser-Regular-",$size,".metrics")).as_slice(),
+        include_bytes!(concat!("../../../assets/fonts/InfinityBrowser-Regular-",$size,".kern")).as_slice(),$pixels)}}
+    match (pixels/14).clamp(1,4) {1=>face!("14",14),2=>face!("28",28),3=>face!("42",42),_=>face!("56",56)}
+}
+
+// ------------------------=
+// FUNC: browser_text_width
+// DESC: Measures the exact native Inter advances and kerning used by browser chrome painting.
+// ------------------=
+fn browser_text_width(text:&[u8],pixels:usize)->usize {
+    let (_,metrics,kern,_)=browser_font(pixels);let mut width=0usize;let mut previous=None;
+    for &byte in text {if !(32..=126).contains(&byte) {previous=None;continue;}
+        let index=(byte-32) as usize;
+        if let Some(left)=previous {width=width.saturating_add_signed(kern[left*95+index] as isize-128);}
+        width+=metrics[index] as usize;previous=Some(index);
+    }width
+}
 
 impl DisplayDevice {
     // ------------------------=
@@ -24,7 +47,7 @@ impl DisplayDevice {
             .desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
         let view=crate::runtime::browser::presentation();
         let scale=self.ui_scale().max(1).min((window.width as usize/760).max(1));
-        let Some(layout)=Layout::new(window.width,window.height,scale as u32) else {return;};
+        let Some(layout)=Layout::new(window.width,window.height,scale as u32).map(|layout|layout.with_tab_count(view.tab_count)) else {return;};
         if !self.recording_surface {
             unsafe {
                 if REVISION!=Some(view.revision) && infinity_browser_core::damage::chrome_only(PAGE_KEY,view.page_key()) {
@@ -40,25 +63,25 @@ impl DisplayDevice {
             return;
         }
         let left=window.x.max(0) as usize;let top=window.y.max(0) as usize;
-        self.glass_panel(left,top,window.width as usize,window.height as usize,true);
+        self.fill_rounded_rect_alpha(left,top,window.width as usize,window.height as usize,8*scale,7,14,26,255);
+        self.outline_rounded_rect(left,top,window.width as usize,window.height as usize,8*scale,65,80,112);
         self.fill_rect_alpha(left+1,top+1,window.width as usize-2,layout.content.y as usize-1,8,17,30,238);
         let offset=|r:Viewport|Viewport{x:r.x+window.x,y:r.y+window.y,..r};
-        self.paint_bitmap_alpha_fit_rect(ICON,left+12*scale,top+4*scale,32*scale,32*scale);
-        self.browser_label(Viewport{x:(left+50*scale) as i32,y:(top+11*scale) as i32,width:200*scale as u32,height:24*scale as u32},b"Infinity Browser",18*scale,false);
-        if window.width as usize>950*scale {
-            self.browser_label(Viewport{x:(left+270*scale) as i32,y:(top+13*scale) as i32,
-                width:window.width.saturating_sub(430*scale as u32),height:20*scale as u32},
-                &view.title[..view.title_length],14*scale,false);
+        for (index,(red,green,blue)) in [(255,91,87),(255,194,48),(42,195,72)].into_iter().enumerate() {
+            self.fill_rounded_rect_alpha(left+(18+index*22)*scale,top+18*scale,12*scale,12*scale,6*scale,red,green,blue,255);
         }
         for (index,r) in [layout.minimize,layout.maximize,layout.close].into_iter().enumerate() {
-            let r=offset(r);self.window_control(r.x as usize,r.y as usize,r.width as usize,index,state.maximized);
+            let r=offset(r);self.browser_glyph(r,7+index,true,scale);
         }
         for index in 0..view.tab_count {
             let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
             let tab=offset(tab);let close=offset(close);let entry=&view.tabs[index];
             self.browser_tab(tab,entry.id==view.active_tab,entry.id==view.hovered_tab);
-            self.browser_label(Viewport{x:tab.x+16*scale as i32,y:tab.y+10*scale as i32,
-                width:tab.width.saturating_sub(56*scale as u32),height:20*scale as u32},
+            if tab.width>=112*scale as u32 {
+                self.browser_glyph(Viewport{x:tab.x+28*scale as i32,y:tab.y+10*scale as i32,width:16*scale as u32,height:16*scale as u32},10,true,scale);
+            }
+            self.browser_label(Viewport{x:tab.x+52*scale as i32,y:tab.y+11*scale as i32,
+                width:tab.width.saturating_sub(100*scale as u32),height:20*scale as u32},
                 if entry.length==0 {b"New tab"}else{&entry.title[..entry.length]},14*scale,false);
             if view.hovered_tab==entry.id && view.hovered_close {
                 self.fill_rounded_rect_alpha(close.x as usize,close.y as usize,close.width as usize,close.height as usize,5*scale,92,76,158,170);
@@ -69,17 +92,15 @@ impl DisplayDevice {
             self.line(cx+d,cy-d,cx-d,cy+d,217,227,245);
         }
         let new_tab=offset(layout.new_tab);
-        self.browser_surface(new_tab,skin::button(false,skin::Interaction::Normal));
-        self.ui_text_elided_strong(new_tab.x as usize+10*scale,new_tab.y as usize+8*scale,16*scale,b"+",231,242,250);
+        self.browser_glyph(new_tab,11,true,scale);
         for (rect,glyph,enabled) in [(layout.back,0,view.history&1!=0),(layout.forward,1,view.history&2!=0),
             (layout.reload,2,true),(layout.downloads,4,true),(layout.menu,6,true)] {
             let r=offset(rect);
-            self.browser_surface(r,skin::button(false,if enabled {skin::Interaction::Normal}else{skin::Interaction::Disabled}));
-            self.paint_bitmap_alpha_atlas_cell(NAV,4,2,glyph,r.x as usize+6*scale,r.y as usize+6*scale,32*scale);
+            self.browser_glyph(r,glyph,enabled,scale);
         }
         let address=offset(layout.address);
         self.browser_surface(address,skin::ADDRESS);
-        self.paint_bitmap_alpha_atlas_cell(NAV,4,2,5,address.x as usize+8*scale,address.y as usize+10*scale,24*scale);
+        self.browser_glyph(Viewport{x:address.x+8*scale as i32,y:address.y+4*scale as i32,width:24*scale as u32,height:24*scale as u32},5,true,scale);
         let text=if view.address_focused {&view.edit[..view.edit_length]}else{&view.address[..view.address_length]};
         let available=(address.width as usize).saturating_sub(48*scale);
         let caret=view.caret.min(text.len());
@@ -88,24 +109,23 @@ impl DisplayDevice {
             let mut end=caret;
             while !view.address_selected && start<end {
                 let middle=(start+end)/2;
-                if self.template_text_width(&text[middle..caret],14*scale,false)>available.saturating_sub(3) {start=middle+1;}
+                if browser_text_width(&text[middle..caret],14*scale)>available.saturating_sub(3) {start=middle+1;}
                 else {end=middle;}
             }
             self.outline_rounded_rect(address.x as usize,address.y as usize,address.width as usize,address.height as usize,10,0,215,255);
         }
         if view.address_focused && view.address_selected {
-            let width=self.template_text_width(text,14*scale,false).min(available);
-            self.fill_rect(address.x as usize+40*scale,address.y as usize+12*scale,width,22*scale,18,91,132);
+            let width=browser_text_width(text,14*scale).min(available);
+            self.fill_rect(address.x as usize+40*scale,address.y as usize+7*scale,width,18*scale,18,91,132);
         }
-        self.browser_label(Viewport{x:address.x+40*scale as i32,y:address.y+14*scale as i32,
+        self.browser_label(Viewport{x:address.x+40*scale as i32,y:address.y+9*scale as i32,
             width:available as u32,height:20*scale as u32},&text[start..],14*scale,false);
         if view.address_focused && view.caret_visible && !view.address_selected {
-            let x=self.template_text_width(&text[start..caret],14*scale,false);
-            self.fill_rect(address.x as usize+40*scale+x,address.y as usize+12*scale,2,20*scale,0,215,255);
+            let x=browser_text_width(&text[start..caret],14*scale);
+            self.fill_rect(address.x as usize+40*scale+x,address.y as usize+7*scale,scale,18*scale,134,158,255);
         }
         let go=offset(layout.go);
-        self.browser_surface(go,skin::button(false,skin::Interaction::Normal));
-        self.browser_label(Viewport{y:go.y+13*scale as i32,..go},b"Go",16*scale,true);
+        self.browser_glyph(go,1,true,scale);
         let content=offset(layout.content);
         if self.clipped_render_region(content.x.max(0) as usize,content.y.max(0) as usize,
             content.width as usize,(window.bottom()-(content.y)).max(0) as usize).is_none() {return;}
@@ -152,7 +172,7 @@ impl DisplayDevice {
             else if view.error!=0 {b"Page could not be loaded. Check permissions and connection."}
             else if view.loading {b"Loading..."} else {b"Ready"};
         self.browser_label(Viewport{x:status.x+16*scale as i32,y:status.y+5*scale as i32,
-            width:status.width-32*scale as u32,..status},message,12*scale,false);
+            width:status.width-32*scale as u32,..status},message,14*scale,false);
     }
     // ------------------------=
     // FUNC: browser_label
@@ -163,29 +183,76 @@ impl DisplayDevice {
         let length=text.len().min(label.len()-3);
         label[..length].copy_from_slice(&text[..length]);
         let mut end=length;
-        if self.template_text_width(&label[..end],pixels,false)>r.width as usize {
-            let dots=self.template_text_width(b"...",pixels,false);
+        if browser_text_width(&label[..end],pixels)>r.width as usize {
+            let dots=browser_text_width(b"...",pixels);
             if dots>r.width as usize {return;}
             let mut low=0;let mut high=end;
             while low<high {
                 let middle=(low+high+1)/2;
-                if self.template_text_width(&label[..middle],pixels,false)+dots<=r.width as usize {low=middle;}else{high=middle-1;}
+                if browser_text_width(&label[..middle],pixels)+dots<=r.width as usize {low=middle;}else{high=middle-1;}
             }
             end=low;label[end..end+3].copy_from_slice(b"...");end+=3;
         }
-        let width=self.template_text_width(&label[..end],pixels,false);
-        let x=r.x.max(0) as usize+if center {(r.width as usize).saturating_sub(width)/2}else{0};
-        self.template_text(x,r.y.max(0) as usize,&label[..end],231,242,250,255,pixels,false);
+        let width=browser_text_width(&label[..end],pixels);
+        let mut x=r.x.max(0) as usize+if center {(r.width as usize).saturating_sub(width)/2}else{0};
+        let (atlas,metrics,kern,size)=browser_font(pixels);let mut previous=None;
+        for &byte in &label[..end] {if !(32..=126).contains(&byte) {previous=None;continue;}
+            let index=(byte-32) as usize;
+            if let Some(left)=previous {x=x.saturating_add_signed(kern[left*95+index] as isize-128);}
+            for gy in 0..size+6 {for gx in 0..size {
+                let alpha=atlas[gy*size*95+index*size+gx];
+                if alpha!=0 {self.blend_color((x+gx) as i32,r.y+gy as i32,222,228,246,alpha);}
+            }}
+            x+=metrics[index] as usize;previous=Some(index);
+        }
     }
     // ------------------------=
     // FUNC: browser_tab
     // DESC: Paints the horizontal AI-adornment glass silhouette with antialiased sapphire-violet shoulders.
     // ------------------=
     fn browser_tab(&mut self,r:Viewport,active:bool,hover:bool) {
+        let radius=(r.height/36).max(1) as i32*6;
+        for y in -radius..r.height as i32 {for x in -radius..r.width as i32+radius {
+            let (red,green,blue,alpha)=infinity_browser_core::tab_style::halo(r.width,r.height,x,y,active,hover);
+            if alpha!=0 {self.blend_color(r.x+x,r.y+y,red,green,blue,alpha);}
+        }}
         for y in 0..r.height {for x in 0..r.width {
             let (red,green,blue,alpha)=infinity_browser_core::tab_style::pixel(r.width,r.height,x,y,active,hover);
             if alpha!=0 {self.blend_color(r.x+x as i32,r.y+y as i32,red,green,blue,alpha);}
         }}
+        if active || hover {
+            let s=(r.height/36).max(1) as i32;
+            let cx=r.x+(r.width*53/100) as i32;let cy=r.y+s;
+            for d in 0..4*s {
+                let alpha=(210*(4*s-d)/(4*s)) as u8;
+                for (x,y) in [(cx-d,cy),(cx+d,cy),(cx,cy-d),(cx,cy+d)] {
+                    self.blend_color(x,y,217,237,255,alpha);
+                }
+            }
+        }
+    }
+    // ------------------------=
+    // FUNC: browser_glyph
+    // DESC: Draws quiet kit-matched chrome strokes at native resolution without boxed bitmap buttons.
+    // ------------------=
+    fn browser_glyph(&mut self,r:Viewport,glyph:usize,enabled:bool,scale:usize) {
+        let cx=r.x+r.width as i32/2;let cy=r.y+r.height as i32/2;let s=scale as i32;
+        let color=if enabled {(196,207,232)}else{(91,108,139)};
+        let mut stroke=|x1:i32,y1:i32,x2:i32,y2:i32| {
+            for offset in 0..scale as i32 {self.line(cx+x1*s,cy+y1*s+offset,cx+x2*s,cy+y2*s+offset,color.0,color.1,color.2);}
+        };
+        match glyph {
+            0|1=>{let sign=if glyph==0 {-1}else{1};stroke(-7,0,7,0);stroke(sign*7,0,sign, -6);stroke(sign*7,0,sign,6);}
+            2=>{for (a,b,c,d) in [(-5,-5,2,-7),(2,-7,7,-3),(7,-3,7,0),(-5,-5,-7,0),(-7,0,-5,5),(-5,5,2,7),(2,7,6,4),(7,-7,7,-1),(7,-1,1,-1)] {stroke(a,b,c,d);}}
+            4=>{stroke(0,-7,0,3);stroke(-4,-1,0,3);stroke(0,3,4,-1);stroke(-6,4,-6,7);stroke(-6,7,6,7);stroke(6,7,6,4);}
+            5=>{for (a,b,c,d) in [(-4,-1,-4,6),(-4,6,4,6),(4,6,4,-1),(4,-1,-4,-1),(-3,-1,-3,-5),(-3,-5,0,-7),(0,-7,3,-5),(3,-5,3,-1)] {stroke(a,b,c,d);}}
+            6=>{stroke(-7,0,-6,0);stroke(0,0,1,0);stroke(7,0,8,0);}
+            7=>stroke(-5,0,5,0),
+            8=>{stroke(-5,-5,5,-5);stroke(5,-5,5,5);stroke(5,5,-5,5);stroke(-5,5,-5,-5);}
+            9=>{stroke(-5,-5,5,5);stroke(5,-5,-5,5);}
+            10=>{for (a,b,c,d) in [(-5,-7,2,-7),(2,-7,5,-4),(5,-4,5,7),(5,7,-5,7),(-5,7,-5,-7),(2,-7,2,-3),(2,-3,5,-3),(-2,0,2,0),(-2,3,2,3)] {stroke(a,b,c,d);}}
+            _=>{stroke(-7,0,7,0);stroke(0,-7,0,7);}
+        }
     }
     // ------------------------=
     // FUNC: browser_surface

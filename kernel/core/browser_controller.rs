@@ -248,7 +248,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
-    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32) else{return false;};
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|layout|layout.with_tab_count(crate::runtime::browser::presentation().tab_count)) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
     if crate::runtime::browser::presentation().permission!=0 {

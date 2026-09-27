@@ -179,11 +179,17 @@ fn ps2_protocols() {
     assert_eq!(wheel.delta_x, -1);
     assert_eq!(wheel.delta_y, -2);
     assert_eq!(wheel.buttons, BUTTON_MIDDLE);
-    assert_eq!(wheel.wheel_y, -1);
+    assert_eq!(wheel.wheel_y, 1);
 
     let explorer = decode_ps2_packet(&[0x08, 0, 0, 0x3f], 4).expect("Explorer packet");
     assert_eq!(explorer.buttons, BUTTON_BACK | BUTTON_FORWARD);
-    assert_eq!(explorer.wheel_y, 1);
+    assert_eq!(explorer.wheel_y, -1);
+    // IntelliMouse uses the whole signed byte, Explorer a signed nibble.
+    assert_eq!(decode_ps2_packet(&[0x08, 0, 0, 32], 3).unwrap().wheel_y, 32);
+    assert_eq!(decode_ps2_packet(&[0x08, 0, 0, 0xe0], 3).unwrap().wheel_y, -32);
+    let ps2_down = decode_ps2_packet(&[0x08, 0, 0, 1], 4).unwrap();
+    let usb_down = decode_usb_boot_mouse(&[0, 0, 0, 0xff]).unwrap();
+    assert_eq!(ps2_down.wheel_y, usb_down.wheel_y);
 
     assert!(decode_ps2_packet(&[0x48, 1, 1], 0).is_none());
 }

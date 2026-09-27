@@ -11,7 +11,7 @@ pub const CHROME: Surface = Surface {
     top: 0x0c2945, bottom: 0x071a2e, border: 0x407c9f, text: 0xe7f2fa,
 };
 pub const ADDRESS: Surface = Surface {
-    top: 0x041326, bottom: 0x061b30, border: 0x366887, text: 0xe7f2fa,
+    top: 0x101b31, bottom: 0x0b1425, border: 0x1a2940, text: 0xe7f2fa,
 };
 pub const ERROR: Surface = Surface {
     top: 0x392031, bottom: 0x231723, border: 0xb45c70, text: 0xffe9ee,
@@ -21,7 +21,7 @@ pub const SECONDARY_TEXT: u32 = 0xa8c4d8;
 pub const CONTENT_CLEAR: u32 = 0xf7f8fa;
 pub const GUTTER: u32 = 16;
 pub const GAP: u32 = 8;
-pub const CONTROL_HEIGHT: u32 = 44;
+pub const CONTROL_HEIGHT: u32 = 32;
 pub const CORNER_RADIUS: u32 = 10;
 pub const APP_ICON: &str = "infinity-browser-icon-v1-source.png";
 pub const NAVIGATION_ATLAS: &str = "infinity-browser-navigation-v1-source.png";

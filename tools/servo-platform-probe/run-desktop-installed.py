@@ -70,7 +70,7 @@ def extract_media_kernels(iso, artifacts, arch):
 # DESC: Serves a minimal HTML test document from a real public HTTPS endpoint, not an injected engine response.
 # ------------------=
 def interaction_url():
-    document=b'''<body style="margin:0;background:#123456"><input oninput="document.body.style.background='#00ff00'"><img style="position:absolute;top:40px;left:0" src="https://httpbingo.org/image/png"><div style="height:900px"></div><div style="height:900px;background:#ff0000"></div>'''
+    document=b'''<body style="margin:0;background:#123456"><input oninput="document.body.style.background='#00ff00'"><img style="position:absolute;top:40px;left:0" src="https://httpbingo.org/image/png"><div style="height:100vh"></div><div style="height:100vh;background:#ff0000"></div>'''
     return "https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64="+quote(base64.b64encode(document).decode(),safe="")
 
 # ------------------------=
@@ -368,7 +368,9 @@ def main():
     # x86 PIO under cross-architecture TCG must read back the entire large payload.
     # This bounds the harness only; it does not relax any installed-byte checks.
     guest.install_timeout_seconds=1800 if args.arch=="x86_64" else 900
-    guest.fast_commands = args.interaction
+    # PS/2 emulation cannot reliably ingest the rapid four-key batches while
+    # the 2048px x86 desktop is painting. Acknowledge each key on that target.
+    guest.fast_commands = args.interaction and args.arch != "x86_64"
     guest.patched = args.iso_parity or (reuse and args.update_kernel is None)
     receipt = dict(architecture=args.arch,installed=reuse, browser_iso_parity=False, browser_interactive=False)
     if media_kernels is not None: receipt["iso_kernel_artifacts"]=media_kernels
@@ -485,7 +487,8 @@ def main():
                 wait_color(guest,"browser-js-input",check_x,check_y,(0,255,0))
                 receipt["keyboard_javascript_dom_mutation"]=True
             with acceptance_case(receipt,"scroll"):
-                guest.click(check_x,check_y)
+                # Keep the software cursor away from the exact CSS sample.
+                guest.click(check_x-48,check_y)
                 for _ in range(32):
                     for down in (True,False):
                         guest.qmp("input-send-event",{"events":[{"type":"btn","data":{"button":"wheel-down","down":down}}]})
@@ -495,9 +498,9 @@ def main():
             receipt["browser_interactive"]=all(case["passed"] for case in receipt["cases"])
             if args.tabs:
                 # Bounds come from rendered page pixels, not a guessed desktop position.
-                # This fixture uses the native scale-one 136px chrome layout.
-                tab_y=top-80
-                guest.click(right-31,tab_y)
+                # Kit chrome: 48px shared tab row and 48px navigation row.
+                tab_y=top-66
+                guest.click(left+352,tab_y)
                 time.sleep(1)
                 guest.click(left+300,top-30)
                 guest.key("end")
@@ -508,13 +511,13 @@ def main():
                 browser_text(guest,"https://example.com/")
                 guest.key("ret")
                 wait_color(guest,"browser-second-tab",check_x,check_y,(238,238,238))
-                guest.click(left+90,tab_y)
+                guest.click(left+174,tab_y)
                 wait_color(guest,"browser-first-tab-restored",check_x,check_y,(255,0,0))
-                guest.click(left+310,tab_y)
+                slot=min((right-left-264)//2,232)
+                guest.click(left+104+slot+50,tab_y)
                 wait_color(guest,"browser-second-tab-restored",check_x,check_y,(238,238,238))
                 # Center of the second tab's 24px close target in Layout::tab.
-                slot=min((right-left-72)//2,220)
-                guest.click(left+16+slot+(slot-8)-36+12,tab_y)
+                guest.click(left+104+slot+(slot-8)-44+12,tab_y)
                 wait_color(guest,"browser-tab-closed",check_x,check_y,(255,0,0))
                 receipt["native_tab_create_select_close_pixels"]=True
                 receipt["background_tab_scroll_preserved"]=True

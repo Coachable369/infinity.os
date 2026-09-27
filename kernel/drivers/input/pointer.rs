@@ -327,7 +327,12 @@ pub fn decode_ps2_packet(packet: &[u8], device_id: u8) -> Option<PointerEvent> {
     let mut buttons = packet[0] & 0x07;
     let mut wheel_y = 0;
     if required == 4 {
-        wheel_y = -sign_extend_nibble(packet[3]);
+        // PS/2 encodes down as positive (unlike the USB HID wheel).
+        wheel_y = if device_id == 3 {
+            packet[3] as i8
+        } else {
+            sign_extend_nibble(packet[3])
+        };
         if device_id == 4 {
             if packet[3] & 0x10 != 0 {
                 buttons |= BUTTON_BACK;
