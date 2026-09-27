@@ -121,9 +121,12 @@ def main():
         raise SystemExit("Run through build-kit")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reuse-installed", type=Path)
+    parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
     parser.add_argument("--navigation", action="store_true", help="Capture real link/history interaction for manual review; not an automatic navigation pass")
     args = parser.parse_args()
     reuse = args.reuse_installed is not None
+    if args.update_kernel and (not reuse or not args.update_kernel.resolve().is_relative_to(ROOT / "build")):
+        parser.error("Kernel updates require a reused disposable installation and a build-local image")
     work = args.reuse_installed.resolve() if reuse else ROOT / "build" / ("browser-installed-" + str(time.time_ns()))
     assert work.parent == ROOT / "build" and work.name.startswith("browser-installed-")
     artifacts = work / "artifacts"
@@ -134,10 +137,12 @@ def main():
         ("build/aarch64/kernel-qemu.elf", "kernel.elf"),
         ("build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")]):
         shutil.copyfile(ROOT / source, artifacts / name)
+    if args.update_kernel:
+        shutil.copyfile(args.update_kernel.resolve(), artifacts / "installed-kernel.elf")
     subprocess.run(["/opt/homebrew/opt/llvm/bin/llvm-objcopy", "--strip-debug",
         str(artifacts / "installed-kernel.elf"), str(artifacts / "installed-stripped.elf")], check=True)
     guest = Guest(work, 1, "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", reuse=reuse, width=1024, height=768, memory_mb=12288)
-    guest.patched = reuse
+    guest.patched = reuse and args.update_kernel is None
     receipt = dict(installed=reuse, browser_iso_parity=False, browser_interactive=False)
     try:
         if not reuse:

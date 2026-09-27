@@ -23,6 +23,30 @@ def main():
     text = helper.native_body(text, 'pub fn from_file_path<P:', 'let _ = path; Err(UrlError::FromFilePath)')
     (servo / relative).write_text(text)
 
+    # Native intercepted navigation responses bypass http_fetch's redirect
+    # metadata assignment. Preserve Servo's own manual-navigation redirect
+    # controller, URL list, origin checks and redirect limit instead of fetching
+    # a replacement body behind the engine's back.
+    relative = "components/net/http_loader.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace("fn location_url_for_response(", "pub(crate) fn location_url_for_response(")
+    (servo / relative).write_text(text)
+    relative = "components/net/request_interceptor.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace("url: request.url().into_url(),", '''url: {
+                #[cfg(infinity_native)]
+                { request.current_url().clone().into_url() }
+                #[cfg(not(infinity_native))]
+                { request.url().into_url() }
+            },''')
+    text = text.replace("*response = Some(response_override);", '''#[cfg(infinity_native)]
+                    if response_override.status.try_code().is_some_and(|code| matches!(code.as_u16(), 301 | 302 | 303 | 307 | 308)) {
+                        response_override.location_url = crate::http_loader::location_url_for_response(
+                            &response_override, request.current_url().fragment());
+                    }
+                    *response = Some(response_override);''')
+    (servo / relative).write_text(text)
+
     # Native execution is in-process. Never link a Unix sandbox or attempt
     # fork/exec when an upstream caller accidentally enables multiprocess.
     for relative in ("components/constellation/Cargo.toml", "components/servo/Cargo.toml"):

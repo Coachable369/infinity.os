@@ -58,6 +58,14 @@ acceptance is not passed. The later pointer wait timed out, so Forward/Reload
 are also not accepted (`20260927T070333756165Z-83590.json`). These captures are
 diagnostic evidence, not a passing complete interaction test.
 
+The intercepted-navigation redirect fix now passes the real Servo component
+guest (`20260927T090340265723Z-89690.json`): an initial 301 reaches the destination
+through another provider request and must produce the expected JS pixels.
+Paired keyboard/mouse input, resize, Back/Forward and shutdown still pass. The
+patch supplies location metadata to Servo's existing navigation redirect
+controller and intercepts the current redirect URL, not the original URL.
+Installed rerun is pending; subresource Fetch redirect modes are not claimed.
+
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.
 3. Verify responsiveness, input, resize, cancellation and window lifecycle in

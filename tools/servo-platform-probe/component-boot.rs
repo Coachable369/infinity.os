@@ -19,6 +19,7 @@ static mut STEP:u32=0;
 static mut FRAMES:u32=0;
 static mut RELEASES:u32=0;
 static mut NEXT_ID:u64=0;
+static mut REDIRECT_ID:u64=0;
 static mut HISTORY:u32=0;
 static mut LOCATION:u32=0;
 static mut LOAD_STARTS:u32=0;
@@ -111,7 +112,7 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
     let mut value=abi::Command::empty();
     match STEP {
         0|6=>{value.kind=abi::OPEN;value.a=128;value.b=128;STEP+=1;},
-        1|7=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/";value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP+=1;},
+        1|7=>{value.kind=abi::NAVIGATE;let url:&[u8]=if STEP==1 {b"https://fixture.test/redirect"}else{b"https://fixture.test/"};value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP+=1;},
         3=>{value.kind=abi::RESIZE;value.a=160;value.b=96;STEP=4;},
         5=>{value.kind=abi::CLOSE;STEP=6;},
         9=>{value.kind=abi::KEY;value.flags=abi::KEY_DOWN|abi::KEY_REPEAT;value.a='K' as u32;
@@ -176,6 +177,10 @@ unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,leng
 // ------------------=
 unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
     record(8,((STEP as u64)<<32)|length as u64);
+    if core::slice::from_raw_parts(url,length)==b"https://fixture.test/redirect" {
+        if REDIRECT_ID!=0 {return 0;}
+        NEXT_ID+=1;REDIRECT_ID=NEXT_ID;return NEXT_ID;
+    }
     if core::slice::from_raw_parts(url,length)!=b"https://fixture.test/" {return 0;}
     NEXT_ID+=1;NEXT_ID
 }
@@ -183,7 +188,11 @@ unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
 // FUNC: poll
 // DESC: Returns bounded fixture bytes for real Servo HTML, JS and raster execution.
 // ------------------=
-unsafe extern "C" fn poll(_: *mut c_void,_:u64,out:*mut abi::Response)->u32 {
+unsafe extern "C" fn poll(_: *mut c_void,id:u64,out:*mut abi::Response)->u32 {
+    if id==REDIRECT_ID {
+        let headers=b"location: /\r\ncontent-type: text/html\r\n";
+        out.write(abi::Response{status:301,headers:headers.as_ptr(),headers_length:headers.len(),body:HTML.as_ptr(),body_length:0});return 1;
+    }
     out.write(abi::Response{status:200,headers:HEADERS.as_ptr(),headers_length:HEADERS.len(),body:HTML.as_ptr(),body_length:HTML.len()});1
 }
 // ------------------------=
@@ -207,6 +216,6 @@ pub unsafe extern "C" fn component_boot()->! {
     if infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST))!=1 {finish(1,401);}
     HOST.version=abi::VERSION;
     let result=infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST));
-    if result!=0 || STEP!=15 || FRAMES!=4 || LOAD_STARTS!=7 || RELEASES<3 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
+    if result!=0 || STEP!=15 || FRAMES!=4 || LOAD_STARTS!=7 || REDIRECT_ID==0 || RELEASES<4 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
     finish(0,4)
 }
