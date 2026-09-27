@@ -347,7 +347,7 @@ $(BUILD)/x86_64/installed-kernel.elf: $(BUILD)/x86_64/installed-kernel.o linker/
 $(BUILD)/x86_64/kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/x86_64/installed-esp.img $(BUILD)/x86_64/installed-kernel.elf
 	@mkdir -p $(@D)
 	RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=$(BUILD)/cargo $(CARGO) build --release \
-		-Z build-std=core --target x86_64-unknown-none --features installer $(BROWSER_FEATURE)
+		-Z build-std=core --target x86_64-unknown-none --features installer $(BROWSER_FEATURE) $(BROWSER_INSTALL_FEATURE)
 	cp $(BUILD)/cargo/x86_64-unknown-none/release/libinfinity_kernel.a $(BUILD)/x86_64/libkernel.a
 	touch $@
 
@@ -394,6 +394,8 @@ $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel
 	@mkdir -p $(BUILD)/fat/EFI/BOOT $(BUILD)/fat/EFI/INFINITY/FONTS $(BUILD)/fat/EFI/INFINITY/FONT-LICENSES $(BUILD)/fat/EFI/INFINITY/APPLICATIONS $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Wallpapers $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Installer $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Crash $(BUILD)/fat/EFI/INFINITY/INFINITYUI/Mesh
 	cp $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/fat/EFI/BOOT/BOOTX64.EFI
 	cp $(BUILD)/x86_64/kernel.elf $(BUILD)/fat/EFI/INFINITY/KERNEL.ELF
+	rm -rf $(BUILD)/fat/EFI/INFINITY/PAYLOAD
+	$(BROWSER_STAGE_X86)
 	cp assets/fonts/*.ttf $(BUILD)/fat/EFI/INFINITY/FONTS/
 	cp assets/fonts/OFL-*.txt $(BUILD)/fat/EFI/INFINITY/FONT-LICENSES/
 	cp -R assets/skins/. $(BUILD)/fat/EFI/INFINITY/INFINITYUI/
@@ -415,6 +417,7 @@ builds/InfinityOS-x86_64-bootstrap-test.iso: $(BUILD)/infinity-x86_64.img x86-na
 	@mkdir -p builds
 	@mkdir -p $(BUILD)/iso/EFI
 	cp $< $(BUILD)/iso/efi.img
+	rm -rf $(BUILD)/iso/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat/EFI/BOOT $(BUILD)/fat/EFI/INFINITY $(BUILD)/iso/EFI/
 	xorriso -as mkisofs -R -V INFINITYOS -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso
 	mv $@.partial $@
@@ -737,7 +740,7 @@ $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS)
 $(BUILD)/aarch64/kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/aarch64/installed-esp.img $(BUILD)/aarch64/installed-kernel.elf
 	@mkdir -p $(@D)
 	RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=$(BUILD)/cargo $(CARGO) build --release \
-		-Z build-std=core --target aarch64-unknown-none-softfloat --features installer $(BROWSER_FEATURE)
+		-Z build-std=core --target aarch64-unknown-none-softfloat --features installer $(BROWSER_FEATURE) $(BROWSER_INSTALL_FEATURE)
 	cp $(BUILD)/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a $(BUILD)/aarch64/libkernel.a
 	touch $@
 
@@ -764,6 +767,8 @@ $(BUILD)/infinity-aarch64.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/ke
 	@mkdir -p $(BUILD)/fat-aarch64/EFI/BOOT $(BUILD)/fat-aarch64/EFI/INFINITY/FONTS $(BUILD)/fat-aarch64/EFI/INFINITY/FONT-LICENSES $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Wallpapers $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Installer $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Crash $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/Mesh
 	cp $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/fat-aarch64/EFI/BOOT/BOOTAA64.EFI
 	cp $(BUILD)/aarch64/kernel.elf $(BUILD)/fat-aarch64/EFI/INFINITY/KERNEL.ELF
+	rm -rf $(BUILD)/fat-aarch64/EFI/INFINITY/PAYLOAD
+	$(BROWSER_STAGE_ARM)
 	cp assets/fonts/*.ttf $(BUILD)/fat-aarch64/EFI/INFINITY/FONTS/
 	cp assets/fonts/OFL-*.txt $(BUILD)/fat-aarch64/EFI/INFINITY/FONT-LICENSES/
 	cp -R assets/skins/. $(BUILD)/fat-aarch64/EFI/INFINITY/INFINITYUI/
@@ -780,6 +785,7 @@ builds/InfinityOS-aarch64-bootstrap-test.iso: $(BUILD)/infinity-aarch64.img
 	@mkdir -p builds
 	@mkdir -p $(BUILD)/iso-aarch64/EFI
 	cp $< $(BUILD)/iso-aarch64/efi.img
+	rm -rf $(BUILD)/iso-aarch64/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat-aarch64/EFI/BOOT $(BUILD)/fat-aarch64/EFI/INFINITY $(BUILD)/iso-aarch64/EFI/
 	xorriso -as mkisofs -R -V INFINITYOS_ARM64 -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso-aarch64
 	mv $@.partial $@
@@ -789,6 +795,8 @@ $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch
 	@mkdir -p $(BUILD)/fat-aarch64-qemu/EFI/BOOT $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONTS $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONT-LICENSES $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Wallpapers $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Installer $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Crash $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Mesh
 	cp $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/fat-aarch64-qemu/EFI/BOOT/BOOTAA64.EFI
 	cp $(BUILD)/aarch64/kernel-qemu.elf $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/KERNEL.ELF
+	rm -rf $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/PAYLOAD
+	$(BROWSER_STAGE_QEMU)
 	cp assets/fonts/*.ttf $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONTS/
 	cp assets/fonts/OFL-*.txt $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONT-LICENSES/
 	cp -R assets/skins/. $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/
@@ -805,6 +813,7 @@ builds/InfinityOS-aarch64-qemu-test.iso: $(BUILD)/infinity-aarch64-qemu.img
 	@mkdir -p builds
 	@mkdir -p $(BUILD)/iso-aarch64-qemu/EFI
 	cp $< $(BUILD)/iso-aarch64-qemu/efi.img
+	rm -rf $(BUILD)/iso-aarch64-qemu/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat-aarch64-qemu/EFI/BOOT $(BUILD)/fat-aarch64-qemu/EFI/INFINITY $(BUILD)/iso-aarch64-qemu/EFI/
 	xorriso -as mkisofs -R -V INFINITYOS_ARM64 -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso-aarch64-qemu
 	mv $@.partial $@

@@ -10,6 +10,7 @@ crate-type = ["staticlib"]
 [features]
 installer = []
 streamed-payload = ["installer"]
+browser-installer-payload = ["streamed-payload"]
 native-browser = []
 
 [dependencies]

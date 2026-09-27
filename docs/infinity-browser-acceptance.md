@@ -30,7 +30,13 @@ descriptor-bounded conventional-RAM reservations and rolls back partial success;
 reserved-memory holes remain fatal. Host behavioral tests cover adjacent ranges,
 allocation failure and reserved holes (`20260927T063005500199Z-81154.json`). The
 firmware scratch space is bounded loader BSS, avoiding an unresolved stack-probe
-runtime dependency. The rebuilt ISO/installed retry is still pending.
+runtime dependency. The first retry still failed safely because the requested
+span was unavailable. The experimental browser build now reuses the existing
+streamed installer payload protocol, with target-specific manifests and binary
+reassembly checks for both ESP and installed kernel. This reduced the ARM live
+ELF from 2.1 GiB to 823 MiB and brought its load span below 4 GiB. Build manifest
+`20260927T064220906014Z-82461.json` passed. The actual QEMU installer then booted
+and reached disk provisioning. Detached installed browser acceptance is pending.
 
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.
