@@ -72,8 +72,16 @@ cat "${payload_build}"/live/EFI/INFINITY/PAYLOAD/P1-*.BIN | cmp - build/$arch/in
 # Its validated bytes now belong to the payload shards. Release only this
 # invocation's disposable ESP before allocating another full EFI image.
 rm -- "${payload_build}/installed-esp.img"
-RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target "$triple" --features streamed-payload
-/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/$arch.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/$triple/release/libinfinity_kernel.a build/$arch/qwen-math.o build/voice-kokoro/$arch/private-native.o build/voice-pocketsphinx-$stt/private-native.o
+payload_features=streamed-payload
+set --
+# Match the already-built installed kernel's browser configuration. The model
+# installer has its own streamed manifest, but uses the same native component.
+if test "$(cat build/browser-mode)" = 1; then
+    payload_features=streamed-payload,native-browser
+    set -- --strip-debug --undefined=infinity_browser_private_infinity_browser_run "build/servo-platform-probe/browser-private-$arch.o"
+fi
+RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target "$triple" --features "$payload_features"
+/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/$arch.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/$triple/release/libinfinity_kernel.a build/$arch/qwen-math.o build/voice-kokoro/$arch/private-native.o build/voice-pocketsphinx-$stt/private-native.o "$@"
 rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
 python3 tools/voice-kokoro/install-parity.py build/$arch/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
 build/tools/cursor-install-parity build/$arch/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF

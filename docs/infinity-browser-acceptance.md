@@ -61,7 +61,20 @@ build pass in `20260927T123409619320Z-18143.json`. The generated media is
 `builds/InfinityOS-aarch64-qemu-test.iso`; this was incremental, not a clean
 release. The new `--iso-parity` run uses a new disk, disables offline kernel
 replacement, verifies the installed bytes and boots with media detached.
-That cold-install run is in progress, not yet acceptance evidence.
+Cold-install run `20260927T124526053815Z-24464.json` passes. The new disk's
+870,728,112-byte kernel exactly matches SHA-256
+`ea0e214870e1c68c6784edb531afe50e700677cbd29f18e6bc2d8effb6b16027`
+and all 11 references verified. It booted without media, completed account
+setup, rebooted and authenticated, launched Browser from the app catalog with
+explicit network consent, rendered real HTTPS Example Domain, then accepted a
+new URL through its native address field and rendered the external red CSS page.
+No offline replacement was used. Receipt and screenshot are preserved under
+`builds/evidence/browser-v0.1/`. This establishes the ARM QEMU path only.
+
+Subsequent builds include the browser by default (`NATIVE_BROWSER=1`). The
+model-inclusive installer also selects that mode for its live kernel, while
+retaining its own model/ESP payload manifest. A clean release with that default,
+model-inclusive media verification and x86 installed execution remain open.
 
 `20260927T122822317730Z-17672.json` measured cold native engine startup and
 Example Domain loading on the installed 4-vCPU, 12-GiB ARM QEMU TCG guest:
@@ -75,10 +88,24 @@ not hardware-accelerated VM performance claims.
 The original pointer snapshot samples (0.52–1.30 s) are **not cursor latency**:
 relative-pointer handling does not publish the broad diagnostics snapshot, so
 they include waiting for its coarse clock publication. The harness now measures
-visible cursor pixels in a quiet screen corner instead. That revised test is
-not yet verified. No scheduler optimization or responsiveness pass is claimed
-from the misleading snapshot numbers. Logs are preserved under
+visible cursor pixels in a quiet screen corner instead. No scheduler optimization is claimed
+from the misleading snapshot numbers. The pixel-based retest passes in
+`20260927T125502320022Z-24796.json`: 37.65–78.31 ms submission-to-visible-cursor
+roundtrips after page loading. Its first page paint/complete was 10.5450 s,
+first engine frame 5.6474 s, peak allocation 209,058,816 bytes, and host emulator
+CPU 200.66%. It reused the unmodified fresh-installed disk, not an offline
+kernel update. Active-load run `20260927T125713345953Z-24869.json` also completes:
+10 pointer-to-pixel samples while the page was loading range from 32.32 to
+336.70 ms; post-load samples range from 30.16 to 171.45 ms. First page paint
+was 10.4796 s, allocator peak unchanged, emulator CPU 200.77%. This demonstrates
+that input continues during native rendering, but the emulated worst-case
+latency is not a claim of 60-FPS hardware performance. No engine/UI failure or
+allocation failure was observed. Both timing receipts use actual framebuffer
+changes and are retained alongside the logs.
+Logs are preserved under
 `builds/evidence/browser-v0.1/` before clean builds.
+
+## Historical packaging checkpoints (superseded by the dated results above)
 
 Installed integration exposed a payload-capacity blocker: the experimental ARM
 kernel is 802 MiB after debug stripping, above the old 512 MiB reservation.

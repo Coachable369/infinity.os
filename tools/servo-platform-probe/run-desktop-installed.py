@@ -113,7 +113,7 @@ class Guest(base.Guest):
     # FUNC: click
     # DESC: Requires observed pointer motion and paired button transitions before accepting a desktop click.
     # ------------------=
-    def click(self, x, y):
+    def click(self, x, y, press=True):
         target = (x * 1000 // self.width, y * 1000 // self.height)
         previous=(0,0)
         divisor=[3,3]
@@ -134,6 +134,7 @@ class Guest(base.Guest):
             self.wait(lambda s: s[13:15] != state[13:15], "browser pointer moved", timeout=30)
         else:
             raise AssertionError({"pointer_target":target,"pointer_actual":state[13:15]})
+        if not press:return
         for down in (True, False):
             self.qmp("input-send-event", {"events": [
                 {"type": "btn", "data": {"button": "left", "down": down}}]})
@@ -274,9 +275,11 @@ def main():
             if args.measure:
                 assert int.from_bytes(guest.memory(*counters["STATE"]),"little")==0
                 guest.text(command)
+                guest.click(970,700,press=False)
                 cpu_started=process_cpu_seconds(guest.process.pid)
                 submitted=time.monotonic()
                 guest.key("ret")
+                receipt["pointer_during_load_seconds"]=[]
             else:
                 guest.command(command)
         started = time.monotonic()
@@ -289,6 +292,9 @@ def main():
                 elapsed=time.monotonic()-submitted
                 if values["FRAME_REVISION"] and "first_engine_frame_seconds" not in receipt:
                     receipt["first_engine_frame_seconds"]=elapsed
+                if values["LOADING"] and values["FRAME_REVISION"]:
+                    samples=receipt["pointer_during_load_seconds"]
+                    samples.append(pointer_pixel_latency(guest,1 if len(samples)%2==0 else -1))
                 width,height,pixels=read_pixels(guest.screenshot("browser-timing"))
                 at=(500*width+400)*3
                 if pixels[at:at+3]==bytes((238,238,238)) and values["NETWORK_COMPLETED"]:

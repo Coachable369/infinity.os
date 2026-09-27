@@ -1,6 +1,6 @@
-# Experimental until installed browser acceptance passes. Both live and installed
-# kernels always select the same mode; configuration changes invalidate stamps.
-NATIVE_BROWSER ?= 0
+# Native browser is included in normal live and installed System Generations.
+# Configuration changes invalidate both kernels; explicit opt-out is diagnostic.
+NATIVE_BROWSER ?= 1
 QEMU_KERNEL_STAMP = $(BUILD)/aarch64/kernel.stamp
 QEMU_KERNEL_LIBRARY = $(BUILD)/aarch64/libkernel.a
 BROWSER_SOURCES := $(shell find sdk/infinity-browser-core sdk/infinity-browser-servo sdk/servo-runtime-primitives sdk/servo-std tools/servo-platform-probe -type d \( -name target -o -name __pycache__ \) -prune -o -type f -print) $(wildcard assets/apps/infinity-browser-*) tools/browser-build.mk
