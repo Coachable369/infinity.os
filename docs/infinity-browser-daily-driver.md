@@ -58,6 +58,13 @@ passed 23 behavioral tests, including the new transitions, actual snapshot pixel
 bytes, limits, recovery corruption and URL encoding. Receipt:
 `builds/manifests/20260927T153535932185Z-32837.json`.
 These are host core tests, **not installed browser feature acceptance**.
+The normal build now includes these behavioral tests before expensive image
+builds; the focused entrypoint is `./build-kit browser-core-tests`.
+
+Native-browser kernel compile checks also passed for AArch64 and x86_64:
+`20260927T153704259271Z-32948.json` and
+`20260927T153819545393Z-33655.json`, respectively. These checks do not link,
+boot, or prove live browsing and still emit existing repository warnings.
 
 The pre-existing x86 cold-install run timed out after 900 seconds during
 installation verification under x86 TCG on an ARM host:

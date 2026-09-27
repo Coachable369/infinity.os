@@ -21,6 +21,7 @@ python3 tools/installer-output-test.py
 python3 tools/iso-staging-test.py
 python3 tools/re-provision-tpm-test.py
 make install-boot-handoff-test
+cargo test --manifest-path sdk/infinity-browser-core/Cargo.toml
 
 echo "==> Building InfinityOS for x86_64 and AArch64"
 
