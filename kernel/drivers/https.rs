@@ -17,7 +17,8 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-const BODY: usize = 8192;
+const BODY: usize = 128 * 1024;
+const HEAD: usize = 8192;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Failure {
     Busy,
@@ -29,10 +30,14 @@ pub enum Failure {
     Resolution,
     Transport,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Ticket(u64);
 pub struct Response {
     pub status: u16,
     pub length: usize,
     pub bytes: [u8; BODY],
+    pub header_length: usize,
+    pub headers: [u8; HEAD],
 }
 type Outcome = Result<Response, Failure>;
 #[derive(Clone, Copy)]
@@ -107,12 +112,14 @@ impl Ring {
     }
 }
 static LOCK: AtomicBool = AtomicBool::new(false);
-static mut TASK: Task<Outcome, 262144> = Task::new();
+static mut TASK: Task<Outcome, 524288> = Task::new();
 static mut RNG: Option<http::rand_chacha::ChaCha20Rng> = None;
 static mut CLOCK: u64 = 0;
 static mut SERVICES: u64 = 0;
 static mut OWNER: Option<SecurityIdentity> = None;
 static mut RESULT: Option<Outcome> = None;
+static mut NEXT_TICKET:u64=0;
+static mut ACTIVE_TICKET:Option<Ticket>=None;
 static mut RX: Ring = Ring::new();
 static mut TX: Ring = Ring::new();
 static mut AUTH: Option<Authority> = None;
@@ -375,10 +382,47 @@ pub(crate) fn get(
     host: &str,
     path: &str,
 ) -> Result<(), Failure> {
+    get_bounded(owner,connect,send,receive,resolve,host,443,path,8192).map(|_|())
+}
+
+// ------------------------=
+// FUNC: get_browser
+// DESC: Retains bounded page headers and bodies using the same revocable native authority as command requests.
+// ------------------=
+pub(crate) fn get_browser(
+    owner: SecurityIdentity,
+    connect: CapabilityId,
+    send: CapabilityId,
+    receive: CapabilityId,
+    resolve: CapabilityId,
+    host: &str,
+    port: u16,
+    path: &str,
+) -> Result<Ticket, Failure> {
+    get_bounded(owner,connect,send,receive,resolve,host,port,path,BODY)
+}
+
+// ------------------------=
+// FUNC: get_bounded
+// DESC: Starts one explicitly authorized HTTPS transaction with bounded response storage and endpoint port.
+// ------------------=
+fn get_bounded(
+    owner: SecurityIdentity,
+    connect: CapabilityId,
+    send: CapabilityId,
+    receive: CapabilityId,
+    resolve: CapabilityId,
+    host: &str,
+    remote_port: u16,
+    path: &str,
+    body_limit: usize,
+) -> Result<Ticket, Failure> {
     let Some(_guard) = lock() else {
         return Err(Failure::Busy);
     };
-    if host.is_empty() || host.len() > 253 || path.len() > 1024 {
+    // Non-default TLS ports require explicit Host authority formatting in the
+    // shared client. Refuse them until that contract is implemented end to end.
+    if host.is_empty() || host.len() > 253 || path.len() > 1024 || remote_port!=443 {
         return Err(Failure::Invalid);
     }
     let mut check = [0; 1536];
@@ -387,6 +431,7 @@ pub(crate) fn get(
         if OWNER.is_some() {
             return Err(Failure::Busy);
         }
+        let ticket=Ticket(NEXT_TICKET.checked_add(1).ok_or(Failure::Unavailable)?);
         let now = crate::ui::performance::monotonic_ns()
             .map(|n| n / 1_000_000)
             .unwrap_or(CLOCK);
@@ -459,7 +504,8 @@ pub(crate) fn get(
             let mut write = [0; 4096];
             let mut request = [0; 1536];
             let mut body = [0; BODY];
-            let result = http::client::get(
+            let mut headers = [0; HEAD];
+            let result = http::client::get_with_headers(
                 ServiceLink(auth),
                 config,
                 Destination::Resolve,
@@ -467,14 +513,15 @@ pub(crate) fn get(
                 http::tls::system_roots(),
                 time,
                 core::str::from_utf8(&name[..name_length]).unwrap(),
-                443,
+                remote_port,
                 core::str::from_utf8(&target[..target_length]).unwrap(),
                 http::https::Buffers {
                     read_record: &mut read,
                     write_record: &mut write,
                     request: &mut request,
-                    response: &mut body,
+                    response: &mut body[..body_limit],
                 },
+                Some(&mut headers),
             )
             .await
             .map_err(|error| match error {
@@ -492,6 +539,8 @@ pub(crate) fn get(
                 status: result.status,
                 length: result.body_bytes,
                 bytes: body,
+                header_length: result.header_bytes,
+                headers,
             })
         };
         Pin::new_unchecked(&mut *(&raw mut TASK))
@@ -501,8 +550,10 @@ pub(crate) fn get(
         TX = Ring::new();
         AUTH = Some(auth);
         OWNER = Some(owner);
+        NEXT_TICKET=ticket.0;
+        ACTIVE_TICKET=Some(ticket);
         RESULT = None;
-        Ok(())
+        Ok(ticket)
     }
 }
 // ------------------------=
@@ -510,17 +561,32 @@ pub(crate) fn get(
 // DESC: Returns only the owner's complete response and releases the bounded request slot.
 // ------------------=
 pub(crate) fn take(owner: SecurityIdentity) -> Result<Option<Outcome>, Failure> {
+    take_matching(owner,None)
+}
+// ------------------------=
+// FUNC: take_browser
+// DESC: Rejects stale browser callbacks even when another app shares the same login identity.
+// ------------------=
+pub(crate) fn take_browser(owner:SecurityIdentity,ticket:Ticket)->Result<Option<Outcome>,Failure> {
+    take_matching(owner,Some(ticket))
+}
+// ------------------------=
+// FUNC: take_matching
+// DESC: Consumes only the current owner and optional exact request generation.
+// ------------------=
+fn take_matching(owner:SecurityIdentity,ticket:Option<Ticket>)->Result<Option<Outcome>,Failure> {
     let Some(_guard) = lock() else {
         return Err(Failure::Busy);
     };
     unsafe {
-        if OWNER != Some(owner) {
+        if OWNER != Some(owner) || ticket.is_some_and(|ticket|ACTIVE_TICKET!=Some(ticket)) {
             return Err(Failure::Denied);
         }
         let result = (&mut *(&raw mut RESULT)).take();
         if result.is_some() {
             OWNER = None;
             AUTH = None;
+            ACTIVE_TICKET=None;
         }
         Ok(result)
     }
@@ -530,11 +596,25 @@ pub(crate) fn take(owner: SecurityIdentity) -> Result<Option<Outcome>, Failure> 
 // DESC: Cancels only the caller's request, destroys its future, and clears queued packets before reporting cancellation.
 // ------------------=
 pub(crate) fn cancel(owner: SecurityIdentity) -> Result<(), Failure> {
+    cancel_matching(owner,None)
+}
+// ------------------------=
+// FUNC: cancel_browser
+// DESC: Cancels the exact browser request without cancelling a later transaction from the same user.
+// ------------------=
+pub(crate) fn cancel_browser(owner:SecurityIdentity,ticket:Ticket)->Result<(),Failure> {
+    cancel_matching(owner,Some(ticket))
+}
+// ------------------------=
+// FUNC: cancel_matching
+// DESC: Releases a matching actor future under exclusive ownership and publishes cancellation.
+// ------------------=
+fn cancel_matching(owner:SecurityIdentity,ticket:Option<Ticket>)->Result<(),Failure> {
     let Some(_guard) = lock() else {
         return Err(Failure::Busy);
     };
     unsafe {
-        if OWNER != Some(owner) {
+        if OWNER != Some(owner) || ticket.is_some_and(|ticket|ACTIVE_TICKET!=Some(ticket)) {
             return Err(Failure::Denied);
         }
         Pin::new_unchecked(&mut *(&raw mut TASK)).cancel();
@@ -582,6 +662,7 @@ pub(super) fn poll(nic: &mut super::e1000::E1000, now_ms: u64) {
                 Pin::new_unchecked(&mut *(&raw mut TASK)).cancel();
                 OWNER = None;
                 AUTH = None;
+                ACTIVE_TICKET=None;
                 RESULT = None;
                 RX = Ring::new();
                 TX = Ring::new();

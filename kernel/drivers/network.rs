@@ -61,6 +61,7 @@ pub fn poll() {
             };
             if now >= NEXT_POLL {
                 NEXT_POLL = now.saturating_add(1_000_000);
+                super::browser_network::pump();
                 if let Some(nic) = (&mut *(&raw mut NIC)).as_mut() {
                     pump(nic, now / 1_000_000_000);
                     super::https::poll(nic, now / 1_000_000);

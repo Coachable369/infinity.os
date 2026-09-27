@@ -4,6 +4,8 @@ pub use infinity_http as http_transport;
 mod boot_info;
 #[path = "../kernel/drivers/https.rs"]
 pub(crate) mod https;
+#[path = "../kernel/drivers/browser_network.rs"]
+mod browser_network;
 mod drivers {
     pub(crate) use crate::https;
 }
@@ -175,6 +177,48 @@ fn main() {
     boot.firmware_entropy = [23; 32];
     boot.firmware_entropy_valid = 1;
     https::initialize(&boot);
+    assert_eq!(https::get_browser(owner,caps[0],caps[1],caps[2],caps[3],
+        "example.test",0,"/"),Err(https::Failure::Invalid));
+    assert_eq!(https::get_browser(owner,0,caps[1],caps[2],caps[3],
+        "example.test",443,"/"),Err(https::Failure::Denied));
+    // The larger future must fit its bounded task slot, retain exclusive owner
+    // semantics and cancel without leaving the shared network actor occupied.
+    let first=https::get_browser(owner,caps[0],caps[1],caps[2],caps[3],"example.test",443,"/").unwrap();
+    assert_eq!(https::get_browser(owner,caps[0],caps[1],caps[2],caps[3],
+        "example.test",443,"/image.png"),Err(https::Failure::Busy));
+    assert_eq!(https::cancel(Identity([44;16])),Err(https::Failure::Denied));
+    https::cancel_browser(owner,first).unwrap();
+    assert!(matches!(https::take_browser(owner,first),Ok(Some(Err(https::Failure::Cancelled)))));
+    let second=https::get_browser(owner,caps[0],caps[1],caps[2],caps[3],"example.test",443,"/").unwrap();
+    assert_ne!(first,second);
+    assert_eq!(https::cancel_browser(owner,first),Err(https::Failure::Denied));
+    assert!(matches!(https::take_browser(owner,first),Err(https::Failure::Denied)));
+    assert!(matches!(https::take_browser(owner,second),Ok(None)));
+    https::cancel_browser(owner,second).unwrap();
+    assert!(matches!(https::take_browser(owner,second),Ok(Some(Err(https::Failure::Cancelled)))));
+    unsafe {
+        use browser_network as bridge;
+        let mut reply=bridge::abi::Response {status:0,headers:core::ptr::null(),headers_length:0,
+            body:core::ptr::null(),body_length:0};
+        assert!(bridge::configure(owner,[0;4]));
+        let denied=bridge::begin(b"https://example.test/");assert_ne!(denied,0);
+        bridge::pump();assert_eq!(bridge::poll(denied,&mut reply),2);
+        bridge::cancel(denied);bridge::pump();
+        assert!(bridge::configure(owner,caps));
+        let mut ids=[0;16];
+        for id in &mut ids {*id=bridge::begin(b"file:///private");assert_ne!(*id,0);}
+        assert_eq!(bridge::begin(b"https://example.test/"),0);
+        assert!(!bridge::configure(owner,caps));
+        bridge::pump();
+        for id in ids {assert_eq!(bridge::poll(id,&mut reply),2);bridge::cancel(id);}
+        bridge::pump();
+        let old=bridge::begin(b"https://example.test/");bridge::pump();
+        assert_eq!(bridge::poll(old,&mut reply),0);
+        bridge::cancel(old);bridge::pump();assert_eq!(bridge::poll(old,&mut reply),2);
+        let current=bridge::begin(b"https://example.test/");assert_ne!(old,current);
+        bridge::cancel(old);bridge::pump();assert_eq!(bridge::poll(current,&mut reply),0);
+        bridge::cancel(current);bridge::pump();assert_eq!(bridge::poll(current,&mut reply),2);
+    }
     let session = runtime::with_runtime(|r| r.identity.session_nth(0).unwrap()).unwrap();
     let mut command_console = ConsoleRuntime {
         current_user: session.user,

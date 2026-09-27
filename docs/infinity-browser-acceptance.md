@@ -27,6 +27,10 @@ All commands run through `./build-kit run`. Manifests are under
 | `20260927T040808632926Z-47636.json` | 13 browser-core tests, including concurrent frame integrity, buffer bounds, coalescing and stale-generation rejection | Host behavioral tests, not guest/UI proof |
 | `20260927T040859563049Z-47691.json` | Actual Servo pixels copied into owned frame transport and inspected by the consumer across resize/reopen | Non-tracing component guest |
 | `20260927T041146653085Z-47811.json` | Ctrl+Shift+K autorepeat reaches real JS and changes pixels; four raster gates through frame transport plus clean shutdown | Non-tracing component guest, 256 MiB grant |
+| `20260927T042213768189Z-48699.json` | Governed browser-network queue rejects missing authority, forbidden URLs, queue overflow and stale cancellation; existing HTTPS actor lifecycle remains passing | Host service harness |
+| `20260927T042251408923Z-48745.json` | Exact binary-body preservation and HTTP header handoff without duplicate transfer decoding | Focused host behavioral test |
+| `20260927T042330025765Z-48799.json` | Shared kernel including BSP browser-network pump compiles | AArch64 installed configuration, compile only |
+| `20260927T042402000298Z-48919.json` | Same shared adapter compiles | x86_64 installer configuration, compile only |
 
 The small lifecycle fixture with the keyboard listener peaked at **149,722,880 bytes of allocator
 reservation**, including buddy rounding. This is not total RAM and is not a
@@ -49,3 +53,17 @@ teardown is bypassed, leaked or reported complete prematurely.
   size. Broader method/plaintext handling is not proven.
 - Worker ABI and owned pixel transport are implemented, but production desktop
   callbacks, default-app registration and download persistence remain open above.
+
+## Desktop network bridge
+
+`kernel/drivers/browser_network.rs` now bridges a single native engine owner to
+the BSP HTTPS actor using sixteen bounded slots. It is polled from the real OS
+network pump. The caller supplies existing capabilities; the bridge grants none.
+Requests retain generation tickets, so stale browser cancellation cannot cancel
+a newer transaction belonging to the same user. Queues, response bodies (128 KiB)
+and headers (8 KiB) are bounded. Existing `geturl` retains its 8 KiB body limit.
+Replies remain borrowed until cancellation and are never read while the BSP is
+writing them. Unsupported schemes and non-default TLS ports fail closed.
+
+The bridge still needs the production browser supervisor to configure and call
+it. Its service tests do not establish installed page loading or download proof.
