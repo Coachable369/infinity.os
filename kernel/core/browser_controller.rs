@@ -212,8 +212,11 @@ fn enqueue(console:&ConsoleRuntime,command:abi::Command)->bool {unsafe {
 fn navigate_address(console:&ConsoleRuntime) {
     let view=crate::runtime::browser::presentation();
     let (bytes,length)=if view.address_focused {(&view.edit,view.edit_length)}else{(&view.address,view.address_length)};
-    let mut command=abi::Command::empty();command.kind=abi::NAVIGATE;command.length=length as u32;
-    command.text[..length].copy_from_slice(&bytes[..length]);
+    let mut command=abi::Command::empty();command.kind=abi::NAVIGATE;
+    let Ok(input)=core::str::from_utf8(&bytes[..length]) else{return;};
+    let Ok((_,length))=infinity_browser_core::omnibox::resolve(input,
+        "https://www.google.com/search?q=",&mut command.text) else{return;};
+    command.length=length as u32;
     if enqueue(console,command) {crate::runtime::browser::focus_address(false);poll(console);}
 }
 

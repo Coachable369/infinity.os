@@ -10,6 +10,9 @@ pub mod mailbox;
 pub mod frames;
 pub mod input_queue;
 pub mod pointer;
+pub mod tabs;
+pub mod time_travel;
+pub mod omnibox;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Navigation(u64);

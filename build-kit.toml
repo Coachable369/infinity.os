@@ -42,6 +42,10 @@ clean = false
 command = ["make", "NATIVE_BROWSER=1", "builds/InfinityOS-aarch64-qemu-test.iso"]
 clean = false
 
+[profiles.browser-core-tests]
+command = ["cargo", "test", "--manifest-path", "sdk/infinity-browser-core/Cargo.toml"]
+clean = false
+
 [profiles.studio]
 command = ["sh", "tools/installer-designer/build.sh"]
 clean = false
