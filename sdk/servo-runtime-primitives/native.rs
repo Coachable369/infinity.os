@@ -45,6 +45,11 @@ impl Runtime {
     // DESC: Reads heap accounting on the serialized owner CPU.
     // ------------------=
     pub unsafe fn allocated() -> usize { let p = active(); if p.is_null() { 0 } else { (*p).arena.allocated() } }
+    // ------------------------=
+    // FUNC: peak_allocated
+    // DESC: Returns high-water heap ownership on the serialized engine CPU without logging or locks.
+    // ------------------=
+    pub unsafe fn peak_allocated() -> usize { let p=active();if p.is_null(){0}else{(*p).arena.peak_allocated()} }
 }
 // ------------------------=
 // FUNC: active

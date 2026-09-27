@@ -10,6 +10,7 @@ pub struct Arena<'a> {
     base: NonNull<u8>,
     capacity: usize,
     allocated: usize,
+    peak: usize,
     heads: [usize; ORDERS],
     _owner: PhantomData<&'a mut [u8]>,
 }
@@ -28,7 +29,7 @@ impl<'a> Arena<'a> {
             let aligned = start.checked_add(size - 1)? & !(size - 1);
             if aligned.checked_add(size)? <= end {
                 let base = NonNull::new(bytes.as_mut_ptr().wrapping_add(aligned - start))?;
-                let mut arena = Self { base, capacity: size, allocated: 0,
+                let mut arena = Self { base, capacity: size, allocated: 0, peak: 0,
                     heads: [EMPTY; ORDERS], _owner: PhantomData };
                 let order = size.trailing_zeros() as usize;
                 arena.push(order, 0);
@@ -60,6 +61,7 @@ impl<'a> Arena<'a> {
         let offset = self.pop(found)?;
         for index in (order..found).rev() { self.push(index, offset + (1 << index)); }
         self.allocated += 1 << order;
+        self.peak = self.peak.max(self.allocated);
         // SAFETY: offset is an owned free block, now removed and split under exclusive access.
         Some(unsafe { NonNull::new_unchecked(self.base.as_ptr().add(offset)) })
     }
@@ -97,6 +99,11 @@ impl<'a> Arena<'a> {
     // DESC: Reports reserved bytes including buddy rounding for resource accounting.
     // ------------------=
     pub fn allocated(&self) -> usize { self.allocated }
+    // ------------------------=
+    // FUNC: peak_allocated
+    // DESC: Reports the exact high-water reservation, including transient blocks and buddy rounding.
+    // ------------------=
+    pub fn peak_allocated(&self) -> usize { self.peak }
     // ------------------------=
     // FUNC: next
     // DESC: Reads intrusive metadata only from a block currently on a free list.
@@ -163,6 +170,7 @@ mod tests {
     fn exhaustion_reclamation_and_alignment() {
         let mut memory = Memory([0; 4096]);
         let mut arena = Arena::new(&mut memory.0).unwrap();
+        assert_eq!(arena.peak_allocated(), 0);
         let layout = Layout::from_size_align(23, 64).unwrap();
         let mut pointers = [NonNull::dangling(); 64];
         for (index, slot) in pointers.iter_mut().enumerate() {
@@ -171,6 +179,7 @@ mod tests {
             unsafe { slot.as_ptr().write_bytes(index as u8, 23); }
         }
         assert_eq!(arena.allocated(), 4096);
+        assert_eq!(arena.peak_allocated(), 4096);
         assert!(arena.allocate(layout).is_none());
         for (index, pointer) in pointers.iter().enumerate() {
             let bytes = unsafe { core::slice::from_raw_parts(pointer.as_ptr(), 23) };
@@ -178,6 +187,7 @@ mod tests {
         }
         for step in 0..64 { unsafe { arena.release(pointers[(step * 17) % 64], layout); } }
         assert_eq!(arena.allocated(), 0);
+        assert_eq!(arena.peak_allocated(), 4096);
         let whole = Layout::from_size_align(4096, 4096).unwrap();
         assert!(arena.allocate(whole).is_some());
     }
