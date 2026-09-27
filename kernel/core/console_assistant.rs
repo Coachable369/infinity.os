@@ -35,6 +35,7 @@ impl ConsoleRuntime {
             DesktopAppKind::TextEditor => 2,
             DesktopAppKind::CommandWindow => 1,
             DesktopAppKind::TaskManager => 3,
+            DesktopAppKind::Browser => return None,
             DesktopAppKind::None => 0,
         };
         if id == 0 {

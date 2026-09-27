@@ -61,9 +61,9 @@ pub(super) fn arrange(
 // FUNC: next_window
 // DESC: Cycles stable window identities so raising a window cannot trap cycling between two apps.
 // ------------------=
-pub(super) fn next_window(visible: [bool; 5], active: usize) -> Option<usize> {
-    (1..=5)
-        .map(|step| (active + step) % 5)
+pub(super) fn next_window<const N:usize>(visible: [bool; N], active: usize) -> Option<usize> {
+    (1..=N)
+        .map(|step| (active % N + step) % N)
         .find(|id| visible[*id])
 }
 pub(super) struct TitleClicks {
@@ -148,6 +148,10 @@ mod tests {
         assert_eq!(next_window(visible, 0), Some(2));
         assert_eq!(next_window(visible, 2), Some(3));
         assert_eq!(next_window(visible, 3), Some(0));
+        let browser_visible=[true,false,false,false,false,true];
+        assert_eq!(next_window(browser_visible,0),Some(5));
+        assert_eq!(next_window(browser_visible,5),Some(0));
+        assert_eq!(next_window([false;0],0),None);
     }
     // ------------------------=
     // FUNC: title_gestures_are_bounded_and_isolated

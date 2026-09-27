@@ -4499,7 +4499,7 @@ impl super::DisplayDevice {
             self.onboarding_frame(step, input, masked, focus, validation_error);
             return;
         }
-        if matches!(screen, 2 | 3 | 4 | 7 | 8 | 9 | 10) {
+        if matches!(screen, 2 | 3 | 4 | 7 | 8 | 9 | 10 | 11) {
             self.paint_desktop_background();
         } else {
             self.paint_first_boot_background();
@@ -4546,7 +4546,7 @@ impl super::DisplayDevice {
             self.render_clip = launcher_clip;
         }
 
-        if matches!(screen,2|4|8|9|10) {
+        if matches!(screen,2|4|8|9|10|11) {
             let stack=crate::ui::desktop_stack::current();
             self.desktop_base(scale,desktop_items,desktop_item_positions,false);
             for id in stack.order {
@@ -4556,6 +4556,9 @@ impl super::DisplayDevice {
                         window_visible,window_maximized,home_location,dragging_item);
                 } else if id==4 {
                     self.render_settings_window(stack.settings_section,if screen==4 {input}else{b""},settings_window,scale);
+                } else if id==5 {
+                    #[cfg(feature="native-browser")]
+                    self.browser_window(crate::console::browser_window());
                 } else {
                     let (kind,state,text)=match id {
                         1=>(8,command_window,command_input),
@@ -4572,16 +4575,16 @@ impl super::DisplayDevice {
                     let rect=if id==4 {layout.settings_window_geometry(settings_window).window}
                     else if id==0 {let (x,y,w,h)=layout.home_window_geometry_sized(window_x,window_y,window_width,window_height,window_maximized);
                         crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32}}
-                    else {let state=match id {1=>command_window,2=>editor_window,_=>task_manager_window};
+                    else {let state=match id {1=>command_window,2=>editor_window,5=>crate::console::browser_window(),_=>task_manager_window};
                         layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window};
-                    if id!=0 && !(id==2 && editor_dialog!=0) {self.window_assistant(id,rect,scale);}
+                    if id!=0 && id!=5 && !(id==2 && editor_dialog!=0) {self.window_assistant(id,rect,scale);}
                     if id==stack.active {self.outline_rounded_rect(rect.x.max(0) as usize,rect.y.max(0) as usize,
                         rect.width as usize,rect.height as usize,10*scale,105,199,245);}
                 }
             }
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-        if matches!(screen,2|4|8|9|10) { self.minimized_app_shelf(); self.desktop_widget_menu(scale); }
+        if matches!(screen,2|4|8|9|10|11) { self.minimized_app_shelf(); self.desktop_widget_menu(scale); }
         if screen==4 {return;}
         if matches!(screen, 1 | 5 | 6) {
             let panel_top = if matches!(screen, 5 | 6) {
@@ -10570,7 +10573,7 @@ pub fn system_ui_present(
                 && !settings_geometry_changed
                 && !app_window_geometry_changed;
             let bounded_scene_geometry_change = !structural_change_without_window
-                && (!content_changed || matches!(screen, 8 | 9 | 10) || (screen == 4 && chat_changed))
+                && (!content_changed || matches!(screen, 8 | 9 | 10 | 11) || (screen == 4 && chat_changed))
                 && console.last_system_screen == screen
                 && (navigator_surface_changed
                     || network_settings_changed
@@ -10581,7 +10584,7 @@ pub fn system_ui_present(
                     || settings_geometry_changed
                     || app_window_geometry_changed
                     || (chat_changed && screen == 4)
-                    || (content_changed && matches!(screen, 8 | 9 | 10)));
+                    || (content_changed && matches!(screen, 8 | 9 | 10 | 11)));
             let mut full_surface_redrawn = false;
             if bounded_menu_change
                 && !structural_change_without_window
@@ -11047,7 +11050,7 @@ pub fn system_ui_present(
                     focus,
                     menu_kind,
                 );
-            } else if (matches!(screen,4|8|9|10) && thinking_header_changed && !content_changed) || crate::ui::redraw::desktop_chat_content_requires_bounded_redraw(
+            } else if (matches!(screen,4|8|9|10|11) && thinking_header_changed && !content_changed) || crate::ui::redraw::desktop_chat_content_requires_bounded_redraw(
                 screen,
                 content_changed || thinking_header_changed,
             ) {
@@ -11160,7 +11163,7 @@ pub fn system_ui_present(
             {
                 console.display.system_top_bar_clock(clock);
             }
-            if matches!(screen, 2 | 4 | 7 | 8 | 9 | 10) {
+            if matches!(screen, 2 | 4 | 7 | 8 | 9 | 10 | 11) {
                 for damage in [crate::ui::app_launcher::minimized_shelf::take_damage(console.display.width, console.display.height),
                     crate::ui::desktop_widgets::take_damage(console.display.width, console.display.height,layout.scale()),
                     crate::ui::app_launcher::shortcuts::take_damage(console.display.width,console.display.height).map(|(x,y,w,h)|crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32})].into_iter().flatten() {
@@ -11178,7 +11181,7 @@ pub fn system_ui_present(
                     }
                 }
             }
-            if matches!(screen,2|4|7|8|9|10) {
+            if matches!(screen,2|4|7|8|9|10|11) {
                 let shortcuts=crate::ui::app_launcher::shortcuts::current();
                 if let Some((id,_,_,true))=shortcuts.drag {
                     console.display.desktop_app_shortcut(id,

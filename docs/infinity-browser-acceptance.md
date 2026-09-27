@@ -42,6 +42,11 @@ All commands run through `./build-kit run`. Manifests are under
 | `20260927T050142723257Z-74529.json` | Binary ELF inspection verifies target architecture, executable entry, nonoverlapping segments and no writable-executable load segments | Artifact structure, not runtime security proof |
 | `20260927T050741867645Z-75613.json` | Browser stack slot raises, hides and hit-tests with existing windows; five-window callers keep the extra slot hidden | Shared native window-stack behavioral test, not browser UI proof |
 | `20260927T052146575941Z-76540.json` | Real Servo second navigation, exact Back/Forward destinations and history flags, fragment-free provider request, released request handles, four prior pixel/input gates and clean shutdown | AArch64 freestanding component guest, not installed desktop |
+| `20260927T053040513878Z-77044.json` | Approved PNG artwork converted to native BMP with every BGRA row and alpha byte preserved | Binary artwork verification, not screenshot review |
+| `20260927T053403252290Z-77187.json` | Native retained browser renderer, independent window state and metadata drain compile | AArch64 compile only |
+| `20260927T053513507015Z-77289.json` | Same shared renderer and window integration compile | x86_64 installer compile only |
+| `20260927T053436488285Z-77233.json` | Existing editor/window stack behavioral regressions pass | Host harness |
+| `20260927T053555084820Z-77341.json` | Six-window cycling includes browser, wraps correctly and handles an empty window set | Host window-workflow behavior |
 
 The history test exposed fragment-bearing URLs crossing the native HTTP boundary.
 The adapter now removes fragments only from provider requests, preserving the
@@ -101,6 +106,15 @@ cost remains an explicit measurement and correction item.
 
 The supervisor is not enabled in release images yet. No shell, installed launch,
 responsiveness or total-RAM acceptance follows from these compilation checks.
+The in-progress native renderer now has a separate retained slot (12), approved
+losslessly converted artwork, bounded viewport pixel copying and engine-driven
+metadata. Browser geometry has its own console state and stack identity (5).
+The painter retains a borrowed completed frame while the worker can publish into
+the other slot; it never invokes Servo. This is not yet an interactive shell:
+launch/permission flow, input routing, resize commands, repaint scheduling and
+rendered screenshot review remain unverified. The new window starts hidden and
+has no launcher entry until that integration is ready. Browser session-layout
+persistence and minimized-shelf representation also remain open.
 The kernel boot path retains its loader-owned BootInfo for later authenticated
 launch; it does not launch Servo automatically. Start and command submission are
 bound to one nonzero session owner. Cross-session restart/teardown remains an

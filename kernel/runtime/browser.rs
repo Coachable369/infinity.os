@@ -14,6 +14,7 @@ static STATE:AtomicU32=AtomicU32::new(0);
 static FAILURE:AtomicU32=AtomicU32::new(0);
 static GENERATION:AtomicU64=AtomicU64::new(0);
 static PEAK:AtomicU64=AtomicU64::new(0);
+static FRAME_REVISION:AtomicU64=AtomicU64::new(0);
 static BOOT:AtomicPtr<crate::boot_info::BootInfo>=AtomicPtr::new(core::ptr::null_mut());
 static OWNER:[AtomicU64;2]=[AtomicU64::new(0),AtomicU64::new(0)];
 static COMMANDS:Mailbox<abi::Command,32>=Mailbox::new();
@@ -86,6 +87,55 @@ pub fn take_event()->Option<Event> {EVENTS.try_take().ok().flatten()}
 // ------------------=
 pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(Ordering::Acquire),
     GENERATION.load(Ordering::Acquire),PEAK.load(Ordering::Acquire))}
+
+#[derive(Clone,Copy)]
+pub struct Presentation {
+    pub address:[u8;2048],pub address_length:usize,
+    pub title:[u8;256],pub title_length:usize,
+    pub loading:bool,pub history:u32,pub error:u32,pub revision:u64,
+}
+static mut PRESENTATION:Presentation=Presentation{address:[0;2048],address_length:0,title:[0;256],
+    title_length:0,loading:false,history:0,error:0,revision:0};
+static mut LAST_FRAME_REVISION:u64=0;
+
+// ------------------------=
+// FUNC: presentation
+// DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
+// ------------------=
+pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+
+// ------------------------=
+// FUNC: poll_presentation
+// DESC: Drains a bounded metadata batch and coalesces frame revisions without waiting on the engine worker.
+// ------------------=
+pub fn poll_presentation()->bool {
+    unsafe {
+        let view=&mut *(&raw mut PRESENTATION);
+        let frame=FRAME_REVISION.load(Ordering::Acquire);
+        let mut changed=frame!=LAST_FRAME_REVISION;
+        LAST_FRAME_REVISION=frame;
+        for _ in 0..32 {
+            let Some(event)=take_event() else {break;};
+            match event.kind {
+                abi::EVENT_OPEN=>{view.loading=false;view.error=0;view.history=0;},
+                abi::EVENT_CLOSED=>{view.loading=false;view.history=0;},
+                abi::EVENT_LOAD=>view.loading=event.value==0,
+                abi::EVENT_HISTORY=>view.history=event.value&3,
+                abi::EVENT_ERROR=>{view.error=event.value+1;view.loading=false;},
+                abi::EVENT_ADDRESS=>{view.address_length=event.length.min(view.address.len());
+                    view.address[..view.address_length].copy_from_slice(&event.text[..view.address_length]);},
+                abi::EVENT_TITLE=>{view.title_length=event.length.min(view.title.len());
+                    view.title[..view.title_length].copy_from_slice(&event.text[..view.title_length]);},
+                _=>continue,
+            }
+            changed=true;
+        }
+        let error=FAILURE.load(Ordering::Acquire);
+        if error!=view.error && error!=0 {view.error=error;view.loading=false;changed=true;}
+        if changed {view.revision=view.revision.wrapping_add(1);}
+        changed
+    }
+}
 // ------------------------=
 // FUNC: worker
 // DESC: Enters the privately linked component on its sole native owner CPU.
@@ -150,7 +200,9 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
 // DESC: Publishes owned RGBA pixels, never a global framebuffer pointer.
 // ------------------=
 unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,length:usize) {
-    let _=FRAMES.publish(GENERATION.load(Ordering::Acquire),width,height,core::slice::from_raw_parts(bytes,length));
+    if FRAMES.publish(GENERATION.load(Ordering::Acquire),width,height,core::slice::from_raw_parts(bytes,length)).is_ok() {
+        FRAME_REVISION.fetch_add(1,Ordering::Release);
+    }
 }
 // ------------------------=
 // FUNC: event

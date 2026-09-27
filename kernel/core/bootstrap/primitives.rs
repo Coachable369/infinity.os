@@ -360,6 +360,25 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
+    // FUNC: browser_pixels
+    // DESC: Copies a bounded native RGBA viewport into the compositor surface with one damage submission.
+    // ------------------=
+    #[cfg(feature="native-browser")]
+    pub(super) fn browser_pixels(&mut self,r:infinity_browser_core::Viewport,bytes:&[u8]) {
+        let Some(length)=(r.width as usize).checked_mul(r.height as usize).and_then(|n|n.checked_mul(4)) else {return;};
+        if length!=bytes.len() {return;}
+        let left=r.x.max(0) as usize;let top=r.y.max(0) as usize;
+        let right=(i64::from(r.x)+i64::from(r.width)).clamp(0,self.width as i64) as usize;
+        let bottom=(i64::from(r.y)+i64::from(r.height)).clamp(0,self.height as i64) as usize;
+        for y in top..bottom {for x in left..right {
+            if !self.render_point_visible(x,y) {continue;}
+            let at=((y as i64-i64::from(r.y)) as usize*r.width as usize+(x as i64-i64::from(r.x)) as usize)*4;
+            self.write_rgb_unchecked(x,y,bytes[at],bytes[at+1],bytes[at+2]);
+        }}
+        self.mark_dirty_rect(left,top,right.saturating_sub(left),bottom.saturating_sub(top));
+    }
+
+    // ------------------------=
     // FUNC: write_rgb_unchecked
     // DESC: Stores an already-bounded pixel without repeating per-pixel damage bookkeeping.
     // ------------------=

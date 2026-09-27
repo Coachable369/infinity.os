@@ -4,7 +4,7 @@ use super::{DisplayDevice, PresentRegion};
 const PIXELS: usize = 2560 * 1600;
 const SCRATCH_PIXELS: usize = 3840 * 2160;
 // Six ordinary shell slots plus one persistent surface per navigator instance.
-const SLOTS: usize = 12;
+const SLOTS: usize = 13;
 
 // ------------------------=
 // FUNC: invalidate_revision

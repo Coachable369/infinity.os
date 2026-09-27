@@ -63,6 +63,7 @@ enum DesktopAppKind {
     TextEditor,
     CommandWindow,
     TaskManager,
+    Browser,
 }
 
 #[derive(Clone, Copy)]
@@ -558,6 +559,7 @@ struct ConsoleRuntime {
     editor_window: DesktopAppWindowState,
     command_window: DesktopAppWindowState,
     task_manager_window: DesktopAppWindowState,
+    browser_window: DesktopAppWindowState,
     task_manager_selected: usize,
     task_manager_scroll: usize,
     session_idle: SessionIdleState,
@@ -732,6 +734,7 @@ impl ConsoleRuntime {
             editor_window: crate::ui::editor_chrome::default_window(system.framebuffer_width,system.framebuffer_height),
             command_window: DesktopAppWindowState::new(240, 210, 600, 620),
             task_manager_window: DesktopAppWindowState::new(160, 140, 760, 650),
+            browser_window: DesktopAppWindowState::new(100, 120, 800, 740),
             task_manager_selected: 0,
             task_manager_scroll: 0,
             session_idle: SessionIdleState::new(),
@@ -1149,8 +1152,10 @@ impl ConsoleRuntime {
         if matches!(self.mode,ConsoleMode::Desktop|ConsoleMode::Settings|ConsoleMode::SystemMenu|ConsoleMode::AppLauncher) {
             let (e,c,t)=self.desktop_app_windows();
             let active=if self.mode==ConsoleMode::Settings {4} else {match self.desktop_app {
-                DesktopAppKind::None=>0,DesktopAppKind::CommandWindow=>1,DesktopAppKind::TextEditor=>2,DesktopAppKind::TaskManager=>3}};
-            crate::ui::desktop_stack::publish([self.home_window_visible,c.visible,e.visible,t.visible,self.settings_open],active,self.system_focus);
+                DesktopAppKind::None=>0,DesktopAppKind::CommandWindow=>1,DesktopAppKind::TextEditor=>2,DesktopAppKind::TaskManager=>3,DesktopAppKind::Browser=>5}};
+            let browser=self.browser_window_state();
+            unsafe { BROWSER_WINDOW=browser; }
+            crate::ui::desktop_stack::publish([self.home_window_visible,c.visible,e.visible,t.visible,self.settings_open,browser.visible],active,self.system_focus);
         }
         if !unsafe { (&mut *(&raw mut INPUT_PRESENTATION)).request() } { return; }
         crate::runtime::with_runtime(|runtime| { runtime.node_selection = self.selected_node_id; runtime.node_policy_offset = self.node_policy_offset; });
@@ -1171,6 +1176,7 @@ impl ConsoleRuntime {
                     DesktopAppKind::CommandWindow => 8,
                     DesktopAppKind::TextEditor => 9,
                     DesktopAppKind::TaskManager => 10,
+                    DesktopAppKind::Browser => 11,
                     DesktopAppKind::None => 2,
                 },
                 ConsoleMode::AppLauncher => 7,
@@ -1732,7 +1738,7 @@ impl ConsoleRuntime {
                 DesktopAppKind::TextEditor => crate::runtime::task_manager::IMAGE_TEXT_EDITOR,
                 DesktopAppKind::CommandWindow => crate::runtime::task_manager::IMAGE_COMMAND_WINDOW,
                 DesktopAppKind::TaskManager => crate::runtime::task_manager::IMAGE_TASK_MANAGER,
-                DesktopAppKind::None => return true,
+                DesktopAppKind::None | DesktopAppKind::Browser => return true,
             };
             match row {
                 0 => self.apply_application_resource_mode(
@@ -2772,6 +2778,7 @@ impl ConsoleRuntime {
                 self.command_window_suspended = true;
             }
             DesktopAppKind::TaskManager => self.task_manager_window.visible = false,
+            DesktopAppKind::Browser => self.browser_window.visible = false,
             DesktopAppKind::None => return,
         }
         self.desktop_app = DesktopAppKind::None;
@@ -2807,6 +2814,7 @@ impl ConsoleRuntime {
             DesktopAppKind::TextEditor => self.editor_window.visible = false,
             DesktopAppKind::CommandWindow => self.command_window.visible = false,
             DesktopAppKind::TaskManager => self.task_manager_window.visible = false,
+            DesktopAppKind::Browser => self.browser_window.visible = false,
             DesktopAppKind::None => {}
         }
         self.desktop_app = DesktopAppKind::None;
@@ -2830,14 +2838,14 @@ impl ConsoleRuntime {
         self.store_active_app_window();
         let active=if self.mode==ConsoleMode::Settings {4} else {match self.desktop_app {
             DesktopAppKind::CommandWindow=>1, DesktopAppKind::TextEditor=>2,
-            DesktopAppKind::TaskManager=>3, DesktopAppKind::None=>0}};
+            DesktopAppKind::TaskManager=>3, DesktopAppKind::Browser=>5, DesktopAppKind::None=>0}};
         if action==A::Cycle {
             let visible=[self.home_window_visible,self.command_window.visible,self.editor_window.visible,
-                self.task_manager_window.visible,self.settings_open];
+                self.task_manager_window.visible,self.settings_open,self.browser_window.visible];
             if let Some(id)=window_workflows::next_window(visible,active) {
                 if id==4 {self.mode=ConsoleMode::Settings;self.system_focus=crate::ui::desktop_stack::current().settings_section;}
                 else {self.mode=ConsoleMode::Desktop;self.desktop_app=match id {1=>DesktopAppKind::CommandWindow,
-                    2=>DesktopAppKind::TextEditor,3=>DesktopAppKind::TaskManager,_=>DesktopAppKind::None};
+                    2=>DesktopAppKind::TextEditor,3=>DesktopAppKind::TaskManager,5=>DesktopAppKind::Browser,_=>DesktopAppKind::None};
                     self.load_active_app_window();}
                 self.ai_chat_focus=0;self.shell_menu=0;
             }
@@ -2915,6 +2923,7 @@ impl ConsoleRuntime {
             DesktopAppKind::TextEditor => self.editor_window = state,
             DesktopAppKind::CommandWindow => self.command_window = state,
             DesktopAppKind::TaskManager => self.task_manager_window = state,
+            DesktopAppKind::Browser => self.browser_window = state,
             DesktopAppKind::None => {}
         }
     }
@@ -2928,6 +2937,7 @@ impl ConsoleRuntime {
             DesktopAppKind::TextEditor => self.editor_window,
             DesktopAppKind::CommandWindow => self.command_window,
             DesktopAppKind::TaskManager => self.task_manager_window,
+            DesktopAppKind::Browser => self.browser_window,
             DesktopAppKind::None => return,
         };
         self.app_window_x = state.x;
@@ -2983,9 +2993,20 @@ impl ConsoleRuntime {
             DesktopAppKind::TextEditor => editor = active,
             DesktopAppKind::CommandWindow => command = active,
             DesktopAppKind::TaskManager => task_manager = active,
-            DesktopAppKind::None => {}
+            DesktopAppKind::None | DesktopAppKind::Browser => {}
         }
         (editor, command, task_manager)
+    }
+
+    // ------------------------=
+    // FUNC: browser_window_state
+    // DESC: Projects independent browser geometry including a focused live drag or resize.
+    // ------------------=
+    fn browser_window_state(&self)->DesktopAppWindowState {
+        if self.desktop_app==DesktopAppKind::Browser {
+            DesktopAppWindowState{x:self.app_window_x,y:self.app_window_y,width:self.app_window_width,
+                height:self.app_window_height,maximized:self.app_window_maximized,visible:true}
+        } else {self.browser_window}
     }
 
     // ------------------------=
@@ -3001,7 +3022,7 @@ impl ConsoleRuntime {
                 DesktopAppKind::TextEditor => DesktopResumeSurface::TextEditor,
                 DesktopAppKind::CommandWindow => DesktopResumeSurface::CommandWindow,
                 DesktopAppKind::TaskManager => DesktopResumeSurface::TaskManager,
-                DesktopAppKind::None => DesktopResumeSurface::Workspace,
+                DesktopAppKind::None | DesktopAppKind::Browser => DesktopResumeSurface::Workspace,
             }
         };
         DesktopSessionLayout {
@@ -3295,7 +3316,7 @@ impl ConsoleRuntime {
             y:self.system.framebuffer_height as i32*self.pointer_y/1000};
         let navigator=self.inactive_file_navigator_at_pointer();
         if navigator.is_some() {home=crate::ui::geometry::Rect{x:point.x,y:point.y,width:1,height:1};}
-        let mut bounds=[home,app_rect(c),app_rect(e),app_rect(t),layout.settings_window_geometry(self.settings_window).window];
+        let mut bounds=[home,app_rect(c),app_rect(e),app_rect(t),layout.settings_window_geometry(self.settings_window).window,app_rect(self.browser_window_state())];
         let active_navigator=crate::runtime::with_runtime(|r|r.file_navigators.active_index()).flatten().unwrap_or(0);
         for (id,panel_id) in [(0,5+active_navigator),(1,1),(2,2),(3,3),(4,4)] {
             let panel=crate::ui::app_assistant::read(panel_id);
@@ -3312,7 +3333,7 @@ impl ConsoleRuntime {
         else {
             self.mode=ConsoleMode::Desktop;
             self.desktop_app=match id {1=>DesktopAppKind::CommandWindow,2=>DesktopAppKind::TextEditor,
-                3=>DesktopAppKind::TaskManager,_=>DesktopAppKind::None};
+                3=>DesktopAppKind::TaskManager,5=>DesktopAppKind::Browser,_=>DesktopAppKind::None};
             self.load_active_app_window();self.system_focus=0;
             if id==0 {if let Some(index)=navigator {let _=self.load_file_navigator_window(index);}}
         }
@@ -13015,12 +13036,25 @@ fn object_error_text(error: crate::storage::object::ObjectError) -> &'static [u8
 }
 
 static mut RUNTIME: Option<ConsoleRuntime> = None;
+static mut BROWSER_WINDOW:DesktopAppWindowState=DesktopAppWindowState::new(100,120,800,740);
+
+// ------------------------=
+// FUNC: browser_window
+// DESC: Returns the BSP-published browser geometry without borrowing the active console during painting.
+// ------------------=
+pub fn browser_window()->DesktopAppWindowState {unsafe {BROWSER_WINDOW}}
 
 // ------------------------=
 // FUNC: poll_native_ai
 // DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
 // ------------------=
 pub fn poll_native_ai() {
+    #[cfg(feature="native-browser")]
+    if crate::runtime::browser::poll_presentation() {
+        unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
+            if runtime.browser_window_state().visible {runtime.redraw();}
+        } }
+    }
     #[cfg(target_os = "none")]
     if crate::runtime::ai::voice_conversation::poll() {
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
