@@ -6,7 +6,8 @@ pub const COMMAND: usize = 6;
 pub const EDITOR: usize = 7;
 pub const TASKS: usize = 8;
 pub const SETTINGS: usize = 9;
-pub const COUNT: usize = 10;
+pub const BROWSER: usize = 10;
+pub const COUNT: usize = 11;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -247,6 +248,7 @@ pub fn label(id: usize) -> &'static [u8] {
         EDITOR => b"Editor",
         TASKS => b"Tasks",
         SETTINGS => b"Settings",
+        BROWSER => b"Browser",
         _ => b"Files",
     }
 }
@@ -260,6 +262,7 @@ pub fn icon(id: usize) -> usize {
         EDITOR => 49,
         TASKS => 19,
         SETTINGS => 26,
+        BROWSER => 60,
         _ => 2,
     }
 }

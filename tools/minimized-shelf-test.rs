@@ -10,6 +10,21 @@ use geometry::Point;
 use shelf::*;
 #[test]
 // ------------------------=
+// FUNC: browser_minimize_has_an_independent_restore_identity
+// DESC: Verifies browser minimization survives alongside other apps and restores without clearing their entries.
+// ------------------=
+fn browser_minimize_has_an_independent_restore_identity() {
+    let mut state=State::new();
+    state.set(EDITOR,true);
+    state.set(BROWSER,true);
+    assert_eq!(state.count(),2);
+    assert_eq!(state.item(1),Some(BROWSER));
+    state.set(BROWSER,false);
+    assert_eq!(state.count(),1);
+    assert_eq!(state.item(0),Some(EDITOR));
+}
+#[test]
+// ------------------------=
 // FUNC: drop_interior_floats_and_edges_anchor
 // DESC: Exercises the same coalesced drag/release state transition used by native pointer routing.
 // ------------------=

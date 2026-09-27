@@ -15,6 +15,7 @@ impl ConsoleRuntime {
             DesktopAppKind::CommandWindow => Some(shelf::COMMAND),
             DesktopAppKind::TextEditor => Some(shelf::EDITOR),
             DesktopAppKind::TaskManager => Some(shelf::TASKS),
+            DesktopAppKind::Browser => Some(shelf::BROWSER),
             _ => None,
         }
     }
@@ -42,6 +43,7 @@ impl ConsoleRuntime {
             (shelf::COMMAND, c.visible),
             (shelf::TASKS, t.visible),
             (shelf::SETTINGS, self.settings_open),
+            (shelf::BROWSER, self.browser_window_state().visible),
         ] {
             if visible {
                 state.set(id, false);
@@ -299,6 +301,10 @@ impl ConsoleRuntime {
                     self.editor_window.visible = true;
                     DesktopAppKind::TextEditor
                 }
+                shelf::BROWSER => {
+                    self.browser_window.visible = true;
+                    DesktopAppKind::Browser
+                }
                 _ => {
                     self.task_manager_window.visible = true;
                     DesktopAppKind::TaskManager
@@ -306,7 +312,7 @@ impl ConsoleRuntime {
             };
             self.focus_desktop_app(app);
             if action == Action::Maximize && !self.app_window_maximized {
-                self.toggle_window_maximized(1);
+                self.toggle_window_maximized(if app==DesktopAppKind::Browser {5}else{1});
             }
             if action == Action::Close {
                 self.close_desktop_app();

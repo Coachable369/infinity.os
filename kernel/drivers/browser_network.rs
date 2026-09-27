@@ -47,6 +47,15 @@ pub unsafe fn configure(owner:SecurityIdentity,capabilities:[CapabilityId;4])->b
     AUTHORITY=Some((owner,capabilities));true
 }
 // ------------------------=
+// FUNC: renew
+// DESC: Replaces future-request authority only for the existing owner; active HTTPS transactions retain their original lease checks.
+// ------------------=
+/// BSP only. The engine never reads AUTHORITY and no response slots are changed.
+pub unsafe fn renew(owner:SecurityIdentity,capabilities:[CapabilityId;4])->bool {
+    if !AUTHORITY.as_ref().is_some_and(|(current,_)|*current==owner) {return false;}
+    AUTHORITY=Some((owner,capabilities));true
+}
+// ------------------------=
 // FUNC: begin
 // DESC: Queues a bounded URL without touching BSP services, sockets or runtime locks.
 // ------------------=
@@ -124,6 +133,20 @@ unsafe fn finish(slot:&Slot,response:https::Response)->bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: lease_renewal_preserves_session_ownership
+    // DESC: Checks that renewal updates only the current owner's future requests and rejects cross-session replacement.
+    // ------------------=
+    #[test]
+    fn lease_renewal_preserves_session_ownership() { unsafe {
+        let owner=SecurityIdentity([7;16]);
+        AUTHORITY=Some((owner,[1,2,3,4]));
+        assert!(!renew(SecurityIdentity([8;16]),[5,6,7,8]));
+        assert_eq!(AUTHORITY.unwrap().1,[1,2,3,4]);
+        assert!(renew(owner,[5,6,7,8]));
+        assert_eq!(AUTHORITY.unwrap().1,[5,6,7,8]);
+        AUTHORITY=None;
+    }}
     // ------------------------=
     // FUNC: response_handoff_preserves_content_not_transfer_framing
     // DESC: Checks actual HTTP metadata transformation and exact decoded binary-body ownership.
