@@ -36,7 +36,27 @@ streamed installer payload protocol, with target-specific manifests and binary
 reassembly checks for both ESP and installed kernel. This reduced the ARM live
 ELF from 2.1 GiB to 823 MiB and brought its load span below 4 GiB. Build manifest
 `20260927T064220906014Z-82461.json` passed. The actual QEMU installer then booted
-and reached disk provisioning. Detached installed browser acceptance is pending.
+and completed disk provisioning. The disposable installation cold-booted without
+ISO media, completed onboarding, preserved its identity across another reboot,
+and launched the native browser worker with zero reported failure
+(`20260927T064832537858Z-82458.json`). A settled rerun
+(`20260927T065606170203Z-83428.json`) produced six engine frames; manual review of
+`build/browser-installed-1790491712614395000/node-1/browser-launch.png` confirms
+the real HTTPS Example Domain page rendered with text, CSS and its link inside
+the native shell. The initial two frames were only `about:blank` and were not
+accepted as page proof. The harness uses a QEMU-addressed installed-kernel
+replacement, so this is not unmodified release-ISO parity. JS, interactive
+navigation, downloads and performance acceptance remain open. The zero PEAK
+counter is not a RAM measurement: that event is emitted at engine teardown.
+
+Installed pointer QA found that QEMU's USB tablet did not deliver movement in
+this guest. The harness now uses the existing ARM USB-mouse configuration and
+requires observed coordinates and button transitions. Manual captures showed
+the real link loading IANA's HTTPS 301 body and Back restoring Example Domain.
+That exposed missing redirect metadata in the interception path; redirect
+acceptance is not passed. The later pointer wait timed out, so Forward/Reload
+are also not accepted (`20260927T070333756165Z-83590.json`). These captures are
+diagnostic evidence, not a passing complete interaction test.
 
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.

@@ -4,6 +4,7 @@ The installation uses existing media and receives the experimental kernel offlin
 This is not fresh browser-ISO parity evidence.
 """
 import importlib.util
+import argparse
 import json
 import os
 from pathlib import Path
@@ -41,6 +42,30 @@ def browser_symbols(elf):
 
 class Guest(base.Guest):
     # ------------------------=
+    # FUNC: click
+    # DESC: Requires observed pointer motion and paired button transitions before accepting a desktop click.
+    # ------------------=
+    def click(self, x, y):
+        target = (x * 1000 // self.width, y * 1000 // self.height)
+        for _ in range(80):
+            state = self.state()
+            assert state is not None
+            deltas = (target[0] - state[13], target[1] - state[14])
+            if max(map(abs, deltas)) <= 4:
+                break
+            events = [{"type": "rel", "data": {"axis": axis,
+                "value": max(-40, min(40, int(delta / 3) or (1 if delta > 0 else -1)))}}
+                for axis, delta in zip(("x", "y"), deltas) if abs(delta) > 4]
+            self.qmp("input-send-event", {"events": events})
+            self.wait(lambda s: s[13:15] != state[13:15], "browser pointer moved", timeout=30)
+        else:
+            raise AssertionError("Pointer did not reach browser control")
+        for down in (True, False):
+            self.qmp("input-send-event", {"events": [
+                {"type": "btn", "data": {"button": "left", "down": down}}]})
+            self.wait(lambda s: bool(s[15] & 1) == down, "browser pointer button", timeout=30)
+
+    # ------------------------=
     # FUNC: boot
     # DESC: Boots actual UEFI media and patches only this disposable installation before its first detached boot.
     # ------------------=
@@ -61,7 +86,7 @@ class Guest(base.Guest):
         self.log = (self.work / ("installer.log" if installer else "installed.log")).open("ab")
         command = ["qemu-system-aarch64", "-machine", "virt", "-accel", "tcg", "-cpu", "max",
             "-smp", "4", "-m", "12G", "-bios", self.firmware, "-device", "ramfb",
-            "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-tablet",
+            "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse",
             "-device", "virtio-scsi-pci", "-drive", f"if=none,id=disk,format=raw,file={self.disk}",
             "-device", "scsi-hd,drive=disk,bootindex=1", "-netdev", "user,id=net",
             "-device", "e1000,netdev=net", "-qmp", f"unix:{qmp},server=on,wait=off",
@@ -94,42 +119,61 @@ class Guest(base.Guest):
 def main():
     if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
         raise SystemExit("Run through build-kit")
-    work = ROOT / "build" / ("browser-installed-" + str(time.time_ns()))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--reuse-installed", type=Path)
+    parser.add_argument("--navigation", action="store_true", help="Capture real link/history interaction for manual review; not an automatic navigation pass")
+    args = parser.parse_args()
+    reuse = args.reuse_installed is not None
+    work = args.reuse_installed.resolve() if reuse else ROOT / "build" / ("browser-installed-" + str(time.time_ns()))
+    assert work.parent == ROOT / "build" and work.name.startswith("browser-installed-")
     artifacts = work / "artifacts"
-    artifacts.mkdir(parents=True)
-    for source, name in [
+    if not reuse:
+        artifacts.mkdir(parents=True)
+    for source, name in ([] if reuse else [
         ("builds/InfinityOS-aarch64-qemu-test.iso", "installer.iso"),
         ("build/aarch64/kernel-qemu.elf", "kernel.elf"),
-        ("build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")]:
+        ("build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")]):
         shutil.copyfile(ROOT / source, artifacts / name)
     subprocess.run(["/opt/homebrew/opt/llvm/bin/llvm-objcopy", "--strip-debug",
         str(artifacts / "installed-kernel.elf"), str(artifacts / "installed-stripped.elf")], check=True)
-    guest = Guest(work, 1, "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", width=1024, height=768, memory_mb=12288)
-    receipt = dict(installed=False, browser_iso_parity=False, browser_interactive=False)
+    guest = Guest(work, 1, "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", reuse=reuse, width=1024, height=768, memory_mb=12288)
+    guest.patched = reuse
+    receipt = dict(installed=reuse, browser_iso_parity=False, browser_interactive=False)
     try:
-        guest.install()
-        receipt["installed"] = True
-        guest.stop()
+        if not reuse:
+            guest.install()
+            receipt["installed"] = True
+            guest.stop()
         guest.onboard()
-        network.configure_nat(guest)
+        if not reuse:
+            network.configure_nat(guest)
         guest.launch("command", 5)
         counters = browser_symbols(artifacts / "installed-kernel.elf")
         guest.command("https authorize confirm=true")
         guest.command("browser https://example.com/")
-        deadline = time.monotonic() + 90
+        started = time.monotonic()
+        deadline = started + 90
         while time.monotonic() < deadline:
             values = {name: int.from_bytes(guest.memory(address, size), "little")
                 for name, (address, size) in counters.items()}
             receipt["engine"] = values
             if values["STATE"] == 3 or values["FAILURE"]:
                 break
-            if values["STATE"] == 2 and values["FRAME_REVISION"] >= 2:
+            if values["STATE"] == 2 and values["FRAME_REVISION"] >= 2 and time.monotonic() - started >= 15:
                 break
             time.sleep(.25)
         guest.screenshot("browser-launch")
+        receipt["observation_seconds"] = time.monotonic() - started
         assert values["STATE"] == 2 and values["FAILURE"] == 0 and values["FRAME_REVISION"] >= 2, receipt
         receipt["engine_running_with_frames"] = True
         receipt["launch_command_submitted"] = True
+        if args.navigation:
+            for label, x, y in (("link", 303, 368), ("back", 139, 161),
+                               ("forward", 192, 161), ("reload", 242, 161)):
+                guest.click(x, y)
+                time.sleep(8)
+                guest.screenshot("browser-" + label)
+            receipt["navigation_captures_for_review"] = True
         print(json.dumps(dict(work=str(work), **receipt)), flush=True)
     finally:
         (work / "result.json").write_text(json.dumps(receipt, indent=2) + "\n")
