@@ -27,6 +27,18 @@ def interaction_url():
     return "https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64="+quote(base64.b64encode(document).decode(),safe="")
 
 # ------------------------=
+# FUNC: browser_text
+# DESC: Types into native browser chrome using keyboard/event-loop acknowledgement, not Console editor counters.
+# ------------------=
+def browser_text(guest,value):
+    aliases={" ":"spc","-":"minus",".":"dot","=":"equal","/":"slash"}
+    shifted={":":"semicolon","?":"slash","%":"5","&":"7","_":"minus"}
+    for character in value:
+        if character in shifted: guest.key("shift",shifted[character])
+        elif character.isupper(): guest.key("shift",character.lower())
+        else: guest.key(aliases.get(character,character))
+
+# ------------------------=
 # FUNC: read_pixels
 # DESC: Decodes the actual QEMU framebuffer capture for behavioral color and image assertions.
 # ------------------=
@@ -49,6 +61,21 @@ def wait_color(guest,label,x,y,color):
         if pixels[at:at+3]==bytes(color): return
         time.sleep(.5)
     raise AssertionError({"pixel_stage":label,"actual":list(pixels[at:at+3]),"expected":color})
+
+# ------------------------=
+# FUNC: page_color_bounds
+# DESC: Finds the actual test page's unique CSS pixels so interaction proof is independent of firmware resolution.
+# ------------------=
+def page_color_bounds(guest):
+    deadline=time.monotonic()+60
+    while time.monotonic()<deadline:
+        width,height,pixels=read_pixels(guest.screenshot("browser-css"))
+        locations=[at//3 for at in range(0,len(pixels),3) if pixels[at:at+3]==b"\x12\x34\x56"]
+        if len(locations)>1000:
+            guest.width,guest.height=width,height
+            return min(at%width for at in locations),min(at//width for at in locations),max(at%width for at in locations),max(at//width for at in locations)
+        time.sleep(.5)
+    raise AssertionError("Real CSS background did not render")
 
 # ------------------------=
 # FUNC: process_cpu_seconds
@@ -105,7 +132,9 @@ def browser_symbols(elf):
             if fields[3] in ("infinity_kernel::runtime::browser::" + name,
                 "infinity_kernel::runtime::browser::" + name + " (.0)", "INFINITY_BROWSER_" + name):
                 result[name] = (int(fields[0], 16), int(fields[1], 16))
-    assert len(result) == 14
+    required={"STATE","FAILURE","FRAME_REVISION","LOAD_REVISION","LOADING","PAGE_ERROR","HISTORY",
+              "NETWORK_FAILURE","NETWORK_STATUS","NETWORK_COMPLETED","FAILED_ALLOCATION","LOCATION_HASH","DOWNLOAD_STATE"}
+    assert required.issubset(result), {"missing_counters":sorted(required-set(result))}
     return result
 
 class Guest(base.Guest):
@@ -212,12 +241,15 @@ def main():
     parser.add_argument("--download", action="store_true", help="Fetch a real HTTPS attachment, click native Save, and verify the stored object after shutdown")
     parser.add_argument("--launcher", action="store_true", help="Launch through the installed catalog and approve native network consent without Console authorization")
     parser.add_argument("--interaction", action="store_true", help="Verify real HTTPS image, CSS, JavaScript input and scrolling by framebuffer pixels")
+    parser.add_argument("--tabs", action="store_true", help="With interaction, exercise native create/select/close controls and independent page pixels")
     parser.add_argument("--invalid-tls", action="store_true", help="Require a certificate-validation rejection from a real expired HTTPS endpoint")
     parser.add_argument("--lifecycle", action="store_true", help="Check maximize/restore/minimize/close/reopen after the interaction page")
     parser.add_argument("--measure", action="store_true", help="Measure submission-to-real-page pixels and completion on the cold installed engine")
     parser.add_argument("--address", action="store_true", help="Type a new URL into the native address bar and require its real rendered page")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
+    if args.tabs and not args.interaction:
+        parser.error("Tab acceptance requires --interaction")
     if args.lifecycle and (args.invalid_tls or args.download or args.launcher or args.navigation):
         parser.error("Lifecycle acceptance is a separate bounded run")
     if args.reopen and (args.interaction or args.invalid_tls or args.download or args.launcher or args.navigation or args.lifecycle):
@@ -273,6 +305,8 @@ def main():
         if not reuse:
             network.configure_nat(guest)
         counters = browser_symbols(artifacts / "installed-kernel.elf")
+        if args.measure or args.lifecycle or args.reopen:
+            assert "PEAK" in counters, "This optimized kernel does not expose peak-memory diagnostics"
         if args.launcher:
             guest.launch("browser",5)
             time.sleep(.5)
@@ -356,23 +390,47 @@ def main():
             assert values["NETWORK_COMPLETED"] == 0 and values["PAGE_ERROR"] != 0, receipt
             receipt["expired_certificate_rejected_before_http"] = True
         if args.interaction:
-            wait_color(guest,"browser-css",400,400,(18,52,86))
+            left,top,right,bottom=page_color_bounds(guest)
+            check_x,check_y=right-32,min(bottom-32,top+210)
+            wait_color(guest,"browser-css",check_x,check_y,(18,52,86))
             width,height,pixels=read_pixels(guest.screenshot("browser-image"))
-            image_colors={pixels[(y*width+x)*3:(y*width+x)*3+3] for y in range(235,330) for x in range(106,200)}
+            image_colors={pixels[(y*width+x)*3:(y*width+x)*3+3] for y in range(top+44,top+139) for x in range(left+4,left+98)}
             assert len(image_colors)>32,{"image_colors":len(image_colors)}
             receipt["https_image_and_css"]=True
-            guest.click(145,201)
+            guest.click(left+43,top+10)
             guest.key("a")
-            wait_color(guest,"browser-js-input",400,400,(0,255,0))
+            wait_color(guest,"browser-js-input",check_x,check_y,(0,255,0))
             receipt["keyboard_javascript_dom_mutation"]=True
-            guest.click(450,350)
+            guest.click(check_x,check_y)
             for _ in range(32):
                 for down in (True,False):
                     guest.qmp("input-send-event",{"events":[{"type":"btn","data":{"button":"wheel-down","down":down}}]})
                 time.sleep(.1)
-            wait_color(guest,"browser-scroll",400,400,(255,0,0))
+            wait_color(guest,"browser-scroll",check_x,check_y,(255,0,0))
             receipt["scroll_pixels"]=True
             receipt["browser_interactive"]=True
+            if args.tabs:
+                # Bounds come from rendered page pixels, not a guessed desktop position.
+                # This fixture uses the native scale-one 136px chrome layout.
+                tab_y=top-80
+                guest.click(right-31,tab_y)
+                time.sleep(1)
+                guest.click(left+300,top-30)
+                guest.key("end")
+                for _ in range(len("about:blank")):
+                    guest.key("backspace")
+                page=b'<body style="margin:0;background:rgb(70,80,90)">Second tab</body>'
+                browser_text(guest,"https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64="+quote(base64.b64encode(page).decode(),safe=""))
+                guest.key("ret")
+                wait_color(guest,"browser-second-tab",check_x,check_y,(70,80,90))
+                guest.click(left+90,tab_y)
+                wait_color(guest,"browser-first-tab-restored",check_x,check_y,(255,0,0))
+                guest.click(left+310,tab_y)
+                wait_color(guest,"browser-second-tab-restored",check_x,check_y,(70,80,90))
+                guest.click(left+438,tab_y)
+                wait_color(guest,"browser-tab-closed",check_x,check_y,(255,0,0))
+                receipt["native_tab_create_select_close_pixels"]=True
+                receipt["background_tab_scroll_preserved"]=True
         if args.lifecycle:
             wait_color(guest,"browser-lifecycle-page",400,400,(255,0,0))
             guest.click(849,111)

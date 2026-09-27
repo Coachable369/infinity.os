@@ -13,6 +13,9 @@ pub const SCROLL: u32 = 8;
 pub const BACK: u32 = 9;
 pub const FORWARD: u32 = 10;
 pub const RELOAD: u32 = 11;
+pub const TAB_CREATE: u32 = 12;
+pub const TAB_SELECT: u32 = 13;
+pub const TAB_CLOSE: u32 = 14;
 pub const SHUTDOWN: u32 = 255;
 /// KEY flags: press versus release, named versus Unicode key, autorepeat.
 pub const KEY_DOWN:u32=1;
@@ -34,6 +37,9 @@ pub const EVENT_MEMORY: u32 = 7;
 pub const EVENT_ALLOCATION_FAILURE: u32 = 9;
 /// Value bit 0 permits Back; bit 1 permits Forward, from real engine history.
 pub const EVENT_HISTORY: u32 = 8;
+pub const EVENT_TAB_CREATED: u32 = 10;
+pub const EVENT_TAB_SELECTED: u32 = 11;
+pub const EVENT_TAB_CLOSED: u32 = 12;
 /// Supervisor diagnostics only; never render raw engine text as an error page.
 pub const EVENT_DIAGNOSTIC: u32 = 100;
 

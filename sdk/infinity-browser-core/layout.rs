@@ -2,10 +2,12 @@
 use crate::Viewport;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Control { Back, Forward, Reload, Address, Go, Downloads, Menu, Minimize, Maximize, Close, Content }
+pub enum Control { Back, Forward, Reload, Address, Go, Downloads, Menu, Minimize, Maximize, Close, Content, NewTab }
 
 pub struct Layout {
     pub title: Viewport,
+    pub tabs: Viewport,
+    pub new_tab: Viewport,
     pub back: Viewport,
     pub forward: Viewport,
     pub reload: Viewport,
@@ -37,7 +39,8 @@ impl Layout {
         let title_height = 40 * scale;
         let toolbar_height = control + 2 * gap;
         let status_height = 24 * scale;
-        let y = title_height + gap;
+        let tab_height = 36 * scale;
+        let y = title_height + tab_height + gap;
         let rect = |x: u32, y: u32, width, height| Viewport { x: x as i32, y: y as i32, width, height };
         let address_x = gutter + 3 * (control + gap);
         let go_width = 72 * scale;
@@ -46,9 +49,11 @@ impl Layout {
         let go_x = downloads_x - gap - go_width;
         let window_control = 32 * scale;
         let close_x = width - gutter - window_control;
-        let content_y = title_height + toolbar_height;
+        let content_y = title_height + tab_height + toolbar_height;
         Some(Self {
             title: rect(0, 0, width, title_height),
+            tabs: rect(gutter, title_height, width - 2 * gutter - 40 * scale, tab_height),
+            new_tab: rect(width - gutter - 32 * scale, title_height, 32 * scale, 32 * scale),
             back: rect(gutter, y, control, control),
             forward: rect(gutter + control + gap, y, control, control),
             reload: rect(gutter + 2 * (control + gap), y, control, control),
@@ -78,16 +83,56 @@ impl Layout {
             (self.downloads, Control::Downloads), (self.menu, Control::Menu),
             (self.minimize, Control::Minimize), (self.maximize, Control::Maximize),
             (self.close, Control::Close),
+            (self.new_tab, Control::NewTab),
         ] {
             if bounds.local(x, y).is_some() { return Some(control); }
         }
         None
+    }
+    // ------------------------=
+    // FUNC: tab
+    // DESC: Gives each of up to eight native tab slots distinct title and close hit areas at every supported scale.
+    // ------------------=
+    pub fn tab(&self, index: usize, count: usize) -> Option<(Viewport, Viewport)> {
+        if count == 0 || count > 8 || index >= count {return None;}
+        let scale = self.tabs.height / 36;
+        let slot = (self.tabs.width / count as u32).min(220 * scale);
+        let tab = Viewport { x: self.tabs.x + (index as u32 * slot) as i32,
+            y: self.tabs.y, width: slot - 4 * scale, height: 32 * scale };
+        let close = Viewport { x: tab.x + tab.width as i32 - (24 * scale) as i32,
+            y: tab.y + (4 * scale) as i32, width: 20 * scale, height: 24 * scale };
+        Some((tab, close))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: tab_targets_never_overlap_navigation
+    // DESC: Exercises all supported tab counts and scales, including separate close and new-tab targets.
+    // ------------------=
+    #[test]
+    fn tab_targets_never_overlap_navigation() {
+        for scale in 1..=4 {
+            let layout=Layout::new(760*scale,240*scale,scale).unwrap();
+            for count in 1..=8 {
+                let mut right=layout.tabs.x;
+                for index in 0..count {
+                    let (tab,close)=layout.tab(index,count).unwrap();
+                    assert!(tab.x>=right);
+                    assert!(tab.local(close.x,close.y).is_some());
+                    assert!(tab.local(close.x+close.width as i32-1,close.y+close.height as i32-1).is_some());
+                    assert!(tab.y+tab.height as i32<=layout.address.y);
+                    right=tab.x+tab.width as i32;
+                }
+                assert!(right<layout.new_tab.x);
+            }
+            assert_eq!(layout.hit(layout.new_tab.x,layout.new_tab.y),Some(Control::NewTab));
+            assert!(layout.tab(0,0).is_none());
+            assert!(layout.tab(0,9).is_none());
+        }
+    }
     // ------------------------=
     // FUNC: download_consent_stays_inside_viewport_with_separate_actions
     // DESC: Checks native save-card geometry at minimum size and every supported scale.

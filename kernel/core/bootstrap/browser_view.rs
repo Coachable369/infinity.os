@@ -42,6 +42,18 @@ impl DisplayDevice {
         for (index,r) in [layout.minimize,layout.maximize,layout.close].into_iter().enumerate() {
             let r=offset(r);self.window_control(r.x as usize,r.y as usize,r.width as usize,index,state.maximized);
         }
+        for index in 0..view.tab_count {
+            let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
+            let tab=offset(tab);let close=offset(close);let entry=&view.tabs[index];
+            self.browser_surface(tab,skin::button(entry.id==view.active_tab,skin::Interaction::Normal));
+            self.ui_text_elided_strong(tab.x as usize+8*scale,tab.y as usize+8*scale,
+                (tab.width as usize).saturating_sub(36*scale),
+                if entry.length==0 {b"New tab"}else{&entry.title[..entry.length]},231,242,250);
+            self.window_control(close.x as usize,close.y as usize,close.width as usize,2,false);
+        }
+        let new_tab=offset(layout.new_tab);
+        self.browser_surface(new_tab,skin::button(false,skin::Interaction::Normal));
+        self.ui_text_elided_strong(new_tab.x as usize+10*scale,new_tab.y as usize+8*scale,16*scale,b"+",231,242,250);
         for (rect,glyph,enabled) in [(layout.back,0,view.history&1!=0),(layout.forward,1,view.history&2!=0),
             (layout.reload,2,true),(layout.downloads,4,true),(layout.menu,6,true)] {
             let r=offset(rect);
@@ -80,7 +92,7 @@ impl DisplayDevice {
             self.ui_text_elided_strong(content.x as usize+32*scale,content.y as usize+68*scale,
                 content.width as usize-64*scale,b"Check network permission and connection, then reload or enter another address.",53,79,101);
         } else { unsafe {
-            let generation=crate::runtime::browser::status().2;
+            let generation=crate::runtime::browser::frame_generation();
             let current=&mut *(&raw mut FRAME);
             if current.as_ref().is_some_and(|frame|frame.generation()!=generation) {*current=None;}
             if let Some(frame)=crate::runtime::browser::FRAMES.acquire(generation) {*current=Some(frame);}

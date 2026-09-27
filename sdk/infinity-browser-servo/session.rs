@@ -75,11 +75,18 @@ impl<P: Provider + 'static> Session<P> {
     // DESC: Opens one software-backed context with no ambient network authority.
     // ------------------=
     pub fn new(engine: &Servo, provider: P, clock: fn() -> u64, width: u32, height: u32) -> Result<Self, ()> {
+        Self::create(engine, provider, clock, width, height, true)
+    }
+    // ------------------------=
+    // FUNC: create
+    // DESC: Creates an isolated view queue; grouped tabs leave the profile-level global delegate unchanged.
+    // ------------------=
+    fn create(engine: &Servo, provider: P, clock: fn() -> u64, width: u32, height: u32, global: bool) -> Result<Self, ()> {
         if !valid_size(width, height) { return Err(()); }
         let context = Rc::new(SoftwareRenderingContext::new((width, height).into()).map_err(|_| ())?);
         context.make_current().map_err(|_| ())?;
         let resources = Rc::new(Resources::new(provider, clock));
-        engine.set_delegate(resources.clone());
+        if global { engine.set_delegate(resources.clone()); }
         let dirty = Rc::new(Cell::new(false));
         let complete = Rc::new(Cell::new(false));
         let crashed = Rc::new(Cell::new(false));
@@ -159,6 +166,13 @@ impl<P: Provider + 'static> Session<P> {
     // ------------------=
     pub fn pump(&self, engine: &Servo, mut frame: impl FnMut(u32, u32, &[u8])) -> Result<bool, ()> {
         engine.spin_event_loop();
+        self.pump_frame(true, &mut frame)
+    }
+    // ------------------------=
+    // FUNC: pump_frame
+    // DESC: Advances a tab's requests without repainting hidden tabs or consuming their pending dirty state.
+    // ------------------=
+    fn pump_frame(&self, visible: bool, mut frame: impl FnMut(u32, u32, &[u8])) -> Result<bool, ()> {
         if self.ready.get() && (!self.resources.failed_document() || self.complete.get()) {
             if let Some(url) = self.pending.borrow_mut().take() {
                 self.resources.cancel_all();
@@ -168,7 +182,7 @@ impl<P: Provider + 'static> Session<P> {
         }
         self.resources.pump();
         if self.crashed.get() { return Err(()); }
-        if !self.dirty.replace(false) { return Ok(false); }
+        if !visible || !self.dirty.replace(false) { return Ok(false); }
         self.view.paint();
         let image = self.context.read_to_image(servo::DeviceIntRect::new((0, 0).into(),
             (self.size.0 as i32, self.size.1 as i32).into())).ok_or(())?;
@@ -181,6 +195,11 @@ impl<P: Provider + 'static> Session<P> {
     // ------------------=
     pub fn complete(&self) -> bool { self.complete.get() }
     // ------------------------=
+    // FUNC: failed
+    // DESC: Reports this document's native request failure without leaking a background tab failure into the foreground UI.
+    // ------------------=
+    pub fn failed(&self) -> bool { self.resources.failed_document() }
+    // ------------------------=
     // FUNC: address
     // DESC: Returns the engine's actual location after redirects and history changes.
     // ------------------=
@@ -190,6 +209,126 @@ impl<P: Provider + 'static> Session<P> {
     // DESC: Returns document metadata for the native shell rather than engine-owned chrome.
     // ------------------=
     pub fn title(&self) -> Option<String> { self.view.page_title() }
+    // ------------------------=
+    // FUNC: visible
+    // DESC: Changes actual engine visibility/focus and forces one fresh foreground paint after a tab switch.
+    // ------------------=
+    fn visible(&self, visible: bool) {
+        self.view.set_focused(visible);
+        if visible { self.view.show(); self.dirty.set(true); } else { self.view.hide(); }
+    }
+}
+
+const TAB_LIMIT: usize = 8;
+struct Tab<P: Provider> { id: u32, session: Session<P> }
+/// One normal-profile engine group. Separate profiles/private sessions must not
+/// share this group until Servo storage partitioning is implemented.
+pub struct TabSessions<P: Provider> {
+    global: Rc<Resources<P>>,
+    tabs: std::vec::Vec<Tab<P>>,
+    active: u32,
+    next: u32,
+    size: (u32, u32),
+    clock: fn() -> u64,
+}
+impl<P: Provider + 'static> TabSessions<P> {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Installs a stable global delegate once, so creating/closing a tab cannot steal another tab's resource routing.
+    // ------------------=
+    pub fn new(engine: &Servo, provider: P, clock: fn() -> u64, width: u32, height: u32) -> Result<Self, ()> {
+        if !valid_size(width, height) { return Err(()); }
+        let global = Rc::new(Resources::new(provider, clock));
+        engine.set_delegate(global.clone());
+        Ok(Self { global, tabs: std::vec::Vec::with_capacity(TAB_LIMIT), active: 0, next: 1,
+            size: (width, height), clock })
+    }
+    // ------------------------=
+    // FUNC: create
+    // DESC: Adds one real WebView with independent history and resource cancellation, bounded by the native tab budget.
+    // ------------------=
+    pub fn create(&mut self, engine: &Servo, provider: P, foreground: bool) -> Result<u32, ()> {
+        if self.tabs.len() == TAB_LIMIT { return Err(()); }
+        let next = self.next.checked_add(1).ok_or(())?;
+        let session = Session::create(engine, provider, self.clock, self.size.0, self.size.1, false)?;
+        session.visible(false);
+        let id = self.next;
+        self.next = next;
+        self.tabs.push(Tab { id, session });
+        if foreground || self.active == 0 { self.select(id)?; }
+        Ok(id)
+    }
+    // ------------------------=
+    // FUNC: select
+    // DESC: Switches focus only after validating the requested identity, preserving other tabs' documents and history.
+    // ------------------=
+    pub fn select(&mut self, id: u32) -> Result<(), ()> {
+        if !self.tabs.iter().any(|tab| tab.id == id) { return Err(()); }
+        if self.active != id {
+            for tab in &self.tabs { tab.session.visible(tab.id == id); }
+            self.active = id;
+        }
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: active
+    // DESC: Returns the real focused WebView identity; zero means no tabs remain.
+    // ------------------=
+    pub fn active(&self) -> u32 { self.active }
+    // ------------------------=
+    // FUNC: current
+    // DESC: Lends only the selected page for native keyboard and navigation dispatch.
+    // ------------------=
+    pub fn current(&mut self) -> Option<&mut Session<P>> {
+        self.tabs.iter_mut().find(|tab| tab.id == self.active).map(|tab| &mut tab.session)
+    }
+    // ------------------------=
+    // FUNC: close
+    // DESC: Cancels and drops exactly one WebView, then focuses its surviving neighbor if necessary.
+    // ------------------=
+    pub fn close(&mut self, id: u32) -> Result<(), ()> {
+        let at = self.tabs.iter().position(|tab| tab.id == id).ok_or(())?;
+        self.tabs.remove(at);
+        if self.active == id {
+            self.active = 0;
+            if !self.tabs.is_empty() { self.select(self.tabs[at.min(self.tabs.len() - 1)].id)?; }
+        }
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: resize
+    // DESC: Keeps hidden page viewports consistent without painting them on each foreground update.
+    // ------------------=
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<(), ()> {
+        if !valid_size(width, height) { return Err(()); }
+        for tab in &mut self.tabs { tab.session.resize(width, height)?; }
+        self.size = (width, height);
+        Ok(())
+    }
+    // ------------------------=
+    // FUNC: pump
+    // DESC: Spins Servo once, services bounded tab queues, and paints only the selected page.
+    // ------------------=
+    pub fn pump(&self, engine: &Servo, mut frame: impl FnMut(u32, u32, &[u8])) -> Result<bool, ()> {
+        engine.spin_event_loop();
+        self.global.pump();
+        let mut painted = false;
+        for tab in &self.tabs {
+            match tab.session.pump_frame(tab.id == self.active, &mut frame) {
+                Ok(value) => painted |= value,
+                Err(()) if tab.id == self.active => return Err(()),
+                Err(()) => {},
+            }
+        }
+        Ok(painted)
+    }
+}
+impl<P: Provider> Drop for TabSessions<P> {
+    // ------------------------=
+    // FUNC: drop
+    // DESC: Revokes global requests when the whole normal-profile group closes, not when an individual tab closes.
+    // ------------------=
+    fn drop(&mut self) { self.global.close(); }
 }
 
 impl<P: Provider> Drop for Session<P> {

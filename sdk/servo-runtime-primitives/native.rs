@@ -3,7 +3,7 @@
 //! CPU; this module does not create/reserve that CPU or provide preemption.
 use core::{alloc::Layout, ptr::{self, NonNull}, sync::atomic::{AtomicPtr, AtomicU32, Ordering}};
 use crate::{arena::Arena, executor::Executor, wait::Outcome, Destructor};
-pub const MAX_THREADS: usize = 32;
+pub const MAX_THREADS: usize = 64;
 const LIMIT: usize = MAX_THREADS;
 pub struct Hooks {
     pub cpu: fn() -> u64,

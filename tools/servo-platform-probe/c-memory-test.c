@@ -2,9 +2,14 @@
 #include <stdint.h>
 #include <errno.h>
 #include <unistd.h>
+#if defined(__x86_64__)
+#define _open open
+#define _read read
+#define _write write
+#endif
 extern int _open(const char *,int,...);
-extern ssize_t _read(int,void *,size_t);
-extern ssize_t _write(int,const void *,size_t);
+extern _READ_WRITE_RETURN_TYPE _read(int,void *,size_t);
+extern _READ_WRITE_RETURN_TYPE _write(int,const void *,size_t);
 // ------------------------=
 // FUNC: infinity_c_memory_test
 // DESC: Exercises real zeroed backing, split release, holes, protection denial and reclaim cycles.

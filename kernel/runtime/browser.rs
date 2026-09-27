@@ -21,6 +21,7 @@ pub static INFINITY_BROWSER_LOCATION_HASH:AtomicU64=AtomicU64::new(0);
 #[no_mangle]
 pub static INFINITY_BROWSER_DOWNLOAD_STATE:AtomicU32=AtomicU32::new(0);
 static FRAME_REVISION:AtomicU64=AtomicU64::new(0);
+static ACTIVE_TAB:AtomicU32=AtomicU32::new(0);
 static LOAD_REVISION:AtomicU64=AtomicU64::new(0);
 #[no_mangle]
 pub static INFINITY_BROWSER_LOADING:AtomicU32=AtomicU32::new(0);
@@ -136,6 +137,7 @@ pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
+    pub tabs:[TabPresentation;8],pub tab_count:usize,pub active_tab:u32,
     pub permission:u8,
     pub download_name:[u8;63],pub download_length:usize,pub download_state:u8,
     pub address:[u8;2048],pub address_length:usize,
@@ -143,7 +145,11 @@ pub struct Presentation {
     pub title:[u8;256],pub title_length:usize,
     pub loading:bool,pub input_busy:bool,pub history:u32,pub error:u32,pub revision:u64,
 }
+#[derive(Clone,Copy)]
+pub struct TabPresentation {pub id:u32,pub title:[u8;256],pub length:usize}
+const EMPTY_TAB:TabPresentation=TabPresentation{id:0,title:[0;256],length:0};
 static mut PRESENTATION:Presentation=Presentation{address:[0;2048],address_length:0,title:[0;256],
+    tabs:[EMPTY_TAB;8],tab_count:0,active_tab:0,
     permission:0,
     download_name:[0;63],download_length:0,download_state:0,
     edit:[0;2048],edit_length:0,caret:0,address_focused:false,caret_visible:true,
@@ -156,6 +162,11 @@ static mut LAST_VIEW_REVISION:u64=0;
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+// ------------------------=
+// FUNC: frame_generation
+// DESC: Separates tab surfaces within the existing window lifetime so a switch never displays another tab's pixels.
+// ------------------=
+pub fn frame_generation()->u64 {(GENERATION.load(Ordering::Acquire)<<32)|u64::from(ACTIVE_TAB.load(Ordering::Acquire))}
 
 // ------------------------=
 // FUNC: permission_presentation
@@ -233,7 +244,15 @@ pub fn poll_presentation()->bool {
             let Some(event)=take_event() else {break;};
             match event.kind {
                 abi::EVENT_OPEN=>{view.loading=false;view.error=0;view.history=0;},
-                abi::EVENT_CLOSED=>{view.loading=false;view.history=0;},
+                abi::EVENT_CLOSED=>{view.loading=false;view.history=0;view.tabs=[EMPTY_TAB;8];view.tab_count=0;view.active_tab=0;},
+                abi::EVENT_TAB_CREATED=>{if view.tab_count<8 && !view.tabs.iter().any(|tab|tab.id==event.value) {
+                    view.tabs[view.tab_count]=TabPresentation{id:event.value,..EMPTY_TAB};view.tab_count+=1;
+                }},
+                abi::EVENT_TAB_SELECTED=>{view.active_tab=event.value;view.error=0;view.address_length=0;view.title_length=0;
+                    view.history=0;view.address_focused=false;},
+                abi::EVENT_TAB_CLOSED=>{if let Some(at)=view.tabs[..view.tab_count].iter().position(|tab|tab.id==event.value) {
+                    view.tabs.copy_within(at+1..view.tab_count,at);view.tab_count-=1;view.tabs[view.tab_count]=EMPTY_TAB;
+                }},
                 abi::EVENT_LOAD=>{view.loading=event.value==0;if view.loading {view.error=0;}
                     LOAD_REVISION.fetch_add(1,Ordering::Release);},
                 abi::EVENT_HISTORY=>view.history=event.value&3,
@@ -244,7 +263,10 @@ pub fn poll_presentation()->bool {
                         |hash,byte|(hash^(*byte as u64)).wrapping_mul(0x100000001b3));
                     INFINITY_BROWSER_LOCATION_HASH.store(hash,Ordering::Release);},
                 abi::EVENT_TITLE=>{view.title_length=event.length.min(view.title.len());
-                    view.title[..view.title_length].copy_from_slice(&event.text[..view.title_length]);},
+                    view.title[..view.title_length].copy_from_slice(&event.text[..view.title_length]);
+                    if let Some(tab)=view.tabs.iter_mut().find(|tab|tab.id==view.active_tab) {
+                        tab.length=view.title_length;tab.title=view.title;
+                    }},
                 _=>continue,
             }
             changed=true;
@@ -315,7 +337,7 @@ unsafe extern "C" fn idle(_: *mut c_void) {core::hint::spin_loop();}
 // ------------------=
 unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
     let Ok(Some(value))=COMMANDS.try_take() else{return 0;};
-    if value.kind==abi::OPEN {GENERATION.fetch_add(1,Ordering::AcqRel);}
+    if value.kind==abi::OPEN {GENERATION.fetch_add(1,Ordering::AcqRel);ACTIVE_TAB.store(0,Ordering::Release);}
     out.write(value);1
 }
 // ------------------------=
@@ -323,7 +345,7 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
 // DESC: Publishes owned RGBA pixels, never a global framebuffer pointer.
 // ------------------=
 unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,length:usize) {
-    if FRAMES.publish(GENERATION.load(Ordering::Acquire),width,height,core::slice::from_raw_parts(bytes,length)).is_ok() {
+    if FRAMES.publish(frame_generation(),width,height,core::slice::from_raw_parts(bytes,length)).is_ok() {
         FRAME_REVISION.fetch_add(1,Ordering::Release);
     }
 }
@@ -332,6 +354,7 @@ unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,l
 // DESC: Publishes bounded shell metadata and retains failures independently of queue capacity.
 // ------------------=
 unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,length:usize) {
+    if kind==abi::EVENT_TAB_SELECTED {ACTIVE_TAB.store(value,Ordering::Release);}
     if kind==abi::EVENT_MEMORY {PEAK.store(value as u64,Ordering::Release);return;}
     if kind==abi::EVENT_ALLOCATION_FAILURE {INFINITY_BROWSER_FAILED_ALLOCATION.store(value,Ordering::Release);return;}
     if kind==abi::EVENT_ERROR && value!=3 {FAILURE.store(value+1,Ordering::Release);}

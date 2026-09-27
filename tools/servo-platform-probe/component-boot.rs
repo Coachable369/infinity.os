@@ -25,6 +25,10 @@ static mut HISTORY:u32=0;
 static mut LOCATION:u32=0;
 static mut LOAD_STARTS:u32=0;
 static mut LOAD_COMPLETE:bool=false;
+static mut SECOND_TAB:u32=0;
+static mut ACTIVE_TAB:u32=0;
+static mut TAB_PROOF:u32=0;
+static mut SECOND_REQUEST:u64=0;
 static mut INPUT:input_queue::Queue<16>=input_queue::Queue::new();
 static PIXELS:frames::Frames<81920>=frames::Frames::new();
 static HTML:&[u8]=b"<!doctype html><html style='background:red;min-height:100vh'><script>let down=false,clicked=false;document.documentElement.style.background='rgb(12,34,56)';document.addEventListener('click',e=>{if(e.clientX===40&&e.clientY===40)clicked=true});document.addEventListener('keydown',e=>{if(e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.altKey&&!e.metaKey&&e.repeat)down=true});document.addEventListener('keyup',e=>{if(clicked&&down&&e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.repeat)document.documentElement.style.background='rgb(34,56,78)'})</script></html>";
@@ -115,6 +119,10 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
     if (&mut *(&raw mut INPUT)).drain(1,|value|{out.write(value);true})==1 {return 1;}
     if let Some(frame)=PIXELS.acquire(1) {
         let (width,height)=frame.size();
+        if STEP==22 && ACTIVE_TAB==SECOND_TAB && SECOND_TAB!=0
+            && frame.bytes().chunks_exact(4).all(|pixel|pixel==[70,80,90,255]) {TAB_PROOF|=1;STEP=23;}
+        if STEP==24 && ACTIVE_TAB==1
+            && frame.bytes().chunks_exact(4).all(|pixel|pixel==[12,34,56,255]) {TAB_PROOF|=2;STEP=25;}
         let color=if STEP==10 {[34,56,78,255]}else{[12,34,56,255]};
         if frame.bytes().chunks_exact(4).all(|pixel|pixel==color) {
             if STEP==17 && LOCATION==3 {STEP=18;}
@@ -149,7 +157,12 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
             value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=17;},
         18=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/download";
             value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=19;},
-        20=>{value.kind=abi::SHUTDOWN;STEP=21;},
+        20=>{value.kind=abi::TAB_CREATE;STEP=21;},
+        21 if SECOND_TAB!=0=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/second-tab";
+            value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=22;},
+        23=>{value.kind=abi::TAB_SELECT;value.a=1;STEP=24;},
+        25=>{value.kind=abi::TAB_CLOSE;value.a=SECOND_TAB;STEP=26;},
+        26 if TAB_PROOF==7=>{value.kind=abi::SHUTDOWN;STEP=27;},
         _=>return 0,
     }
     record(11,((STEP as u64)<<32)|value.kind as u64);
@@ -169,6 +182,9 @@ unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,l
 // DESC: Treats component errors as failures, not successful UI status strings.
 // ------------------=
 unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,length:usize) {
+    if kind==abi::EVENT_TAB_CREATED && STEP==21 {SECOND_TAB=value;}
+    if kind==abi::EVENT_TAB_SELECTED {ACTIVE_TAB=value;}
+    if kind==abi::EVENT_TAB_CLOSED && STEP==26 && value==SECOND_TAB && ACTIVE_TAB==1 {TAB_PROOF|=4;}
     if kind==abi::EVENT_ERROR {
         record(10,((STEP as u64)<<32)|value as u64);
         if STEP==15 && value==3 {STEP=16;} else {finish(1,200+value as u64);}
@@ -203,6 +219,9 @@ unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,leng
 // ------------------=
 unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
     record(8,((STEP as u64)<<32)|length as u64);
+    if core::slice::from_raw_parts(url,length)==b"https://fixture.test/second-tab" {
+        NEXT_ID+=1;SECOND_REQUEST=NEXT_ID;return NEXT_ID;
+    }
     if core::slice::from_raw_parts(url,length)==b"https://fixture.test/download" {
         NEXT_ID+=1;DOWNLOAD_ID=NEXT_ID;return NEXT_ID;
     }
@@ -218,6 +237,10 @@ unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
 // DESC: Returns bounded fixture bytes for real Servo HTML, JS and raster execution.
 // ------------------=
 unsafe extern "C" fn poll(_: *mut c_void,id:u64,out:*mut abi::Response)->u32 {
+    if id==SECOND_REQUEST && id!=0 {
+        let body=b"<!doctype html><html style='background:rgb(70,80,90);min-height:100vh'></html>";
+        out.write(abi::Response{status:200,headers:HEADERS.as_ptr(),headers_length:HEADERS.len(),body:body.as_ptr(),body_length:body.len()});return 1;
+    }
     if id==DOWNLOAD_ID {
         let headers=b"content-disposition: attachment; filename=\"fixture.txt\"\r\ncontent-type: text/plain; charset=utf-8\r\n";
         let body=b"native download\n";
@@ -250,6 +273,6 @@ pub unsafe extern "C" fn component_boot()->! {
     if infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST))!=1 {finish(1,401);}
     HOST.version=abi::VERSION;
     let result=infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST));
-    if result!=0 || STEP!=21 || DOWNLOAD_ID==0 || FRAMES!=4 || LOAD_STARTS!=7 || REDIRECT_ID==0 || RELEASES<5 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
+    if result!=0 || STEP!=27 || TAB_PROOF!=7 || DOWNLOAD_ID==0 || FRAMES!=4 || LOAD_STARTS!=7 || REDIRECT_ID==0 || RELEASES<5 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
     finish(0,4)
 }

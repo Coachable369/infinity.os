@@ -168,7 +168,22 @@ pub(super) fn close() {unsafe {
 // FUNC: key
 // DESC: Admits native text and editing keys as complete press/release pairs for focused web content.
 // ------------------=
-pub(super) fn key(console:&ConsoleRuntime,key:ConsoleKey) {
+pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
+    if let ConsoleKey::Shortcut(value)=key {
+        let mut command=abi::Command::empty();
+        match value {
+            b't'|b'T'=>command.kind=abi::TAB_CREATE,
+            b'w'|b'W'=>{
+                let view=crate::runtime::browser::presentation();
+                if view.tab_count<=1 {console.close_desktop_app();return;}
+                command.kind=abi::TAB_CLOSE;command.a=view.active_tab;
+            },
+            b'l'|b'L'=>{crate::runtime::browser::focus_address(true);return;},
+            _=>return,
+        }
+        if enqueue(console,command) {poll(console);}
+        return;
+    }
     if crate::runtime::browser::presentation().address_focused {
         if matches!(key,ConsoleKey::Enter) {navigate_address(console);}
         else if matches!(key,ConsoleKey::Escape|ConsoleKey::Tab(_)) {crate::runtime::browser::focus_address(false);}
@@ -244,15 +259,26 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
         if layout.download_discard.local(x,y).is_some() {unsafe {DOWNLOAD=None;}crate::runtime::browser::download_presentation(&[],0);}
         return true;
     }
-    let Some(control)=layout.hit(x,y) else{return false;};
     let mut command=abi::Command::empty();
     let view=crate::runtime::browser::presentation();
+    for index in 0..view.tab_count {
+        let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
+        if tab.local(x,y).is_some() {
+            if close.local(x,y).is_some() && view.tab_count==1 {console.close_desktop_app();return true;}
+            command.kind=if close.local(x,y).is_some(){abi::TAB_CLOSE}else{abi::TAB_SELECT};
+            command.a=view.tabs[index].id;
+            if enqueue(console,command) {poll(console);}
+            return true;
+        }
+    }
+    let Some(control)=layout.hit(x,y) else{return false;};
     match control {
         Control::Address=>crate::runtime::browser::focus_address(true),
         Control::Go=>navigate_address(console),
         Control::Back=>{if view.history&1!=0 {command.kind=abi::BACK;}},
         Control::Forward=>{if view.history&2!=0 {command.kind=abi::FORWARD;}},
         Control::Reload=>command.kind=abi::RELOAD,
+        Control::NewTab=>command.kind=abi::TAB_CREATE,
         Control::Minimize=>console.minimize_desktop_app(),
         Control::Maximize=>console.toggle_window_maximized(5),
         Control::Close=>console.close_desktop_app(),

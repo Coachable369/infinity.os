@@ -29,7 +29,22 @@ Status: **in progress; not accepted, not a daily-driver release.**
 - `sdk/infinity-browser-core/tabs.rs`: bounded 24-tab state model, stable IDs,
   window/profile/private scope, pin partitions, reorder, duplicate, selection,
   cycling, bounded closed-tab history, generation-checked metadata, mute state.
-  This is **not yet connected to multiple Servo WebViews or native tab chrome**.
+  The richer pin/reorder/reopen/recovery model is **not yet connected** to the
+  native shell; the engine integration below currently supports basic tabs.
+- `sdk/infinity-browser-servo/session.rs` now owns a bounded group of real
+  WebViews with a stable global delegate, per-tab resource queues and independent
+  history. Hidden tabs service requests without painting; selection focuses and
+  paints the selected WebView. Closing one tab cancels only its requests.
+- Native tab strip: create, select, close, page titles, Ctrl/Cmd+T and W.
+  Frame generations include the active tab identity to reject another tab's
+  retained pixels. More shortcuts, overflow, pin/reorder/reopen, favicons and
+  background metadata remain pending. The eight-slot limit is a capacity bound,
+  **not an eight-page memory/stability acceptance result**.
+- Increased matching native thread/C lock-reader budgets from 32 to 64 after the
+  second real page exhausted the previous thread table. Both architecture guest
+  probes exercise capacity, exhaustion, joining and slot reuse. Corrected the C
+  denial fixture's syscall return type and architecture-specific symbol names;
+  ambient file access remains denied.
 - Versioned recovery encoding preserves order, URLs, titles, pin/mute state and
   selection. Decode rejects wrong profile, invalid records, truncation and
   corruption. Private windows cannot encode. Native atomic persistence and
@@ -52,6 +67,43 @@ Status: **in progress; not accepted, not a daily-driver release.**
   is not established by URL construction tests.
 
 ## Evidence and limits
+
+The new two-tab AArch64 component guest passed actual pixel, switch, independent
+page restoration and background-close checks, alongside existing lifecycle,
+JavaScript/input, history, request-failure recovery and download byte checks:
+`20260927T155042429029Z-34591.json`. Peak engine allocation was 263,158,336 bytes
+(about 251 MiB). Requests are injected by this test fixture: this is **not live
+HTTPS or installed-system proof**, and does not establish eight-tab capacity.
+
+`./build-kit browser-core-tests` passed 24 tests, including the new independent
+tab/close/toolbar hit targets: `20260927T155356256690Z-35008.json`.
+Native std/thread guest probes passed on AArch64 and x86_64 respectively:
+`20260927T155617058227Z-35332.json`,
+`20260927T155736612258Z-35623.json`.
+The updated x86_64 native-browser kernel compile check also passed:
+`20260927T162822482342Z-43358.json` (existing warnings remain).
+
+The AArch64 live/install test ISO was rebuilt successfully through
+`./build-kit browser-aarch64` (`20260927T155825375026Z-35725.json`). The cold
+installation verified the installed kernel SHA-256
+`89395ae1ca683c6205e6637ead658fec57ca702dfe94005fe2de8cbc363d826a`
+and booted with media detached. That first run stopped at a harness-only symbol
+lookup (`20260927T160846711210Z-42571.json`); no kernel replacement was made.
+The resumed test on the same disk passed real HTTPS CSS/image rendering,
+JavaScript keyboard input, scrolling, native tab create/select/close, and
+background scroll restoration (`20260927T162027164551Z-42885.json`). Its receipt
+says `browser_iso_parity: false` because it is a reuse run; the original cold
+install receipt supplies the separate byte-for-byte provenance. This is not an
+x86 installed result or broad site-compatibility acceptance.
+
+Evidence: `builds/evidence/browser-daily-driver/installed-tabs-aarch64.json`,
+`installed-two-tabs.png`, and `installed-tabs-js.png`. Visual review confirms
+separate native tab/close targets and the existing sapphire chrome; the simple
+fixtures intentionally have no HTML title, so their labels show "New tab".
+The test now types browser fields through keyboard/event-loop acknowledgement,
+not Console editor-length counters. Optimized kernels without the private PEAK
+symbol can run interaction tests; memory-measurement tests still require it and
+fail explicitly rather than reporting an invented number.
 
 `./build-kit run cargo test --manifest-path sdk/infinity-browser-core/Cargo.toml`
 passed 23 behavioral tests, including the new transitions, actual snapshot pixel
@@ -76,9 +128,10 @@ build cleanup removes it. Earlier v0.1 evidence remains separately documented in
 
 ## First integration constraints found
 
-- There is currently one engine session / WebView, not an existing full tab
-  system. `Session::new` replaces Servo's global resource delegate. Multiple
-  sessions must not overwrite each other's global networking authority.
+- The normal-profile multi-WebView group now retains one global delegate.
+  Private/profile partitioning and stable persisted identity remain pending.
+  Metadata delivery under mailbox pressure needs further hardening before rapid
+  multi-tab operation can be accepted.
 - `resources.rs` rejects non-GET requests. The pinned Servo
   `WebResourceRequest` has method/headers but no request body. The adapter must
   be extended before real login forms or uploads can be accepted.
@@ -114,4 +167,6 @@ Tab Glance, Time Travel thumbnails, pinned/audio/muted/private states, omnibox
 suggestions, bookmark folder, download, permission and focus recipes. Keep the
 existing icon family; clear production UI rather than conceptual decoration.
 
-No new daily-driver ISO has been released from this increment.
+An updated AArch64 **test** ISO exists at
+`builds/InfinityOS-aarch64-qemu-test.iso`. No daily-driver release or fresh full
+release build is claimed. The remaining checklist above is still required.

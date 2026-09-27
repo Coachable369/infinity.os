@@ -113,11 +113,6 @@ fn event(kind:u32,value:u32,text:&str) {
 struct Network;
 impl resources::Provider for Network {
     // ------------------------=
-    // FUNC: document_failed
-    // DESC: Reports a recoverable native request failure immediately to the bounded shell event mailbox.
-    // ------------------=
-    fn document_failed(&mut self) { event(abi::EVENT_ERROR,3,""); }
-    // ------------------------=
     // FUNC: download
     // DESC: Copies an attachment into the native consent mailbox without granting file or namespace access to Servo.
     // ------------------=
@@ -181,11 +176,12 @@ fn run() {
     let engine=servo::ServoBuilder::default().build();
     #[cfg(infinity_component_trace)]
     verify_closed_channel_retirement();
-    let mut session:Option<session::Session<Network>>=None;
+    let mut session:Option<session::TabSessions<Network>>=None;
     let mut last_address=None;
     let mut last_title=None;
     let mut last_complete=false;
     let mut last_history=None;
+    let mut last_failed=false;
     loop {
         for _ in 0..16 {
             let h=host(); let mut command=abi::Command::empty();
@@ -205,27 +201,53 @@ fn run() {
                 return;
             }
             if command.kind==abi::CLOSE {
-                session=None; last_address=None; last_title=None; last_complete=false; last_history=None;
+                session=None; last_address=None; last_title=None; last_complete=false; last_history=None;last_failed=false;
                 event(abi::EVENT_MEMORY,unsafe{Runtime::peak_allocated()} as u32,"");
                 event(abi::EVENT_CLOSED,0,""); continue;
             }
             if command.kind==abi::OPEN {
                 if session.is_none() {
-                    session=session::Session::new(&engine,Network,clock,command.a,command.b).ok();
+                    session=session::TabSessions::new(&engine,Network,clock,command.a,command.b).ok();
+                    if let Some(group)=session.as_mut() {
+                        if let Ok(id)=group.create(&engine,Network,true) {
+                            event(abi::EVENT_TAB_CREATED,id,"");event(abi::EVENT_TAB_SELECTED,id,"");
+                        } else {session=None;}
+                    }
                     event(if session.is_some(){abi::EVENT_OPEN}else{abi::EVENT_ERROR},0,"");
                 }
                 continue;
             }
-            let Some(view)=session.as_mut() else { continue; };
+            let Some(group)=session.as_mut() else { continue; };
+            if matches!(command.kind,abi::TAB_CREATE|abi::TAB_SELECT|abi::TAB_CLOSE) {
+                let previous=group.active();
+                let result=match command.kind {
+                    abi::TAB_CREATE=>group.create(&engine,Network,true).map(|id|event(abi::EVENT_TAB_CREATED,id,"")),
+                    abi::TAB_SELECT=>group.select(command.a),
+                    _=>group.close(command.a).map(|()|event(abi::EVENT_TAB_CLOSED,command.a,"")),
+                };
+                if result.is_ok() && group.active()!=previous {
+                    event(abi::EVENT_TAB_SELECTED,group.active(),"");
+                    last_address=None;last_title=None;last_complete=false;last_history=None;last_failed=false;
+                }
+                continue;
+            }
+            if command.kind==abi::RESIZE {
+                if group.resize(command.a,command.b).is_err() {event(abi::EVENT_ERROR,1,"");}
+                continue;
+            }
+            let Some(view)=group.current() else {continue;};
             if dispatch(view,&command).is_err() { event(abi::EVENT_ERROR,1,""); }
             else if matches!(command.kind,abi::NAVIGATE|abi::RELOAD|abi::BACK|abi::FORWARD) && !view.complete() {
                 last_complete=false;event(abi::EVENT_LOAD,0,"");
             }
         }
-        if let Some(view)=session.as_ref() {
-            if view.pump(&engine,|w,h,bytes| {
+        if let Some(group)=session.as_mut() {
+            if group.pump(&engine,|w,h,bytes| {
                 let host=host(); unsafe { (host.frame)(host.context,w,h,bytes.as_ptr(),bytes.len()) }
             }).is_err() { event(abi::EVENT_ERROR,2,""); session=None; continue; }
+            let Some(view)=group.current() else {std::thread::sleep(Duration::from_millis(1));continue;};
+            if view.failed() && !last_failed {event(abi::EVENT_ERROR,3,"");}
+            last_failed=view.failed();
             let address=view.address(); let title=view.title(); let complete=view.complete();
             if address!=last_address { event(abi::EVENT_ADDRESS,0,address.as_deref().unwrap_or("")); last_address=address; }
             if title!=last_title { event(abi::EVENT_TITLE,0,title.as_deref().unwrap_or("")); last_title=title; }
