@@ -31,6 +31,7 @@ pub const EVENT_TITLE: u32 = 5;
 pub const EVENT_ERROR: u32 = 6;
 /// Value is native heap high-water bytes, including allocator rounding, not total OS RAM.
 pub const EVENT_MEMORY: u32 = 7;
+pub const EVENT_ALLOCATION_FAILURE: u32 = 9;
 /// Value bit 0 permits Back; bit 1 permits Forward, from real engine history.
 pub const EVENT_HISTORY: u32 = 8;
 /// Supervisor diagnostics only; never render raw engine text as an error page.

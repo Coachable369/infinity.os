@@ -51,6 +51,11 @@ impl Runtime {
     // ------------------=
     pub unsafe fn peak_allocated() -> usize { let p=active();if p.is_null(){0}else{(*p).arena.peak_allocated()} }
     // ------------------------=
+    // FUNC: failed_request
+    // DESC: Reads the latest exhausted allocation on the serialized engine CPU.
+    // ------------------=
+    pub unsafe fn failed_request() -> usize { let p=active();if p.is_null(){0}else{(*p).arena.failed_request()} }
+    // ------------------------=
     // FUNC: diagnostic_thread_name
     // DESC: Copies a test-only bounded thread label without allocating or lending runtime state.
     // ------------------=

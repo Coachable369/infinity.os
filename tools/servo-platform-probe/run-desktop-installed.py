@@ -34,11 +34,11 @@ def browser_symbols(elf):
         if len(fields) != 4:
             continue
         for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK", "LOAD_REVISION", "LOADING", "PAGE_ERROR", "HISTORY",
-                     "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED"):
+                     "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION"):
             if fields[3] in ("infinity_kernel::runtime::browser::" + name,
                 "infinity_kernel::runtime::browser::" + name + " (.0)", "INFINITY_BROWSER_" + name):
                 result[name] = (int(fields[0], 16), int(fields[1], 16))
-    assert len(result) == 11
+    assert len(result) == 12
     return result
 
 class Guest(base.Guest):

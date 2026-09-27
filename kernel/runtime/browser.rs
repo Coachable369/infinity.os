@@ -14,6 +14,8 @@ static STATE:AtomicU32=AtomicU32::new(0);
 static FAILURE:AtomicU32=AtomicU32::new(0);
 static GENERATION:AtomicU64=AtomicU64::new(0);
 static PEAK:AtomicU64=AtomicU64::new(0);
+#[no_mangle]
+pub static INFINITY_BROWSER_FAILED_ALLOCATION:AtomicU32=AtomicU32::new(0);
 static FRAME_REVISION:AtomicU64=AtomicU64::new(0);
 static LOAD_REVISION:AtomicU64=AtomicU64::new(0);
 #[no_mangle]
@@ -266,6 +268,7 @@ unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,l
 // ------------------=
 unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,length:usize) {
     if kind==abi::EVENT_MEMORY {PEAK.store(value as u64,Ordering::Release);return;}
+    if kind==abi::EVENT_ALLOCATION_FAILURE {INFINITY_BROWSER_FAILED_ALLOCATION.store(value,Ordering::Release);return;}
     if kind==abi::EVENT_ERROR && value!=3 {FAILURE.store(value+1,Ordering::Release);}
     if kind==abi::EVENT_DIAGNOSTIC || length>2048 {return;}
     let mut message=Event{kind,value,length,text:[0;2048]};

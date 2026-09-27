@@ -99,6 +99,19 @@ handler: supervisor state 3, failure 4, allocator peak 244,012,544 bytes. This i
 not a successful completed-page/navigation result. Memory pressure near the
 256 MiB arena is a lead, not yet a proven cause. No release ISO was updated.
 
+The allocation diagnostic rerun (`20260927T101420564854Z-11668.json`)
+confirmed a failed 16,777,264-byte arena request immediately before that abort.
+The allocator previously discarded half of a misaligned 512 MiB grant to select
+one power-of-two root. It now partitions the same grant into aligned buddy roots
+and bounds coalescing to that grant. Kernel load span is unchanged. Seven host
+behavioral tests pass, including exhaustion and scrambled reclamation across
+non-power-of-two roots (`20260927T102718005581Z-11991.json`). The native Servo
+component also passes. Installed rerun `20260927T102047099692Z-11812.json`
+no longer aborts or reports failed allocation; link load revision reaches 4
+and loading becomes false after 13 completed native requests. This is not yet
+navigation acceptance: the captured page remains Example Domain and Back
+stalls with loading set. Presentation/history completion is the next blocker.
+
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.
 3. Verify responsiveness, input, resize, cancellation and window lifecycle in
