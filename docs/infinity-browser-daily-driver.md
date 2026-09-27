@@ -128,6 +128,28 @@ build cleanup removes it. Earlier v0.1 evidence remains separately documented in
 
 ## First integration constraints found
 
+### Verification follow-up (27 September)
+
+The focused `./build-kit x86_64` build passed in receipt
+`20260927T163105799603Z-44120.json`, producing both the bootstrap test ISO and
+the model-inclusive `builds/InfinityOS-x86_64.iso`. This is not a clean full
+release or an installed x86 acceptance result. Browser peak allocation now has
+an exported diagnostic counter so release optimization cannot remove the
+measurement point.
+
+The navigation harness now checks real HTTPS link/back/forward/reload using
+per-page URL hashes, completed load revisions and actual framebuffer colors.
+Its first run (`20260927T165251295443Z-59745.json`) failed while typing the
+Console launch command, before browser navigation. Navigation uses acknowledged
+individual key events for the retry rather than rapid batches. The retry passed
+in `20260927T165600056847Z-59816.json`: link, back, forward and reload each
+matched the intended URL hash, advanced completed-load revision, and rendered
+the expected CSS pixels, with zero engine/network errors. This used the same
+previously cold-installed ARM disk without replacing its kernel; it is not a
+new cold install or x86 result. The x86 installation verification timeout is now
+30 minutes under cross-architecture TCG; byte and checksum verification are
+unchanged.
+
 - The normal-profile multi-WebView group now retains one global delegate.
   Private/profile partitioning and stable persisted identity remain pending.
   Metadata delivery under mailbox pressure needs further hardening before rapid

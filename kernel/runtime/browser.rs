@@ -13,7 +13,9 @@ static mut HEAP:Heap=Heap([0;HEAP_BYTES]);
 static STATE:AtomicU32=AtomicU32::new(0);
 static FAILURE:AtomicU32=AtomicU32::new(0);
 static GENERATION:AtomicU64=AtomicU64::new(0);
-static PEAK:AtomicU64=AtomicU64::new(0);
+// Stable read-only diagnostic identity: do not rely on optimizer-private symbols.
+#[no_mangle]
+pub static INFINITY_BROWSER_PEAK:AtomicU64=AtomicU64::new(0);
 #[no_mangle]
 pub static INFINITY_BROWSER_FAILED_ALLOCATION:AtomicU32=AtomicU32::new(0);
 #[no_mangle]
@@ -133,7 +135,7 @@ pub fn take_event()->Option<Event> {EVENTS.try_take().ok().flatten()}
 // DESC: Reports supervisor state, structured failure, frame generation and peak engine reservation.
 // ------------------=
 pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(Ordering::Acquire),
-    GENERATION.load(Ordering::Acquire),PEAK.load(Ordering::Acquire))}
+    GENERATION.load(Ordering::Acquire),INFINITY_BROWSER_PEAK.load(Ordering::Acquire))}
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
@@ -355,7 +357,7 @@ unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,l
 // ------------------=
 unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,length:usize) {
     if kind==abi::EVENT_TAB_SELECTED {ACTIVE_TAB.store(value,Ordering::Release);}
-    if kind==abi::EVENT_MEMORY {PEAK.store(value as u64,Ordering::Release);return;}
+    if kind==abi::EVENT_MEMORY {INFINITY_BROWSER_PEAK.store(value as u64,Ordering::Release);return;}
     if kind==abi::EVENT_ALLOCATION_FAILURE {INFINITY_BROWSER_FAILED_ALLOCATION.store(value,Ordering::Release);return;}
     if kind==abi::EVENT_ERROR && value!=3 {FAILURE.store(value+1,Ordering::Release);}
     if kind==abi::EVENT_DIAGNOSTIC || length>2048 {return;}

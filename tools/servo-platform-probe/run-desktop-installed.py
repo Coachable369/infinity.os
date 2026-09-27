@@ -27,6 +27,17 @@ def interaction_url():
     return "https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64="+quote(base64.b64encode(document).decode(),safe="")
 
 # ------------------------=
+# FUNC: navigation_urls
+# DESC: Provides real HTTPS pages with a deterministic link and distinct rendered colors for navigation assertions.
+# ------------------=
+def navigation_urls():
+    prefix="https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64="
+    second=prefix+quote(base64.b64encode(b'<title>Destination</title><body style=margin:0;background:#46505a>Next').decode(),safe="")
+    first=prefix+quote(base64.b64encode(('<body style=margin:0;background:#123456><a style=display:block;margin:24px;width:200px;height:48px href="'+second+'">Next</a>').encode()).decode(),safe="")
+    assert len("browser "+first)<512, "Navigation fixture exceeds native Console capacity"
+    return first,second
+
+# ------------------------=
 # FUNC: browser_text
 # DESC: Types into native browser chrome using keyboard/event-loop acknowledgement, not Console editor counters.
 # ------------------=
@@ -237,7 +248,7 @@ def main():
     parser.add_argument("--reuse-installed", type=Path)
     parser.add_argument("--iso-parity", action="store_true", help="Cold-install the browser QEMU ISO without any offline kernel replacement")
     parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
-    parser.add_argument("--navigation", action="store_true", help="Capture real link/history interaction for manual review; not an automatic navigation pass")
+    parser.add_argument("--navigation", action="store_true", help="Verify real HTTPS link/back/forward/reload through URL state and distinct page pixels")
     parser.add_argument("--download", action="store_true", help="Fetch a real HTTPS attachment, click native Save, and verify the stored object after shutdown")
     parser.add_argument("--launcher", action="store_true", help="Launch through the installed catalog and approve native network consent without Console authorization")
     parser.add_argument("--interaction", action="store_true", help="Verify real HTTPS image, CSS, JavaScript input and scrolling by framebuffer pixels")
@@ -285,6 +296,9 @@ def main():
         str(artifacts / "installed-kernel.elf"), str(artifacts / "installed-stripped.elf")], check=True)
     guest = Guest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd", reuse=reuse, width=1024, height=768, memory_mb=12288)
     guest.arch=args.arch
+    # x86 PIO under cross-architecture TCG must read back the entire large payload.
+    # This bounds the harness only; it does not relax any installed-byte checks.
+    guest.install_timeout_seconds=1800 if args.arch=="x86_64" else 900
     guest.fast_commands = args.interaction
     guest.patched = args.iso_parity or (reuse and args.update_kernel is None)
     receipt = dict(architecture=args.arch,installed=reuse, browser_iso_parity=False, browser_interactive=False)
@@ -319,6 +333,7 @@ def main():
             guest.launch("command", 5)
             guest.command("browser authorize confirm=true")
             command="browser " + ("https://expired-isrgrootx1.letsencrypt.org/" if args.invalid_tls else interaction_url() if args.interaction else "https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64=PGJvZHkgc3R5bGU9YmFja2dyb3VuZDpyZWQ%2B" if args.lifecycle else "https://httpbingo.org/response-headers?Content-Disposition=attachment%3B%20filename%3Dnative-browser-test.txt&Content-Type=text%2Fplain" if args.download else "https://example.com/")
+            if args.navigation: command="browser "+navigation_urls()[0]
             if args.measure:
                 assert int.from_bytes(guest.memory(*counters["STATE"]),"little")==0
                 guest.text(command)
@@ -364,11 +379,11 @@ def main():
         receipt["engine_running_with_frames"] = True
         receipt["launch_command_submitted"] = True
         if args.address:
-            guest.click(480,160)
+            guest.click(480,196)
             guest.key("end")
             for _ in range(len("https://example.com/")):
                 guest.key("backspace")
-            guest.text("https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64=PGJvZHkgc3R5bGU9YmFja2dyb3VuZDpyZWQ%2B")
+            browser_text(guest,"https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64=PGJvZHkgc3R5bGU9YmFja2dyb3VuZDpyZWQ%2B")
             guest.key("ret")
             wait_color(guest,"browser-address-navigation",400,400,(255,0,0))
             receipt["native_address_keyboard_navigation"]=True
@@ -481,9 +496,11 @@ def main():
             receipt["download_persisted"]=True
         if args.navigation:
             receipt["navigation"] = []
-            for label, x, y in (("link", 303, 368), ("back", 139, 161),
-                               ("forward", 192, 161), ("reload", 242, 161)):
-                target_url = "https://example.com/" if label == "back" else "https://www.iana.org/help/example-domains"
+            left,top,right,bottom=page_color_bounds(guest)
+            first,second=navigation_urls()
+            for label, x, y in (("link", left+40, top+32), ("back", left+38, top-30),
+                               ("forward", left+90, top-30), ("reload", left+140, top-30)):
+                target_url = first if label == "back" else second
                 target_hash = 0xcbf29ce484222325
                 for byte in target_url.encode():
                     target_hash = ((target_hash ^ byte) * 0x100000001b3) & ((1 << 64) - 1)
@@ -506,7 +523,8 @@ def main():
                 assert values["FAILURE"] == 0 and values["PAGE_ERROR"] == 0, receipt
                 assert values["LOAD_REVISION"] > before and values["LOADING"] == 0, receipt
                 assert values["LOCATION_HASH"] == target_hash, receipt
-            receipt["navigation_captures_for_review"] = True
+                wait_color(guest,"browser-"+label,right-32,bottom-32,(18,52,86) if label=="back" else (70,80,90))
+            receipt["https_navigation_state_and_pixels"] = True
         print(json.dumps(dict(work=str(work), **receipt)), flush=True)
     finally:
         (work / "result.json").write_text(json.dumps(receipt, indent=2) + "\n")
