@@ -91,5 +91,17 @@ fn main() {
         let mut state = [0u8; 16_384];
         assert_eq!(store.read(node, None, &mut state).unwrap(), 12_288);
     }
+    if std::env::args().any(|argument| argument == "--browser-download") {
+        let id=store.resolve(b"/home/default/downloads/native-browser-test.txt").unwrap();
+        let length=store.read(id,None,&mut bytes).unwrap();
+        assert_eq!(&bytes[..length],b"{\n  \"Content-Disposition\": [\n    \"attachment; filename=native-browser-test.txt\"\n  ],\n  \"Content-Type\": [\n    \"text/plain\"\n  ]\n}\n");
+        let metadata=store.metadata(id).unwrap();
+        assert_ne!(metadata.owner.0,[0;16]);
+        let relation=store.relationship_nth(id,0).unwrap();
+        assert_eq!(relation.kind,storage::object::RelationshipType::References);
+        let length=store.read(relation.target.id,None,&mut bytes).unwrap();
+        assert_eq!(&bytes[..length],b"text/plain");
+        assert_eq!(store.metadata(relation.target.id).unwrap().owner,metadata.owner);
+    }
     println!("PASS: installed native runtime, AI, organization schema, and date/time settings mount and validate");
 }

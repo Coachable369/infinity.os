@@ -44,7 +44,7 @@ fn queues_preserve_frames_until_hardware_accepts() {
 fn request_encoding_is_bounded_and_injection_safe() {
     let mut output = [0; 256];
     let count = get("example.com", "/weather?units=f", &mut output).unwrap();
-    assert_eq!(&output[..count], b"GET /weather?units=f HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\nAccept-Encoding: identity\r\n\r\n");
+    assert_eq!(&output[..count], b"GET /weather?units=f HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\nAccept-Encoding: identity\r\nUser-Agent: InfinityOS/0.1\r\n\r\n");
     let before = output;
     assert_eq!(
         get("evil\r\nHost: other", "/", &mut output),

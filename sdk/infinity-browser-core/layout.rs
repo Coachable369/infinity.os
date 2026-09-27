@@ -18,6 +18,9 @@ pub struct Layout {
     pub close: Viewport,
     pub content: Viewport,
     pub status: Viewport,
+    pub download_card: Viewport,
+    pub download_save: Viewport,
+    pub download_discard: Viewport,
 }
 
 impl Layout {
@@ -58,6 +61,9 @@ impl Layout {
             close: rect(close_x, 4 * scale, window_control, window_control),
             content: rect(0, content_y, width, height - content_y - status_height),
             status: rect(0, height - status_height, width, status_height),
+            download_card: rect(gutter,height-status_height-80*scale,width-2*gutter,72*scale),
+            download_save: rect(width-gutter-212*scale,height-status_height-60*scale,96*scale,36*scale),
+            download_discard: rect(width-gutter-108*scale,height-status_height-60*scale,96*scale,36*scale),
         })
     }
     // ------------------------=
@@ -82,6 +88,24 @@ impl Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: download_consent_stays_inside_viewport_with_separate_actions
+    // DESC: Checks native save-card geometry at minimum size and every supported scale.
+    // ------------------=
+    #[test]
+    fn download_consent_stays_inside_viewport_with_separate_actions() {
+        for scale in 1..=4 {
+            let layout=Layout::new(760*scale,240*scale,scale).unwrap();
+            for button in [layout.download_save,layout.download_discard] {
+                assert!(layout.download_card.local(button.x,button.y).is_some());
+                assert!(layout.download_card.local(button.x+button.width as i32-1,button.y+button.height as i32-1).is_some());
+            }
+            assert!(layout.content.local(layout.download_card.x,layout.download_card.y).is_some());
+            assert!(layout.content.local(layout.download_card.x+layout.download_card.width as i32-1,
+                layout.download_card.y+layout.download_card.height as i32-1).is_some());
+            assert!(layout.download_save.x+(layout.download_save.width as i32)<layout.download_discard.x);
+        }
+    }
     // ------------------------=
     // FUNC: resizing_preserves_chrome_and_changes_content_bounds
     // DESC: Verifies proportional sizing, nonoverlap and correct hit targets at each supported scale.

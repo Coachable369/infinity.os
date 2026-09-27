@@ -7408,7 +7408,11 @@ impl ConsoleRuntime {
             });
             // Widgets are painted below application surfaces. Do not dispatch a
             // covered widget's controls before the foreground window's controls.
-            let over_window = self.assistant_owner().map(|(_, rect)| rect.contains(
+            let browser=self.browser_window_state();
+            let over_browser=self.desktop_app==DesktopAppKind::Browser && browser.visible
+                && layout.desktop_app_window_geometry(browser.x,browser.y,browser.width,browser.height,browser.maximized)
+                    .window.contains(layout.point(self.pointer_x,self.pointer_y));
+            let over_window = over_browser || self.assistant_owner().map(|(_, rect)| rect.contains(
                 crate::ui::geometry::Point {
                     x: self.pointer_x * self.system.framebuffer_width as i32 / 1000,
                     y: self.pointer_y * self.system.framebuffer_height as i32 / 1000,

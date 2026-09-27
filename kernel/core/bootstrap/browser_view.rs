@@ -91,6 +91,17 @@ impl DisplayDevice {
                 }
             }
         }}
+        if view.download_state!=0 {
+            let card=offset(layout.download_card);
+            self.glass_panel(card.x as usize,card.y as usize,card.width as usize,card.height as usize,true);
+            let title:&[u8]=match view.download_state {2=>b"Saved to Downloads",3=>b"Save failed - file retained for retry",_=>b"Save this download?"};
+            self.ui_text_elided_strong(card.x as usize+16*scale,card.y as usize+10*scale,
+                card.width as usize-244*scale,title,231,242,250);
+            self.ui_text_elided_strong(card.x as usize+16*scale,card.y as usize+38*scale,
+                card.width as usize-244*scale,&view.download_name[..view.download_length],168,196,216);
+            if view.download_state!=2 {self.browser_download_button(offset(layout.download_save),b"Save",true,scale);}
+            self.browser_download_button(offset(layout.download_discard),if view.download_state==2 {b"Done"}else{b"Discard"},false,scale);
+        }
         let status=offset(layout.status);
         let message:&[u8]=if view.input_busy {b"Input queue busy. Please retry the last input."}
             else if view.error!=0 {b"Page could not be loaded. Check permissions and connection."}
@@ -109,5 +120,15 @@ impl DisplayDevice {
         self.fill_rounded_rect_alpha(r.x as usize+1,r.y as usize+1,r.width as usize-2,r.height as usize/2,8,red,green,blue,180);
         let (red,green,blue)=rgb(surface.border);
         self.outline_rounded_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize,10,red,green,blue);
+    }
+    // ------------------------=
+    // FUNC: browser_download_button
+    // DESC: Reuses the browser kit surface with centered native save controls and no decorative action glyph.
+    // ------------------=
+    fn browser_download_button(&mut self,r:Viewport,label:&[u8],primary:bool,scale:usize) {
+        self.browser_surface(r,skin::button(primary,skin::Interaction::Normal));
+        let width=self.ui_text_width_weighted(label,1,true);
+        self.ui_text_elided_strong(r.x as usize+(r.width as usize).saturating_sub(width)/2,r.y as usize+9*scale,
+            r.width as usize,label,231,242,250);
     }
 }

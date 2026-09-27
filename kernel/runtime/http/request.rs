@@ -30,7 +30,7 @@ pub fn get(host: &str, path: &str, output: &mut [u8]) -> Result<usize, Error> {
         path.as_bytes(),
         b" HTTP/1.1\r\nHost: ",
         host.as_bytes(),
-        b"\r\nConnection: close\r\nAccept-Encoding: identity\r\n\r\n",
+        b"\r\nConnection: close\r\nAccept-Encoding: identity\r\nUser-Agent: InfinityOS/0.1\r\n\r\n",
     ];
     let length = parts
         .iter()

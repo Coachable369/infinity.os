@@ -18,6 +18,8 @@ static PEAK:AtomicU64=AtomicU64::new(0);
 pub static INFINITY_BROWSER_FAILED_ALLOCATION:AtomicU32=AtomicU32::new(0);
 #[no_mangle]
 pub static INFINITY_BROWSER_LOCATION_HASH:AtomicU64=AtomicU64::new(0);
+#[no_mangle]
+pub static INFINITY_BROWSER_DOWNLOAD_STATE:AtomicU32=AtomicU32::new(0);
 static FRAME_REVISION:AtomicU64=AtomicU64::new(0);
 static LOAD_REVISION:AtomicU64=AtomicU64::new(0);
 #[no_mangle]
@@ -33,7 +35,7 @@ pub static FRAMES:Frames<16384000>=Frames::new();
 static EVENTS:Mailbox<Event,32>=Mailbox::new();
 static DOWNLOADS:Mailbox<Download,1>=Mailbox::new();
 #[derive(Clone,Copy)]
-pub struct Download {pub name:[u8;63],pub name_length:usize,pub media_type:[u8;127],
+pub struct Download {pub generation:u64,pub name:[u8;63],pub name_length:usize,pub media_type:[u8;127],
     pub type_length:usize,pub bytes:[u8;16384],pub length:usize}
 static mut RNG:Option<ChaCha20Rng>=None;
 static mut UTC:u64=0;
@@ -50,7 +52,7 @@ static mut HOST:abi::Host=abi::Host {version:abi::VERSION,size:core::mem::size_o
 // ------------------=
 pub fn take_download(owner:SecurityIdentity)->Option<Download> {
     if !owned_by(owner) {return None;}
-    DOWNLOADS.try_take().ok().flatten()
+    DOWNLOADS.try_take().ok().flatten().filter(|value|value.generation==GENERATION.load(Ordering::Acquire))
 }
 
 // ------------------------=
@@ -64,7 +66,7 @@ unsafe extern "C" fn download(_: *mut c_void,name:*const u8,name_length:usize,
     let media_type=core::slice::from_raw_parts(media_type,type_length);
     let (Ok(name_text),Ok(type_text))=(core::str::from_utf8(name),core::str::from_utf8(media_type)) else {return 0;};
     if infinity_browser_core::download::validate_metadata(name_text,type_text).is_err() {return 0;}
-    let mut value=Download{name:[0;63],name_length,media_type:[0;127],type_length,bytes:[0;16384],length};
+    let mut value=Download{generation:GENERATION.load(Ordering::Acquire),name:[0;63],name_length,media_type:[0;127],type_length,bytes:[0;16384],length};
     value.name[..name_length].copy_from_slice(name);value.media_type[..type_length].copy_from_slice(media_type);
     value.bytes[..length].copy_from_slice(core::slice::from_raw_parts(body,length));
     DOWNLOADS.try_send(value).is_ok() as u32
@@ -131,21 +133,35 @@ pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
+    pub download_name:[u8;63],pub download_length:usize,pub download_state:u8,
     pub address:[u8;2048],pub address_length:usize,
     pub edit:[u8;2048],pub edit_length:usize,pub caret:usize,pub address_focused:bool,pub caret_visible:bool,
     pub title:[u8;256],pub title_length:usize,
     pub loading:bool,pub input_busy:bool,pub history:u32,pub error:u32,pub revision:u64,
 }
 static mut PRESENTATION:Presentation=Presentation{address:[0;2048],address_length:0,title:[0;256],
+    download_name:[0;63],download_length:0,download_state:0,
     edit:[0;2048],edit_length:0,caret:0,address_focused:false,caret_visible:true,
     title_length:0,loading:false,input_busy:false,history:0,error:0,revision:0};
 static mut LAST_FRAME_REVISION:u64=0;
+static mut LAST_VIEW_REVISION:u64=0;
 
 // ------------------------=
 // FUNC: presentation
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+
+// ------------------------=
+// FUNC: download_presentation
+// DESC: Publishes native consent or save result without accepting untrusted UI markup.
+// ------------------=
+pub fn download_presentation(name:&[u8],state:u8) {unsafe {
+    let view=&mut *(&raw mut PRESENTATION);
+    view.download_length=name.len().min(63);view.download_name[..view.download_length].copy_from_slice(&name[..view.download_length]);
+    view.download_state=state;view.loading=false;view.revision=view.revision.wrapping_add(1);
+    INFINITY_BROWSER_DOWNLOAD_STATE.store(state as u32,Ordering::Release);
+}}
 
 // ------------------------=
 // FUNC: focus_address
@@ -196,7 +212,7 @@ pub fn poll_presentation()->bool {
     unsafe {
         let view=&mut *(&raw mut PRESENTATION);
         let frame=FRAME_REVISION.load(Ordering::Acquire);
-        let mut changed=frame!=LAST_FRAME_REVISION;
+        let mut changed=frame!=LAST_FRAME_REVISION || view.revision!=LAST_VIEW_REVISION;
         let caret_visible=(super::ai::qwen::workers::clock_ns()/500_000_000)%2==0;
         if view.address_focused && caret_visible!=view.caret_visible {view.caret_visible=caret_visible;changed=true;}
         LAST_FRAME_REVISION=frame;
@@ -226,6 +242,7 @@ pub fn poll_presentation()->bool {
         INFINITY_BROWSER_PAGE_ERROR.store(view.error,Ordering::Release);
         INFINITY_BROWSER_HISTORY.store(view.history,Ordering::Release);
         if changed {view.revision=view.revision.wrapping_add(1);}
+        LAST_VIEW_REVISION=view.revision;
         changed
     }
 }

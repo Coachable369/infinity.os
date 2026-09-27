@@ -644,6 +644,17 @@ pub fn object_create_note_at(
     }
 }
 // ------------------------=
+// FUNC: object_save_download
+// DESC: Commits one native download through the capability-checked object service, never a host filesystem.
+// ------------------=
+pub fn object_save_download<P:object::ObjectCapabilityPolicy>(request:object::DownloadCreateRequest<'_>,policy:&P)
+    ->Result<object::ObjectRef,object::ObjectError> {
+    #[cfg(any(target_arch="x86_64",target_arch="aarch64"))]
+    {with_store(|store|object::ObjectService::new(store,policy).create_download(request))}
+    #[cfg(target_arch="x86")]
+    {let _=(request,policy);Err(object::ObjectError::SpaceUnavailable)}
+}
+// ------------------------=
 // FUNC: object_write_path
 // DESC: Implements the object write path operation.
 // ------------------=

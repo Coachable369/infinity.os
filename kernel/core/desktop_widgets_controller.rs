@@ -99,6 +99,7 @@ impl ConsoleRuntime {
                         app_rect(e),
                         app_rect(t),
                         layout.settings_window_geometry(self.settings_window).window,
+                        app_rect(self.browser_window_state()),
                     ],
                     point,
                 )

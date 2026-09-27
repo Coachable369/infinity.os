@@ -34,11 +34,11 @@ def browser_symbols(elf):
         if len(fields) != 4:
             continue
         for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK", "LOAD_REVISION", "LOADING", "PAGE_ERROR", "HISTORY",
-                     "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION", "LOCATION_HASH"):
+                     "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION", "LOCATION_HASH", "DOWNLOAD_STATE"):
             if fields[3] in ("infinity_kernel::runtime::browser::" + name,
                 "infinity_kernel::runtime::browser::" + name + " (.0)", "INFINITY_BROWSER_" + name):
                 result[name] = (int(fields[0], 16), int(fields[1], 16))
-    assert len(result) == 13
+    assert len(result) == 14
     return result
 
 class Guest(base.Guest):
@@ -124,6 +124,7 @@ def main():
     parser.add_argument("--reuse-installed", type=Path)
     parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
     parser.add_argument("--navigation", action="store_true", help="Capture real link/history interaction for manual review; not an automatic navigation pass")
+    parser.add_argument("--download", action="store_true", help="Fetch a real HTTPS attachment, click native Save, and verify the stored object after shutdown")
     args = parser.parse_args()
     reuse = args.reuse_installed is not None
     if args.update_kernel and (not reuse or not args.update_kernel.resolve().is_relative_to(ROOT / "build")):
@@ -160,7 +161,7 @@ def main():
         guest.launch("command", 5)
         counters = browser_symbols(artifacts / "installed-kernel.elf")
         guest.command("browser authorize confirm=true")
-        guest.command("browser https://example.com/")
+        guest.command("browser " + ("https://httpbingo.org/response-headers?Content-Disposition=attachment%3B%20filename%3Dnative-browser-test.txt&Content-Type=text%2Fplain" if args.download else "https://example.com/"))
         started = time.monotonic()
         deadline = started + 90
         while time.monotonic() < deadline:
@@ -169,7 +170,9 @@ def main():
             receipt["engine"] = values
             if values["STATE"] == 3 or values["FAILURE"]:
                 break
-            if values["STATE"] == 2 and values["FRAME_REVISION"] >= 2 and time.monotonic() - started >= 15:
+            if args.download and values["DOWNLOAD_STATE"]==1:
+                break
+            if not args.download and values["STATE"] == 2 and values["FRAME_REVISION"] >= 2 and time.monotonic() - started >= 15:
                 break
             time.sleep(.25)
         guest.screenshot("browser-launch")
@@ -177,6 +180,24 @@ def main():
         assert values["STATE"] == 2 and values["FAILURE"] == 0 and values["FRAME_REVISION"] >= 2, receipt
         receipt["engine_running_with_frames"] = True
         receipt["launch_command_submitted"] = True
+        if args.download:
+            assert values["DOWNLOAD_STATE"] == 1, receipt
+            time.sleep(.5)
+            guest.screenshot("browser-download-consent")
+            guest.click(740,595)
+            deadline=time.monotonic()+30
+            while time.monotonic()<deadline:
+                status=int.from_bytes(guest.memory(*counters["DOWNLOAD_STATE"]),"little")
+                if status in (2,3): break
+                time.sleep(.25)
+            receipt["download_state"]=status
+            guest.screenshot("browser-download-saved")
+            assert status==2,receipt
+            guest.stop()
+            checker=ROOT/"build/tests/browser-installed-object-test"
+            subprocess.run(["rustc","--edition=2021","-O",str(ROOT/"tools/installed-object-test.rs"),"-o",str(checker)],check=True)
+            subprocess.run([str(checker),str(work/"node-1/installed.raw"),"--browser-download"],check=True)
+            receipt["download_persisted"]=True
         if args.navigation:
             receipt["navigation"] = []
             for label, x, y in (("link", 303, 368), ("back", 139, 161),

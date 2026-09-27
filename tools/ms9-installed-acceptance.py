@@ -261,6 +261,7 @@ class Guest:
     # ------------------=
     def text(self, value):
         aliases = {" ": "spc", "-": "minus", ".": "dot", "=": "equal", "/": "slash"}
+        shifted = {":": "semicolon", "?": "slash", "%": "5", "&": "7", "_": "minus"}
         initial = self.state()
         fast = self.fast_commands and initial is not None and initial[4] == 5 and initial[71] != 0
         if fast:
@@ -268,8 +269,8 @@ class Guest:
         batch = []
         batch_codes = set()
         for index, character in enumerate(value):
-            if character == ":":
-                codes = ("shift", "semicolon")
+            if character in shifted:
+                codes = ("shift", shifted[character])
             elif character.isupper():
                 codes = ("shift", character.lower())
             else:

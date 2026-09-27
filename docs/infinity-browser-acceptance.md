@@ -147,9 +147,33 @@ identity, refuses overwrite, and rolls back failed writes. Remount and injected
 write-failure coverage passed (`20260927T105727871041Z-13163.json`). The typed
 ObjectService entry additionally requires Create, NamespaceAttach and
 RelationshipAttach authority. The browser-to-service save-consent UI/controller
-is not wired yet; queued attachments are not claimed as persisted downloads.
+is now wired with explicit Save/Discard, active-session validation, a short-lived
+object-write capability and saved/error states. Installed persistence verification
+now passes as detailed below.
 RFC 5987 extended filenames currently use the safe fallback basename rather
 than claiming full filename-encoding support. No release ISO was updated.
+
+The first installed download retry reached the real HTTPS endpoint but received
+HTTP 402 because the native request omitted User-Agent. Adding the honest
+`InfinityOS/0.1` identifier passed the native HTTP tests and all 17 browser-core
+tests. The installed retry received HTTP 200 and an attachment with zero engine
+or network failures (`20260927T111621094082Z-14276.json`), but Save did not activate:
+the underlying desktop AI widget consumed its click. Browser occlusion is being
+added to widget dispatch; this failed interaction is not download acceptance.
+
+The corrected installed download test passed
+(`20260927T112310848229Z-14737.json`): real HTTPS from
+`https://httpbingo.org/response-headers` delivered an attachment; the native Save
+button moved the consent state from 1 to 2. After stopping the guest, a read-only
+mount of its installed disk verified the exact 128 received bytes at
+`/home/default/downloads/native-browser-test.txt`, nonzero owner identity and a
+related `text/plain` metadata object with the same owner. The saved-state capture
+`build/browser-download-saved-current.png` was visually reviewed. No network,
+page, engine or allocation failure was reported. Browser bounds now prevent
+covered widgets from consuming its controls; pending consent is cleared when
+the session changes. The measured 6.15 seconds is attachment observation time,
+not browser first-paint or general performance acceptance. This remains the
+kernel-updated disposable ARM installation, not unmodified release-ISO parity.
 
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.
