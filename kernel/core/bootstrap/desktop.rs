@@ -245,6 +245,12 @@ impl super::DisplayDevice {
         role: usize,
         size: usize,
     ) -> bool {
+        #[cfg(feature="native-browser")]
+        if role==60 {
+            self.paint_bitmap_alpha_fit_rect(include_bytes!("../../../assets/apps/infinity-browser-icon-v1.bmp"),
+                center_x.saturating_sub(size/2),center_y.saturating_sub(size/2),size,size);
+            return true;
+        }
         if (57..=59).contains(&role) {
             self.spatial_identity_icon(center_x, center_y, size, role - 57);
             return true;

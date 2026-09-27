@@ -1,7 +1,7 @@
 //! Launcher copies and pointer capture; only the UI thread publishes this state.
 use super::{LAUNCHER_APPS, LAUNCHER_NO_ITEM};
 
-pub const STATE_BYTES: usize = 94;
+pub const STATE_BYTES: usize = 9 + 5 * LAUNCHER_APPS.len();
 const LEGACY_STATE_BYTES: usize = 84;
 const PATH_PREFIX: &[u8] = b"/home/default/.launcher-layout-";
 // ------------------------=
@@ -99,14 +99,16 @@ impl State {
     // ------------------=
     pub fn decode(bytes: &[u8]) -> Option<(Self, [u8; LAUNCHER_APPS.len()])> {
         let legacy = bytes.len() == LEGACY_STATE_BYTES && &bytes[..4] == b"IAP1";
-        let current = bytes.len() == STATE_BYTES && &bytes[..4] == b"IAP2";
+        let current = matches!(bytes.len(),94) || bytes.len()==STATE_BYTES;
+        let current = current && bytes.get(..4)==Some(b"IAP2");
         let checksum_at = bytes.len().checked_sub(4)?;
         if (!legacy && !current)
             || checksum(&bytes[..checksum_at]) != u32::from_le_bytes(bytes[checksum_at..].try_into().ok()?)
         {
             return None;
         }
-        let stored_count = if legacy { 15 } else { LAUNCHER_APPS.len() };
+        let stored_count = if legacy { 15 } else { (bytes.len()-9)/5 };
+        if stored_count>LAUNCHER_APPS.len() {return None;}
         let mut order = core::array::from_fn(|index| index as u8);
         order[..stored_count].copy_from_slice(&bytes[4..4 + stored_count]);
         let mut seen = 0u32;

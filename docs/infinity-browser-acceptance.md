@@ -175,6 +175,27 @@ the session changes. The measured 6.15 seconds is attachment observation time,
 not browser first-paint or general performance acceptance. This remains the
 kernel-updated disposable ARM installation, not unmodified release-ISO parity.
 
+The installed launcher/consent path also passes
+(`20260927T113301747791Z-15110.json`). Browser-enabled builds append a typed
+Infinity Browser catalog entry with its dedicated generated artwork; older
+launcher indices are unchanged. Selecting it displays native network consent
+without starting the engine or completing any network requests. Explicit Allow
+uses the existing authenticated-operator, policy-governed ten-minute lease.
+The browser then loads Example Domain over HTTPS and passes real link to IANA,
+Back, Forward and Reload with observed location and load transitions. The native
+permission capture was visually reviewed. A subresource transport failure was
+observed around history traversal; it did not fail the main document, and reload
+ended with status 200 and zero current network/page/engine failure. The 15-second
+observation window is a test wait, not a measured launch-time claim.
+The normal release build remains browser-disabled pending full installed
+acceptance; this catalog integration is not default release-ISO registration.
+Catalog-enabled host behavior testing exposed the old fixed 94-byte shortcut
+record overflowing with an eighteenth app. Its size now follows catalog length,
+while decoding retains the 15-app and 17-app formats and appends default positions
+for new entries. Launcher drag/order/persistence tests pass with browser disabled
+and enabled (`20260927T113810063199Z-15250.json`), including both legacy migrations.
+This persistence correction still needs inclusion in the next installed kernel.
+
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.
 3. Verify responsiveness, input, resize, cancellation and window lifecycle in

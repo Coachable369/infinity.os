@@ -91,7 +91,16 @@ impl DisplayDevice {
                 }
             }
         }}
-        if view.download_state!=0 {
+        if view.permission!=0 {
+            let card=offset(layout.download_card);
+            self.glass_panel(card.x as usize,card.y as usize,card.width as usize,card.height as usize,true);
+            self.ui_text_elided_strong(card.x as usize+16*scale,card.y as usize+10*scale,
+                card.width as usize-244*scale,if view.permission==2 {b"An authorized operator is required"}else{b"Allow browser network access?"},231,242,250);
+            self.ui_text_elided_strong(card.x as usize+16*scale,card.y as usize+38*scale,
+                card.width as usize-244*scale,b"10 minutes. Network policy still applies.",168,196,216);
+            self.browser_download_button(offset(layout.download_save),b"Allow",true,scale);
+            self.browser_download_button(offset(layout.download_discard),b"Cancel",false,scale);
+        } else if view.download_state!=0 {
             let card=offset(layout.download_card);
             self.glass_panel(card.x as usize,card.y as usize,card.width as usize,card.height as usize,true);
             let title:&[u8]=match view.download_state {2=>b"Saved to Downloads",3=>b"Save failed - file retained for retry",_=>b"Save this download?"};

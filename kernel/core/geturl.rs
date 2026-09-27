@@ -23,7 +23,7 @@ pub(super) fn authorize(console: &mut ConsoleRuntime, confirmed: bool) {
 // FUNC: authorize_for
 // DESC: Grants an explicitly confirmed bounded session lease, retaining endpoint policy and operator checks.
 // ------------------=
-pub(super) fn authorize_for(console: &mut ConsoleRuntime, confirmed: bool, browser: bool) {
+pub(super) fn authorize_for(console: &mut ConsoleRuntime, confirmed: bool, browser: bool) -> bool {
     let seconds = if browser {600} else {60};
     if !confirmed {
         console.output.write_line(
@@ -37,7 +37,7 @@ pub(super) fn authorize_for(console: &mut ConsoleRuntime, confirmed: bool, brows
             .output
             .write_line(if browser {b"To approve: browser authorize confirm=true"}
                 else {b"To approve: https authorize confirm=true"});
-        return;
+        return false;
     }
     let Ok(lease) = crate::runtime::node_client::begin_capability_input(
         console.current_user,
@@ -46,7 +46,7 @@ pub(super) fn authorize_for(console: &mut ConsoleRuntime, confirmed: bool, brows
         console
             .output
             .write_line(b"HTTPS authorization requires an authenticated privileged operator.");
-        return;
+        return false;
     };
     let owner = SecurityIdentity(console.current_session.0);
     let result = crate::runtime::node_client::clock()
@@ -102,6 +102,7 @@ pub(super) fn authorize_for(console: &mut ConsoleRuntime, confirmed: bool, brows
     } else {
         b"Network lease could not be granted."
     });
+    result
 }
 
 // ------------------------=

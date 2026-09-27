@@ -7,6 +7,37 @@ static mut LAUNCH:Option<Launch>=None;
 static mut INPUT:infinity_browser_core::input_queue::Queue<64>=infinity_browser_core::input_queue::Queue::new();
 static mut POINTER:infinity_browser_core::pointer::Pointer=infinity_browser_core::pointer::Pointer::new();
 static mut DOWNLOAD:Option<crate::runtime::browser::Download>=None;
+static mut CONSENT:Option<Launch>=None;
+
+// ------------------------=
+// FUNC: request_access
+// DESC: Opens native browser consent without starting Servo or granting network authority.
+// ------------------=
+pub(super) fn request_access(console:&mut ConsoleRuntime,url:&[u8]) {
+    if url.len()>2048 {return;}
+    let mut consent=Launch{owner:SecurityIdentity(console.current_session.0),url:[0;2048],length:url.len(),stage:0,size:(0,0)};
+    consent.url[..url.len()].copy_from_slice(url);
+    unsafe {CONSENT=Some(consent);}
+    if console.mode!=ConsoleMode::Desktop {console.enter_desktop();}
+    console.store_active_app_window();console.desktop_app=DesktopAppKind::Browser;
+    console.browser_window.visible=true;console.load_active_app_window();
+    console.ai_chat_focus=0;console.shell_menu=0;
+    crate::runtime::browser::permission_presentation(1);
+}
+
+// ------------------------=
+// FUNC: approve_access
+// DESC: Grants only the existing privileged, time-bounded network lease after a native user approval.
+// ------------------=
+fn approve_access(console:&mut ConsoleRuntime) {unsafe {
+    let Some(consent)=(&*(&raw const CONSENT)).as_ref() else {return;};
+    if consent.owner!=SecurityIdentity(console.current_session.0) {CONSENT=None;crate::runtime::browser::permission_presentation(0);return;}
+    if !geturl::authorize_for(console,true,true) {crate::runtime::browser::permission_presentation(2);return;}
+    let mut command=[0u8;2056];command[..8].copy_from_slice(b"browser ");
+    command[8..8+consent.length].copy_from_slice(&consent.url[..consent.length]);let length=8+consent.length;
+    CONSENT=None;crate::runtime::browser::permission_presentation(0);
+    execute(console,&command[..length]);
+}}
 
 struct DownloadPolicy {owner:SecurityIdentity,capability:u64}
 impl crate::storage::object::ObjectCapabilityPolicy for DownloadPolicy {
@@ -126,6 +157,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
 // DESC: Retains a close request until the worker mailbox accepts it, superseding pending navigation.
 // ------------------=
 pub(super) fn close() {unsafe {
+    CONSENT=None;crate::runtime::browser::permission_presentation(0);
     DOWNLOAD=None;crate::runtime::browser::download_presentation(&[],0);
     (&mut *(&raw mut INPUT)).clear();
     POINTER=infinity_browser_core::pointer::Pointer::new();
@@ -198,6 +230,12 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
+    if crate::runtime::browser::presentation().permission!=0 {
+        if layout.download_save.local(x,y).is_some() {approve_access(console);}
+        else if layout.download_discard.local(x,y).is_some() {console.close_desktop_app();}
+        else if layout.close.local(x,y).is_some() {console.close_desktop_app();}
+        return true;
+    }
     if crate::runtime::browser::presentation().download_state!=0 && layout.download_card.local(x,y).is_some() {
         if layout.download_save.local(x,y).is_some() {save_download(console);}
         if layout.download_discard.local(x,y).is_some() {unsafe {DOWNLOAD=None;}crate::runtime::browser::download_presentation(&[],0);}
@@ -216,6 +254,10 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
         Control::Maximize=>console.toggle_window_maximized(5),
         Control::Close=>console.close_desktop_app(),
         Control::Content=>{crate::runtime::browser::focus_address(false);return false;},
+        Control::Menu=>{
+            let url=&view.address[..view.address_length];
+            request_access(console,if url.starts_with(b"https://") {url}else{b"https://example.com/"});
+        },
         _=>return false,
     }
     if command.kind!=0 && enqueue(console,command) {
@@ -253,6 +295,7 @@ pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
 // DESC: Translates desktop pointer packets to web coordinates and preserves captured releases outside the page.
 // ------------------=
 pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->bool {
+    if crate::runtime::browser::presentation().permission!=0 {return false;}
     let captured=unsafe {(&*(&raw const POINTER)).captured()};
     if capture_only && !captured {return false;}
     let state=console.browser_window_state();

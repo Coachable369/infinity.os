@@ -8,6 +8,8 @@ use app_launcher::{LauncherRelease, LAUNCHER_APPS};
 // DESC: Verifies native launcher transition, smooth-scroll, and drag-reorder state behavior.
 // ------------------=
 fn main() {
+    assert_eq!(LAUNCHER_APPS.iter().filter(|entry| entry.action==app_launcher::LauncherAction::Browser).count(),
+        cfg!(feature="native-browser") as usize);
     shortcut_drag_and_persistence();
     for section in [6, 7, 8, 9] {
         assert_eq!(
@@ -160,8 +162,18 @@ fn shortcut_drag_and_persistence() {
     legacy[80..].copy_from_slice(&legacy_sum.to_le_bytes());
     let (legacy_state, legacy_order) = State::decode(&legacy).unwrap();
     assert_eq!(legacy_state.positions[0], [400, 500]);
-    assert_eq!(legacy_state.positions[15..], [[0, 0], [0, 0]]);
-    assert_eq!(legacy_order[15..], [15, 16]);
+    assert!(legacy_state.positions[15..].iter().all(|p|*p==[0,0]));
+    assert!(legacy_order[15..].iter().enumerate().all(|(i,id)|*id as usize==i+15));
+    let mut previous=[0u8;94];
+    previous[..4].copy_from_slice(b"IAP2");
+    previous[4..21].copy_from_slice(&order[..17]);
+    previous[22..24].copy_from_slice(&400u16.to_le_bytes());
+    previous[24..26].copy_from_slice(&500u16.to_le_bytes());
+    let sum=legacy_checksum(&previous[..90]);previous[90..].copy_from_slice(&sum.to_le_bytes());
+    let (previous_state,previous_order)=State::decode(&previous).unwrap();
+    assert_eq!(previous_state.positions[0],[400,500]);
+    assert_eq!(&previous_order[..17],&order[..17]);
+    assert!(previous_state.positions[17..].iter().all(|p|*p==[0,0]));
     shortcuts::publish(s);
     let _ = shortcuts::take_damage(1920, 1080);
     s.begin(6, 400, 500, true);

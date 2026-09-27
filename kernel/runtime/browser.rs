@@ -133,6 +133,7 @@ pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
+    pub permission:u8,
     pub download_name:[u8;63],pub download_length:usize,pub download_state:u8,
     pub address:[u8;2048],pub address_length:usize,
     pub edit:[u8;2048],pub edit_length:usize,pub caret:usize,pub address_focused:bool,pub caret_visible:bool,
@@ -140,6 +141,7 @@ pub struct Presentation {
     pub loading:bool,pub input_busy:bool,pub history:u32,pub error:u32,pub revision:u64,
 }
 static mut PRESENTATION:Presentation=Presentation{address:[0;2048],address_length:0,title:[0;256],
+    permission:0,
     download_name:[0;63],download_length:0,download_state:0,
     edit:[0;2048],edit_length:0,caret:0,address_focused:false,caret_visible:true,
     title_length:0,loading:false,input_busy:false,history:0,error:0,revision:0};
@@ -151,6 +153,14 @@ static mut LAST_VIEW_REVISION:u64=0;
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+
+// ------------------------=
+// FUNC: permission_presentation
+// DESC: Presents explicit policy-governed network consent independently from engine startup.
+// ------------------=
+pub fn permission_presentation(state:u8) {unsafe {
+    PRESENTATION.permission=state;PRESENTATION.revision=PRESENTATION.revision.wrapping_add(1);
+}}
 
 // ------------------------=
 // FUNC: download_presentation

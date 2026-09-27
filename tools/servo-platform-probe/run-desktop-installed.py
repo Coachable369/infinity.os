@@ -125,7 +125,10 @@ def main():
     parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
     parser.add_argument("--navigation", action="store_true", help="Capture real link/history interaction for manual review; not an automatic navigation pass")
     parser.add_argument("--download", action="store_true", help="Fetch a real HTTPS attachment, click native Save, and verify the stored object after shutdown")
+    parser.add_argument("--launcher", action="store_true", help="Launch through the installed catalog and approve native network consent without Console authorization")
     args = parser.parse_args()
+    if args.download and (args.launcher or args.navigation):
+        parser.error("Download acceptance is a separate bounded run")
     reuse = args.reuse_installed is not None
     if args.update_kernel and (not reuse or not args.update_kernel.resolve().is_relative_to(ROOT / "build")):
         parser.error("Kernel updates require a reused disposable installation and a build-local image")
@@ -158,10 +161,19 @@ def main():
             guest.onboard()
         if not reuse:
             network.configure_nat(guest)
-        guest.launch("command", 5)
         counters = browser_symbols(artifacts / "installed-kernel.elf")
-        guest.command("browser authorize confirm=true")
-        guest.command("browser " + ("https://httpbingo.org/response-headers?Content-Disposition=attachment%3B%20filename%3Dnative-browser-test.txt&Content-Type=text%2Fplain" if args.download else "https://example.com/"))
+        if args.launcher:
+            guest.launch("browser",5)
+            time.sleep(.5)
+            assert int.from_bytes(guest.memory(*counters["STATE"]),"little")==0
+            assert int.from_bytes(guest.memory(*counters["NETWORK_COMPLETED"]),"little")==0
+            guest.screenshot("browser-network-consent")
+            guest.click(740,595)
+            receipt["launcher_with_explicit_consent"]=True
+        else:
+            guest.launch("command", 5)
+            guest.command("browser authorize confirm=true")
+            guest.command("browser " + ("https://httpbingo.org/response-headers?Content-Disposition=attachment%3B%20filename%3Dnative-browser-test.txt&Content-Type=text%2Fplain" if args.download else "https://example.com/"))
         started = time.monotonic()
         deadline = started + 90
         while time.monotonic() < deadline:

@@ -81,6 +81,7 @@ pub enum LauncherAction {
     TaskManager,
     HolographicDesktop,
     WorldShift,
+    Browser,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,7 +144,7 @@ pub const DESKTOP_DOCK_ENTRIES: [DockEntry; 8] = [
     },
 ];
 
-pub const LAUNCHER_APPS: [LauncherEntry; 17] = [
+pub const LAUNCHER_APPS: [LauncherEntry; 17 + cfg!(feature="native-browser") as usize] = [
     LauncherEntry {
         label: b"File Navigator",
         icon_role: 4,
@@ -229,6 +230,8 @@ pub const LAUNCHER_APPS: [LauncherEntry; 17] = [
         icon_role: 59,
         action: LauncherAction::WorldShift,
     },
+    #[cfg(feature="native-browser")]
+    LauncherEntry {label:b"Infinity Browser",icon_role:60,action:LauncherAction::Browser},
 ];
 
 pub const LAUNCHER_CATEGORIES: [LauncherEntry; 5] = [
