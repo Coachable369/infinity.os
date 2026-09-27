@@ -17,6 +17,14 @@ impl<const N:usize> Queue<N>{
         true
     }
     // ------------------------=
+    // FUNC: push_reserved
+    // DESC: Leaves capacity for releases of already admitted pointer buttons.
+    // ------------------=
+    pub fn push_reserved(&mut self,commands:&[Command],reserve:usize)->bool {
+        if reserve>N-self.len || commands.len()>N-self.len-reserve {return false;}
+        self.push(commands)
+    }
+    // ------------------------=
     // FUNC: drain
     // DESC: Retains the oldest unsent command on backpressure and bounds each UI tick's work.
     // ------------------=

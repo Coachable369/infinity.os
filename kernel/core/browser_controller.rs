@@ -5,6 +5,7 @@ use crate::runtime::{capability::CapabilityType,execution::SecurityIdentity};
 struct Launch {owner:SecurityIdentity,url:[u8;2048],length:usize,stage:u8,size:(u32,u32)}
 static mut LAUNCH:Option<Launch>=None;
 static mut INPUT:infinity_browser_core::input_queue::Queue<64>=infinity_browser_core::input_queue::Queue::new();
+static mut POINTER:infinity_browser_core::pointer::Pointer=infinity_browser_core::pointer::Pointer::new();
 
 // ------------------------=
 // FUNC: viewport
@@ -59,7 +60,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
                 launch.stage=1;launch.size=previous.size;
             }
         }
-        if launch.stage==0 {(&mut *(&raw mut INPUT)).clear();}
+        if launch.stage==0 {(&mut *(&raw mut INPUT)).clear();POINTER=infinity_browser_core::pointer::Pointer::new();}
         LAUNCH=Some(launch);
     }
     if console.mode!=ConsoleMode::Desktop {console.enter_desktop();}
@@ -76,6 +77,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
 // ------------------=
 pub(super) fn close() {unsafe {
     (&mut *(&raw mut INPUT)).clear();
+    POINTER=infinity_browser_core::pointer::Pointer::new();
     if let Some(launch)=(&mut *(&raw mut LAUNCH)).as_mut() {launch.stage=3;}
 }}
 
@@ -102,7 +104,7 @@ pub(super) fn key(console:&ConsoleRuntime,key:ConsoleKey) {
     unsafe {
         let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return;};
         if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return;}
-        let accepted=(&mut *(&raw mut INPUT)).push(&[down,up]);
+        let accepted=(&mut *(&raw mut INPUT)).push_reserved(&[down,up],3);
         crate::runtime::browser::input_pressure(!accepted);
     }
     poll(console);
@@ -115,7 +117,7 @@ pub(super) fn key(console:&ConsoleRuntime,key:ConsoleKey) {
 fn enqueue(console:&ConsoleRuntime,command:abi::Command)->bool {unsafe {
     let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return false;};
     if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return false;}
-    let accepted=(&mut *(&raw mut INPUT)).push(&[command]);
+    let accepted=(&mut *(&raw mut INPUT)).push_reserved(&[command],3);
     crate::runtime::browser::input_pressure(!accepted);
     accepted
 }}
@@ -185,8 +187,35 @@ pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
     unsafe {
         let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return false;};
         if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return false;}
-        crate::runtime::browser::input_pressure(!(&mut *(&raw mut INPUT)).push(&[command]));
+        crate::runtime::browser::input_pressure(!(&mut *(&raw mut INPUT)).push_reserved(&[command],3));
     }
+    poll(console);true
+}
+
+// ------------------------=
+// FUNC: pointer
+// DESC: Translates desktop pointer packets to web coordinates and preserves captured releases outside the page.
+// ------------------=
+pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->bool {
+    let captured=unsafe {(&*(&raw const POINTER)).captured()};
+    if capture_only && !captured {return false;}
+    let state=console.browser_window_state();
+    if !state.visible {return false;}
+    let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
+    let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
+    let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32) else{return false;};
+    let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
+    let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
+    if !captured && layout.content.local(x,y).is_none() {return false;}
+    unsafe {
+        let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return false;};
+        if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return false;}
+        let accepted=(&mut *(&raw mut POINTER)).update(&mut *(&raw mut INPUT),
+            x-layout.content.x,y-layout.content.y,buttons);
+        crate::runtime::browser::input_pressure(!accepted);
+    }
+    if buttons&7!=0 {crate::runtime::browser::focus_address(false);}
     poll(console);true
 }
 

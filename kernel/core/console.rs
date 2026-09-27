@@ -7188,6 +7188,8 @@ impl ConsoleRuntime {
         }
         self.pointer_pressed = left_button;
         self.pointer_buttons = buttons;
+        #[cfg(feature="native-browser")]
+        if browser_controller::pointer(self,buttons,true) {return;}
         self.spatial_finish_arrival();
         if self.spatial.open { self.spatial_pointer(clicked, released); return; }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -7621,6 +7623,8 @@ impl ConsoleRuntime {
                 self.present_continuous_motion(released);
                 return;
             } else if self.desktop_app != DesktopAppKind::None {
+                #[cfg(feature="native-browser")]
+                if self.desktop_app==DesktopAppKind::Browser && browser_controller::pointer(self,buttons,false) {return;}
                 if clicked {
                     #[cfg(feature="native-browser")]
                     if self.desktop_app==DesktopAppKind::Browser && browser_controller::chrome_pointer(self) {

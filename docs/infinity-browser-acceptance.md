@@ -25,6 +25,17 @@ explicit loading transitions for initial navigation and history traversal,
 paired keyboard delivery, JS pixels, resize and shutdown. This is not an
 installed-OS test and does not update the installer ISO.
 
+Pointer movement and three-button capture now route to viewport-local Servo input.
+Normal FIFO producers reserve three entries for releases; a captured release is
+routed before desktop overlays even outside the viewport. The bounded-pressure
+behavior passes core tests (`20260927T055854548204Z-79088.json`, 15 tests), and
+both kernel targets compile (`20260927T055946758454Z-79148.json`). A fixture-only
+run against the previously rebuilt engine (`20260927T060024309498Z-79214.json`)
+requires a real DOM click at (40,40) plus paired key events before accepting the
+expected page pixels. It passed, with a component allocator peak of 150,826,624
+bytes. This is not total system RAM, a desktop performance measurement, or
+installed pointer/drag verification.
+
 All commands run through `./build-kit run`. Manifests are under
 `builds/manifests/`; they identify actual commands and exit statuses.
 

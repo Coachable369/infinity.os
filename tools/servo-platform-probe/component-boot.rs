@@ -3,6 +3,7 @@
 #[path="../../sdk/infinity-browser-core/worker.rs"] mod abi;
 use abi as worker;
 #[path="../../sdk/infinity-browser-core/input_queue.rs"] mod input_queue;
+#[path="../../sdk/infinity-browser-core/pointer.rs"] mod pointer;
 #[path="../../sdk/infinity-browser-core/frames.rs"] mod frames;
 #[path="guest/entropy_probe.rs"] mod entropy_probe;
 use core::ffi::c_void;
@@ -21,9 +22,9 @@ static mut NEXT_ID:u64=0;
 static mut HISTORY:u32=0;
 static mut LOCATION:u32=0;
 static mut LOAD_STARTS:u32=0;
-static mut INPUT:input_queue::Queue<4>=input_queue::Queue::new();
+static mut INPUT:input_queue::Queue<16>=input_queue::Queue::new();
 static PIXELS:frames::Frames<81920>=frames::Frames::new();
-static HTML:&[u8]=b"<!doctype html><html style='background:red'><script>let down=false;document.documentElement.style.background='rgb(12,34,56)';document.addEventListener('keydown',e=>{if(e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.altKey&&!e.metaKey&&e.repeat)down=true});document.addEventListener('keyup',e=>{if(down&&e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.repeat)document.documentElement.style.background='rgb(34,56,78)'})</script></html>";
+static HTML:&[u8]=b"<!doctype html><html style='background:red;min-height:100vh'><script>let down=false,clicked=false;document.documentElement.style.background='rgb(12,34,56)';document.addEventListener('click',e=>{if(e.clientX===40&&e.clientY===40)clicked=true});document.addEventListener('keydown',e=>{if(e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.altKey&&!e.metaKey&&e.repeat)down=true});document.addEventListener('keyup',e=>{if(clicked&&down&&e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.repeat)document.documentElement.style.background='rgb(34,56,78)'})</script></html>";
 static HEADERS:&[u8]=b"content-type: text/html\r\n";
 static mut HOST:abi::Host=abi::Host {
     version:abi::VERSION,size:core::mem::size_of::<abi::Host>() as u32,context:core::ptr::null_mut(),
@@ -114,6 +115,9 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
         3=>{value.kind=abi::RESIZE;value.a=160;value.b=96;STEP=4;},
         5=>{value.kind=abi::CLOSE;STEP=6;},
         9=>{value.kind=abi::KEY;value.flags=abi::KEY_DOWN|abi::KEY_REPEAT;value.a='K' as u32;
+            let mut pointer=pointer::Pointer::new();
+            if !pointer.update(&mut *(&raw mut INPUT),40,40,1)
+                || !pointer.update(&mut *(&raw mut INPUT),40,40,0) {finish(1,105);}
             value.b=abi::MOD_SHIFT|abi::MOD_CONTROL;
             let mut release=value;release.flags=0;
             if !(&mut *(&raw mut INPUT)).push(&[value,release]) {finish(1,104);}

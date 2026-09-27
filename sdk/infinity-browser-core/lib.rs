@@ -9,6 +9,7 @@ pub mod worker;
 pub mod mailbox;
 pub mod frames;
 pub mod input_queue;
+pub mod pointer;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Navigation(u64);
