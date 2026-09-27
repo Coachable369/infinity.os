@@ -1,6 +1,6 @@
 //! Native browser supervisor. BSP owns UI and permission decisions; one leased
 //! AP owns Servo and its private heap. No engine code runs in a paint callback.
-use core::{ffi::c_void,sync::atomic::{AtomicU32,AtomicU64,Ordering}};
+use core::{ffi::c_void,sync::atomic::{AtomicPtr,AtomicU32,AtomicU64,Ordering}};
 use infinity_browser_core::{worker as abi,mailbox::Mailbox,frames::Frames};
 use crate::http_transport::{rand_chacha::ChaCha20Rng,rand_core::{RngCore,SeedableRng}};
 use super::{execution::SecurityIdentity,capability::CapabilityId};
@@ -14,6 +14,8 @@ static STATE:AtomicU32=AtomicU32::new(0);
 static FAILURE:AtomicU32=AtomicU32::new(0);
 static GENERATION:AtomicU64=AtomicU64::new(0);
 static PEAK:AtomicU64=AtomicU64::new(0);
+static BOOT:AtomicPtr<crate::boot_info::BootInfo>=AtomicPtr::new(core::ptr::null_mut());
+static OWNER:[AtomicU64;2]=[AtomicU64::new(0),AtomicU64::new(0)];
 static COMMANDS:Mailbox<abi::Command,32>=Mailbox::new();
 pub static FRAMES:Frames<16384000>=Frames::new();
 static EVENTS:Mailbox<Event,32>=Mailbox::new();
@@ -27,12 +29,29 @@ static mut HOST:abi::Host=abi::Host {version:abi::VERSION,size:core::mem::size_o
     cpu,monotonic,utc,entropy,idle,command,frame,event,begin,poll,cancel,fatal};
 
 // ------------------------=
+// FUNC: initialize
+// DESC: Retains loader-owned boot services for later authenticated launch without starting an engine at boot.
+// ------------------=
+pub fn initialize(info:&'static crate::boot_info::BootInfo) {
+    let _=BOOT.compare_exchange(core::ptr::null_mut(),core::ptr::from_ref(info).cast_mut(),Ordering::Release,Ordering::Relaxed);
+}
+// ------------------------=
+// FUNC: owned_by
+// DESC: Prevents an authenticated session from submitting work to another session's engine.
+// ------------------=
+fn owned_by(owner:SecurityIdentity)->bool {
+    OWNER[0].load(Ordering::Acquire)==u64::from_le_bytes(owner.0[..8].try_into().unwrap())
+        && OWNER[1].load(Ordering::Acquire)==u64::from_le_bytes(owner.0[8..].try_into().unwrap())
+}
+// ------------------------=
 // FUNC: start
 // DESC: Grants an isolated engine CPU and heap only after native time, entropy and explicit network authority exist.
 // ------------------=
 /// BSP only. BootInfo remains loader-owned; no firmware operation runs on the AP.
-pub unsafe fn start(info:&crate::boot_info::BootInfo,owner:SecurityIdentity,caps:[CapabilityId;4])->bool {
-    if STATE.load(Ordering::Acquire)!=0 {return STATE.load(Ordering::Acquire)==2;}
+pub unsafe fn start(owner:SecurityIdentity,caps:[CapabilityId;4])->bool {
+    if owner.0==[0;16] {return false;}
+    if STATE.load(Ordering::Acquire)!=0 {return STATE.load(Ordering::Acquire)==2 && owned_by(owner);}
+    let Some(info)=BOOT.load(Ordering::Acquire).as_ref() else{return false;};
     if info.firmware_entropy_valid!=1 {return false;}
     let Some(seconds)=crate::console::certificate_time(info.firmware_runtime_services) else{return false;};
     if !crate::drivers::browser_network::configure(owner,caps) {return false;}
@@ -41,6 +60,8 @@ pub unsafe fn start(info:&crate::boot_info::BootInfo,owner:SecurityIdentity,caps
     RNG=Some(ChaCha20Rng::from_seed(hash.finalize().into()));
     UTC=seconds;EPOCH_NS=super::ai::qwen::workers::clock_ns();
     HOST.heap=core::ptr::addr_of_mut!(HEAP.0).cast();
+    OWNER[0].store(u64::from_le_bytes(owner.0[..8].try_into().unwrap()),Ordering::Release);
+    OWNER[1].store(u64::from_le_bytes(owner.0[8..].try_into().unwrap()),Ordering::Release);
     STATE.store(1,Ordering::Release);
     if !super::ai::qwen::workers::background(worker) {STATE.store(0,Ordering::Release);return false;}
     true
@@ -49,8 +70,8 @@ pub unsafe fn start(info:&crate::boot_info::BootInfo,owner:SecurityIdentity,caps
 // FUNC: submit
 // DESC: Sends native input with explicit backpressure; callers retain events for retry instead of losing key releases.
 // ------------------=
-pub fn submit(value:abi::Command)->Result<(),abi::Command> {
-    if !matches!(STATE.load(Ordering::Acquire),1|2) {return Err(value);}
+pub fn submit(owner:SecurityIdentity,value:abi::Command)->Result<(),abi::Command> {
+    if !matches!(STATE.load(Ordering::Acquire),1|2) || !owned_by(owner) {return Err(value);}
     COMMANDS.try_send(value).map_err(|error|match error {
         infinity_browser_core::mailbox::SendError::Busy(v)|infinity_browser_core::mailbox::SendError::Full(v)=>v})
 }

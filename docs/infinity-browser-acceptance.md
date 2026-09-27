@@ -91,6 +91,11 @@ cost remains an explicit measurement and correction item.
 
 The supervisor is not enabled in release images yet. No shell, installed launch,
 responsiveness or total-RAM acceptance follows from these compilation checks.
+The kernel boot path retains its loader-owned BootInfo for later authenticated
+launch; it does not launch Servo automatically. Start and command submission are
+bound to one nonzero session owner. Cross-session restart/teardown remains an
+integration gate. Boot wiring compiles on ARM (`20260927T050259018212Z-74615.json`)
+and x86 (`20260927T050356924058Z-75003.json`); this is not a runtime ownership test.
 
 The x86 engine needs a separate hardware-float native target: Rust's built-in
 bare-metal target uses softfloat, unlike the C/C++ SysV ABI used by Servo. The

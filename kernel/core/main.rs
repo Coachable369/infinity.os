@@ -181,6 +181,8 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     drivers::audio::initialize(info);
     // Native speech jobs need workers even before an optional LLM is loaded.
     unsafe { runtime::ai::qwen::workers::initialize(info.worker_bridge); }
+    #[cfg(feature="native-browser")]
+    runtime::browser::initialize(info);
     let _ = system_sounds::play_boot_once();
     crash::set_phase(crash::CrashPhase::Services);
     runtime::announce_services();
