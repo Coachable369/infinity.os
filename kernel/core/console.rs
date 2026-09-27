@@ -48,6 +48,9 @@ mod pool_commands;
 mod editor_commands;
 #[path = "console_assistant.rs"]
 mod assistant_commands;
+#[cfg(feature="native-browser")]
+#[path="browser_controller.rs"]
+mod browser_controller;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EditorDialog {
@@ -2805,6 +2808,8 @@ impl ConsoleRuntime {
     // DESC: Dismisses the active desktop application after its document lifecycle has explicitly authorized closure.
     // ------------------=
     fn close_desktop_app_unchecked(&mut self) {
+        #[cfg(feature="native-browser")]
+        if self.desktop_app==DesktopAppKind::Browser {browser_controller::close();}
         if let Some(id) = self.shelf_app_id() { crate::ui::app_launcher::minimized_shelf::set(id, false); }
         self.store_active_app_window();
         if self.desktop_app == DesktopAppKind::CommandWindow {
@@ -10944,6 +10949,8 @@ impl ConsoleRuntime {
         }
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if geturl::execute(self, command) { return true; }
+        #[cfg(feature="native-browser")]
+        if browser_controller::execute(self,command) {return true;}
         #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         if command == b"https" || command.starts_with(b"https ") {
             use crate::drivers::https;
@@ -13049,6 +13056,8 @@ pub fn browser_window()->DesktopAppWindowState {unsafe {BROWSER_WINDOW}}
 // DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
 // ------------------=
 pub fn poll_native_ai() {
+    #[cfg(feature="native-browser")]
+    unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {browser_controller::poll(runtime);}}
     #[cfg(feature="native-browser")]
     if crate::runtime::browser::poll_presentation() {
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {

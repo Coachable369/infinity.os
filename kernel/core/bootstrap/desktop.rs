@@ -11,6 +11,7 @@ mod glass;
 static mut THINKING_ANIMATION: crate::ui::thinking::ThinkingAnimation =
     crate::ui::thinking::ThinkingAnimation::new();
 static mut THINKING_HEADER_DIRTY: bool = false;
+static mut LAST_BROWSER_REVISION:u64=0;
 
 // ------------------------=
 // FUNC: thinking_animation_tick
@@ -10544,6 +10545,14 @@ pub fn system_ui_present(
                     window_maximized,
                 );
             let content_changed = console.last_system_content != content;
+            let browser_revision={
+                #[cfg(feature="native-browser")]
+                {crate::runtime::browser::presentation().revision}
+                #[cfg(not(feature="native-browser"))]
+                {0}
+            };
+            let browser_changed=core::mem::replace(&mut *(&raw mut LAST_BROWSER_REVISION),browser_revision)!=browser_revision
+                && crate::console::browser_window().visible && matches!(screen,2|4|8|9|10|11);
             let thinking_header_changed = core::mem::replace(&mut *(&raw mut THINKING_HEADER_DIRTY), false);
             let command_input_only = screen == 8 && console.last_system_screen == 8
                 && content_changed && static_content == console.last_system_static_content
@@ -10583,6 +10592,7 @@ pub fn system_ui_present(
                     || window_resized
                     || settings_geometry_changed
                     || app_window_geometry_changed
+                    || browser_changed
                     || (chat_changed && screen == 4)
                     || (content_changed && matches!(screen, 8 | 9 | 10 | 11)));
             let mut full_surface_redrawn = false;
@@ -10786,6 +10796,11 @@ pub fn system_ui_present(
                             right: rect.right().max(0) as usize, bottom: rect.bottom().max(0) as usize,
                         });
                         (rect, rect, false)
+                    } else if browser_changed && !content_changed && !window_moved && !window_resized
+                        && !app_window_geometry_changed && !settings_geometry_changed {
+                        let state=crate::console::browser_window();
+                        let rect=layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
+                        (rect,rect,false)
                     } else if screen == 2 && (window_moved || window_resized) {
                         let current = console.display.desktop_window_rect(
                             window_x,
@@ -10882,12 +10897,18 @@ pub fn system_ui_present(
                     display_rect,
                     padding,
                 );
+                if browser_changed {
+                    let state=crate::console::browser_window();
+                    let rect=layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
+                    damages[0]=damages[0].union(rect);
+                }
                 let union_pixels = damages[0].width as u64 * damages[0].height as u64;
                 let split_pixels = split_damages
                     .iter()
                     .map(|region| region.width as u64 * region.height as u64)
                     .sum::<u64>();
                 let damage_count = if split_motion_damage
+                    && !browser_changed
                     && previous_damage_window != current_damage_window
                     && split_pixels < union_pixels
                 {

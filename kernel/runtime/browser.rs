@@ -51,7 +51,7 @@ fn owned_by(owner:SecurityIdentity)->bool {
 /// BSP only. BootInfo remains loader-owned; no firmware operation runs on the AP.
 pub unsafe fn start(owner:SecurityIdentity,caps:[CapabilityId;4])->bool {
     if owner.0==[0;16] {return false;}
-    if STATE.load(Ordering::Acquire)!=0 {return STATE.load(Ordering::Acquire)==2 && owned_by(owner);}
+    if STATE.load(Ordering::Acquire)!=0 {return matches!(STATE.load(Ordering::Acquire),1|2) && owned_by(owner);}
     let Some(info)=BOOT.load(Ordering::Acquire).as_ref() else{return false;};
     if info.firmware_entropy_valid!=1 {return false;}
     let Some(seconds)=crate::console::certificate_time(info.firmware_runtime_services) else{return false;};
