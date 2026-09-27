@@ -145,7 +145,7 @@ pub struct Presentation {
     pub permission:u8,
     pub download_name:[u8;63],pub download_length:usize,pub download_state:u8,
     pub address:[u8;2048],pub address_length:usize,
-    pub edit:[u8;2048],pub edit_length:usize,pub caret:usize,pub address_focused:bool,pub caret_visible:bool,
+    pub edit:[u8;2048],pub edit_length:usize,pub caret:usize,pub address_focused:bool,pub caret_visible:bool,pub address_selected:bool,
     pub title:[u8;256],pub title_length:usize,
     pub loading:bool,pub input_busy:bool,pub history:u32,pub error:u32,pub revision:u64,
 }
@@ -156,7 +156,7 @@ static mut PRESENTATION:Presentation=Presentation{address:[0;2048],address_lengt
     tabs:[EMPTY_TAB;8],tab_count:0,active_tab:0,
     permission:0,
     download_name:[0;63],download_length:0,download_state:0,
-    edit:[0;2048],edit_length:0,caret:0,address_focused:false,caret_visible:true,
+    edit:[0;2048],edit_length:0,caret:0,address_focused:false,caret_visible:true,address_selected:false,
     title_length:0,loading:false,input_busy:false,history:0,error:0,revision:0};
 static mut LAST_FRAME_REVISION:u64=0;
 static mut LAST_VIEW_REVISION:u64=0;
@@ -197,11 +197,26 @@ pub fn download_presentation(name:&[u8],state:u8) {unsafe {
 // ------------------=
 pub fn focus_address(focused:bool) {unsafe {
     let view=&mut *(&raw mut PRESENTATION);
+    if !focused {view.address_selected=false;}
     if focused && !view.address_focused {
-        view.edit=view.address;view.edit_length=view.address_length;view.caret=view.edit_length;
+        view.edit=view.address;view.edit_length=view.address_length;view.caret=view.edit_length;view.address_selected=false;
     }
     if focused!=view.address_focused {view.address_focused=focused;view.revision=view.revision.wrapping_add(1);}
 }}
+
+// ------------------------=
+// FUNC: select_address
+// DESC: Focuses the native omnibox and selects its entire draft for standard shortcut replacement.
+// ------------------=
+pub fn select_address() {
+    focus_address(true);
+    unsafe {
+        let view=&mut *(&raw mut PRESENTATION);
+        view.address_selected=view.edit_length!=0;
+        view.caret=view.edit_length;
+        view.revision=view.revision.wrapping_add(1);
+    }
+}
 
 // ------------------------=
 // FUNC: edit_address
@@ -211,6 +226,21 @@ pub fn edit_address(key:crate::ui::text_input::TextEditKey) {unsafe {
     use crate::ui::text_input::{self as text,TextEditKey as K};
     let view=&mut *(&raw mut PRESENTATION);
     if !view.address_focused {return;}
+    if view.address_selected {
+        match key {
+            K::Character(c) if c.is_ascii_graphic() || c==b' ' => {view.edit_length=0;view.caret=0;},
+            K::Backspace|K::Delete => {
+                view.edit_length=0;view.caret=0;view.address_selected=false;
+                view.revision=view.revision.wrapping_add(1);return;
+            },
+            K::Left|K::Home|K::Right|K::End => {
+                view.caret=if matches!(key,K::Left|K::Home) {0}else{view.edit_length};
+                view.address_selected=false;view.revision=view.revision.wrapping_add(1);return;
+            },
+            _=>return,
+        }
+        view.address_selected=false;
+    }
     let changed=match key {
         K::Character(c)=>text::insert_ascii(&mut view.edit,&mut view.edit_length,&mut view.caret,c),
         K::Backspace=>text::backspace(&mut view.edit,&mut view.edit_length,&mut view.caret),

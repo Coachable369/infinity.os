@@ -121,6 +121,23 @@ def wait_color(guest,label,x,y,color):
     raise AssertionError({"pixel_stage":label,"actual":list(pixels[at:at+3]),"expected":color})
 
 # ------------------------=
+# FUNC: wait_image
+# DESC: Waits for asynchronous image decode and compositing rather than treating document completion as image readiness.
+# ------------------=
+def wait_image(guest, left, top):
+    deadline=time.monotonic()+40
+    while True:
+        width,height,pixels=read_pixels(guest.screenshot("browser-image"))
+        assert left>=0 and top>=0 and left+98<width and top+139<height
+        colors={pixels[(y*width+x)*3:(y*width+x)*3+3]
+            for y in range(top+44,top+139) for x in range(left+4,left+98)}
+        if len(colors)>32:
+            return {"distinct_colors":len(colors)}
+        if time.monotonic()>=deadline:
+            raise AssertionError({"image_colors":len(colors),"decode_present_timeout_seconds":40})
+        time.sleep(.5)
+
+# ------------------------=
 # FUNC: page_color_bounds
 # DESC: Finds the actual test page's unique CSS pixels so interaction proof is independent of firmware resolution.
 # ------------------=
@@ -439,14 +456,12 @@ def main():
         receipt["engine_running_with_frames"] = True
         receipt["launch_command_submitted"] = True
         if args.address:
-            guest.click(480,196)
-            guest.key("end")
-            for _ in range(len("https://example.com/")):
-                guest.key("backspace")
+            guest.key("ctrl","l")
             browser_text(guest,"https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64=PGJvZHkgc3R5bGU9YmFja2dyb3VuZDpyZWQ%2B")
             guest.key("ret")
             wait_color(guest,"browser-address-navigation",400,400,(255,0,0))
             receipt["native_address_keyboard_navigation"]=True
+            receipt["omnibox_shortcut_replaces_previous_address"]=True
         if args.measure:
             assert "page_complete_seconds" in receipt and values["PAGE_ERROR"]==0,receipt
             receipt["timing_boundary"]=f"QMP Enter submission to observed framebuffer/engine completion; {args.arch} TCG, 4 vCPU, 12 GiB; polling upper bounds"
@@ -469,9 +484,7 @@ def main():
             check_x,check_y=right-32,min(bottom-32,top+210)
             with acceptance_case(receipt,"https_css_image"):
                 wait_color(guest,"browser-css",check_x,check_y,(18,52,86))
-                width,height,pixels=read_pixels(guest.screenshot("browser-image"))
-                image_colors={pixels[(y*width+x)*3:(y*width+x)*3+3] for y in range(top+44,top+139) for x in range(left+4,left+98)}
-                assert len(image_colors)>32,{"image_colors":len(image_colors)}
+                receipt["image_pixels"]=wait_image(guest,left,top)
                 receipt["https_image_and_css"]=True
             with acceptance_case(receipt,"keyboard_javascript"):
                 guest.click(left+43,top+10)

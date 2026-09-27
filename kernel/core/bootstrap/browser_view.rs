@@ -69,16 +69,20 @@ impl DisplayDevice {
         let mut start=0;
         if view.address_focused {
             let mut end=caret;
-            while start<end {
+            while !view.address_selected && start<end {
                 let middle=(start+end)/2;
                 if self.ui_text_width_weighted(&text[middle..caret],1,true)>available.saturating_sub(3) {start=middle+1;}
                 else {end=middle;}
             }
             self.outline_rounded_rect(address.x as usize,address.y as usize,address.width as usize,address.height as usize,10,0,215,255);
         }
+        if view.address_focused && view.address_selected {
+            let width=self.ui_text_width_weighted(text,1,true).min(available);
+            self.fill_rect(address.x as usize+40*scale,address.y as usize+12*scale,width,22*scale,18,91,132);
+        }
         self.ui_text_elided_strong(address.x as usize+40*scale,address.y as usize+14*scale,
             available,&text[start..],231,242,250);
-        if view.address_focused && view.caret_visible {
+        if view.address_focused && view.caret_visible && !view.address_selected {
             let x=self.ui_text_width_weighted(&text[start..caret],1,true);
             self.fill_rect(address.x as usize+40*scale+x,address.y as usize+12*scale,2,20*scale,0,215,255);
         }

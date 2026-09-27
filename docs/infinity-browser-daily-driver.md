@@ -26,6 +26,13 @@ Status: **in progress; not accepted, not a daily-driver release.**
 
 ## Implemented in this increment
 
+- Omnibox Ctrl/Cmd+L now selects the entire draft; typing replaces it, deletion
+  clears it, and Home/Left or End/Right collapse the selection to the expected
+  edge. Ctrl/Cmd+A selects the focused omnibox. The native painter shows the
+  selected span and hides the caret while selected. This source change awaits
+  the next kernel build and the updated installed `--address` acceptance case;
+  it is not in the current ISO.
+
 - `sdk/infinity-browser-core/tabs.rs`: bounded 24-tab state model, stable IDs,
   window/profile/private scope, pin partitions, reorder, duplicate, selection,
   cycling, bounded closed-tab history, generation-checked metadata, mute state.

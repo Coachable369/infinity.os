@@ -178,7 +178,10 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
                 if view.tab_count<=1 {console.close_desktop_app();return;}
                 command.kind=abi::TAB_CLOSE;command.a=view.active_tab;
             },
-            b'l'|b'L'=>{crate::runtime::browser::focus_address(true);return;},
+            b'l'|b'L'=>{crate::runtime::browser::select_address();return;},
+            b'a'|b'A' if crate::runtime::browser::presentation().address_focused=>{
+                crate::runtime::browser::select_address();return;
+            },
             _=>return,
         }
         if enqueue(console,command) {poll(console);}
