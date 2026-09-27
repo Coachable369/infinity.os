@@ -4,6 +4,7 @@ use infinity_browser_core::{layout::Layout,worker as abi};
 use crate::runtime::{capability::CapabilityType,execution::SecurityIdentity};
 struct Launch {owner:SecurityIdentity,url:[u8;2048],length:usize,stage:u8,size:(u32,u32)}
 static mut LAUNCH:Option<Launch>=None;
+static mut INPUT:infinity_browser_core::input_queue::Queue<64>=infinity_browser_core::input_queue::Queue::new();
 
 // ------------------------=
 // FUNC: viewport
@@ -58,6 +59,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
                 launch.stage=1;launch.size=previous.size;
             }
         }
+        if launch.stage==0 {(&mut *(&raw mut INPUT)).clear();}
         LAUNCH=Some(launch);
     }
     if console.mode!=ConsoleMode::Desktop {console.enter_desktop();}
@@ -71,7 +73,57 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
 // FUNC: close
 // DESC: Retains a close request until the worker mailbox accepts it, superseding pending navigation.
 // ------------------=
-pub(super) fn close() {unsafe {if let Some(launch)=(&mut *(&raw mut LAUNCH)).as_mut() {launch.stage=3;}}}
+pub(super) fn close() {unsafe {
+    (&mut *(&raw mut INPUT)).clear();
+    if let Some(launch)=(&mut *(&raw mut LAUNCH)).as_mut() {launch.stage=3;}
+}}
+
+// ------------------------=
+// FUNC: key
+// DESC: Admits native text and editing keys as complete press/release pairs for focused web content.
+// ------------------=
+pub(super) fn key(console:&ConsoleRuntime,key:ConsoleKey) {
+    let mut down=abi::Command::empty();down.kind=abi::KEY;down.flags=abi::KEY_DOWN|abi::KEY_NAMED;
+    down.a=match key {
+        ConsoleKey::Character(c)=>{down.flags=abi::KEY_DOWN;u32::from(c)},
+        ConsoleKey::Enter=>1,ConsoleKey::Tab(shift)=>{if shift {down.b=abi::MOD_SHIFT;}2},
+        ConsoleKey::Backspace=>3,ConsoleKey::Delete=>4,ConsoleKey::Left=>5,ConsoleKey::Right=>6,
+        ConsoleKey::Up=>7,ConsoleKey::Down=>8,ConsoleKey::Home=>9,ConsoleKey::End=>10,ConsoleKey::Escape=>11,
+        _=>return,
+    };
+    let mut up=down;up.flags&=!abi::KEY_DOWN;
+    unsafe {
+        let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return;};
+        if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return;}
+        let accepted=(&mut *(&raw mut INPUT)).push(&[down,up]);
+        crate::runtime::browser::input_pressure(!accepted);
+    }
+    poll(console);
+}
+
+// ------------------------=
+// FUNC: scroll
+// DESC: Maps desktop wheel input to viewport-local Servo coordinates without entering the engine on the UI CPU.
+// ------------------=
+pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
+    if vertical==0 {return false;}
+    let state=console.browser_window_state();
+    let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
+    let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
+    let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32) else{return false;};
+    let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
+    let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
+    let Some((x,y))=layout.content.local(x,y) else{return false;};
+    let mut command=abi::Command::empty();command.kind=abi::SCROLL;
+    command.x=x as i32;command.y=y as i32;command.b=(i32::from(vertical)*48) as u32;
+    unsafe {
+        let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return false;};
+        if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return false;}
+        crate::runtime::browser::input_pressure(!(&mut *(&raw mut INPUT)).push(&[command]));
+    }
+    poll(console);true
+}
 
 // ------------------------=
 // FUNC: poll
@@ -82,6 +134,10 @@ pub(super) fn poll(console:&ConsoleRuntime) {
         let slot=&mut *(&raw mut LAUNCH);
         let Some(launch)=slot.as_mut() else {return;};
         if launch.owner!=SecurityIdentity(console.current_session.0) {launch.stage=3;}
+        if matches!(launch.stage,1|2) {
+            (&mut *(&raw mut INPUT)).drain(16,|command|crate::runtime::browser::submit(launch.owner,command).is_ok());
+            if launch.stage==1 && !(&*(&raw const INPUT)).is_empty() {return;}
+        }
         for _ in 0..2 {
             let mut command=abi::Command::empty();
             match launch.stage {

@@ -70,7 +70,8 @@ impl DisplayDevice {
             }
         }
         let status=offset(layout.status);
-        let message:&[u8]=if view.error!=0 {b"Page could not be loaded. Check permissions and connection."}
+        let message:&[u8]=if view.input_busy {b"Input queue busy. Please retry the last input."}
+            else if view.error!=0 {b"Page could not be loaded. Check permissions and connection."}
             else if view.loading {b"Loading..."} else {b"Ready"};
         self.ui_text_elided_strong(status.x as usize+16*scale,status.y as usize+4*scale,
             status.width as usize-32*scale,message,168,196,216);

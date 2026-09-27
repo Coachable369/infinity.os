@@ -49,6 +49,9 @@ All commands run through `./build-kit run`. Manifests are under
 | `20260927T053555084820Z-77341.json` | Six-window cycling includes browser, wraps correctly and handles an empty window set | Host window-workflow behavior |
 | `20260927T054039406345Z-77993.json` | Authenticated console launch, queued lifecycle/resize and browser-specific repaint scheduling compile | AArch64 compile only |
 | `20260927T054109765351Z-78034.json` | Same launch and repaint path compiles | x86_64 installer compile only |
+| `20260927T054618595998Z-78436.json` | 14 core tests pass, including atomic gesture admission, backpressure retry, FIFO wrap and lifetime clearing | Host behavioral harness |
+| `20260927T054633897630Z-78487.json` | Native keyboard/wheel controller compiles for both kernel targets | Compilation, not installed input proof |
+| `20260927T054725789432Z-78533.json` | Production input FIFO delivers a key press/release pair into real Servo; JavaScript requires both before changing every pixel; history/lifecycle regressions remain passing | AArch64 component guest using unchanged cached engine; not installed OS |
 
 The history test exposed fragment-bearing URLs crossing the native HTTP boundary.
 The adapter now removes fragments only from provider requests, preserving the
@@ -128,6 +131,15 @@ in bounded scene damage. Neither this command path nor its repaint behavior has
 been exercised in an installed guest yet. Toolbar/page input and native user-facing
 permission UX remain required before release. A subsequent small correction retains
 the last submitted viewport across repeated navigation so resize is not suppressed.
+
+Native text/editing keys and wheel deltas now enter a bounded BSP input FIFO.
+Key press/release pairs are admitted atomically. A full queue rejects the whole
+gesture with a visible busy state; it does not report delivery. Admitted releases
+drain before a subsequent navigation. Wheel coordinates are clipped to the content
+viewport. The real component fixture confirms paired delivery and resulting JS
+pixels, but the desktop controller still requires installed interaction testing.
+Address editing, pointer buttons/selection, toolbar action wiring and permission
+UX remain incomplete. The browser remains excluded from release images.
 The kernel boot path retains its loader-owned BootInfo for later authenticated
 launch; it does not launch Servo automatically. Start and command submission are
 bound to one nonzero session owner. Cross-session restart/teardown remains an

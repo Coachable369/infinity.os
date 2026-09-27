@@ -92,10 +92,10 @@ pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(
 pub struct Presentation {
     pub address:[u8;2048],pub address_length:usize,
     pub title:[u8;256],pub title_length:usize,
-    pub loading:bool,pub history:u32,pub error:u32,pub revision:u64,
+    pub loading:bool,pub input_busy:bool,pub history:u32,pub error:u32,pub revision:u64,
 }
 static mut PRESENTATION:Presentation=Presentation{address:[0;2048],address_length:0,title:[0;256],
-    title_length:0,loading:false,history:0,error:0,revision:0};
+    title_length:0,loading:false,input_busy:false,history:0,error:0,revision:0};
 static mut LAST_FRAME_REVISION:u64=0;
 
 // ------------------------=
@@ -103,6 +103,15 @@ static mut LAST_FRAME_REVISION:u64=0;
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+
+// ------------------------=
+// FUNC: input_pressure
+// DESC: Makes rejected whole gestures visible without fabricating a successful key delivery.
+// ------------------=
+pub fn input_pressure(full:bool) {unsafe {
+    let view=&mut *(&raw mut PRESENTATION);
+    if full!=view.input_busy {view.input_busy=full;view.revision=view.revision.wrapping_add(1);}
+}}
 
 // ------------------------=
 // FUNC: poll_presentation

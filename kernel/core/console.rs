@@ -1376,6 +1376,10 @@ impl ConsoleRuntime {
         }
         if self.input_window_assistant(key) {self.redraw();return;}
         if self.mode == ConsoleMode::Desktop {
+            #[cfg(feature="native-browser")]
+            if self.desktop_app==DesktopAppKind::Browser {
+                browser_controller::key(self,key);self.redraw();return;
+            }
             if self.desktop_app == DesktopAppKind::CommandWindow {
                 self.input_console(key);
                 self.redraw();
@@ -6678,6 +6682,9 @@ impl ConsoleRuntime {
         self.spatial_finish_arrival();
         if self.spatial.open {return self.spatial_scroll(vertical);}
         if self.minimized_shelf_scroll(vertical) { return true; }
+        #[cfg(feature="native-browser")]
+        if self.mode==ConsoleMode::Desktop && self.desktop_app==DesktopAppKind::Browser
+            && browser_controller::scroll(self,vertical) {self.redraw();return true;}
         if vertical == 0 {
             return false;
         }

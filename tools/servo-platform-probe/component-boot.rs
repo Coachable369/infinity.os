@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 #[path="../../sdk/infinity-browser-core/worker.rs"] mod abi;
+use abi as worker;
+#[path="../../sdk/infinity-browser-core/input_queue.rs"] mod input_queue;
 #[path="../../sdk/infinity-browser-core/frames.rs"] mod frames;
 #[path="guest/entropy_probe.rs"] mod entropy_probe;
 use core::ffi::c_void;
@@ -18,8 +20,9 @@ static mut RELEASES:u32=0;
 static mut NEXT_ID:u64=0;
 static mut HISTORY:u32=0;
 static mut LOCATION:u32=0;
+static mut INPUT:input_queue::Queue<4>=input_queue::Queue::new();
 static PIXELS:frames::Frames<81920>=frames::Frames::new();
-static HTML:&[u8]=b"<!doctype html><html style='background:red'><script>document.documentElement.style.background='rgb(12,34,56)';document.addEventListener('keydown',e=>{if(e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.altKey&&!e.metaKey&&e.repeat)document.documentElement.style.background='rgb(34,56,78)'})</script></html>";
+static HTML:&[u8]=b"<!doctype html><html style='background:red'><script>let down=false;document.documentElement.style.background='rgb(12,34,56)';document.addEventListener('keydown',e=>{if(e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.altKey&&!e.metaKey&&e.repeat)down=true});document.addEventListener('keyup',e=>{if(down&&e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.repeat)document.documentElement.style.background='rgb(34,56,78)'})</script></html>";
 static HEADERS:&[u8]=b"content-type: text/html\r\n";
 static mut HOST:abi::Host=abi::Host {
     version:abi::VERSION,size:core::mem::size_of::<abi::Host>() as u32,context:core::ptr::null_mut(),
@@ -94,6 +97,7 @@ unsafe extern "C" fn idle(_: *mut c_void) {core::hint::spin_loop();}
 // DESC: Drives open, immediate navigation, resize, close and reopen through the real ABI.
 // ------------------=
 unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
+    if (&mut *(&raw mut INPUT)).drain(1,|value|{out.write(value);true})==1 {return 1;}
     if let Some(frame)=PIXELS.acquire(1) {
         let (width,height)=frame.size();
         let color=if STEP==10 {[34,56,78,255]}else{[12,34,56,255]};
@@ -109,7 +113,12 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
         3=>{value.kind=abi::RESIZE;value.a=160;value.b=96;STEP=4;},
         5=>{value.kind=abi::CLOSE;STEP=6;},
         9=>{value.kind=abi::KEY;value.flags=abi::KEY_DOWN|abi::KEY_REPEAT;value.a='K' as u32;
-            value.b=abi::MOD_SHIFT|abi::MOD_CONTROL;STEP=10;},
+            value.b=abi::MOD_SHIFT|abi::MOD_CONTROL;
+            let mut release=value;release.flags=0;
+            if !(&mut *(&raw mut INPUT)).push(&[value,release]) {finish(1,104);}
+            STEP=10;
+            return (&mut *(&raw mut INPUT)).drain(1,|value|{out.write(value);true}) as u32;
+        },
         11=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/#second";
             value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=12;},
         12 if LOCATION==2 && HISTORY&1!=0=>{value.kind=abi::BACK;STEP=13;},
