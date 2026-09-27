@@ -4,6 +4,8 @@ use std::time::{Duration, Instant};
 use servo::{RenderingContext, Servo, SoftwareRenderingContext, WebView, WebViewBuilder};
 #[path = "../../sdk/infinity-browser-servo/resources.rs"]
 mod resources;
+#[path = "../../sdk/infinity-browser-servo/session.rs"]
+mod session;
 #[cfg(infinity_network_probe)]
 #[path = "../../sdk/infinity-browser-servo/native_https.rs"]
 mod native_https;
@@ -105,6 +107,55 @@ fn verify_resources(engine: &Servo) -> bool {
     drop(view);
     drain_close(engine);
     passed
+}
+
+// ------------------------=
+// FUNC: verify_session
+// DESC: Exercises the production session with real resource loading, resize and dirty RGBA delivery.
+// ------------------=
+fn verify_session(engine: &Servo) -> bool {
+    let starts = Rc::new(Cell::new(0));
+    let cancels = Rc::new(Cell::new(0));
+    let Ok(mut session) = session::Session::new(engine, FixtureProvider {
+        starts: starts.clone(), cancels: cancels.clone(), serial: 0,
+    }, super::monotonic, 128, 128) else { return false; };
+    if session.navigate("file:///secret").is_ok() || session.resize(0, 128).is_ok()
+        || session.resize(2560, 2560).is_ok() || session.navigate("https://adapter.test/").is_err() { return false; }
+    let mut painted = false;
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && !(painted && session.complete()) {
+        if session.pump(engine, |w,h,bytes| {
+            painted = w == 128 && h == 128 && bytes.len() == 128*128*4
+                && bytes.chunks_exact(4).all(|pixel| pixel == [12,34,56,255]);
+        }).is_err() { return false; }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    super::record(2, 21, (u64::from(painted) << 32) | u64::from(starts.get()));
+    if !painted || starts.get() != 15 || session.resize(160, 96).is_err() { return false; }
+    painted = false;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && !painted {
+        if session.pump(engine, |w,h,bytes| {
+            painted = w == 160 && h == 96 && bytes.len() == 160*96*4
+                && bytes.chunks_exact(4).all(|pixel| pixel == [12,34,56,255]);
+        }).is_err() { return false; }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let deadline = Instant::now() + Duration::from_millis(100);
+    while Instant::now() < deadline {
+        if session.pump(engine, |_,_,_| {}).is_err() { return false; }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let mut idle_frames = 0;
+    for _ in 0..50 {
+        if session.pump(engine, |_,_,_| idle_frames += 1).is_err() { return false; }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let location_matches = session.address().as_deref() == Some("https://adapter.test/");
+    drop(session);
+    drain_close(engine);
+    super::record(2, 22, (u64::from(painted) << 32) | u64::from(cancels.get()));
+    painted && cancels.get() == 3 && idle_frames == 0 && location_matches
 }
 
 // ------------------------=
@@ -275,6 +326,7 @@ pub fn verify(engine: &Servo) -> u64 {
     drop(view);
     drain_close(engine);
     if !verify_resources(engine) { return 19; }
+    if !verify_session(engine) { return 21; }
     super::record(2, 11, 9);
     #[cfg(infinity_network_probe)]
     if !network::verify(engine) { return 20; }

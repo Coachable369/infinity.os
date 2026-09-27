@@ -44,6 +44,15 @@ browser as installed before gate 6 passes.
 
 ## Current checkpoint
 
+- Shared engine session added in `sdk/infinity-browser-servo/session.rs`.
+  Guest manifest `20260927T022632587679Z-16112.json` proves initial queued
+  navigation, private RGBA delivery, 128x128 to 160x96 resize, rejection of
+  invalid dimensions/privileged schemes, and zero frame deliveries across 50
+  idle pumps after settling. Fixed an initial-context navigation race by retaining
+  the latest requested URL until the initial document is ready. External HTTPS
+  regression also passes. This is not yet linked into the production desktop;
+  worker/component ABI, shell wiring and installed acceptance remain open.
+
 - External native Servo HTTPS and rendered pixels now pass:
   `20260927T021100949566Z-15169.json`, URL `https://example.com/`. Native
   DNS/TCP/TLS runs through the existing HTTP client/e1000 path, with public

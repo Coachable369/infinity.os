@@ -17,3 +17,11 @@ Current proof: `tools/servo-platform-probe/run-engine-guest.py --page-probe`
 executes real Servo with injected response bytes; `--network-probe` is the
 separate external HTTPS test. Neither is an installed browser. Production
 worker, shell, object storage and installer wiring remain acceptance gates.
+
+`session.rs` owns one WebView and its bounded software surface. It accepts
+navigation, input, history and resize operations on the engine owner thread and
+publishes RGBA bytes only after a ready-frame notification. The host must copy
+these into an owned window surface; no global framebuffer is exposed. Initial
+navigation is retained until the initial document is ready. Guest coverage proves
+resource loading, pixel delivery, resize, idle suppression and invalid-input
+rejection. Production worker/desktop wiring is still pending.
