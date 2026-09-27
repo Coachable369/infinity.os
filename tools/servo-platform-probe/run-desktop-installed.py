@@ -510,14 +510,15 @@ def main():
                 guest.key("end")
                 for _ in range(len("about:blank")):
                     guest.key("backspace")
-                page=b'<body style="margin:0;background:rgb(70,80,90)">Second tab</body>'
-                browser_text(guest,"https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64="+quote(base64.b64encode(page).decode(),safe=""))
+                # A short real URL exercises the same chrome-to-HTTPS path without
+                # spending minutes typing an encoded fixture under cross-ISA TCG.
+                browser_text(guest,"https://example.com/")
                 guest.key("ret")
-                wait_color(guest,"browser-second-tab",check_x,check_y,(70,80,90))
+                wait_color(guest,"browser-second-tab",check_x,check_y,(238,238,238))
                 guest.click(left+90,tab_y)
                 wait_color(guest,"browser-first-tab-restored",check_x,check_y,(255,0,0))
                 guest.click(left+310,tab_y)
-                wait_color(guest,"browser-second-tab-restored",check_x,check_y,(70,80,90))
+                wait_color(guest,"browser-second-tab-restored",check_x,check_y,(238,238,238))
                 guest.click(left+438,tab_y)
                 wait_color(guest,"browser-tab-closed",check_x,check_y,(255,0,0))
                 receipt["native_tab_create_select_close_pixels"]=True
