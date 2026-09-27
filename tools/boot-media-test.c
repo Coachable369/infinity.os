@@ -10,6 +10,37 @@ static EFI_LOADED_IMAGE_PROTOCOL test_loaded;
 static EFI_SIMPLE_FILE_SYSTEM_PROTOCOL test_fs;
 static unsigned calls, fail_at, roots_closed, files_closed;
 static uint8_t present;
+static unsigned range_calls, range_frees, range_mode;
+// ------------------------=
+// FUNC: test_range_allocate
+// DESC: Models firmware refusing one allocation across adjacent conventional-memory descriptors.
+// ------------------=
+static EFI_STATUS EFIAPI test_range_allocate(uint32_t kind, uint32_t type, size_t pages, uint64_t *address) {
+    assert(kind == EFI_ALLOCATE_ADDRESS && type == EFI_LOADER_DATA);
+    ++range_calls;
+    if (pages == 4 || (range_mode == 1 && *address == UINT64_C(0x100000000))) return 1;
+    assert(pages == 2);
+    return EFI_SUCCESS;
+}
+// ------------------------=
+// FUNC: test_range_free
+// DESC: Verifies rollback frees exactly the first successful reservation.
+// ------------------=
+static EFI_STATUS EFIAPI test_range_free(uint64_t address, size_t pages) {
+    assert(address == UINT64_C(0xffffe000) && pages == 2);
+    ++range_frees; return EFI_SUCCESS;
+}
+// ------------------------=
+// FUNC: test_range_map
+// DESC: Supplies unordered descriptors with an optional reserved-memory hole.
+// ------------------=
+static EFI_STATUS EFIAPI test_range_map(size_t *bytes, void *buffer, uint64_t *key, size_t *stride, uint32_t *version) {
+    assert(*bytes >= 80); *bytes = 80; *stride = 40; *key = 1; *version = 1;
+    uint64_t entries[10] = {7, UINT64_C(0x100000000), 0, 2, 0,
+                            7, UINT64_C(0xffffe000), 0, 2, 0};
+    if (range_mode == 2) entries[0] = 0;
+    memcpy(buffer, entries, sizeof(entries)); return EFI_SUCCESS;
+}
 
 // ------------------------=
 // FUNC: test_close
@@ -76,6 +107,14 @@ int main(void) {
     assert(installed_kernel_size_valid(UINT64_C(1024)*1024*1024));
     assert(!installed_kernel_size_valid(UINT64_C(1024)*1024*1024+1));
     EFI_BOOT_SERVICES boot = {0};
+    boot.allocate_pages = test_range_allocate; boot.free_pages = test_range_free;
+    boot.get_memory_map = test_range_map;
+    for (range_mode = 0; range_mode < 3; ++range_mode) {
+        range_calls = range_frees = 0;
+        assert(reserve_kernel_range(&boot, UINT64_C(0xffffe000), UINT64_C(0x100002000)) == (range_mode == 0));
+        assert(range_calls == (range_mode == 2 ? 2u : 3u));
+        assert(range_frees == (range_mode != 0));
+    }
     EFI_SYSTEM_TABLE system = {0};
     boot.handle_protocol = test_protocol;
     system.boot_services = &boot;

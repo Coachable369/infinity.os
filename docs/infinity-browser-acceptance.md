@@ -24,6 +24,14 @@ kernel is approximately 830 MiB. The configuration stamp invalidates kernel
 builds when browser inclusion changes. Installed GUI testing is in progress;
 the normal build still leaves the incomplete browser opt-in.
 
+The first browser-enabled ISO boot exposed a UEFI contiguous-allocation failure
+across memory-map entries, before kernel entry. The loader now falls back to
+descriptor-bounded conventional-RAM reservations and rolls back partial success;
+reserved-memory holes remain fatal. Host behavioral tests cover adjacent ranges,
+allocation failure and reserved holes (`20260927T063005500199Z-81154.json`). The
+firmware scratch space is bounded loader BSS, avoiding an unresolved stack-probe
+runtime dependency. The rebuilt ISO/installed retry is still pending.
+
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.
 3. Verify responsiveness, input, resize, cancellation and window lifecycle in

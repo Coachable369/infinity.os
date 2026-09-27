@@ -16,6 +16,28 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("installed", ROOT / "tools/ms9-installed-acceptance.py")
 base = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(base)
+net_spec = importlib.util.spec_from_file_location("geturl_installed", ROOT / "tools/geturl-installed-test.py")
+network = importlib.util.module_from_spec(net_spec)
+net_spec.loader.exec_module(network)
+
+# ------------------------=
+# FUNC: browser_symbols
+# DESC: Locates read-only engine counters in ELF metadata; acceptance uses their guest values, not symbol strings.
+# ------------------=
+def browser_symbols(elf):
+    output = subprocess.check_output(["/opt/homebrew/opt/llvm/bin/llvm-nm", "-S",
+        "--defined-only", "--demangle", str(elf)], text=True)
+    result = {}
+    for line in output.splitlines():
+        fields = line.split(maxsplit=3)
+        if len(fields) != 4:
+            continue
+        for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK"):
+            if fields[3] in ("infinity_kernel::runtime::browser::" + name,
+                "infinity_kernel::runtime::browser::" + name + " (.0)"):
+                result[name] = (int(fields[0], 16), int(fields[1], 16))
+    assert len(result) == 4
+    return result
 
 class Guest(base.Guest):
     # ------------------------=
@@ -89,10 +111,24 @@ def main():
         receipt["installed"] = True
         guest.stop()
         guest.onboard()
+        network.configure_nat(guest)
         guest.launch("command", 5)
+        counters = browser_symbols(artifacts / "installed-kernel.elf")
         guest.command("https authorize confirm=true")
         guest.command("browser https://example.com/")
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            values = {name: int.from_bytes(guest.memory(address, size), "little")
+                for name, (address, size) in counters.items()}
+            receipt["engine"] = values
+            if values["STATE"] == 3 or values["FAILURE"]:
+                break
+            if values["STATE"] == 2 and values["FRAME_REVISION"] >= 2:
+                break
+            time.sleep(.25)
         guest.screenshot("browser-launch")
+        assert values["STATE"] == 2 and values["FAILURE"] == 0 and values["FRAME_REVISION"] >= 2, receipt
+        receipt["engine_running_with_frames"] = True
         receipt["launch_command_submitted"] = True
         print(json.dumps(dict(work=str(work), **receipt)), flush=True)
     finally:

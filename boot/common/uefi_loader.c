@@ -139,6 +139,7 @@ typedef struct {
 } InfinityFirmwarePointers;
 
 typedef EFI_STATUS (EFIAPI *EFI_ALLOCATE_PAGES)(uint32_t, uint32_t, size_t, uint64_t *);
+typedef EFI_STATUS (EFIAPI *EFI_FREE_PAGES)(uint64_t, size_t);
 typedef EFI_STATUS (EFIAPI *EFI_GET_MEMORY_MAP)(size_t *, void *, uint64_t *, size_t *, uint32_t *);
 typedef EFI_STATUS (EFIAPI *EFI_ALLOCATE_POOL)(uint32_t, size_t, void **);
 typedef EFI_STATUS (EFIAPI *EFI_FREE_POOL)(void *);
@@ -160,7 +161,7 @@ typedef struct {
     void *raise_tpl;
     void *restore_tpl;
     EFI_ALLOCATE_PAGES allocate_pages;
-    void *free_pages;
+    EFI_FREE_PAGES free_pages;
     EFI_GET_MEMORY_MAP get_memory_map;
     EFI_ALLOCATE_POOL allocate_pool;
     EFI_FREE_POOL free_pool;
@@ -839,6 +840,52 @@ static uint8_t boot_media_has_kernel(EFI_HANDLE image, EFI_SYSTEM_TABLE *system)
 }
 
 // ------------------------=
+// FUNC: reserve_kernel_range
+// DESC: Reserves only conventional RAM across firmware descriptor boundaries, rolling back partial reservations.
+// ------------------=
+static int reserve_kernel_range(EFI_BOOT_SERVICES *boot, uint64_t low, uint64_t high) {
+    if (high <= low || (low & PAGE_MASK) || (high & PAGE_MASK)) return 0;
+    uint64_t address = low;
+    if (boot->allocate_pages(EFI_ALLOCATE_ADDRESS, EFI_LOADER_DATA,
+            (size_t)((high-low)/PAGE_SIZE), &address) == EFI_SUCCESS) {
+        if (address == low) return 1;
+        if (boot->free_pages) boot->free_pages(address, (size_t)((high-low)/PAGE_SIZE));
+        return 0;
+    }
+    if (!boot->get_memory_map || !boot->free_pages) return 0;
+    /* Firmware entry is single-threaded. Keep bounded scratch in loader BSS,
+       avoiding a platform stack-probe runtime dependency before kernel entry. */
+    static uint64_t map[4096], reserved[128][2];
+    uint64_t key = 0;
+    size_t bytes = sizeof(map), stride = 0, count = 0;
+    uint32_t version = 0;
+    if (boot->get_memory_map(&bytes, map, &key, &stride, &version) != EFI_SUCCESS
+        || bytes > sizeof(map) || stride < 40 || bytes % stride) return 0;
+    uint64_t cursor = low;
+    while (cursor < high && count < 128) {
+        uint64_t end = cursor;
+        for (size_t at = 0; at < bytes; at += stride) {
+            const uint8_t *entry = (const uint8_t *)map + at;
+            uint32_t type; uint64_t start, pages;
+            memcpy(&type, entry, 4); memcpy(&start, entry+8, 8); memcpy(&pages, entry+24, 8);
+            if (type != 7 || pages > (UINT64_MAX-start)/PAGE_SIZE) continue;
+            uint64_t limit = start + pages*PAGE_SIZE;
+            if (start <= cursor && cursor < limit) {end = limit < high ? limit : high; break;}
+        }
+        if (end == cursor || (end & PAGE_MASK)) break;
+        address = cursor;
+        size_t pages = (size_t)((end-cursor)/PAGE_SIZE);
+        if (boot->allocate_pages(EFI_ALLOCATE_ADDRESS, EFI_LOADER_DATA, pages, &address) != EFI_SUCCESS) break;
+        if (address != cursor) {boot->free_pages(address, pages); break;}
+        reserved[count][0] = cursor; reserved[count++][1] = pages;
+        cursor = end;
+    }
+    if (cursor == high) return 1;
+    while (count) {--count; boot->free_pages(reserved[count][0], (size_t)reserved[count][1]);}
+    return 0;
+}
+
+// ------------------------=
 // FUNC: load_elf
 // DESC: Reads load elf from firmware or device state.
 // ------------------=
@@ -872,8 +919,7 @@ static InfinityLoadedKernel load_elf(EFI_SYSTEM_TABLE *system, const void *image
     }
     if (low == UINT64_MAX || high <= low || header->entry < low || header->entry >= high)
         fail(system, L"ERROR: kernel has no loadable entry\r\n", "ERROR: kernel has no loadable entry\n");
-    uint64_t address = low;
-    if (boot->allocate_pages(EFI_ALLOCATE_ADDRESS, EFI_LOADER_DATA, (size_t)((high - low) / PAGE_SIZE), &address) != EFI_SUCCESS)
+    if (!reserve_kernel_range(boot, low, high))
         fail(system, L"ERROR: unable to allocate kernel pages\r\n", "ERROR: unable to allocate kernel pages\n");
     memset((void *)(uintptr_t)low, 0, (size_t)(high - low));
     for (uint16_t i = 0; i < header->phnum; ++i) {
