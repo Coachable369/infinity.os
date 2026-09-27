@@ -11,7 +11,7 @@ Servo is pinned to `d05154e2b4def11a9fefe412898a0a6c8925a9cd` (0.6).
 | Governed live networking | Real HTTPS, explicit session consent and expired-certificate rejection pass. |
 | Responsive execution | Dedicated engine worker; visible cursor samples during loading 32–337 ms in ARM TCG. Hardware-VM timing is not measured. |
 | Native downloads/storage | Real small attachment persisted as an Object/Namespace file with metadata; no host download path. |
-| Installed default registration | Catalog and minimized shelf work on an unmodified fresh ARM QEMU install; default and model-inclusive build wiring added. Updated normal ISOs still building. |
+| Installed default registration | Catalog and minimized shelf work on an unmodified fresh ARM QEMU install. Focused x86 model-inclusive ISO build passed; current normal ARM media and clean-release validation remain open. |
 | Cold-installed acceptance | ARM QEMU ISO bytes, detached boot, onboarding, reboot, launcher and address navigation pass. x86 installed proof and final build regression pass remain open. |
 
 Clean-build attempts exposed two packaging-check assumptions, now corrected:
@@ -26,7 +26,54 @@ success claim.
 
 ## Latest installed interaction evidence — 2026-09-27
 
-Current x86 cold-install verification exposed low-memory pressure before kernel
+The current tab-enabled ARM installation also passes HTTPS link/back/forward/
+reload verification (`20260927T165600056847Z-59816.json`). Each action checks
+the resulting URL hash, completed-load revision and visible page pixels; no
+engine or network errors occurred. This reused the previously cold-installed
+disk without replacing its kernel. Evidence is retained as
+`builds/evidence/browser-daily-driver/installed-navigation-aarch64.json` and
+`installed-navigation-aarch64.png`.
+
+Focused x86 build `20260927T163105799603Z-44120.json` produced both bootstrap
+test media and the model-inclusive `builds/InfinityOS-x86_64.iso`. It is not a
+clean full-release result. The x86 installation finished and booted into
+media-detached onboarding in `20260927T170120540479Z-60316.json`, but its artifact
+comparison failed: the later model build had overwritten the loose kernel
+reference. The harness now extracts its live kernel and ordered installed-kernel
+shards from the tested ISO itself. The same untouched disk matches all
+868,555,928 installed kernel bytes, SHA-256
+`1988a777eb8f765389b64e5d3b8e77c9bb504e4dae193b93d16833890607aa3c`, with 11
+component references checked. Resume run `20260927T172849910136Z-61049.json`
+completed onboarding and another media-detached authenticated reboot, then
+launched the real engine and rendered HTTPS CSS. Two native HTTP transactions
+completed with status 200, with no recorded network or engine failure. However,
+the image region contained only one color rather than the required image.
+JavaScript, scrolling and tabs were not reached in that run. This remains a
+failed browser acceptance result, not proof of full x86 interaction support.
+Screenshot: `builds/evidence/browser-daily-driver/installed-x86-image-failure.png`.
+The 30-minute TCG timeout changes no integrity checks.
+
+## Current implementation batch and failure queue
+
+- Browser random seeds previously repeated after engine restart within one boot.
+  `browser_entropy.rs` now derives owner/launch-separated HKDF seeds from validated
+  boot entropy, with a nonwrapping boot-lifetime counter. Two behavioral tests
+  passed (`20260927T172648405631Z-60967.json`). Kernel rebuild and installed
+  verification of this change are pending; it is not in the current ISOs.
+- Open: x86 HTTPS image missing despite completed requests. Determine whether
+  response bytes, decoding or rendering failed; do not weaken the pixel check.
+- The interaction runner now records independent image, JavaScript and scrolling
+  failures before returning failure. Infrastructure failures still abort safely.
+  Preserve already-passing install phases and reuse their disk/provenance.
+- Timing coordinates now follow the observed framebuffer dimensions instead of
+  assuming 1024x768. This correction still needs the consolidated timing pass.
+
+Workflow: finish the implementation batch, run consolidated acceptance, record
+all surfaced failures, fix those failures together, then rerun affected checks
+and necessary regressions. Passing installation steps are not repeated unless
+packaging or boot behavior changed.
+
+Earlier x86 cold-install verification exposed low-memory pressure before kernel
 entry: firmware's maximum-address allocation still staged the large ELF below
 3 GiB, overlapping its fixed load reservation. The loader now explicitly selects
 conventional high RAM from the firmware map. The separate native runtime pool

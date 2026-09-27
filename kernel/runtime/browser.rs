@@ -4,6 +4,9 @@ use core::{ffi::c_void,sync::atomic::{AtomicPtr,AtomicU32,AtomicU64,Ordering}};
 use infinity_browser_core::{worker as abi,mailbox::Mailbox,frames::Frames};
 use crate::http_transport::{rand_chacha::ChaCha20Rng,rand_core::{RngCore,SeedableRng}};
 use super::{execution::SecurityIdentity,capability::CapabilityId};
+#[path="browser_entropy.rs"]
+mod browser_entropy;
+static RANDOM_SEEDS:browser_entropy::Seeds=browser_entropy::Seeds::new();
 const HEAP_BYTES:usize=512*1024*1024;
 // A page-aligned 512 MiB grant always contains a 256 MiB aligned buddy arena.
 // It occupies loader-owned BSS, not installer payload bytes or the framebuffer.
@@ -105,9 +108,8 @@ pub unsafe fn start(owner:SecurityIdentity,caps:[CapabilityId;4])->bool {
     if info.firmware_entropy_valid!=1 {return false;}
     let Some(seconds)=crate::console::certificate_time(info.firmware_runtime_services) else{return false;};
     if !crate::drivers::browser_network::configure(owner,caps) {return false;}
-    use sha2::{Digest,Sha256};
-    let mut hash=Sha256::new();hash.update(b"InfinityOS native browser RNG v1");hash.update(info.firmware_entropy);
-    RNG=Some(ChaCha20Rng::from_seed(hash.finalize().into()));
+    let Some(seed)=RANDOM_SEEDS.derive(&info.firmware_entropy,&owner.0) else{return false;};
+    RNG=Some(ChaCha20Rng::from_seed(seed));
     UTC=seconds;EPOCH_NS=super::ai::qwen::workers::clock_ns();
     HOST.heap=core::ptr::addr_of_mut!(HEAP.0).cast();
     OWNER[0].store(u64::from_le_bytes(owner.0[..8].try_into().unwrap()),Ordering::Release);

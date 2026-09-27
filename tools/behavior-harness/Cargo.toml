@@ -139,3 +139,7 @@ path = "../milestone-11-compute-test.rs"
 [[bin]]
 name = "ministral-native-test"
 path = "../ministral-native-test.rs"
+
+[[bin]]
+name = "browser-entropy-test"
+path = "../browser-entropy-test.rs"

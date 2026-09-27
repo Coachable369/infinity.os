@@ -8,15 +8,62 @@ import importlib.util
 import argparse
 import base64
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
 import socket
 import subprocess
 import time
+import tempfile
+from contextlib import contextmanager
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# ------------------------=
+# FUNC: acceptance_case
+# DESC: Records independent behavioral failures without skipping later checks; transport and infrastructure exceptions remain fatal.
+# ------------------=
+@contextmanager
+def acceptance_case(receipt, name):
+    result = {"case": name, "passed": False}
+    receipt.setdefault("cases", []).append(result)
+    try:
+        yield result
+    except AssertionError as error:
+        result["failure"] = str(error)
+    else:
+        result["passed"] = True
+
+# ------------------------=
+# FUNC: extract_media_kernels
+# DESC: Uses the tested ISO's own live ELF and ordered payload shards, never a loose artifact overwritten by a later build.
+# ------------------=
+def extract_media_kernels(iso, artifacts, arch):
+    assert artifacts.resolve().is_relative_to(ROOT / "build")
+    machine={"x86_64":62,"aarch64":183}[arch]
+    with tempfile.TemporaryDirectory(prefix="browser-media-",dir=ROOT / "build" / "tmp") as temporary:
+        temporary=Path(temporary)
+        subprocess.run(["xorriso","-osirrox","on","-indev",str(iso),
+            "-extract","/EFI/INFINITY/KERNEL.ELF",str(temporary/"live.elf"),
+            "-extract","/EFI/INFINITY/PAYLOAD",str(temporary/"payload")],check=True)
+        parts=sorted((temporary/"payload").glob("P1-*.BIN"))
+        assert parts and len(parts)<=8
+        assert [part.name for part in parts]==[f"P1-{index:03}.BIN" for index in range(len(parts))]
+        assert 0<sum(part.stat().st_size for part in parts)<=1024**3
+        with (temporary/"installed.elf").open("wb") as output:
+            for part in parts:
+                with part.open("rb") as source: shutil.copyfileobj(source,output,1024*1024)
+        receipt={}
+        for source,name in [(temporary/"live.elf","kernel.elf"),(temporary/"installed.elf","installed-kernel.elf")]:
+            with source.open("rb") as stream:
+                header=stream.read(20)
+                assert header[:6]==b"\x7fELF\x02\x01" and int.from_bytes(header[18:20],"little")==machine
+                stream.seek(0)
+                receipt[name]=dict(bytes=source.stat().st_size,sha256=hashlib.file_digest(stream,"sha256").hexdigest())
+            shutil.copyfile(source,artifacts/name)
+        return receipt
 
 # ------------------------=
 # FUNC: interaction_url
@@ -109,8 +156,9 @@ def pointer_pixel_latency(guest, direction):
     # ------------------=
     def region():
         width,height,pixels=read_pixels(guest.screenshot("browser-pointer-timing"))
-        assert (width,height)==(1024,768)
-        return b"".join(pixels[(y*width+940)*3:(y*width+1024)*3] for y in range(670,750))
+        assert (width,height)==(guest.width,guest.height)
+        return b"".join(pixels[(y*width+width-84)*3:(y*width+width)*3]
+                        for y in range(height-98,height-18))
     before=region()
     began=time.monotonic()
     guest.qmp("input-send-event",{"events":[{"type":"rel","data":{"axis":"x","value":direction*2}}]})
@@ -246,6 +294,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch",choices=("aarch64","x86_64"),default="aarch64")
     parser.add_argument("--reuse-installed", type=Path)
+    parser.add_argument("--resume-onboarding",action="store_true",help="Resume a completed disposable installation, reverify against its original ISO and finish onboarding")
     parser.add_argument("--iso-parity", action="store_true", help="Cold-install the browser QEMU ISO without any offline kernel replacement")
     parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
     parser.add_argument("--navigation", action="store_true", help="Verify real HTTPS link/back/forward/reload through URL state and distinct page pixels")
@@ -274,6 +323,8 @@ def main():
     if args.interaction and (args.download or args.launcher or args.navigation):
         parser.error("Interaction acceptance is a separate bounded run")
     reuse = args.reuse_installed is not None
+    if args.resume_onboarding and (not reuse or args.update_kernel):
+        parser.error("Onboarding resume requires a reused disk without a kernel update")
     if args.arch=="x86_64" and not (reuse or args.iso_parity):
         parser.error("x86 verification requires unmodified ISO installation or a previously verified disk")
     if args.iso_parity and (reuse or args.update_kernel):
@@ -290,6 +341,7 @@ def main():
         ("build/x86_64/kernel.elf" if args.arch=="x86_64" else "build/aarch64/kernel-qemu.elf", "kernel.elf"),
         ("build/x86_64/installed-kernel.elf" if args.arch=="x86_64" else "build/aarch64/installed-kernel-qemu.elf" if args.iso_parity else "build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")]):
         shutil.copyfile(ROOT / source, artifacts / name)
+    media_kernels=extract_media_kernels(artifacts/"installer.iso",artifacts,args.arch) if args.iso_parity or args.resume_onboarding else None
     if args.update_kernel:
         shutil.copyfile(args.update_kernel.resolve(), artifacts / "installed-kernel.elf")
     subprocess.run(["/opt/homebrew/opt/llvm/bin/llvm-objcopy", "--strip-debug",
@@ -302,6 +354,7 @@ def main():
     guest.fast_commands = args.interaction
     guest.patched = args.iso_parity or (reuse and args.update_kernel is None)
     receipt = dict(architecture=args.arch,installed=reuse, browser_iso_parity=False, browser_interactive=False)
+    if media_kernels is not None: receipt["iso_kernel_artifacts"]=media_kernels
     try:
         if not reuse:
             guest.install()
@@ -311,12 +364,18 @@ def main():
                 subprocess.run(["python3",str(ROOT/"tools/update-installed-clone.py"),str(guest.disk),
                     str(artifacts/"installed-kernel.elf"),"--verify-only"],check=True)
                 receipt["browser_iso_parity"]=True
-        if reuse:
+        if args.resume_onboarding:
+            subprocess.run(["python3",str(ROOT/"tools/update-installed-clone.py"),str(guest.disk),
+                str(artifacts/"installed-kernel.elf"),"--verify-only"],check=True)
+            receipt["browser_iso_parity"]=True
+            receipt["resumed_completed_installation"]=True
+            guest.onboard()
+        elif reuse:
             guest.boot(False)
             guest.authenticate()
         else:
             guest.onboard()
-        if not reuse:
+        if not reuse or args.resume_onboarding:
             network.configure_nat(guest)
         counters = browser_symbols(artifacts / "installed-kernel.elf")
         if args.measure or args.lifecycle or args.reopen:
@@ -337,7 +396,8 @@ def main():
             if args.measure:
                 assert int.from_bytes(guest.memory(*counters["STATE"]),"little")==0
                 guest.text(command)
-                guest.click(970,700,press=False)
+                guest.width,guest.height,_=read_pixels(guest.screenshot("browser-timing-display"))
+                guest.click(guest.width-54,guest.height-68,press=False)
                 cpu_started=process_cpu_seconds(guest.process.pid)
                 submitted=time.monotonic()
                 guest.key("ret")
@@ -390,9 +450,9 @@ def main():
         if args.measure:
             assert "page_complete_seconds" in receipt and values["PAGE_ERROR"]==0,receipt
             receipt["timing_boundary"]=f"QMP Enter submission to observed framebuffer/engine completion; {args.arch} TCG, 4 vCPU, 12 GiB; polling upper bounds"
-            guest.click(970,700)
+            guest.click(guest.width-54,guest.height-68,press=False)
             receipt["pointer_visible_roundtrip_seconds"]=[pointer_pixel_latency(guest,1 if index%2==0 else -1) for index in range(10)]
-            guest.click(889,111)
+            guest.key("ctrl","w")
             deadline=time.monotonic()+30
             while time.monotonic()<deadline:
                 peak=int.from_bytes(guest.memory(*counters["PEAK"]),"little")
@@ -407,23 +467,26 @@ def main():
         if args.interaction:
             left,top,right,bottom=page_color_bounds(guest)
             check_x,check_y=right-32,min(bottom-32,top+210)
-            wait_color(guest,"browser-css",check_x,check_y,(18,52,86))
-            width,height,pixels=read_pixels(guest.screenshot("browser-image"))
-            image_colors={pixels[(y*width+x)*3:(y*width+x)*3+3] for y in range(top+44,top+139) for x in range(left+4,left+98)}
-            assert len(image_colors)>32,{"image_colors":len(image_colors)}
-            receipt["https_image_and_css"]=True
-            guest.click(left+43,top+10)
-            guest.key("a")
-            wait_color(guest,"browser-js-input",check_x,check_y,(0,255,0))
-            receipt["keyboard_javascript_dom_mutation"]=True
-            guest.click(check_x,check_y)
-            for _ in range(32):
-                for down in (True,False):
-                    guest.qmp("input-send-event",{"events":[{"type":"btn","data":{"button":"wheel-down","down":down}}]})
-                time.sleep(.1)
-            wait_color(guest,"browser-scroll",check_x,check_y,(255,0,0))
-            receipt["scroll_pixels"]=True
-            receipt["browser_interactive"]=True
+            with acceptance_case(receipt,"https_css_image"):
+                wait_color(guest,"browser-css",check_x,check_y,(18,52,86))
+                width,height,pixels=read_pixels(guest.screenshot("browser-image"))
+                image_colors={pixels[(y*width+x)*3:(y*width+x)*3+3] for y in range(top+44,top+139) for x in range(left+4,left+98)}
+                assert len(image_colors)>32,{"image_colors":len(image_colors)}
+                receipt["https_image_and_css"]=True
+            with acceptance_case(receipt,"keyboard_javascript"):
+                guest.click(left+43,top+10)
+                guest.key("a")
+                wait_color(guest,"browser-js-input",check_x,check_y,(0,255,0))
+                receipt["keyboard_javascript_dom_mutation"]=True
+            with acceptance_case(receipt,"scroll"):
+                guest.click(check_x,check_y)
+                for _ in range(32):
+                    for down in (True,False):
+                        guest.qmp("input-send-event",{"events":[{"type":"btn","data":{"button":"wheel-down","down":down}}]})
+                    time.sleep(.1)
+                wait_color(guest,"browser-scroll",check_x,check_y,(255,0,0))
+                receipt["scroll_pixels"]=True
+            receipt["browser_interactive"]=all(case["passed"] for case in receipt["cases"])
             if args.tabs:
                 # Bounds come from rendered page pixels, not a guessed desktop position.
                 # This fixture uses the native scale-one 136px chrome layout.
@@ -526,6 +589,7 @@ def main():
                 wait_color(guest,"browser-"+label,right-32,bottom-32,(18,52,86) if label=="back" else (70,80,90))
             receipt["https_navigation_state_and_pixels"] = True
         print(json.dumps(dict(work=str(work), **receipt)), flush=True)
+        assert all(case["passed"] for case in receipt.get("cases", [])), receipt.get("cases")
     finally:
         (work / "result.json").write_text(json.dumps(receipt, indent=2) + "\n")
         guest.stop()

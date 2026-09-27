@@ -22,6 +22,7 @@ python3 tools/iso-staging-test.py
 python3 tools/re-provision-tpm-test.py
 make install-boot-handoff-test
 cargo test --manifest-path sdk/infinity-browser-core/Cargo.toml
+CARGO_TARGET_DIR=build/behavior-harness cargo test --manifest-path tools/behavior-harness/Cargo.toml --bin browser-entropy-test
 
 echo "==> Building InfinityOS for x86_64 and AArch64"
 
