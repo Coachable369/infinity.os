@@ -13,6 +13,7 @@ pub mod pointer;
 pub mod tabs;
 pub mod time_travel;
 pub mod omnibox;
+pub mod damage;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Navigation(u64);

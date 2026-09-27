@@ -26,6 +26,15 @@ Status: **in progress; not accepted, not a daily-driver release.**
 
 ## Implemented in this increment
 
+- Browser address/caret/title-only changes now invalidate native chrome instead
+  of discarding the retained page surface. A shared `damage::PageKey` tracks
+  page frames, active tab, error/permission/download state, loading and input
+  pressure; changes to those still require a full browser update. Both retained
+  surface invalidation and desktop damage use this distinction. The clipped
+  chrome paint returns before copying page pixels. This source optimization
+  awaits compilation, installed regression checks and before/after timings;
+  no latency reduction is claimed yet.
+
 - Omnibox Ctrl/Cmd+L now selects the entire draft; typing replaces it, deletion
   clears it, and Home/Left or End/Right collapse the selection to the expected
   edge. Ctrl/Cmd+A selects the focused omnibox. The native painter shows the

@@ -141,6 +141,7 @@ pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
+    pub frame_revision:u64,
     pub tabs:[TabPresentation;8],pub tab_count:usize,pub active_tab:u32,
     pub permission:u8,
     pub download_name:[u8;63],pub download_length:usize,pub download_state:u8,
@@ -152,7 +153,7 @@ pub struct Presentation {
 #[derive(Clone,Copy)]
 pub struct TabPresentation {pub id:u32,pub title:[u8;256],pub length:usize}
 const EMPTY_TAB:TabPresentation=TabPresentation{id:0,title:[0;256],length:0};
-static mut PRESENTATION:Presentation=Presentation{address:[0;2048],address_length:0,title:[0;256],
+static mut PRESENTATION:Presentation=Presentation{frame_revision:0,address:[0;2048],address_length:0,title:[0;256],
     tabs:[EMPTY_TAB;8],tab_count:0,active_tab:0,
     permission:0,
     download_name:[0;63],download_length:0,download_state:0,
@@ -160,6 +161,19 @@ static mut PRESENTATION:Presentation=Presentation{address:[0;2048],address_lengt
     title_length:0,loading:false,input_busy:false,history:0,error:0,revision:0};
 static mut LAST_FRAME_REVISION:u64=0;
 static mut LAST_VIEW_REVISION:u64=0;
+
+impl Presentation {
+    // ------------------------=
+    // FUNC: page_key
+    // DESC: Separates engine/content changes from native address, caret, title and tab-label updates.
+    // ------------------=
+    pub fn page_key(&self)->infinity_browser_core::damage::PageKey {
+        infinity_browser_core::damage::PageKey {frame:self.frame_revision,tab:self.active_tab,
+            error:self.error,permission:self.permission,download:self.download_state,
+            download_content:self.download_name[..self.download_length].iter().fold(0u64,|hash,byte|hash.wrapping_mul(131).wrapping_add(*byte as u64)),
+            loading:self.loading,busy:self.input_busy}
+    }
+}
 
 // ------------------------=
 // FUNC: presentation
@@ -270,6 +284,7 @@ pub fn poll_presentation()->bool {
     unsafe {
         let view=&mut *(&raw mut PRESENTATION);
         let frame=FRAME_REVISION.load(Ordering::Acquire);
+        view.frame_revision=frame;
         let mut changed=frame!=LAST_FRAME_REVISION || view.revision!=LAST_VIEW_REVISION;
         let caret_visible=(super::ai::qwen::workers::clock_ns()/500_000_000)%2==0;
         if view.address_focused && caret_visible!=view.caret_visible {view.caret_visible=caret_visible;changed=true;}

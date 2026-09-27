@@ -12,6 +12,7 @@ static mut THINKING_ANIMATION: crate::ui::thinking::ThinkingAnimation =
     crate::ui::thinking::ThinkingAnimation::new();
 static mut THINKING_HEADER_DIRTY: bool = false;
 static mut LAST_BROWSER_REVISION:u64=0;
+static mut LAST_BROWSER_PAGE_KEY:Option<infinity_browser_core::damage::PageKey>=None;
 
 // ------------------------=
 // FUNC: thinking_animation_tick
@@ -10551,11 +10552,25 @@ pub fn system_ui_present(
                     window_maximized,
                 );
             let content_changed = console.last_system_content != content;
-            let browser_revision={
+            let (browser_revision,browser_page_key)={
                 #[cfg(feature="native-browser")]
-                {crate::runtime::browser::presentation().revision}
+                {let view=crate::runtime::browser::presentation();(view.revision,Some(view.page_key()))}
                 #[cfg(not(feature="native-browser"))]
-                {0}
+                {(0,None)}
+            };
+            let browser_chrome_only=browser_page_key.is_some_and(|key|
+                infinity_browser_core::damage::chrome_only(LAST_BROWSER_PAGE_KEY,key));
+            LAST_BROWSER_PAGE_KEY=browser_page_key;
+            let browser_damage_rect={
+                let state=crate::console::browser_window();
+                let mut rect=layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
+                let scale=layout.scale().max(1).min((rect.width as usize/760).max(1));
+                if browser_chrome_only {
+                    if let Some(chrome)=infinity_browser_core::layout::Layout::new(rect.width,rect.height,scale as u32) {
+                        rect.height=chrome.content.y.max(0) as u32;
+                    }
+                }
+                rect
             };
             let browser_changed=core::mem::replace(&mut *(&raw mut LAST_BROWSER_REVISION),browser_revision)!=browser_revision
                 && crate::console::browser_window().visible && matches!(screen,2|4|8|9|10|11);
@@ -10804,8 +10819,7 @@ pub fn system_ui_present(
                         (rect, rect, false)
                     } else if browser_changed && !content_changed && !window_moved && !window_resized
                         && !app_window_geometry_changed && !settings_geometry_changed {
-                        let state=crate::console::browser_window();
-                        let rect=layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
+                        let rect=browser_damage_rect;
                         (rect,rect,false)
                     } else if screen == 2 && (window_moved || window_resized) {
                         let current = console.display.desktop_window_rect(
@@ -10904,9 +10918,7 @@ pub fn system_ui_present(
                     padding,
                 );
                 if browser_changed {
-                    let state=crate::console::browser_window();
-                    let rect=layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
-                    damages[0]=damages[0].union(rect);
+                    damages[0]=damages[0].union(browser_damage_rect);
                 }
                 let union_pixels = damages[0].width as u64 * damages[0].height as u64;
                 let split_pixels = split_damages

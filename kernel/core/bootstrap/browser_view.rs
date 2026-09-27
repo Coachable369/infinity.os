@@ -5,6 +5,7 @@ use crate::ui::system_layout::DesktopAppWindowState;
 const ICON:&[u8]=include_bytes!("../../../assets/apps/infinity-browser-icon-v1.bmp");
 const NAV:&[u8]=include_bytes!("../../../assets/apps/infinity-browser-navigation-v1.bmp");
 static mut REVISION:Option<u64>=None;
+static mut PAGE_KEY:Option<infinity_browser_core::damage::PageKey>=None;
 static mut FRAME:Option<Frame<'static,16384000>>=None;
 
 // ------------------------=
@@ -22,14 +23,22 @@ impl DisplayDevice {
         let window=crate::ui::system_layout::SystemLayout::new(self.width,self.height)
             .desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
         let view=crate::runtime::browser::presentation();
+        let scale=self.ui_scale().max(1).min((window.width as usize/760).max(1));
+        let Some(layout)=Layout::new(window.width,window.height,scale as u32) else {return;};
         if !self.recording_surface {
-            unsafe {super::retained_windows::invalidate_revision(12,&mut *(&raw mut REVISION),Some(view.revision));}
+            unsafe {
+                if REVISION!=Some(view.revision) && infinity_browser_core::damage::chrome_only(PAGE_KEY,view.page_key()) {
+                    super::retained_windows::invalidate_region(12,super::PresentRegion {
+                        left:window.x.max(0) as usize,top:window.y.max(0) as usize,
+                        right:window.right().max(0) as usize,bottom:(window.y+layout.content.y).max(0) as usize});
+                    REVISION=Some(view.revision);
+                } else {super::retained_windows::invalidate_revision(12,&mut *(&raw mut REVISION),Some(view.revision));}
+                PAGE_KEY=Some(view.page_key());
+            }
             self.retained_window(12,(window.x.max(0) as usize,window.y.max(0) as usize,
                 window.width as usize,window.height as usize),|display|display.browser_window(state));
             return;
         }
-        let scale=self.ui_scale().max(1).min((window.width as usize/760).max(1));
-        let Some(layout)=Layout::new(window.width,window.height,scale as u32) else {return;};
         let left=window.x.max(0) as usize;let top=window.y.max(0) as usize;
         self.glass_panel(left,top,window.width as usize,window.height as usize,true);
         let offset=|r:Viewport|Viewport{x:r.x+window.x,y:r.y+window.y,..r};
@@ -89,6 +98,8 @@ impl DisplayDevice {
         let go=offset(layout.go);
         self.polished_button(go.x as usize,go.y as usize,go.width as usize,go.height as usize,b"Go",true,false);
         let content=offset(layout.content);
+        if self.clipped_render_region(content.x.max(0) as usize,content.y.max(0) as usize,
+            content.width as usize,(window.bottom()-(content.y)).max(0) as usize).is_none() {return;}
         self.fill_rect(content.x as usize,content.y as usize,content.width as usize,content.height as usize,247,248,250);
         if view.error!=0 {
             self.ui_text_elided_strong(content.x as usize+32*scale,content.y as usize+32*scale,
