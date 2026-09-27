@@ -18,10 +18,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--swgl-probe", action="store_true")
     parser.add_argument("--page-probe", action="store_true")
+    parser.add_argument("--network-probe", action="store_true")
     options = parser.parse_args()
+    if options.network_probe:
+        options.page_probe = True
     subprocess.run(["python3",str(Path(__file__).with_name("link-engine.py")),"--boot-probe"] +
                    (["--swgl-probe"] if options.swgl_probe else []) +
-                   (["--page-probe"] if options.page_probe else []),check=True)
+                   (["--page-probe"] if options.page_probe else []) +
+                   (["--network-probe"] if options.network_probe else []),check=True)
     output=root / "build/servo-platform-probe"
     result=output / "engine-boot.bin"
     result.unlink(missing_ok=True)
@@ -29,12 +33,15 @@ def main():
     registers=None
     monitor=output / "engine-qmp.sock"
     monitor.unlink(missing_ok=True)
-    process=subprocess.Popen(["qemu-system-aarch64","-machine","virt","-accel","tcg","-cpu","max",
+    process=subprocess.Popen(["qemu-system-aarch64","-machine","virt,highmem=off","-accel","tcg","-cpu","max",
             "-m","2G","-display","none","-serial","file:"+str(result),"-monitor","none",
             "-qmp","unix:"+str(monitor)+",server=on,wait=off",
-            "-kernel",str(output / "engine-boot.elf")])
+            "-kernel",str(output / "engine-boot.elf")] +
+            (["-netdev","user,id=browser","-device","e1000,netdev=browser,addr=1",
+              "-object","filter-dump,id=packets,netdev=browser,file="+str(output / "browser-network.pcap")]
+             if options.network_probe else []))
     try:
-        process.wait(timeout=45)
+        process.wait(timeout=90 if options.network_probe else 45)
     except subprocess.TimeoutExpired:
         timed_out=True
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
@@ -63,9 +70,13 @@ def main():
     page_passed = [9,2,9,1] in records
     if options.page_probe:
         passed = passed and page_passed
+    network_passed = [9,2,16,1] in records
+    if options.network_probe:
+        passed = passed and network_passed
     diagnostics={str(kind):b"".join(struct.pack("<Q",r[3]) for r in records if r[:3]==[9,4,kind]).rstrip(b"\0").decode(errors="replace") for kind in (6,7)}
     report={"passed":passed,"timed_out":timed_out,"records":[r for r in records if r[1]!=4],"diagnostics":diagnostics,"registers":registers,"installed_os":False,"page_rendered":page_passed}
     report["software_raster_verified"] = raster_passed
+    report["external_https_verified"] = network_passed
     (output / "engine-boot.json").write_text(json.dumps(report,indent=2)+"\n")
     print(json.dumps(report,indent=2))
     return 0 if passed else 1

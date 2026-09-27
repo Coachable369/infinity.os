@@ -1,0 +1,14 @@
+[package]
+name = "infinity-browser-native-network"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+infinity-http = { path = "../../../kernel/runtime/http" }
+webpki-roots = { version = "1", default-features = false }
+
+[lib]
+path = "lib.rs"

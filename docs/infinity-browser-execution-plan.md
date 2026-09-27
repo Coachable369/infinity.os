@@ -44,6 +44,22 @@ browser as installed before gate 6 passes.
 
 ## Current checkpoint
 
+- External native Servo HTTPS and rendered pixels now pass:
+  `20260927T021100949566Z-15169.json`, URL `https://example.com/`. Native
+  DNS/TCP/TLS runs through the existing HTTP client/e1000 path, with public
+  certificate validation. The next gate is production desktop worker/surface
+  integration, not more inline-page mocks. Installed acceptance remains open.
+
+- Native Servo resource interception passes in
+  `20260927T015501179582Z-9991.json`: external-style document, CSS and JavaScript
+  loads cross the bounded adapter, denied-image failure is observed in DOM state,
+  and painted pixels match the stylesheet. Responses in this test are injected;
+  this is not live HTTPS or installed proof. The adapter handles main-frame and
+  subresource loads, explicit rejection, queue bounds, deadlines and cancellation.
+  Live native DNS/TCP/TLS wiring is the active next test, followed by the desktop
+  engine worker/surface boundary and installed packaging. Items 1–6 remain open
+  until their installed acceptance has passed.
+
 - Expanded native page proof now passes pointer/keyboard, navigation/reload,
   history and scrolling: `20260926T224911285190Z-76406.json`. Shared bounded
   TLS exhaustion/reuse passes on both CPU guests. External network and installed

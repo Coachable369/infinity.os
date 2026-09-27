@@ -2,6 +2,122 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 use servo::{RenderingContext, Servo, SoftwareRenderingContext, WebView, WebViewBuilder};
+#[path = "../../sdk/infinity-browser-servo/resources.rs"]
+mod resources;
+#[cfg(infinity_network_probe)]
+#[path = "../../sdk/infinity-browser-servo/native_https.rs"]
+mod native_https;
+#[cfg(infinity_network_probe)]
+#[path = "engine-network.rs"]
+mod network;
+
+struct ResourceDelegate<P: resources::Provider> {
+    resources: Rc<resources::Resources<P>>,
+    repaint: Rc<Cell<bool>>,
+    loaded: Rc<Cell<u8>>,
+}
+impl<P: resources::Provider> servo::WebViewDelegate for ResourceDelegate<P> {
+    // ------------------------=
+    // FUNC: load_web_resource
+    // DESC: Routes actual Servo document and subresource loads through the shared adapter.
+    // ------------------=
+    fn load_web_resource(&self, _view: WebView, load: servo::WebResourceLoad) { self.resources.submit(load); }
+    // ------------------------=
+    // FUNC: notify_new_frame_ready
+    // DESC: Defers painting until outside the engine callback.
+    // ------------------=
+    fn notify_new_frame_ready(&self, _view: WebView) { self.repaint.set(true); }
+    // ------------------------=
+    // FUNC: notify_load_status_changed
+    // DESC: Observes completion of the real intercepted document load.
+    // ------------------=
+    fn notify_load_status_changed(&self, _view: WebView, status: servo::LoadStatus) {
+        if status == servo::LoadStatus::Complete { self.loaded.set(1); }
+    }
+}
+
+struct FixtureProvider { starts: Rc<Cell<u32>>, cancels: Rc<Cell<u32>>, serial: u64 }
+impl resources::Provider for FixtureProvider {
+    // ------------------------=
+    // FUNC: begin
+    // DESC: Injects deterministic resources for adapter testing, not wire-network acceptance.
+    // ------------------=
+    fn begin(&mut self, url: &str) -> Result<u64, ()> {
+        let kind = match url {
+            "https://adapter.test/" => 1,
+            "https://adapter.test/style.css" => 2,
+            "https://adapter.test/script.js" => 3,
+            _ => { self.starts.set(self.starts.get() | 8); return Err(()); }
+        };
+        self.starts.set(self.starts.get() | (1 << (kind - 1)));
+        self.serial += 1;
+        Ok((self.serial << 8) | kind)
+    }
+    // ------------------------=
+    // FUNC: poll
+    // DESC: Supplies fixture bytes to real Servo parsing, stylesheet loading and JavaScript execution.
+    // ------------------=
+    fn poll(&mut self, id: u64) -> Result<Option<resources::Response>, ()> {
+        let (media, body) = match id & 255 {
+            1 => ("text/html", "<!doctype html><link rel=stylesheet href=/style.css><script src=/script.js></script><body><img src=https://denied.test/no.png onerror=\"document.body.dataset.denied='yes'\"></body>"),
+            2 => ("text/css", "html{background:rgb(12,34,56)}body{margin:0}img{display:none}"),
+            3 => ("application/javascript", "window.adapterResult=6*7;"),
+            _ => return Err(()),
+        };
+        Ok(Some(resources::Response { status: 200,
+            headers: std::vec![("content-type".into(), media.into())], body: body.as_bytes().to_vec() }))
+    }
+    // ------------------------=
+    // FUNC: cancel
+    // DESC: Counts released operations so successful loads cannot leak service handles.
+    // ------------------=
+    fn cancel(&mut self, _id: u64) { self.cancels.set(self.cancels.get() + 1); }
+}
+
+// ------------------------=
+// FUNC: verify_resources
+// DESC: Proves real Servo interception, external CSS/JS processing and fail-closed resource denial.
+// ------------------=
+fn verify_resources(engine: &Servo) -> bool {
+    let starts = Rc::new(Cell::new(0));
+    let cancels = Rc::new(Cell::new(0));
+    let resources = Rc::new(resources::Resources::new(FixtureProvider {
+        starts: starts.clone(), cancels: cancels.clone(), serial: 0,
+    }, super::monotonic));
+    engine.set_delegate(resources.clone());
+    let repaint = Rc::new(Cell::new(false));
+    let loaded = Rc::new(Cell::new(0));
+    let Ok(context) = SoftwareRenderingContext::new((128, 128).into()) else { return false; };
+    let view = WebViewBuilder::new(engine, Rc::new(context))
+        .delegate(Rc::new(ResourceDelegate { resources: resources.clone(), repaint: repaint.clone(), loaded: loaded.clone() }))
+        .url("https://adapter.test/".parse().unwrap()).build();
+    view.show();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while loaded.get() == 0 && Instant::now() < deadline {
+        engine.spin_event_loop(); resources.pump();
+        if repaint.replace(false) { view.paint(); }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let passed = loaded.get() == 1 && starts.get() == 15 && cancels.get() == 3
+        && javascript_true(engine, &view, &repaint, "window.adapterResult===42 && document.body.dataset.denied==='yes'")
+        && pixels_match(engine, &view, &repaint, [12,34,56,255]);
+    resources.close();
+    drop(view);
+    drain_close(engine);
+    passed
+}
+
+// ------------------------=
+// FUNC: drain_close
+// DESC: Lets asynchronous document teardown release native worker slots before opening another context.
+// ------------------=
+fn drain_close(engine: &Servo) {
+    let deadline = Instant::now() + Duration::from_millis(100);
+    while Instant::now() < deadline {
+        engine.spin_event_loop();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+}
 
 struct PageDelegate { repaint: Rc<Cell<bool>>, loaded: Rc<Cell<u8>>, input: Rc<Cell<u8>> }
 impl servo::WebViewDelegate for PageDelegate {
@@ -156,5 +272,11 @@ pub fn verify(engine: &Servo) -> u64 {
     view.notify_scroll_event(servo::Scroll::End, servo::WebViewPoint::Device((64.0, 64.0).into()));
     if !pixels_match(engine, &view, &repaint, [0, 0, 255, 255]) { super::finish(1, 9, 18); }
     super::record(2, 11, 8);
+    drop(view);
+    drain_close(engine);
+    if !verify_resources(engine) { return 19; }
+    super::record(2, 11, 9);
+    #[cfg(infinity_network_probe)]
+    if !network::verify(engine) { return 20; }
     0
 }

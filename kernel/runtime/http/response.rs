@@ -51,6 +51,14 @@ impl<'a> Headers<'a> {
             .filter(move |field| field.name.eq_ignore_ascii_case(name))
             .map(|field| field.value)
     }
+
+    // ------------------------=
+    // FUNC: iter
+    // DESC: Preserves every validated response field for native browser security and content processing.
+    // ------------------=
+    pub fn iter(&self) -> impl Iterator<Item = (&'a str, &'a [u8])> + '_ {
+        self.fields[..self.length].iter().map(|field| (field.name, field.value))
+    }
 }
 
 // ------------------------=
@@ -113,4 +121,24 @@ pub fn parse(bytes: &[u8], head_request: bool) -> Result<Option<Head>, Error> {
         bytes: size,
         body,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // ------------------------=
+    // FUNC: iteration_preserves_repeated_fields_and_binary_values
+    // DESC: Verifies lossless protocol metadata and rejects ambiguous framing before exposing fields.
+    // ------------------=
+    #[test]
+    fn iteration_preserves_repeated_fields_and_binary_values() {
+        let bytes = b"HTTP/1.1 200 OK\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nX-Value: \x80\r\nContent-Length: 0\r\n\r\n";
+        let headers = Headers::parse(bytes).unwrap();
+        let fields: std::vec::Vec<_> = headers.iter().collect();
+        assert_eq!(fields.len(), 4);
+        assert_eq!(fields[0], ("Set-Cookie", b"a=1".as_slice()));
+        assert_eq!(fields[1], ("Set-Cookie", b"b=2".as_slice()));
+        assert_eq!(fields[2], ("X-Value", b"\x80".as_slice()));
+        assert!(Headers::parse(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nTransfer-Encoding: chunked\r\n\r\n").is_err());
+    }
 }

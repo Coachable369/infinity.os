@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--boot-probe", action="store_true")
     parser.add_argument("--swgl-probe", action="store_true")
     parser.add_argument("--page-probe", action="store_true")
+    parser.add_argument("--network-probe", action="store_true")
     options = parser.parse_args()
     arch = options.arch
     if options.boot_probe and arch != "aarch64":
@@ -45,6 +46,10 @@ def main():
              "--check-cfg=cfg(infinity_certificate_test)"]
     native_externs = []
     for name in ("core", "panic_abort", "compiler_builtins", *(("std",) if options.boot_probe else ())):
+        recorded = codegen.get("native_archives", {}).get(name)
+        if recorded and Path(recorded).is_file():
+            native_externs += ["--extern", name + "=" + recorded]
+            continue
         archives = []
         for fingerprint in (target / ".fingerprint").glob(name + "-*/lib-" + name + ".json"):
             archive = target / "deps" / ("lib" + fingerprint.parent.name + ".rlib")
@@ -53,6 +58,14 @@ def main():
         if len(archives) != 1:
             raise SystemExit("Expected one native code-generated " + name + " archive")
         native_externs += ["--extern", name + "=" + str(archives[0])]
+    if options.page_probe:
+        archives = list((target / "deps").glob("libhttp-*.rlib"))
+        if len(archives) != 1:
+            raise SystemExit("Expected one native HTTP type archive")
+        native_externs += ["--extern", "http=" + str(archives[0])]
+    if options.network_probe:
+        network = json.loads((output / "network.json").read_text())
+        native_externs += ["--extern", "infinity_browser_native_network=" + network["archive"]]
     runtime = output / ("libnative_runtime_" + arch + ".rlib")
     newlib = root / ("build/voice-newlib-" + arch) / (arch + "-none-elf/newlib")
     c_objects = []
@@ -84,6 +97,7 @@ def main():
     command = ["rustc", "--edition=2021", "--target", triple,
                "--cfg", "infinity_native", "-C", "panic=abort",
                *(["--cfg", "infinity_page_probe"] if options.page_probe else []),
+               *(["--cfg", "infinity_network_probe"] if options.network_probe else []),
                *(["--cfg", "infinity_swgl_probe", "--extern",
                   "infinity_swgl_probe=" + str(target / "libinfinity_swgl_probe.rlib")]
                  if options.swgl_probe else []),

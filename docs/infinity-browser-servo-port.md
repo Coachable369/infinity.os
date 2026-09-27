@@ -1,6 +1,36 @@
 # Infinity Browser v0.1: port status
 
-Status: **not implemented or packaged; acceptance remains open**.
+Status: **native engine and external HTTPS proven in a test guest; installed browser acceptance remains open**.
+
+## Real native Servo HTTPS passed, September 26
+
+`20260927T021100949566Z-15169.json` proves `https://example.com/` through
+Servo resource interception → shared InfinityOS DNS/TCP/TLS client → native
+e1000 → QEMU network. TLS uses public certificate roots, RTC time and virtual
+CPU entropy. The test asserts authenticated HTTP 200/nonempty body, structural
+DOM values and a nonuniform 800×600 rendered surface. It does not use a host
+HTTP client, Linux userspace or another browser engine. The final allocation
+checkpoint is 72,753,216 bytes, **not peak RAM**.
+
+`sdk/infinity-browser-servo/resources.rs` routes both WebView and global loads
+through a 16-request bounded queue with deadlines and explicit cancellation.
+`native_https.rs` provides serialized, cancellable native GET transactions capped
+at 128 KiB per response. Native wire headers are retained for Servo processing;
+already-decoded transfer framing is not forwarded. The fixture separately
+authorizes the configured DNS resolver and HTTPS origin. Production capability
+binding remains required. The earlier intercepted-resource fixture passes
+document/CSS/JS pixels and denied-image behavior using injected responses.
+
+The engine link now consumes exact Cargo-recorded native core/std archives,
+avoiding ABI ambiguity when transport and engine builds coexist. Sequential
+test views explicitly drain asynchronous teardown to release bounded worker
+slots rather than increasing the thread limit.
+
+Still missing: desktop worker/surface/window wiring, HTTP/non-GET requests,
+native download object commit, persistent profile wiring, installed model/app
+registration and cold-installed acceptance. The current ISO is not a usable
+Infinity Browser release. The code under `tools/servo-platform-probe` is a test
+fixture, including its fixed QEMU ECAM/network configuration.
 
 ## Bounded native resolver adapter, September 26
 

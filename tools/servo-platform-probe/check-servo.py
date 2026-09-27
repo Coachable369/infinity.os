@@ -128,6 +128,7 @@ def main():
         command += ["-p", options.package]
     prefix = options.package + "-" + arch + ("-codegen" if options.codegen else "-check")
     native_paths = set()
+    native_archives = {}
     with (output / (prefix + ".log")).open("w") as log:
         process = subprocess.Popen(command, cwd=root, env=environment, stdout=subprocess.PIPE,
                                    stderr=log, text=True)
@@ -139,12 +140,19 @@ def main():
                 continue
             if event.get("reason") == "build-script-executed":
                 native_paths.update(event.get("linked_paths", []))
+            if event.get("reason") == "compiler-artifact":
+                name = event.get("target", {}).get("name")
+                if name in ("core", "panic_abort", "compiler_builtins", "std"):
+                    for filename in event.get("filenames", []):
+                        if filename.endswith(".rlib"):
+                            native_archives[name] = filename
             if event.get("reason") == "compiler-message":
                 log.write(event["message"].get("rendered") or "")
             log.flush()
         status = process.wait()
     report = {"servo_revision": revision, "package": options.package, "target": target, "command": command,
-              "compiler_exit_status": status, "native_search_paths": sorted(native_paths), "executed": False}
+              "compiler_exit_status": status, "native_search_paths": sorted(native_paths),
+              "native_archives": native_archives, "executed": False}
     (output / (prefix + ".json")).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report, indent=2))
     return status
