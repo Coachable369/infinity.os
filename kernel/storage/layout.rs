@@ -4,7 +4,9 @@ pub const LEGACY_STORE_RELATIVE_LBA: u64 = 262_144;
 pub const STORE_RELATIVE_LBA: u64 = 257 * 2048;
 // Larger native speech images use a separate location; existing disks stay put.
 pub const LARGE_STORE_RELATIVE_LBA: u64 = 513 * 2048;
-pub const MAX_KERNEL_BLOCKS: u64 = 512 * 2048;
+// Native browser images require a larger fresh-generation reservation.
+pub const BROWSER_STORE_RELATIVE_LBA: u64 = 1025 * 2048;
+pub const MAX_KERNEL_BLOCKS: u64 = 1024 * 2048;
 const MINIMUM_BLOCKS: u64 = 262_144;
 const ESP_FIRST: u64 = 2_048;
 const ALIGNMENT_BLOCKS: u64 = 2_048;
@@ -30,7 +32,9 @@ pub struct EntireDiskLayout {
 // ------------------=
 pub fn store_relative_lba(kernel_blocks: u64) -> Result<u64, LayoutError> {
     if kernel_blocks > MAX_KERNEL_BLOCKS { return Err(LayoutError::InsufficientCapacity); }
-    Ok(if kernel_blocks <= 256 * 2048 { STORE_RELATIVE_LBA } else { LARGE_STORE_RELATIVE_LBA })
+    Ok(if kernel_blocks <= 256 * 2048 { STORE_RELATIVE_LBA }
+        else if kernel_blocks <= 512 * 2048 { LARGE_STORE_RELATIVE_LBA }
+        else { BROWSER_STORE_RELATIVE_LBA })
 }
 
 // ------------------------=

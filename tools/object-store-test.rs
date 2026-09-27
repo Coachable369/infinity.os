@@ -718,7 +718,7 @@ fn legacy_store_mount(sectors: usize) {
 // DESC: Verifies the expanded location persists ordinary objects without touching the historical kernel/store area.
 // ------------------=
 fn large_kernel_store_mount() {
-    let offset = storage::layout::LARGE_STORE_RELATIVE_LBA;
+    for offset in [storage::layout::LARGE_STORE_RELATIVE_LBA, storage::layout::BROWSER_STORE_RELATIVE_LBA] {
     let sectors = offset + 32_768;
     let disk = MemoryDisk::new(sectors as usize);
     disk.0.borrow_mut()[STORE_RELATIVE_LBA as usize] = [0xa5; 512];
@@ -731,6 +731,7 @@ fn large_kernel_store_mount() {
     assert!(mounted.runtime_bootstrap_valid());
     assert_eq!(mounted.resolve(b"/home/default/large-kernel-link").unwrap(), documents);
     assert_eq!(disk.0.borrow()[STORE_RELATIVE_LBA as usize], [0xa5; 512]);
+    }
 }
 
 // ------------------------=

@@ -609,6 +609,14 @@ static EFI_STATUS read_blocks_bounded(
 }
 
 // ------------------------=
+// FUNC: installed_kernel_size_valid
+// DESC: Bounds installed ELF payloads before allocation, matching the native generation reservation.
+// ------------------=
+static int installed_kernel_size_valid(uint64_t bytes) {
+    return bytes >= sizeof(Elf64Header) && bytes <= UINT64_C(1024) * 1024 * 1024;
+}
+
+// ------------------------=
 // FUNC: try_load_installed_kernel
 // DESC: Reads try load installed kernel from firmware or device state.
 // ------------------=
@@ -723,7 +731,7 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
          * can legitimately exceed 64 MiB as new CORE services are added. Keep
          * the bound explicit, but large enough for the architecture-neutral
          * installed image assembled by the current build. */
-        if (kernel_bytes < sizeof(Elf64Header) || kernel_bytes > UINT64_C(512) * 1024 * 1024) continue;
+        if (!installed_kernel_size_valid(kernel_bytes)) continue;
         size_t transfer_size = (size_t)((kernel_bytes + 511) & ~UINT64_C(511));
         void *buffer = NULL;
         if (boot->allocate_pool(EFI_LOADER_DATA, transfer_size, &buffer) != EFI_SUCCESS) continue;

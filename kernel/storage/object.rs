@@ -491,7 +491,8 @@ impl<D: BlockDevice> ObjectStore<D> {
     // ------------------=
     pub fn format_with_progress_at<F: FnMut(u8, &[u8])>(device: D, container_lba: u64,
         container_blocks: u64, seed: [u8; 16], offset: u64, progress: &mut F) -> Result<Self, ObjectError> {
-        if offset != STORE_RELATIVE_LBA && offset != super::layout::LARGE_STORE_RELATIVE_LBA {
+        if offset != STORE_RELATIVE_LBA && offset != super::layout::LARGE_STORE_RELATIVE_LBA
+            && offset != super::layout::BROWSER_STORE_RELATIVE_LBA {
             return Err(ObjectError::InsufficientCapacity);
         }
         let available = container_blocks
@@ -524,7 +525,7 @@ impl<D: BlockDevice> ObjectStore<D> {
     pub fn mount(mut device: D, container_lba: u64) -> Result<Self, ObjectError> {
         let mut unsupported = false;
         for offset in [STORE_RELATIVE_LBA, super::layout::LEGACY_STORE_RELATIVE_LBA,
-                       super::layout::LARGE_STORE_RELATIVE_LBA] {
+                       super::layout::LARGE_STORE_RELATIVE_LBA, super::layout::BROWSER_STORE_RELATIVE_LBA] {
             let store_lba = container_lba
                 .checked_add(offset)
                 .ok_or(ObjectError::CorruptMetadata)?;

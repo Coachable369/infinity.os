@@ -70,6 +70,11 @@ void infinity_ap_entry(void) { abort(); }
 // DESC: Verifies media detection, installed fallback and balanced firmware handle cleanup.
 // ------------------=
 int main(void) {
+    assert(!installed_kernel_size_valid(sizeof(Elf64Header)-1));
+    assert(installed_kernel_size_valid(sizeof(Elf64Header)));
+    assert(installed_kernel_size_valid(UINT64_C(802)*1024*1024));
+    assert(installed_kernel_size_valid(UINT64_C(1024)*1024*1024));
+    assert(!installed_kernel_size_valid(UINT64_C(1024)*1024*1024+1));
     EFI_BOOT_SERVICES boot = {0};
     EFI_SYSTEM_TABLE system = {0};
     boot.handle_protocol = test_protocol;

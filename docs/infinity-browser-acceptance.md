@@ -5,6 +5,16 @@ Servo is pinned to `d05154e2b4def11a9fefe412898a0a6c8925a9cd` (0.6).
 
 ## Open acceptance gates
 
+Installed integration exposed a payload-capacity blocker: the experimental ARM
+kernel is 802 MiB after debug stripping, above the old 512 MiB reservation.
+The offline updater refused the write before changing the disk. Fresh layouts
+now support up to 1 GiB with a separate object-store offset; legacy, 256 MiB and
+512 MiB layouts remain readable and are not migrated in place. UEFI uses the
+same 1 GiB payload limit. Layout boundary, object format/write/remount and loader
+size-bound tests passed (`20260927T061422344899Z-79781.json`). New installer media
+and a matching loader still need to be built and cold-tested; the old installer
+cannot be used to prove this larger payload.
+
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.
 3. Verify responsiveness, input, resize, cancellation and window lifecycle in
