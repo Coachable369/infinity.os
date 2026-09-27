@@ -41,6 +41,15 @@ All commands run through `./build-kit run`. Manifests are under
 | `20260927T045922151909Z-74042.json` | Same production installed-kernel linkage | x86_64 linkage, not boot proof |
 | `20260927T050142723257Z-74529.json` | Binary ELF inspection verifies target architecture, executable entry, nonoverlapping segments and no writable-executable load segments | Artifact structure, not runtime security proof |
 | `20260927T050741867645Z-75613.json` | Browser stack slot raises, hides and hit-tests with existing windows; five-window callers keep the extra slot hidden | Shared native window-stack behavioral test, not browser UI proof |
+| `20260927T052146575941Z-76540.json` | Real Servo second navigation, exact Back/Forward destinations and history flags, fragment-free provider request, released request handles, four prior pixel/input gates and clean shutdown | AArch64 freestanding component guest, not installed desktop |
+
+The history test exposed fragment-bearing URLs crossing the native HTTP boundary.
+The adapter now removes fragments only from provider requests, preserving the
+original document URL for Servo history and anchors. Native controls receive
+engine-derived Back/Forward availability; disabled traversal leaves requests
+alone. The expanded fixture peaked at 150,009,600 allocator-reserved bytes.
+`--reuse-engine` is an explicit fixture-only debugging mode; the passing manifest
+above rebuilt the engine and did not use it.
 
 The small lifecycle fixture with the keyboard listener peaked at **149,722,880 bytes of allocator
 reservation**, including buddy rounding. This is not total RAM and is not a

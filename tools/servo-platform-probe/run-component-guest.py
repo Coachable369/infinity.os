@@ -18,9 +18,13 @@ def main():
     output = root / "build/servo-platform-probe"
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trace",action="store_true",help="Enable targeted diagnostics and selector regression")
+    parser.add_argument("--reuse-engine",action="store_true",help="Fixture-only iteration against the existing linked engine; does not verify engine source changes")
     options=parser.parse_args()
-    subprocess.run(["python3", str(Path(__file__).with_name("link-engine.py")), "--component"] +
-                   (["--component-trace"] if options.trace else []), check=True)
+    if options.reuse_engine and options.trace:
+        parser.error("Trace changes require engine rebuilding")
+    if not options.reuse_engine:
+        subprocess.run(["python3", str(Path(__file__).with_name("link-engine.py")), "--component"] +
+                       (["--component-trace"] if options.trace else []), check=True)
     report = json.loads((output / "component-aarch64.json").read_text())
     codegen = json.loads((output / "servo-aarch64-codegen.json").read_text())
     native = []
@@ -68,7 +72,8 @@ def main():
     passed = not timeout and bool(records) and records[-1] == [9, 0, 4]
     diagnostic = b"".join(struct.pack("<Q", row[2]) for row in records if row[1] == 4).decode(errors="replace")
     report = {"passed": passed, "records": [row for row in records if row[1] != 4],
-              "diagnostic": diagnostic, "registers":registers, "timeout": timeout, "installed_os": False}
+              "diagnostic": diagnostic, "registers":registers, "timeout": timeout, "installed_os": False,
+              "reused_engine": options.reuse_engine}
     (output / "component-boot.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
     return 0 if passed else 1

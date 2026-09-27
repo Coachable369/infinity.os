@@ -16,6 +16,8 @@ static mut STEP:u32=0;
 static mut FRAMES:u32=0;
 static mut RELEASES:u32=0;
 static mut NEXT_ID:u64=0;
+static mut HISTORY:u32=0;
+static mut LOCATION:u32=0;
 static PIXELS:frames::Frames<81920>=frames::Frames::new();
 static HTML:&[u8]=b"<!doctype html><html style='background:red'><script>document.documentElement.style.background='rgb(12,34,56)';document.addEventListener('keydown',e=>{if(e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.altKey&&!e.metaKey&&e.repeat)document.documentElement.style.background='rgb(34,56,78)'})</script></html>";
 static HEADERS:&[u8]=b"content-type: text/html\r\n";
@@ -108,7 +110,11 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
         5=>{value.kind=abi::CLOSE;STEP=6;},
         9=>{value.kind=abi::KEY;value.flags=abi::KEY_DOWN|abi::KEY_REPEAT;value.a='K' as u32;
             value.b=abi::MOD_SHIFT|abi::MOD_CONTROL;STEP=10;},
-        11=>{value.kind=abi::SHUTDOWN;STEP=12;},
+        11=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/#second";
+            value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=12;},
+        12 if LOCATION==2 && HISTORY&1!=0=>{value.kind=abi::BACK;STEP=13;},
+        13 if LOCATION==1 && HISTORY&2!=0=>{value.kind=abi::FORWARD;STEP=14;},
+        14 if LOCATION==2 && HISTORY&1!=0=>{value.kind=abi::SHUTDOWN;STEP=15;},
         _=>return 0,
     }
     out.write(value);1
@@ -129,6 +135,17 @@ unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,l
 unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,length:usize) {
     if kind==abi::EVENT_ERROR {finish(1,200+value as u64);}
     if kind==abi::EVENT_MEMORY {record(5,value as u64);}
+    if kind==abi::EVENT_HISTORY {
+        if value>3 {finish(1,103);}
+        HISTORY=value;
+        record(6,((STEP as u64)<<32)|value as u64);
+    }
+    if kind==abi::EVENT_ADDRESS {
+        LOCATION=match core::slice::from_raw_parts(text,length) {
+            b"https://fixture.test/"=>1,b"https://fixture.test/#second"=>2,_=>0,
+        };
+        record(7,((STEP as u64)<<32)|LOCATION as u64);
+    }
     if kind==abi::EVENT_DIAGNOSTIC {
         record(3,value as u64);
         for chunk in core::slice::from_raw_parts(text,length.min(1024)).chunks(8) {
@@ -141,6 +158,7 @@ unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,leng
 // DESC: Grants only the injected fixture URL; this test makes no network-proof claim.
 // ------------------=
 unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
+    record(8,((STEP as u64)<<32)|length as u64);
     if core::slice::from_raw_parts(url,length)!=b"https://fixture.test/" {return 0;}
     NEXT_ID+=1;NEXT_ID
 }
@@ -172,6 +190,6 @@ pub unsafe extern "C" fn component_boot()->! {
     if infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST))!=1 {finish(1,401);}
     HOST.version=abi::VERSION;
     let result=infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST));
-    if result!=0 || STEP!=12 || FRAMES!=4 || RELEASES!=2 {finish(1,400+result as u64);}
+    if result!=0 || STEP!=15 || FRAMES!=4 || RELEASES<3 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
     finish(0,4)
 }

@@ -131,8 +131,16 @@ impl<P: Provider + 'static> Session<P> {
     // DESC: Traverses one entry through Servo's real document history.
     // ------------------=
     pub fn history(&self, forward: bool) {
+        if if forward {!self.view.can_go_forward()} else {!self.view.can_go_back()} {return;}
         self.resources.cancel_all();
         if forward { self.view.go_forward(1); } else { self.view.go_back(1); }
+    }
+    // ------------------------=
+    // FUNC: history_available
+    // DESC: Exposes actual engine traversal availability for native navigation controls.
+    // ------------------=
+    pub fn history_available(&self)->u32 {
+        self.view.can_go_back() as u32 | ((self.view.can_go_forward() as u32)<<1)
     }
     // ------------------------=
     // FUNC: pump

@@ -171,6 +171,7 @@ fn run() {
     let mut last_address=None;
     let mut last_title=None;
     let mut last_complete=false;
+    let mut last_history=None;
     loop {
         for _ in 0..16 {
             let h=host(); let mut command=abi::Command::empty();
@@ -190,7 +191,7 @@ fn run() {
                 return;
             }
             if command.kind==abi::CLOSE {
-                session=None; last_address=None; last_title=None; last_complete=false;
+                session=None; last_address=None; last_title=None; last_complete=false; last_history=None;
                 event(abi::EVENT_MEMORY,unsafe{Runtime::peak_allocated()} as u32,"");
                 event(abi::EVENT_CLOSED,0,""); continue;
             }
@@ -212,6 +213,8 @@ fn run() {
             if address!=last_address { event(abi::EVENT_ADDRESS,0,address.as_deref().unwrap_or("")); last_address=address; }
             if title!=last_title { event(abi::EVENT_TITLE,0,title.as_deref().unwrap_or("")); last_title=title; }
             if complete!=last_complete { event(abi::EVENT_LOAD,complete as u32,"");last_complete=complete; }
+            let history=view.history_available();
+            if last_history!=Some(history) {event(abi::EVENT_HISTORY,history,"");last_history=Some(history);}
         } else { engine.spin_event_loop(); }
         std::thread::sleep(Duration::from_millis(1));
     }

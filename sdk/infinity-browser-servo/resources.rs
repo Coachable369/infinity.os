@@ -73,7 +73,11 @@ impl<P: Provider> Resources<P> {
             || !url.username().is_empty() || url.password().is_some() {
             reject(load); return;
         }
-        let Ok(id) = state.provider.begin(url.as_str()) else { reject(load); return; };
+        // Fragments identify document locations, never HTTP request targets.
+        // Retain the original URL on `load` for Servo history and anchor handling.
+        let mut network_url=url.clone();
+        network_url.set_fragment(None);
+        let Ok(id) = state.provider.begin(network_url.as_str()) else { reject(load); return; };
         if id == 0 || state.pending.iter().any(|pending| pending.id == id) {
             state.provider.cancel(id); reject(load); return;
         }
