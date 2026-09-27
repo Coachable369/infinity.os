@@ -4,6 +4,7 @@ from pathlib import Path
 import hashlib
 import json
 import struct
+import subprocess
 import sys
 from reference import MODEL_SHA256
 
@@ -60,6 +61,13 @@ def main():
     arguments = sys.argv[1:]
     embedded = "--embedded-install" in arguments
     arguments = [argument for argument in arguments if argument != "--embedded-install"]
+    media = None
+    if "--installer-media" in arguments:
+        index = arguments.index("--installer-media")
+        if index + 1 >= len(arguments):
+            raise SystemExit("--installer-media requires a FAT image")
+        media = arguments[index + 1]
+        del arguments[index:index + 2]
     if not arguments:
         raise SystemExit("Provide linked kernel ELF paths")
     results = [verify(path) for path in arguments]
@@ -67,6 +75,14 @@ def main():
         assert len(arguments) == 2
         installed, live = [Path(path).read_bytes() for path in arguments]
         assert live.find(installed) >= 0, "Live installer does not embed the verified installed kernel"
+    if media:
+        assert len(arguments) == 2 and not embedded
+        installed = Path(arguments[0]).read_bytes()
+        chunk = 512 * 1024 * 1024
+        for part, offset in enumerate(range(0, len(installed), chunk)):
+            actual = subprocess.check_output(["mtype", "-i", media,
+                f"::/EFI/INFINITY/PAYLOAD/P1-{part:03}.BIN"])
+            assert actual == installed[offset:offset + chunk], (media, part)
     print(json.dumps(results, indent=2))
 
 

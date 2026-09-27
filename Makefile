@@ -410,8 +410,8 @@ $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel
 	mcopy -i $@ -s $(BUILD)/fat/EFI ::
 
 .PHONY: x86-native-speech-parity
-x86-native-speech-parity: $(BUILD)/x86_64/installed-kernel.elf $(BUILD)/x86_64/kernel.elf
-	python3 tools/voice-kokoro/install-parity.py --embedded-install $(BUILD)/x86_64/installed-kernel.elf $(BUILD)/x86_64/kernel.elf
+x86-native-speech-parity: $(BUILD)/x86_64/installed-kernel.elf $(BUILD)/x86_64/kernel.elf $(if $(filter 1,$(NATIVE_BROWSER)),$(BUILD)/infinity-x86_64.img)
+	python3 tools/voice-kokoro/install-parity.py $(if $(filter 1,$(NATIVE_BROWSER)),--installer-media $(BUILD)/infinity-x86_64.img,--embedded-install) $(BUILD)/x86_64/installed-kernel.elf $(BUILD)/x86_64/kernel.elf
 
 builds/InfinityOS-x86_64-bootstrap-test.iso: $(BUILD)/infinity-x86_64.img x86-native-speech-parity
 	@mkdir -p builds
