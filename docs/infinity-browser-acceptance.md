@@ -37,6 +37,9 @@ All commands run through `./build-kit run`. Manifests are under
 | `20260927T044841231205Z-72829.json` | Fatal cleanup invalidates both active and queued network handles and allows bridge reconfiguration after release | Host HTTPS actor behavioral harness |
 | `20260927T045144799929Z-72990.json` | Isolated x86 Servo component links with no unresolved required symbols | Native linkage only, not execution |
 | `20260927T045309082355Z-73038.json` | AArch64 component regression with updated C syscall adapter: four real pixel gates, keyboard JS, resize, close/reopen, two released requests and clean shutdown | Freestanding guest, not installed OS |
+| `20260927T045735758478Z-73265.json` | Servo and existing speech providers link into the production installed-kernel configuration | AArch64 linkage, not boot proof |
+| `20260927T045922151909Z-74042.json` | Same production installed-kernel linkage | x86_64 linkage, not boot proof |
+| `20260927T050142723257Z-74529.json` | Binary ELF inspection verifies target architecture, executable entry, nonoverlapping segments and no writable-executable load segments | Artifact structure, not runtime security proof |
 
 The small lifecycle fixture with the keyboard listener peaked at **149,722,880 bytes of allocator
 reservation**, including buddy rounding. This is not total RAM and is not a
@@ -97,3 +100,11 @@ unsupported multiprocess requests fail closed. Engine code generation now passes
 on x86, as does component linkage. Execution remains a separate gate. Both
 architectures use the same C policy adapters; their Newlib syscall symbol
 spellings differ, and read/write return types follow each target's headers.
+
+`tools/servo-platform-probe/link-kernel.py` keeps experimental kernels separate
+from release images. Production-kernel linkage succeeds for both targets. Actual
+load segments contain 590,608,512 file bytes / 2,336,586,224 memory bytes on ARM,
+and 635,897,464 file bytes / 2,381,880,744 memory bytes on x86. Those totals include
+the whole kernel and existing providers, not just browser RAM or a runtime peak.
+ELFs retain debug data and are roughly 2 GB on disk; release packaging and cold
+boot remain unverified, and no installer ISO was updated by these link probes.
