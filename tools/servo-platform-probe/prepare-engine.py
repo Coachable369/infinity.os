@@ -23,6 +23,53 @@ def main():
     text = helper.native_body(text, 'pub fn from_file_path<P:', 'let _ = path; Err(UrlError::FromFilePath)')
     (servo / relative).write_text(text)
 
+    # Native execution is in-process. Never link a Unix sandbox or attempt
+    # fork/exec when an upstream caller accidentally enables multiprocess.
+    for relative in ("components/constellation/Cargo.toml", "components/servo/Cargo.toml"):
+        text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+        text = text.replace('all(not(target_os = "windows"),',
+            'all(not(target_os = "none"), not(target_os = "windows"),')
+        (servo / relative).write_text(text)
+    relative = "components/constellation/sandboxing.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace('not(target_os = "windows"),',
+        'not(target_os = "none"), not(target_os = "windows"),')
+    text = text.replace('#[cfg(any(\n    target_os = "windows",',
+        '#[cfg(all(not(target_os = "none"), any(\n    target_os = "windows",')
+    text = text.replace('all(target_arch = "aarch64", not(target_os = "macos"))\n))]',
+        'all(target_arch = "aarch64", not(target_os = "macos"))\n)))]')
+    text = text.replace('target_arch = "riscv64"\n))]\npub fn spawn_multiprocess',
+        'target_arch = "riscv64"\n)))]\npub fn spawn_multiprocess')
+    text += '''
+#[cfg(target_os = "none")]
+// ------------------------=
+// FUNC: content_process_sandbox_profile
+// DESC: Rejects unsupported process sandbox initialization on the native platform.
+// ------------------=
+pub fn content_process_sandbox_profile() {
+    panic!("Native browser requires in-process execution");
+}
+#[cfg(target_os = "none")]
+// ------------------------=
+// FUNC: spawn_multiprocess
+// DESC: Fails closed without attempting host process creation.
+// ------------------=
+pub fn spawn_multiprocess(_: UnprivilegedContent)
+    -> Result<crate::process_manager::Process, ipc_channel::IpcError> {
+    Err(std::io::Error::new(std::io::ErrorKind::Unsupported,
+        "Native browser requires in-process execution").into())
+}
+'''
+    (servo / relative).write_text(text)
+
+    relative = "components/servo/servo.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace('not(target_os = "windows"),',
+        'not(target_os = "none"), not(target_os = "windows"),')
+    text = text.replace('#[cfg(any(\n    target_os = "windows",',
+        '#[cfg(any(\n    target_os = "none",\n    target_os = "windows",')
+    (servo / relative).write_text(text)
+
     # A closed in-process receiver must be retired just like an IPC receiver.
     # Otherwise ResourceManager spins on the profiler channel after its exit,
     # starving every other continuation on the native owner CPU.

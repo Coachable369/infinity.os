@@ -30,6 +30,10 @@ def main():
     target = root / "build/cargo" / triple / "debug"
     output = root / "build/servo-platform-probe"
     codegen = json.loads((output / ("servo-" + arch + "-codegen.json")).read_text())
+    target_spec=codegen.get("target_spec",triple)
+    target_flags=["-Z", "unstable-options"] if target_spec.endswith(".json") else []
+    if target_flags:
+        os.environ["RUSTC_BOOTSTRAP"]="1"
     if codegen["compiler_exit_status"] != 0 or codegen["target"] != triple:
         raise SystemExit("Successful matching native code generation required")
     native_search = ["-L", "native=" + str(root / ("build/voice-kokoro/cxx-" + arch + "/lib"))]
@@ -92,7 +96,7 @@ def main():
         c_objects += ["-C", "link-arg=" + str(fatal), "-C", "link-arg=--wrap=abort",
                       "-C", "link-arg=--wrap=__assert_func", "-C", "link-arg=--wrap=fprintf",
                       "-C", "link-arg=--wrap=fputs", "-C", "link-arg=--wrap=fwrite"]
-    subprocess.run(["rustc", "--edition=2021", "--target", triple,
+    subprocess.run(["rustc", *target_flags, "--edition=2021", "--target", target_spec,
                     "--crate-name", "infinity_servo_runtime_primitives", "--crate-type", "rlib",
                     "--cfg", 'feature="native-abi"', "--cfg", 'feature="c-allocator-abi"', "-C", "panic=abort",
                     *(["--cfg", "infinity_component_trace"] if options.component_trace else []),
@@ -110,7 +114,7 @@ def main():
             native_externs += ["--extern", "servo_base=" + str(base[0])]
         archive = output / ("browser-component-" + arch + ".a")
         component = root / "sdk/infinity-browser-servo"
-        command = ["rustc", "--edition=2021", "--target", triple, "--crate-type", "staticlib",
+        command = ["rustc", *target_flags, "--edition=2021", "--target", target_spec, "--crate-type", "staticlib",
                    "--cfg", "infinity_native", "-C", "panic=abort", "-l", "static=c++abi",
                    *native_search, *native_externs,
                    "--extern", "servo=" + str(target / "libservo.rlib"),
@@ -156,7 +160,7 @@ def main():
         (output / ("component-" + arch + ".json")).write_text(json.dumps(report, indent=2) + "\n")
         print(json.dumps(report))
         return 1 if any(line.split()[0] == "U" for line in undefined.splitlines() if line.split()) else 0
-    command = ["rustc", "--edition=2021", "--target", triple,
+    command = ["rustc", *target_flags, "--edition=2021", "--target", target_spec,
                "--cfg", "infinity_native", "-C", "panic=abort",
                *(["--cfg", "infinity_page_probe"] if options.page_probe else []),
                *(["--cfg", "infinity_network_probe"] if options.network_probe else []),

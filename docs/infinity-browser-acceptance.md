@@ -31,6 +31,12 @@ All commands run through `./build-kit run`. Manifests are under
 | `20260927T042251408923Z-48745.json` | Exact binary-body preservation and HTTP header handoff without duplicate transfer decoding | Focused host behavioral test |
 | `20260927T042330025765Z-48799.json` | Shared kernel including BSP browser-network pump compiles | AArch64 installed configuration, compile only |
 | `20260927T042402000298Z-48919.json` | Same shared adapter compiles | x86_64 installer configuration, compile only |
+| `20260927T043602153977Z-59009.json` | Native browser supervisor and bounded ABI callbacks compile | AArch64 installed configuration with native-browser, compile only |
+| `20260927T043850445456Z-63400.json` | Same supervisor compiles | x86_64 installer configuration with native-browser, compile only |
+| `20260927T044127660539Z-67839.json` | Real Servo, SpiderMonkey and software renderer code generation succeeds with hardware-float ABI and matching LLVM intrinsic headers | x86_64 native component compilation, not execution |
+| `20260927T044841231205Z-72829.json` | Fatal cleanup invalidates both active and queued network handles and allows bridge reconfiguration after release | Host HTTPS actor behavioral harness |
+| `20260927T045144799929Z-72990.json` | Isolated x86 Servo component links with no unresolved required symbols | Native linkage only, not execution |
+| `20260927T045309082355Z-73038.json` | AArch64 component regression with updated C syscall adapter: four real pixel gates, keyboard JS, resize, close/reopen, two released requests and clean shutdown | Freestanding guest, not installed OS |
 
 The small lifecycle fixture with the keyboard listener peaked at **149,722,880 bytes of allocator
 reservation**, including buddy rounding. This is not total RAM and is not a
@@ -67,3 +73,27 @@ writing them. Unsupported schemes and non-default TLS ports fail closed.
 
 The bridge still needs the production browser supervisor to configure and call
 it. Its service tests do not establish installed page loading or download proof.
+
+## Supervisor integration in progress
+
+`kernel/runtime/browser.rs` is feature-gated by `native-browser` until production
+linkage and desktop activation are verified. It leases one existing background
+worker, supplies an isolated heap, derives a worker-owned cryptographic RNG from
+firmware entropy, and advances verified UTC using the monotonic clock. Servo
+input, metadata and pixels cross bounded queues. Network callbacks use the BSP
+bridge rather than entering runtime services from the engine CPU. Fatal engine
+failure cancels outstanding requests and quarantines that worker; restart after
+fatal failure is not yet supported. The idle hook currently spins, so idle CPU
+cost remains an explicit measurement and correction item.
+
+The supervisor is not enabled in release images yet. No shell, installed launch,
+responsiveness or total-RAM acceptance follows from these compilation checks.
+
+The x86 engine needs a separate hardware-float native target: Rust's built-in
+bare-metal target uses softfloat, unlike the C/C++ SysV ABI used by Servo. The
+custom target keeps `target_os=none` and enables SSE2 without introducing Linux
+semantics. Upstream Unix sandbox dependencies are excluded on native targets;
+unsupported multiprocess requests fail closed. Engine code generation now passes
+on x86, as does component linkage. Execution remains a separate gate. Both
+architectures use the same C policy adapters; their Newlib syscall symbol
+spellings differ, and read/write return types follow each target's headers.

@@ -1,4 +1,6 @@
 pub mod ai;
+#[cfg(feature="native-browser")]
+pub mod browser;
 pub mod audio;
 pub mod capability;
 pub mod compute;

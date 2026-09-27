@@ -6,6 +6,21 @@
 #include <time.h>
 #include <errno.h>
 #include "include/infinity-error.h"
+/* Newlib's x86 syscall connectors use public spellings; ARM's connectors use
+ * underscore spellings. Both enter the identical native denial/time policy. */
+#if defined(__x86_64__)
+#define _gettimeofday gettimeofday
+#define _open open
+#define _close close
+#define _read read
+#define _write write
+#define _lseek lseek
+#define _fstat fstat
+#define _isatty isatty
+#define _unlink unlink
+#define _getpid getpid
+#define _kill kill
+#endif
 extern int infinity_std_entropy(unsigned char *, size_t);
 // ------------------------=
 // FUNC: getentropy
@@ -57,12 +72,12 @@ int _close(int fd) { (void)fd;errno=EBADF;return -1; }
 // FUNC: _read
 // DESC: Rejects reads from unissued Unix descriptor identities without changing buffers.
 // ------------------=
-ssize_t _read(int fd,void *buffer,size_t size) { (void)fd;(void)buffer;(void)size;errno=EBADF;return -1; }
+_READ_WRITE_RETURN_TYPE _read(int fd,void *buffer,size_t size) { (void)fd;(void)buffer;(void)size;errno=EBADF;return -1; }
 // ------------------------=
 // FUNC: _write
 // DESC: Rejects writes to unissued descriptors rather than silently discarding data as success.
 // ------------------=
-ssize_t _write(int fd,const void *buffer,size_t size) { (void)fd;(void)buffer;(void)size;errno=EBADF;return -1; }
+_READ_WRITE_RETURN_TYPE _write(int fd,const void *buffer,size_t size) { (void)fd;(void)buffer;(void)size;errno=EBADF;return -1; }
 // ------------------------=
 // FUNC: _lseek
 // DESC: Rejects seeking an unissued native descriptor.

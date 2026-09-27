@@ -39,6 +39,10 @@ def main():
     # The engine calls C/C++ APIs with floating arguments. Match AAPCS64's
     # hardware-float ABI; the native executor preserves FP/SIMD register state.
     target = "aarch64-unknown-none" if arch == "aarch64" else "x86_64-unknown-none"
+    # Rust's built-in x86 bare-metal target has a softfloat ABI and disables
+    # SSE. Servo's C/C++ libraries use SysV hardware float. Keep target_os=none
+    # and use an isolated hardware-float component, not Linux target semantics.
+    target_spec = str(root / "sdk/servo-std/x86_64-unknown-none.json") if arch == "x86_64" else target
     target_key = target.replace("-", "_")
     source = root / "build/servo-port-audit"
     revision = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
@@ -64,11 +68,15 @@ def main():
     if not all(path.is_dir() for path in includes):
         raise SystemExit("Native target C headers unavailable; prepare the native toolchain through build-kit")
     environment[f"CC_{target_key}"] = "/opt/homebrew/opt/llvm/bin/clang"
+    # Bindgen's header discovery must use the same LLVM installation as
+    # LIBCLANG_PATH, never Apple's differently versioned intrinsic headers.
+    environment["CLANG_PATH"] = environment[f"CC_{target_key}"]
+    resource = subprocess.check_output([environment["CLANG_PATH"], "-print-resource-dir"], text=True).strip()
     environment[f"AR_{target_key}"] = "/opt/homebrew/opt/llvm/bin/llvm-ar"
     environment[f"CPP_{target_key}"] = f"/opt/homebrew/opt/llvm/bin/clang --target={arch}-none-elf -E"
     environment[f"CPPFLAGS_{target_key}"] = ""
     cflags = (
-        f"--target={arch}-none-elf -ffreestanding " +
+        f"--target={arch}-none-elf -ffreestanding -resource-dir={resource} " +
         ("-mstrict-align " if arch == "aarch64" else "-mno-red-zone ") +
         "-I" + str(root / "sdk/servo-std/include") + " " +
         "-include " + str(root / "sdk/servo-std/c-target.h") + " " +
@@ -89,8 +97,10 @@ def main():
                     *shlex.split(cflags), "-std=c11", "-fsyntax-only",
                     str(Path(__file__).with_name("c-abi-probe.c"))], check=True, env=environment)
     command = ["cargo", "build" if options.codegen else "check", "-j", "4", "-Z", "build-std=std,panic_abort",
-               "--target", target, "--manifest-path",
+               "--target", target_spec, "--manifest-path",
                str(source / "components/servo/Cargo.toml"), "--locked", "--message-format=json-render-diagnostics"]
+    if arch == "x86_64":
+        command += ["-Z", "json-target-spec"]
     if options.package == "swgl":
         manifest = Path(__file__).with_name("swgl") / "Cargo.toml"
         command[command.index("--manifest-path") + 1] = str(manifest)
@@ -150,7 +160,7 @@ def main():
                 log.write(event["message"].get("rendered") or "")
             log.flush()
         status = process.wait()
-    report = {"servo_revision": revision, "package": options.package, "target": target, "command": command,
+    report = {"servo_revision": revision, "package": options.package, "target": target, "target_spec":target_spec, "command": command,
               "compiler_exit_status": status, "native_search_paths": sorted(native_paths),
               "native_archives": native_archives, "executed": False}
     (output / (prefix + ".json")).write_text(json.dumps(report, indent=2) + "\n")

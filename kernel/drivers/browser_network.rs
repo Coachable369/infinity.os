@@ -85,6 +85,16 @@ pub unsafe fn cancel(id:u64) {
     }
 }
 // ------------------------=
+// FUNC: cancel_all
+// DESC: Revokes all pending engine handles on fatal termination without entering BSP services.
+// ------------------=
+/// Engine owner only, after permanently abandoning all borrowed response data.
+pub unsafe fn cancel_all() {
+    for slot in &SLOTS {
+        if slot.state.load(Ordering::Acquire)!=FREE {slot.cancelled.store(true,Ordering::Release);}
+    }
+}
+// ------------------------=
 // FUNC: finish
 // DESC: Copies one validated response and strips already-decoded hop-by-hop framing before publication.
 // ------------------=

@@ -1,0 +1,174 @@
+//! Native browser supervisor. BSP owns UI and permission decisions; one leased
+//! AP owns Servo and its private heap. No engine code runs in a paint callback.
+use core::{ffi::c_void,sync::atomic::{AtomicU32,AtomicU64,Ordering}};
+use infinity_browser_core::{worker as abi,mailbox::Mailbox,frames::Frames};
+use crate::http_transport::{rand_chacha::ChaCha20Rng,rand_core::{RngCore,SeedableRng}};
+use super::{execution::SecurityIdentity,capability::CapabilityId};
+const HEAP_BYTES:usize=512*1024*1024;
+// A page-aligned 512 MiB grant always contains a 256 MiB aligned buddy arena.
+// It occupies loader-owned BSS, not installer payload bytes or the framebuffer.
+#[repr(C,align(4096))]
+struct Heap([u8;HEAP_BYTES]);
+static mut HEAP:Heap=Heap([0;HEAP_BYTES]);
+static STATE:AtomicU32=AtomicU32::new(0);
+static FAILURE:AtomicU32=AtomicU32::new(0);
+static GENERATION:AtomicU64=AtomicU64::new(0);
+static PEAK:AtomicU64=AtomicU64::new(0);
+static COMMANDS:Mailbox<abi::Command,32>=Mailbox::new();
+pub static FRAMES:Frames<16384000>=Frames::new();
+static EVENTS:Mailbox<Event,32>=Mailbox::new();
+static mut RNG:Option<ChaCha20Rng>=None;
+static mut UTC:u64=0;
+static mut EPOCH_NS:u64=0;
+#[derive(Clone,Copy)]
+pub struct Event {pub kind:u32,pub value:u32,pub length:usize,pub text:[u8;2048]}
+static mut HOST:abi::Host=abi::Host {version:abi::VERSION,size:core::mem::size_of::<abi::Host>() as u32,
+    context:core::ptr::null_mut(),heap:core::ptr::null_mut(),heap_length:HEAP_BYTES,
+    cpu,monotonic,utc,entropy,idle,command,frame,event,begin,poll,cancel,fatal};
+
+// ------------------------=
+// FUNC: start
+// DESC: Grants an isolated engine CPU and heap only after native time, entropy and explicit network authority exist.
+// ------------------=
+/// BSP only. BootInfo remains loader-owned; no firmware operation runs on the AP.
+pub unsafe fn start(info:&crate::boot_info::BootInfo,owner:SecurityIdentity,caps:[CapabilityId;4])->bool {
+    if STATE.load(Ordering::Acquire)!=0 {return STATE.load(Ordering::Acquire)==2;}
+    if info.firmware_entropy_valid!=1 {return false;}
+    let Some(seconds)=crate::console::certificate_time(info.firmware_runtime_services) else{return false;};
+    if !crate::drivers::browser_network::configure(owner,caps) {return false;}
+    use sha2::{Digest,Sha256};
+    let mut hash=Sha256::new();hash.update(b"InfinityOS native browser RNG v1");hash.update(info.firmware_entropy);
+    RNG=Some(ChaCha20Rng::from_seed(hash.finalize().into()));
+    UTC=seconds;EPOCH_NS=super::ai::qwen::workers::clock_ns();
+    HOST.heap=core::ptr::addr_of_mut!(HEAP.0).cast();
+    STATE.store(1,Ordering::Release);
+    if !super::ai::qwen::workers::background(worker) {STATE.store(0,Ordering::Release);return false;}
+    true
+}
+// ------------------------=
+// FUNC: submit
+// DESC: Sends native input with explicit backpressure; callers retain events for retry instead of losing key releases.
+// ------------------=
+pub fn submit(value:abi::Command)->Result<(),abi::Command> {
+    if !matches!(STATE.load(Ordering::Acquire),1|2) {return Err(value);}
+    COMMANDS.try_send(value).map_err(|error|match error {
+        infinity_browser_core::mailbox::SendError::Busy(v)|infinity_browser_core::mailbox::SendError::Full(v)=>v})
+}
+// ------------------------=
+// FUNC: take_event
+// DESC: Copies one pending metadata update without waiting for the engine CPU.
+// ------------------=
+pub fn take_event()->Option<Event> {EVENTS.try_take().ok().flatten()}
+// ------------------------=
+// FUNC: status
+// DESC: Reports supervisor state, structured failure, frame generation and peak engine reservation.
+// ------------------=
+pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(Ordering::Acquire),
+    GENERATION.load(Ordering::Acquire),PEAK.load(Ordering::Acquire))}
+// ------------------------=
+// FUNC: worker
+// DESC: Enters the privately linked component on its sole native owner CPU.
+// ------------------=
+unsafe fn worker() {
+    extern "C" {fn infinity_browser_private_infinity_browser_run(host:*mut abi::Host)->u32;}
+    STATE.store(2,Ordering::Release);
+    let result=infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST));
+    FAILURE.store(result,Ordering::Release);STATE.store(if result==0{4}else{3},Ordering::Release);
+}
+// ------------------------=
+// FUNC: cpu
+// DESC: Returns hardware CPU identity through the small target-specific adapter.
+// ------------------=
+unsafe extern "C" fn cpu(_: *mut c_void)->u64 {
+    #[cfg(target_arch="aarch64")]
+    {let value:u64;core::arch::asm!("mrs {}, mpidr_el1",out(reg)value,options(nomem,nostack));return value&0xff00ffffff;}
+    #[cfg(target_arch="x86_64")]
+    {let max=core::arch::x86_64::__cpuid(0).eax;
+        if max>=11 {let leaf=core::arch::x86_64::__cpuid_count(11,0);if leaf.ebx!=0{return leaf.edx as u64;}}
+        return (core::arch::x86_64::__cpuid(1).ebx>>24) as u64;}
+}
+// ------------------------=
+// FUNC: monotonic
+// DESC: Reads the native calibrated counter without service or UI locks.
+// ------------------=
+unsafe extern "C" fn monotonic(_: *mut c_void)->u64 {super::ai::qwen::workers::clock_ns()}
+// ------------------------=
+// FUNC: utc
+// DESC: Advances verified BSP wall time using the monotonic counter without AP firmware calls.
+// ------------------=
+unsafe extern "C" fn utc(_: *mut c_void,seconds:*mut u64,nanos:*mut u32)->u32 {
+    let elapsed=monotonic(core::ptr::null_mut()).saturating_sub(EPOCH_NS);
+    seconds.write(UTC+elapsed/1_000_000_000);nanos.write((elapsed%1_000_000_000) as u32);1
+}
+// ------------------------=
+// FUNC: entropy
+// DESC: Supplies domain-separated cryptographic entropy owned exclusively by this engine worker.
+// ------------------=
+unsafe extern "C" fn entropy(_: *mut c_void,bytes:*mut u8,length:usize)->u32 {
+    if length==0 {return 1;}
+    if bytes.is_null() {return 0;}
+    let Some(rng)=(&mut *(&raw mut RNG)).as_mut() else{return 0;};
+    rng.fill_bytes(core::slice::from_raw_parts_mut(bytes,length));1
+}
+// ------------------------=
+// FUNC: idle
+// DESC: Leaves scheduling to the component without acquiring desktop services.
+// ------------------=
+unsafe extern "C" fn idle(_: *mut c_void) {core::hint::spin_loop();}
+// ------------------------=
+// FUNC: command
+// DESC: Transfers one complete command and advances window generation only when the engine consumes Open.
+// ------------------=
+unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
+    let Ok(Some(value))=COMMANDS.try_take() else{return 0;};
+    if value.kind==abi::OPEN {GENERATION.fetch_add(1,Ordering::AcqRel);}
+    out.write(value);1
+}
+// ------------------------=
+// FUNC: frame
+// DESC: Publishes owned RGBA pixels, never a global framebuffer pointer.
+// ------------------=
+unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,length:usize) {
+    let _=FRAMES.publish(GENERATION.load(Ordering::Acquire),width,height,core::slice::from_raw_parts(bytes,length));
+}
+// ------------------------=
+// FUNC: event
+// DESC: Publishes bounded shell metadata and retains failures independently of queue capacity.
+// ------------------=
+unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,length:usize) {
+    if kind==abi::EVENT_MEMORY {PEAK.store(value as u64,Ordering::Release);return;}
+    if kind==abi::EVENT_ERROR {FAILURE.store(value+1,Ordering::Release);}
+    if kind==abi::EVENT_DIAGNOSTIC || length>2048 {return;}
+    let mut message=Event{kind,value,length,text:[0;2048]};
+    if length>0 {message.text[..length].copy_from_slice(core::slice::from_raw_parts(text,length));}
+    let _=EVENTS.try_send(message);
+}
+// ------------------------=
+// FUNC: begin
+// DESC: Requests network work only through the BSP capability-governed bridge.
+// ------------------=
+unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
+    crate::drivers::browser_network::begin(core::slice::from_raw_parts(url,length))
+}
+// ------------------------=
+// FUNC: poll
+// DESC: Lends bridge-owned response data using the common integer-only ABI layout.
+// ------------------=
+unsafe extern "C" fn poll(_: *mut c_void,id:u64,out:*mut abi::Response)->u32 {
+    // Both repr(C) Response types include the exact same versioned source file.
+    crate::drivers::browser_network::poll(id,&mut *out.cast())
+}
+// ------------------------=
+// FUNC: cancel
+// DESC: Releases a bridge handle after the engine has finished copying its response.
+// ------------------=
+unsafe extern "C" fn cancel(_: *mut c_void,id:u64) {crate::drivers::browser_network::cancel(id);}
+// ------------------------=
+// FUNC: fatal
+// DESC: Quarantines a failed engine CPU; the desktop can still display failure and close its native window.
+// ------------------=
+unsafe extern "C" fn fatal(_: *mut c_void,code:u32)->! {
+    crate::drivers::browser_network::cancel_all();
+    FAILURE.store(code,Ordering::Release);STATE.store(3,Ordering::Release);
+    loop {core::hint::spin_loop();}
+}
