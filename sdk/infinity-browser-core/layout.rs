@@ -2,7 +2,7 @@
 use crate::Viewport;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Control { Back, Forward, Reload, Address, Go, Content }
+pub enum Control { Back, Forward, Reload, Address, Go, Downloads, Menu, Minimize, Maximize, Close, Content }
 
 pub struct Layout {
     pub title: Viewport,
@@ -11,6 +11,11 @@ pub struct Layout {
     pub reload: Viewport,
     pub address: Viewport,
     pub go: Viewport,
+    pub downloads: Viewport,
+    pub menu: Viewport,
+    pub minimize: Viewport,
+    pub maximize: Viewport,
+    pub close: Viewport,
     pub content: Viewport,
     pub status: Viewport,
 }
@@ -22,10 +27,10 @@ impl Layout {
     // ------------------=
     pub fn new(width: u32, height: u32, scale: u32) -> Option<Self> {
         if !(1..=4).contains(&scale) || width > i32::MAX as u32 || height > i32::MAX as u32
-            || width < 640 * scale || height < 240 * scale { return None; }
-        let gap = 8 * scale;
-        let gutter = 16 * scale;
-        let control = 44 * scale;
+            || width < 760 * scale || height < 240 * scale { return None; }
+        let gap = crate::skin::GAP * scale;
+        let gutter = crate::skin::GUTTER * scale;
+        let control = crate::skin::CONTROL_HEIGHT * scale;
         let title_height = 40 * scale;
         let toolbar_height = control + 2 * gap;
         let status_height = 24 * scale;
@@ -33,7 +38,11 @@ impl Layout {
         let rect = |x: u32, y: u32, width, height| Viewport { x: x as i32, y: y as i32, width, height };
         let address_x = gutter + 3 * (control + gap);
         let go_width = 72 * scale;
-        let go_x = width - gutter - go_width;
+        let menu_x = width - gutter - control;
+        let downloads_x = menu_x - gap - control;
+        let go_x = downloads_x - gap - go_width;
+        let window_control = 32 * scale;
+        let close_x = width - gutter - window_control;
         let content_y = title_height + toolbar_height;
         Some(Self {
             title: rect(0, 0, width, title_height),
@@ -42,6 +51,11 @@ impl Layout {
             reload: rect(gutter + 2 * (control + gap), y, control, control),
             address: rect(address_x, y, go_x - gap - address_x, control),
             go: rect(go_x, y, go_width, control),
+            downloads: rect(downloads_x, y, control, control),
+            menu: rect(menu_x, y, control, control),
+            minimize: rect(close_x - 2 * (window_control + gap), 4 * scale, window_control, window_control),
+            maximize: rect(close_x - window_control - gap, 4 * scale, window_control, window_control),
+            close: rect(close_x, 4 * scale, window_control, window_control),
             content: rect(0, content_y, width, height - content_y - status_height),
             status: rect(0, height - status_height, width, status_height),
         })
@@ -55,6 +69,9 @@ impl Layout {
             (self.back, Control::Back), (self.forward, Control::Forward),
             (self.reload, Control::Reload), (self.address, Control::Address),
             (self.go, Control::Go), (self.content, Control::Content),
+            (self.downloads, Control::Downloads), (self.menu, Control::Menu),
+            (self.minimize, Control::Minimize), (self.maximize, Control::Maximize),
+            (self.close, Control::Close),
         ] {
             if bounds.local(x, y).is_some() { return Some(control); }
         }
@@ -72,8 +89,8 @@ mod tests {
     #[test]
     fn resizing_preserves_chrome_and_changes_content_bounds() {
         for scale in 1..=4 {
-            let small = Layout::new(640 * scale, 480 * scale, scale).unwrap();
-            let large = Layout::new(1040 * scale, 760 * scale, scale).unwrap();
+            let small = Layout::new(760 * scale, 480 * scale, scale).unwrap();
+            let large = Layout::new(1160 * scale, 760 * scale, scale).unwrap();
             assert_eq!(large.address.width - small.address.width, 400 * scale);
             assert_eq!(large.content.height - small.content.height, 280 * scale);
             assert_eq!(small.hit(small.back.x, small.back.y), Some(Control::Back));
@@ -86,5 +103,33 @@ mod tests {
         assert!(Layout::new(639, 480, 1).is_none());
         assert!(Layout::new(u32::MAX, 480, 1).is_none());
         assert!(Layout::new(640, 480, 0).is_none());
+    }
+    // ------------------------=
+    // FUNC: every_control_has_an_independent_hit_target
+    // DESC: Verifies every design-kit control and its outer edges at all supported scales.
+    // ------------------=
+    #[test]
+    fn every_control_has_an_independent_hit_target() {
+        for scale in 1..=4 {
+            let layout = Layout::new(760 * scale, 480 * scale, scale).unwrap();
+            let controls = [
+                (layout.back, Control::Back), (layout.forward, Control::Forward),
+                (layout.reload, Control::Reload), (layout.address, Control::Address),
+                (layout.go, Control::Go), (layout.downloads, Control::Downloads),
+                (layout.menu, Control::Menu), (layout.minimize, Control::Minimize),
+                (layout.maximize, Control::Maximize), (layout.close, Control::Close),
+            ];
+            for (bounds, control) in controls {
+                assert_eq!(layout.hit(bounds.x, bounds.y), Some(control));
+                assert_eq!(layout.hit(bounds.x + bounds.width as i32 - 1,
+                    bounds.y + bounds.height as i32 - 1), Some(control));
+                assert_eq!(layout.hit(bounds.x + bounds.width as i32, bounds.y), None);
+                for (other, other_control) in controls {
+                    if control != other_control {
+                        assert!(other.local(bounds.x, bounds.y).is_none());
+                    }
+                }
+            }
+        }
     }
 }

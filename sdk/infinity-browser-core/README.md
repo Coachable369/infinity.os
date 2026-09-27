@@ -4,6 +4,13 @@ Allocation-free lifecycle and bounded input/download staging for the future
 native shell. This is not Servo, a network client, a permission grant, or a
 browser implementation. No launcher entry or installed browser is advertised.
 
+The generated Sapphire/Titanium reference and unique globe/infinity icon are
+specified in `docs/infinity-browser-design.md`. `skin.rs` owns interaction colors
+and navigation-atlas cell geometry; `layout.rs` owns disjoint chrome hit targets.
+These are shell building blocks, not a renderer. Native painting and screenshot
+comparison, functional controls, default URL registration and packaging remain
+required before the browser can ship.
+
 The shell must serialize Session access on its event loop. Navigation IDs label
 all callbacks; supersession/close invalidates older results. The caller must
 also cancel the corresponding engine/network work and release its resources.

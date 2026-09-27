@@ -77,6 +77,7 @@ tools/ui-install-parity-test.sh \
 make input-regression-test
 make app-launcher-interaction-test
 sh tools/build-hermes.sh
+python3 tools/browser-artwork-parity.py
 
 # Build targets publish directly into builds; there is no second installer copy.
 cp tools/configure-virtualbox-arm64.sh "$output_dir/configure-virtualbox-arm64.sh"

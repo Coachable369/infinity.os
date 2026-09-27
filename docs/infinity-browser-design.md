@@ -9,7 +9,7 @@ The reference must not be shown as a fake page or treated as runtime proof.
   chrome, fields, controls, states and spacing.
 - `assets/apps/infinity-browser-icon-v1-source.png`: final app identity,
   1254 × 1254 RGBA. Blue globe, brushed **grey** infinity orbit and grey
-  latitude/longitude lines. This supersedes the plain infinity mark on the board.
+  latitude/longitude lines. The board also uses this revised identity.
 - `assets/apps/infinity-browser-navigation-v1-source.png`: 1774 × 887 RGBA,
   four columns by two rows. Back, Forward, Reload, Stop; Download,
   Site controls, Menu, Go. Silver-grey titanium with restrained sapphire insets.
@@ -23,8 +23,8 @@ No icon or screenshot is evidence of functional browser installation.
 Use `sdk/infinity-browser-core/skin.rs` for opaque RGB recipes and interaction
 states, and `layout.rs` for window-local rectangles and hit testing. Do not render
 labels or controls by stretching the design-board bitmap. Use the existing
-native font pipeline. The board names Inter, but native Fira Sans is the initial
-available implementation font; exact typography parity remains to be reviewed.
+native Fira Sans font pipeline, matching the updated board's typography choice;
+exact rendered typography parity remains to be reviewed.
 
 - 16-pixel outer gutter, 8-pixel gaps, 44-pixel navigation hit targets.
 - 40-pixel title strip; 32-pixel minimize/maximize/close targets, vertically centered.
@@ -55,6 +55,16 @@ the app, follow a real HTTPS link, and capture a screenshot against this kit.
 Review geometry, font quality, contrast, alpha edges and control states at 1×/2×.
 These installation/runtime/screenshot gates are **not yet passed**.
 
+## Current verification
+
+Nine browser-core behavior tests pass, including control hit targets, resize,
+atlas partitioning, state recipes and lifecycle bounds:
+`builds/manifests/20260927T013651247052Z-99622.json`.
+Byte-identical RGBA artwork in both installed ESP templates passes:
+`builds/manifests/20260927T013704641318Z-99656.json`.
+The regular build runs this artwork parity check after model packaging.
+Neither result proves a running browser or pixel-perfect native rendering.
+
 ## Generation briefs
 
 Design prompt: production-quality Infinity Browser IDesign Kit; familiar
@@ -63,6 +73,9 @@ restrained cyan edges, crisp typography; one browsing context, title/window
 controls, back/forward/reload, recessed URL field, Go/download/menu, neutral
 Example Domain content, slim status footer; state samples, error card, menu,
 typography and 8/16/24 spacing; no tabs, AI sidebar, extensions or Chrome branding.
+Final board edit: replace the plain infinity identity and flat navigation marks
+with the approved globe and titanium atlas; change the typography sample to
+Fira Sans, remove the incidental slogan, and retain the original layout.
 
 Final app-icon edit prompt: preserve the blue globe, continents, composition,
 perspective and transparent silhouette; change only the infinity orbital ribbon
