@@ -192,101 +192,123 @@ impl super::DisplayDevice {
             self.app_symbol(g.send, b'^', CYAN, s);
         }
         let t = g.toggle;
-        let shadow_x = if g.tab_left {
-            t.x - 2 * s as i32
+        let accent = self.active_accent_rgb();
+        let accent = (
+            ((accent >> 16) & 0xff) as u8,
+            ((accent >> 8) & 0xff) as u8,
+            (accent & 0xff) as u8,
+        );
+        let primary = self.active_primary_rgb();
+        let surface = (
+            (((primary >> 16) & 0xff) as u8).saturating_add(5),
+            (((primary >> 8) & 0xff) as u8).saturating_add(7),
+            ((primary & 0xff) as u8).saturating_add(11),
+        );
+        let pulse = if panel.hovered {
+            assistant::glow_intensity(panel.glow_phase)
         } else {
-            t.x + 2 * s as i32
+            48
         };
-        self.fill_rounded_rect_alpha(
-            shadow_x.max(0) as usize,
-            (t.y + 4 * s as i32).max(0) as usize,
-            t.width as usize,
-            t.height as usize,
-            9 * s,
-            0,
-            6,
-            14,
-            118,
+        self.assistant_tab_fill(t, surface, if panel.expanded { 248 } else { 232 }, s);
+        self.assistant_tab_outline(t, 3 * s as i32, (accent.0 / 5, accent.1 / 5, accent.2 / 5), s);
+        self.assistant_tab_outline(t, 1 * s as i32, (accent.0 / 2, accent.1 / 2, accent.2 / 2), s);
+        self.assistant_tab_outline(t, 0, accent, s);
+        let center = (t.x + t.width as i32 / 2, t.y + t.height as i32 / 2);
+        self.glow_color(
+            center.0,
+            center.1,
+            (18 * s) as i32,
+            accent.0,
+            accent.1,
+            accent.2,
+            pulse,
         );
-        let body_x = if g.tab_left {
-            t.x
-        } else {
-            t.x + 3 * s as i32
-        };
-        let body_width = t.width.saturating_sub(3 * s as u32);
-        self.fill_rounded_rect_alpha(
-            body_x.max(0) as usize,
-            t.y.max(0) as usize,
-            body_width as usize,
-            t.height as usize,
-            8 * s,
-            if panel.expanded { 8 } else { 7 },
-            if panel.expanded { 25 } else { 31 },
-            if panel.expanded { 40 } else { 49 },
-            238,
-        );
-        self.outline_rounded_rect(
-            body_x.max(0) as usize,
-            t.y.max(0) as usize,
-            body_width as usize,
-            t.height as usize,
-            8 * s,
-            if panel.expanded { 83 } else { 45 },
-            if panel.expanded { 154 } else { 190 },
-            if panel.expanded { 182 } else { 222 },
-        );
-        let seam_x = if g.tab_left {
-            t.right() - 2 * s as i32
-        } else {
-            t.x
-        };
-        self.fill_rect(
-            seam_x.max(0) as usize,
-            (t.y + 10 * s as i32).max(0) as usize,
-            2 * s,
-            t.height.saturating_sub(20 * s as u32) as usize,
-            67,
-            210,
-            241,
-        );
-        let notch_y = t.y + (t.height / 2) as i32 - 10 * s as i32;
-        self.fill_rect(
-            if g.tab_left {
-                t.right() - 8 * s as i32
+        self.assistant_star(center.0, center.1, accent, pulse, s);
+        self.render_clip = clip;
+    }
+
+    // ------------------------=
+    // FUNC: assistant_tab_fill
+    // DESC: Paints the reference kit's compact chamfered glass tab outside usable window content.
+    // ------------------=
+    fn assistant_tab_fill(&mut self, tab: Rect, color: (u8, u8, u8), alpha: u8, s: usize) {
+        let cut = (10 * s).min(tab.height as usize / 3);
+        for row in 0..tab.height as usize {
+            let inset = if row < cut {
+                cut - row
+            } else if row + cut >= tab.height as usize {
+                row + cut + 1 - tab.height as usize
             } else {
-                t.x + 6 * s as i32
+                0
+            };
+            let width = tab.width as usize - inset.saturating_mul(2);
+            if width > 0 {
+                self.fill_rect_alpha(
+                    (tab.x + inset as i32).max(0) as usize,
+                    (tab.y + row as i32).max(0) as usize,
+                    width,
+                    1,
+                    color.0,
+                    color.1,
+                    color.2,
+                    alpha,
+                );
             }
-            .max(0) as usize,
-            notch_y.max(0) as usize,
-            2 * s,
-            20 * s,
-            28,
-            82,
-            111,
-        );
-        if panel.expanded {
-            self.app_symbol(t, b'x', TEXT, s);
-        } else {
-            let mark_offset = if g.tab_left { 9 } else { 10 };
-            self.app_ai_mark(Rect {
-                x: t.x + mark_offset * s as i32,
-                y: t.y + 10 * s as i32,
-                width: 22 * s as u32,
-                height: 30 * s as u32,
-            });
-            self.app_label(
-                Rect {
-                    y: t.y + 54 * s as i32,
-                    height: 24 * s as u32,
-                    ..t
-                },
-                b"AI",
-                CYAN,
-                true,
-                s,
+        }
+    }
+
+    // ------------------------=
+    // FUNC: assistant_tab_outline
+    // DESC: Draws one theme-colored octagonal edge layer so stacked layers read as a restrained electric glow.
+    // ------------------=
+    fn assistant_tab_outline(&mut self, tab: Rect, spread: i32, color: (u8, u8, u8), s: usize) {
+        let left = tab.x - spread;
+        let top = tab.y - spread;
+        let right = tab.right() + spread - 1;
+        let bottom = tab.bottom() + spread - 1;
+        let cut = 10 * s as i32 + spread;
+        let points = [
+            (left, top + cut),
+            (left + cut, top),
+            (right - cut, top),
+            (right, top + cut),
+            (right, bottom - cut),
+            (right - cut, bottom),
+            (left + cut, bottom),
+            (left, bottom - cut),
+        ];
+        for index in 0..points.len() {
+            let next = (index + 1) % points.len();
+            self.line(
+                points[index].0,
+                points[index].1,
+                points[next].0,
+                points[next].1,
+                color.0,
+                color.1,
+                color.2,
             );
         }
-        self.render_clip = clip;
+    }
+
+    // ------------------------=
+    // FUNC: assistant_star
+    // DESC: Renders the kit's centered four-point assistant glyph using the current desktop accent.
+    // ------------------=
+    fn assistant_star(&mut self, x: i32, y: i32, accent: (u8, u8, u8), pulse: u8, s: usize) {
+        let radius = 13 * s as i32;
+        for distance in -radius..=radius {
+            let taper = radius - distance.abs();
+            let horizontal = (taper * 4 / radius.max(1)).max(1);
+            let vertical = (taper * 3 / radius.max(1)).max(1);
+            for offset in -horizontal..=horizontal {
+                self.blend_color(x + offset, y + distance, 232, 249, 255, pulse.saturating_add(90));
+            }
+            for offset in -vertical..=vertical {
+                self.blend_color(x + distance, y + offset, accent.0, accent.1, accent.2, pulse.saturating_add(70));
+            }
+        }
+        self.glow_color(x, y, 4 * s as i32, 255, 255, 255, 220);
     }
     // ------------------------=
     // FUNC: assistant_lines

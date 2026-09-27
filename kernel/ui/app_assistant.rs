@@ -1,8 +1,8 @@
 //! Shared app-window assistant contract. No ambient file access or command execution.
 use super::geometry::{Point, Rect};
 pub const PANEL_SLOTS: usize = 16;
-pub const TAB_WIDTH: usize = 40;
-pub const TAB_HEIGHT: usize = 88;
+pub const TAB_WIDTH: usize = 48;
+pub const TAB_HEIGHT: usize = 104;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     None,
@@ -31,6 +31,8 @@ pub enum Target {
 pub struct Panel {
     pub expanded: bool,
     pub focused: bool,
+    pub hovered: bool,
+    pub glow_phase: u8,
     pub input: [u8; 192],
     pub length: usize,
     pub response: [u8; 512],
@@ -51,6 +53,8 @@ impl Panel {
         Self {
             expanded: false,
             focused: false,
+            hovered: false,
+            glow_phase: 0,
             input: [0; 192],
             length: 0,
             response: [0; 512],
@@ -311,6 +315,62 @@ pub fn write(id: usize, panel: Panel) {
 // ------------------=
 pub fn revision() -> u32 {
     REVISION.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+// ------------------------=
+// FUNC: set_hovered
+// DESC: Makes hover ownership exclusive to the visible active-window tab and clears stale hover when focus moves away.
+// ------------------=
+pub fn set_hovered(id: Option<usize>) -> bool {
+    let mut changed = false;
+    unsafe {
+        for (index, panel) in (&mut *(&raw mut PANELS)).iter_mut().enumerate() {
+            let hovered = id == Some(index);
+            if panel.hovered != hovered {
+                panel.hovered = hovered;
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        REVISION.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
+    changed
+}
+
+// ------------------------=
+// FUNC: animation_tick
+// DESC: Advances only hovered assistant-tab glow phases and settles inactive tabs without unbounded repaint work.
+// ------------------=
+pub fn animation_tick() -> bool {
+    let mut changed = false;
+    unsafe {
+        for panel in &mut *(&raw mut PANELS) {
+            let next = if panel.hovered {
+                (panel.glow_phase + 1) & 31
+            } else {
+                panel.glow_phase.saturating_sub(4)
+            };
+            if next != panel.glow_phase {
+                panel.glow_phase = next;
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        REVISION.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
+    changed
+}
+
+// ------------------------=
+// FUNC: glow_intensity
+// DESC: Converts the bounded ping-pong animation phase into a subtle hover-only edge intensity.
+// ------------------=
+pub const fn glow_intensity(phase: u8) -> u8 {
+    let phase = phase & 31;
+    let wave = if phase <= 15 { phase } else { 31 - phase };
+    70 + wave * 7
 }
 // ------------------------=
 // FUNC: fingerprint

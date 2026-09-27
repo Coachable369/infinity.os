@@ -132,6 +132,9 @@ impl ConsoleRuntime {
     // ------------------=
     pub(super) fn pointer_window_assistant(&mut self, clicked: bool) -> bool {
         let Some((id, window)) = self.assistant_owner() else {
+            if assistant::set_hovered(None) {
+                self.redraw();
+            }
             return false;
         };
         let mut panel = assistant::read(id);
@@ -144,23 +147,31 @@ impl ConsoleRuntime {
             x: self.system.framebuffer_width as i32 * self.pointer_x / 1000,
             y: self.system.framebuffer_height as i32 * self.pointer_y / 1000,
         };
-        let Some(target) = assistant::hit(
-            assistant::geometry_in_viewport(
-                window,
-                self.system.framebuffer_width,
-                scale,
-                panel.expanded,
-            ),
+        let geometry = assistant::geometry_in_viewport(
+            window,
+            self.system.framebuffer_width,
+            scale,
             panel.expanded,
-            p,
-        ) else {
+        );
+        let hovered = geometry.toggle.contains(p);
+        let hover_changed = panel.hovered != hovered;
+        let hover_owner_changed = assistant::set_hovered(if hovered { Some(id) } else { None });
+        panel.hovered = hovered;
+        let Some(target) = assistant::hit(geometry, panel.expanded, p) else {
             if clicked {
                 panel.focused = false;
-                assistant::write(id, panel);
+            }
+            assistant::write(id, panel);
+            if hover_changed || hover_owner_changed {
+                self.redraw();
             }
             return false;
         };
         if !clicked {
+            assistant::write(id, panel);
+            if hover_changed || hover_owner_changed {
+                self.redraw();
+            }
             return panel.expanded;
         }
         self.ai_chat_focus = 0;

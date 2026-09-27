@@ -180,7 +180,10 @@ fn panels() {
     assert_eq!(geometry.panel.bottom(), reference.bottom() - 1);
     assert_eq!(geometry.toggle.x, reference.right() - 1);
     assert_eq!(geometry.toggle.width, ai::TAB_WIDTH as u32);
+    assert_eq!(geometry.toggle.height, 44);
     assert!(geometry.toggle.right() > reference.right());
+    let collapsed_geometry = ai::geometry(reference, 1, false);
+    assert_eq!(collapsed_geometry.toggle.height, ai::TAB_HEIGHT as u32);
     for scale in 1..=2 {
         for width in [480, 800, 1200] {
             let window = Rect {
@@ -276,6 +279,28 @@ fn panels() {
     ai::write(2, p);
     assert!(ai::read(2).expanded);
     assert!(!ai::read(1).expanded);
+    let mut hover = ai::Panel::new();
+    hover.hovered = true;
+    ai::write(12, hover);
+    assert!(ai::set_hovered(Some(12)) || ai::read(12).hovered);
+    let mut stale = ai::Panel::new();
+    stale.hovered = true;
+    ai::write(11, stale);
+    assert!(ai::set_hovered(Some(12)));
+    assert!(!ai::read(11).hovered);
+    assert!(ai::read(12).hovered);
+    let revision = ai::revision();
+    assert!(ai::animation_tick());
+    assert!(ai::revision() > revision);
+    assert_eq!(ai::read(12).glow_phase, 1);
+    assert!(ai::glow_intensity(15) > ai::glow_intensity(0));
+    assert_eq!(ai::glow_intensity(15), ai::glow_intensity(16));
+    hover = ai::read(12);
+    hover.hovered = false;
+    ai::write(12, hover);
+    assert!(ai::animation_tick());
+    assert_eq!(ai::read(12).glow_phase, 0);
+    assert!(!ai::animation_tick());
     assert_ne!(
         ai::fingerprint(b"abc", 1, None),
         ai::fingerprint(b"abc", 2, None)

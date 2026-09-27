@@ -13193,10 +13193,12 @@ pub fn ui_animation_tick() -> bool {
         if runtime.spatial.arriving { return runtime.spatial_arrival_tick(); }
         if runtime.spatial.open { return runtime.spatial_tick(); }
         let thinking_changed = crate::bootstrap::thinking_animation_tick(matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::Settings));
-        if thinking_changed && !motion_frame {
+        let assistant_changed = matches!(runtime.mode, ConsoleMode::Desktop | ConsoleMode::Settings)
+            && crate::ui::app_assistant::animation_tick();
+        if thinking_changed && !motion_frame && !assistant_changed {
             runtime.redraw();
         }
-        let mut frame_changed = motion_frame;
+        let mut frame_changed = motion_frame || assistant_changed;
         let pool_revision = crate::runtime::storage_view::visibility(runtime.current_user, runtime.current_session,
             runtime.mode == ConsoleMode::Settings && runtime.system_focus == 8);
         if pool_revision != runtime.pool_view_revision {
