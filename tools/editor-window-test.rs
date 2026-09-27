@@ -202,4 +202,18 @@ fn main() {
     stack.sync(visible, 1, 0);
     assert_eq!(stack.order, before);
     assert_ne!(stack.hit(bounds, Point { x: 50, y: 50 }), Some(1));
+    let bounds=[bounds[0];ui::desktop_stack::SURFACES];
+    let mut visible=[true;ui::desktop_stack::SURFACES];
+    stack.sync(visible,ui::desktop_stack::BROWSER,6);
+    assert_eq!(stack.hit(bounds,Point{x:50,y:50}),Some(ui::desktop_stack::BROWSER));
+    stack.sync(visible,2,6);
+    assert_eq!(stack.hit(bounds,Point{x:50,y:50}),Some(2));
+    stack.sync(visible,ui::desktop_stack::BROWSER,6);
+    visible[ui::desktop_stack::BROWSER]=false;
+    stack.sync(visible,ui::desktop_stack::BROWSER,6);
+    assert_eq!(stack.hit(bounds,Point{x:50,y:50}),Some(2));
+    // Existing five-surface callers must neither expose nor hit the new slot.
+    stack.sync([true;5],4,6);
+    assert!(!stack.visible[ui::desktop_stack::BROWSER]);
+    assert_eq!(stack.hit(bounds,Point{x:50,y:50}),Some(4));
 }
