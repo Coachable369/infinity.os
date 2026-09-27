@@ -17,6 +17,29 @@ pub enum Error {
     Truncated,
     Protocol,
 }
+impl Error {
+    // ------------------------=
+    // FUNC: certificate_rejected
+    // DESC: Distinguishes authenticated certificate validation failure from generic transport failures.
+    // ------------------=
+    pub fn certificate_rejected(&self) -> bool {
+        matches!(self, Self::Tls(TlsError::InvalidCertificate))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // ------------------------=
+    // FUNC: certificate_failure_is_not_a_transport_failure
+    // DESC: Verifies the typed classification used by native browser negative-certificate acceptance.
+    // ------------------=
+    #[test]
+    fn certificate_failure_is_not_a_transport_failure() {
+        assert!(super::Error::Tls(super::TlsError::InvalidCertificate).certificate_rejected());
+        assert!(!super::Error::Protocol.certificate_rejected());
+        assert!(!super::Error::Truncated.certificate_rejected());
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Response {
     pub status: u16,

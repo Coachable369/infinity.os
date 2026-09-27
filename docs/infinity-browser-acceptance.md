@@ -3,6 +3,35 @@
 This is an implementation ledger, not an installed-browser completion claim.
 Servo is pinned to `d05154e2b4def11a9fefe412898a0a6c8925a9cd` (0.6).
 
+## Latest installed interaction evidence — 2026-09-27
+
+Manifest `20260927T115142932176Z-15762.json` passes real external HTTPS
+HTML/CSS/image loading, keyboard-triggered JavaScript DOM mutation, and wheel
+scrolling in the installed ARM desktop. The document is served by HTTPbun and
+its PNG by HTTPbingo; neither response is injected into Servo. Acceptance checks
+the framebuffer's CSS color, image color diversity, green background after
+typing into the input, and the red lower section after scrolling. Captures:
+`build/browser-js-input-current.png` and `build/browser-scroll-current.png`.
+The engine reported two completed HTTPS requests, HTTP 200, and zero page,
+engine, network or allocation failure. The earlier HTTPbin variant failed native
+transport before receiving HTTP (`20260927T114111366053Z-15517.json`); it is not
+counted as passing compatibility evidence.
+
+Expired-certificate rejection also passes inside the installed browser:
+`20260927T115837021724Z-16195.json`,
+`https://expired-isrgrootx1.letsencrypt.org/`. Native TLS returned the distinct
+certificate-rejection value (9), zero completed HTTP responses and a recoverable
+page error; the engine remained running without failure. The transport now
+preserves certificate rejection separately from connection failure, so an
+unreachable host cannot falsely satisfy this check. Focused HTTP/TLS tests pass
+in `20260927T115822171664Z-15893.json` (31 behavioral tests).
+
+This uses the same disposable cold-booted installed disk with an offline kernel
+update, not unmodified release ISO parity. Its 15-second observation interval is
+not launch/load timing. Lifecycle/performance measurement,
+default release packaging and target parity remain open. Older entries below
+describe historical checkpoints and do not supersede this evidence.
+
 ## Open acceptance gates
 
 Installed integration exposed a payload-capacity blocker: the experimental ARM

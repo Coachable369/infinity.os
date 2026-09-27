@@ -29,6 +29,7 @@ pub enum Failure {
     Timeout,
     Resolution,
     Transport,
+    Certificate,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Ticket(u64);
@@ -533,6 +534,7 @@ fn get_bounded(
                     Failure::Resolution
                 }
                 http::client::Error::Denied => Failure::Denied,
+                http::client::Error::Https(error) if error.certificate_rejected() => Failure::Certificate,
                 _ => Failure::Transport,
             })?;
             Ok(Response {
