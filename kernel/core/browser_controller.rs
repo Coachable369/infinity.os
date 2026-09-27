@@ -25,6 +25,9 @@ fn viewport(console:&ConsoleRuntime)->Option<(u32,u32)> {
 // DESC: Opens a native browser only for an active session already holding the required network capabilities.
 // ------------------=
 pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
+    if command==b"browser authorize" || command==b"browser authorize confirm=true" {
+        geturl::authorize_for(console,command==b"browser authorize confirm=true",true);return true;
+    }
     let Some(url)=command.strip_prefix(b"browser ") else {return false;};
     if url.len()>2048 || !(url.starts_with(b"https://") || url.starts_with(b"http://")) || core::str::from_utf8(url).is_err() {
         console.output.write_line(b"Usage: browser https://example.com/");return true;

@@ -16,16 +16,27 @@ static mut PENDING: Option<(SecurityIdentity, bool, bool, bool)> = None;
 // DESC: Requires explicit authenticated operator consent for a sixty-second session network lease; endpoint policy remains mandatory.
 // ------------------=
 pub(super) fn authorize(console: &mut ConsoleRuntime, confirmed: bool) {
+    authorize_for(console, confirmed, false);
+}
+
+// ------------------------=
+// FUNC: authorize_for
+// DESC: Grants an explicitly confirmed bounded session lease, retaining endpoint policy and operator checks.
+// ------------------=
+pub(super) fn authorize_for(console: &mut ConsoleRuntime, confirmed: bool, browser: bool) {
+    let seconds = if browser {600} else {60};
     if !confirmed {
         console.output.write_line(
-            b"Grant this session connect/send/receive/DNS capabilities for 60 seconds.",
+            if browser {b"Grant this session connect/send/receive/DNS capabilities for 10 minutes."}
+            else {b"Grant this session connect/send/receive/DNS capabilities for 60 seconds."},
         );
         console.output.write_line(
             b"Scope: all destinations still allowed by Network policy. Not persistent.",
         );
         console
             .output
-            .write_line(b"To approve: https authorize confirm=true");
+            .write_line(if browser {b"To approve: browser authorize confirm=true"}
+                else {b"To approve: https authorize confirm=true"});
         return;
     }
     let Ok(lease) = crate::runtime::node_client::begin_capability_input(
@@ -67,7 +78,7 @@ pub(super) fn authorize(console: &mut ConsoleRuntime, confirmed: bool) {
                         0,
                         owner,
                         owner,
-                        Some(now.saturating_add(60)),
+                        Some(now.saturating_add(seconds)),
                         0,
                     ) {
                         Ok(id) => created[i] = Some(id),

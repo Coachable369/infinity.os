@@ -35,6 +35,13 @@ impl<P: Provider> servo::WebViewDelegate for Delegate<P> {
         if status == servo::LoadStatus::Complete { self.ready.set(true); }
     }
     // ------------------------=
+    // FUNC: notify_traversal_complete
+    // DESC: Finishes cached history traversal even when no new document load event is emitted.
+    // ------------------=
+    fn notify_traversal_complete(&self, _: WebView, _: servo::TraversalId) {
+        self.complete.set(true);
+    }
+    // ------------------------=
     // FUNC: notify_crashed
     // DESC: Records failure without publishing untrusted engine diagnostics to UI.
     // ------------------=

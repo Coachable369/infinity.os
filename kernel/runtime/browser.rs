@@ -16,6 +16,8 @@ static GENERATION:AtomicU64=AtomicU64::new(0);
 static PEAK:AtomicU64=AtomicU64::new(0);
 #[no_mangle]
 pub static INFINITY_BROWSER_FAILED_ALLOCATION:AtomicU32=AtomicU32::new(0);
+#[no_mangle]
+pub static INFINITY_BROWSER_LOCATION_HASH:AtomicU64=AtomicU64::new(0);
 static FRAME_REVISION:AtomicU64=AtomicU64::new(0);
 static LOAD_REVISION:AtomicU64=AtomicU64::new(0);
 #[no_mangle]
@@ -178,7 +180,10 @@ pub fn poll_presentation()->bool {
                 abi::EVENT_HISTORY=>view.history=event.value&3,
                 abi::EVENT_ERROR=>{view.error=event.value+1;view.loading=false;},
                 abi::EVENT_ADDRESS=>{view.address_length=event.length.min(view.address.len());
-                    view.address[..view.address_length].copy_from_slice(&event.text[..view.address_length]);},
+                    view.address[..view.address_length].copy_from_slice(&event.text[..view.address_length]);
+                    let hash=view.address[..view.address_length].iter().fold(0xcbf29ce484222325u64,
+                        |hash,byte|(hash^(*byte as u64)).wrapping_mul(0x100000001b3));
+                    INFINITY_BROWSER_LOCATION_HASH.store(hash,Ordering::Release);},
                 abi::EVENT_TITLE=>{view.title_length=event.length.min(view.title.len());
                     view.title[..view.title_length].copy_from_slice(&event.text[..view.title_length]);},
                 _=>continue,

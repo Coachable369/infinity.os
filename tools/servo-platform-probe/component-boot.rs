@@ -23,6 +23,7 @@ static mut REDIRECT_ID:u64=0;
 static mut HISTORY:u32=0;
 static mut LOCATION:u32=0;
 static mut LOAD_STARTS:u32=0;
+static mut LOAD_COMPLETE:bool=false;
 static mut INPUT:input_queue::Queue<16>=input_queue::Queue::new();
 static PIXELS:frames::Frames<81920>=frames::Frames::new();
 static HTML:&[u8]=b"<!doctype html><html style='background:red;min-height:100vh'><script>let down=false,clicked=false;document.documentElement.style.background='rgb(12,34,56)';document.addEventListener('click',e=>{if(e.clientX===40&&e.clientY===40)clicked=true});document.addEventListener('keydown',e=>{if(e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.altKey&&!e.metaKey&&e.repeat)down=true});document.addEventListener('keyup',e=>{if(clicked&&down&&e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.repeat)document.documentElement.style.background='rgb(34,56,78)'})</script></html>";
@@ -129,8 +130,8 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
         11=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/#second";
             value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=12;},
         12 if LOCATION==2 && HISTORY&1!=0=>{value.kind=abi::BACK;STEP=13;},
-        13 if LOCATION==1 && HISTORY&2!=0=>{value.kind=abi::FORWARD;STEP=14;},
-        14 if LOCATION==2 && HISTORY&1!=0=>{value.kind=abi::NAVIGATE;
+        13 if LOCATION==1 && HISTORY&2!=0 && LOAD_COMPLETE=>{value.kind=abi::FORWARD;STEP=14;},
+        14 if LOCATION==2 && HISTORY&1!=0 && LOAD_COMPLETE=>{value.kind=abi::NAVIGATE;
             let url=b"https://fixture.test/denied";value.text[..url.len()].copy_from_slice(url);
             value.length=url.len() as u32;STEP=15;},
         16=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/recovery";
@@ -160,6 +161,7 @@ unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,leng
         if STEP==15 && value==3 {STEP=16;} else {finish(1,200+value as u64);}
     }
     if kind==abi::EVENT_MEMORY {record(5,value as u64);}
+    if kind==abi::EVENT_LOAD {LOAD_COMPLETE=value!=0;}
     if kind==abi::EVENT_LOAD && value==0 {
         LOAD_STARTS|=match STEP {2=>1,8=>2,12=>4,_=>0};
     }

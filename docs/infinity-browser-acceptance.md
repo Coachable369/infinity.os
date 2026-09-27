@@ -109,8 +109,31 @@ non-power-of-two roots (`20260927T102718005581Z-11991.json`). The native Servo
 component also passes. Installed rerun `20260927T102047099692Z-11812.json`
 no longer aborts or reports failed allocation; link load revision reaches 4
 and loading becomes false after 13 completed native requests. This is not yet
-navigation acceptance: the captured page remains Example Domain and Back
-stalls with loading set. Presentation/history completion is the next blocker.
+navigation acceptance: Back stalls with loading set. The PNG initially reviewed
+was an older conversion, not the newly captured PPM; do not use it as evidence
+of a presentation defect.
+
+`20260927T103006872681Z-12181.json` verifies the redirected IANA destination,
+Back to Example Domain, and Forward to IANA through the actual engine URL and
+completed-load state. Fresh PPM conversion confirms IANA text/CSS in the native
+viewport. Cached traversal now consumes Servo's traversal-complete callback;
+it does not wait for a nonexistent new document-load event. Reload failed closed
+after the existing sixty-second network lease expired. An explicit browser
+authorization command with a bounded ten-minute lease is being verified; it
+retains authenticated operator consent and endpoint policy. This is not yet
+the native permission UI or a completed browser acceptance result.
+
+Installed navigation passes in `20260927T103806468778Z-12383.json`: real link
+navigation through IANA's redirect chain, Back, Forward, and Reload all reach
+the expected engine URL with loading false and no page/worker failure. Reload
+adds ten completed native requests (23 total). Fresh `browser-reload.ppm`
+shows IANA content in the native window. The browser command's explicit
+ten-minute lease preserves capability checks; the normal HTTPS command still
+uses sixty seconds. The component fixture also requires history completion,
+not just location change. Some optional IANA subresources failed on the first
+load; comprehensive site compatibility is not claimed. Installed JS/input,
+image/scroll/download, permission UI, performance and release-ISO parity remain
+open. The active-session PEAK counter still is not a RAM measurement.
 
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.

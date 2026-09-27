@@ -34,11 +34,11 @@ def browser_symbols(elf):
         if len(fields) != 4:
             continue
         for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK", "LOAD_REVISION", "LOADING", "PAGE_ERROR", "HISTORY",
-                     "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION"):
+                     "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION", "LOCATION_HASH"):
             if fields[3] in ("infinity_kernel::runtime::browser::" + name,
                 "infinity_kernel::runtime::browser::" + name + " (.0)", "INFINITY_BROWSER_" + name):
                 result[name] = (int(fields[0], 16), int(fields[1], 16))
-    assert len(result) == 12
+    assert len(result) == 13
     return result
 
 class Guest(base.Guest):
@@ -159,7 +159,7 @@ def main():
             network.configure_nat(guest)
         guest.launch("command", 5)
         counters = browser_symbols(artifacts / "installed-kernel.elf")
-        guest.command("https authorize confirm=true")
+        guest.command("browser authorize confirm=true")
         guest.command("browser https://example.com/")
         started = time.monotonic()
         deadline = started + 90
@@ -181,6 +181,10 @@ def main():
             receipt["navigation"] = []
             for label, x, y in (("link", 303, 368), ("back", 139, 161),
                                ("forward", 192, 161), ("reload", 242, 161)):
+                target_url = "https://example.com/" if label == "back" else "https://www.iana.org/help/example-domains"
+                target_hash = 0xcbf29ce484222325
+                for byte in target_url.encode():
+                    target_hash = ((target_hash ^ byte) * 0x100000001b3) & ((1 << 64) - 1)
                 before = int.from_bytes(guest.memory(*counters["LOAD_REVISION"]), "little")
                 guest.click(x, y)
                 deadline = time.monotonic() + 60
@@ -189,7 +193,7 @@ def main():
                         for name, (address, size) in counters.items()}
                     if values["FAILURE"] or values["PAGE_ERROR"]:
                         break
-                    if values["LOAD_REVISION"] > before and values["LOADING"] == 0:
+                    if values["LOAD_REVISION"] > before and values["LOADING"] == 0 and values["LOCATION_HASH"] == target_hash:
                         break
                     time.sleep(.25)
                 receipt["navigation"].append(dict(action=label, **values))
@@ -199,6 +203,7 @@ def main():
                 guest.screenshot("browser-" + label)
                 assert values["FAILURE"] == 0 and values["PAGE_ERROR"] == 0, receipt
                 assert values["LOAD_REVISION"] > before and values["LOADING"] == 0, receipt
+                assert values["LOCATION_HASH"] == target_hash, receipt
             receipt["navigation_captures_for_review"] = True
         print(json.dumps(dict(work=str(work), **receipt)), flush=True)
     finally:
