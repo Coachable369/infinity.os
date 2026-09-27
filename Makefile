@@ -62,7 +62,7 @@ LLD_LINK := $(LLD)/lld-link
 OBJCOPY := $(LLVM)/llvm-objcopy
 RUSTC := rustc
 CARGO := cargo
-include tools/browser-build.mk
+include $(dir $(lastword $(MAKEFILE_LIST)))tools/browser-build.mk
 QEMU_X64 := qemu-system-x86_64
 
 QEMU_AARCH64 := qemu-system-aarch64

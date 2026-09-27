@@ -25,14 +25,15 @@ def main():
                 (folder / "fixture.bin").write_bytes(bytes(range(256)))
             image = f"build/infinity-{architecture}.img"
             (work / image).write_bytes(bytes(range(256)) * 16)
-            subprocess.run(
+            result = subprocess.run(
                 # This fixture tests ISO packaging only. Native model parity is
                 # exercised separately against actual linked kernel artifacts.
                 ["make", "-f", str(root / "Makefile"), "-o", image,
                  "-o", "x86-native-speech-parity", f"builds/{name}"],
-                cwd=work, check=True, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                cwd=work, stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE, text=True,
             )
+            assert result.returncode == 0, result.stderr[-4000:]
             artifact = work / "builds" / name
             assert artifact.is_file() and artifact.stat().st_size > 0
             extracted = work / f"{architecture}.bin"
