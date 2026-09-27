@@ -1,4 +1,4 @@
-"""Exercise the integrated browser in a disposable installed ARM desktop.
+"""Exercise the integrated browser in a disposable installed native desktop.
 
 Default diagnostic runs use an offline experimental kernel update. Only
 --iso-parity installs matching browser media unchanged and verifies the exact
@@ -166,7 +166,16 @@ class Guest(base.Guest):
             "-device", "scsi-hd,drive=disk,bootindex=1", "-netdev", "user,id=net",
             "-device", "e1000,netdev=net", "-qmp", f"unix:{qmp},server=on,wait=off",
             "-display", "none", "-serial", "stdio", "-monitor", "none", "-no-reboot"]
-        if installer:
+        if self.arch=="x86_64":
+            command=["qemu-system-x86_64","-machine","pc","-accel","tcg","-cpu","max",
+                "-smp","4","-m","12G","-vga","none","-device","VGA,xres=1024,yres=768,xmax=1024,ymax=768",
+                "-drive",f"if=pflash,format=raw,readonly=on,file={self.firmware}",
+                "-drive",f"if=ide,index=0,format=raw,file={self.disk}",
+                "-netdev","user,id=net","-device","e1000,netdev=net",
+                "-object","rng-random,id=rng0,filename=/dev/urandom","-device","virtio-rng-pci,rng=rng0",
+                "-qmp",f"unix:{qmp},server=on,wait=off","-display","none","-serial","stdio","-no-reboot"]
+            command += ["-cdrom",str(artifacts/"installer.iso"),"-boot","order=d"] if installer else ["-boot","order=c"]
+        elif installer:
             command += ["-drive", f"if=none,id=cd,format=raw,media=cdrom,file={artifacts / 'installer.iso'}",
                 "-device", "scsi-cd,drive=cd,bootindex=0"]
         self.process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=self.log, stderr=self.log)
@@ -195,6 +204,7 @@ def main():
     if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
         raise SystemExit("Run through build-kit")
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--arch",choices=("aarch64","x86_64"),default="aarch64")
     parser.add_argument("--reuse-installed", type=Path)
     parser.add_argument("--iso-parity", action="store_true", help="Cold-install the browser QEMU ISO without any offline kernel replacement")
     parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
@@ -221,6 +231,8 @@ def main():
     if args.interaction and (args.download or args.launcher or args.navigation):
         parser.error("Interaction acceptance is a separate bounded run")
     reuse = args.reuse_installed is not None
+    if args.arch=="x86_64" and not (reuse or args.iso_parity):
+        parser.error("x86 verification requires unmodified ISO installation or a previously verified disk")
     if args.iso_parity and (reuse or args.update_kernel):
         parser.error("ISO parity requires a new unmodified installation")
     if args.update_kernel and (not reuse or not args.update_kernel.resolve().is_relative_to(ROOT / "build")):
@@ -231,18 +243,19 @@ def main():
     if not reuse:
         artifacts.mkdir(parents=True)
     for source, name in ([] if reuse else [
-        ("builds/InfinityOS-aarch64-qemu-test.iso", "installer.iso"),
-        ("build/aarch64/kernel-qemu.elf", "kernel.elf"),
-        ("build/aarch64/installed-kernel-qemu.elf" if args.iso_parity else "build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")]):
+        ("builds/InfinityOS-x86_64-bootstrap-test.iso" if args.arch=="x86_64" else "builds/InfinityOS-aarch64-qemu-test.iso", "installer.iso"),
+        ("build/x86_64/kernel.elf" if args.arch=="x86_64" else "build/aarch64/kernel-qemu.elf", "kernel.elf"),
+        ("build/x86_64/installed-kernel.elf" if args.arch=="x86_64" else "build/aarch64/installed-kernel-qemu.elf" if args.iso_parity else "build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")]):
         shutil.copyfile(ROOT / source, artifacts / name)
     if args.update_kernel:
         shutil.copyfile(args.update_kernel.resolve(), artifacts / "installed-kernel.elf")
     subprocess.run(["/opt/homebrew/opt/llvm/bin/llvm-objcopy", "--strip-debug",
         str(artifacts / "installed-kernel.elf"), str(artifacts / "installed-stripped.elf")], check=True)
-    guest = Guest(work, 1, "/opt/homebrew/share/qemu/edk2-aarch64-code.fd", reuse=reuse, width=1024, height=768, memory_mb=12288)
+    guest = Guest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd", reuse=reuse, width=1024, height=768, memory_mb=12288)
+    guest.arch=args.arch
     guest.fast_commands = args.interaction
     guest.patched = args.iso_parity or (reuse and args.update_kernel is None)
-    receipt = dict(installed=reuse, browser_iso_parity=False, browser_interactive=False)
+    receipt = dict(architecture=args.arch,installed=reuse, browser_iso_parity=False, browser_interactive=False)
     try:
         if not reuse:
             guest.install()
@@ -327,7 +340,7 @@ def main():
             receipt["native_address_keyboard_navigation"]=True
         if args.measure:
             assert "page_complete_seconds" in receipt and values["PAGE_ERROR"]==0,receipt
-            receipt["timing_boundary"]="QMP Enter submission to observed framebuffer/engine completion; ARM TCG, 4 vCPU, 12 GiB; polling upper bounds"
+            receipt["timing_boundary"]=f"QMP Enter submission to observed framebuffer/engine completion; {args.arch} TCG, 4 vCPU, 12 GiB; polling upper bounds"
             guest.click(970,700)
             receipt["pointer_visible_roundtrip_seconds"]=[pointer_pixel_latency(guest,1 if index%2==0 else -1) for index in range(10)]
             guest.click(889,111)

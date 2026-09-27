@@ -3,7 +3,40 @@
 This is an implementation ledger, not an installed-browser completion claim.
 Servo is pinned to `d05154e2b4def11a9fefe412898a0a6c8925a9cd` (0.6).
 
+## Current six-item checklist
+
+| Item | Current evidence / remaining gate |
+| --- | --- |
+| Native Servo shell | ARM installed rendering, native address input, page input, JavaScript, navigation and lifecycle pass. |
+| Governed live networking | Real HTTPS, explicit session consent and expired-certificate rejection pass. |
+| Responsive execution | Dedicated engine worker; visible cursor samples during loading 32–337 ms in ARM TCG. Hardware-VM timing is not measured. |
+| Native downloads/storage | Real small attachment persisted as an Object/Namespace file with metadata; no host download path. |
+| Installed default registration | Catalog and minimized shelf work on an unmodified fresh ARM QEMU install; default and model-inclusive build wiring added. Updated normal ISOs still building. |
+| Cold-installed acceptance | ARM QEMU ISO bytes, detached boot, onboarding, reboot, launcher and address navigation pass. x86 installed proof and final build regression pass remain open. |
+
+Clean-build attempts exposed two packaging-check assumptions, now corrected:
+Make include resolution from a fixture directory, and a speech test requiring
+contiguous rather than streamed installed kernels. Focused checks pass in
+`20260927T130251926000Z-25336.json` and
+`20260927T132322786706Z-68809.json`. The latter verifies 366 speech resources,
+194,770,124 resource bytes and three constructor entries in each x86 kernel,
+plus exact kernel shards from installer FAT media. The clean attempts remain
+failed records; the current continuation is incremental, not a clean-release
+success claim.
+
 ## Latest installed interaction evidence — 2026-09-27
+
+Current x86 cold-install verification exposed low-memory pressure before kernel
+entry: firmware's maximum-address allocation still staged the large ELF below
+3 GiB, overlapping its fixed load reservation. The loader now explicitly selects
+conventional high RAM from the firmware map. The separate native runtime pool
+also uses that allocator, bounded by the existing 64-GiB identity map. A
+diagnostic firmware boot reaches kernel entry; this is not yet installed-browser
+proof. Allocation tests cover high-RAM selection, reserved-region exclusion,
+size overflow, failure and matching page release. The full build also found a
+stale 1-GiB production-payload assumption; its corrected capacity test checks
+both real payloads, exact minimum disk boundaries and a historical small payload
+(`20260927T140822977505Z-19149.json`).
 
 Manifest `20260927T115142932176Z-15762.json` passes real external HTTPS
 HTML/CSS/image loading, keyboard-triggered JavaScript DOM mutation, and wheel

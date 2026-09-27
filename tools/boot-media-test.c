@@ -11,6 +11,38 @@ static EFI_SIMPLE_FILE_SYSTEM_PROTOCOL test_fs;
 static unsigned calls, fail_at, roots_closed, files_closed;
 static uint8_t present;
 static unsigned range_calls, range_frees, range_mode;
+static unsigned image_calls, image_frees, image_fail, image_high_map;
+static uint64_t image_ceiling = UINT64_MAX;
+// ------------------------=
+// FUNC: test_image_map
+// DESC: Exposes high conventional RAM beside reserved RAM to verify explicit safe staging placement.
+// ------------------=
+static EFI_STATUS EFIAPI test_image_map(size_t *bytes, void *buffer, uint64_t *key, size_t *stride, uint32_t *version) {
+    assert(*bytes >= 80); *bytes = 80; *stride = 40; *key = 1; *version = 1;
+    uint64_t entries[10] = {7, UINT64_C(0x200000000), 0, 2, 0,
+                            0, UINT64_C(0x300000000), 0, 100, 0};
+    memcpy(buffer, entries, sizeof(entries)); return EFI_SUCCESS;
+}
+// ------------------------=
+// FUNC: test_image_allocate
+// DESC: Requires unrestricted high-memory staging and models allocation failure without returning a bogus image.
+// ------------------=
+static EFI_STATUS EFIAPI test_image_allocate(uint32_t kind, uint32_t type, size_t pages, uint64_t *address) {
+    assert(type == EFI_LOADER_DATA && pages == 2);
+    assert(kind == (image_high_map ? EFI_ALLOCATE_ADDRESS : EFI_ALLOCATE_MAX_ADDRESS));
+    assert(*address == (image_high_map ? UINT64_C(0x200000000) : image_ceiling));
+    ++image_calls;
+    *address = image_ceiling == UINT32_MAX ? UINT64_C(0xffffe000) : UINT64_C(0x200000000);
+    return image_fail ? 1 : EFI_SUCCESS;
+}
+// ------------------------=
+// FUNC: test_image_free
+// DESC: Checks staging pages above 4 GiB are released with the exact rounded allocation size.
+// ------------------=
+static EFI_STATUS EFIAPI test_image_free(uint64_t address, size_t pages) {
+    assert(address == UINT64_C(0x200000000) && pages == 2);
+    ++image_frees; return EFI_SUCCESS;
+}
 // ------------------------=
 // FUNC: test_range_allocate
 // DESC: Models firmware refusing one allocation across adjacent conventional-memory descriptors.
@@ -107,6 +139,25 @@ int main(void) {
     assert(installed_kernel_size_valid(UINT64_C(1024)*1024*1024));
     assert(!installed_kernel_size_valid(UINT64_C(1024)*1024*1024+1));
     EFI_BOOT_SERVICES boot = {0};
+    boot.allocate_pages = test_image_allocate; boot.free_pages = test_image_free;
+    assert(!allocate_kernel_image(&boot, 0));
+    assert(!allocate_kernel_image(&boot, SIZE_MAX));
+    assert(image_calls == 0);
+    void *staging = allocate_kernel_image(&boot, PAGE_SIZE + 1);
+    assert((uintptr_t)staging == UINT64_C(0x200000000));
+    free_kernel_image(&boot, staging, PAGE_SIZE + 1);
+    assert(image_calls == 1 && image_frees == 1);
+    image_fail = 1;
+    assert(!allocate_kernel_image(&boot, PAGE_SIZE + 1));
+    assert(image_calls == 2 && image_frees == 1);
+    image_fail = 0; image_high_map = 1; boot.get_memory_map = test_image_map;
+    staging = allocate_kernel_image(&boot, PAGE_SIZE + 1);
+    assert((uintptr_t)staging == UINT64_C(0x200000000));
+    free_kernel_image(&boot, staging, PAGE_SIZE + 1);
+    assert(image_calls == 3 && image_frees == 2);
+    image_high_map = 0; image_ceiling = UINT32_MAX;
+    assert((uintptr_t)allocate_native_buffer(&boot, PAGE_SIZE + 1, image_ceiling) == UINT64_C(0xffffe000));
+    assert(image_calls == 4);
     boot.allocate_pages = test_range_allocate; boot.free_pages = test_range_free;
     boot.get_memory_map = test_range_map;
     for (range_mode = 0; range_mode < 3; ++range_mode) {

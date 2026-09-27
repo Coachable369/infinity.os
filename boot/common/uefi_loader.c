@@ -618,6 +618,59 @@ static int installed_kernel_size_valid(uint64_t bytes) {
 }
 
 // ------------------------=
+// FUNC: allocate_native_buffer
+// DESC: Allocates verified high RAM within an explicit address ceiling, avoiding fixed low kernel ranges.
+// ------------------=
+static void *allocate_native_buffer(EFI_BOOT_SERVICES *boot, size_t bytes, uint64_t maximum) {
+    if (!bytes || bytes > SIZE_MAX - PAGE_MASK) return NULL;
+    size_t pages = (bytes + PAGE_MASK) / PAGE_SIZE;
+    // Some firmware's MaxAddress policy still prefers low memory. Select a
+    // conventional high-RAM descriptor explicitly before accepting that policy.
+    static uint64_t map[4096];
+    size_t map_bytes = sizeof(map), stride = 0;
+    uint64_t key = 0, highest = 0; uint32_t version = 0;
+    if (boot->get_memory_map && boot->get_memory_map(&map_bytes, map, &key, &stride, &version) == EFI_SUCCESS &&
+        map_bytes <= sizeof(map) && stride >= 40 && map_bytes % stride == 0) {
+        for (size_t at = 0; at < map_bytes; at += stride) {
+            const uint8_t *entry = (const uint8_t *)map + at;
+            uint32_t type; uint64_t start, count;
+            memcpy(&type, entry, 4); memcpy(&start, entry + 8, 8); memcpy(&count, entry + 24, 8);
+            if (type != 7 || count < pages || count > (UINT64_MAX-start)/PAGE_SIZE) continue;
+            uint64_t end = start + count*PAGE_SIZE;
+            uint64_t limit = maximum & ~(uint64_t)PAGE_MASK;
+            if (limit <= UINT64_MAX-PAGE_SIZE) limit += PAGE_SIZE;
+            if (end > limit) end = limit;
+            if (end <= start || (end-start)/PAGE_SIZE < pages) continue;
+            uint64_t candidate = end - pages*PAGE_SIZE;
+            if (candidate >= UINT64_C(0x100000000) && candidate > highest) highest = candidate;
+        }
+    }
+    if (highest && boot->allocate_pages(EFI_ALLOCATE_ADDRESS, EFI_LOADER_DATA, pages, &highest) == EFI_SUCCESS)
+        return (void *)(uintptr_t)highest;
+    uint64_t address = maximum;
+    if (boot->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA, pages, &address) != EFI_SUCCESS)
+        return NULL;
+    return (void *)(uintptr_t)address;
+}
+
+// ------------------------=
+// FUNC: allocate_kernel_image
+// DESC: Stages ELF bytes outside fixed low kernel ranges while firmware mappings remain active.
+// ------------------=
+static void *allocate_kernel_image(EFI_BOOT_SERVICES *boot, size_t bytes) {
+    return allocate_native_buffer(boot, bytes, UINT64_MAX);
+}
+
+// ------------------------=
+// FUNC: free_kernel_image
+// DESC: Releases the page-backed staging image after validation failure or successful ELF loading.
+// ------------------=
+static void free_kernel_image(EFI_BOOT_SERVICES *boot, void *image, size_t bytes) {
+    if (image && bytes && bytes <= SIZE_MAX - PAGE_MASK)
+        boot->free_pages((uint64_t)(uintptr_t)image, (bytes + PAGE_MASK) / PAGE_SIZE);
+}
+
+// ------------------------=
 // FUNC: try_load_installed_kernel
 // DESC: Reads try load installed kernel from firmware or device state.
 // ------------------=
@@ -734,12 +787,12 @@ static void *try_load_installed_kernel(EFI_SYSTEM_TABLE *system, size_t *file_si
          * installed image assembled by the current build. */
         if (!installed_kernel_size_valid(kernel_bytes)) continue;
         size_t transfer_size = (size_t)((kernel_bytes + 511) & ~UINT64_C(511));
-        void *buffer = NULL;
-        if (boot->allocate_pool(EFI_LOADER_DATA, transfer_size, &buffer) != EFI_SUCCESS) continue;
+        void *buffer = allocate_kernel_image(boot, transfer_size);
+        if (!buffer) continue;
         if (read_blocks_bounded(block, container_lba + kernel_relative_lba,
-                transfer_size, buffer) != EFI_SUCCESS) { boot->free_pool(buffer); continue; }
+                transfer_size, buffer) != EFI_SUCCESS) { free_kernel_image(boot, buffer, transfer_size); continue; }
         if (installed_generation_stage < 9) installed_generation_stage = 9;
-        if (crc32_bytes(buffer, (size_t)kernel_bytes) != kernel_crc) { boot->free_pool(buffer); continue; }
+        if (crc32_bytes(buffer, (size_t)kernel_bytes) != kernel_crc) { free_kernel_image(boot, buffer, transfer_size); continue; }
         installed_generation_stage = 10;
         *file_size = (size_t)kernel_bytes;
         installed_generation_invalid = 0;
@@ -807,9 +860,8 @@ static void *load_kernel_file(EFI_HANDLE image, EFI_SYSTEM_TABLE *system, size_t
     *file_size = (size_t)((uint64_t *)info)[1];
     boot->free_pool(info);
 
-    void *buffer = NULL;
-    if (*file_size < sizeof(Elf64Header) ||
-        boot->allocate_pool(EFI_LOADER_DATA, *file_size, &buffer) != EFI_SUCCESS)
+    void *buffer = *file_size < sizeof(Elf64Header) ? NULL : allocate_kernel_image(boot, *file_size);
+    if (!buffer)
         fail(system, L"ERROR: kernel buffer allocation failed\r\n", "ERROR: kernel buffer allocation failed\n");
     size_t read_size = *file_size;
     if (file->read(file, &read_size, buffer) != EFI_SUCCESS || read_size != *file_size)
@@ -886,6 +938,32 @@ static int reserve_kernel_range(EFI_BOOT_SERVICES *boot, uint64_t low, uint64_t 
 }
 
 // ------------------------=
+// FUNC: report_kernel_memory_conflict
+// DESC: Emits bounded boot-only allocation diagnostics without changing memory ownership or normal runtime logging.
+// ------------------=
+static void report_kernel_memory_conflict(EFI_BOOT_SERVICES *boot, uint64_t low, uint64_t high) {
+    static uint64_t map[4096];
+    size_t bytes = sizeof(map), stride = 0;
+    uint64_t key = 0; uint32_t version = 0;
+    if (boot->get_memory_map(&bytes, map, &key, &stride, &version) != EFI_SUCCESS ||
+        bytes > sizeof(map) || stride < 40 || bytes % stride) return;
+    for (size_t at = 0; at < bytes; at += stride) {
+        const uint8_t *entry = (const uint8_t *)map + at;
+        uint32_t type; uint64_t start, pages;
+        memcpy(&type, entry, 4); memcpy(&start, entry + 8, 8); memcpy(&pages, entry + 24, 8);
+        if (pages > (UINT64_MAX-start)/PAGE_SIZE || start >= high || start + pages*PAGE_SIZE <= low) continue;
+        uint64_t values[3] = {type, start, pages*PAGE_SIZE};
+        serial_write("[BOOT] kernel memory type/start/bytes ");
+        for (unsigned field = 0; field < 3; ++field) {
+            char text[18];
+            for (unsigned digit = 0; digit < 16; ++digit)
+                text[digit] = "0123456789abcdef"[(values[field] >> ((15-digit)*4)) & 15];
+            text[16] = field == 2 ? '\n' : ' '; text[17] = 0; serial_write(text);
+        }
+    }
+}
+
+// ------------------------=
 // FUNC: load_elf
 // DESC: Reads load elf from firmware or device state.
 // ------------------=
@@ -919,8 +997,10 @@ static InfinityLoadedKernel load_elf(EFI_SYSTEM_TABLE *system, const void *image
     }
     if (low == UINT64_MAX || high <= low || header->entry < low || header->entry >= high)
         fail(system, L"ERROR: kernel has no loadable entry\r\n", "ERROR: kernel has no loadable entry\n");
-    if (!reserve_kernel_range(boot, low, high))
+    if (!reserve_kernel_range(boot, low, high)) {
+        report_kernel_memory_conflict(boot, low, high);
         fail(system, L"ERROR: unable to allocate kernel pages\r\n", "ERROR: unable to allocate kernel pages\n");
+    }
     memset((void *)(uintptr_t)low, 0, (size_t)(high - low));
     for (uint16_t i = 0; i < header->phnum; ++i) {
         if (segments[i].type == PT_LOAD)
@@ -945,9 +1025,9 @@ static uint64_t reserve_native_runtime_pool(EFI_SYSTEM_TABLE *system) {
     (void)system;
     return 0;
 #else
-    uint64_t base = UINT32_MAX;
-    if (system->boot_services->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA,
-            NATIVE_RUNTIME_POOL_PAGES, &base) != EFI_SUCCESS)
+    uint64_t base = (uint64_t)(uintptr_t)allocate_native_buffer(system->boot_services,
+        (size_t)NATIVE_RUNTIME_POOL_PAGES * PAGE_SIZE, (uint64_t)IDENTITY_MAP_GIB * 1024 * 1024 * 1024 - 1);
+    if (!base)
         fail(system, L"ERROR: native runtime pool allocation failed\r\n",
             "ERROR: native runtime pool allocation failed\n");
     return base;
@@ -1408,7 +1488,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     if (!kernel_image) kernel_image = load_kernel_file(image, system, &image_size);
     serial_write("[BOOT] kernel located\n");
     InfinityLoadedKernel kernel = load_elf(system, kernel_image, image_size);
-    system->boot_services->free_pool(kernel_image);
+    free_kernel_image(system->boot_services, kernel_image, image_size);
     serial_write("[BOOT] kernel loaded\n");
 
     uint64_t stack_base = UINT32_MAX;
