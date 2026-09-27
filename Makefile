@@ -62,6 +62,7 @@ LLD_LINK := $(LLD)/lld-link
 OBJCOPY := $(LLVM)/llvm-objcopy
 RUSTC := rustc
 CARGO := cargo
+include tools/browser-build.mk
 QEMU_X64 := qemu-system-x86_64
 
 QEMU_AARCH64 := qemu-system-aarch64
@@ -314,7 +315,7 @@ $(ICON_RUNTIME_ASSETS): $(ICON_THEME_SOURCES)
 $(BUILD)/x86_64/installed-kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUNTIME_ASSETS)
 	@mkdir -p $(@D)
 	RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=$(BUILD)/cargo-installed $(CARGO) build --release \
-		-Z build-std=core --target x86_64-unknown-none
+		-Z build-std=core --target x86_64-unknown-none $(BROWSER_FEATURE)
 	cp $(BUILD)/cargo-installed/x86_64-unknown-none/release/libinfinity_kernel.a $(BUILD)/x86_64/libinstalled-kernel.a
 	touch $@
 
@@ -341,17 +342,17 @@ $(BUILD)/voice-flite/%/libflite.a: $(FLITE_PORT_SOURCES)
 	python3 tools/voice-flite/build.py --target $*
 
 $(BUILD)/x86_64/installed-kernel.elf: $(BUILD)/x86_64/installed-kernel.o linker/x86_64.ld $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
-	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libinstalled-kernel.a $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
+	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libinstalled-kernel.a $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o $(BROWSER_X86)
 
 $(BUILD)/x86_64/kernel.o: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/x86_64/installed-esp.img $(BUILD)/x86_64/installed-kernel.elf
 	@mkdir -p $(@D)
 	RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=$(BUILD)/cargo $(CARGO) build --release \
-		-Z build-std=core --target x86_64-unknown-none --features installer
+		-Z build-std=core --target x86_64-unknown-none --features installer $(BROWSER_FEATURE)
 	cp $(BUILD)/cargo/x86_64-unknown-none/release/libinfinity_kernel.a $(BUILD)/x86_64/libkernel.a
 	touch $@
 
 $(BUILD)/x86_64/kernel.elf: $(BUILD)/x86_64/kernel.o linker/x86_64.ld $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
-	$(LD_LLD) -nostdlib -static -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libkernel.a $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o
+	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/x86_64.ld -o $@ $(BUILD)/x86_64/libkernel.a $(BUILD)/x86_64/qwen-math.o $(BUILD)/voice-kokoro/x86_64/private-native.o $(BUILD)/voice-pocketsphinx-x86_64/private-native.o $(BROWSER_X86)
 
 $(BUILD)/x86_64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/x86_64/workers.h boot/common/payload_loader.h boot/common/payload_cache.h
 	@mkdir -p $(@D)
@@ -703,7 +704,7 @@ test-x86: x86
 $(BUILD)/aarch64/installed-kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUNTIME_ASSETS)
 	@mkdir -p $(@D)
 	RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=$(BUILD)/cargo-installed-aarch64 $(CARGO) build --release \
-		-Z build-std=core --target aarch64-unknown-none-softfloat
+		-Z build-std=core --target aarch64-unknown-none-softfloat $(BROWSER_FEATURE)
 	cp $(BUILD)/cargo-installed-aarch64/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a $(BUILD)/aarch64/libinstalled-kernel.a
 	touch $@
 
@@ -712,7 +713,7 @@ $(BUILD)/aarch64/qwen-math.o: kernel/runtime/ai/qwen/cpu_math.c
 	$(CLANG) --target=aarch64-none-elf -ffreestanding -fno-builtin -fno-stack-protector -ffp-contract=off -O3 -c $< -o $@
 
 $(BUILD)/aarch64/installed-kernel.elf: $(BUILD)/aarch64/installed-kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
-	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
+	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o $(BROWSER_ARM)
 
 $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS) $(UI_ASSETS) $(ICON_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS) $(NODE_ASSETS)
 	rm -rf $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Icons $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Wallpapers $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Crash
@@ -736,15 +737,15 @@ $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS)
 $(BUILD)/aarch64/kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/aarch64/installed-esp.img $(BUILD)/aarch64/installed-kernel.elf
 	@mkdir -p $(@D)
 	RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=$(BUILD)/cargo $(CARGO) build --release \
-		-Z build-std=core --target aarch64-unknown-none-softfloat --features installer
+		-Z build-std=core --target aarch64-unknown-none-softfloat --features installer $(BROWSER_FEATURE)
 	cp $(BUILD)/cargo/aarch64-unknown-none-softfloat/release/libinfinity_kernel.a $(BUILD)/aarch64/libkernel.a
 	touch $@
 
 $(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
-	$(LD_LLD) -nostdlib -static -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
+	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o $(BROWSER_ARM)
 
 $(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
-	$(LD_LLD) -nostdlib -static -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
+	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o $(BROWSER_ARM)
 
 $(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/common/payload_loader.h boot/common/worker_bridge.h boot/common/psci_workers.h
 	@mkdir -p $(@D)

@@ -51,7 +51,10 @@ def main():
         raise SystemExit("Run through build-kit")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", choices=("aarch64", "x86_64"), default="aarch64")
+    parser.add_argument("--qemu-ram", action="store_true", help="Link ARM at the existing QEMU RAM address instead of the VirtualBox address")
     args = parser.parse_args()
+    if args.qemu_ram and args.arch != "aarch64":
+        parser.error("QEMU RAM relocation is ARM-only")
     root = Path(__file__).resolve().parents[2]
     output = root / "build/servo-platform-probe"
     arch = args.arch
@@ -68,7 +71,7 @@ def main():
                        cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT)
     if result.returncode:
         raise SystemExit("Kernel compilation failed; inspect " + str(work / "compile.log"))
-    image = work / "installed-kernel.elf"
+    image = work / ("qemu-kernel.elf" if args.qemu_ram else "installed-kernel.elf")
     sources = [work / "cargo" / target / "release/libinfinity_kernel.a",
                root / "build" / arch / "qwen-math.o",
                root / "build/voice-kokoro" / arch / "private-native.o",
@@ -79,12 +82,12 @@ def main():
         raise SystemExit("Production native dependencies must be built through the build kit first")
     subprocess.run(["/opt/homebrew/opt/lld/bin/ld.lld", "-nostdlib", "-static",
                     "--undefined=infinity_browser_private_infinity_browser_run",
-                    "-T", str(root / "linker" / (arch + ".ld")), "-o", str(image),
+                    "-T", str(root / "linker" / (arch + ("-qemu" if args.qemu_ram else "") + ".ld")), "-o", str(image),
                     *map(str, sources)], check=True)
     report = dict(arch=arch, image=str(image), bytes=image.stat().st_size,
-                  installed_configuration=True, executed=False, release_iso_updated=False,
+                  installed_configuration=True, executed=False, release_iso_updated=False, qemu_ram=args.qemu_ram,
                   **elf_footprint(image, arch))
-    (work / "link.json").write_text(json.dumps(report, indent=2) + "\n")
+    (work / ("link-qemu.json" if args.qemu_ram else "link.json")).write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
 
 

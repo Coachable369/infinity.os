@@ -38,6 +38,10 @@ clean = false
 command = ["make", "test"]
 clean = false
 
+[profiles.browser-aarch64]
+command = ["make", "NATIVE_BROWSER=1", "builds/InfinityOS-aarch64-qemu-test.iso"]
+clean = false
+
 [profiles.studio]
 command = ["sh", "tools/installer-designer/build.sh"]
 clean = false

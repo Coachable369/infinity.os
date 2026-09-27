@@ -15,6 +15,15 @@ size-bound tests passed (`20260927T061422344899Z-79781.json`). New installer med
 and a matching loader still need to be built and cold-tested; the old installer
 cannot be used to prove this larger payload.
 
+The opt-in `./build-kit browser-aarch64` profile now builds the shared browser
+component into live and installed kernels. Its incremental build passed
+(`20260927T061739267337Z-79995.json`) and atomically replaced
+`builds/InfinityOS-aarch64-qemu-test.iso`. This is experimental QEMU test media,
+not an updated default/reprovision ISO or a clean-release claim. The installed
+kernel is approximately 830 MiB. The configuration stamp invalidates kernel
+builds when browser inclusion changes. Installed GUI testing is in progress;
+the normal build still leaves the incomplete browser opt-in.
+
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.
 3. Verify responsiveness, input, resize, cancellation and window lifecycle in
