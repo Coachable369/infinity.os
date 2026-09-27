@@ -204,6 +204,9 @@ fn run() {
             }
             let Some(view)=session.as_mut() else { continue; };
             if dispatch(view,&command).is_err() { event(abi::EVENT_ERROR,1,""); }
+            else if matches!(command.kind,abi::NAVIGATE|abi::RELOAD|abi::BACK|abi::FORWARD) && !view.complete() {
+                last_complete=false;event(abi::EVENT_LOAD,0,"");
+            }
         }
         if let Some(view)=session.as_ref() {
             if view.pump(&engine,|w,h,bytes| {

@@ -16,6 +16,15 @@ Servo is pinned to `d05154e2b4def11a9fefe412898a0a6c8925a9cd` (0.6).
 
 ## Evidence already obtained
 
+Native address-field editing, caret scrolling/blinking, Go/history/reload and
+window-control hit routing are now implemented behind `native-browser`. Both
+kernel targets compile (`20260927T055139547238Z-78802.json`), but desktop interaction
+and visual matching remain unverified. Downloads and menu actions remain open.
+The rebuilt engine guest passed (`20260927T055217855046Z-78858.json`), including
+explicit loading transitions for initial navigation and history traversal,
+paired keyboard delivery, JS pixels, resize and shutdown. This is not an
+installed-OS test and does not update the installer ISO.
+
 All commands run through `./build-kit run`. Manifests are under
 `builds/manifests/`; they identify actual commands and exit statuses.
 

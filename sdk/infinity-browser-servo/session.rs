@@ -133,6 +133,7 @@ impl<P: Provider + 'static> Session<P> {
     pub fn history(&self, forward: bool) {
         if if forward {!self.view.can_go_forward()} else {!self.view.can_go_back()} {return;}
         self.resources.cancel_all();
+        self.complete.set(false);
         if forward { self.view.go_forward(1); } else { self.view.go_back(1); }
     }
     // ------------------------=

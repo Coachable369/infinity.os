@@ -7622,6 +7622,10 @@ impl ConsoleRuntime {
                 return;
             } else if self.desktop_app != DesktopAppKind::None {
                 if clicked {
+                    #[cfg(feature="native-browser")]
+                    if self.desktop_app==DesktopAppKind::Browser && browser_controller::chrome_pointer(self) {
+                        self.redraw();return;
+                    }
                     if self.activate_native_app_performance_pointer() {
                         self.redraw();
                         return;

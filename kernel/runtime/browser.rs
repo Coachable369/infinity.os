@@ -91,10 +91,12 @@ pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(
 #[derive(Clone,Copy)]
 pub struct Presentation {
     pub address:[u8;2048],pub address_length:usize,
+    pub edit:[u8;2048],pub edit_length:usize,pub caret:usize,pub address_focused:bool,pub caret_visible:bool,
     pub title:[u8;256],pub title_length:usize,
     pub loading:bool,pub input_busy:bool,pub history:u32,pub error:u32,pub revision:u64,
 }
 static mut PRESENTATION:Presentation=Presentation{address:[0;2048],address_length:0,title:[0;256],
+    edit:[0;2048],edit_length:0,caret:0,address_focused:false,caret_visible:true,
     title_length:0,loading:false,input_busy:false,history:0,error:0,revision:0};
 static mut LAST_FRAME_REVISION:u64=0;
 
@@ -103,6 +105,38 @@ static mut LAST_FRAME_REVISION:u64=0;
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+
+// ------------------------=
+// FUNC: focus_address
+// DESC: Keeps an address draft independent of asynchronous engine location updates.
+// ------------------=
+pub fn focus_address(focused:bool) {unsafe {
+    let view=&mut *(&raw mut PRESENTATION);
+    if focused && !view.address_focused {
+        view.edit=view.address;view.edit_length=view.address_length;view.caret=view.edit_length;
+    }
+    if focused!=view.address_focused {view.address_focused=focused;view.revision=view.revision.wrapping_add(1);}
+}}
+
+// ------------------------=
+// FUNC: edit_address
+// DESC: Applies native bounded insertion, deletion and caret navigation to the address draft.
+// ------------------=
+pub fn edit_address(key:crate::ui::text_input::TextEditKey) {unsafe {
+    use crate::ui::text_input::{self as text,TextEditKey as K};
+    let view=&mut *(&raw mut PRESENTATION);
+    if !view.address_focused {return;}
+    let changed=match key {
+        K::Character(c)=>text::insert_ascii(&mut view.edit,&mut view.edit_length,&mut view.caret,c),
+        K::Backspace=>text::backspace(&mut view.edit,&mut view.edit_length,&mut view.caret),
+        K::Delete=>text::delete(&mut view.edit,&mut view.edit_length,&mut view.caret),
+        K::Left=>text::move_caret(&mut view.caret,view.edit_length,-1),
+        K::Right=>text::move_caret(&mut view.caret,view.edit_length,1),
+        K::Home=>text::move_caret(&mut view.caret,view.edit_length,-2),
+        K::End=>text::move_caret(&mut view.caret,view.edit_length,2),
+    };
+    if changed {view.revision=view.revision.wrapping_add(1);}
+}}
 
 // ------------------------=
 // FUNC: input_pressure
@@ -122,6 +156,8 @@ pub fn poll_presentation()->bool {
         let view=&mut *(&raw mut PRESENTATION);
         let frame=FRAME_REVISION.load(Ordering::Acquire);
         let mut changed=frame!=LAST_FRAME_REVISION;
+        let caret_visible=(super::ai::qwen::workers::clock_ns()/500_000_000)%2==0;
+        if view.address_focused && caret_visible!=view.caret_visible {view.caret_visible=caret_visible;changed=true;}
         LAST_FRAME_REVISION=frame;
         for _ in 0..32 {
             let Some(event)=take_event() else {break;};

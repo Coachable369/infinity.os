@@ -51,8 +51,25 @@ impl DisplayDevice {
         let address=offset(layout.address);
         self.browser_surface(address,skin::ADDRESS);
         self.paint_bitmap_alpha_atlas_cell(NAV,4,2,5,address.x as usize+8*scale,address.y as usize+10*scale,24*scale);
+        let text=if view.address_focused {&view.edit[..view.edit_length]}else{&view.address[..view.address_length]};
+        let available=(address.width as usize).saturating_sub(48*scale);
+        let caret=view.caret.min(text.len());
+        let mut start=0;
+        if view.address_focused {
+            let mut end=caret;
+            while start<end {
+                let middle=(start+end)/2;
+                if self.ui_text_width_weighted(&text[middle..caret],1,true)>available.saturating_sub(3) {start=middle+1;}
+                else {end=middle;}
+            }
+            self.outline_rounded_rect(address.x as usize,address.y as usize,address.width as usize,address.height as usize,10,0,215,255);
+        }
         self.ui_text_elided_strong(address.x as usize+40*scale,address.y as usize+14*scale,
-            (address.width as usize).saturating_sub(48*scale),&view.address[..view.address_length],231,242,250);
+            available,&text[start..],231,242,250);
+        if view.address_focused && view.caret_visible {
+            let x=self.ui_text_width_weighted(&text[start..caret],1,true);
+            self.fill_rect(address.x as usize+40*scale+x,address.y as usize+12*scale,2,20*scale,0,215,255);
+        }
         let go=offset(layout.go);
         self.polished_button(go.x as usize,go.y as usize,go.width as usize,go.height as usize,b"Go",true,false);
         let content=offset(layout.content);

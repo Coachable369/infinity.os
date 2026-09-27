@@ -65,6 +65,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
     if console.mode!=ConsoleMode::Desktop {console.enter_desktop();}
     console.store_active_app_window();console.desktop_app=DesktopAppKind::Browser;
     console.browser_window.visible=true;console.load_active_app_window();
+    console.ai_chat_focus=0;console.shell_menu=0;
     console.app_window_dragging=false;console.app_window_resizing=None;
     poll(console);true
 }
@@ -83,6 +84,12 @@ pub(super) fn close() {unsafe {
 // DESC: Admits native text and editing keys as complete press/release pairs for focused web content.
 // ------------------=
 pub(super) fn key(console:&ConsoleRuntime,key:ConsoleKey) {
+    if crate::runtime::browser::presentation().address_focused {
+        if matches!(key,ConsoleKey::Enter) {navigate_address(console);}
+        else if matches!(key,ConsoleKey::Escape|ConsoleKey::Tab(_)) {crate::runtime::browser::focus_address(false);}
+        else if let Some(key)=text_edit_key(key) {crate::runtime::browser::edit_address(key);}
+        return;
+    }
     let mut down=abi::Command::empty();down.kind=abi::KEY;down.flags=abi::KEY_DOWN|abi::KEY_NAMED;
     down.a=match key {
         ConsoleKey::Character(c)=>{down.flags=abi::KEY_DOWN;u32::from(c)},
@@ -99,6 +106,64 @@ pub(super) fn key(console:&ConsoleRuntime,key:ConsoleKey) {
         crate::runtime::browser::input_pressure(!accepted);
     }
     poll(console);
+}
+
+// ------------------------=
+// FUNC: enqueue
+// DESC: Admits a native chrome operation only into its authenticated active engine lifetime.
+// ------------------=
+fn enqueue(console:&ConsoleRuntime,command:abi::Command)->bool {unsafe {
+    let Some(launch)=(&*(&raw const LAUNCH)).as_ref() else{return false;};
+    if launch.stage!=2 || launch.owner!=SecurityIdentity(console.current_session.0) {return false;}
+    let accepted=(&mut *(&raw mut INPUT)).push(&[command]);
+    crate::runtime::browser::input_pressure(!accepted);
+    accepted
+}}
+
+// ------------------------=
+// FUNC: navigate_address
+// DESC: Routes the current native address field through the same governed engine navigation queue.
+// ------------------=
+fn navigate_address(console:&ConsoleRuntime) {
+    let view=crate::runtime::browser::presentation();
+    let (bytes,length)=if view.address_focused {(&view.edit,view.edit_length)}else{(&view.address,view.address_length)};
+    let mut command=abi::Command::empty();command.kind=abi::NAVIGATE;command.length=length as u32;
+    command.text[..length].copy_from_slice(&bytes[..length]);
+    if enqueue(console,command) {crate::runtime::browser::focus_address(false);poll(console);}
+}
+
+// ------------------------=
+// FUNC: chrome_pointer
+// DESC: Hit-tests native chrome with the exact painter layout and keeps those clicks out of web content.
+// ------------------=
+pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
+    use infinity_browser_core::layout::Control;
+    let state=console.browser_window_state();
+    let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
+    let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
+    let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32) else{return false;};
+    let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
+    let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
+    let Some(control)=layout.hit(x,y) else{return false;};
+    let mut command=abi::Command::empty();
+    let view=crate::runtime::browser::presentation();
+    match control {
+        Control::Address=>crate::runtime::browser::focus_address(true),
+        Control::Go=>navigate_address(console),
+        Control::Back=>{if view.history&1!=0 {command.kind=abi::BACK;}},
+        Control::Forward=>{if view.history&2!=0 {command.kind=abi::FORWARD;}},
+        Control::Reload=>command.kind=abi::RELOAD,
+        Control::Minimize=>console.minimize_desktop_app(),
+        Control::Maximize=>console.toggle_window_maximized(5),
+        Control::Close=>console.close_desktop_app(),
+        Control::Content=>{crate::runtime::browser::focus_address(false);return false;},
+        _=>return false,
+    }
+    if command.kind!=0 && enqueue(console,command) {
+        crate::runtime::browser::focus_address(false);poll(console);
+    }
+    true
 }
 
 // ------------------------=

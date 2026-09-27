@@ -20,6 +20,7 @@ static mut RELEASES:u32=0;
 static mut NEXT_ID:u64=0;
 static mut HISTORY:u32=0;
 static mut LOCATION:u32=0;
+static mut LOAD_STARTS:u32=0;
 static mut INPUT:input_queue::Queue<4>=input_queue::Queue::new();
 static PIXELS:frames::Frames<81920>=frames::Frames::new();
 static HTML:&[u8]=b"<!doctype html><html style='background:red'><script>let down=false;document.documentElement.style.background='rgb(12,34,56)';document.addEventListener('keydown',e=>{if(e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.altKey&&!e.metaKey&&e.repeat)down=true});document.addEventListener('keyup',e=>{if(down&&e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.repeat)document.documentElement.style.background='rgb(34,56,78)'})</script></html>";
@@ -144,6 +145,9 @@ unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,l
 unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,length:usize) {
     if kind==abi::EVENT_ERROR {finish(1,200+value as u64);}
     if kind==abi::EVENT_MEMORY {record(5,value as u64);}
+    if kind==abi::EVENT_LOAD && value==0 {
+        LOAD_STARTS|=match STEP {2=>1,8=>2,12=>4,_=>0};
+    }
     if kind==abi::EVENT_HISTORY {
         if value>3 {finish(1,103);}
         HISTORY=value;
@@ -199,6 +203,6 @@ pub unsafe extern "C" fn component_boot()->! {
     if infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST))!=1 {finish(1,401);}
     HOST.version=abi::VERSION;
     let result=infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST));
-    if result!=0 || STEP!=15 || FRAMES!=4 || RELEASES<3 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
+    if result!=0 || STEP!=15 || FRAMES!=4 || LOAD_STARTS!=7 || RELEASES<3 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
     finish(0,4)
 }
