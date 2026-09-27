@@ -51,7 +51,14 @@ def run(arch="x86_64", rsa=False):
                         chunk = stream.recv(512)
                         if not chunk: break
                         request.extend(chunk)
-                    assert request == b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nAccept-Encoding: identity\r\n\r\n"
+                    lines = bytes(request).split(b"\r\n")
+                    assert lines[0].split() == [b"GET", b"/", b"HTTP/1.1"], bytes(request)
+                    assert lines[-2:] == [b"", b""], bytes(request)
+                    headers = dict((name.lower(), value.strip()) for name, value in
+                                   (line.split(b":", 1) for line in lines[1:-2]))
+                    assert headers[b"host"] == b"localhost"
+                    assert headers[b"connection"] == b"close"
+                    assert headers[b"accept-encoding"] == b"identity"
                     stream.sendall(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n")
                     outcomes.append(True)
             except Exception as error:
