@@ -455,13 +455,6 @@ def main():
         assert values["STATE"] == 2 and values["FAILURE"] == 0 and values["FRAME_REVISION"] >= 2, receipt
         receipt["engine_running_with_frames"] = True
         receipt["launch_command_submitted"] = True
-        if args.address:
-            guest.key("ctrl","l")
-            browser_text(guest,"https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64=PGJvZHkgc3R5bGU9YmFja2dyb3VuZDpyZWQ%2B")
-            guest.key("ret")
-            wait_color(guest,"browser-address-navigation",400,400,(255,0,0))
-            receipt["native_address_keyboard_navigation"]=True
-            receipt["omnibox_shortcut_replaces_previous_address"]=True
         if args.measure:
             assert "page_complete_seconds" in receipt and values["PAGE_ERROR"]==0,receipt
             receipt["timing_boundary"]=f"QMP Enter submission to observed framebuffer/engine completion; {args.arch} TCG, 4 vCPU, 12 GiB; polling upper bounds"
@@ -519,10 +512,20 @@ def main():
                 wait_color(guest,"browser-first-tab-restored",check_x,check_y,(255,0,0))
                 guest.click(left+310,tab_y)
                 wait_color(guest,"browser-second-tab-restored",check_x,check_y,(238,238,238))
-                guest.click(left+438,tab_y)
+                # Center of the second tab's 24px close target in Layout::tab.
+                slot=min((right-left-72)//2,220)
+                guest.click(left+16+slot+(slot-8)-36+12,tab_y)
                 wait_color(guest,"browser-tab-closed",check_x,check_y,(255,0,0))
                 receipt["native_tab_create_select_close_pixels"]=True
                 receipt["background_tab_scroll_preserved"]=True
+        # Run address replacement last so it cannot destroy the interaction fixture.
+        if args.address:
+            guest.key("ctrl","l")
+            browser_text(guest,"https://example.com/")
+            guest.key("ret")
+            wait_color(guest,"browser-address-navigation",400,400,(238,238,238))
+            receipt["native_address_keyboard_navigation"]=True
+            receipt["omnibox_shortcut_replaces_previous_address"]=True
         if args.lifecycle:
             wait_color(guest,"browser-lifecycle-page",400,400,(255,0,0))
             guest.click(849,111)

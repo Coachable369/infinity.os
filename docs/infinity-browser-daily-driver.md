@@ -26,21 +26,39 @@ Status: **in progress; not accepted, not a daily-driver release.**
 
 ## Implemented in this increment
 
+- Horizontal AI-adornment tab design: generated reference and native beveled
+  glass raster recipe, sapphire-to-violet active rim, quieter inactive state,
+  shared silhouette hit testing and 24px close targets with hover feedback.
+  See `design/infinity-browser/horizontal-tabs-v1.md`. Core tests: 26 pass,
+  receipt `20260927T181701757433Z-63827.json`; x86 compile check:
+  `20260927T181728149687Z-63877.json`; ARM installed-kernel link:
+  `20260927T181810647364Z-64052.json`. Installed ARM interaction batch passed
+  `20260927T182151829632Z-64546.json`: actual HTTPS CSS/image, JS input, scroll,
+  tab create/select/close, background scroll preservation, Ctrl+L replacement.
+  Receipt: `builds/evidence/browser-daily-driver/horizontal-tabs-interactions.json`.
+  First screenshot review identified oversized inherited chrome typography and
+  an unnecessary Go arrow; a follow-up uses authored 18/14/12px text roles,
+  a centered Go label and a denser dark chrome tint. Final installed render and
+  x86 compile check passed `20260927T182700531051Z-64758.json`. Reviewed screenshot:
+  `design/infinity-browser/installed-horizontal-tabs-v1.png`. Tab silhouette,
+  rim, title fit, close clearance, URL legibility and Go centering were reviewed
+  against the generated kit. No claims are made for unrelated desktop chrome.
+  These are installed test-disk updates, not new release ISO claims.
+
 - Browser address/caret/title-only changes now invalidate native chrome instead
   of discarding the retained page surface. A shared `damage::PageKey` tracks
   page frames, active tab, error/permission/download state, loading and input
   pressure; changes to those still require a full browser update. Both retained
   surface invalidation and desktop damage use this distinction. The clipped
-  chrome paint returns before copying page pixels. This source optimization
-  awaits compilation, installed regression checks and before/after timings;
-  no latency reduction is claimed yet.
+  chrome paint returns before copying page pixels. Compilation and the ARM
+  installed interaction batch passed; before/after timing remains outstanding,
+  so no measured latency reduction is claimed.
 
 - Omnibox Ctrl/Cmd+L now selects the entire draft; typing replaces it, deletion
   clears it, and Home/Left or End/Right collapse the selection to the expected
   edge. Ctrl/Cmd+A selects the focused omnibox. The native painter shows the
-  selected span and hides the caret while selected. This source change awaits
-  the next kernel build and the updated installed `--address` acceptance case;
-  it is not in the current ISO.
+  selected span and hides the caret while selected. ARM installed `--address`
+  acceptance passed in the batch above. It is not in the current release ISO.
 
 - `sdk/infinity-browser-core/tabs.rs`: bounded 24-tab state model, stable IDs,
   window/profile/private scope, pin partitions, reorder, duplicate, selection,
@@ -83,6 +101,19 @@ Status: **in progress; not accepted, not a daily-driver release.**
   is not established by URL construction tests.
 
 ## Evidence and limits
+
+Latest x86 reused-install batch (`20260927T174428672056Z-62250.json`): real
+HTTPS image/CSS and JavaScript input passed; scrolling failed its pixel check,
+and the subsequent second-tab page remained blank. This batch did **not** pass.
+The first progress update incorrectly inferred that scrolling passed from the
+runner advancing to tabs; the consolidated receipt correctly records failure.
+The runner deliberately continues independent cases after an assertion failure.
+These failures remain open; do not cite earlier ARM results as x86 acceptance.
+
+UI test harness correction: address replacement now runs after interaction/tab
+checks, since navigating first destroyed the fixture those checks needed. The
+initial UI run was intentionally interrupted after its disk update and before
+browser checks (`20260927T181952939243Z-64461.json`); the updated disk is reused.
 
 The new two-tab AArch64 component guest passed actual pixel, switch, independent
 page restoration and background-close checks, alongside existing lifecycle,

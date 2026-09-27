@@ -98,9 +98,9 @@ impl Layout {
         let scale = self.tabs.height / 36;
         let slot = (self.tabs.width / count as u32).min(220 * scale);
         let tab = Viewport { x: self.tabs.x + (index as u32 * slot) as i32,
-            y: self.tabs.y, width: slot - 4 * scale, height: 32 * scale };
-        let close = Viewport { x: tab.x + tab.width as i32 - (24 * scale) as i32,
-            y: tab.y + (4 * scale) as i32, width: 20 * scale, height: 24 * scale };
+            y: self.tabs.y, width: slot - 8 * scale, height: 36 * scale };
+        let close = Viewport { x: tab.x + tab.width as i32 - (36 * scale) as i32,
+            y: tab.y + (6 * scale) as i32, width: 24 * scale, height: 24 * scale };
         Some((tab, close))
     }
 }
@@ -123,6 +123,10 @@ mod tests {
                     assert!(tab.x>=right);
                     assert!(tab.local(close.x,close.y).is_some());
                     assert!(tab.local(close.x+close.width as i32-1,close.y+close.height as i32-1).is_some());
+                    for y in 0..close.height {for x in 0..close.width {
+                        assert!(crate::tab_style::contains(tab.width,tab.height,
+                            (close.x-tab.x) as u32+x,(close.y-tab.y) as u32+y));
+                    }}
                     assert!(tab.y+tab.height as i32<=layout.address.y);
                     right=tab.x+tab.width as i32;
                 }

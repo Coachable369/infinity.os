@@ -266,7 +266,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     let view=crate::runtime::browser::presentation();
     for index in 0..view.tab_count {
         let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
-        if tab.local(x,y).is_some() {
+        if tab.local(x,y).is_some_and(|(x,y)|infinity_browser_core::tab_style::contains(tab.width,tab.height,x,y)) {
             if close.local(x,y).is_some() && view.tab_count==1 {console.close_desktop_app();return true;}
             command.kind=if close.local(x,y).is_some(){abi::TAB_CLOSE}else{abi::TAB_SELECT};
             command.a=view.tabs[index].id;
@@ -338,6 +338,15 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
     let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
+    let view=crate::runtime::browser::presentation();
+    let mut hover=(0,false);
+    if !captured {for index in 0..view.tab_count {
+        let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
+        if tab.local(x,y).is_some_and(|(x,y)|infinity_browser_core::tab_style::contains(tab.width,tab.height,x,y)) {
+            hover=(view.tabs[index].id,close.local(x,y).is_some());break;
+        }
+    }}
+    crate::runtime::browser::hover_tab(hover.0,hover.1);
     if !captured && layout.content.local(x,y).is_none() {return false;}
     if !captured && crate::runtime::browser::presentation().download_state!=0 && layout.download_card.local(x,y).is_some() {return false;}
     unsafe {

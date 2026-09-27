@@ -41,12 +41,14 @@ impl DisplayDevice {
         }
         let left=window.x.max(0) as usize;let top=window.y.max(0) as usize;
         self.glass_panel(left,top,window.width as usize,window.height as usize,true);
+        self.fill_rect_alpha(left+1,top+1,window.width as usize-2,layout.content.y as usize-1,8,17,30,238);
         let offset=|r:Viewport|Viewport{x:r.x+window.x,y:r.y+window.y,..r};
         self.paint_bitmap_alpha_fit_rect(ICON,left+12*scale,top+4*scale,32*scale,32*scale);
-        self.ui_text_elided_strong(left+50*scale,top+12*scale,200*scale,b"Infinity Browser",231,242,250);
+        self.browser_label(Viewport{x:(left+50*scale) as i32,y:(top+11*scale) as i32,width:200*scale as u32,height:24*scale as u32},b"Infinity Browser",18*scale,false);
         if window.width as usize>950*scale {
-            self.ui_text_elided_strong(left+270*scale,top+12*scale,
-                (window.width as usize).saturating_sub(430*scale),&view.title[..view.title_length],168,196,216);
+            self.browser_label(Viewport{x:(left+270*scale) as i32,y:(top+13*scale) as i32,
+                width:window.width.saturating_sub(430*scale as u32),height:20*scale as u32},
+                &view.title[..view.title_length],14*scale,false);
         }
         for (index,r) in [layout.minimize,layout.maximize,layout.close].into_iter().enumerate() {
             let r=offset(r);self.window_control(r.x as usize,r.y as usize,r.width as usize,index,state.maximized);
@@ -54,11 +56,17 @@ impl DisplayDevice {
         for index in 0..view.tab_count {
             let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
             let tab=offset(tab);let close=offset(close);let entry=&view.tabs[index];
-            self.browser_surface(tab,skin::button(entry.id==view.active_tab,skin::Interaction::Normal));
-            self.ui_text_elided_strong(tab.x as usize+8*scale,tab.y as usize+8*scale,
-                (tab.width as usize).saturating_sub(36*scale),
-                if entry.length==0 {b"New tab"}else{&entry.title[..entry.length]},231,242,250);
-            self.window_control(close.x as usize,close.y as usize,close.width as usize,2,false);
+            self.browser_tab(tab,entry.id==view.active_tab,entry.id==view.hovered_tab);
+            self.browser_label(Viewport{x:tab.x+16*scale as i32,y:tab.y+10*scale as i32,
+                width:tab.width.saturating_sub(56*scale as u32),height:20*scale as u32},
+                if entry.length==0 {b"New tab"}else{&entry.title[..entry.length]},14*scale,false);
+            if view.hovered_tab==entry.id && view.hovered_close {
+                self.fill_rounded_rect_alpha(close.x as usize,close.y as usize,close.width as usize,close.height as usize,5*scale,92,76,158,170);
+            }
+            let cx=close.x+close.width as i32/2;let cy=close.y+close.height as i32/2;
+            let d=4*scale as i32;
+            self.line(cx-d,cy-d,cx+d,cy+d,217,227,245);
+            self.line(cx+d,cy-d,cx-d,cy+d,217,227,245);
         }
         let new_tab=offset(layout.new_tab);
         self.browser_surface(new_tab,skin::button(false,skin::Interaction::Normal));
@@ -80,23 +88,24 @@ impl DisplayDevice {
             let mut end=caret;
             while !view.address_selected && start<end {
                 let middle=(start+end)/2;
-                if self.ui_text_width_weighted(&text[middle..caret],1,true)>available.saturating_sub(3) {start=middle+1;}
+                if self.template_text_width(&text[middle..caret],14*scale,false)>available.saturating_sub(3) {start=middle+1;}
                 else {end=middle;}
             }
             self.outline_rounded_rect(address.x as usize,address.y as usize,address.width as usize,address.height as usize,10,0,215,255);
         }
         if view.address_focused && view.address_selected {
-            let width=self.ui_text_width_weighted(text,1,true).min(available);
+            let width=self.template_text_width(text,14*scale,false).min(available);
             self.fill_rect(address.x as usize+40*scale,address.y as usize+12*scale,width,22*scale,18,91,132);
         }
-        self.ui_text_elided_strong(address.x as usize+40*scale,address.y as usize+14*scale,
-            available,&text[start..],231,242,250);
+        self.browser_label(Viewport{x:address.x+40*scale as i32,y:address.y+14*scale as i32,
+            width:available as u32,height:20*scale as u32},&text[start..],14*scale,false);
         if view.address_focused && view.caret_visible && !view.address_selected {
-            let x=self.ui_text_width_weighted(&text[start..caret],1,true);
+            let x=self.template_text_width(&text[start..caret],14*scale,false);
             self.fill_rect(address.x as usize+40*scale+x,address.y as usize+12*scale,2,20*scale,0,215,255);
         }
         let go=offset(layout.go);
-        self.polished_button(go.x as usize,go.y as usize,go.width as usize,go.height as usize,b"Go",true,false);
+        self.browser_surface(go,skin::button(false,skin::Interaction::Normal));
+        self.browser_label(Viewport{y:go.y+13*scale as i32,..go},b"Go",16*scale,true);
         let content=offset(layout.content);
         if self.clipped_render_region(content.x.max(0) as usize,content.y.max(0) as usize,
             content.width as usize,(window.bottom()-(content.y)).max(0) as usize).is_none() {return;}
@@ -142,8 +151,41 @@ impl DisplayDevice {
         let message:&[u8]=if view.input_busy {b"Input queue busy. Please retry the last input."}
             else if view.error!=0 {b"Page could not be loaded. Check permissions and connection."}
             else if view.loading {b"Loading..."} else {b"Ready"};
-        self.ui_text_elided_strong(status.x as usize+16*scale,status.y as usize+4*scale,
-            status.width as usize-32*scale,message,168,196,216);
+        self.browser_label(Viewport{x:status.x+16*scale as i32,y:status.y+5*scale as i32,
+            width:status.width-32*scale as u32,..status},message,12*scale,false);
+    }
+    // ------------------------=
+    // FUNC: browser_label
+    // DESC: Measures and elides authored-size chrome typography without inheriting oversized desktop labels.
+    // ------------------=
+    fn browser_label(&mut self,r:Viewport,text:&[u8],pixels:usize,center:bool) {
+        let mut label=[0u8;2048];
+        let length=text.len().min(label.len()-3);
+        label[..length].copy_from_slice(&text[..length]);
+        let mut end=length;
+        if self.template_text_width(&label[..end],pixels,false)>r.width as usize {
+            let dots=self.template_text_width(b"...",pixels,false);
+            if dots>r.width as usize {return;}
+            let mut low=0;let mut high=end;
+            while low<high {
+                let middle=(low+high+1)/2;
+                if self.template_text_width(&label[..middle],pixels,false)+dots<=r.width as usize {low=middle;}else{high=middle-1;}
+            }
+            end=low;label[end..end+3].copy_from_slice(b"...");end+=3;
+        }
+        let width=self.template_text_width(&label[..end],pixels,false);
+        let x=r.x.max(0) as usize+if center {(r.width as usize).saturating_sub(width)/2}else{0};
+        self.template_text(x,r.y.max(0) as usize,&label[..end],231,242,250,255,pixels,false);
+    }
+    // ------------------------=
+    // FUNC: browser_tab
+    // DESC: Paints the horizontal AI-adornment glass silhouette with antialiased sapphire-violet shoulders.
+    // ------------------=
+    fn browser_tab(&mut self,r:Viewport,active:bool,hover:bool) {
+        for y in 0..r.height {for x in 0..r.width {
+            let (red,green,blue,alpha)=infinity_browser_core::tab_style::pixel(r.width,r.height,x,y,active,hover);
+            if alpha!=0 {self.blend_color(r.x+x as i32,r.y+y as i32,red,green,blue,alpha);}
+        }}
     }
     // ------------------------=
     // FUNC: browser_surface

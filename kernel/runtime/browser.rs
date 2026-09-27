@@ -141,6 +141,7 @@ pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
+    pub hovered_tab:u32,pub hovered_close:bool,
     pub frame_revision:u64,
     pub tabs:[TabPresentation;8],pub tab_count:usize,pub active_tab:u32,
     pub permission:u8,
@@ -153,7 +154,7 @@ pub struct Presentation {
 #[derive(Clone,Copy)]
 pub struct TabPresentation {pub id:u32,pub title:[u8;256],pub length:usize}
 const EMPTY_TAB:TabPresentation=TabPresentation{id:0,title:[0;256],length:0};
-static mut PRESENTATION:Presentation=Presentation{frame_revision:0,address:[0;2048],address_length:0,title:[0;256],
+static mut PRESENTATION:Presentation=Presentation{hovered_tab:0,hovered_close:false,frame_revision:0,address:[0;2048],address_length:0,title:[0;256],
     tabs:[EMPTY_TAB;8],tab_count:0,active_tab:0,
     permission:0,
     download_name:[0;63],download_length:0,download_state:0,download_revision:0,
@@ -161,6 +162,17 @@ static mut PRESENTATION:Presentation=Presentation{frame_revision:0,address:[0;20
     title_length:0,loading:false,input_busy:false,history:0,error:0,revision:0};
 static mut LAST_FRAME_REVISION:u64=0;
 static mut LAST_VIEW_REVISION:u64=0;
+
+// ------------------------=
+// FUNC: hover_tab
+// DESC: Invalidates native chrome only when the tab or close hover target changes.
+// ------------------=
+pub fn hover_tab(id:u32,close:bool) {unsafe {
+    let view=&mut *(&raw mut PRESENTATION);
+    if (view.hovered_tab,view.hovered_close)!=(id,close) {
+        view.hovered_tab=id;view.hovered_close=close;view.revision=view.revision.wrapping_add(1);
+    }
+}}
 
 impl Presentation {
     // ------------------------=
