@@ -20,7 +20,15 @@ def main():
         assert installed.find(hero) >= 0, (architecture, 'missing installed World Shift hero')
         with (root / 'build' / architecture / 'kernel.elf').open('rb') as stream:
             with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as live:
-                assert live.find(installed) >= 0, architecture
+                if live.find(installed) < 0:
+                    # Streamed browser-sized kernels must be byte-identical in
+                    # actual installer FAT media, not merely in a staging folder.
+                    media=root / 'build' / f'infinity-{architecture}.img'
+                    chunk=512*1024*1024
+                    for part,offset in enumerate(range(0,len(installed),chunk)):
+                        actual=subprocess.check_output(['mtype','-i',str(media),
+                            f'::/EFI/INFINITY/PAYLOAD/P1-{part:03}.BIN'])
+                        assert actual==installed[offset:offset+chunk],(architecture,part)
         print({'architecture': architecture, 'installed_bytes': len(installed), 'parity': True})
         boot_name = 'BOOTAA64.EFI' if architecture == 'aarch64' else 'BOOTX64.EFI'
         loader = (root / 'build' / architecture / boot_name).read_bytes()

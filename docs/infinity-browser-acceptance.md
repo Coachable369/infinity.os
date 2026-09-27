@@ -32,7 +32,53 @@ not launch/load timing. Lifecycle/performance measurement,
 default release packaging and target parity remain open. Older entries below
 describe historical checkpoints and do not supersede this evidence.
 
+Installed lifecycle checkpoint `20260927T122056355733Z-17052.json` passes
+maximize/restore pixels, minimizing, and restoring the same live page from the
+new browser drawer entry. Close acknowledges teardown with a measured allocator
+peak of 156,332,864 bytes (not total system/browser RAM). Reopen renders Example
+Domain, but its automated pixel check expected the former background color;
+the served CSS is now `#eee`, matching the actual `(238,238,238)` pixel. The bounded
+reopen-only retest passes (`20260927T122538019598Z-17217.json`), including a real
+HTTPS page after close/reopen and a 209,058,816-byte allocator peak for that run.
+Earlier failures sampled the drawer/shadow or
+overshot pointer coordinates; the controller now reduces relative movement after
+overshoot and uses individually acknowledged keys for short commands. These are
+test corrections, not claimed OS performance fixes.
+
+The browser now has a stable minimized-shelf identity and uses the existing
+restore/maximize/close actions. Same-session network lease renewal replaces the
+authority for future requests without changing ownership or weakening checks on
+already-active transfers. Focused shelf and network-bridge behavioral tests pass;
+an accidentally unfiltered host service suite exceeded its default thread stack,
+so that broad invocation is not cited as passing evidence.
+
 ## Open acceptance gates
+
+### Timing measurement checkpoint
+
+The reproducible component wrapper and matching QEMU installed-kernel packaging
+build pass in `20260927T123409619320Z-18143.json`. The generated media is
+`builds/InfinityOS-aarch64-qemu-test.iso`; this was incremental, not a clean
+release. The new `--iso-parity` run uses a new disk, disables offline kernel
+replacement, verifies the installed bytes and boots with media detached.
+That cold-install run is in progress, not yet acceptance evidence.
+
+`20260927T122822317730Z-17672.json` measured cold native engine startup and
+Example Domain loading on the installed 4-vCPU, 12-GiB ARM QEMU TCG guest:
+first engine frame 5.7003 s, first real page pixels 10.6092 s, and page complete
+10.6092 s. Peak engine allocator use was 209,058,816 bytes. This excludes the
+512-MiB reserved arena, desktop surfaces and other OS memory. The QEMU host
+process consumed 21.26 CPU seconds (200.39% over that interval); that is emulator
+CPU accounting, not guest CPU utilization. These are polling upper bounds,
+not hardware-accelerated VM performance claims.
+
+The original pointer snapshot samples (0.52–1.30 s) are **not cursor latency**:
+relative-pointer handling does not publish the broad diagnostics snapshot, so
+they include waiting for its coarse clock publication. The harness now measures
+visible cursor pixels in a quiet screen corner instead. That revised test is
+not yet verified. No scheduler optimization or responsiveness pass is claimed
+from the misleading snapshot numbers. Logs are preserved under
+`builds/evidence/browser-v0.1/` before clean builds.
 
 Installed integration exposed a payload-capacity blocker: the experimental ARM
 kernel is 802 MiB after debug stripping, above the old 512 MiB reservation.

@@ -747,8 +747,10 @@ $(BUILD)/aarch64/kernel.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(BUILD)/aarch6
 $(BUILD)/aarch64/kernel.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
 	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/aarch64.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o $(BROWSER_ARM)
 
-$(BUILD)/aarch64/kernel-qemu.elf: $(BUILD)/aarch64/kernel.stamp linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
-	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libkernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o $(BROWSER_ARM)
+$(BUILD)/aarch64/kernel-qemu.elf: $(QEMU_KERNEL_STAMP) linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o
+	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/aarch64-qemu.ld -o $@ $(QEMU_KERNEL_LIBRARY) $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o $(BROWSER_ARM)
+
+$(BUILD)/aarch64/kernel-browser-qemu.stamp: $(KERNEL_SOURCES) $(SPLASH_ASSET) $(ICON_RUNTIME_ASSETS)
 
 $(BUILD)/aarch64/loader.obj: boot/common/uefi_loader.c boot/common/boot_info.h boot/common/video_modes.h boot/common/tpm_random.h boot/common/payload_loader.h boot/common/worker_bridge.h boot/common/psci_workers.h
 	@mkdir -p $(@D)

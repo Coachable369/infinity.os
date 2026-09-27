@@ -15,8 +15,10 @@ const ESP_IMAGE: Image = Image::embedded(include_bytes!("../../build/aarch64/ins
 const KERNEL_IMAGE: Image = Image::embedded(include_bytes!("../../build/aarch64/installed-kernel.elf"));
 #[cfg(all(feature="streamed-payload",not(feature="browser-installer-payload")))]
 include!("../../build/qwen/payload-manifest.rs");
-#[cfg(all(feature="browser-installer-payload",target_arch="aarch64"))]
+#[cfg(all(feature="browser-installer-payload",target_arch="aarch64",not(feature="browser-qemu-payload")))]
 include!("../../build/browser-payload/aarch64/manifest.rs");
+#[cfg(all(feature="browser-qemu-payload",target_arch="aarch64"))]
+include!("../../build/browser-payload/aarch64-qemu/manifest.rs");
 #[cfg(all(feature="browser-installer-payload",target_arch="x86_64"))]
 include!("../../build/browser-payload/x86_64/manifest.rs");
 const ESP_FIRST: u64 = 2048;

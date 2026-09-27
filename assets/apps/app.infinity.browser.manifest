@@ -1,0 +1,16 @@
+INFINITY-APPLICATION 1
+identity=app.infinity.browser
+display-name=Infinity Browser
+window-class=Normal
+surface=persistent
+minimum-size=760x240
+icon=assets/apps/infinity-browser-icon-v1.bmp
+engine=Servo
+engine-revision=d05154e2b4def11a9fefe412898a0a6c8925a9cd
+entrypoint=native.browser
+network-consent=required
+downloads-consent=required
+capability=Network.Connect
+capability=Network.Send
+capability=Network.Receive
+capability=Network.Resolve

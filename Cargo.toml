@@ -11,6 +11,7 @@ crate-type = ["staticlib"]
 installer = []
 streamed-payload = ["installer"]
 browser-installer-payload = ["streamed-payload"]
+browser-qemu-payload = ["browser-installer-payload"]
 native-browser = []
 
 [dependencies]

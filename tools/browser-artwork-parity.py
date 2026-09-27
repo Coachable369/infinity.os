@@ -37,6 +37,14 @@ def main():
                 assert output.read_bytes() == expected, f"Stale or altered asset: {architecture}/{name}"
                 records.append({"architecture": architecture, "asset": name,
                     "bytes": len(expected), "dimensions": dimensions, "rgba": True})
+            for name in ("infinity-browser-icon-v1.bmp","infinity-browser-navigation-v1.bmp",
+                         "app.infinity.browser.manifest"):
+                expected=(root/"assets/apps"/name).read_bytes()
+                output=Path(temporary)/name
+                subprocess.run(["mcopy","-o","-i",str(image),
+                    "::/EFI/InfinityOS/Applications/"+name,str(output)],check=True)
+                assert output.read_bytes()==expected,(architecture,name)
+                records.append({"architecture":architecture,"asset":name,"bytes":len(expected)})
     print(json.dumps({"artwork_parity": records, "browser_installed": False}, indent=2))
 
 
