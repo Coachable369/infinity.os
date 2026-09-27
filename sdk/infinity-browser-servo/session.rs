@@ -93,6 +93,9 @@ impl<P: Provider + 'static> Session<P> {
         if address.len() > 2048 { return Err(()); }
         let url = servo::ServoUrl::parse(address).map_err(|_| ())?;
         if !matches!(url.scheme(), "https" | "http") || !url.username().is_empty() || url.password().is_some() { return Err(()); }
+        if self.resources.failed_document() && !self.complete.get() {
+            *self.pending.borrow_mut()=Some(url);return Ok(());
+        }
         self.resources.cancel_all();
         self.complete.set(false);
         if self.ready.get() { self.view.load(url.into_url()); }
@@ -149,8 +152,9 @@ impl<P: Provider + 'static> Session<P> {
     // ------------------=
     pub fn pump(&self, engine: &Servo, mut frame: impl FnMut(u32, u32, &[u8])) -> Result<bool, ()> {
         engine.spin_event_loop();
-        if self.ready.get() {
+        if self.ready.get() && (!self.resources.failed_document() || self.complete.get()) {
             if let Some(url) = self.pending.borrow_mut().take() {
+                self.resources.cancel_all();
                 self.complete.set(false);
                 self.view.load(url.into_url());
             }

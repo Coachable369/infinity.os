@@ -15,6 +15,13 @@ static FAILURE:AtomicU32=AtomicU32::new(0);
 static GENERATION:AtomicU64=AtomicU64::new(0);
 static PEAK:AtomicU64=AtomicU64::new(0);
 static FRAME_REVISION:AtomicU64=AtomicU64::new(0);
+static LOAD_REVISION:AtomicU64=AtomicU64::new(0);
+#[no_mangle]
+pub static INFINITY_BROWSER_LOADING:AtomicU32=AtomicU32::new(0);
+#[no_mangle]
+pub static INFINITY_BROWSER_PAGE_ERROR:AtomicU32=AtomicU32::new(0);
+#[no_mangle]
+pub static INFINITY_BROWSER_HISTORY:AtomicU32=AtomicU32::new(0);
 static BOOT:AtomicPtr<crate::boot_info::BootInfo>=AtomicPtr::new(core::ptr::null_mut());
 static OWNER:[AtomicU64;2]=[AtomicU64::new(0),AtomicU64::new(0)];
 static COMMANDS:Mailbox<abi::Command,32>=Mailbox::new();
@@ -164,7 +171,8 @@ pub fn poll_presentation()->bool {
             match event.kind {
                 abi::EVENT_OPEN=>{view.loading=false;view.error=0;view.history=0;},
                 abi::EVENT_CLOSED=>{view.loading=false;view.history=0;},
-                abi::EVENT_LOAD=>view.loading=event.value==0,
+                abi::EVENT_LOAD=>{view.loading=event.value==0;if view.loading {view.error=0;}
+                    LOAD_REVISION.fetch_add(1,Ordering::Release);},
                 abi::EVENT_HISTORY=>view.history=event.value&3,
                 abi::EVENT_ERROR=>{view.error=event.value+1;view.loading=false;},
                 abi::EVENT_ADDRESS=>{view.address_length=event.length.min(view.address.len());
@@ -177,6 +185,9 @@ pub fn poll_presentation()->bool {
         }
         let error=FAILURE.load(Ordering::Acquire);
         if error!=view.error && error!=0 {view.error=error;view.loading=false;changed=true;}
+        INFINITY_BROWSER_LOADING.store(view.loading as u32,Ordering::Release);
+        INFINITY_BROWSER_PAGE_ERROR.store(view.error,Ordering::Release);
+        INFINITY_BROWSER_HISTORY.store(view.history,Ordering::Release);
         if changed {view.revision=view.revision.wrapping_add(1);}
         changed
     }
@@ -255,7 +266,7 @@ unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,l
 // ------------------=
 unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,length:usize) {
     if kind==abi::EVENT_MEMORY {PEAK.store(value as u64,Ordering::Release);return;}
-    if kind==abi::EVENT_ERROR {FAILURE.store(value+1,Ordering::Release);}
+    if kind==abi::EVENT_ERROR && value!=3 {FAILURE.store(value+1,Ordering::Release);}
     if kind==abi::EVENT_DIAGNOSTIC || length>2048 {return;}
     let mut message=Event{kind,value,length,text:[0;2048]};
     if length>0 {message.text[..length].copy_from_slice(core::slice::from_raw_parts(text,length));}

@@ -40,11 +40,40 @@ def main():
                 { request.url().into_url() }
             },''')
     text = text.replace("*response = Some(response_override);", '''#[cfg(infinity_native)]
+                    context.state.hsts_list.write().update_hsts_list_from_response(
+                        &request.current_url(), &response_override.headers);
+                    #[cfg(infinity_native)]
                     if response_override.status.try_code().is_some_and(|code| matches!(code.as_u16(), 301 | 302 | 303 | 307 | 308)) {
                         response_override.location_url = crate::http_loader::location_url_for_response(
                             &response_override, request.current_url().fragment());
                     }
                     *response = Some(response_override);''')
+    text = text.replace("WebResourceResponseMsg::CancelLoad => {", '''WebResourceResponseMsg::FailLoad => {
+                    *response = Some(Response::network_error(NetworkError::ConnectionFailure));
+                    break;
+                },
+                WebResourceResponseMsg::CancelLoad => {''')
+    (servo / relative).write_text(text)
+
+    # A provider failure is not an intentional superseding-navigation cancel.
+    # Preserve that distinction so Servo finishes its failed-document lifecycle.
+    relative = "components/shared/embedder/lib.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace("    CancelLoad,", "    CancelLoad,\n    FailLoad,")
+    (servo / relative).write_text(text)
+    relative = "components/servo/webview_delegate.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace("    pub fn cancel(mut self) {", '''    // ------------------------=
+    // FUNC: fail
+    // DESC: Completes a failed provider request without treating it as intentional navigation cancellation.
+    // ------------------=
+    pub fn fail(mut self) {
+        if let Err(error) = self.response_sender.send(WebResourceResponseMsg::FailLoad) {
+            self.error_sender.raise_response_send_error(error);
+        }
+        self.finished = true;
+    }
+    pub fn cancel(mut self) {''')
     (servo / relative).write_text(text)
 
     # Native execution is in-process. Never link a Unix sandbox or attempt

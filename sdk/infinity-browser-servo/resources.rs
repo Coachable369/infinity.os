@@ -29,10 +29,15 @@ pub trait Provider {
     // DESC: Releases request resources after success, failure, revocation or supersession.
     // ------------------=
     fn cancel(&mut self, id: u64);
+    // ------------------------=
+    // FUNC: document_failed
+    // DESC: Publishes document failure immediately without waiting for the engine's failed-navigation processing.
+    // ------------------=
+    fn document_failed(&mut self) {}
 }
 
 struct Pending { id: u64, deadline: u64, load: WebResourceLoad }
-struct State<P> { provider: P, pending: Vec<Pending>, closed: bool }
+struct State<P> { provider: P, pending: Vec<Pending>, closed: bool, failed_document: bool }
 pub struct Resources<P: Provider> { state: RefCell<State<P>>, clock: fn() -> u64 }
 
 impl<P: Provider> servo::ServoDelegate for Resources<P> {
@@ -52,13 +57,23 @@ fn reject(load: WebResourceLoad) {
     load.intercept(response).cancel();
 }
 
+// ------------------------=
+// FUNC: fail_load
+// DESC: Notifies the shell only for document failure; optional subresources still fail closed without a page-wide error.
+// ------------------=
+fn fail_load<P: Provider>(state: &mut State<P>, load: WebResourceLoad) {
+    if load.request().is_for_main_frame { state.failed_document=true;state.provider.document_failed(); }
+    let response = WebResourceResponse::new(load.request().url.clone());
+    load.intercept(response).fail();
+}
+
 impl<P: Provider> Resources<P> {
     // ------------------------=
     // FUNC: new
     // DESC: Creates a bounded resource queue without opening any network connections.
     // ------------------=
     pub fn new(provider: P, clock: fn() -> u64) -> Self {
-        Self { state: RefCell::new(State { provider, pending: Vec::with_capacity(MAX_REQUESTS), closed: false }), clock }
+        Self { state: RefCell::new(State { provider, pending: Vec::with_capacity(MAX_REQUESTS), closed: false, failed_document: false }), clock }
     }
     // ------------------------=
     // FUNC: submit
@@ -71,15 +86,17 @@ impl<P: Provider> Resources<P> {
         if state.closed || state.pending.len() == MAX_REQUESTS || request.method.as_str() != "GET"
             || !matches!(url.scheme(), "http" | "https") || url.as_str().len() > 2048
             || !url.username().is_empty() || url.password().is_some() {
-            reject(load); return;
+            fail_load(&mut state, load); return;
         }
         // Fragments identify document locations, never HTTP request targets.
         // Retain the original URL on `load` for Servo history and anchor handling.
         let mut network_url=url.clone();
         network_url.set_fragment(None);
-        let Ok(id) = state.provider.begin(network_url.as_str()) else { reject(load); return; };
+        let Ok(id) = state.provider.begin(network_url.as_str()) else {
+            fail_load(&mut state, load); return;
+        };
         if id == 0 || state.pending.iter().any(|pending| pending.id == id) {
-            state.provider.cancel(id); reject(load); return;
+            state.provider.cancel(id); fail_load(&mut state, load); return;
         }
         state.pending.push(Pending { id, deadline: (self.clock)().saturating_add(TIMEOUT_NS), load });
     }
@@ -97,9 +114,11 @@ impl<P: Provider> Resources<P> {
             if matches!(result, Ok(None)) { at += 1; continue; }
             let pending = state.pending.swap_remove(at);
             state.provider.cancel(id);
-            let Ok(Some(result)) = result else { reject(pending.load); continue; };
+            let Ok(Some(result)) = result else {
+                fail_load(&mut state, pending.load); continue;
+            };
             if result.body.len() > MAX_BODY || result.headers.len() > 32 || !(200..=599).contains(&result.status) {
-                reject(pending.load); continue;
+                fail_load(&mut state, pending.load); continue;
             }
             let mut response = WebResourceResponse::new(pending.load.request().url.clone());
             response.status_code = result.status.try_into().unwrap();
@@ -113,18 +132,26 @@ impl<P: Provider> Resources<P> {
                 };
                 response.headers.append(name, value);
             }
-            if !valid { reject(pending.load); continue; }
+            if !valid {
+                fail_load(&mut state, pending.load); continue;
+            }
             let mut intercepted = pending.load.intercept(response);
             intercepted.send_body_data(result.body);
             intercepted.finish();
         }
     }
     // ------------------------=
+    // FUNC: failed_document
+    // DESC: Allows retry to await the failed document's lifecycle completion rather than lose a replacement navigation.
+    // ------------------=
+    pub fn failed_document(&self) -> bool { self.state.borrow().failed_document }
+    // ------------------------=
     // FUNC: cancel_all
     // DESC: Cancels superseded navigation and all subresources without closing the reusable adapter.
     // ------------------=
     pub fn cancel_all(&self) {
         let mut state = self.state.borrow_mut();
+        state.failed_document=false;
         while let Some(pending) = state.pending.pop() {
             state.provider.cancel(pending.id); reject(pending.load);
         }

@@ -66,6 +66,39 @@ patch supplies location metadata to Servo's existing navigation redirect
 controller and intercepts the current redirect URL, not the original URL.
 Installed rerun is pending; subresource Fetch redirect modes are not claimed.
 
+The completion-gated installed rerun failed
+(`20260927T091952982886Z-94058.json`): the link received paired pointer events,
+but load revision stayed at 2 and history stayed at 1. Frame revision advanced
+from 6 to 7 only. This supersedes any interpretation of screenshot capture or
+click delivery as successful navigation. The harness now waits for an actual
+load transition and completion rather than a fixed eight-second delay. Further
+network-result diagnostics and recoverable main-document error reporting are
+under verification; no updated default-browser release is claimed.
+
+Native component recovery now passes (`build/servo-platform-probe/component-boot.json`,
+the component portion of `build/browser-queued-retry-test.log`). Provider failure
+is distinct from intentional cancellation: Servo receives `ConnectionFailure`,
+the native shell receives a bounded error event, and a retry arriving before the
+failed document completes is retained rather than lost. The fixture denies a
+document, immediately requests a different allowed document, then requires its
+actual location and JS-painted pixels before shutdown. Existing redirect,
+paired input, resize and history checks remain passing. Engine allocator peak
+for this expanded fixture is 169,657,472 bytes; it is not whole-system peak RAM.
+The installed navigation rerun (`20260927T094933377595Z-3096.json`) then completed
+three native transactions (initial 200, followed by two 301 responses), but the
+next request failed. Inspection of the real redirect chain found an HTTP target
+paired with HSTS; interception had omitted Servo's HSTS update. HSTS handling is
+being restored and tested before claiming this navigation passes. A recoverable
+document error also no longer latches the supervisor's permanent engine-failure
+counter. Plain HTTP transport remains unsupported and is a separate open gate.
+
+The HSTS fixture subsequently passed and the installed rerun progressed through
+13 real native requests, reaching 200 responses
+(`20260927T095910127797Z-7263.json`). The engine then aborted through the C abort
+handler: supervisor state 3, failure 4, allocator peak 244,012,544 bytes. This is
+not a successful completed-page/navigation result. Memory pressure near the
+256 MiB arena is a lead, not yet a proven cause. No release ISO was updated.
+
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.
 3. Verify responsiveness, input, resize, cancellation and window lifecycle in

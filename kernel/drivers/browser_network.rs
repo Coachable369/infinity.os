@@ -1,6 +1,6 @@
 //! Single engine-owner CPU producer; BSP exclusively runs the governed HTTPS
 //! actor. Response storage remains pinned until the engine releases its handle.
-use core::{cell::UnsafeCell,sync::atomic::{AtomicBool,AtomicU8,AtomicU64,Ordering}};
+use core::{cell::UnsafeCell,sync::atomic::{AtomicBool,AtomicU8,AtomicU32,AtomicU64,Ordering}};
 use crate::runtime::{execution::SecurityIdentity,capability::CapabilityId};
 use super::https;
 #[path="../../sdk/infinity-browser-core/worker.rs"]
@@ -27,6 +27,13 @@ impl Slot {
 }
 static SLOTS:[Slot;COUNT]=[const {Slot::new()};COUNT];
 static NEXT:AtomicU64=AtomicU64::new(1);
+// Transaction-edge diagnostics only; never consulted for authorization.
+#[no_mangle]
+pub static INFINITY_BROWSER_NETWORK_FAILURE:AtomicU32=AtomicU32::new(0);
+#[no_mangle]
+pub static INFINITY_BROWSER_NETWORK_STATUS:AtomicU32=AtomicU32::new(0);
+#[no_mangle]
+pub static INFINITY_BROWSER_NETWORK_COMPLETED:AtomicU64=AtomicU64::new(0);
 static mut AUTHORITY:Option<(SecurityIdentity,[CapabilityId;4])>=None;
 static mut CURRENT:Option<(usize,https::Ticket)>=None;
 
@@ -160,7 +167,17 @@ pub unsafe fn pump() {
                 CURRENT=None;
                 if slot.cancelled.load(Ordering::Acquire) {slot.state.store(FREE,Ordering::Release);}
                 else {
-                    let good=match result {Ok(Some(Ok(response)))=>finish(slot,response),_=>false};
+                    let good=match result {
+                        Ok(Some(Ok(response)))=>{
+                            INFINITY_BROWSER_NETWORK_STATUS.store(response.status as u32,Ordering::Release);
+                            INFINITY_BROWSER_NETWORK_COMPLETED.fetch_add(1,Ordering::Release);
+                            finish(slot,response)
+                        },
+                        Ok(Some(Err(error)))|Err(error)=>{
+                            INFINITY_BROWSER_NETWORK_FAILURE.store(error as u32+1,Ordering::Release);false
+                        },
+                        _=>false
+                    };
                     slot.state.store(if good{READY}else{FAILED},Ordering::Release);
                 }
             }
@@ -179,9 +196,11 @@ pub unsafe fn pump() {
             slot.state.store(FAILED,Ordering::Release);continue;
         };
         match https::get_browser(owner,caps[0],caps[1],caps[2],caps[3],options.host,443,options.target) {
-            Ok(ticket)=>{slot.state.store(ACTIVE,Ordering::Release);CURRENT=Some((index,ticket));},
+            Ok(ticket)=>{INFINITY_BROWSER_NETWORK_FAILURE.store(0,Ordering::Release);
+                slot.state.store(ACTIVE,Ordering::Release);CURRENT=Some((index,ticket));},
             Err(https::Failure::Busy)=>{},
-            Err(_)=>slot.state.store(FAILED,Ordering::Release),
+            Err(error)=>{INFINITY_BROWSER_NETWORK_FAILURE.store(error as u32+1,Ordering::Release);
+                slot.state.store(FAILED,Ordering::Release);},
         }
         break;
     }

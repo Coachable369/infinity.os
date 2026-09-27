@@ -74,7 +74,12 @@ impl DisplayDevice {
         self.polished_button(go.x as usize,go.y as usize,go.width as usize,go.height as usize,b"Go",true,false);
         let content=offset(layout.content);
         self.fill_rect(content.x as usize,content.y as usize,content.width as usize,content.height as usize,247,248,250);
-        unsafe {
+        if view.error!=0 {
+            self.ui_text_elided_strong(content.x as usize+32*scale,content.y as usize+32*scale,
+                content.width as usize-64*scale,b"This page could not be opened",22,45,66);
+            self.ui_text_elided_strong(content.x as usize+32*scale,content.y as usize+68*scale,
+                content.width as usize-64*scale,b"Check network permission and connection, then reload or enter another address.",53,79,101);
+        } else { unsafe {
             let generation=crate::runtime::browser::status().2;
             let current=&mut *(&raw mut FRAME);
             if current.as_ref().is_some_and(|frame|frame.generation()!=generation) {*current=None;}
@@ -85,7 +90,7 @@ impl DisplayDevice {
                     self.browser_pixels(content,frame.bytes());
                 }
             }
-        }
+        }}
         let status=offset(layout.status);
         let message:&[u8]=if view.input_busy {b"Input queue busy. Please retry the last input."}
             else if view.error!=0 {b"Page could not be loaded. Check permissions and connection."}

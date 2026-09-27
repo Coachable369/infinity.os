@@ -113,6 +113,11 @@ fn event(kind:u32,value:u32,text:&str) {
 struct Network;
 impl resources::Provider for Network {
     // ------------------------=
+    // FUNC: document_failed
+    // DESC: Reports a recoverable native request failure immediately to the bounded shell event mailbox.
+    // ------------------=
+    fn document_failed(&mut self) { event(abi::EVENT_ERROR,3,""); }
+    // ------------------------=
     // FUNC: begin
     // DESC: Requests authority through the host mailbox instead of opening sockets.
     // ------------------=

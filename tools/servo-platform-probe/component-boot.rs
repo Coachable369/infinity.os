@@ -105,6 +105,7 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
         let (width,height)=frame.size();
         let color=if STEP==10 {[34,56,78,255]}else{[12,34,56,255]};
         if frame.bytes().chunks_exact(4).all(|pixel|pixel==color) {
+            if STEP==17 && LOCATION==3 {STEP=18;}
             let next=match (STEP,width,height) {(2,128,128)=>3,(4,160,96)=>5,(8,128,128)=>9,(10,128,128)=>11,_=>STEP};
             if next!=STEP {STEP=next;FRAMES+=1;record(2,STEP as u64);}
         }
@@ -129,9 +130,15 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
             value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=12;},
         12 if LOCATION==2 && HISTORY&1!=0=>{value.kind=abi::BACK;STEP=13;},
         13 if LOCATION==1 && HISTORY&2!=0=>{value.kind=abi::FORWARD;STEP=14;},
-        14 if LOCATION==2 && HISTORY&1!=0=>{value.kind=abi::SHUTDOWN;STEP=15;},
+        14 if LOCATION==2 && HISTORY&1!=0=>{value.kind=abi::NAVIGATE;
+            let url=b"https://fixture.test/denied";value.text[..url.len()].copy_from_slice(url);
+            value.length=url.len() as u32;STEP=15;},
+        16=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/recovery";
+            value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=17;},
+        18=>{value.kind=abi::SHUTDOWN;STEP=19;},
         _=>return 0,
     }
+    record(11,((STEP as u64)<<32)|value.kind as u64);
     out.write(value);1
 }
 // ------------------------=
@@ -148,7 +155,10 @@ unsafe extern "C" fn frame(_: *mut c_void,width:u32,height:u32,bytes:*const u8,l
 // DESC: Treats component errors as failures, not successful UI status strings.
 // ------------------=
 unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,length:usize) {
-    if kind==abi::EVENT_ERROR {finish(1,200+value as u64);}
+    if kind==abi::EVENT_ERROR {
+        record(10,((STEP as u64)<<32)|value as u64);
+        if STEP==15 && value==3 {STEP=16;} else {finish(1,200+value as u64);}
+    }
     if kind==abi::EVENT_MEMORY {record(5,value as u64);}
     if kind==abi::EVENT_LOAD && value==0 {
         LOAD_STARTS|=match STEP {2=>1,8=>2,12=>4,_=>0};
@@ -160,7 +170,8 @@ unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,leng
     }
     if kind==abi::EVENT_ADDRESS {
         LOCATION=match core::slice::from_raw_parts(text,length) {
-            b"https://fixture.test/"=>1,b"https://fixture.test/#second"=>2,_=>0,
+            b"https://fixture.test/"=>1,b"https://fixture.test/#second"=>2,
+            b"https://fixture.test/recovery"=>3,_=>0,
         };
         record(7,((STEP as u64)<<32)|LOCATION as u64);
     }
@@ -181,7 +192,7 @@ unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
         if REDIRECT_ID!=0 {return 0;}
         NEXT_ID+=1;REDIRECT_ID=NEXT_ID;return NEXT_ID;
     }
-    if core::slice::from_raw_parts(url,length)!=b"https://fixture.test/" {return 0;}
+    if !matches!(core::slice::from_raw_parts(url,length),b"https://fixture.test/"|b"https://fixture.test/recovery") {return 0;}
     NEXT_ID+=1;NEXT_ID
 }
 // ------------------------=
@@ -190,7 +201,7 @@ unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
 // ------------------=
 unsafe extern "C" fn poll(_: *mut c_void,id:u64,out:*mut abi::Response)->u32 {
     if id==REDIRECT_ID {
-        let headers=b"location: /\r\ncontent-type: text/html\r\n";
+        let headers=b"location: http://fixture.test/\r\nstrict-transport-security: max-age=3600\r\ncontent-type: text/html\r\n";
         out.write(abi::Response{status:301,headers:headers.as_ptr(),headers_length:headers.len(),body:HTML.as_ptr(),body_length:0});return 1;
     }
     out.write(abi::Response{status:200,headers:HEADERS.as_ptr(),headers_length:HEADERS.len(),body:HTML.as_ptr(),body_length:HTML.len()});1
@@ -216,6 +227,6 @@ pub unsafe extern "C" fn component_boot()->! {
     if infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST))!=1 {finish(1,401);}
     HOST.version=abi::VERSION;
     let result=infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST));
-    if result!=0 || STEP!=15 || FRAMES!=4 || LOAD_STARTS!=7 || REDIRECT_ID==0 || RELEASES<4 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
+    if result!=0 || STEP!=19 || FRAMES!=4 || LOAD_STARTS!=7 || REDIRECT_ID==0 || RELEASES<5 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
     finish(0,4)
 }

@@ -33,11 +33,12 @@ def browser_symbols(elf):
         fields = line.split(maxsplit=3)
         if len(fields) != 4:
             continue
-        for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK"):
+        for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK", "LOAD_REVISION", "LOADING", "PAGE_ERROR", "HISTORY",
+                     "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED"):
             if fields[3] in ("infinity_kernel::runtime::browser::" + name,
-                "infinity_kernel::runtime::browser::" + name + " (.0)"):
+                "infinity_kernel::runtime::browser::" + name + " (.0)", "INFINITY_BROWSER_" + name):
                 result[name] = (int(fields[0], 16), int(fields[1], 16))
-    assert len(result) == 4
+    assert len(result) == 11
     return result
 
 class Guest(base.Guest):
@@ -149,7 +150,11 @@ def main():
             guest.install()
             receipt["installed"] = True
             guest.stop()
-        guest.onboard()
+        if reuse:
+            guest.boot(False)
+            guest.authenticate()
+        else:
+            guest.onboard()
         if not reuse:
             network.configure_nat(guest)
         guest.launch("command", 5)
@@ -173,11 +178,27 @@ def main():
         receipt["engine_running_with_frames"] = True
         receipt["launch_command_submitted"] = True
         if args.navigation:
+            receipt["navigation"] = []
             for label, x, y in (("link", 303, 368), ("back", 139, 161),
                                ("forward", 192, 161), ("reload", 242, 161)):
+                before = int.from_bytes(guest.memory(*counters["LOAD_REVISION"]), "little")
                 guest.click(x, y)
-                time.sleep(8)
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
+                    values = {name: int.from_bytes(guest.memory(address, size), "little")
+                        for name, (address, size) in counters.items()}
+                    if values["FAILURE"] or values["PAGE_ERROR"]:
+                        break
+                    if values["LOAD_REVISION"] > before and values["LOADING"] == 0:
+                        break
+                    time.sleep(.25)
+                receipt["navigation"].append(dict(action=label, **values))
+                # Allow the BSP compositor to present the observed status before
+                # capturing it; the state assertions below remain authoritative.
+                time.sleep(.5)
                 guest.screenshot("browser-" + label)
+                assert values["FAILURE"] == 0 and values["PAGE_ERROR"] == 0, receipt
+                assert values["LOAD_REVISION"] > before and values["LOADING"] == 0, receipt
             receipt["navigation_captures_for_review"] = True
         print(json.dumps(dict(work=str(work), **receipt)), flush=True)
     finally:
