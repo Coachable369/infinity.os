@@ -118,6 +118,15 @@ impl resources::Provider for Network {
     // ------------------=
     fn document_failed(&mut self) { event(abi::EVENT_ERROR,3,""); }
     // ------------------------=
+    // FUNC: download
+    // DESC: Copies an attachment into the native consent mailbox without granting file or namespace access to Servo.
+    // ------------------=
+    fn download(&mut self, metadata:&resources::download::Metadata, body:&[u8])->Result<(),()> {
+        let h=host();
+        if unsafe {(h.download)(h.context,metadata.name.as_ptr(),metadata.name_length,
+            metadata.media_type.as_ptr(),metadata.type_length,body.as_ptr(),body.len())}==1 {Ok(())} else {Err(())}
+    }
+    // ------------------------=
     // FUNC: begin
     // DESC: Requests authority through the host mailbox instead of opening sockets.
     // ------------------=

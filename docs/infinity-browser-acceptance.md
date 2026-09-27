@@ -135,6 +135,22 @@ load; comprehensive site compatibility is not claimed. Installed JS/input,
 image/scroll/download, permission UI, performance and release-ISO parity remain
 open. The active-session PEAK counter still is not a RAM measurement.
 
+Download implementation now includes validated Content-Disposition attachment
+interception and a version-two native ABI offer into a single bounded consent
+mailbox (16 KiB file limit). No website-selected path is accepted. The real Servo
+component fixture verifies exact attachment bytes, basename and MIME type
+(`20260927T105118118796Z-12917.json`); the integrated ARM kernel links with that
+ABI (`20260927T105518500459Z-13066.json`). Core tests pass (16 tests,
+`20260927T104956042077Z-12859.json`). Native object storage has an atomic download
+transaction that attaches content and a related MIME metadata object with owner
+identity, refuses overwrite, and rolls back failed writes. Remount and injected
+write-failure coverage passed (`20260927T105727871041Z-13163.json`). The typed
+ObjectService entry additionally requires Create, NamespaceAttach and
+RelationshipAttach authority. The browser-to-service save-consent UI/controller
+is not wired yet; queued attachments are not claimed as persisted downloads.
+RFC 5987 extended filenames currently use the safe fallback basename rather
+than claiming full filename-encoding support. No release ISO was updated.
+
 1. Connect the native shell and retained compositor to the engine worker.
 2. Connect governed desktop networking to the resource callback boundary.
 3. Verify responsiveness, input, resize, cancellation and window lifecycle in

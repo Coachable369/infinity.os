@@ -240,6 +240,7 @@ fn main() {
         return;
     }
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
+    download_transaction(test_sectors);
     private_spatial_checkpoint(test_sectors);
     legacy_store_mount(test_sectors);
     checkpoint_replacement(test_sectors);
@@ -660,6 +661,48 @@ fn main() {
     );
 
     println!("PASS: native IDs, typed metadata/query, persistent date/time settings, persistent relationships, multi-extent COW, per-Space accounting, conservative GC, namespace identity, reboot/restore, five crash boundaries, format rejection, root/allocation/object/namespace/relationship/content corruption detection");
+}
+
+// ------------------------=
+// FUNC: download_transaction
+// DESC: Verifies downloaded bytes and MIME ownership survive remount together and failed saves expose no partial path.
+// ------------------=
+fn download_transaction(sectors:usize) {
+    for failure in [None,Some(0),Some(1),Some(20)] {
+        let backing=MemoryDisk::new(sectors);
+        let disk=FailingDisk::new(backing.clone());
+        let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x96;16]).unwrap();
+        let generation=store.generation();
+        let owner=storage::object::ObjectId([0x42;16]);
+        let path=b"/home/default/downloads/fixture.txt";
+        assert_eq!(ObjectService::new(&mut store,&Deny).create_download(storage::object::DownloadCreateRequest {
+            name:b"fixture.txt",content:b"native download\n",path,media_type:b"text/plain",owner}),Err(ObjectError::Unauthorized));
+        assert_eq!(store.generation(),generation);
+        if let Some(writes)=failure {disk.arm(writes);}
+        let result=store.create_download(b"fixture.txt",b"native download\n",path,b"text/plain",owner);
+        disk.disarm();
+        if failure.is_some() {
+            assert!(result.is_err());
+            assert_eq!(store.generation(),generation);
+            assert!(store.resolve(path).is_err());
+        } else {
+            let id=result.unwrap();
+            assert_eq!(store.create_download(b"fixture.txt",b"overwrite",path,b"text/plain",owner),Err(ObjectError::NameConflict));
+            assert_eq!(store.metadata(id).unwrap().owner,owner);
+        }
+        drop(store);
+        let mut recovered=ObjectStore::mount(backing,0).unwrap();
+        if failure.is_some() {assert!(recovered.resolve(path).is_err());continue;}
+        let id=recovered.resolve(path).unwrap();
+        let mut bytes=[0;64];
+        let length=recovered.read(id,None,&mut bytes).unwrap();
+        assert_eq!(&bytes[..length],b"native download\n");
+        let relationship=recovered.relationship_nth(id,0).unwrap();
+        assert_eq!(relationship.kind,RelationshipType::References);
+        let length=recovered.read(relationship.target.id,None,&mut bytes).unwrap();
+        assert_eq!(&bytes[..length],b"text/plain");
+        assert_eq!(recovered.metadata(relationship.target.id).unwrap().owner,owner);
+    }
 }
 
 // ------------------------=

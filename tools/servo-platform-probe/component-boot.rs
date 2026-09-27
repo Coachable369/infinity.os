@@ -20,6 +20,7 @@ static mut FRAMES:u32=0;
 static mut RELEASES:u32=0;
 static mut NEXT_ID:u64=0;
 static mut REDIRECT_ID:u64=0;
+static mut DOWNLOAD_ID:u64=0;
 static mut HISTORY:u32=0;
 static mut LOCATION:u32=0;
 static mut LOAD_STARTS:u32=0;
@@ -31,8 +32,18 @@ static HEADERS:&[u8]=b"content-type: text/html\r\n";
 static mut HOST:abi::Host=abi::Host {
     version:abi::VERSION,size:core::mem::size_of::<abi::Host>() as u32,context:core::ptr::null_mut(),
     heap:0x80000000 as *mut u8,heap_length:256*1024*1024,
-    cpu,monotonic,utc,entropy,idle,command,frame,event,begin,poll,cancel,fatal,
+    cpu,monotonic,utc,entropy,idle,command,frame,event,begin,poll,cancel,download,fatal,
 };
+// ------------------------=
+// FUNC: download
+// DESC: Verifies exact native attachment bytes and validated metadata before acknowledging the offer.
+// ------------------=
+unsafe extern "C" fn download(_: *mut c_void,name:*const u8,n:usize,mime:*const u8,m:usize,body:*const u8,b:usize)->u32 {
+    if STEP!=19 || core::slice::from_raw_parts(name,n)!=b"fixture.txt"
+        || core::slice::from_raw_parts(mime,m)!=b"text/plain"
+        || core::slice::from_raw_parts(body,b)!=b"native download\n" {finish(1,109);}
+    STEP=20;record(12,b as u64);1
+}
 // ------------------------=
 // FUNC: record
 // DESC: Emits structured fixture results without a host runtime.
@@ -136,7 +147,9 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
             value.length=url.len() as u32;STEP=15;},
         16=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/recovery";
             value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=17;},
-        18=>{value.kind=abi::SHUTDOWN;STEP=19;},
+        18=>{value.kind=abi::NAVIGATE;let url=b"https://fixture.test/download";
+            value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP=19;},
+        20=>{value.kind=abi::SHUTDOWN;STEP=21;},
         _=>return 0,
     }
     record(11,((STEP as u64)<<32)|value.kind as u64);
@@ -190,6 +203,9 @@ unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,leng
 // ------------------=
 unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
     record(8,((STEP as u64)<<32)|length as u64);
+    if core::slice::from_raw_parts(url,length)==b"https://fixture.test/download" {
+        NEXT_ID+=1;DOWNLOAD_ID=NEXT_ID;return NEXT_ID;
+    }
     if core::slice::from_raw_parts(url,length)==b"https://fixture.test/redirect" {
         if REDIRECT_ID!=0 {return 0;}
         NEXT_ID+=1;REDIRECT_ID=NEXT_ID;return NEXT_ID;
@@ -202,6 +218,11 @@ unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
 // DESC: Returns bounded fixture bytes for real Servo HTML, JS and raster execution.
 // ------------------=
 unsafe extern "C" fn poll(_: *mut c_void,id:u64,out:*mut abi::Response)->u32 {
+    if id==DOWNLOAD_ID {
+        let headers=b"content-disposition: attachment; filename=\"fixture.txt\"\r\ncontent-type: text/plain; charset=utf-8\r\n";
+        let body=b"native download\n";
+        out.write(abi::Response{status:200,headers:headers.as_ptr(),headers_length:headers.len(),body:body.as_ptr(),body_length:body.len()});return 1;
+    }
     if id==REDIRECT_ID {
         let headers=b"location: http://fixture.test/\r\nstrict-transport-security: max-age=3600\r\ncontent-type: text/html\r\n";
         out.write(abi::Response{status:301,headers:headers.as_ptr(),headers_length:headers.len(),body:HTML.as_ptr(),body_length:0});return 1;
@@ -229,6 +250,6 @@ pub unsafe extern "C" fn component_boot()->! {
     if infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST))!=1 {finish(1,401);}
     HOST.version=abi::VERSION;
     let result=infinity_browser_private_infinity_browser_run(core::ptr::addr_of_mut!(HOST));
-    if result!=0 || STEP!=19 || FRAMES!=4 || LOAD_STARTS!=7 || REDIRECT_ID==0 || RELEASES<5 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
+    if result!=0 || STEP!=21 || DOWNLOAD_ID==0 || FRAMES!=4 || LOAD_STARTS!=7 || REDIRECT_ID==0 || RELEASES<5 || u64::from(RELEASES)!=NEXT_ID {finish(1,400+result as u64);}
     finish(0,4)
 }

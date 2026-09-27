@@ -2,6 +2,8 @@
 //! no fallback to an ambient socket. The provider must enforce OS capabilities.
 use std::{cell::RefCell, vec::Vec};
 use servo::{WebResourceLoad, WebResourceResponse};
+#[path = "../infinity-browser-core/download.rs"]
+pub mod download;
 
 pub const MAX_BODY: usize = 1024 * 1024;
 const MAX_REQUESTS: usize = 16;
@@ -34,6 +36,11 @@ pub trait Provider {
     // DESC: Publishes document failure immediately without waiting for the engine's failed-navigation processing.
     // ------------------=
     fn document_failed(&mut self) {}
+    // ------------------------=
+    // FUNC: download
+    // DESC: Offers a complete bounded attachment to native storage consent, never an engine filesystem path.
+    // ------------------=
+    fn download(&mut self, _metadata: &download::Metadata, _body: &[u8]) -> Result<(), ()> { Err(()) }
 }
 
 struct Pending { id: u64, deadline: u64, load: WebResourceLoad }
@@ -81,9 +88,10 @@ impl<P: Provider> Resources<P> {
     // ------------------=
     pub fn submit(&self, load: WebResourceLoad) {
         let mut state = self.state.borrow_mut();
+        if state.closed {reject(load);return;}
         let request = load.request();
         let url = &request.url;
-        if state.closed || state.pending.len() == MAX_REQUESTS || request.method.as_str() != "GET"
+        if state.pending.len() == MAX_REQUESTS || request.method.as_str() != "GET"
             || !matches!(url.scheme(), "http" | "https") || url.as_str().len() > 2048
             || !url.username().is_empty() || url.password().is_some() {
             fail_load(&mut state, load); return;
@@ -119,6 +127,22 @@ impl<P: Provider> Resources<P> {
             };
             if result.body.len() > MAX_BODY || result.headers.len() > 32 || !(200..=599).contains(&result.status) {
                 fail_load(&mut state, pending.load); continue;
+            }
+            if pending.load.request().is_for_main_frame && (200..300).contains(&result.status) {
+                let dispositions: Vec<_> = result.headers.iter().filter(|(name,_)|name.eq_ignore_ascii_case("content-disposition")).collect();
+                if dispositions.len()>1 {fail_load(&mut state,pending.load);continue;}
+                let media_type=result.headers.iter().find(|(name,_)|name.eq_ignore_ascii_case("content-type"))
+                    .map_or("",|(_,value)|value.as_str());
+                let metadata=download::attachment(dispositions.first().map_or("",|(_,value)|value.as_str()),media_type);
+                match metadata {
+                    Ok(Some(metadata))=>{
+                        if state.provider.download(&metadata,&result.body).is_ok() {reject(pending.load);}
+                        else {fail_load(&mut state,pending.load);}
+                        continue;
+                    },
+                    Err(_)=>{fail_load(&mut state,pending.load);continue;},
+                    Ok(None)=>{},
+                }
             }
             let mut response = WebResourceResponse::new(pending.load.request().url.clone());
             response.status_code = result.status.try_into().unwrap();

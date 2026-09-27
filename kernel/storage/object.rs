@@ -69,6 +69,10 @@ pub struct ObjectCreateRequest<'a> {
     pub space: Space,
     pub content: &'a [u8],
 }
+pub struct DownloadCreateRequest<'a> {
+    pub name:&'a [u8], pub content:&'a [u8], pub path:&'a [u8],
+    pub media_type:&'a [u8], pub owner:ObjectId,
+}
 #[derive(Clone, Copy)]
 pub struct ObjectReadRequest {
     pub object: ObjectRef,
@@ -1030,6 +1034,37 @@ impl<D: BlockDevice> ObjectStore<D> {
             Ok(id)
         })();
         self.finish(before, result)
+    }
+
+    // ------------------------=
+    // FUNC: create_download
+    // DESC: Atomically attaches downloaded bytes and a related MIME metadata object without overwriting an existing name.
+    // ------------------=
+    pub fn create_download(&mut self, name:&[u8], content:&[u8], path:&[u8], media_type:&[u8], owner:ObjectId)
+        ->Result<ObjectId,ObjectError> {
+        if media_type.is_empty() || media_type.len()>127 || !media_type.contains(&b'/')
+            || !media_type.iter().all(|b|b.is_ascii_alphanumeric()||b"/!#$&^_.+-".contains(b)) {
+            return Err(ObjectError::InvalidObject);
+        }
+        let before=self.begin()?;
+        let result=(|| {
+            validate_path(path)?;
+            if self.state.entries.iter().any(|entry|entry.used&&entry.path()==path) {return Err(ObjectError::NameConflict);}
+            let id=self.create_record(name,ObjectType::Blob,Space::Personal)?;
+            self.write_record(id,content)?;
+            let metadata=self.create_record(b"Download MIME type",ObjectType::Metadata,Space::Personal)?;
+            self.write_record(metadata,media_type)?;
+            for object in [id,metadata] {
+                let index=self.object_index(object)?;
+                self.state.objects[index].owner=owner;
+            }
+            let slot=self.state.relationships.iter().position(|entry|!entry.used).ok_or(ObjectError::InsufficientCapacity)?;
+            self.state.relationships[slot]=RelationshipRecord{used:true,source:id,target:metadata,
+                kind:RelationshipType::References as u16,flags:0,created:self.state.generation+1};
+            self.attach_record(path,id)?;
+            Ok(id)
+        })();
+        self.finish(before,result)
     }
 
     // ------------------------=
@@ -2201,6 +2236,17 @@ pub struct ObjectService<'a, D: BlockDevice, P: ObjectCapabilityPolicy> {
     policy: &'a P,
 }
 impl<'a, D: BlockDevice, P: ObjectCapabilityPolicy> ObjectService<'a, D, P> {
+    // ------------------------=
+    // FUNC: create_download
+    // DESC: Requires creation, namespace and relationship authority before the atomic native download transaction.
+    // ------------------=
+    pub fn create_download(&mut self, request:DownloadCreateRequest<'_>)->Result<ObjectRef,ObjectError> {
+        self.allow(ObjectOperation::Create,None)?;
+        self.allow(ObjectOperation::NamespaceAttach,None)?;
+        self.allow(ObjectOperation::RelationshipAttach,None)?;
+        self.store.create_download(request.name,request.content,request.path,request.media_type,request.owner)
+            .map(|id|ObjectRef{id})
+    }
     // ------------------------=
     // FUNC: new
     // DESC: Creates and initializes a new instance.

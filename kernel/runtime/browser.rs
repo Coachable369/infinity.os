@@ -31,6 +31,10 @@ static OWNER:[AtomicU64;2]=[AtomicU64::new(0),AtomicU64::new(0)];
 static COMMANDS:Mailbox<abi::Command,32>=Mailbox::new();
 pub static FRAMES:Frames<16384000>=Frames::new();
 static EVENTS:Mailbox<Event,32>=Mailbox::new();
+static DOWNLOADS:Mailbox<Download,1>=Mailbox::new();
+#[derive(Clone,Copy)]
+pub struct Download {pub name:[u8;63],pub name_length:usize,pub media_type:[u8;127],
+    pub type_length:usize,pub bytes:[u8;16384],pub length:usize}
 static mut RNG:Option<ChaCha20Rng>=None;
 static mut UTC:u64=0;
 static mut EPOCH_NS:u64=0;
@@ -38,7 +42,33 @@ static mut EPOCH_NS:u64=0;
 pub struct Event {pub kind:u32,pub value:u32,pub length:usize,pub text:[u8;2048]}
 static mut HOST:abi::Host=abi::Host {version:abi::VERSION,size:core::mem::size_of::<abi::Host>() as u32,
     context:core::ptr::null_mut(),heap:core::ptr::null_mut(),heap_length:HEAP_BYTES,
-    cpu,monotonic,utc,entropy,idle,command,frame,event,begin,poll,cancel,fatal};
+    cpu,monotonic,utc,entropy,idle,command,frame,event,begin,poll,cancel,download,fatal};
+
+// ------------------------=
+// FUNC: take_download
+// DESC: Transfers a pending attachment only to its authenticated native browser owner for save consent.
+// ------------------=
+pub fn take_download(owner:SecurityIdentity)->Option<Download> {
+    if !owned_by(owner) {return None;}
+    DOWNLOADS.try_take().ok().flatten()
+}
+
+// ------------------------=
+// FUNC: download
+// DESC: Validates and copies one bounded attachment without touching disk or accepting a website-selected path.
+// ------------------=
+unsafe extern "C" fn download(_: *mut c_void,name:*const u8,name_length:usize,
+    media_type:*const u8,type_length:usize,body:*const u8,length:usize)->u32 {
+    if name.is_null() || media_type.is_null() || body.is_null() || name_length>63 || type_length>127 || length>16384 {return 0;}
+    let name=core::slice::from_raw_parts(name,name_length);
+    let media_type=core::slice::from_raw_parts(media_type,type_length);
+    let (Ok(name_text),Ok(type_text))=(core::str::from_utf8(name),core::str::from_utf8(media_type)) else {return 0;};
+    if infinity_browser_core::download::validate_metadata(name_text,type_text).is_err() {return 0;}
+    let mut value=Download{name:[0;63],name_length,media_type:[0;127],type_length,bytes:[0;16384],length};
+    value.name[..name_length].copy_from_slice(name);value.media_type[..type_length].copy_from_slice(media_type);
+    value.bytes[..length].copy_from_slice(core::slice::from_raw_parts(body,length));
+    DOWNLOADS.try_send(value).is_ok() as u32
+}
 
 // ------------------------=
 // FUNC: initialize
