@@ -50,6 +50,15 @@ impl Runtime {
     // DESC: Returns high-water heap ownership on the serialized engine CPU without logging or locks.
     // ------------------=
     pub unsafe fn peak_allocated() -> usize { let p=active();if p.is_null(){0}else{(*p).arena.peak_allocated()} }
+    // ------------------------=
+    // FUNC: diagnostic_thread_name
+    // DESC: Copies a test-only bounded thread label without allocating or lending runtime state.
+    // ------------------=
+    #[cfg(infinity_component_trace)]
+    pub unsafe fn diagnostic_thread_name(id:u64)->[u8;32] {
+        let p=active(); if p.is_null(){return [0;32];}
+        (*p).records.iter().find(|record|record.id==id).map_or([0;32],|record|record.name)
+    }
 }
 // ------------------------=
 // FUNC: active
@@ -207,7 +216,18 @@ pub unsafe extern "C" fn infinity_std_thread_create(size: usize, callback: exter
 pub unsafe extern "C" fn infinity_std_thread_join(id: u64) -> i32 {
     let p = active(); if p.is_null() { return 22; }
     if (*p).executor.current_id().is_some() {
-        return if (*p).executor.join(id).is_ok() { 0 } else { 22 };
+        #[cfg(infinity_component_trace)]
+        {
+            unsafe extern "C" { fn infinity_browser_tls_trace(thread:u64,callback:usize,done:u32); }
+            infinity_browser_tls_trace((*p).executor.current_id().unwrap_or(0),id as usize,2);
+        }
+        let result=if (*p).executor.join(id).is_ok() { 0 } else { 22 };
+        #[cfg(infinity_component_trace)]
+        {
+            unsafe extern "C" { fn infinity_browser_tls_trace(thread:u64,callback:usize,done:u32); }
+            infinity_browser_tls_trace((*p).executor.current_id().unwrap_or(0),id as usize,3);
+        }
+        return result;
     }
     loop {
         match (*p).executor.try_join(id) {

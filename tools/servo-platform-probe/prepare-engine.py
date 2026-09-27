@@ -23,6 +23,44 @@ def main():
     text = helper.native_body(text, 'pub fn from_file_path<P:', 'let _ = path; Err(UrlError::FromFilePath)')
     (servo / relative).write_text(text)
 
+    # A closed in-process receiver must be retired just like an IPC receiver.
+    # Otherwise ResourceManager spins on the profiler channel after its exit,
+    # starving every other continuation on the native owner CPU.
+    relative = "components/shared/base/generic_channel/generic_channelset.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace("Crossbeam(Vec<crossbeam_channel::Receiver<Result<T, SendError>>>)",
+        "Crossbeam(Vec<crossbeam_channel::Receiver<Result<T, SendError>>>, Vec<bool>)")
+    text = text.replace("GenericReceiverSetVariants::Crossbeam(vec![])", "GenericReceiverSetVariants::Crossbeam(vec![], vec![])")
+    text = text.replace("GenericReceiverSetVariants::Crossbeam(_)", "GenericReceiverSetVariants::Crossbeam(_, _)")
+    text = text.replace("GenericReceiverSetVariants::Crossbeam(receivers)", "GenericReceiverSetVariants::Crossbeam(receivers, closed)")
+    text = text.replace("receivers.push(receiver);", "receivers.push(receiver);\n                closed.push(false);")
+    text = text.replace('''for receiver in receivers.iter() {
+                    sel.recv(receiver);
+                }''', '''let mut ids = Vec::new();
+                for (id, receiver) in receivers.iter().enumerate() {
+                    if !closed[id] {
+                        sel.recv(receiver);
+                        ids.push(id);
+                    }
+                }''')
+    text = text.replace("receivers: receivers.as_slice(),\n                    sel,",
+        "receivers: receivers.as_slice(),\n                    closed: closed.as_mut_slice(),\n                    ids,\n                    sel,")
+    text = text.replace("sel: crossbeam_channel::Select<'a>,",
+        "sel: crossbeam_channel::Select<'a>,\n        closed: &'a mut [bool],\n        ids: Vec<usize>,")
+    text = text.replace("SelectorInner::Crossbeam { receivers, sel }", "SelectorInner::Crossbeam { receivers, sel, closed, ids }")
+    text = text.replace("let index = selected.index();", "let operation = selected.index();\n                let index = ids[operation];")
+    text = text.replace("Err(_) => GenericSelectionResult::ChannelClosed(index as u64),", '''Err(_) => {
+                            closed[index] = true;
+                            sel.remove(operation);
+                            GenericSelectionResult::ChannelClosed(index as u64)
+                        },''')
+    (servo / relative).write_text(text)
+
+    # Restore temporary diagnostic-only edits from earlier probe runs.
+    for relative in ("components/script/event_loop/script_thread.rs", "components/constellation/constellation.rs"):
+        text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+        (servo / relative).write_text(text)
+
     # The beta owns session storage in memory. Do not manufacture a Unix temp
     # directory before selecting the upstream memory implementations.
     for component, handle, engine, thread_body in (

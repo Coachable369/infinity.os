@@ -88,7 +88,19 @@ impl<const N: usize> Executor<N> {
             inner.current = Some(index); inner.threads[index].state = State::Running;
             (ptr::addr_of_mut!(inner.root), ptr::addr_of!(inner.threads[index].context), index)
         };
+        #[cfg(infinity_component_trace)]
+        {
+            unsafe extern "C" { fn infinity_browser_tls_trace(thread:u64,callback:usize,done:u32); }
+            let id=(*self.inner.get()).threads[index].id;
+            infinity_browser_tls_trace(id,0,5);
+        }
         switch(root, next);
+        #[cfg(infinity_component_trace)]
+        {
+            unsafe extern "C" { fn infinity_browser_tls_trace(thread:u64,callback:usize,done:u32); }
+            let id=(*self.inner.get()).threads[index].id;
+            infinity_browser_tls_trace(id,0,6);
+        }
         let inner = &mut *self.inner.get();
         inner.current = None;
         let t = &mut inner.threads[index];
@@ -235,13 +247,31 @@ impl<const N: usize> Executor<N> {
                 teardown.next(&i.keys, &mut i.threads[n].values)
             };
             let Some((callback, value)) = callback else { break; };
+            #[cfg(infinity_component_trace)]
+            {
+                unsafe extern "C" { fn infinity_browser_tls_trace(thread:u64,callback:usize,done:u32); }
+                infinity_browser_tls_trace(self.current_id().unwrap_or(0),callback as usize,0);
+            }
             callback(value as *mut u8);
+            #[cfg(infinity_component_trace)]
+            {
+                unsafe extern "C" { fn infinity_browser_tls_trace(thread:u64,callback:usize,done:u32); }
+                infinity_browser_tls_trace(self.current_id().unwrap_or(0),callback as usize,1);
+            }
         }
-        {
+        let resumed = {
             let i = &mut *self.inner.get(); let n = i.current.expect("native thread"); let id = i.threads[n].id;
             i.waits.cancel(id);
-            for t in &mut i.threads { if t.state == State::Joining(id) { t.state = State::Runnable; } }
+            let mut resumed=0;
+            for t in &mut i.threads { if t.state == State::Joining(id) { t.state = State::Runnable; resumed+=1; } }
+            resumed
+        };
+        #[cfg(infinity_component_trace)]
+        {
+            unsafe extern "C" { fn infinity_browser_tls_trace(thread:u64,callback:usize,done:u32); }
+            infinity_browser_tls_trace(self.current_id().unwrap_or(0),resumed,4);
         }
+        let _=resumed;
         let _ = self.suspend(State::Complete);
         panic!("completed native thread resumed")
     }

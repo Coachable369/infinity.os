@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import json
 import argparse
+import tempfile
 
 # ------------------------=
 # FUNC: main
@@ -19,6 +20,8 @@ def main():
     parser.add_argument("--swgl-probe", action="store_true")
     parser.add_argument("--page-probe", action="store_true")
     parser.add_argument("--network-probe", action="store_true")
+    parser.add_argument("--component", action="store_true")
+    parser.add_argument("--component-trace", action="store_true")
     options = parser.parse_args()
     arch = options.arch
     if options.boot_probe and arch != "aarch64":
@@ -45,7 +48,7 @@ def main():
     flags = ["--cfg", "infinity_native", "--check-cfg=cfg(infinity_native)",
              "--check-cfg=cfg(infinity_certificate_test)"]
     native_externs = []
-    for name in ("core", "panic_abort", "compiler_builtins", *(("std",) if options.boot_probe else ())):
+    for name in ("core", "panic_abort", "compiler_builtins", *(("std",) if options.boot_probe or options.component else ())):
         recorded = codegen.get("native_archives", {}).get(name)
         if recorded and Path(recorded).is_file():
             native_externs += ["--extern", name + "=" + recorded]
@@ -58,7 +61,7 @@ def main():
         if len(archives) != 1:
             raise SystemExit("Expected one native code-generated " + name + " archive")
         native_externs += ["--extern", name + "=" + str(archives[0])]
-    if options.page_probe:
+    if options.page_probe or options.component:
         archives = list((target / "deps").glob("libhttp-*.rlib"))
         if len(archives) != 1:
             raise SystemExit("Expected one native HTTP type archive")
@@ -92,8 +95,67 @@ def main():
     subprocess.run(["rustc", "--edition=2021", "--target", triple,
                     "--crate-name", "infinity_servo_runtime_primitives", "--crate-type", "rlib",
                     "--cfg", 'feature="native-abi"', "--cfg", 'feature="c-allocator-abi"', "-C", "panic=abort",
+                    *(["--cfg", "infinity_component_trace"] if options.component_trace else []),
                     *native_externs, "-L", "dependency=" + str(target / "deps"),
                     str(root / "sdk/servo-runtime-primitives/lib.rs"), "-o", str(runtime)], check=True)
+    if options.component:
+        if options.component_trace:
+            archives = list((target / "deps").glob("liblog-*.rlib"))
+            if len(archives) != 1:
+                raise SystemExit("Expected one native log archive")
+            native_externs += ["--extern", "log=" + str(archives[0]), "--cfg", "infinity_component_trace"]
+            base = list((target / "deps").glob("libservo_base-*.rlib"))
+            if len(base) != 1:
+                raise SystemExit("Expected one native Servo base archive")
+            native_externs += ["--extern", "servo_base=" + str(base[0])]
+        archive = output / ("browser-component-" + arch + ".a")
+        component = root / "sdk/infinity-browser-servo"
+        command = ["rustc", "--edition=2021", "--target", triple, "--crate-type", "staticlib",
+                   "--cfg", "infinity_native", "-C", "panic=abort", "-l", "static=c++abi",
+                   *native_search, *native_externs,
+                   "--extern", "servo=" + str(target / "libservo.rlib"),
+                   "--extern", "infinity_servo_runtime_primitives=" + str(runtime),
+                   "-L", "dependency=" + str(target / "deps"),
+                   "-L", "dependency=" + str(root / "build/cargo/debug/deps"),
+                   str(component / "component.rs"), "-o", str(archive)]
+        with (output / "component-link.log").open("w") as log:
+            result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
+            if result.returncode:
+                return result.returncode
+            # rustc's executable link retains Rust crate objects (and their
+            # inventory constructors), but lazily selects bundled C archives.
+            # Reproduce that distinction: whole-archiving all bundled C pulls
+            # duplicate implementations such as SpiderMonkey/fontsan LZ4.
+            ar = "/opt/homebrew/opt/llvm/bin/llvm-ar"
+            members = subprocess.check_output([ar, "t", str(archive)], text=True).splitlines()
+            rust_members = [member for member in members if member.endswith(".rcgu.o")]
+            if not rust_members or len(rust_members) != len(set(rust_members)):
+                raise SystemExit("Ambiguous native Rust archive members")
+            rust_archive = output / ("browser-rust-" + arch + ".a")
+            rust_archive.unlink(missing_ok=True)
+            with tempfile.TemporaryDirectory(prefix="browser-rust-", dir=output) as directory:
+                subprocess.run([ar, "x", str(archive), *rust_members], cwd=directory, check=True)
+                subprocess.run([ar, "rc", str(rust_archive), *rust_members], cwd=directory, check=True)
+            native = output / ("browser-native-" + arch + ".o")
+            objects = [argument.removeprefix("link-arg=") for argument in c_objects if argument.startswith("link-arg=")]
+            result = subprocess.run(["/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--strip-debug",
+                    "--undefined=infinity_browser_run", "--wrap=abort", "--defsym=__wrap_abort=infinity_browser_abort",
+                    "-T", str(component / "private.ld"), "-o", str(native), *objects,
+                    "--start-group", "--whole-archive", str(rust_archive), "--no-whole-archive", str(archive),
+                    str(root / ("build/voice-kokoro/cxx-" + arch + "/lib/libc++.a")),
+                    str(root / ("build/voice-kokoro/cxx-" + arch + "/lib/libc++abi.a")),
+                    str(newlib / "libc.a"), str(newlib / "libm.a"),
+                    "--end-group"], stdout=log, stderr=subprocess.STDOUT)
+            if result.returncode:
+                return result.returncode
+            private = output / ("browser-private-" + arch + ".o")
+            subprocess.run(["/opt/homebrew/opt/llvm/bin/llvm-objcopy",
+                "--prefix-symbols=infinity_browser_private_", str(native), str(private)], check=True)
+        undefined = subprocess.check_output(["/opt/homebrew/opt/llvm/bin/llvm-nm", "--undefined-only", str(private)], text=True)
+        report = {"target": triple, "object": str(private), "undefined": undefined, "executed": False}
+        (output / ("component-" + arch + ".json")).write_text(json.dumps(report, indent=2) + "\n")
+        print(json.dumps(report))
+        return 1 if any(line.split()[0] == "U" for line in undefined.splitlines() if line.split()) else 0
     command = ["rustc", "--edition=2021", "--target", triple,
                "--cfg", "infinity_native", "-C", "panic=abort",
                *(["--cfg", "infinity_page_probe"] if options.page_probe else []),

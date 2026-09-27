@@ -14,6 +14,15 @@ pub const BACK: u32 = 9;
 pub const FORWARD: u32 = 10;
 pub const RELOAD: u32 = 11;
 pub const SHUTDOWN: u32 = 255;
+/// KEY flags: press versus release, named versus Unicode key, autorepeat.
+pub const KEY_DOWN:u32=1;
+pub const KEY_NAMED:u32=2;
+pub const KEY_REPEAT:u32=4;
+/// KEY b field is an engine-independent native modifier mask.
+pub const MOD_SHIFT:u32=1;
+pub const MOD_CONTROL:u32=2;
+pub const MOD_ALT:u32=4;
+pub const MOD_META:u32=8;
 pub const EVENT_OPEN: u32 = 1;
 pub const EVENT_CLOSED: u32 = 2;
 pub const EVENT_LOAD: u32 = 3;
