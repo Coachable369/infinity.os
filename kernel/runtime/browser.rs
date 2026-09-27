@@ -144,7 +144,7 @@ pub struct Presentation {
     pub frame_revision:u64,
     pub tabs:[TabPresentation;8],pub tab_count:usize,pub active_tab:u32,
     pub permission:u8,
-    pub download_name:[u8;63],pub download_length:usize,pub download_state:u8,
+    pub download_name:[u8;63],pub download_length:usize,pub download_state:u8,pub download_revision:u64,
     pub address:[u8;2048],pub address_length:usize,
     pub edit:[u8;2048],pub edit_length:usize,pub caret:usize,pub address_focused:bool,pub caret_visible:bool,pub address_selected:bool,
     pub title:[u8;256],pub title_length:usize,
@@ -156,7 +156,7 @@ const EMPTY_TAB:TabPresentation=TabPresentation{id:0,title:[0;256],length:0};
 static mut PRESENTATION:Presentation=Presentation{frame_revision:0,address:[0;2048],address_length:0,title:[0;256],
     tabs:[EMPTY_TAB;8],tab_count:0,active_tab:0,
     permission:0,
-    download_name:[0;63],download_length:0,download_state:0,
+    download_name:[0;63],download_length:0,download_state:0,download_revision:0,
     edit:[0;2048],edit_length:0,caret:0,address_focused:false,caret_visible:true,address_selected:false,
     title_length:0,loading:false,input_busy:false,history:0,error:0,revision:0};
 static mut LAST_FRAME_REVISION:u64=0;
@@ -170,7 +170,7 @@ impl Presentation {
     pub fn page_key(&self)->infinity_browser_core::damage::PageKey {
         infinity_browser_core::damage::PageKey {frame:self.frame_revision,tab:self.active_tab,
             error:self.error,permission:self.permission,download:self.download_state,
-            download_content:self.download_name[..self.download_length].iter().fold(0u64,|hash,byte|hash.wrapping_mul(131).wrapping_add(*byte as u64)),
+            download_content:self.download_revision,
             loading:self.loading,busy:self.input_busy}
     }
 }
@@ -202,6 +202,7 @@ pub fn download_presentation(name:&[u8],state:u8) {unsafe {
     let view=&mut *(&raw mut PRESENTATION);
     view.download_length=name.len().min(63);view.download_name[..view.download_length].copy_from_slice(&name[..view.download_length]);
     view.download_state=state;view.loading=false;view.revision=view.revision.wrapping_add(1);
+    view.download_revision=view.download_revision.wrapping_add(1);
     INFINITY_BROWSER_DOWNLOAD_STATE.store(state as u32,Ordering::Release);
 }}
 
