@@ -6,6 +6,22 @@ use crate::Error;
 pub enum Destination { Url, Search }
 
 // ------------------------=
+// FUNC: web_association
+// DESC: Resolves explicit public web schemes for OS open requests without turning local paths into searches.
+// ------------------=
+pub fn web_association(input:&[u8],output:&mut[u8])->Result<Option<usize>,Error> {
+    let scheme=if input.get(..8).is_some_and(|s|s.eq_ignore_ascii_case(b"https://")) {8}
+        else if input.get(..7).is_some_and(|s|s.eq_ignore_ascii_case(b"http://")) {7}
+        else {return Ok(None);};
+    let text=core::str::from_utf8(input).map_err(|_|Error::Invalid)?;
+    if text.chars().any(char::is_whitespace) || input.len()==scheme
+        || matches!(input[scheme],b'/'|b'?'|b'#') {return Err(Error::Invalid);}
+    let (_,length)=resolve(text,"https://example.com/",output)?;
+    output[..scheme].make_ascii_lowercase();
+    Ok(Some(length))
+}
+
+// ------------------------=
 // FUNC: resolve
 // DESC: Preserves explicit HTTP URLs, upgrades bare domains to HTTPS, and percent-encodes search input without allocation.
 // ------------------=
@@ -59,6 +75,23 @@ fn unreserved(byte: u8) -> bool { byte.is_ascii_alphanumeric() || matches!(byte,
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: explicit_web_association_preserves_local_objects
+    // DESC: Checks default web routing, bounded writes and refusal to turn file or privileged schemes into web requests.
+    // ------------------=
+    #[test]
+    fn explicit_web_association_preserves_local_objects() {
+        let mut output=[0u8;128];
+        assert_eq!(web_association(b"HTTPS://example.com/",&mut output),Ok(Some(20)));
+        assert_eq!(&output[..20],b"https://example.com/");
+        for input in [b"/home/default/note".as_slice(),b"file:///secret",b"javascript:alert(1)",b"example.com"] {
+            assert_eq!(web_association(input,&mut output),Ok(None));
+        }
+        for input in [b"https://".as_slice(),b"https:///",b"https://bad host/",b"http://\n"] {
+            assert_eq!(web_association(input,&mut output),Err(Error::Invalid));
+        }
+        assert_eq!(web_association(b"https://example.com/",&mut [0u8;4]),Err(Error::Full));
+    }
     // ------------------------=
     // FUNC: routes_and_encodes_without_injection
     // DESC: Validates URL/search routing and exact request bytes including Unicode and query separators.

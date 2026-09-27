@@ -9072,6 +9072,15 @@ impl ConsoleRuntime {
             let Some(target) = command_word(command, 1) else {
                 return true;
             };
+            #[cfg(feature="native-browser")]
+            {
+                let mut url=[0u8;2048];
+                match infinity_browser_core::omnibox::web_association(target,&mut url) {
+                    Ok(Some(length))=>{browser_controller::request_access(self,&url[..length]);return true;},
+                    Err(_)=>{self.output.write_line(b"Invalid web address.");return true;},
+                    Ok(None)=>{},
+                }
+            }
             if crate::storage::object_inspect_path(target).is_ok() {
                 self.output
                     .write_line(b"ApplicationAssociation.Resolve -> Application.Launch");

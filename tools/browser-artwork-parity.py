@@ -3,11 +3,32 @@
 This proves asset packaging only, not browser availability or installed execution.
 """
 import json
+import mmap
 import os
 from pathlib import Path
 import struct
 import subprocess
 import tempfile
+
+
+# ------------------------=
+# FUNC: verify_embedded_fonts
+# DESC: Checks exact native Inter raster and metric bytes inside each shipped installed kernel.
+# ------------------=
+def verify_embedded_fonts(kernel, root):
+    records = []
+    with kernel.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as image:
+        # The native desktop currently selects only 1x/2x UI scale. Higher
+        # source atlases are unreachable and legitimately dead-stripped.
+        for size in (14, 28):
+            for extension, length in (("atlas", size * (size + 6) * 95), ("metrics", 95), ("kern", 95 * 95)):
+                asset = root / "assets/fonts" / f"InfinityBrowser-Regular-{size}.{extension}"
+                expected = asset.read_bytes()
+                assert len(expected) == length, (asset, len(expected), length)
+                offset = image.find(expected)
+                assert offset >= 0, (kernel, asset)
+                records.append({"asset": asset.name, "bytes": length, "kernel_offset": offset})
+    return records
 
 
 # ------------------------=
@@ -25,6 +46,8 @@ def main():
     records = []
     with tempfile.TemporaryDirectory(prefix="browser-artwork-", dir=root / "build/tmp") as temporary:
         for architecture in ("x86_64", "aarch64"):
+            records.append({"architecture": architecture, "embedded_fonts": verify_embedded_fonts(
+                root / "build" / architecture / "installed-kernel.elf", root)})
             image = root / "build" / architecture / "installed-esp.img"
             for name, dimensions in assets.items():
                 expected = (root / "assets/apps" / name).read_bytes()

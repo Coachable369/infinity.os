@@ -39,7 +39,7 @@ if [ "${INFINITY_BUILD_LEGACY_X86:-0}" = "1" ]; then
 else
     echo "==> Skipping legacy BIOS x86 (set INFINITY_BUILD_LEGACY_X86=1 to attempt it)"
 fi
-make x86_64
+make builds/InfinityOS-x86_64-bootstrap-test.iso
 make aarch64-bootstrap
 make system-sound-test
 make system-sound-install-parity-test
@@ -49,6 +49,9 @@ make installer-entropy-test
 make editor-window-test
 make active-painter-test
 make video-driver-test
+# Native dependency preparation can refresh linked kernels after the first
+# architecture pass. Re-stage the actual media before comparing its payloads.
+make builds/InfinityOS-x86_64-bootstrap-test.iso aarch64-bootstrap
 python3 tools/installed-kernel-parity-test.py
 make crash-screen-test
 make component-manifest-test
@@ -78,6 +81,7 @@ tools/ui-install-parity-test.sh \
     build/aarch64/installed-esp.img
 make input-regression-test
 make app-launcher-interaction-test
+sh tools/build-hermes.sh --target x86_64
 sh tools/build-hermes.sh
 python3 tools/browser-artwork-parity.py
 

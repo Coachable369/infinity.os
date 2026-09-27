@@ -264,7 +264,8 @@ class Guest(base.Guest):
         qmp = self.work / "qmp.sock"
         qmp.unlink(missing_ok=True)
         self.log = (self.work / ("installer.log" if installer else "installed.log")).open("ab")
-        command = ["qemu-system-aarch64", "-machine", "virt", "-accel", "tcg", "-cpu", "max",
+        acceleration=getattr(self,"acceleration","tcg")
+        command = ["qemu-system-aarch64", "-machine", "virt", "-accel", acceleration, "-cpu", "host" if acceleration=="hvf" else "max",
             "-smp", "4", "-m", "12G", "-bios", self.firmware, "-device", "ramfb",
             "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse",
             "-device", "virtio-scsi-pci", "-drive", f"if=none,id=disk,format=raw,file={self.disk}",
@@ -310,6 +311,7 @@ def main():
         raise SystemExit("Run through build-kit")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch",choices=("aarch64","x86_64"),default="aarch64")
+    parser.add_argument("--accel",choices=("tcg","hvf"),default="tcg",help="Use host ARM virtualization for hardware-accelerated latency measurements")
     parser.add_argument("--reuse-installed", type=Path)
     parser.add_argument("--resume-onboarding",action="store_true",help="Resume a completed disposable installation, reverify against its original ISO and finish onboarding")
     parser.add_argument("--iso-parity", action="store_true", help="Cold-install the browser QEMU ISO without any offline kernel replacement")
@@ -317,6 +319,7 @@ def main():
     parser.add_argument("--navigation", action="store_true", help="Verify real HTTPS link/back/forward/reload through URL state and distinct page pixels")
     parser.add_argument("--download", action="store_true", help="Fetch a real HTTPS attachment, click native Save, and verify the stored object after shutdown")
     parser.add_argument("--launcher", action="store_true", help="Launch through the installed catalog and approve native network consent without Console authorization")
+    parser.add_argument("--open-url", action="store_true", help="Verify the OS default web association and its explicit network-consent boundary")
     parser.add_argument("--interaction", action="store_true", help="Verify real HTTPS image, CSS, JavaScript input and scrolling by framebuffer pixels")
     parser.add_argument("--tabs", action="store_true", help="With interaction, exercise native create/select/close controls and independent page pixels")
     parser.add_argument("--invalid-tls", action="store_true", help="Require a certificate-validation rejection from a real expired HTTPS endpoint")
@@ -325,6 +328,10 @@ def main():
     parser.add_argument("--address", action="store_true", help="Type a new URL into the native address bar and require its real rendered page")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
+    if args.accel=="hvf" and args.arch!="aarch64":
+        parser.error("HVF verification is supported only for the native ARM target")
+    if args.open_url and any((args.launcher,args.interaction,args.tabs,args.address,args.measure,args.navigation,args.download,args.invalid_tls,args.lifecycle,args.reopen)):
+        parser.error("Default web association acceptance is a separate bounded run")
     if args.tabs and not args.interaction:
         parser.error("Tab acceptance requires --interaction")
     if args.lifecycle and (args.invalid_tls or args.download or args.launcher or args.navigation):
@@ -365,6 +372,7 @@ def main():
         str(artifacts / "installed-kernel.elf"), str(artifacts / "installed-stripped.elf")], check=True)
     guest = Guest(work, 1, f"/opt/homebrew/share/qemu/edk2-{args.arch}-code.fd", reuse=reuse, width=1024, height=768, memory_mb=12288)
     guest.arch=args.arch
+    guest.acceleration=args.accel
     # x86 PIO under cross-architecture TCG must read back the entire large payload.
     # This bounds the harness only; it does not relax any installed-byte checks.
     guest.install_timeout_seconds=1800 if args.arch=="x86_64" else 900
@@ -372,7 +380,7 @@ def main():
     # the 2048px x86 desktop is painting. Acknowledge each key on that target.
     guest.fast_commands = args.interaction and args.arch != "x86_64"
     guest.patched = args.iso_parity or (reuse and args.update_kernel is None)
-    receipt = dict(architecture=args.arch,installed=reuse, browser_iso_parity=False, browser_interactive=False)
+    receipt = dict(architecture=args.arch,acceleration=args.accel,installed=reuse, browser_iso_parity=False, browser_interactive=False)
     if media_kernels is not None: receipt["iso_kernel_artifacts"]=media_kernels
     try:
         if not reuse:
@@ -399,14 +407,19 @@ def main():
         counters = browser_symbols(artifacts / "installed-kernel.elf")
         if args.measure or args.lifecycle or args.reopen:
             assert "PEAK" in counters, "This optimized kernel does not expose peak-memory diagnostics"
-        if args.launcher:
-            guest.launch("browser",5)
+        if args.launcher or args.open_url:
+            if args.open_url:
+                guest.launch("command",5)
+                guest.command("open https://example.com/")
+            else:
+                guest.launch("browser",5)
             time.sleep(.5)
             assert int.from_bytes(guest.memory(*counters["STATE"]),"little")==0
             assert int.from_bytes(guest.memory(*counters["NETWORK_COMPLETED"]),"little")==0
             guest.screenshot("browser-network-consent")
             guest.click(740,595)
             receipt["launcher_with_explicit_consent"]=True
+            if args.open_url: receipt["default_web_association_with_explicit_consent"]=True
         else:
             guest.launch("command", 5)
             guest.command("browser authorize confirm=true")
@@ -459,7 +472,7 @@ def main():
         receipt["launch_command_submitted"] = True
         if args.measure:
             assert "page_complete_seconds" in receipt and values["PAGE_ERROR"]==0,receipt
-            receipt["timing_boundary"]=f"QMP Enter submission to observed framebuffer/engine completion; {args.arch} TCG, 4 vCPU, 12 GiB; polling upper bounds"
+            receipt["timing_boundary"]=f"QMP Enter submission to observed framebuffer/engine completion; {args.arch} {args.accel.upper()}, 4 vCPU, 12 GiB; polling upper bounds"
             guest.click(guest.width-54,guest.height-68,press=False)
             receipt["pointer_visible_roundtrip_seconds"]=[pointer_pixel_latency(guest,1 if index%2==0 else -1) for index in range(10)]
             guest.key("ctrl","w")

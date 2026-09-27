@@ -3,6 +3,36 @@
 This is an implementation ledger, not an installed-browser completion claim.
 Servo is pinned to `d05154e2b4def11a9fefe412898a0a6c8925a9cd` (0.6).
 
+## Installer handoff — 2026-09-27
+
+The user requested updated ISOs followed by manual feature verification, with
+work stopping at that handoff. Clean run `20260927T193335871261Z-71378.json`
+failed because a later kernel rebuild left the earlier x86 installer FAT payload
+stale. `build.sh` now refreshes both architectures' actual test media before the
+binary parity gate and packages both model-inclusive release ISOs at the end.
+The resumed run passed that gate for ARM (864,610,952 installed kernel bytes)
+and x86 (862,397,304 bytes), including exact bootloader parity. All 28 browser-core
+tests passed, including explicit URL association. The continuation
+`20260927T203007149973Z-60677.json` produced both final ISOs, then stopped at an
+overbroad font assertion: 42/56px atlases are unreachable at the desktop's 1x/2x
+scale and are dead-stripped. The check now requires the used 14/28px faces.
+Final verification `20260927T212119387180Z-83067.json` passed exact font/artwork
+and manifest packaging checks, extracted nonempty boot payloads from all five
+ISOs, generated `builds/SHA256SUMS`, and passed the VirtualBox input guard.
+
+Final manual-test installers (2026-09-27 CDT):
+
+- `builds/InfinityOS-aarch64.iso`: 8,590,338,048 bytes, 16:19:16;
+  SHA-256 `15ffb2d3f46bdd78f07bd6ca47f0dac35230679a33f02e37b0d837bb0b9bbab0`.
+- `builds/InfinityOS-x86_64.iso`: 8,590,346,240 bytes, 16:13:19;
+  SHA-256 `0ce6bd08212c38181f8da5814373587388935d9b8ddf33b57e1ccc606a201c98`.
+
+This is a verified artifact handoff after a failed clean run and incremental
+continuation, not a successful clean-build or new installed-system acceptance
+claim. Per the user's request, further feature/VM testing stops here for manual
+verification. The optional HVF and Console-open installed harness paths remain
+unverified.
+
 ## Current six-item checklist
 
 | Item | Current evidence / remaining gate |
@@ -54,6 +84,20 @@ Screenshot: `builds/evidence/browser-daily-driver/installed-x86-image-failure.pn
 The 30-minute TCG timeout changes no integrity checks.
 
 ## Current implementation batch and failure queue
+
+- Clean release build started from `e780373` using `./build-kit full` on
+  27 September. Completion and refreshed media are pending, not inferred from
+  successful experimental kernel links. The artwork parity gate now also
+  checks exact Inter atlas/metric/kerning bytes in both installed kernels.
+- Hardware timing: the host ARM QEMU binary exposes HVF. The installed runner
+  now accepts `--accel hvf` for ARM and records its accelerator in the receipt;
+  actual hardware-accelerated execution remains unverified. TCG stays default.
+- Default-browser scope: installed catalog launch is proven. Console `open`
+  now routes explicit HTTP/HTTPS URLs to Infinity Browser through its existing
+  consent boundary; local objects and privileged schemes are not turned into
+  searches. Typed association tests and installed `--open-url` acceptance were
+  added. Execution of these new checks remains pending, not covered by catalog
+  availability alone.
 
 - Revised browser kit: shared 48px tab/window row, native Inter atlases at four
   scales, 36px beveled tabs, bounded exterior glow, 8px tab gaps, 24px close
