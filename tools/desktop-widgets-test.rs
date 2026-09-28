@@ -5,6 +5,23 @@ mod desktop_widgets;
 mod geometry;
 use desktop_widgets::State;
 use geometry::Point;
+// ------------------------=
+// FUNC: browser_suppresses_overview_without_mutating_preferences
+// DESC: Verifies the browser removes the overview hit/paint surface while retaining AI and saved desktop state.
+// ------------------=
+#[test]
+fn browser_suppresses_overview_without_mutating_preferences() {
+    for visible in 0..4 {
+        let mut state = State::new();
+        state.visible = visible;
+        let saved = state.encode();
+        assert!(!state.shown(0, true));
+        assert_eq!(state.shown(1, true), visible & 2 != 0);
+        assert_eq!(state.shown(0, false), visible & 1 != 0);
+        assert_eq!(state.encode(), saved);
+        assert!(!state.shown(2, true));
+    }
+}
 #[test]
 // ------------------------=
 // FUNC: drag_snap_visibility_and_persistence

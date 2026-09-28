@@ -9609,7 +9609,7 @@ impl super::DisplayDevice {
     // DESC: Renders the persistent right-side system overview and AI status foreground layer.
     // ------------------=
     fn desktop_widgets(&mut self, scale: usize) {
-        if crate::ui::desktop_widgets::current().visible & 1 != 0 { self.desktop_overview_widget(scale); }
+        if crate::ui::desktop_widgets::current().shown(0,crate::ui::desktop_stack::current().visible[crate::ui::desktop_stack::BROWSER]) { self.desktop_overview_widget(scale); }
         self.desktop_ai_chat(scale);
     }
 

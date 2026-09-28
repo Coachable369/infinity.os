@@ -121,7 +121,7 @@ impl ConsoleRuntime {
         }
         if clicked {
             for id in (0..2).rev() {
-                if state.visible & (1 << id) == 0 {
+                if !state.shown(id,self.browser_window_state().visible) {
                     continue;
                 }
                 let rect = state.rect(id, width, height, scale, minimized && id == 1);

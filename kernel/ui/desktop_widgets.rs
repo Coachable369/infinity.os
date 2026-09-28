@@ -9,6 +9,13 @@ pub struct State {
 }
 impl State {
     // ------------------------=
+    // FUNC: shown
+    // DESC: Keeps the overview off a standalone browser desktop without changing saved widget preferences.
+    // ------------------=
+    pub fn shown(self, id: usize, browser_visible: bool) -> bool {
+        id < 2 && self.visible & (1 << id) != 0 && !(id == 0 && browser_visible)
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Keeps legacy right-column placement until a user moves a widget.
     // ------------------=
