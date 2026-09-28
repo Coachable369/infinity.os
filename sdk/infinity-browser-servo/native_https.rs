@@ -50,7 +50,7 @@ impl<F: Factory> Provider for Https<F> {
             let mut read = std::vec![0;16640];
             let mut write = std::vec![0;4096];
             let mut request = std::vec![0;4096];
-            let mut body = std::vec![0;128*1024];
+            let mut body = std::vec![0;1024*1024];
             let mut head = std::vec![0;8192];
             let result = net::client::get_with_headers(link, config, Destination::Resolve,
                 net::rand_chacha::ChaCha20Rng::from_seed(seed), net::TLS_SERVER_ROOTS, utc,

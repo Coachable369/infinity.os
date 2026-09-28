@@ -125,6 +125,13 @@ production deadline. QEMU HVF requires an ARM64 Mac for the ARM test harness, no
 the native synthesis implementation.
 
 The matrix changes preserve upstream FP32 accumulation and reduction order.
+ARM CPUs exposing FEAT_FHM additionally use checked 16-byte-aligned widening
+half multiply-accumulate tiles; other CPUs and alignments retain the existing
+fallback. September 28 ARM HVF probes preserved the full PCM hashes for all
+seven successful cases. Warm `Hi.` synthesis measured 2.31 seconds versus the
+previous 3.72-second probe, and 11.6 seconds of paragraph audio took 22.02
+seconds versus 36.83 seconds. These are native probe measurements, not installed
+end-to-end response latency or a real-time throughput pass.
 They use wider reads only after checking alignment and retain upstream handling
 for unsupported types, lengths, and boundary rows. The guest additionally checks
 8,448 aligned/fallback dot cases and 165 four-row tile/rejection cases against
@@ -154,24 +161,27 @@ failed native speech job; it does not substitute a different voice.
 
 ## Conversational phrase playback and microphone interruption
 
-The conversation controller now submits one phrase of at most 44 characters,
-preferring a sentence boundary. It does not wait for all 160 characters to be
-synthesized before beginning playback. This is phrase-wise playback after LLM
-generation, not simultaneous synthesis/playback or token-streamed generation.
+The conversation controller submits word-aligned phrases of at most 44 characters,
+preferring sentence boundaries, from cumulative visible LLM output. This matches
+one native graph rather than waiting for a 160-character multi-graph batch.
+Two immutable DMA buffers allow synthesis of the next phrase during playback.
+There is no intentional inter-phrase wait. Gap-free output still requires
+synthesis throughput to keep up with playback; short-chunk dispatch alone does
+not establish that performance gate.
 
-After each completed phrase the controller opens fresh authorized capture,
-discards 200 ms of samples for the speaker's acoustic tail, then checks 600 ms
-of actual microphone samples before allowing another phrase. Confirmed VAD
-speech discards the remaining assistant reply and preserves the utterance for
-recognition. Missing microphone samples do not count as silence; a three-second
-capture watchdog stops the reply. Logout, mute and cancellation close capture.
-The final phrase also gets the acoustic-tail guard before normal listening.
+With conversation input explicitly enabled, authorized microphone capture stays
+open during thinking and speaking. Three voiced 20-ms frames interrupt playback
+and cancel the old response, preserving the utterance onset for recognition.
+Typed replies do not silently enable a disabled microphone. Logout, lock, mute,
+and cancellation close capture and erase its private buffers.
 
-This is a half-duplex boundary check, not acoustic echo cancellation: speech
-during playback or the 200 ms tail guard is not captured. Long room reverberation
-may still trigger VAD. Installed-device microphone/speaker testing is required
-before claiming acoustic interruption quality. The behavioral controller test
-uses real resampling/VAD with deterministic audio and playback seams.
+A bounded playback-reference correlator subtracts delayed direct-path speaker
+echo before VAD, retaining independent near-end speech. Recent reference samples
+remain available for a 200-ms acoustic tail instead of discarding microphone
+input. This is not a full room-adaptive acoustic echo canceller: reverberant
+speakers and real microphone interruption remain installed-device acceptance
+gates. Behavioral tests cover delayed scaled echo, mixed human speech, onset
+preservation, immediate DMA cancellation, and voice off/on lifecycle handling.
 
 Unfinished upstream modifications are preserved as reviewable patches in
 `third_party/patches/voice-kokoro`. Generated clones, dependency checkouts and

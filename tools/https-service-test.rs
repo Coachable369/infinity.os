@@ -79,6 +79,7 @@ fn main() {
         capability::CapabilityType as C, execution::SecurityIdentity as Identity, network::types::*,
     };
     runtime::initialize(false);
+    runtime::poll_node_transport(0);
     let (owner, mut caps) = runtime::with_runtime(|r| {
         r.identity.create_machine(b"test", 3, 1, 0).unwrap();
         let user = r.identity.create_user(b"tester", b"Tester", 0).unwrap();
@@ -201,9 +202,21 @@ fn main() {
         let mut reply=bridge::abi::Response {status:0,headers:core::ptr::null(),headers_length:0,
             body:core::ptr::null(),body_length:0};
         assert!(bridge::configure(owner,[0;4]));
+        // Browser leases are refreshed from the active session policy. Deny
+        // through that policy, not through lease IDs that renewal replaces.
+        let prior=runtime::with_runtime(|r| {
+            let prior=*r.network.profiles.active().unwrap();
+            let mut denied=prior;denied.id=0;denied.protected=false;
+            denied.kind=runtime::network::profile::ProfileKind::Custom;
+            denied.internet_allowed=false;
+            let id=r.network.profiles.create(denied).unwrap();
+            let staged=r.network.profiles.stage(id).unwrap();
+            r.network.profiles.commit(staged).unwrap();prior
+        }).unwrap();
         let denied=bridge::begin(b"https://example.test/");assert_ne!(denied,0);
         bridge::pump();assert_eq!(bridge::poll(denied,&mut reply),2);
         bridge::cancel(denied);bridge::pump();
+        runtime::with_runtime(|r|r.network.profiles.commit(prior).unwrap());
         assert!(bridge::configure(owner,caps));
         let mut ids=[0;16];
         for id in &mut ids {*id=bridge::begin(b"file:///private");assert_ne!(*id,0);}

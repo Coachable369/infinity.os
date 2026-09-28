@@ -13,6 +13,8 @@ use crate::runtime::{
 pub mod indicator;
 #[path = "speech_chunk.rs"]
 mod speech_chunk;
+#[path = "voice_echo.rs"]
+mod voice_echo;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum State {
@@ -33,6 +35,8 @@ static mut RESAMPLER: Resampler = Resampler::empty();
 static mut UTTERANCE: Utterance = Utterance::new(300);
 static mut RAW: [i16; 4800] = [0; 4800];
 static mut MONO: [i16; 4800] = [0; 4800];
+static mut ECHO: [i16; 9600] = [0; 9600];
+static mut ECHO_VALID_UNTIL: u64 = 0;
 static mut TRANSCRIPT: [u8; 512] = [0; 512];
 static mut REPLY: [u8; 16384] = [0; 16384];
 static mut REPLY_LENGTH: usize = 0;
@@ -41,9 +45,6 @@ static mut LEVEL: u16 = 0;
 static mut RESTART_LISTENING: bool = false;
 static mut CHAT_TURN: u64 = 0;
 static mut CONTINUOUS: bool = false;
-static mut ECHO_REMAINING: usize = 0;
-// Discard acoustic tail only once after the complete response, never between phrases.
-const ECHO_TAIL_SAMPLES: usize = 3200;
 static mut REPLY_COMPLETE: bool = false;
 
 // ------------------------=
@@ -99,7 +100,10 @@ pub fn state() -> (State, u16) {
 // DESC: Opens a bounded capture lease and resets private utterance storage between conversational turns.
 // ------------------=
 unsafe fn listen() -> bool {
-    ECHO_REMAINING = 0;
+    if INPUT_CAP != 0 {
+        STATE = State::Listening;
+        return true;
+    }
     let Some(cap) = grant(OWNER, CapabilityType::AudioInput, 60) else {
         return false;
     };
@@ -191,7 +195,6 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         }
         RESTART_LISTENING = false;
         crate::drivers::audio::stop_capture(owner);
-        ECHO_REMAINING = 0;
         INPUT_CAP = 0;
         voice_input::stop(owner);
         voice_output::stop(owner);
@@ -208,6 +211,7 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         (&mut *(&raw mut RESAMPLER)).clear();
         (&mut *(&raw mut RAW)).fill(0);
         (&mut *(&raw mut MONO)).fill(0);
+        (&mut *(&raw mut ECHO)).fill(0);ECHO_VALID_UNTIL=0;
         (&mut *(&raw mut TRANSCRIPT)).fill(0);
         (&mut *(&raw mut REPLY)).fill(0);
         REPLY_LENGTH = 0;
@@ -231,7 +235,7 @@ unsafe fn speak_next() -> bool {
     while REPLY_AT < REPLY_LENGTH && REPLY[REPLY_AT] == b' ' { REPLY_AT += 1; }
     if REPLY_AT >= REPLY_LENGTH {
         if !REPLY_COMPLETE { STATE = State::Thinking; return true; }
-        if CONTINUOUS { let ready = listen(); ECHO_REMAINING = ECHO_TAIL_SAMPLES; return ready; }
+        if CONTINUOUS { return listen(); }
         STATE = State::Off;
         (&mut *(&raw mut REPLY)).fill(0);
         return true;
@@ -278,7 +282,6 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         if !matches!(STATE, State::Off | State::Failed | State::Listening) || !active_owner(owner) { return; }
         if STATE == State::Listening && OWNER != owner { return; }
         let continuous = STATE == State::Listening;
-        if continuous { crate::drivers::audio::stop_capture(owner); INPUT_CAP = 0; }
         OWNER = owner;
         CONTINUOUS = continuous;
         REPLY_AT = 0; REPLY_LENGTH = 0; REPLY_COMPLETE = false;
@@ -286,6 +289,38 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         CHAT_TURN = turn;
         STATE = State::Thinking;
     }
+}
+// ------------------------=
+// FUNC: capture_frame
+// DESC: Renews explicit microphone authority and feeds bounded echo-reduced input during listening and spoken replies.
+// ------------------=
+unsafe fn capture_frame(duplex: bool) -> bool {
+    let now=super::qwen::workers::clock_ns();
+    if now>=RENEW_AT {
+        let cap=grant(OWNER,CapabilityType::AudioInput,60).unwrap_or(0);
+        if cap==0 || !crate::drivers::audio::renew_capture(OWNER,cap) {retire(cap);return false;}
+        INPUT_CAP=cap;RENEW_AT=now+1_000_000_000;
+    }
+    if !crate::drivers::audio::capture_status().is_some_and(|s|s.state==crate::runtime::audio::CaptureState::Recording) {return false;}
+    let count=crate::drivers::audio::read_capture(OWNER,&mut *(&raw mut RAW));
+    if count==0 {return true;}
+    let (used,n)=(&mut *(&raw mut RESAMPLER)).process(&(&*(&raw const RAW))[..count],&mut *(&raw mut MONO));
+    if used!=count {return false;}
+    if duplex && voice_output::echo_reference(OWNER,&mut *(&raw mut ECHO)) {
+        ECHO_VALID_UNTIL=now+200_000_000;
+    }
+    if now<ECHO_VALID_UNTIL {
+        voice_echo::subtract(&mut (&mut *(&raw mut MONO))[..n],&*(&raw const ECHO));
+    } else {
+        (&mut *(&raw mut ECHO)).fill(0);
+    }
+    LEVEL=(&*(&raw const MONO))[..n].iter().map(|x|x.unsigned_abs()).max().unwrap_or(0);
+    (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[..n]);
+    (&mut *(&raw mut RAW)).fill(0);(&mut *(&raw mut MONO)).fill(0);
+    if duplex && matches!((&*(&raw const UTTERANCE)).state(),VadState::NoSpeech|VadState::Limit) {
+        (&mut *(&raw mut UTTERANCE)).clear(300);
+    }
+    true
 }
 // ------------------------=
 // FUNC: poll
@@ -305,45 +340,25 @@ pub fn poll() -> bool {
                 GenerationState::Failed | GenerationState::Cancelled | GenerationState::ContextFull)) {
             stop(OWNER);
         }
+        if CONTINUOUS && matches!(STATE, State::Thinking | State::Speaking) {
+            if INPUT_CAP == 0 {
+                let previous=STATE;
+                if !listen() {stop(OWNER);return true;}
+                STATE=previous;
+            }
+            if !capture_frame(true) {stop(OWNER);return true;}
+            if matches!((&*(&raw const UTTERANCE)).state(),VadState::Speech|VadState::Complete) {
+                // Keep the onset and preroll already captured. Do not use stop(),
+                // which deliberately erases microphone storage on user disable.
+                voice_output::stop(OWNER);
+                super::with_ai_runtime(|ai| {if ai.chat.turn_id()==CHAT_TURN {ai.cancel_chat();}});
+                (&mut *(&raw mut REPLY)).fill(0);REPLY_AT=0;REPLY_LENGTH=0;
+                REPLY_COMPLETE=false;STATE=State::Listening;
+            }
+        }
         match STATE {
             State::Listening => {
-                let now = super::qwen::workers::clock_ns();
-                if now >= RENEW_AT {
-                    let cap = grant(OWNER, CapabilityType::AudioInput, 60).unwrap_or(0);
-                    if !crate::drivers::audio::renew_capture(OWNER, cap) {
-                        retire(cap);
-                        stop(OWNER);
-                        return true;
-                    }
-                    INPUT_CAP = cap;
-                    RENEW_AT = now + 1_000_000_000;
-                }
-                let Some(status) = crate::drivers::audio::capture_status() else {
-                    return false;
-                };
-                if status.state != crate::runtime::audio::CaptureState::Recording {
-                    stop(OWNER);
-                    return true;
-                }
-                let count = crate::drivers::audio::read_capture(OWNER, &mut *(&raw mut RAW));
-                if count != 0 {
-                    let (used, n) = (&mut *(&raw mut RESAMPLER))
-                        .process(&(&*(&raw const RAW))[..count], &mut *(&raw mut MONO));
-                    if used != count {
-                        stop(OWNER);
-                        return true;
-                    }
-                    LEVEL = (&*(&raw const MONO))[..n]
-                        .iter()
-                        .map(|x| x.unsigned_abs())
-                        .max()
-                        .unwrap_or(0);
-                    let discard = ECHO_REMAINING.min(n);
-                    ECHO_REMAINING -= discard;
-                    (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[discard..n]);
-                    (&mut *(&raw mut RAW)).fill(0);
-                    (&mut *(&raw mut MONO)).fill(0);
-                }
+                if !capture_frame(false) {stop(OWNER);return true;}
                 match (&*(&raw const UTTERANCE)).state() {
                     VadState::Complete => {
                         RECOGNIZE_CAP = grant(OWNER, CapabilityType::AudioInput, 15).unwrap_or(0);

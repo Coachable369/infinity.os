@@ -12,7 +12,7 @@ const PENDING:u8=2;
 const ACTIVE:u8=3;
 const READY:u8=4;
 const FAILED:u8=5;
-struct Data {url:[u8;2048],length:usize,status:u32,headers:[u8;8192],head:usize,body:[u8;131072],size:usize}
+struct Data {url:[u8;2048],length:usize,status:u32,headers:[u8;8192],head:usize,body:[u8;https::BODY],size:usize}
 struct Slot {state:AtomicU8,id:AtomicU64,cancelled:AtomicBool,data:UnsafeCell<Data>}
 // Engine writes only after claiming FREE. BSP writes only after acquiring
 // PENDING; READY release-publishes immutable bytes until engine cancellation.
@@ -23,7 +23,7 @@ impl Slot {
     // DESC: Reserves bounded native response storage in BSS rather than on the desktop stack.
     // ------------------=
     const fn new()->Self {Self {state:AtomicU8::new(FREE),id:AtomicU64::new(0),cancelled:AtomicBool::new(false),
-        data:UnsafeCell::new(Data {url:[0;2048],length:0,status:0,headers:[0;8192],head:0,body:[0;131072],size:0})}}
+        data:UnsafeCell::new(Data {url:[0;2048],length:0,status:0,headers:[0;8192],head:0,body:[0;https::BODY],size:0})}}
 }
 static SLOTS:[Slot;COUNT]=[const {Slot::new()};COUNT];
 static NEXT:AtomicU64=AtomicU64::new(1);
@@ -153,8 +153,9 @@ mod tests {
     // ------------------=
     #[test]
     fn response_handoff_preserves_content_not_transfer_framing() {
-        let slot=Slot::new();
-        let mut response=https::Response{status:200,length:4,bytes:[0;131072],header_length:0,headers:[0;8192]};
+        static SLOT:Slot=Slot::new();
+        let slot=&SLOT;
+        let mut response=https::Response{status:200,length:4,bytes:https::ResponseBody::claim().unwrap(),header_length:0,headers:[0;8192]};
         response.bytes[..4].copy_from_slice(&[0,128,255,9]);
         let head=b"HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
         response.headers[..head.len()].copy_from_slice(head);response.header_length=head.len();
@@ -162,8 +163,17 @@ mod tests {
         let data=unsafe {&*slot.data.get()};
         assert_eq!(data.status,200);assert_eq!(&data.body[..data.size],&[0,128,255,9]);
         assert_eq!(&data.headers[..data.head],b"Content-Type: image/png\r\n");
-        let malformed=https::Response{status:200,length:131073,bytes:[0;131072],header_length:0,headers:[0;8192]};
+        let malformed=https::Response{status:200,length:https::BODY+1,bytes:https::ResponseBody::claim().unwrap(),header_length:0,headers:[0;8192]};
         assert!(!unsafe {finish(&slot,malformed)});
+        let mut large=https::Response{status:200,length:512*1024,bytes:https::ResponseBody::claim().unwrap(),header_length:0,headers:[0;8192]};
+        assert!(https::ResponseBody::claim().is_none());
+        for (i,b) in large.bytes[..large.length].iter_mut().enumerate(){*b=(i%251) as u8;}
+        large.headers[..head.len()].copy_from_slice(head);large.header_length=head.len();
+        assert!(unsafe {finish(slot,large)});
+        let data=unsafe {&*slot.data.get()};
+        assert_eq!(data.size,512*1024);
+        assert!(data.body[..data.size].iter().enumerate().all(|(i,b)|*b==(i%251) as u8));
+        let released=https::ResponseBody::claim().unwrap();assert!(released.iter().all(|b|*b==0));
     }
 }
 // ------------------------=
@@ -215,6 +225,14 @@ pub unsafe fn pump() {
                     slot.state.store(if good{READY}else{FAILED},Ordering::Release);
                 }
             }
+        }
+    }
+    // Releasing completed/cancelled handles never requires network permission.
+    // Otherwise disabling Internet retains slots and prevents reconfiguration.
+    for slot in &SLOTS {
+        if matches!(slot.state.load(Ordering::Acquire),PENDING|READY|FAILED)
+            && slot.cancelled.load(Ordering::Acquire) {
+            slot.state.store(FREE,Ordering::Release);
         }
     }
     if !allowed {return;}

@@ -231,6 +231,11 @@ mod voice_input {
 }
 mod voice_output {
     // ------------------------=
+    // FUNC: echo_reference
+    // DESC: Supplies headphone playback with no acoustic return for the controller interruption test.
+    // ------------------=
+    pub fn echo_reference(_:crate::runtime::execution::SecurityIdentity,out:&mut[i16])->bool{out.fill(0);false}
+    // ------------------------=
     // FUNC: can_prefetch
     // DESC: Leaves buffer concurrency to the separate production output harness.
     // ------------------=
@@ -293,7 +298,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     for _ in 0..10 {conversation::poll();}
     assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(*PHRASES.lock().unwrap(),vec![b"Hi.".to_vec()]);
-    // A playing phrase cannot reopen capture or submit the next phrase.
+    // Duplex capture stays open while playback remains in progress.
     let captures=CAPTURES.load(Ordering::SeqCst);
     conversation::poll();assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
@@ -346,4 +351,19 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::poll(); assert_eq!(PHRASES.lock().unwrap().len(),before+2);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Off);
+    STREAMING.store(false,Ordering::SeqCst);TURNS.store(0,Ordering::SeqCst);
+    assert!(conversation::start(owner));
+    conversation::speak_visible_reply(owner,1);conversation::poll();
+    assert_eq!(conversation::state().0,State::Speaking);
+    let phrases=PHRASES.lock().unwrap().len();
+    MICROPHONE.lock().unwrap().extend([2300;1600]);
+    conversation::poll();
+    assert_eq!(OUTPUT.load(Ordering::SeqCst),0);
+    assert_eq!(conversation::state().0,State::Listening);
+    MICROPHONE.lock().unwrap().extend([0;12000]);
+    for _ in 0..4 {conversation::poll();if conversation::state().0==State::Recognizing {break;}}
+    assert_eq!(conversation::state().0,State::Recognizing);
+    assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==2300));
+    assert_eq!(PHRASES.lock().unwrap().len(),phrases);
+    conversation::stop(owner);conversation::poll();
 }

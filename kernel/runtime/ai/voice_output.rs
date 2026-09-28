@@ -27,6 +27,7 @@ static mut RESIDENT: [Resident; 2] = [Resident([0; 48_000 * 2 * 32]), Resident([
 static mut WRITE_SLOT: usize = 0;
 static mut PLAY_SLOT: usize = 0;
 static mut PLAYING: bool = false;
+static mut PLAY_STARTED: u64 = 0;
 static mut RATE: u32 = 0;
 static mut OUTPUT_SAMPLES: usize = 0;
 static mut DISPATCHED: bool = false;
@@ -123,12 +124,35 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
 // ------------------=
 pub fn can_prefetch() -> bool { STATE.load(Ordering::Acquire) == 5 && !CANCEL.load(Ordering::Acquire) }
 // ------------------------=
+// FUNC: echo_reference
+// DESC: Copies recent own-session DMA audio at the microphone rate; only the desktop owner reads immutable playing storage.
+// ------------------=
+pub fn echo_reference(owner: SecurityIdentity, output: &mut [i16]) -> bool {
+    unsafe {
+        if !PLAYING || owner != OWNER || RATE == 0 {return false;}
+        output.fill(0);
+        let end=super::qwen::workers::clock_ns().saturating_sub(PLAY_STARTED)*16_000/1_000_000_000;
+        let pcm=&(&*(&raw const RESIDENT))[PLAY_SLOT].0;
+        let length=output.len();
+        for (i,sample) in output.iter_mut().enumerate() {
+            let position=end as i64-length as i64+i as i64;
+            if position>=0 {
+                let at=position as usize*RATE as usize/16_000*2;
+                *sample=pcm.get(at).copied().unwrap_or(0);
+            }
+        }
+        true
+    }
+}
+// ------------------------=
 // FUNC: stop
 // DESC: Cancels only the owning session's job; worker buffers are not reused until it acknowledges cancellation.
 // ------------------=
 pub fn stop(owner: SecurityIdentity) -> bool {
     if STATE.load(Ordering::Acquire) == 0 || unsafe { OWNER != owner } { return false; }
-    CANCEL.store(true, Ordering::Release); true
+    CANCEL.store(true, Ordering::Release);
+    if unsafe {PLAYING} {crate::drivers::audio::stop_playback(owner);}
+    true
 }
 // ------------------------=
 // FUNC: status
@@ -193,6 +217,7 @@ pub fn poll() {
                 &(&*(&raw const RESIDENT))[WRITE_SLOT].0[..RATE as usize * 2 * 32], OUTPUT_SAMPLES, RATE) {
                 // Hardware owns the immutable resident buffer until its stream stops.
                 PLAY_SLOT = WRITE_SLOT; PLAYING = true;
+                PLAY_STARTED = super::qwen::workers::clock_ns();
                 CAPABILITY = 0; (&mut *(&raw mut PCM)).fill(0); (&mut *(&raw mut TEXT)).fill(0);
                 STATE.store(5, Ordering::Release);
             } else { ERROR = 7; STATE.store(4, Ordering::Release); retire(); }

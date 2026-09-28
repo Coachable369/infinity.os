@@ -17,8 +17,46 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-const BODY: usize = 128 * 1024;
+pub const BODY: usize = 1024 * 1024;
 const HEAD: usize = 8192;
+static BODY_LOANED: AtomicBool = AtomicBool::new(false);
+static mut BODY_STORAGE: [u8; BODY] = [0; BODY];
+pub struct ResponseBody { _owner: core::marker::PhantomData<*mut ()> }
+impl ResponseBody {
+    // ------------------------=
+    // FUNC: claim
+    // DESC: Exclusively leases pinned response storage without moving a megabyte through the kernel stack.
+    // ------------------=
+    pub(crate) fn claim() -> Option<Self> {
+        BODY_LOANED.compare_exchange(false,true,Ordering::AcqRel,Ordering::Acquire).ok()?;
+        Some(Self{_owner:core::marker::PhantomData})
+    }
+}
+impl core::ops::Deref for ResponseBody {
+    type Target=[u8];
+    // ------------------------=
+    // FUNC: deref
+    // DESC: Borrows bytes only for the lifetime of the exclusive response loan.
+    // ------------------=
+    fn deref(&self)->&[u8] {unsafe {&*(&raw const BODY_STORAGE)}}
+}
+impl core::ops::DerefMut for ResponseBody {
+    // ------------------------=
+    // FUNC: deref_mut
+    // DESC: Lets the owning HTTPS future fill its pinned response storage.
+    // ------------------=
+    fn deref_mut(&mut self)->&mut[u8] {unsafe {&mut *(&raw mut BODY_STORAGE)}}
+}
+impl Drop for ResponseBody {
+    // ------------------------=
+    // FUNC: drop
+    // DESC: Erases private response data before releasing storage for another request.
+    // ------------------=
+    fn drop(&mut self) {
+        unsafe {(&mut *(&raw mut BODY_STORAGE)).fill(0);}
+        BODY_LOANED.store(false,Ordering::Release);
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Failure {
     Busy,
@@ -30,13 +68,16 @@ pub enum Failure {
     Resolution,
     Transport,
     Certificate,
+    Capacity,
+    Protocol,
+    Truncated,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Ticket(u64);
 pub struct Response {
     pub status: u16,
     pub length: usize,
-    pub bytes: [u8; BODY],
+    pub bytes: ResponseBody,
     pub header_length: usize,
     pub headers: [u8; HEAD],
 }
@@ -500,11 +541,11 @@ fn get_bounded(
         let mut target = [0; 1024];
         target[..path.len()].copy_from_slice(path.as_bytes());
         let target_length = path.len();
+        let mut body=ResponseBody::claim().ok_or(Failure::Busy)?;
         let future = async move {
             let mut read = [0; 16640];
             let mut write = [0; 4096];
             let mut request = [0; 1536];
-            let mut body = [0; BODY];
             let mut headers = [0; HEAD];
             let result = http::client::get_with_headers(
                 ServiceLink(auth),
@@ -535,6 +576,13 @@ fn get_bounded(
                 }
                 http::client::Error::Denied => Failure::Denied,
                 http::client::Error::Https(error) if error.certificate_rejected() => Failure::Certificate,
+                http::client::Error::Https(http::https::Error::Capacity)
+                | http::client::Error::Https(http::https::Error::Body(http::body::Error::Capacity)) => Failure::Capacity,
+                http::client::Error::Https(http::https::Error::Truncated)
+                | http::client::Error::Https(http::https::Error::Body(http::body::Error::Truncated)) => Failure::Truncated,
+                http::client::Error::Https(http::https::Error::Protocol)
+                | http::client::Error::Https(http::https::Error::Header(_))
+                | http::client::Error::Https(http::https::Error::Body(_)) => Failure::Protocol,
                 _ => Failure::Transport,
             })?;
             Ok(Response {

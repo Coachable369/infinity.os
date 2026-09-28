@@ -74,6 +74,11 @@ def main():
                  "-I" + str(WORK / ("cxx-" + ARCH) / "include/c++/v1")] if cxx else []
         run(LLVM / ("clang++" if cxx else "clang"), *flags, *extra, "-c", path, "-o", obj)
         objects.append(obj)
+        if ARCH == "aarch64" and path.name == "dot4.cpp":
+            fast = output / "dot4-fhm.o"
+            run(LLVM / "clang++", *flags, *extra, "-march=armv8.2-a+fp16fml",
+                "-DNATIVE_FAST_FHM", "-c", path, "-o", fast)
+            objects.append(fast)
         if ARCH == "x86_64" and path.name == "dot4.cpp":
             fast = output / "dot4-f16c.o"
             # Compile the same arithmetic source with optional ISA flags. The

@@ -192,7 +192,9 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     poll(); assert_eq!(status().state, S::Speaking);
     assert_eq!(PLAYED.load(Ordering::SeqCst), played + 1);
     assert_ne!(PLAY_PTR.load(Ordering::SeqCst), pointer as usize);
-    stop(owner); poll();
+    stop(owner);
+    assert!(!PLAYING.load(Ordering::SeqCst), "Barge-in stops DMA without waiting for another service poll");
+    poll();
     // Busy inference workers delay, rather than discard, queued synthesis.
     WORKER_BUSY.store(true,Ordering::SeqCst);
     submit(owner,1,b"Waiting for an AP.").unwrap();

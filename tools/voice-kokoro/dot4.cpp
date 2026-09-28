@@ -48,6 +48,21 @@ template<bool Half> static void dot4(int n, float *out, const unsigned char *x, 
     float32x4_t sums[4][4];
     for (int row = 0; row < 4; ++row) for (int lane = 0; lane < 4; ++lane) sums[row][lane] = vdupq_n_f32(0);
     for (int i = 0; i < n; i += 16) {
+#if defined(NATIVE_FAST_FHM)
+        if constexpr (Half) {
+            // Widening half multiplication still accumulates in FP32, with
+            // the same four accumulators and final reduction as the fallback.
+            for (int pair = 0; pair < 2; ++pair) {
+                const auto activation = vld1q_f16((const __fp16 *)__builtin_assume_aligned(y + (i + pair * 8) * 2,16));
+                for (int row = 0; row < 4; ++row) {
+                    const auto weight = vld1q_f16((const __fp16 *)__builtin_assume_aligned(x + row * stride + (i + pair * 8) * 2,16));
+                    sums[row][pair*2] = vfmlalq_low_f16(sums[row][pair*2],weight,activation);
+                    sums[row][pair*2+1] = vfmlalq_high_f16(sums[row][pair*2+1],weight,activation);
+                }
+            }
+            continue;
+        }
+#endif
         #pragma clang loop unroll(full)
         for (int lane = 0; lane < 4; ++lane) {
             const auto activation = load<Half>(y + (i + lane * 4) * width);
@@ -101,6 +116,19 @@ extern "C" __attribute__((noinline)) int native_f16c_available(void) {
 }
 #endif
 
+#if defined(__aarch64__) && !defined(NATIVE_FAST_FHM)
+extern "C" int native_dot4_fhm(int, int, float *, const void *, size_t, const void *);
+// ------------------------=
+// FUNC: native_fhm_available
+// DESC: Checks guest CPU widening-half capability before entering the optional native instruction variant.
+// ------------------=
+static int native_fhm_available(void) {
+    uint64_t features;
+    __asm__ volatile("mrs %0, id_aa64isar0_el1" : "=r"(features));
+    return ((features >> 48) & 15) == 1;
+}
+#endif
+
 // ------------------------=
 // FUNC: native_dot4
 // DESC: Accepts only complete four-row FP32/FP16 tiles with verified alignment; all other tensors retain upstream execution.
@@ -108,6 +136,8 @@ extern "C" __attribute__((noinline)) int native_f16c_available(void) {
 extern "C" int
 #if defined(NATIVE_FAST_F16C)
 native_dot4_f16c
+#elif defined(NATIVE_FAST_FHM)
+native_dot4_fhm
 #else
 native_dot4
 #endif
@@ -116,8 +146,19 @@ native_dot4
 #if defined(__x86_64__)
     if (n % 32) return 0;
 #endif
-    const uintptr_t mask = type == 1 ? 7 : 15;
+    const uintptr_t mask =
+#if defined(NATIVE_FAST_FHM)
+        15;
+#else
+        type == 1 ? 7 : 15;
+#endif
     if (((uintptr_t)x | (uintptr_t)y | stride) & mask) return 0;
+#if defined(__aarch64__) && !defined(NATIVE_FAST_FHM)
+    static int accelerated = -1;
+    if (accelerated < 0) accelerated = native_fhm_available();
+    if (type == 1 && accelerated && !(((uintptr_t)x | (uintptr_t)y | stride) & 15))
+        return native_dot4_fhm(type,n,out,x,stride,y);
+#endif
 #if defined(__x86_64__) && !defined(NATIVE_FAST_F16C)
     // One speech worker owns this engine for its lifetime.
     static int accelerated = -1;

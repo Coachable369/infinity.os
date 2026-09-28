@@ -336,6 +336,7 @@ def main():
     parser.add_argument("--chrome",action="store_true",help="Check File/Settings menus, URL gear and attached AI panel")
     parser.add_argument("--find-view",action="store_true",help="Search real page text and switch open tabs through View")
     parser.add_argument("--welcome",action="store_true",help="Verify the local welcome, native settings, keyboard actions and real address navigation")
+    parser.add_argument("--url",help="Require successful installed loading of this real HTTPS destination")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
     if args.accel=="hvf" and args.arch!="aarch64":
@@ -432,6 +433,7 @@ def main():
             guest.command("browser authorize confirm=true")
             command="browser " + ("https://expired-isrgrootx1.letsencrypt.org/" if args.invalid_tls else interaction_url() if args.interaction else "https://httpbun.com/mix/h=Content-Type:text%2Fhtml/b64=PGJvZHkgc3R5bGU9YmFja2dyb3VuZDpyZWQ%2B" if args.lifecycle else "https://httpbingo.org/response-headers?Content-Disposition=attachment%3B%20filename%3Dnative-browser-test.txt&Content-Type=text%2Fplain" if args.download else "https://example.com/")
             if args.navigation: command="browser "+navigation_urls()[0]
+            if args.url: command="browser "+args.url
             if args.measure:
                 assert int.from_bytes(guest.memory(*counters["STATE"]),"little")==0
                 guest.text(command)
@@ -492,7 +494,7 @@ def main():
                 break
             if args.download and values["DOWNLOAD_STATE"]==1:
                 break
-            if not args.measure and not args.download and values["STATE"] == 2 and values["FRAME_REVISION"] >= 2 and time.monotonic() - started >= 15:
+            if not args.measure and not args.download and values["STATE"] == 2 and values["FRAME_REVISION"] >= 2 and time.monotonic() - started >= 15 and (not args.url or values["LOADING"]==0):
                 break
             time.sleep(.25)
         guest.screenshot("browser-launch")
@@ -500,6 +502,20 @@ def main():
         assert values["STATE"] == 2 and values["FAILURE"] == 0 and values["FRAME_REVISION"] >= 2, receipt
         receipt["engine_running_with_frames"] = True
         receipt["launch_command_submitted"] = True
+        if args.url:
+            assert values["PAGE_ERROR"]==0 and values["NETWORK_FAILURE"]==0 and values["NETWORK_COMPLETED"]>0 and values["LOADING"]==0, receipt
+            receipt["requested_url_loaded"]=args.url
+            if args.url=="https://www.google.com/":
+                before=values["LOAD_REVISION"]
+                guest.key("ctrl","l");browser_text(guest,"www.google.com");guest.key("ret")
+                deadline=time.monotonic()+90
+                while time.monotonic()<deadline:
+                    values={name:int.from_bytes(guest.memory(address,size),"little") for name,(address,size) in counters.items()}
+                    if values["LOAD_REVISION"]>before and values["LOADING"]==0:break
+                    time.sleep(.25)
+                assert values["LOAD_REVISION"]>before and values["LOADING"]==0 and values["PAGE_ERROR"]==0 and values["NETWORK_FAILURE"]==0,values
+                receipt["bare_google_omnibox_loaded"]=True
+                guest.screenshot("browser-google-omnibox")
         if args.measure:
             assert "page_complete_seconds" in receipt and values["PAGE_ERROR"]==0,receipt
             receipt["timing_boundary"]=f"QMP Enter submission to observed framebuffer/engine completion; {args.arch} {args.accel.upper()}, 4 vCPU, 12 GiB; polling upper bounds"
