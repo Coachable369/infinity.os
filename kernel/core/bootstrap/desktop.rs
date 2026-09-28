@@ -346,11 +346,16 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: spatial_identity_icon
-    // DESC: Draws distinct code-native identities for Spatial, Holographic, and World Shift surfaces.
+    // DESC: Draws shared spatial identities and the AI-authored World Shift artwork at the requested size.
     // ------------------=
     fn spatial_identity_icon(&mut self, center_x: usize, center_y: usize, size: usize, kind: usize) {
         let left = center_x.saturating_sub(size / 2);
         let top = center_y.saturating_sub(size / 2);
+        if kind == 2 {
+            self.paint_bitmap_alpha_fit_rect(include_bytes!("../../../assets/apps/infinity-world-shift-icon-v1.bmp"),
+                left,top,size,size);
+            return;
+        }
         let radius = (size / 5).max(5);
         let palette = [(12, 65, 105), (25, 52, 108), (34, 38, 104)][kind.min(2)];
         self.fill_rounded_rect_alpha(left, top, size, size, radius, palette.0, palette.1, palette.2, 248);
@@ -368,16 +373,6 @@ impl super::DisplayDevice {
                 self.outline_rounded_rect(left + offset.saturating_sub(size / 7), top + size / 5,
                     size * 2 / 7, size * 3 / 5, size / 9, stroke.0, stroke.1, stroke.2);
             }
-        } else {
-            self.icon_line((left + size / 5) as i32, center_y as i32, center_x as i32,
-                (top + size / 5) as i32, stroke, size);
-            self.icon_line(center_x as i32, (top + size / 5) as i32,
-                (left + size * 4 / 5) as i32, center_y as i32, stroke, size);
-            self.icon_line((left + size * 4 / 5) as i32, center_y as i32, center_x as i32,
-                (top + size * 4 / 5) as i32, stroke, size);
-            self.icon_line(center_x as i32, (top + size * 4 / 5) as i32,
-                (left + size / 5) as i32, center_y as i32, stroke, size);
-            self.fill_rounded_rect_alpha(center_x.saturating_sub(size / 10), center_y.saturating_sub(size / 10), size / 5, size / 5, size / 10, 225, 248, 255, 255);
         }
     }
 

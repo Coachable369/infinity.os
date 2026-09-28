@@ -42,6 +42,7 @@ def main():
     assets = {
         "infinity-browser-icon-v1-source.png": (1254, 1254),
         "infinity-browser-navigation-v1-source.png": (1774, 887),
+        "infinity-world-shift-icon-v1-source.png": (1254, 1254),
     }
     records = []
     with tempfile.TemporaryDirectory(prefix="browser-artwork-", dir=root / "build/tmp") as temporary:
@@ -61,7 +62,7 @@ def main():
                 records.append({"architecture": architecture, "asset": name,
                     "bytes": len(expected), "dimensions": dimensions, "rgba": True})
             for name in ("infinity-browser-icon-v1.bmp","infinity-browser-navigation-v1.bmp",
-                         "app.infinity.browser.manifest"):
+                         "infinity-world-shift-icon-v1.bmp", "app.infinity.browser.manifest"):
                 expected=(root/"assets/apps"/name).read_bytes()
                 output=Path(temporary)/name
                 subprocess.run(["mcopy","-o","-i",str(image),
