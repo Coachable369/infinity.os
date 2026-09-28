@@ -6,6 +6,10 @@ static EXPIRE: AtomicBool = AtomicBool::new(false);
 static INVALID: AtomicBool = AtomicBool::new(false);
 static REVOKED: AtomicBool = AtomicBool::new(false);
 static PLAYED: AtomicUsize = AtomicUsize::new(0);
+static PLAYING: AtomicBool = AtomicBool::new(false);
+static HOLD: AtomicBool = AtomicBool::new(false);
+static WORKER_BUSY: AtomicBool = AtomicBool::new(false);
+static PLAY_PTR: AtomicUsize = AtomicUsize::new(0);
 static mut TASK: Option<unsafe fn()> = None;
 mod runtime {
     pub mod execution {
@@ -14,6 +18,7 @@ mod runtime {
     }
     pub mod capability { pub enum CapabilityType { AudioOutput } }
     pub mod audio {
+        #[derive(PartialEq, Eq)]
         pub enum PlaybackState { Playing, Complete, Cancelled, Denied }
     }
     pub struct Caps;
@@ -55,18 +60,20 @@ mod drivers { pub mod audio {
     pub fn play_resident_speech(_: SecurityIdentity, _: u64, pcm: &[i16], count: usize, rate: u32) -> bool {
         assert_eq!(rate, 48000); assert_eq!(count, 320);
         assert!(pcm[..count].iter().any(|v| *v != 0));
+        crate::PLAY_PTR.store(pcm.as_ptr() as usize, Ordering::SeqCst);
+        crate::PLAYING.store(crate::HOLD.load(Ordering::SeqCst), Ordering::SeqCst);
         PLAYED.fetch_add(1, Ordering::SeqCst); true
     }
     // ------------------------=
     // FUNC: stop_playback
     // DESC: Supplies the hardware cancellation seam.
     // ------------------=
-    pub fn stop_playback(_: SecurityIdentity) {}
+    pub fn stop_playback(_: SecurityIdentity) { crate::PLAYING.store(false, Ordering::SeqCst); }
     // ------------------------=
     // FUNC: playback_state
     // DESC: Completes deterministic finite playback.
     // ------------------=
-    pub fn playback_state() -> Option<PlaybackState> { Some(PlaybackState::Complete) }
+    pub fn playback_state() -> Option<PlaybackState> { Some(if crate::PLAYING.load(Ordering::SeqCst) { PlaybackState::Playing } else { PlaybackState::Complete }) }
 } }
 mod types { #[derive(Clone, Copy, Debug)] pub enum AiError { InvalidRequest, QueueFull, AccessDenied, ProviderUnavailable } }
 mod voice {
@@ -88,7 +95,10 @@ mod qwen { pub mod workers {
     // FUNC: background
     // DESC: Queues without executing on the submitting thread.
     // ------------------=
-    pub fn background(task: unsafe fn()) -> bool { unsafe { crate::TASK = Some(task); } true }
+    pub fn background(task: unsafe fn()) -> bool {
+        if crate::WORKER_BUSY.load(crate::Ordering::SeqCst) { return false; }
+        unsafe { crate::TASK = Some(task); } true
+    }
 } }
 #[path = "../kernel/runtime/ai/voice_output.rs"] mod voice_output;
 // ------------------------=
@@ -164,4 +174,36 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     poll(); assert_eq!(status().state, S::Cancelled);
     assert_eq!(PLAYED.load(Ordering::SeqCst), 1);
     REVOKED.store(false, Ordering::SeqCst);
+    // Synthesize ahead while DMA retains the first buffer unchanged.
+    HOLD.store(true, Ordering::SeqCst);
+    submit(owner, 1, b"First sentence.").unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll(); assert!(can_prefetch());
+    let pointer = PLAY_PTR.load(Ordering::SeqCst) as *const i16;
+    let before = unsafe { std::slice::from_raw_parts(pointer, 320).to_vec() };
+    submit(owner, 1, b"Second sentence.").unwrap();
+    assert!(!can_prefetch());
+    assert!(submit(owner, 1, b"Third sentence.").is_err());
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll(); assert_eq!(status().state, S::Ready);
+    assert_eq!(unsafe { std::slice::from_raw_parts(pointer, 320) }, before);
+    let played = PLAYED.load(Ordering::SeqCst);
+    PLAYING.store(false, Ordering::SeqCst);
+    poll(); assert_eq!(status().state, S::Speaking);
+    assert_eq!(PLAYED.load(Ordering::SeqCst), played + 1);
+    assert_ne!(PLAY_PTR.load(Ordering::SeqCst), pointer as usize);
+    stop(owner); poll();
+    // Busy inference workers delay, rather than discard, queued synthesis.
+    WORKER_BUSY.store(true,Ordering::SeqCst);
+    submit(owner,1,b"Waiting for an AP.").unwrap();
+    poll(); assert_eq!(status().state,S::Queued);
+    assert!(unsafe { (&*(&raw const TASK)).is_none() });
+    WORKER_BUSY.store(false,Ordering::SeqCst);poll();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll(); assert_eq!(status().state,S::Speaking);
+    stop(owner);poll();
+    WORKER_BUSY.store(true,Ordering::SeqCst);
+    submit(owner,1,b"Cancel before dispatch.").unwrap();
+    stop(owner);poll();assert_eq!(status().state,S::Cancelled);
+    assert!(unsafe { (&*(&raw const TASK)).is_none() });
 }

@@ -13148,10 +13148,9 @@ pub fn poll_native_ai() {
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
             let enabled = crate::runtime::with_runtime(|r| r.identity.ai_profile(runtime.current_user)
                 .map(|p| p.speech_output_enabled).unwrap_or(false)).unwrap_or(false);
-            let (complete, turn) = crate::runtime::ai::with_ai_runtime(|ai|
-                (ai.chat.generation_state == crate::runtime::ai::chat::GenerationState::Complete, ai.chat.turn_id()));
-            if enabled && complete {
-                crate::runtime::ai::voice_conversation::speak_completed_reply(
+            let turn = crate::runtime::ai::with_ai_runtime(|ai| ai.chat.turn_id());
+            if enabled {
+                crate::runtime::ai::voice_conversation::speak_visible_reply(
                     crate::runtime::execution::SecurityIdentity(runtime.current_session.0), turn);
             }
         } }

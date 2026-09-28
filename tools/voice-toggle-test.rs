@@ -9,6 +9,8 @@ static READY: AtomicBool = AtomicBool::new(false);
 static OUTPUT: AtomicUsize = AtomicUsize::new(0);
 static NOW: AtomicUsize = AtomicUsize::new(1);
 static TURNS: AtomicUsize = AtomicUsize::new(0);
+static STREAMING: AtomicBool = AtomicBool::new(false);
+static VISIBLE: AtomicUsize = AtomicUsize::new(usize::MAX);
 static MICROPHONE: std::sync::Mutex<std::collections::VecDeque<i16>> = std::sync::Mutex::new(std::collections::VecDeque::new());
 static PHRASES: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
 static RECOGNIZED: std::sync::Mutex<Vec<i16>> = std::sync::Mutex::new(Vec::new());
@@ -112,7 +114,10 @@ mod chat {
         // FUNC: text
         // DESC: Supplies no fabricated assistant speech.
         // ------------------=
-        pub fn text(&self)->&[u8]{if crate::TURNS.load(crate::Ordering::SeqCst)>1 {b"New response."} else {b"Hi. This is the next phrase of the response. This old remainder must never play after interruption."}}
+        pub fn text(&self)->&[u8]{
+            let bytes: &[u8] = if crate::TURNS.load(crate::Ordering::SeqCst)>1 {b"New response."} else {b"Hi. This is the next phrase of the response."};
+            &bytes[..bytes.len().min(crate::VISIBLE.load(crate::Ordering::SeqCst))]
+        }
     }
     pub struct Chat {pub generation_state:GenerationState}
     impl Chat {
@@ -185,7 +190,7 @@ impl Ai {
 // FUNC: with_ai_runtime
 // DESC: Exposes an idle local model to the production controller.
 // ------------------=
-fn with_ai_runtime<T>(f:impl FnOnce(&mut Ai)->T)->T{f(&mut Ai{chat:chat::Chat{generation_state:chat::GenerationState::Complete}})}
+fn with_ai_runtime<T>(f:impl FnOnce(&mut Ai)->T)->T{f(&mut Ai{chat:chat::Chat{generation_state:if STREAMING.load(Ordering::SeqCst){chat::GenerationState::Running}else{chat::GenerationState::Complete}}})}
 mod qwen {pub mod workers {
     // ------------------------=
     // FUNC: clock_ns
@@ -225,6 +230,11 @@ mod voice_input {
     }
 }
 mod voice_output {
+    // ------------------------=
+    // FUNC: can_prefetch
+    // DESC: Leaves buffer concurrency to the separate production output harness.
+    // ------------------=
+    pub fn can_prefetch()->bool{false}
     pub const OUTPUT_LEASE_SECONDS: u64 = 130;
     use crate::runtime::execution::SecurityIdentity;
     pub enum OutputState {Queued,Synthesizing,Ready,Speaking,Complete,Failed,Cancelled}
@@ -245,7 +255,7 @@ mod voice_output {
     // ------------------=
     pub fn submit(_:SecurityIdentity,_:u64,text:&[u8])->Result<(),()>{
         if !crate::FLOW.load(crate::Ordering::SeqCst){return Err(());}
-        assert!(text.len()<=44);
+        assert!(text.len()<=160);
         crate::PHRASES.lock().unwrap().push(text.to_vec());
         crate::OUTPUT.store(1,crate::Ordering::SeqCst);Ok(())
     }
@@ -287,14 +297,11 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     let captures=CAPTURES.load(Ordering::SeqCst);
     conversation::poll();assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::state().0,State::Listening);
-    // Residual speaker tail is discarded; checked silence permits the next phrase.
-    MICROPHONE.lock().unwrap().extend([2000;3200]);
-    MICROPHONE.lock().unwrap().extend([0;9600]);
-    for _ in 0..3 {conversation::poll();}
     assert_eq!(conversation::state().0,State::Speaking);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     assert_eq!(PHRASES.lock().unwrap().len(),2);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
     MICROPHONE.lock().unwrap().extend([0;3200]);
     MICROPHONE.lock().unwrap().extend([1700;1600]);
     MICROPHONE.lock().unwrap().extend([0;12000]);
@@ -304,7 +311,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==1700));
     conversation::poll();conversation::poll();
     assert_eq!(PHRASES.lock().unwrap()[2],b"New response.");
-    // Restart a multi-phrase reply and prove missing input never counts as silence.
+    // A second reply advances without waiting for microphone input or a gap timer.
     conversation::stop(owner);conversation::poll();TURNS.store(0,Ordering::SeqCst);
     assert!(conversation::start(owner));
     MICROPHONE.lock().unwrap().extend([1000;1600]);MICROPHONE.lock().unwrap().extend([0;12000]);
@@ -312,8 +319,9 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     let phrases=PHRASES.lock().unwrap().len();
     NOW.store(3_000_000_002,Ordering::SeqCst);conversation::poll();
-    assert_eq!(conversation::state().0,State::Stopping);
+    assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(PHRASES.lock().unwrap().len(),phrases);
+    conversation::stop(owner);
     conversation::poll();assert_eq!(conversation::state().0,State::Off);
     TURNS.store(0,Ordering::SeqCst);assert!(conversation::start(owner));
     MICROPHONE.lock().unwrap().extend([1000;1600]);MICROPHONE.lock().unwrap().extend([0;12000]);
@@ -323,4 +331,19 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     ACTIVE.store(false,Ordering::SeqCst);conversation::poll();conversation::poll();
     assert_eq!(conversation::state().0,State::Off);
     assert_eq!(PHRASES.lock().unwrap().len(),phrases);
+    ACTIVE.store(true,Ordering::SeqCst);
+    STREAMING.store(true,Ordering::SeqCst); TURNS.store(0,Ordering::SeqCst);
+    VISIBLE.store(2,Ordering::SeqCst);
+    conversation::speak_visible_reply(owner,1);
+    conversation::poll(); assert_eq!(conversation::state().0,State::Thinking);
+    let before=PHRASES.lock().unwrap().len();
+    VISIBLE.store(4,Ordering::SeqCst);
+    conversation::poll(); assert_eq!(conversation::state().0,State::Speaking);
+    assert_eq!(PHRASES.lock().unwrap()[before],b"Hi.");
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Thinking);
+    STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
+    conversation::poll(); assert_eq!(PHRASES.lock().unwrap().len(),before+2);
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Off);
 }

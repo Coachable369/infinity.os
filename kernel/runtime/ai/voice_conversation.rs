@@ -11,6 +11,8 @@ use crate::runtime::{
 };
 #[path = "../../ui/voice_indicator.rs"]
 pub mod indicator;
+#[path = "speech_chunk.rs"]
+mod speech_chunk;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum State {
@@ -38,15 +40,11 @@ static mut REPLY_AT: usize = 0;
 static mut LEVEL: u16 = 0;
 static mut RESTART_LISTENING: bool = false;
 static mut CHAT_TURN: u64 = 0;
-static mut BETWEEN_PHRASES: bool = false;
 static mut CONTINUOUS: bool = false;
-static mut GAP_SAMPLES: usize = 0;
-static mut GAP_DEADLINE: u64 = 0;
 static mut ECHO_REMAINING: usize = 0;
-// Capture only after playback has stopped. Discard a short acoustic tail, then
-// inspect 600 ms of real microphone samples (not a blocking desktop sleep).
+// Discard acoustic tail only once after the complete response, never between phrases.
 const ECHO_TAIL_SAMPLES: usize = 3200;
-const INTERRUPT_SAMPLES: usize = 9600;
+static mut REPLY_COMPLETE: bool = false;
 
 // ------------------------=
 // FUNC: active_owner
@@ -101,7 +99,6 @@ pub fn state() -> (State, u16) {
 // DESC: Opens a bounded capture lease and resets private utterance storage between conversational turns.
 // ------------------=
 unsafe fn listen() -> bool {
-    BETWEEN_PHRASES = false;
     ECHO_REMAINING = 0;
     let Some(cap) = grant(OWNER, CapabilityType::AudioInput, 60) else {
         return false;
@@ -156,7 +153,6 @@ pub fn start(owner: SecurityIdentity) -> bool {
         OWNER = owner;
         CONTINUOUS = true;
         RESTART_LISTENING = false;
-        BETWEEN_PHRASES = false;
         if !listen() {
             STATE = State::Failed;
             return false;
@@ -194,13 +190,12 @@ pub fn stop(owner: SecurityIdentity) -> bool {
             return false;
         }
         RESTART_LISTENING = false;
-        BETWEEN_PHRASES = false;
         crate::drivers::audio::stop_capture(owner);
         ECHO_REMAINING = 0;
         INPUT_CAP = 0;
         voice_input::stop(owner);
         voice_output::stop(owner);
-        if STATE == State::Thinking {
+        if matches!(STATE, State::Thinking | State::Speaking) {
             super::with_ai_runtime(|ai| {
                 if ai.chat.turn_id() == CHAT_TURN {
                     ai.cancel_chat();
@@ -224,7 +219,7 @@ pub fn stop(owner: SecurityIdentity) -> bool {
 }
 // ------------------------=
 // FUNC: speak_next
-// DESC: Plays one short phrase immediately instead of waiting for an entire 160-character reply chunk.
+// DESC: Queues a complete sentence or bounded word-aligned segment from the visible response.
 // ------------------=
 unsafe fn speak_next() -> bool {
     let enabled = crate::runtime::with_runtime(|r| {
@@ -235,28 +230,15 @@ unsafe fn speak_next() -> bool {
     if !enabled { REPLY_AT = REPLY_LENGTH; }
     while REPLY_AT < REPLY_LENGTH && REPLY[REPLY_AT] == b' ' { REPLY_AT += 1; }
     if REPLY_AT >= REPLY_LENGTH {
-        if CONTINUOUS { return listen(); }
+        if !REPLY_COMPLETE { STATE = State::Thinking; return true; }
+        if CONTINUOUS { let ready = listen(); ECHO_REMAINING = ECHO_TAIL_SAMPLES; return ready; }
         STATE = State::Off;
         (&mut *(&raw mut REPLY)).fill(0);
         return true;
     }
     let remaining = &(&*(&raw const REPLY))[REPLY_AT..REPLY_LENGTH];
-    let mut count = remaining.len().min(44);
-    if let Some(end) = remaining[..count].iter().enumerate().find_map(|(i, b)| {
-        (matches!(*b, b'.' | b'!' | b'?') && (i + 1 == remaining.len() || remaining[i + 1] == b' ')).then_some(i + 1)
-    }) {
-        count = end;
-    }
-    if count < remaining.len() && !matches!(remaining[count - 1], b'.' | b'!' | b'?') {
-        if let Some(split) = remaining[..count]
-            .iter()
-            .rposition(|b| *b == b' ')
-        {
-            if split > 0 {
-                count = split + 1;
-            }
-        }
-    }
+    let count = speech_chunk::next(remaining, REPLY_COMPLETE);
+    if count == 0 { STATE = State::Thinking; return true; }
     let Some(cap) = grant(OWNER, CapabilityType::AudioOutput, voice_output::OUTPUT_LEASE_SECONDS) else {
         return false;
     };
@@ -269,28 +251,37 @@ unsafe fn speak_next() -> bool {
     true
 }
 // ------------------------=
-// FUNC: check_between_phrases
-// DESC: Reopens a fresh microphone stream only after the preceding playback completes.
+// FUNC: refresh_reply
+// DESC: Mirrors cumulative visible model output while preserving the already queued speech cursor.
 // ------------------=
-unsafe fn check_between_phrases() -> bool {
-    if !CONTINUOUS { return speak_next(); }
-    let pending = REPLY_AT < REPLY_LENGTH;
-    if !listen() { return false; }
-    BETWEEN_PHRASES = pending;
-    ECHO_REMAINING = ECHO_TAIL_SAMPLES;
-    GAP_SAMPLES = 0;
-    GAP_DEADLINE = super::qwen::workers::clock_ns().saturating_add(3_000_000_000);
-    true
+unsafe fn refresh_reply() {
+    super::with_ai_runtime(|ai| {
+        REPLY_COMPLETE = ai.chat.generation_state == GenerationState::Complete;
+        if let Some(message) = ai.chat.message(ai.chat.message_count().saturating_sub(1)).filter(|m| m.role == ChatRole::Assistant) {
+            REPLY_LENGTH = 0;
+            for &byte in message.text() {
+                if REPLY_LENGTH == 16384 { break; }
+                if byte.is_ascii() {
+                    REPLY[REPLY_LENGTH] = if (32..=126).contains(&byte) { byte } else { b' ' };
+                    REPLY_LENGTH += 1;
+                }
+            }
+        }
+    });
 }
 // ------------------------=
-// FUNC: speak_completed_reply
-// DESC: Queues a typed reply on the existing background voice path without opening the microphone.
+// FUNC: speak_visible_reply
+// DESC: Starts sentence buffering as visible output arrives, preserving an enabled conversation's listening preference.
 // ------------------=
-pub fn speak_completed_reply(owner: SecurityIdentity, turn: u64) {
+pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
     unsafe {
-        if !matches!(STATE, State::Off | State::Failed) || !active_owner(owner) { return; }
+        if !matches!(STATE, State::Off | State::Failed | State::Listening) || !active_owner(owner) { return; }
+        if STATE == State::Listening && OWNER != owner { return; }
+        let continuous = STATE == State::Listening;
+        if continuous { crate::drivers::audio::stop_capture(owner); INPUT_CAP = 0; }
         OWNER = owner;
-        CONTINUOUS = false;
+        CONTINUOUS = continuous;
+        REPLY_AT = 0; REPLY_LENGTH = 0; REPLY_COMPLETE = false;
         RESTART_LISTENING = false;
         CHAT_TURN = turn;
         STATE = State::Thinking;
@@ -309,18 +300,14 @@ pub fn poll() -> bool {
         if STATE != State::Stopping && !active_owner(OWNER) {
             stop(OWNER);
         }
-        if !CONTINUOUS && matches!(STATE, State::Thinking | State::Speaking)
-            && super::with_ai_runtime(|ai| ai.chat.turn_id() != CHAT_TURN) {
+        if matches!(STATE, State::Thinking | State::Speaking)
+            && super::with_ai_runtime(|ai| ai.chat.turn_id() != CHAT_TURN || matches!(ai.chat.generation_state,
+                GenerationState::Failed | GenerationState::Cancelled | GenerationState::ContextFull)) {
             stop(OWNER);
         }
         match STATE {
             State::Listening => {
                 let now = super::qwen::workers::clock_ns();
-                if BETWEEN_PHRASES && now >= GAP_DEADLINE {
-                    // A stalled microphone must not be mistaken for checked silence.
-                    stop(OWNER);
-                    return true;
-                }
                 if now >= RENEW_AT {
                     let cap = grant(OWNER, CapabilityType::AudioInput, 60).unwrap_or(0);
                     if !crate::drivers::audio::renew_capture(OWNER, cap) {
@@ -353,27 +340,7 @@ pub fn poll() -> bool {
                         .unwrap_or(0);
                     let discard = ECHO_REMAINING.min(n);
                     ECHO_REMAINING -= discard;
-                    GAP_SAMPLES = GAP_SAMPLES.saturating_add(n);
                     (&mut *(&raw mut UTTERANCE)).push(&(&*(&raw const MONO))[discard..n]);
-                    if BETWEEN_PHRASES {
-                        if matches!((&*(&raw const UTTERANCE)).state(), VadState::Speech | VadState::Complete) {
-                            // Keep the captured onset/preroll; discard only the obsolete assistant reply.
-                            BETWEEN_PHRASES = false;
-                            (&mut *(&raw mut REPLY)).fill(0);
-                            REPLY_AT = 0; REPLY_LENGTH = 0;
-                        } else if GAP_SAMPLES >= ECHO_TAIL_SAMPLES + INTERRUPT_SAMPLES && LEVEL < 300 {
-                            crate::drivers::audio::stop_capture(OWNER);
-                            INPUT_CAP = 0;
-                            BETWEEN_PHRASES = false;
-                            (&mut *(&raw mut UTTERANCE)).clear(300);
-                            (&mut *(&raw mut RESAMPLER)).clear();
-                            (&mut *(&raw mut RAW)).fill(0);
-                            (&mut *(&raw mut MONO)).fill(0);
-                            LEVEL = 0;
-                            if !speak_next() { stop(OWNER); }
-                            return true;
-                        }
-                    }
                     (&mut *(&raw mut RAW)).fill(0);
                     (&mut *(&raw mut MONO)).fill(0);
                 }
@@ -420,6 +387,7 @@ pub fn poll() -> bool {
                                 let accepted = ai.submit_chat();
                                 if accepted {
                                     CHAT_TURN = ai.chat.turn_id();
+                                    REPLY_AT = 0; REPLY_LENGTH = 0; REPLY_COMPLETE = false;
                                 }
                                 accepted
                             })
@@ -456,31 +424,8 @@ pub fn poll() -> bool {
                     return true;
                 }
                 let generation = super::with_ai_runtime(|ai| ai.chat.generation_state);
-                if generation == GenerationState::Complete {
-                    REPLY_LENGTH = 0;
-                    REPLY_AT = 0;
-                    (&mut *(&raw mut REPLY)).fill(0);
-                    super::with_ai_runtime(|ai| {
-                        if let Some(message) = ai
-                            .chat
-                            .message(ai.chat.message_count().saturating_sub(1))
-                            .filter(|m| m.role == ChatRole::Assistant)
-                        {
-                            for &byte in message.text() {
-                                if REPLY_LENGTH == 16384 {
-                                    break;
-                                }
-                                if byte.is_ascii() {
-                                    REPLY[REPLY_LENGTH] = if (32..=126).contains(&byte) {
-                                        byte
-                                    } else {
-                                        b' '
-                                    };
-                                    REPLY_LENGTH += 1;
-                                }
-                            }
-                        }
-                    });
+                if matches!(generation, GenerationState::Running | GenerationState::Complete) {
+                    refresh_reply();
                     if !speak_next() {
                         stop(OWNER);
                     }
@@ -495,14 +440,22 @@ pub fn poll() -> bool {
             }
             State::Speaking => match voice_output::status().state {
                 voice_output::OutputState::Complete => {
-                    if !check_between_phrases() {
+                    refresh_reply();
+                    if !speak_next() {
                         stop(OWNER);
                     }
                 }
                 voice_output::OutputState::Failed | voice_output::OutputState::Cancelled => {
                     stop(OWNER);
                 }
-                _ => {}
+                _ => {
+                    if voice_output::can_prefetch() {
+                        refresh_reply();
+                        if REPLY_AT < REPLY_LENGTH && speech_chunk::next(&(&*(&raw const REPLY))[REPLY_AT..REPLY_LENGTH], REPLY_COMPLETE) > 0 {
+                            if !speak_next() { stop(OWNER); }
+                        }
+                    }
+                }
             },
             State::Stopping => {
                 if !matches!(

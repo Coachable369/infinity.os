@@ -23,9 +23,13 @@ static mut ELAPSED: u64 = 0;
 static mut ERROR: i32 = 0;
 #[repr(C, align(128))]
 struct Resident([i16; 48_000 * 2 * 32]);
-static mut RESIDENT: Resident = Resident([0; 48_000 * 2 * 32]);
+static mut RESIDENT: [Resident; 2] = [Resident([0; 48_000 * 2 * 32]), Resident([0; 48_000 * 2 * 32])];
+static mut WRITE_SLOT: usize = 0;
+static mut PLAY_SLOT: usize = 0;
+static mut PLAYING: bool = false;
 static mut RATE: u32 = 0;
 static mut OUTPUT_SAMPLES: usize = 0;
+static mut DISPATCHED: bool = false;
 #[path = "../../drivers/speech_pcm.rs"]
 mod speech_pcm;
 
@@ -81,19 +85,20 @@ unsafe fn worker() {
     FRAMES = result.unwrap_or(0);
     if result.is_ok() && cancelled() == 0 {
         OUTPUT_SAMPLES = ((FRAMES * RATE as usize + SOURCE_RATE as usize - 1) / SOURCE_RATE as usize) * 2;
-        (&mut *(&raw mut RESIDENT.0)).fill(0);
-        speech_pcm::fill_rate(&(&*(&raw const PCM))[..FRAMES], &mut (&mut *(&raw mut RESIDENT.0))[..OUTPUT_SAMPLES], 0, SOURCE_RATE, RATE);
+        (&mut *(&raw mut RESIDENT))[WRITE_SLOT].0.fill(0);
+        speech_pcm::fill_rate(&(&*(&raw const PCM))[..FRAMES], &mut (&mut *(&raw mut RESIDENT))[WRITE_SLOT].0[..OUTPUT_SAMPLES], 0, SOURCE_RATE, RATE);
     }
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
     STATE.store(if ERROR == 2 || cancelled() != 0 { 6 } else if result.is_ok() { 3 } else { 4 }, Ordering::Release);
 }
 // ------------------------=
 // FUNC: submit
-// DESC: Validates output authority and queues one native phrase; unavailable APs never force UI-thread synthesis.
+// DESC: Queues one bounded native phrase, optionally ahead of playback; busy APs never force UI-thread synthesis.
 // ------------------=
 pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(), AiError> {
     if text.is_empty() || text.len() > 160 || text.iter().any(|v| !(32..=126).contains(v)) { return Err(AiError::InvalidRequest); }
-    if !matches!(STATE.load(Ordering::Acquire), 0 | 4 | 6 | 7) { return Err(AiError::QueueFull); }
+    if !matches!(STATE.load(Ordering::Acquire), 0 | 4 | 5 | 6 | 7) { return Err(AiError::QueueFull); }
+    if unsafe { PLAYING && OWNER != owner } { return Err(AiError::QueueFull); }
     let now = super::qwen::workers::clock_ns();
     let valid = crate::runtime::with_runtime(|r| r.capabilities.validate(capability, owner,
         CapabilityType::AudioOutput, 0, 1, 0, now / 1_000_000_000).is_ok()).unwrap_or(false);
@@ -101,16 +106,22 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
     let rate = crate::drivers::audio::playback_rate().ok_or(AiError::ProviderUnavailable)?;
     if !matches!(rate, 44100 | 48000) { return Err(AiError::ProviderUnavailable); }
     unsafe {
-        retire(); RATE = rate; OWNER = owner; CAPABILITY = capability; DEADLINE = now.saturating_add(SYNTHESIS_SECONDS * 1_000_000_000);
+        retire(); WRITE_SLOT = if PLAYING { 1 - PLAY_SLOT } else { 0 };
+        RATE = rate; OWNER = owner; CAPABILITY = capability; DEADLINE = now.saturating_add(SYNTHESIS_SECONDS * 1_000_000_000);
         (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut TEXT))[..text.len()].copy_from_slice(text); LENGTH = text.len();
         FRAMES = 0; PEAK = 0; ERROR = 0; ELAPSED = 0; CANCEL.store(false, Ordering::Release);
         STATE.store(1, Ordering::Release);
-        if !super::qwen::workers::background(worker) {
-            STATE.store(4, Ordering::Release); retire(); return Err(AiError::ProviderUnavailable);
-        }
+        // Inference can temporarily occupy every AP. Keep one bounded job
+        // queued and retry on poll rather than dropping a streaming reply.
+        DISPATCHED = super::qwen::workers::background(worker);
     }
     Ok(())
 }
+// ------------------------=
+// FUNC: can_prefetch
+// DESC: Allows exactly one synthesis job ahead of the immutable playing DMA buffer.
+// ------------------=
+pub fn can_prefetch() -> bool { STATE.load(Ordering::Acquire) == 5 && !CANCEL.load(Ordering::Acquire) }
 // ------------------------=
 // FUNC: stop
 // DESC: Cancels only the owning session's job; worker buffers are not reused until it acknowledges cancellation.
@@ -139,36 +150,52 @@ unsafe fn retire() {
         crate::runtime::with_runtime(|r| { let _ = r.capabilities.retire_leaf(cap, owner); }); CAPABILITY = 0;
     }
     (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut PCM)).fill(0);
-    (&mut *(&raw mut RESIDENT.0)).fill(0);
+    for slot in 0..2 {
+        if !PLAYING || slot != PLAY_SLOT { (&mut *(&raw mut RESIDENT))[slot].0.fill(0); }
+    }
 }
 // ------------------------=
 // FUNC: poll
 // DESC: Revalidates authority, hands completed PCM to native DMA, and tracks cancellation without blocking the UI.
 // ------------------=
 pub fn poll() {
-    let state = STATE.load(Ordering::Acquire);
+    let mut state = STATE.load(Ordering::Acquire);
     if state == 0 { return; }
     unsafe {
+        if PLAYING {
+            if CANCEL.load(Ordering::Acquire) || matches!(state, 4 | 6) { crate::drivers::audio::stop_playback(OWNER); }
+            if let Some(playback) = crate::drivers::audio::playback_state() {
+                if playback != PlaybackState::Playing {
+                    PLAYING = false;
+                    if playback != PlaybackState::Complete { CANCEL.store(true, Ordering::Release); }
+                    if state == 5 {
+                        state = if playback == PlaybackState::Complete { 7 } else { 6 };
+                        STATE.store(state, Ordering::Release); retire();
+                    }
+                }
+            }
+        }
         if state <= 3 {
             let now = super::qwen::workers::clock_ns() / 1_000_000_000;
             let valid = crate::runtime::with_runtime(|r| r.capabilities.validate(CAPABILITY, OWNER,
                 CapabilityType::AudioOutput, 0, 1, 0, now).is_ok()).unwrap_or(false);
             if !valid { CANCEL.store(true, Ordering::Release); }
         }
+        if state == 1 && !DISPATCHED {
+            if cancelled() != 0 { STATE.store(6, Ordering::Release); retire(); }
+            else { DISPATCHED = super::qwen::workers::background(worker); }
+            return;
+        }
         if state == 3 {
             if CANCEL.load(Ordering::Acquire) { STATE.store(6, Ordering::Release); retire(); }
+            else if PLAYING { return; }
             else if crate::drivers::audio::play_resident_speech(OWNER, CAPABILITY,
-                &(&*(&raw const RESIDENT.0))[..RATE as usize * 2 * 32], OUTPUT_SAMPLES, RATE) {
+                &(&*(&raw const RESIDENT))[WRITE_SLOT].0[..RATE as usize * 2 * 32], OUTPUT_SAMPLES, RATE) {
                 // Hardware owns the immutable resident buffer until its stream stops.
+                PLAY_SLOT = WRITE_SLOT; PLAYING = true;
                 CAPABILITY = 0; (&mut *(&raw mut PCM)).fill(0); (&mut *(&raw mut TEXT)).fill(0);
                 STATE.store(5, Ordering::Release);
             } else { ERROR = 7; STATE.store(4, Ordering::Release); retire(); }
-        } else if state == 5 {
-            if CANCEL.load(Ordering::Acquire) { crate::drivers::audio::stop_playback(OWNER); }
-            if let Some(playback) = crate::drivers::audio::playback_state() {
-                let next = match playback { PlaybackState::Playing=>5,PlaybackState::Complete=>7,PlaybackState::Cancelled=>6,_=>4 };
-                if next != 5 { if next == 4 { ERROR = 8; } STATE.store(next, Ordering::Release); retire(); }
-            }
         } else if matches!(state, 4 | 6 | 7) && CAPABILITY != 0 { retire(); }
     }
 }
