@@ -151,6 +151,9 @@ pub fn profile_ms() -> (u64, u64) {
 }
 // BSP-only submission state. No pointers into movable engine memory are retained.
 static mut PENDING: (usize, usize, bool) = (0, 0, false);
+// BSP-owned single waiting task. Matrix collection releases its inputs before
+// dispatching this task, so streaming inference cannot repeatedly win every AP.
+static mut WAITING_BACKGROUND: Option<unsafe fn()> = None;
 
 // ------------------------=
 // FUNC: online
@@ -201,6 +204,7 @@ pub unsafe fn stop_host_workers() {
 /// Safety: BSP-only; task must own its static buffers, honor cancellation and
 /// deadlines, and never access UI, firmware, runtime locks, or matrix mailboxes.
 pub unsafe fn background(task: unsafe fn()) -> bool {
+    if WAITING_BACKGROUND.is_some() { return false; }
     let ready = READY.load(Ordering::Acquire);
     for (index, slot) in SLOTS.iter().enumerate() {
         if ready & (1 << index) != 0 && slot.state.load(Ordering::Acquire) == 0 {
@@ -213,7 +217,21 @@ pub unsafe fn background(task: unsafe fn()) -> bool {
             return true;
         }
     }
+    if PENDING.0 != 0 {
+        WAITING_BACKGROUND = Some(task);
+        return true;
+    }
     false
+}
+
+// ------------------------=
+// FUNC: dispatch_waiting_background
+// DESC: Gives an accepted latency-sensitive task the first freed AP at a matrix boundary.
+// ------------------=
+unsafe fn dispatch_waiting_background() {
+    if let Some(task) = WAITING_BACKGROUND.take() {
+        if !background(task) { WAITING_BACKGROUND = Some(task); }
+    }
 }
 
 // ------------------------=
@@ -377,6 +395,7 @@ pub unsafe fn rows(
                 slot.state.store(0, Ordering::Relaxed);
             }
             PENDING = (0, 0, false);
+            dispatch_waiting_background();
             if !discarded {
                 core::ptr::copy_nonoverlapping(
                     (&raw const MATRIX_OUTPUT).cast::<f32>().add(start),
@@ -443,11 +462,18 @@ pub fn drain() {
             slot.state.store(0, Ordering::Relaxed);
         }
         PENDING = (0, 0, false);
+        dispatch_waiting_background();
     }
 }
 
 #[cfg(test)]
 mod tests {
+    static QUEUED_BACKGROUND_RAN: AtomicBool = AtomicBool::new(false);
+    // ------------------------=
+    // FUNC: queued_background
+    // DESC: Observes execution of a task accepted while every available AP belonged to a matrix.
+    // ------------------=
+    unsafe fn queued_background() { QUEUED_BACKGROUND_RAN.store(true, Ordering::Release); }
     use super::*;
     static BACKGROUND_STARTED: AtomicBool = AtomicBool::new(false);
     static BACKGROUND_RELEASE: AtomicBool = AtomicBool::new(false);
@@ -538,6 +564,10 @@ mod tests {
                 unsafe { rows(kind, &data, &input, &mut actual, &mut cursor) },
                 Some(false)
             );
+            QUEUED_BACKGROUND_RAN.store(false, Ordering::Release);
+            assert!(unsafe { background(queued_background) });
+            assert!(!unsafe { background(queued_background) });
+            assert!(!QUEUED_BACKGROUND_RAN.load(Ordering::Acquire));
             discard();
             // New geometry is deliberately smaller than the abandoned job.
             let mut tiny = vec![0.0; 1];
@@ -547,6 +577,10 @@ mod tests {
                 std::thread::yield_now();
             }
             assert!(outputs_match(kind, &expected[..1], &tiny));
+            while !QUEUED_BACKGROUND_RAN.load(Ordering::Acquire) {
+                assert!(deadline.elapsed().as_secs() < 5);
+                std::thread::yield_now();
+            }
             let deadline = std::time::Instant::now();
             while unsafe { rows(kind, &data, &input, &mut actual, &mut cursor) } != Some(true) {
                 assert!(deadline.elapsed().as_secs() < 5);

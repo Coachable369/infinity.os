@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 # FUNC: run
 # DESC: Builds a test-only trust fixture, boots the native HTTPS client and asserts its binary guest outcome.
 # ------------------=
-def run(arch="x86_64", rsa=False):
+def run(arch="x86_64", rsa=False, google=False):
     with tempfile.TemporaryDirectory(prefix="infinity-https-") as temporary:
         work = Path(temporary)
         key, cert, der = (work / name for name in ("key.pem", "cert.pem", "root.der"))
@@ -28,7 +28,8 @@ def run(arch="x86_64", rsa=False):
         subprocess.run(["openssl", "x509", "-in", str(cert), "-outform", "DER", "-out", str(der)], check=True)
         listener = socket.socket(); listener.bind(("127.0.0.1", 0)); listener.listen(1); listener.settimeout(60)
         environment = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(ROOT / "build/native-https/cargo"),
-            HTTPS_TEST_PORT=str(listener.getsockname()[1]), HTTPS_TEST_ROOT=str(der), HTTPS_TEST_TIME=str(int(time.time())))
+            HTTPS_TEST_PORT=str(listener.getsockname()[1]), HTTPS_TEST_ROOT=str(der), HTTPS_TEST_TIME=str(int(time.time())),
+            HTTPS_TEST_GOOGLE="1" if google else "0")
         target = "aarch64-unknown-none" if arch == "aarch64" else "x86_64-unknown-none"
         linker = "linker/aarch64-qemu.ld" if arch == "aarch64" else "linker/x86_64.ld"
         subprocess.run(["cargo", "build", "--release", "-Z", "build-std=core", "--target", target,
@@ -63,7 +64,8 @@ def run(arch="x86_64", rsa=False):
                     outcomes.append(True)
             except Exception as error:
                 outcomes.append(error)
-        thread = threading.Thread(target=serve, daemon=True); thread.start()
+        thread = threading.Thread(target=serve, daemon=True)
+        if not google: thread.start()
         volume = work / "volume"; (volume / "EFI/BOOT").mkdir(parents=True); (volume / "EFI/INFINITY").mkdir(parents=True)
         boot = "BOOTAA64.EFI" if arch == "aarch64" else "BOOTX64.EFI"
         shutil.copyfile(ROOT / f"build/{arch}/{boot}", volume / f"EFI/BOOT/{boot}")
@@ -75,14 +77,17 @@ def run(arch="x86_64", rsa=False):
                 "-drive", f"format=raw,file=fat:rw:{volume}", "-boot", "order=c", "-netdev", "user,id=net",
                 "-device", "e1000,netdev=net",
                 "-display", "none", "-serial", "stdio", "-no-reboot"], stdout=log, stderr=subprocess.STDOUT, timeout=55)
-        thread.join(timeout=2); listener.close()
+        if not google: thread.join(timeout=2)
+        listener.close()
         assert result.returncode == (0 if arch == "aarch64" else 33), (result.returncode, outcomes, (work / "qemu.log").read_text(errors="replace")[-1000:])
-        assert outcomes == [True], outcomes
-        print({"architecture": arch, "native_https_guest_exit": result.returncode, "installed_acceptance": False})
+        assert outcomes == ([] if google else [True]), outcomes
+        print({"architecture": arch, "native_https_guest_exit": result.returncode,
+               "google_https": google, "dhcp_configured": True, "installed_acceptance": False})
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--arch", choices=["x86_64", "aarch64"], default="x86_64")
     parser.add_argument("--rsa", action="store_true")
+    parser.add_argument("--google", action="store_true")
     args = parser.parse_args()
-    run(args.arch, args.rsa)
+    run(args.arch, args.rsa, args.google)

@@ -1,6 +1,20 @@
 #![allow(dead_code)]
 #[path = "../kernel/ui/mod.rs"] mod ui;
 #[path = "../kernel/runtime/mod.rs"] mod runtime;
+extern crate infinity_http as http_transport;
+mod drivers {
+    pub mod e1000 {
+        pub struct E1000;
+        impl E1000 {
+            // ------------------------=
+            // FUNC: transmit
+            // DESC: Rejects hardware submission in the host-only DHCP policy harness.
+            // ------------------=
+            pub fn transmit(&mut self, _: &[u8]) -> bool { false }
+        }
+    }
+}
+#[path = "../kernel/drivers/network_dhcp.rs"] mod network_dhcp;
 
 // ------------------------=
 // FUNC: output_text

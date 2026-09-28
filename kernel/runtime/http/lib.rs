@@ -8,6 +8,7 @@ pub mod body;
 pub mod client;
 pub mod clock;
 pub mod device;
+pub mod dhcp;
 pub mod egress;
 pub mod geturl;
 pub mod https;

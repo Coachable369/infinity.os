@@ -76,6 +76,11 @@ def main():
         if source.name in ("ggml-backend-reg.cpp", "file_mapping.cpp") or "/playback/" in str(source):
             continue
         flags = ["-I" + str(source.parent)] + [item for item in command if item.startswith("-I")]
+        # Native profiling identifies matrix products and im2col as the dominant
+        # synthesis cost. Optimize these loop kernels without fast-math or any
+        # change to their floating-point contract; PCM parity gates the result.
+        if source.name in ("ops.cpp", "ggml-cpu.c"):
+            flags.append("-O3")
         flags += ["-DGGML_USE_CPU", "-DGGML_USE_CPU_REPACK", "-DGGML_SCHED_MAX_COPIES=4",
                   '-DGGML_VERSION="0.22.0"', '-DGGML_COMMIT="36da5713"',
                   '-DKOKOPOP_ESPEAK_BUILD_DATA_DIR="/espeak-ng-data"',

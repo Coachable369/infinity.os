@@ -19,7 +19,7 @@ use rand_core::SeedableRng;
 static mut READ: [u8; 16640] = [0; 16640];
 static mut WRITE: [u8; 4096] = [0; 4096];
 static mut REQUEST: [u8; 512] = [0; 512];
-static mut RESPONSE: [u8; 4096] = [0; 4096];
+static mut RESPONSE: [u8; 1024 * 1024] = [0; 1024 * 1024];
 // ------------------------=
 // FUNC: exit
 // DESC: Reports structured guest success or failure without a log-string oracle.
@@ -134,6 +134,9 @@ impl Link for e1000::E1000 {
     // DESC: Confines this test-only adapter to the controlled remote server.
     // ------------------=
     fn allowed(&mut self, destination: [u8; 4], port: u16) -> bool {
+        if env!("HTTPS_TEST_GOOGLE") == "1" {
+            return port == 443 || (destination == [10,0,2,3] && port == 53);
+        }
         destination == [10, 0, 2, 2] && port == env!("HTTPS_TEST_PORT").parse::<u16>().unwrap()
     }
     // ------------------------=
@@ -167,16 +170,34 @@ pub extern "C" fn infinity_kernel_entry(_info: *const u8) -> ! {
         assert_eq!(info.network_reserved, 4);
         e1000::E1000::initialize_ecam(info.firmware_network).unwrap()
     };
+    let mut nic = nic;
+    let mut storage = [infinity_http::smoltcp::iface::SocketStorage::EMPTY];
+    let mut dhcp = infinity_http::dhcp::Client::new(nic.mac, 19, nic.now(), &mut storage);
+    let deadline = nic.now() + infinity_http::smoltcp::time::Duration::from_secs(15);
+    let lease = loop {
+        assert!(nic.now() < deadline);
+        let mut frame = [0;1514];
+        if let Some(length) = nic.receive(&mut frame) { dhcp.frames.ingest(&frame[..length]); }
+        let result = dhcp.poll(nic.now());
+        while let Some(frame) = dhcp.frames.pending() {
+            if !nic.transmit(frame) { break; }
+            dhcp.frames.transmitted();
+        }
+        if let Some(Some(lease)) = result { break lease; }
+    };
+    assert_ne!(lease.address, [0;4]);
+    assert!(lease.gateway.is_some() && lease.dns[0].is_some());
     let config = Configuration {
         mac: nic.mac,
-        address: [10, 0, 2, 15],
-        prefix: 24,
-        gateway: Some([10, 0, 2, 2]),
-        dns_server: [10, 0, 2, 3],
+        address: lease.address,
+        prefix: lease.prefix,
+        gateway: lease.gateway,
+        dns_server: lease.dns[0].unwrap(),
         local_port: 49153,
         deadline: nic.now() + infinity_http::smoltcp::time::Duration::from_secs(30),
     };
-    let port = env!("HTTPS_TEST_PORT").parse::<u16>().unwrap();
+    let google = env!("HTTPS_TEST_GOOGLE") == "1";
+    let port = if google {443} else {env!("HTTPS_TEST_PORT").parse::<u16>().unwrap()};
     let root =
         rustls_pki_types::CertificateDer::from(include_bytes!(env!("HTTPS_TEST_ROOT")).as_slice());
     let roots = [webpki::anchor_from_trusted_cert(&root).unwrap()];
@@ -186,11 +207,11 @@ pub extern "C" fn infinity_kernel_entry(_info: *const u8) -> ! {
         let mut future = core::pin::pin!(client::get(
             nic,
             config,
-            Destination::Address([10, 0, 2, 2]),
+            if google {Destination::Resolve} else {Destination::Address([10, 0, 2, 2])},
             rand_chacha::ChaCha20Rng::from_seed([19; 32]),
-            &roots,
+            if google {infinity_http::tls::system_roots()} else {&roots},
             now,
-            "localhost",
+            if google {"www.google.com"} else {"localhost"},
             port,
             "/",
             Buffers {
@@ -209,7 +230,10 @@ pub extern "C" fn infinity_kernel_entry(_info: *const u8) -> ! {
         }
     };
     assert_eq!(result.status, 200);
-    assert_eq!(result.body_bytes, 11);
-    assert_eq!(unsafe { &(&*(&raw const RESPONSE))[..11] }, b"hello world");
+    if google { assert!(result.body_bytes > 0); }
+    else {
+        assert_eq!(result.body_bytes, 11);
+        assert_eq!(unsafe { &(&*(&raw const RESPONSE))[..11] }, b"hello world");
+    }
     exit(0x10)
 }

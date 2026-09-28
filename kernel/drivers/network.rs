@@ -123,6 +123,7 @@ fn pump(nic: &mut super::e1000::E1000, now: u64) {
                 .active()
                 .map(|p| p.interfaces_enabled)
                 .unwrap_or(false);
+        unsafe { super::network_dhcp::prepare(network, nic.mac, now.saturating_mul(1000)); }
         let address = if enabled {
             (0..network.interfaces.address_count())
                 .filter_map(|i| network.interfaces.address_nth(i))
@@ -154,6 +155,7 @@ fn pump(nic: &mut super::e1000::E1000, now: u64) {
                 break;
             };
             if length != 0 {
+                unsafe { super::network_dhcp::ingest(&frame[..length]); }
                 let _ = network.wire.ingest(&frame[..length], now);
                 super::https::ingest(&frame[..length]);
             }
@@ -178,6 +180,7 @@ fn pump(nic: &mut super::e1000::E1000, now: u64) {
             }
             network.wire.complete_transmit();
         }
+        unsafe { super::network_dhcp::poll(network, nic, now.saturating_mul(1000)); }
         let (rx, tx, drops) = nic.statistics();
         let _ = network.interfaces.update_native_counters(
             2,

@@ -3,6 +3,7 @@ pub mod display;
 pub mod input;
 pub mod svga;
 pub mod network;
+mod network_dhcp;
 pub(crate) mod hda;
 pub mod audio;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
