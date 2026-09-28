@@ -9,7 +9,7 @@ pub struct Resampler {
     phase: u32,
     cursor: usize,
     history: [i16; TAPS],
-    coefficients: [[f32; TAPS]; PHASES],
+    coefficients: [[i32; TAPS]; PHASES],
 }
 
 impl Resampler {
@@ -18,7 +18,7 @@ impl Resampler {
     // DESC: Reserves fixed filter storage in an inactive state suitable for static initialization.
     // ------------------=
     pub const fn empty() -> Self {
-        Self { rate: 0, phase: 0, cursor: 0, history: [0; TAPS], coefficients: [[0.0; TAPS]; PHASES] }
+        Self { rate: 0, phase: 0, cursor: 0, history: [0; TAPS], coefficients: [[0; TAPS]; PHASES] }
     }
 
     // ------------------------=
@@ -36,6 +36,7 @@ impl Resampler {
             for phase in 0..PHASES {
                 let fraction = phase as f64 / PHASES as f64;
                 let mut sum = 0.0;
+                let mut values = [0.0f64; TAPS];
                 for tap in 0..TAPS {
                     let x = tap as f64 - (TAPS - 1) as f64 / 2.0 - fraction;
                     let sinc = if x.abs() < 1e-12 { 2.0 * cutoff }
@@ -43,10 +44,12 @@ impl Resampler {
                     let angle = 2.0 * pi * tap as f64 / (TAPS - 1) as f64;
                     let window = 0.42 - 0.5 * libm::cos(angle) + 0.08 * libm::cos(2.0 * angle);
                     let value = sinc * window;
-                    self.coefficients[phase][tap] = value as f32;
+                    values[tap] = value;
                     sum += value;
                 }
-                for coefficient in &mut self.coefficients[phase] { *coefficient /= sum as f32; }
+                for tap in 0..TAPS {
+                    self.coefficients[phase][tap] = libm::round(values[tap] / sum * (1u64 << 30) as f64) as i32;
+                }
             }
         }
         self.rate = rate;
@@ -82,12 +85,15 @@ impl Resampler {
                 self.phase -= self.rate;
                 // Both 44.1 kHz and 48 kHz land exactly on these 160 fractional phases.
                 let bank = (self.phase / 100) as usize;
-                let mut value = 0.0f32;
+                // Integer MACs avoid soft-float helper calls on the UI owner.
+                // 96 signed Q30 taps at full-scale PCM remain well inside i64.
+                let mut value = 0i64;
                 for tap in 0..TAPS {
                     let index = (self.cursor + TAPS - 1 - tap) % TAPS;
-                    value += self.history[index] as f32 * self.coefficients[bank][tap];
+                    value += self.history[index] as i64 * self.coefficients[bank][tap] as i64;
                 }
-                output[produced] = libm::roundf(value).clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+                let rounded = if value < 0 { -((-value + (1 << 29)) >> 30) } else { (value + (1 << 29)) >> 30 };
+                output[produced] = rounded.clamp(i16::MIN as i64, i16::MAX as i64) as i16;
                 produced += 1;
             }
         }

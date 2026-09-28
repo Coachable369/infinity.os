@@ -4750,6 +4750,14 @@ impl ConsoleRuntime {
                 self.set_ai_chat_enabled(!enabled);
             }
             (3, 2) => self.select_next_chat_model(),
+            (3, 6) => {
+                let _ = crate::runtime::with_runtime(|r| {
+                    let enabled = r.identity.ai_profile(self.current_user).map(|p| p.speech_output_enabled).unwrap_or(false);
+                    r.identity.update_speech_output(self.current_user, self.current_user, !enabled)
+                });
+                let _ = crate::runtime::persist_identity_state();
+                crate::runtime::ai::voice_output::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0));
+            }
             (3, 4 | 5) | (4, 1) => self.toggle_voice_microphone(),
             (4, 3) => self.cycle_user_no_activity_timeout(),
             (6, profile @ 0..=4) => {
@@ -13105,6 +13113,17 @@ pub fn poll_native_ai() {
     if crate::runtime::ai::with_ai_runtime(|ai|ai.poll_qwen()) {
         unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() { runtime.redraw(); } }
         crate::runtime::ai::with_ai_runtime(|ai|ai.record_first_visible_response());
+        #[cfg(target_os = "none")]
+        unsafe { if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {
+            let enabled = crate::runtime::with_runtime(|r| r.identity.ai_profile(runtime.current_user)
+                .map(|p| p.speech_output_enabled).unwrap_or(false)).unwrap_or(false);
+            let (complete, turn) = crate::runtime::ai::with_ai_runtime(|ai|
+                (ai.chat.generation_state == crate::runtime::ai::chat::GenerationState::Complete, ai.chat.turn_id()));
+            if enabled && complete {
+                crate::runtime::ai::voice_conversation::speak_completed_reply(
+                    crate::runtime::execution::SecurityIdentity(runtime.current_session.0), turn);
+            }
+        } }
     }
 }
 static mut INPUT_PRESENTATION: crate::ui::input_batch::PresentationBatch = crate::ui::input_batch::PresentationBatch::new();

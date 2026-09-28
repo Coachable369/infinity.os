@@ -83,13 +83,6 @@ static void discover_psci_workers(EFI_SYSTEM_TABLE *system) {
     __asm__ volatile("mrs %0, mpidr_el1" : "=r"(self));
     self &= UINT64_C(0xff00ffffff);
     parse_psci_cpus(madt,self);
-    // Reserve stacks before the boot memory map is captured, not after the
-    // kernel allocator has taken ownership of the reported free ranges.
-    for (size_t i=0; i<64 && i<psci_count; ++i) {
-        uint64_t stack=UINT64_C(0xffffffff);
-        if (system->boot_services->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS,EFI_LOADER_DATA,16,&stack)) break;
-        psci_contexts[i].stack=stack+16*PAGE_SIZE;
-    }
 }
 // ------------------------=
 // FUNC: worker_identity

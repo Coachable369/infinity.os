@@ -39,6 +39,54 @@ static void attention_fp_leave(uint64_t saved) {
     (void)saved;
 #endif
 }
+/* expf reduction derived from libm 0.2.16 / FreeBSD e_expf.c.
+ * Copyright (C) 1993 Sun Microsystems, Inc. All rights reserved.
+ * Developed at SunPro, a Sun Microsystems, Inc. business.
+ * Permission to use, copy, modify, and distribute this software is freely
+ * granted, provided that this notice is preserved.
+ */
+// ------------------------=
+// FUNC: native_expf
+// DESC: Evaluates the same bounded float exponential polynomial using hardware FP, without a soft-float ABI crossing.
+// ------------------=
+static float native_expf(float x) {
+    union { float f; uint32_t u; } bits = {.f=x};
+    uint32_t hx = bits.u & 0x7fffffffu;
+    int sign = bits.u >> 31;
+    if (hx >= 0x42aeac50u) {
+        if (hx > 0x7f800000u) return x;
+        if (hx >= 0x42b17218u && !sign) return x * 0x1p127f;
+        if (sign && hx >= 0x42cff1b5u) return 0.0f;
+    }
+    int k;
+    float hi, lo;
+    if (hx > 0x3eb17218u) {
+        k = hx > 0x3f851592u ? (int)(1.4426950216f * x + (sign ? -0.5f : 0.5f)) : 1 - sign - sign;
+        hi = x - (float)k * 6.9314575195e-1f;
+        lo = (float)k * 1.4286067653e-6f;
+        x = hi - lo;
+    } else if (hx > 0x39000000u) {
+        k = 0; hi = x; lo = 0.0f;
+    } else return 1.0f + x;
+    float xx = x * x;
+    float c = x - xx * (1.6666625440e-1f + xx * -2.7667332906e-3f);
+    float y = 1.0f + (x * c / (2.0f - c) - lo + hi);
+    if (k == 0) return y;
+    if (k > 127) { y *= 0x1p127f; k -= 127; }
+    if (k < -126) { y *= 0x1p-102f; k += 102; }
+    union { uint32_t u; float f; } scale = {.u=(uint32_t)(127 + k) << 23};
+    return y * scale.f;
+}
+// ------------------------=
+// FUNC: infinity_swiglu
+// DESC: Computes one bounded gated activation vector on native FP with the existing multiply/divide order.
+// ------------------=
+void infinity_swiglu(float *gate, const float *up, size_t count) {
+    uint64_t saved = attention_fp_enter();
+    for (size_t i = 0; i < count; ++i)
+        gate[i] = up[i] * gate[i] / (1.0f + native_expf(-gate[i]));
+    attention_fp_leave(saved);
+}
 // ------------------------=
 // FUNC: infinity_attention_scores
 // DESC: Computes initialized causal key dots with hardware FP and the original reduction order; pointer-only ABI.

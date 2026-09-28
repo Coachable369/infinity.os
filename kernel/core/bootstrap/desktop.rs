@@ -5435,6 +5435,13 @@ impl super::DisplayDevice {
         })
         .flatten()
         .unwrap_or(false);
+        let speech_enabled = crate::runtime::with_runtime(|runtime| {
+            (0..crate::runtime::identity::MAX_SESSIONS)
+                .filter_map(|index| runtime.identity.session_nth(index))
+                .find(|session| session.state == crate::runtime::identity::SessionState::Active)
+                .and_then(|session| runtime.identity.ai_profile(session.user))
+                .map(|profile| profile.speech_output_enabled)
+        }).flatten().unwrap_or(false);
         if focus == 6 {
             self.intersect_render_clip(
                 geometry.viewport.x.max(0) as usize,
@@ -5537,7 +5544,7 @@ impl super::DisplayDevice {
                 (b"Remote Processing", b"Off"),
                 (b"Voice", if voice_enabled { b"Granted" } else { b"Restricted" }),
                 (b"Activation", if voice_enabled { b"Push to talk" } else { b"Disabled" }),
-                (b"Model Access", b"Capability gated"),
+                (b"Spoken Replies", if speech_enabled { b"Enabled" } else { b"Disabled" }),
                 (b"", b""),
             ],
             4 => [
@@ -5984,6 +5991,7 @@ impl super::DisplayDevice {
                         (3, 0) => Some(b"CHANGE POLICY"),
                         (3, 1) => Some(if chat_enabled { b"DISABLE CHAT" } else { b"ENABLE CHAT" }),
                         (3, 2) => Some(b"NEXT MODEL"),
+                        (3, 6) => Some(if speech_enabled { b"MUTE REPLIES" } else { b"SPEAK REPLIES" }),
                         (3, 4) | (3, 5) | (4, 1) => Some(if voice_enabled { b"RESTRICT" } else { b"GRANT" }),
                         _ => None,
                     };

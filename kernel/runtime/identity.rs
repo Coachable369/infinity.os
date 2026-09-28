@@ -243,6 +243,7 @@ pub struct AiProfile {
     pub remote_processing: bool,
     pub chat_enabled: bool,
     pub chat_model_index: u8,
+    pub speech_output_enabled: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -523,6 +524,7 @@ impl IdentitySystem {
             remote_processing: false,
             chat_enabled: true,
             chat_model_index: 3,
+            speech_output_enabled: true,
         });
         self.ai_memories[slot] = AiMemory::new();
         self.voice_profiles[slot] = Some(VoiceProfile {
@@ -1174,6 +1176,19 @@ impl IdentitySystem {
     }
 
     // ------------------------=
+    // FUNC: update_speech_output
+    // DESC: Persists reply playback independently of microphone permission.
+    // ------------------=
+    pub fn update_speech_output(&mut self, actor: StableId, user: StableId, enabled: bool) -> Result<(), IdentityError> {
+        if actor != user { return Err(IdentityError::AccessDenied); }
+        let profile = self.ai_profiles.iter_mut().flatten().find(|p| p.user == user)
+            .ok_or(IdentityError::NotFound)?;
+        profile.speech_output_enabled = enabled;
+        self.commit();
+        Ok(())
+    }
+
+    // ------------------------=
     // FUNC: voice_profile
     // DESC: Reads one user's scoped voice and microphone preference.
     // ------------------=
@@ -1819,6 +1834,7 @@ fn write_user(
             0x80 | (value.remote_processing as u8)
                 | ((value.chat_enabled as u8) << 1)
                 | ((value.chat_model_index.min(15)) << 2)
+                | ((!value.speech_output_enabled as u8) << 6)
         })
         .unwrap_or(0x82);
     let timeout_minutes = profile
@@ -1880,6 +1896,7 @@ fn read_user(
         },
         remote_processing: ai_preferences & 1 != 0,
         chat_enabled: !ai_preferences_versioned || ai_preferences & 2 != 0,
+        speech_output_enabled: ai_preferences & 0x40 == 0,
         chat_model_index: if ai_preferences_versioned {
             match (ai_preferences >> 2) & 0x0f {
                 0..=4 => (ai_preferences >> 2) & 0x0f,

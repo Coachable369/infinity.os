@@ -45,10 +45,11 @@ def main():
     rows = []
     offset = 0
     for case in range(6):
-        assert len(data) - offset >= 72, "Guest exception, panic, or incomplete result"
-        version, index, code, length, memory, ticks, frequency, live, erased = struct.unpack_from("<9Q", data, offset)
-        offset += 72
-        assert version == 2 and index == case and frequency > 0
+        assert len(data) - offset >= 80, "Guest exception, panic, or incomplete result"
+        version, index, code, length, memory, ticks, frequency, live, erased, stack = struct.unpack_from("<10Q", data, offset)
+        offset += 80
+        assert version == 3 and index == case and frequency > 0
+        assert 0 < stack < 1024 * 1024 - 4096, "Native worker exceeded its reserved stack"
         assert code == [0, 0, 2, 6, 5, 2][case]
         assert 0 < memory <= 192 * 1024 * 1024 and erased > 0
         assert offset + length <= len(data)
@@ -65,7 +66,7 @@ def main():
             if case not in (4, 5):
                 assert erased > rows[-1]["erased_bytes"]
         rows.append(dict(case=case, result=code, transcript=text.decode(), seconds=ticks/frequency,
-                         heap_committed_bytes=memory, retained_bytes=live, erased_bytes=erased))
+                         heap_committed_bytes=memory, retained_bytes=live, erased_bytes=erased, stack_bytes=stack))
     assert offset == len(data)
     evidence = dict(environment=f"freestanding ARM64 QEMU {args.accel}; not installed InfinityOS",
                     fixture=str(fixture), expected=args.expected,

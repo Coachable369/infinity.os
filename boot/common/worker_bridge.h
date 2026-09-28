@@ -16,6 +16,7 @@ static InfinityMp *worker_mp;
 static EFI_BOOT_SERVICES *worker_boot;
 static void *worker_events[64];
 static uint8_t worker_started;
+extern void EFIAPI infinity_ap_callback(void *context);
 
 // ------------------------=
 // FUNC: infinity_start_workers
@@ -38,9 +39,15 @@ static uint64_t EFIAPI infinity_start_workers(INFINITY_AP_PROC procedure, uint64
     for (size_t cpu = 0; cpu < total && launched < limit; ++cpu) {
         InfinityProcessor info;
         if (worker_mp->info(worker_mp, cpu, &info) || (info.flags & 1) || (info.flags & 6) != 6) continue;
+        InfinityApContext *context = &psci_contexts[launched];
+        // MP firmware stacks are not sized for speech decoding. Every worker
+        // must enter its reserved native stack before calling kernel code.
+        if (!context->stack) break;
+        context->procedure = (uint64_t)(uintptr_t)procedure;
+        context->argument = launched + 1;
         if (create(0, 0, NULL, NULL, &worker_events[launched])) continue;
-        EFI_STATUS status = worker_mp->start(worker_mp, procedure, cpu, worker_events[launched], 0,
-                                            (void *)(uintptr_t)(launched + 1), NULL);
+        EFI_STATUS status = worker_mp->start(worker_mp, infinity_ap_callback, cpu, worker_events[launched], 0,
+                                            context, NULL);
         if (status) { close(worker_events[launched]); continue; }
         ++launched;
     }
@@ -58,5 +65,15 @@ static uint64_t infinity_worker_bridge(EFI_SYSTEM_TABLE *system) {
     discover_psci_workers(system);
     if (worker_boot->locate_protocol(&guid, NULL, (void **)&worker_mp)) worker_mp=NULL;
     if (!worker_mp && !psci_count) return 0;
+    size_t count = psci_count, total = 0, enabled = 0;
+    if (worker_mp && !worker_mp->count(worker_mp, &total, &enabled) && enabled > 1 && enabled - 1 > count)
+        count = enabled - 1;
+    // Reserve before the boot memory map is captured. Both startup adapters
+    // share the same private 1 MiB worker-stack contract as x86_64.
+    for (size_t i = 0; i < count && i < 64; ++i) {
+        uint64_t stack = UINT64_C(0xffffffff);
+        if (worker_boot->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA, 256, &stack)) break;
+        psci_contexts[i].stack = stack + 256 * PAGE_SIZE;
+    }
     return (uint64_t)(uintptr_t)&bridge;
 }

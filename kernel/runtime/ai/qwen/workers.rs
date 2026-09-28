@@ -57,6 +57,17 @@ impl Slot {
 }
 static SLOTS: [Slot; COUNT] = [const { Slot::new() }; COUNT];
 static READY: AtomicUsize = AtomicUsize::new(0);
+#[cfg(not(target_os = "none"))]
+static HOST_THREADS: [std::sync::Mutex<Option<std::thread::Thread>>; COUNT] =
+    [const { std::sync::Mutex::new(None) }; COUNT];
+// ------------------------=
+// FUNC: wake_host
+// DESC: Mirrors the native event wakeup for host benchmarks without burning idle host cores.
+// ------------------=
+#[cfg(not(target_os = "none"))]
+fn wake_host(index: usize) {
+    if let Some(thread) = HOST_THREADS[index].lock().unwrap().as_ref() { thread.unpark(); }
+}
 static COMPLETED: AtomicUsize = AtomicUsize::new(0);
 static COMPUTE_TICKS: AtomicU64 = AtomicU64::new(0);
 static IDLE_TICKS: AtomicU64 = AtomicU64::new(0);
@@ -178,6 +189,7 @@ pub unsafe fn stop_host_workers() {
         if ready & (1 << i) != 0 {
             while slot.state.load(Ordering::Acquire) == 4 { core::hint::spin_loop(); }
             slot.state.store(3, Ordering::Release);
+            wake_host(i);
         }
     }
 }
@@ -194,6 +206,8 @@ pub unsafe fn background(task: unsafe fn()) -> bool {
         if ready & (1 << index) != 0 && slot.state.load(Ordering::Acquire) == 0 {
             (*slot.job.get()).background = Some(task);
             slot.state.store(4, Ordering::Release);
+            #[cfg(not(target_os = "none"))]
+            wake_host(index);
             #[cfg(all(target_arch = "aarch64", target_os = "none"))]
             core::arch::asm!("sev", options(nomem, nostack));
             return true;
@@ -256,6 +270,8 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
             return;
         }
     }
+    #[cfg(not(target_os = "none"))]
+    { *HOST_THREADS[index].lock().unwrap() = Some(std::thread::current()); }
     READY.fetch_or(1 << index, Ordering::Release);
     let slot = &SLOTS[index];
     loop {
@@ -305,7 +321,9 @@ unsafe extern "efiapi" fn worker_entry(argument: *mut u8) {
             _ => {
                 #[cfg(all(target_arch = "aarch64", target_os = "none"))]
                 core::arch::asm!("wfe", options(nomem, nostack));
-                #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+                #[cfg(not(target_os = "none"))]
+                std::thread::park();
+                #[cfg(all(target_arch = "x86_64", target_os = "none"))]
                 core::hint::spin_loop();
             }
         }
@@ -325,7 +343,7 @@ pub fn discard() {
 
 // ------------------------=
 // FUNC: rows
-// DESC: Publishes one matrix queue to all APs and collects disjoint staging rows; unsupported shapes fall back.
+// DESC: Publishes one matrix queue to all available APs and collects disjoint staging rows; unsupported shapes fall back.
 // ------------------=
 /// Safety: BSP-only, one engine; weights must remain alive until collection or
 /// drain. While pending, callers must keep the same destination geometry unless
@@ -384,7 +402,7 @@ pub unsafe fn rows(
         }
         NEXT_ROW.store(*cursor, Ordering::Relaxed);
         CANCELLED.store(false, Ordering::Release);
-        let mut mask = 0;
+        let mut mask: usize = 0;
         for (i, slot) in SLOTS.iter().enumerate() {
             if ready & (1 << i) == 0 || slot.state.load(Ordering::Acquire) != 0 {
                 continue;
@@ -397,6 +415,8 @@ pub unsafe fn rows(
             job.input[..input.len()].copy_from_slice(input);
             mask |= 1 << i;
             slot.state.store(1, Ordering::Release);
+            #[cfg(not(target_os = "none"))]
+            wake_host(i);
         }
         if mask == 0 { return None; }
         PENDING = (mask, *cursor, false);

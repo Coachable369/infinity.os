@@ -460,6 +460,12 @@ impl<'a, 'b> Engine<'a, 'b> {
                 }
             }
             10 => {
+                #[cfg(target_arch = "aarch64")]
+                unsafe {
+                    extern "C" { fn infinity_swiglu(gate: *mut f32, up: *const f32, count: usize); }
+                    infinity_swiglu(self.gate.as_mut_ptr(), self.up.as_ptr(), self.weights.hidden);
+                }
+                #[cfg(not(target_arch = "aarch64"))]
                 for i in 0..self.weights.hidden {
                     self.gate[i] = self.up[i] * self.gate[i] / (1.0 + libm::expf(-self.gate[i]));
                 }
@@ -826,6 +832,28 @@ fn adjacent_rope(values: &mut [f32], rotary: &[(f32, f32); 64]) {
             let (a, b) = (head[2 * i], head[2 * i + 1]);
             head[2 * i] = a * c - b * s;
             head[2 * i + 1] = a * s + b * c;
+        }
+    }
+}
+
+#[cfg(all(test, target_arch = "aarch64"))]
+mod activation_tests {
+    // ------------------------=
+    // FUNC: native_swiglu_matches_reference
+    // DESC: Compares native activation against the previous scalar libm path across saturation and normal ranges.
+    // ------------------=
+    #[test]
+    fn native_swiglu_matches_reference() {
+        let mut gate: Vec<f32> = (-24000..=24000).map(|i| i as f32 / 200.0).collect();
+        let up: Vec<f32> = (0..gate.len()).map(|i| (i as i32 % 137 - 68) as f32 / 7.0).collect();
+        let expected: Vec<f32> = gate.iter().zip(&up).map(|(g, u)| u * g / (1.0 + libm::expf(-g))).collect();
+        unsafe {
+            extern "C" { fn infinity_swiglu(gate: *mut f32, up: *const f32, count: usize); }
+            infinity_swiglu(gate.as_mut_ptr(), up.as_ptr(), gate.len());
+        }
+        for (actual, expected) in gate.iter().zip(expected) {
+            assert!(actual.is_finite());
+            assert!((*actual - expected).abs() <= 2e-6 * expected.abs().max(1e-30));
         }
     }
 }

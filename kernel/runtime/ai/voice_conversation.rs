@@ -39,6 +39,7 @@ static mut LEVEL: u16 = 0;
 static mut RESTART_LISTENING: bool = false;
 static mut CHAT_TURN: u64 = 0;
 static mut BETWEEN_PHRASES: bool = false;
+static mut CONTINUOUS: bool = false;
 static mut GAP_SAMPLES: usize = 0;
 static mut GAP_DEADLINE: u64 = 0;
 static mut ECHO_REMAINING: usize = 0;
@@ -153,6 +154,7 @@ pub fn start(owner: SecurityIdentity) -> bool {
             return false;
         }
         OWNER = owner;
+        CONTINUOUS = true;
         RESTART_LISTENING = false;
         BETWEEN_PHRASES = false;
         if !listen() {
@@ -225,9 +227,18 @@ pub fn stop(owner: SecurityIdentity) -> bool {
 // DESC: Plays one short phrase immediately instead of waiting for an entire 160-character reply chunk.
 // ------------------=
 unsafe fn speak_next() -> bool {
+    let enabled = crate::runtime::with_runtime(|r| {
+        (0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i| r.identity.session_nth(i))
+            .find(|s| s.id.0 == OWNER.0 && s.state == SessionState::Active)
+            .and_then(|s| r.identity.ai_profile(s.user)).map(|p| p.speech_output_enabled).unwrap_or(false)
+    }).unwrap_or(false);
+    if !enabled { REPLY_AT = REPLY_LENGTH; }
     while REPLY_AT < REPLY_LENGTH && REPLY[REPLY_AT] == b' ' { REPLY_AT += 1; }
     if REPLY_AT >= REPLY_LENGTH {
-        return listen();
+        if CONTINUOUS { return listen(); }
+        STATE = State::Off;
+        (&mut *(&raw mut REPLY)).fill(0);
+        return true;
     }
     let remaining = &(&*(&raw const REPLY))[REPLY_AT..REPLY_LENGTH];
     let mut count = remaining.len().min(44);
@@ -262,6 +273,7 @@ unsafe fn speak_next() -> bool {
 // DESC: Reopens a fresh microphone stream only after the preceding playback completes.
 // ------------------=
 unsafe fn check_between_phrases() -> bool {
+    if !CONTINUOUS { return speak_next(); }
     let pending = REPLY_AT < REPLY_LENGTH;
     if !listen() { return false; }
     BETWEEN_PHRASES = pending;
@@ -269,6 +281,20 @@ unsafe fn check_between_phrases() -> bool {
     GAP_SAMPLES = 0;
     GAP_DEADLINE = super::qwen::workers::clock_ns().saturating_add(3_000_000_000);
     true
+}
+// ------------------------=
+// FUNC: speak_completed_reply
+// DESC: Queues a typed reply on the existing background voice path without opening the microphone.
+// ------------------=
+pub fn speak_completed_reply(owner: SecurityIdentity, turn: u64) {
+    unsafe {
+        if !matches!(STATE, State::Off | State::Failed) || !active_owner(owner) { return; }
+        OWNER = owner;
+        CONTINUOUS = false;
+        RESTART_LISTENING = false;
+        CHAT_TURN = turn;
+        STATE = State::Thinking;
+    }
 }
 // ------------------------=
 // FUNC: poll
@@ -281,6 +307,10 @@ pub fn poll() -> bool {
             return false;
         }
         if STATE != State::Stopping && !active_owner(OWNER) {
+            stop(OWNER);
+        }
+        if !CONTINUOUS && matches!(STATE, State::Thinking | State::Speaking)
+            && super::with_ai_runtime(|ai| ai.chat.turn_id() != CHAT_TURN) {
             stop(OWNER);
         }
         match STATE {

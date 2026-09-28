@@ -27,6 +27,23 @@ infinity_handoff:
     b .Lpark
 
 .p2align 6
+.globl infinity_ap_callback
+// ------------------------=
+// FUNC: infinity_ap_callback
+// DESC: Switches firmware MP callbacks to a reserved native stack, preserving the firmware return context.
+// ------------------=
+infinity_ap_callback:
+    stp x19, x30, [sp, #-16]!
+    mov x19, sp
+    ldp x9, x10, [x0]
+    ldr x0, [x0, #16]
+    mov sp, x9
+    blr x10
+    mov sp, x19
+    ldp x19, x30, [sp], #16
+    ret
+
+.p2align 6
 .globl infinity_ap_entry
 // ------------------------=
 // FUNC: infinity_ap_entry

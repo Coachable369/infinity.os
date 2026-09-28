@@ -692,6 +692,12 @@ fn desktop_chat() {
         .create_user(b"chat-user", b"Chat User", 1)
         .unwrap();
     let voice = identities.voice_profile(user.id).unwrap();
+    assert!(identities.ai_profile(user.id).unwrap().speech_output_enabled);
+    identities.update_speech_output(user.id, user.id, false).unwrap();
+    let speech_restored = runtime::identity::IdentitySystem::decode(&identities.encode()).unwrap();
+    assert!(!speech_restored.ai_profile(user.id).unwrap().speech_output_enabled);
+    assert!(speech_restored.voice_profile(user.id).unwrap().enabled);
+    identities.update_speech_output(user.id, user.id, true).unwrap();
     assert!(voice.enabled);
     assert_eq!(
         voice.activation,
@@ -708,6 +714,7 @@ fn desktop_chat() {
     let restored = runtime::identity::IdentitySystem::decode(&identities.encode()).unwrap();
     let voice = restored.voice_profile(user.id).unwrap();
     assert!(!voice.enabled);
+    assert!(restored.ai_profile(user.id).unwrap().speech_output_enabled);
     assert_eq!(
         voice.activation,
         runtime::identity::VoiceActivation::Disabled

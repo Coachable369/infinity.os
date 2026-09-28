@@ -1,7 +1,12 @@
 #![no_std]
 static INPUT: &[u8] = include_bytes!(env!("INFINITY_STT_FIXTURE"));
 static mut PCM: [i16; 160000] = [0; 160000];
+#[repr(C, align(16))]
+struct WorkerStack([u8; 1024 * 1024]);
+static mut WORKER_STACK: WorkerStack = WorkerStack([0; 1024 * 1024]);
+core::arch::global_asm!(include_str!("../../../boot/aarch64/handoff.S"));
 unsafe extern "C" {
+    fn infinity_ap_callback(context: *const u64);
     fn infinity_stt_native_recognize(
         pcm: *const i16,
         samples: usize,
@@ -98,6 +103,18 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 // ------------------=
 #[no_mangle]
 pub unsafe extern "C" fn probe() -> ! {
+    (&mut *(&raw mut WORKER_STACK.0)).fill(0xa5);
+    let stack = (&raw mut WORKER_STACK.0).cast::<u8>() as u64;
+    let context = [stack + 1024 * 1024, recognition_cases as *const () as u64, 0];
+    infinity_ap_callback(context.as_ptr());
+    assert!((&*(&raw const WORKER_STACK.0))[..4096].iter().all(|v| *v == 0xa5));
+    finish()
+}
+// ------------------------=
+// FUNC: recognition_cases
+// DESC: Executes real recognition through the production ARM MP stack-switch adapter and returns to its caller.
+// ------------------=
+unsafe extern "C" fn recognition_cases(_: *mut u8) {
     for (i, p) in INPUT.chunks_exact(2).enumerate() {
         PCM[i] = i16::from_le_bytes([p[0], p[1]]);
     }
@@ -131,8 +148,12 @@ pub unsafe extern "C" fn probe() -> ! {
         core::arch::asm!("mrs {},cntvct_el0",out(reg)end);
         core::arch::asm!("mrs {},cntfrq_el0",out(reg)frequency);
         infinity_stt_native_memory_state(&mut live, &mut erased);
-        for v in [2, case, result as u64, length as u64, memory as u64,
-            end - start, frequency, live as u64, erased as u64] {
+        let bottom = (&raw const WORKER_STACK.0).cast::<u8>() as usize;
+        let top = bottom + 1024 * 1024;
+        let first = (bottom..top).find(|p| core::ptr::read_volatile(*p as *const u8) != 0xa5).unwrap();
+        let stack_bytes = top - first;
+        for v in [3, case, result as u64, length as u64, memory as u64,
+            end - start, frequency, live as u64, erased as u64, stack_bytes as u64] {
             bytes(&v.to_le_bytes());
         }
         bytes(&text[..length]);
@@ -156,5 +177,4 @@ pub unsafe extern "C" fn probe() -> ! {
         }
         assert!(erased > 0);
     }
-    finish()
 }
