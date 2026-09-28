@@ -149,6 +149,8 @@ pub fn diagnostic()->([u8;2048],usize) {unsafe {DIAGNOSTIC}}
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
+    pub settings:infinity_browser_core::settings::Settings,pub settings_open:bool,pub settings_notice:u8,pub settings_confirm:bool,
+    pub settings_focus:usize,pub settings_scroll:u32,
     pub favorites:[FavoritePresentation;32],pub favorite_count:usize,pub favorite_offset:usize,
     pub favorite_saved:bool,pub favorite_error:u8,pub hovered_favorite:usize,
     pub hovered_tab:u32,pub hovered_close:bool,
@@ -168,6 +170,7 @@ const EMPTY_FAVORITE:FavoritePresentation=FavoritePresentation{title:[0;96],leng
 pub struct TabPresentation {pub id:u32,pub title:[u8;256],pub length:usize}
 const EMPTY_TAB:TabPresentation=TabPresentation{id:0,title:[0;256],length:0};
 static mut PRESENTATION:Presentation=Presentation{hovered_tab:0,hovered_close:false,frame_revision:0,address:[0;2048],address_length:0,title:[0;256],
+    settings:infinity_browser_core::settings::Settings::new(),settings_open:false,settings_notice:0,settings_confirm:false,settings_focus:6,settings_scroll:0,
     favorites:[EMPTY_FAVORITE;32],favorite_count:0,favorite_offset:0,favorite_saved:false,favorite_error:0,hovered_favorite:usize::MAX,
     tabs:[EMPTY_TAB;8],tab_count:0,active_tab:0,
     permission:0,
@@ -204,7 +207,9 @@ impl Presentation {
     pub fn page_key(&self)->infinity_browser_core::damage::PageKey {
         infinity_browser_core::damage::PageKey {frame:self.frame_revision,tab:self.active_tab,
             error:self.error,permission:self.permission,download:self.download_state,
-            download_content:self.download_revision,
+            download_content:self.download_revision ^ ((self.settings_open as u64)<<63) ^ ((self.settings_notice as u64)<<56)
+                ^ ((self.settings_confirm as u64)<<55) ^ ((self.settings.search as u64)<<52) ^ ((self.settings.favorites as u64)<<51)
+                ^ ((self.settings_focus as u64)<<48) ^ ((self.settings_scroll as u64)<<32),
             loading:self.loading,busy:self.input_busy,status:self.favorite_error as u64 ^
                 self.address[..self.address_length].iter().fold(0u64,|hash,b|hash.wrapping_mul(31).wrapping_add(*b as u64))}
     }
@@ -215,6 +220,27 @@ impl Presentation {
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+// ------------------------=
+// FUNC: settings_presentation
+// DESC: Publishes committed preferences and native-page state, invalidating content as well as chrome.
+// ------------------=
+pub fn settings_presentation(settings:infinity_browser_core::settings::Settings,open:bool,notice:u8,confirm:bool) {unsafe {
+    INFINITY_BROWSER_SETTINGS.store(settings.search as u32 | ((settings.favorites as u32)<<8) | ((open as u32)<<16) | ((notice as u32)<<24),Ordering::Release);
+    let v=&mut *(&raw mut PRESENTATION);
+    if (v.settings,v.settings_open,v.settings_notice,v.settings_confirm)!=(settings,open,notice,confirm) {
+        v.settings=settings;v.settings_open=open;v.settings_notice=notice;v.settings_confirm=confirm;
+        v.address_focused=false;v.revision=v.revision.wrapping_add(1);
+    }
+}}
+#[no_mangle] pub static INFINITY_BROWSER_SETTINGS:AtomicU32=AtomicU32::new(256);
+// ------------------------=
+// FUNC: settings_position
+// DESC: Publishes keyboard focus and bounded scrolling without sending settings input to web content.
+// ------------------=
+pub fn settings_position(focus:usize,scroll:u32) {unsafe {
+    let v=&mut *(&raw mut PRESENTATION);
+    if (v.settings_focus,v.settings_scroll)!=(focus,scroll) {v.settings_focus=focus;v.settings_scroll=scroll;v.revision=v.revision.wrapping_add(1);}
+}}
 // ------------------------=
 // FUNC: favorites_presentation
 // DESC: Projects committed native favorites into chrome without exposing storage to the renderer.

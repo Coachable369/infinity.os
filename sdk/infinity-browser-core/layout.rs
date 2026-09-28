@@ -31,6 +31,15 @@ pub struct Layout {
 
 impl Layout {
     // ------------------------=
+    // FUNC: with_favorites
+    // DESC: Reclaims the favorites rail for page content when the user hides it.
+    // ------------------=
+    pub fn with_favorites(mut self,visible:bool)->Self {
+        if !visible {let h=self.favorites.height;self.content.y-=h as i32;self.content.height+=h;
+            self.favorites.height=0;self.favorite.height=0;self.favorites_previous.height=0;self.favorites_next.height=0;}
+        self
+    }
+    // ------------------------=
     // FUNC: with_tab_count
     // DESC: Keeps the add-tab control immediately after the last visible tab without moving window controls.
     // ------------------=

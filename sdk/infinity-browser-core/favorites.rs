@@ -25,8 +25,12 @@ impl Favorites {
     // DESC: Validates every record and rejects duplicates, truncation and unknown versions.
     // ------------------=
     pub fn decode(bytes:&[u8])->Result<Self,Error> {
-        if bytes.len()<4 || bytes[..4]!=[b'I',b'F',b'A',1] || bytes.len()>BYTES {return Err(Error::Invalid);}
+        if bytes.len()<4 || bytes[..3]!=[b'I',b'F',b'A'] || !matches!(bytes[3],1|2) || bytes.len()>BYTES {return Err(Error::Invalid);}
         let mut result=Self::new();let mut at=4;
+        if bytes[3]==2 {
+            if bytes.len()<6 || bytes[4]>2 || bytes[5]>1 {return Err(Error::Invalid);}
+            result.set_preferences(bytes[4],bytes[5]!=0)?;at=6;
+        }
         while at<bytes.len() {
             if at+3>bytes.len() {return Err(Error::Invalid);}
             let url=u16::from_le_bytes([bytes[at],bytes[at+1]]) as usize;let title=bytes[at+2] as usize;at+=3;
@@ -45,11 +49,28 @@ impl Favorites {
     // ------------------=
     pub fn count(&self)->usize {self.count}
     // ------------------------=
+    // FUNC: preferences
+    // DESC: Reads embedded preferences while retaining legacy favorites' established defaults.
+    // ------------------=
+    pub fn preferences(&self)->(u8,bool) {if self.bytes[3]==2 {(self.bytes[4],self.bytes[5]!=0)}else{(0,true)}}
+    // ------------------------=
+    // FUNC: set_preferences
+    // DESC: Upgrades the existing browser object atomically in memory without another namespace or losing saved pages.
+    // ------------------=
+    pub fn set_preferences(&mut self,search:u8,visible:bool)->Result<(),Error> {
+        if search>2 {return Err(Error::Invalid);}
+        if self.bytes[3]==1 {
+            if self.length+2>BYTES {return Err(Error::Full);}
+            self.bytes.copy_within(4..self.length,6);self.length+=2;self.bytes[3]=2;
+        }
+        self.bytes[4]=search;self.bytes[5]=visible as u8;Ok(())
+    }
+    // ------------------------=
     // FUNC: get
     // DESC: Borrows the URL and title of a saved page in insertion order.
     // ------------------=
     pub fn get(&self,index:usize)->Option<(&[u8],&[u8])> {
-        let mut at=4;for i in 0..self.count {
+        let mut at=if self.bytes[3]==2 {6}else{4};for i in 0..self.count {
             let url=u16::from_le_bytes([self.bytes[at],self.bytes[at+1]]) as usize;let title=self.bytes[at+2] as usize;at+=3;
             if i==index {return Some((&self.bytes[at..at+url],&self.bytes[at+url..at+url+title]));}at+=url+title;
         }None
@@ -79,7 +100,7 @@ impl Favorites {
     // ------------------=
     pub fn remove(&mut self,index:usize)->Result<(),Error> {
         if index>=self.count {return Err(Error::Missing);}
-        let mut at=4;for i in 0..self.count {
+        let mut at=if self.bytes[3]==2 {6}else{4};for i in 0..self.count {
             let size=3+u16::from_le_bytes([self.bytes[at],self.bytes[at+1]]) as usize+self.bytes[at+2] as usize;
             if i==index {self.bytes.copy_within(at+size..self.length,at);self.length-=size;self.count-=1;return Ok(());}at+=size;
         }Err(Error::Missing)

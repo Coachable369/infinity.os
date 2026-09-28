@@ -205,7 +205,7 @@ def browser_symbols(elf):
             continue
         for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK", "LOAD_REVISION", "LOADING", "PAGE_ERROR", "HISTORY",
                      "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION", "LOCATION_HASH", "DOWNLOAD_STATE",
-                     "FAVORITES_COUNT","FAVORITES_ERROR","FAVORITE_SAVED","FAVORITE_TITLE_HASH","FAVORITES_HASH","FOOTER_STATUS","DISPLAY_ADDRESS_HASH"):
+                     "FAVORITES_COUNT","FAVORITES_ERROR","FAVORITE_SAVED","FAVORITE_TITLE_HASH","FAVORITES_HASH","FOOTER_STATUS","DISPLAY_ADDRESS_HASH","SETTINGS"):
             if fields[3] in ("infinity_kernel::runtime::browser::" + name,
                 "infinity_kernel::runtime::browser::" + name + " (.0)", "INFINITY_BROWSER_" + name):
                 result[name] = (int(fields[0], 16), int(fields[1], 16))
@@ -332,6 +332,7 @@ def main():
     parser.add_argument("--footer",action="store_true",help="Retry only footer loading, failed destination and recovery on an existing saved favorite")
     parser.add_argument("--favorites-overflow",action="store_true",help="Exercise favorites overflow paging on an installed browser with one saved page")
     parser.add_argument("--favorites-label",action="store_true",help="Verify same-title navigation preserves the document title when saving another favorite")
+    parser.add_argument("--settings",action="store_true",help="Exercise native settings controls, save state, and detached reboot persistence")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
     if args.accel=="hvf" and args.arch!="aarch64":
@@ -666,6 +667,44 @@ def main():
             await_favorite("FAVORITE_TITLE_HASH",title_hash);await_favorite("FAVORITES_ERROR",0)
             guest.click(890,207);guest.screenshot("browser-favorite-title-preserved")
             receipt["same_title_navigation_preserves_favorite_title"]=True
+        if args.settings:
+            if int.from_bytes(guest.memory(*counters["FAVORITES_COUNT"]),"little")==0:
+                guest.key("ctrl","d")
+            assert int.from_bytes(guest.memory(*counters["FAVORITES_COUNT"]),"little")>0
+            # ------------------------=
+            # FUNC: setting_value
+            # DESC: Waits for committed native preference state after real UI input.
+            # ------------------=
+            def setting_value(expected):
+                deadline=time.monotonic()+12
+                while time.monotonic()<deadline:
+                    actual=int.from_bytes(guest.memory(*counters["SETTINGS"]),"little")
+                    if actual==expected: return
+                raise AssertionError(dict(expected=expected,actual=actual))
+            guest.click(888,165);setting_value(0x10100)
+            guest.click(350,329);setting_value(0x1010101)
+            guest.click(500,385);setting_value(0x1010001)
+            guest.screenshot("browser-settings-hidden-favorites")
+            guest.key("esc");setting_value(1)
+            guest.stop();guest.boot(False);guest.authenticate();guest.launch("browser",5)
+            setting_value(1)
+            guest.click(888,165);setting_value(0x10001)
+            guest.click(500,349);setting_value(0x1010101)
+            guest.click(150,505);setting_value(0x1010100)
+            guest.screenshot("browser-settings-defaults")
+            guest.key("tab");guest.key("ret");setting_value(0x1010100)
+            guest.key("tab");guest.key("ret");setting_value(0x1010101)
+            guest.key("tab");guest.key("ret");setting_value(0x1010102)
+            before=int.from_bytes(guest.memory(*counters["FAVORITES_COUNT"]),"little")
+            guest.click(500,441);setting_value(0x10102)
+            assert int.from_bytes(guest.memory(*counters["FAVORITES_COUNT"]),"little")==before
+            guest.key("esc");setting_value(258)
+            guest.click(888,165);setting_value(0x10102)
+            guest.click(500,441);guest.click(500,441);setting_value(0x1010102)
+            assert int.from_bytes(guest.memory(*counters["FAVORITES_COUNT"]),"little")==0
+            guest.click(150,505);setting_value(0x1010100)
+            guest.click(500,505);setting_value(256)
+            receipt["settings_controls_and_detached_persistence"]=True
         if args.lifecycle:
             wait_color(guest,"browser-lifecycle-page",400,400,(255,0,0))
             guest.click(849,111)

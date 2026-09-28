@@ -245,6 +245,7 @@ fn main() {
     download_transaction(test_sectors);
     private_spatial_checkpoint(test_sectors);
     private_browser_favorites(test_sectors);
+    private_browser_settings(test_sectors);
     legacy_store_mount(test_sectors);
     checkpoint_replacement(test_sectors);
     editor_documents_recovery(test_sectors);
@@ -763,6 +764,34 @@ fn private_browser_favorites(sectors:usize) {
         let length=mounted.read_browser_favorites(other_id,&mut bytes).unwrap();
         assert_eq!(favorites::Favorites::decode(&bytes[..length]).unwrap().count(),0);
     }
+}
+
+// ------------------------=
+// FUNC: private_browser_settings
+// DESC: Verifies preferences upgrade the existing browser object even with every namespace slot occupied.
+// ------------------=
+fn private_browser_settings(sectors:usize) {
+    let disk=MemoryDisk::new(sectors);
+    let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x96;16]).unwrap();
+    let path=b"/system/web/test/favorites";let mut state=favorites::Favorites::new();
+    state.add(b"https://example.com/",b"Example").unwrap();
+    let id=store.create_attached(b"@browser-favorites",ObjectType::Metadata,Space::System,state.bytes(),path).unwrap();
+    let mut filled=false;
+    for n in 0..32 {let mut alias=*b"/reserved/00";alias[10]=b'A'+n;
+        match store.attach(&alias,id) {Ok(())=>{},Err(ObjectError::InsufficientCapacity)=>{filled=true;break;},Err(e)=>panic!("{e:?}")}
+    }
+    assert!(filled);
+    state.set_preferences(2,false).unwrap();let saved=state.bytes();
+    let mut out=[0;favorites::BYTES];
+    assert_eq!(store.read(id,None,&mut out),Err(ObjectError::Unauthorized));
+    assert_eq!(store.write(id,saved),Err(ObjectError::Unauthorized));
+    assert_eq!(store.remove(id),Err(ObjectError::Unauthorized));
+    assert_eq!(store.copy_attached(id,b"/home/default/leaked-settings"),Err(ObjectError::Unauthorized));
+    store.checkpoint(path,saved).unwrap();drop(store);
+    let mut mounted=ObjectStore::mount(disk,0).unwrap();
+    let n=mounted.read_browser_favorites(id,&mut out).unwrap();let mut restored=favorites::Favorites::decode(&out[..n]).unwrap();
+    assert_eq!(restored.preferences(),(2,false));assert_eq!(restored.get(0),state.get(0));
+    restored.remove(0).unwrap();assert_eq!(restored.preferences(),(2,false));
 }
 
 // ------------------------=

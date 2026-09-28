@@ -47,7 +47,7 @@ impl DisplayDevice {
             .desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
         let view=crate::runtime::browser::presentation();
         let scale=self.ui_scale().max(1).min((window.width as usize/760).max(1));
-        let Some(layout)=Layout::new(window.width,window.height,scale as u32).map(|layout|layout.with_tab_count(view.tab_count)) else {return;};
+        let Some(layout)=Layout::new(window.width,window.height,scale as u32).map(|layout|layout.with_tab_count(view.tab_count).with_favorites(view.settings.favorites)) else {return;};
         if !self.recording_surface {
             unsafe {
                 if REVISION!=Some(view.revision) && infinity_browser_core::damage::chrome_only(PAGE_KEY,view.page_key()) {
@@ -94,7 +94,7 @@ impl DisplayDevice {
         let new_tab=offset(layout.new_tab);
         self.browser_glyph(new_tab,11,true,scale);
         for (rect,glyph,enabled) in [(layout.back,0,view.history&1!=0),(layout.forward,1,view.history&2!=0),
-            (layout.reload,2,true),(layout.downloads,4,true),(layout.menu,6,true)] {
+            (layout.reload,2,true),(layout.downloads,4,true),(layout.menu,13,true)] {
             let r=offset(rect);
             self.browser_glyph(r,glyph,enabled,scale);
         }
@@ -126,6 +126,7 @@ impl DisplayDevice {
         }
         let go=offset(layout.go);
         self.browser_glyph(go,1,true,scale);
+        if view.settings.favorites {
         let star=offset(layout.favorite);
         if view.favorite_saved {self.browser_surface(star,skin::button(true,skin::Interaction::Normal));}
         self.browser_glyph(star,12,true,scale);
@@ -144,12 +145,37 @@ impl DisplayDevice {
             self.browser_glyph(offset(layout.favorites_previous),0,view.favorite_offset>0,scale);
             self.browser_glyph(offset(layout.favorites_next),1,view.favorite_offset+layout.favorite_slots()<view.favorite_count,scale);
         }
+        }
         self.fill_rect(left,top+layout.content.y as usize-1,window.width as usize,1,33,58,82);
         let content=offset(layout.content);
         if self.clipped_render_region(content.x.max(0) as usize,content.y.max(0) as usize,
             content.width as usize,(window.bottom()-(content.y)).max(0) as usize).is_none() {return;}
         self.fill_rect(content.x as usize,content.y as usize,content.width as usize,content.height as usize,247,248,250);
-        if view.error!=0 {
+        if view.settings_open {
+            self.fill_rect(content.x as usize,content.y as usize,content.width as usize,content.height as usize,9,20,33);
+            let visible=content;
+            let content=Viewport{y:content.y-view.settings_scroll as i32,..content};
+            let label=|x:u32,y:u32,w:u32|Viewport{x:content.x+(x*scale as u32) as i32,y:content.y+(y*scale as u32) as i32,width:w*scale as u32,height:20*scale as u32};
+            for (y,text) in [(20,b"Browser settings" as &[u8]),(56,b"Search engine for the address bar"),
+                (152,b"Show favorites bar"),(208,b"Saved favorites")] {
+                let r=label(24,y,if y<100 {440}else{288});
+                if r.y>=visible.y && r.y+r.height as i32<=visible.y+visible.height as i32 {self.browser_label(r,text,14*scale,false);}
+            }
+            for index in 0..7 {
+                let text:&[u8]=match index {0=>b"Google",1=>b"DuckDuckGo",2=>b"Bing",
+                    3=>if view.settings.favorites {b"On"}else{b"Off"},
+                    4=>if view.settings_confirm {b"Confirm clear"}else{b"Clear favorites"},5=>b"Restore defaults",_=>b"Back to page"};
+                let r=infinity_browser_core::settings::control(content,scale as u32,index);
+                if r.y<visible.y || r.y+r.height as i32>visible.y+visible.height as i32 {continue;}
+                self.browser_surface(r,skin::button(index==view.settings.search as usize || index==3&&view.settings.favorites,skin::Interaction::Normal));
+                self.browser_label(Viewport{y:r.y+9*scale as i32,..r},text,14*scale,true);
+                if index==view.settings_focus {self.outline_rounded_rect(r.x.max(0) as usize,r.y.max(0) as usize,r.width as usize,r.height as usize,8,34,211,238);}
+            }
+            let note:&[u8]=match view.settings_notice {1=>b"Saved to your profile.",2=>b"Could not load or save preferences. Check storage and retry.",
+                _=>if view.settings_confirm {b"Click Confirm clear to permanently remove your favorites."}else{b"Changes save automatically. Downloads always require your approval."}};
+            let r=label(24,240,690);
+            if r.y>=visible.y && r.y+r.height as i32<=visible.y+visible.height as i32 {self.browser_label(r,note,14*scale,false);}
+        } else if view.error!=0 {
             use infinity_browser_core::startup::Error;
             let detail:&[u8]=match view.error {
                 value if value==Error::Entropy as u32=>b"Secure randomness unavailable. Enable firmware RNG or TPM 2.0, then restart InfinityOS.",
@@ -174,7 +200,7 @@ impl DisplayDevice {
                 }
             }
         }}
-        if view.permission!=0 {
+        if !view.settings_open && view.permission!=0 {
             let card=offset(layout.download_card);
             self.glass_panel(card.x as usize,card.y as usize,card.width as usize,card.height as usize,true);
             self.ui_text_elided_strong(card.x as usize+16*scale,card.y as usize+10*scale,
@@ -183,7 +209,7 @@ impl DisplayDevice {
                 card.width as usize-244*scale,b"Check your session and Network Settings.",168,196,216);
             self.browser_download_button(offset(layout.download_save),b"Retry",true,scale);
             self.browser_download_button(offset(layout.download_discard),b"Cancel",false,scale);
-        } else if view.download_state!=0 {
+        } else if !view.settings_open && view.download_state!=0 {
             let card=offset(layout.download_card);
             self.glass_panel(card.x as usize,card.y as usize,card.width as usize,card.height as usize,true);
             let title:&[u8]=match view.download_state {2=>b"Saved to Downloads",3=>b"Save failed - file retained for retry",_=>b"Save this download?"};
@@ -196,9 +222,9 @@ impl DisplayDevice {
         }
         let status=offset(layout.status);
         let mut message=[0u8;2304];
-        let footer=view.footer_status();let prefix=footer.label();
+        let footer=view.footer_status();let prefix=if view.settings_open {b"Browser settings - private to your profile" as &[u8]}else{footer.label()};
         message[..prefix.len()].copy_from_slice(prefix);let mut length=prefix.len();
-        if footer==infinity_browser_core::page_status::Status::Loading {
+        if !view.settings_open && footer==infinity_browser_core::page_status::Status::Loading {
             message[length..length+view.address_length].copy_from_slice(&view.address[..view.address_length]);length+=view.address_length;
         }
         self.fill_rect(status.x as usize,status.y as usize,status.width as usize,status.height as usize,9,20,33);
@@ -276,6 +302,8 @@ impl DisplayDevice {
             9=>{stroke(-5,-5,5,5);stroke(5,-5,-5,5);}
             10=>{for (a,b,c,d) in [(-5,-7,2,-7),(2,-7,5,-4),(5,-4,5,7),(5,7,-5,7),(-5,7,-5,-7),(2,-7,2,-3),(2,-3,5,-3),(-2,0,2,0),(-2,3,2,3)] {stroke(a,b,c,d);}}
             12=>{for (a,b,c,d) in [(0,-8,2,-3),(2,-3,8,-2),(8,-2,4,2),(4,2,5,8),(5,8,0,5),(0,5,-5,8),(-5,8,-4,2),(-4,2,-8,-2),(-8,-2,-2,-3),(-2,-3,0,-8)] {stroke(a,b,c,d);}}
+            13=>{for (a,b,c,d) in [(-3,-6,3,-6),(3,-6,6,-3),(6,-3,6,3),(6,3,3,6),(3,6,-3,6),(-3,6,-6,3),(-6,3,-6,-3),(-6,-3,-3,-6),
+                (0,-9,0,-6),(0,6,0,9),(-9,0,-6,0),(6,0,9,0),(-6,-6,-4,-4),(4,4,6,6),(-6,6,-4,4),(4,-4,6,-6),(-2,-2,2,-2),(2,-2,2,2),(2,2,-2,2),(-2,2,-2,-2)] {stroke(a,b,c,d);}}
             _=>{stroke(-7,0,7,0);stroke(0,-7,0,7);}
         }
     }

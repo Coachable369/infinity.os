@@ -765,6 +765,26 @@ pub(crate) fn browser_favorites_load(owner:[u8;16],session:[u8;16],out:&mut [u8]
 }
 
 // ------------------------=
+// FUNC: browser_settings
+// DESC: Loads or atomically commits private profile preferences through native installed object storage.
+// ------------------=
+pub(crate) fn browser_settings(owner:[u8;16],session:[u8;16],save:Option<&[u8]>,out:&mut [u8])->Result<usize,object::ObjectError> {
+    let mut bytes=[0;infinity_browser_core::favorites::BYTES];
+    let mut state=match browser_favorites_load(owner,session,&mut bytes) {
+        Ok(n)=>infinity_browser_core::favorites::Favorites::decode(&bytes[..n]).map_err(|_|object::ObjectError::CorruptContent)?,
+        Err(object::ObjectError::NamespaceNotFound)=>infinity_browser_core::favorites::Favorites::new(),Err(e)=>return Err(e),
+    };
+    if let Some(bytes)=save {
+        let value=infinity_browser_core::settings::Settings::decode(bytes).ok_or(object::ObjectError::CorruptContent)?;
+        state.set_preferences(value.search,value.favorites).map_err(|_|object::ObjectError::InsufficientCapacity)?;
+        browser_favorites_save(owner,session,state.bytes())?;
+    }
+    if out.len()<6 {return Err(object::ObjectError::InsufficientCapacity);}
+    let (search,favorites)=state.preferences();
+    out[..6].copy_from_slice(&infinity_browser_core::settings::Settings{search,favorites}.bytes());Ok(6)
+}
+
+// ------------------------=
 // FUNC: network_state_load
 // DESC: Loads authoritative typed networking state from System Space.
 // ------------------=

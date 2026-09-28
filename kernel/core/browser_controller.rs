@@ -13,6 +13,56 @@ static mut FAVORITES:infinity_browser_core::favorites::Favorites=infinity_browse
 static mut FAVORITES_OWNER:Option<[u8;16]>=None;
 static mut FAVORITES_OFFSET:usize=0;
 static mut FAVORITES_ERROR:u8=0;
+static mut SETTINGS_OWNER:Option<[u8;16]>=None;
+
+// ------------------------=
+// FUNC: settings_sync
+// DESC: Loads preferences on authenticated profile transitions without sharing state across users.
+// ------------------=
+fn settings_sync(console:&ConsoleRuntime,active:bool) {unsafe {
+    let owner=if active {Some(console.current_user.0)}else{None};
+    if SETTINGS_OWNER==owner {return;}SETTINGS_OWNER=owner;
+    let mut settings=infinity_browser_core::settings::Settings::new();let mut notice=0;
+    if active {let mut bytes=[0u8;6];
+        match crate::storage::browser_settings(console.current_user.0,console.current_session.0,None,&mut bytes) {
+            Ok(n)=>match infinity_browser_core::settings::Settings::decode(&bytes[..n]) {Some(s)=>settings=s,None=>notice=2},
+            Err(crate::storage::object::ObjectError::NamespaceNotFound)=>{},Err(_)=>notice=2,
+        }
+    }
+    crate::runtime::browser::settings_presentation(settings,false,notice,false);
+}}
+// ------------------------=
+// FUNC: settings_action
+// DESC: Applies native settings only after durable commit and requires confirmation before clearing favorites.
+// ------------------=
+fn settings_action(console:&ConsoleRuntime,index:usize) {
+    if !favorites_sync(console) {return;}
+    let v=crate::runtime::browser::presentation();let mut next=v.settings;
+    if index==6 {crate::runtime::browser::settings_presentation(next,false,0,false);return;}
+    if index==4 {
+        if !v.settings_confirm {crate::runtime::browser::settings_presentation(next,true,0,true);return;}
+        let mut empty=infinity_browser_core::favorites::Favorites::new();
+        let _=empty.set_preferences(v.settings.search,v.settings.favorites);
+        let ok=crate::storage::browser_favorites_save(console.current_user.0,console.current_session.0,empty.bytes()).is_ok();
+        if ok {unsafe {FAVORITES=empty;FAVORITES_OFFSET=0;FAVORITES_ERROR=0;}favorites_sync(console);}
+        crate::runtime::browser::settings_presentation(next,true,if ok {1}else{2},false);return;
+    }
+    match index {0..=2=>next.search=index as u8,3=>next.favorites=!next.favorites,5=>next=infinity_browser_core::settings::Settings::new(),_=>return}
+    let mut previous=[0u8;6];
+    let ok=crate::storage::browser_settings(console.current_user.0,console.current_session.0,Some(&next.bytes()),&mut previous).is_ok();
+    if ok {unsafe {FAVORITES_OWNER=None;}favorites_sync(console);}
+    crate::runtime::browser::settings_presentation(if ok {next}else{v.settings},true,if ok {1}else{2},false);
+}
+// ------------------------=
+// FUNC: settings_dimensions
+// DESC: Computes settings scale and visible height from the same window geometry as painting.
+// ------------------=
+fn settings_dimensions(console:&ConsoleRuntime)->(u32,u32) {
+    let s=console.browser_window_state();let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
+    let bounds=system.desktop_app_window_geometry(s.x,s.y,s.width,s.height,s.maximized).window;
+    let scale=system.scale().max(1).min((bounds.width as usize/760).max(1)) as u32;
+    (viewport(console).map(|(_,h)|h).unwrap_or(320*scale),scale)
+}
 
 // ------------------------=
 // FUNC: favorites_sync
@@ -35,6 +85,7 @@ fn favorites_sync(console:&ConsoleRuntime)->bool {unsafe {
         }
         FAVORITES_OWNER=Some(console.current_user.0);
     }
+    settings_sync(console,active);
     crate::runtime::browser::favorites_presentation(&*(&raw const FAVORITES),FAVORITES_OFFSET,FAVORITES_ERROR);active
 }}
 // ------------------------=
@@ -67,6 +118,8 @@ fn toggle_favorite(console:&ConsoleRuntime) {unsafe {
 // ------------------=
 pub(super) fn request_access(console:&mut ConsoleRuntime,url:&[u8]) {
     favorites_sync(console);
+    let view=crate::runtime::browser::presentation();
+    crate::runtime::browser::settings_presentation(view.settings,false,view.settings_notice,false);
     if url.len()>2048 {return;}
     let mut consent=Launch{owner:SecurityIdentity(console.current_session.0),url:[0;2048],length:url.len(),stage:0,size:(0,0)};
     consent.url[..url.len()].copy_from_slice(url);
@@ -146,7 +199,7 @@ fn viewport(console:&ConsoleRuntime)->Option<(u32,u32)> {
     let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
-    let layout=Layout::new(bounds.width,bounds.height,scale as u32)?;
+    let layout=Layout::new(bounds.width,bounds.height,scale as u32)?.with_favorites(crate::runtime::browser::presentation().settings.favorites);
     Some((layout.content.width,layout.content.height))
 }
 
@@ -240,6 +293,18 @@ pub(super) fn close() {unsafe {
 // DESC: Admits native text and editing keys as complete press/release pairs for focused web content.
 // ------------------=
 pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
+    let settings=crate::runtime::browser::presentation();
+    if settings.settings_open {
+        if matches!(key,ConsoleKey::Escape) {settings_action(console,6);}
+        else if matches!(key,ConsoleKey::Enter|ConsoleKey::Character(b' ')) {settings_action(console,settings.settings_focus);}
+        else if let ConsoleKey::Tab(reverse)=key {
+            let focus=(settings.settings_focus+if reverse {6}else{1})%7;
+            let (height,scale)=settings_dimensions(console);
+            let r=infinity_browser_core::settings::control(infinity_browser_core::Viewport{x:0,y:0,width:760*scale,height},scale,focus);
+            crate::runtime::browser::settings_position(focus,(r.y as u32+40*scale).saturating_sub(height));
+        }
+        return;
+    }
     if let ConsoleKey::Shortcut(value)=key {
         let mut command=abi::Command::empty();
         match value {
@@ -305,7 +370,7 @@ fn navigate_address(console:&mut ConsoleRuntime) {
     let mut command=abi::Command::empty();command.kind=abi::NAVIGATE;
     let Ok(input)=core::str::from_utf8(&bytes[..length]) else{return;};
     let Ok((_,length))=infinity_browser_core::omnibox::resolve(input,
-        "https://www.google.com/search?q=",&mut command.text) else{return;};
+        view.settings.search_prefix(),&mut command.text) else{return;};
     command.length=length as u32;
     let retained=unsafe {
         if let Some(launch)=(&mut *(&raw mut LAUNCH)).as_mut().filter(|launch|
@@ -331,6 +396,8 @@ fn navigate_address(console:&mut ConsoleRuntime) {
 // DESC: Retains add-tab gestures across worker startup and mailbox pressure instead of silently discarding clicks.
 // ------------------=
 fn new_tab(console:&mut ConsoleRuntime) {
+    let view=crate::runtime::browser::presentation();
+    crate::runtime::browser::settings_presentation(view.settings,false,view.settings_notice,false);
     unsafe {
         if (&*(&raw const LAUNCH)).as_ref().is_some_and(|launch|
             launch.owner==SecurityIdentity(console.current_session.0) && launch.stage<3) {
@@ -352,22 +419,33 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
-    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|layout|layout.with_tab_count(crate::runtime::browser::presentation().tab_count)) else{return false;};
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|layout|layout.with_tab_count(crate::runtime::browser::presentation().tab_count).with_favorites(crate::runtime::browser::presentation().settings.favorites)) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
-    if crate::runtime::browser::presentation().permission!=0 {
+    let view=crate::runtime::browser::presentation();
+    if layout.menu.local(x,y).is_some() {
+        crate::runtime::browser::settings_position(6,0);
+        crate::runtime::browser::settings_presentation(view.settings,!view.settings_open,view.settings_notice,false);return true;
+    }
+    if !view.settings_open && view.permission!=0 {
         if layout.download_save.local(x,y).is_some() {approve_access(console);}
         else if layout.download_discard.local(x,y).is_some() {console.close_desktop_app();}
         else if layout.close.local(x,y).is_some() {console.close_desktop_app();}
         return true;
     }
-    if crate::runtime::browser::presentation().download_state!=0 && layout.download_card.local(x,y).is_some() {
+    if !view.settings_open && view.download_state!=0 && layout.download_card.local(x,y).is_some() {
         if layout.download_save.local(x,y).is_some() {save_download(console);}
         if layout.download_discard.local(x,y).is_some() {unsafe {DOWNLOAD=None;}crate::runtime::browser::download_presentation(&[],0);}
         return true;
     }
     let mut command=abi::Command::empty();
     let view=crate::runtime::browser::presentation();
+    if view.settings_open && layout.content.local(x,y).is_some() {
+        let content=infinity_browser_core::Viewport{y:layout.content.y-view.settings_scroll as i32,..layout.content};
+        for index in 0..7 {if infinity_browser_core::settings::control(content,scale as u32,index).local(x,y).is_some() {
+            settings_action(console,index);poll(console);break;
+        }}return true;
+    }
     if layout.favorites.local(x,y).is_some() {
         for index in 0..layout.favorite_slots() {
             if layout.favorite_item(index).is_some_and(|r|r.local(x,y).is_some()) {
@@ -383,6 +461,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     for index in 0..view.tab_count {
         let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
         if tab.local(x,y).is_some_and(|(x,y)|infinity_browser_core::tab_style::contains(tab.width,tab.height,x,y)) {
+            crate::runtime::browser::settings_presentation(view.settings,false,view.settings_notice,false);
             if close.local(x,y).is_some() && view.tab_count==1 {console.close_desktop_app();return true;}
             command.kind=if close.local(x,y).is_some(){abi::TAB_CLOSE}else{abi::TAB_SELECT};
             command.a=view.tabs[index].id;
@@ -399,9 +478,9 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
             else if FAVORITES_OFFSET+slots<view.favorite_count {FAVORITES_OFFSET+=slots;}
             favorites_sync(console);
         }return true;},
-        Control::Address=>crate::runtime::browser::focus_address(true),
-        Control::Go=>navigate_address(console),
-        Control::Back=>{if view.history&1!=0 {command.kind=abi::BACK;}},
+        Control::Address=>{crate::runtime::browser::settings_presentation(view.settings,false,view.settings_notice,false);crate::runtime::browser::focus_address(true);},
+        Control::Go=>{crate::runtime::browser::settings_presentation(view.settings,false,view.settings_notice,false);navigate_address(console);},
+        Control::Back=>{if view.settings_open {settings_action(console,6);return true;}if view.history&1!=0 {command.kind=abi::BACK;}},
         Control::Forward=>{if view.history&2!=0 {command.kind=abi::FORWARD;}},
         Control::Reload=>{
             if unsafe {LAUNCH.is_none()} {navigate_address(console);return true;}
@@ -413,8 +492,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
         Control::Close=>console.close_desktop_app(),
         Control::Content=>{crate::runtime::browser::focus_address(false);return false;},
         Control::Menu=>{
-            let url=&view.address[..view.address_length];
-            request_access(console,if url.starts_with(b"https://") {url}else{b"https://example.com/"});
+            crate::runtime::browser::settings_presentation(view.settings,!view.settings_open,0,false);
         },
         _=>return false,
     }
@@ -429,12 +507,19 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
 // DESC: Maps desktop wheel input to viewport-local Servo coordinates without entering the engine on the UI CPU.
 // ------------------=
 pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
+    let view=crate::runtime::browser::presentation();
+    if view.settings_open {
+        let (height,scale)=settings_dimensions(console);
+        let limit=(320*scale).saturating_sub(height);
+        let next=(view.settings_scroll as i32-vertical as i32*32*scale as i32).clamp(0,limit as i32) as u32;
+        crate::runtime::browser::settings_position(view.settings_focus,next);return true;
+    }
     if vertical==0 {return false;}
     let state=console.browser_window_state();
     let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
-    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32) else{return false;};
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|l|l.with_favorites(crate::runtime::browser::presentation().settings.favorites)) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
     let Some((x,y))=layout.content.local(x,y) else{return false;};
@@ -453,6 +538,7 @@ pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
 // DESC: Translates desktop pointer packets to web coordinates and preserves captured releases outside the page.
 // ------------------=
 pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->bool {
+    if crate::runtime::browser::presentation().settings_open {return false;}
     if crate::runtime::browser::presentation().permission!=0 {return false;}
     let captured=unsafe {(&*(&raw const POINTER)).captured()};
     if capture_only && !captured {return false;}
@@ -461,7 +547,7 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
     let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
-    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32) else{return false;};
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|l|l.with_favorites(crate::runtime::browser::presentation().settings.favorites)) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
     let view=crate::runtime::browser::presentation();
