@@ -47,7 +47,8 @@ impl DisplayDevice {
             .desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
         let view=crate::runtime::browser::presentation();
         let scale=self.ui_scale().max(1).min((window.width as usize/760).max(1));
-        let Some(layout)=Layout::new(window.width,window.height,scale as u32).map(|layout|layout.with_tab_count(view.tab_count).with_favorites(view.settings.favorites)) else {return;};
+        let tab_count=if view.welcome_open {1}else{view.tab_count};
+        let Some(layout)=Layout::new(window.width,window.height,scale as u32).map(|layout|layout.with_tab_count(tab_count).with_favorites(view.settings.favorites)) else {return;};
         if !self.recording_surface {
             unsafe {
                 if REVISION!=Some(view.revision) && infinity_browser_core::damage::chrome_only(PAGE_KEY,view.page_key()) {
@@ -73,16 +74,16 @@ impl DisplayDevice {
         for (index,r) in [layout.minimize,layout.maximize,layout.close].into_iter().enumerate() {
             let r=offset(r);self.browser_glyph(r,7+index,true,scale);
         }
-        for index in 0..view.tab_count {
-            let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
+        for index in 0..tab_count {
+            let Some((tab,close))=layout.tab(index,tab_count) else {continue;};
             let tab=offset(tab);let close=offset(close);let entry=&view.tabs[index];
-            self.browser_tab(tab,entry.id==view.active_tab,entry.id==view.hovered_tab);
+            self.browser_tab(tab,view.welcome_open || entry.id==view.active_tab,entry.id==view.hovered_tab);
             if tab.width>=112*scale as u32 {
                 self.browser_glyph(Viewport{x:tab.x+28*scale as i32,y:tab.y+10*scale as i32,width:16*scale as u32,height:16*scale as u32},10,true,scale);
             }
             self.browser_label(Viewport{x:tab.x+52*scale as i32,y:tab.y+11*scale as i32,
                 width:tab.width.saturating_sub(100*scale as u32),height:20*scale as u32},
-                if entry.length==0 {b"New tab"}else{&entry.title[..entry.length]},14*scale,false);
+                if view.welcome_open {b"Welcome"}else if entry.length==0 {b"New tab"}else{&entry.title[..entry.length]},14*scale,false);
             if view.hovered_tab==entry.id && view.hovered_close {
                 self.fill_rounded_rect_alpha(close.x as usize,close.y as usize,close.width as usize,close.height as usize,5*scale,92,76,158,170);
             }
@@ -105,7 +106,7 @@ impl DisplayDevice {
         }
         let address=offset(layout.address);
         self.browser_surface(address,skin::ADDRESS);
-        self.browser_glyph(Viewport{x:address.x+8*scale as i32,y:address.y+4*scale as i32,width:24*scale as u32,height:24*scale as u32},5,true,scale);
+        self.browser_glyph(Viewport{x:address.x+8*scale as i32,y:address.y+4*scale as i32,width:24*scale as u32,height:24*scale as u32},if view.welcome_open {14}else{5},true,scale);
         let text=if view.address_focused {&view.edit[..view.edit_length]}else{&view.address[..view.address_length]};
         let available=(address.width as usize).saturating_sub(48*scale);
         let caret=view.caret.min(text.len());
@@ -124,7 +125,7 @@ impl DisplayDevice {
             self.fill_rect(address.x as usize+40*scale,address.y as usize+7*scale,width,18*scale,18,91,132);
         }
         self.browser_label(Viewport{x:address.x+40*scale as i32,y:address.y+9*scale as i32,
-            width:available as u32,height:20*scale as u32},&text[start..],14*scale,false);
+            width:available as u32,height:20*scale as u32},if view.welcome_open && text.is_empty() && !view.address_focused {b"Search or enter an address"}else{&text[start..]},14*scale,false);
         if view.address_focused && view.caret_visible && !view.address_selected {
             let x=browser_text_width(&text[start..caret],14*scale);
             self.fill_rect(address.x as usize+40*scale+x,address.y as usize+7*scale,scale,18*scale,134,158,255);
@@ -181,6 +182,8 @@ impl DisplayDevice {
                 _=>if view.settings_confirm {b"Click Confirm clear to permanently remove your favorites."}else{b"Changes save automatically. Downloads always require your approval."}};
             let r=label(24,240,690);
             if r.y>=visible.y && r.y+r.height as i32<=visible.y+visible.height as i32 {self.browser_label(r,note,14*scale,false);}
+        } else if view.welcome_open {
+            self.browser_welcome(content,scale,view.welcome_focus,view.welcome_scroll);
         } else if view.error!=0 {
             use infinity_browser_core::startup::Error;
             let detail:&[u8]=match view.error {
@@ -228,7 +231,7 @@ impl DisplayDevice {
         }
         let status=offset(layout.status);
         let mut message=[0u8;2304];
-        let footer=view.footer_status();let prefix=if view.settings_open {b"Browser settings - private to your profile" as &[u8]}else{footer.label()};
+        let footer=view.footer_status();let prefix=if view.settings_open {b"Browser settings - private to your profile" as &[u8]}else if view.welcome_open {b"Welcome - ready to browse"}else{footer.label()};
         message[..prefix.len()].copy_from_slice(prefix);let mut length=prefix.len();
         if !view.settings_open && footer==infinity_browser_core::page_status::Status::Loading {
             message[length..length+view.address_length].copy_from_slice(&view.address[..view.address_length]);length+=view.address_length;
@@ -258,11 +261,11 @@ impl DisplayDevice {
             for (i,label) in [(1,b"<" as &[u8]),(2,b">"),(3,b"X")] {let r=offset(layout.find_control(i));
                 self.browser_surface(r,skin::button(false,skin::Interaction::Normal));self.browser_label(Viewport{y:r.y+9*scale as i32,..r},label,14*scale,true);}
         }
-        for index in 0..if view.chrome_menu==4 {view.tab_count}else{3} {
+        for index in 0..if view.chrome_menu==4 {tab_count}else{3} {
             let Some(r)=layout.menu_item(view.chrome_menu,index) else {continue;};let r=offset(r);
             self.browser_surface(r,skin::button(false,if index==view.menu_focus {skin::Interaction::Hovered}else{skin::Interaction::Normal}));
             let name:&[u8]=match view.chrome_menu {2=>b"Browser settings",3=>b"Find on page    Ctrl+F",4=>{
-                let tab=&view.tabs[index];if tab.length==0 {b"New tab"}else{&tab.title[..tab.length]}
+                let tab=&view.tabs[index];if view.welcome_open {b"Welcome"}else if tab.length==0 {b"New tab"}else{&tab.title[..tab.length]}
             },_=>match index {0=>b"New tab     Ctrl+T",1=>b"Close tab   Ctrl+W",_=>b"Close window"}};
             if view.chrome_menu==4 && view.tabs[index].id==view.active_tab {self.fill_rect(r.x as usize+3*scale,r.y as usize+10*scale,3*scale,12*scale,34,211,238);}
             self.browser_label(Viewport{x:r.x+12*scale as i32,y:r.y+(r.height.saturating_sub(14*scale as u32)/2) as i32,width:r.width-24*scale as u32,..r},name,14*scale,false);
@@ -273,6 +276,13 @@ impl DisplayDevice {
     // DESC: Measures and elides authored-size chrome typography without inheriting oversized desktop labels.
     // ------------------=
     fn browser_label(&mut self,r:Viewport,text:&[u8],pixels:usize,center:bool) {
+        self.browser_label_color(r,text,pixels,center,(222,228,246));
+    }
+    // ------------------------=
+    // FUNC: browser_label_color
+    // DESC: Uses the same authored Inter metrics for semantic welcome typography colors.
+    // ------------------=
+    fn browser_label_color(&mut self,r:Viewport,text:&[u8],pixels:usize,center:bool,color:(u8,u8,u8)) {
         let mut label=[0u8;2048];
         let length=text.len().min(label.len()-3);
         label[..length].copy_from_slice(&text[..length]);
@@ -295,10 +305,60 @@ impl DisplayDevice {
             if let Some(left)=previous {x=x.saturating_add_signed(kern[left*95+index] as isize-128);}
             for gy in 0..size+6 {for gx in 0..size {
                 let alpha=atlas[gy*size*95+index*size+gx];
-                if alpha!=0 {self.blend_color((x+gx) as i32,r.y+gy as i32,222,228,246,alpha);}
+                if alpha!=0 {self.blend_color((x+gx) as i32,r.y+gy as i32,color.0,color.1,color.2,alpha);}
             }}
             x+=metrics[index] as usize;previous=Some(index);
         }
+    }
+    // ------------------------=
+    // FUNC: browser_welcome
+    // DESC: Renders the approved charcoal composition with real native controls and transparent hero artwork.
+    // ------------------=
+    fn browser_welcome(&mut self,content:Viewport,scale:usize,focus:usize,scroll:u32) {
+        let old_clip=self.render_clip;
+        self.fill_rect(content.x as usize,content.y as usize,content.width as usize,content.height as usize,32,33,36);
+        let Some(clip)=self.clipped_render_region(content.x.max(0) as usize,content.y.max(0) as usize,content.width as usize,content.height as usize) else {return;};
+        self.render_clip=Some(clip);
+        let l=infinity_browser_core::welcome::Layout::new(content,scale as u32,scroll);
+        let width=l.area.width/scale as u32;
+        let copy_width=if l.narrow {width-64}else{width/2-24};
+        for (y,text,color,size) in [(24,b"Welcome to" as &[u8],(248,249,250),28),
+            (62,b"Infinity Browser",(34,211,238),28),(110,b"Your next discovery starts here.",(196,200,207),14),
+            (132,b"Search, explore, and make the web your own.",(196,200,207),14)] {
+            let r=l.rect(32,y,copy_width,36);
+            if r.y>=content.y && r.y+r.height as i32<=content.y+content.height as i32 {self.browser_label_color(r,text,size*scale,false,color);}
+        }
+        let hero=l.hero();
+        let bitmap=infinity_browser_core::welcome::HERO;
+        let sw=u32::from_le_bytes(bitmap[18..22].try_into().unwrap()) as usize;
+        let sh=i32::from_le_bytes(bitmap[22..26].try_into().unwrap()).unsigned_abs() as usize;
+        let w=(hero.height as usize*sw/sh).min(hero.width as usize);let h=w*sh/sw;
+        let y=hero.y+(hero.height as i32-h as i32)/2;
+        if y>=0 {self.paint_bitmap_alpha_fit_rect(bitmap,hero.x as usize+(hero.width as usize-w)/2,y as usize,w,h);}
+        for index in 0..2 {
+            let r=l.button(index);if r.y<content.y || r.y+r.height as i32>content.y+content.height as i32 {continue;}
+            self.browser_surface(r,skin::button(index==0,if index==focus {skin::Interaction::Hovered}else{skin::Interaction::Normal}));
+            self.browser_label_color(Viewport{y:r.y+10*scale as i32,..r},if index==0 {b"Start browsing"}else{b"Browser settings"},14*scale,true,if index==0 {(3,27,44)}else{(231,242,250)});
+            if index==focus {self.outline_rounded_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize,8*scale,34,211,238);}
+        }
+        for (index,(title,detail)) in [(b"Keep your place" as &[u8],b"Switch open tabs from View." as &[u8]),
+            (b"Save what matters",b"Star a page to add it to Favorites."),(b"Find it faster",b"Search page text with Ctrl+F.")].into_iter().enumerate() {
+            let r=l.card(index);if r.y<content.y || r.y+r.height as i32>content.y+content.height as i32 {continue;}
+            self.fill_rounded_rect_alpha(r.x as usize,r.y as usize,r.width as usize,r.height as usize,10*scale,41,43,47,255);
+            self.outline_rounded_rect(r.x as usize,r.y as usize,r.width as usize,r.height as usize,10*scale,68,71,77);
+            let inset=if l.narrow {56}else{12}*scale as i32;
+            let title_y=if l.narrow {10}else{44}*scale as i32;
+            let text=Viewport{x:r.x+inset,y:r.y+title_y,width:r.width-inset as u32-12*scale as u32,height:20*scale as u32};
+            self.browser_label_color(text,title,14*scale,!l.narrow,(248,249,250));
+            self.browser_label_color(Viewport{y:text.y+24*scale as i32,..text},detail,14*scale,!l.narrow,(196,200,207));
+            let icon=Viewport{x:if l.narrow {r.x+12*scale as i32}else{r.x+r.width as i32/2-12*scale as i32},y:r.y+10*scale as i32,width:24*scale as u32,height:24*scale as u32};
+            self.browser_glyph(icon,if index==0 {15}else if index==1 {16}else{14},true,scale);
+        }
+        let r=l.rect(32,if l.narrow {622}else{350},width-64,20);
+        if r.y>=content.y && r.y+r.height as i32<=content.y+content.height as i32 {
+            self.browser_label_color(r,b"Infinity AI is one click away on the side of your window.",14*scale,false,(164,172,182));
+        }
+        self.render_clip=old_clip;
     }
     // ------------------------=
     // FUNC: browser_tab
@@ -321,7 +381,7 @@ impl DisplayDevice {
     // ------------------=
     fn browser_glyph(&mut self,r:Viewport,glyph:usize,enabled:bool,scale:usize) {
         let cx=r.x+r.width as i32/2;let cy=r.y+r.height as i32/2;let s=scale as i32;
-        let color=if enabled {(196,207,232)}else{(91,108,139)};
+        let color=if enabled {if glyph>=14 {(34,211,238)}else{(196,207,232)}}else{(91,108,139)};
         let mut stroke=|x1:i32,y1:i32,x2:i32,y2:i32| {
             for offset in 0..scale as i32 {self.line(cx+x1*s,cy+y1*s+offset,cx+x2*s,cy+y2*s+offset,color.0,color.1,color.2);}
         };
@@ -335,7 +395,9 @@ impl DisplayDevice {
             8=>{stroke(-5,-5,5,-5);stroke(5,-5,5,5);stroke(5,5,-5,5);stroke(-5,5,-5,-5);}
             9=>{stroke(-5,-5,5,5);stroke(5,-5,-5,5);}
             10=>{for (a,b,c,d) in [(-5,-7,2,-7),(2,-7,5,-4),(5,-4,5,7),(5,7,-5,7),(-5,7,-5,-7),(2,-7,2,-3),(2,-3,5,-3),(-2,0,2,0),(-2,3,2,3)] {stroke(a,b,c,d);}}
-            12=>{for (a,b,c,d) in [(0,-8,2,-3),(2,-3,8,-2),(8,-2,4,2),(4,2,5,8),(5,8,0,5),(0,5,-5,8),(-5,8,-4,2),(-4,2,-8,-2),(-8,-2,-2,-3),(-2,-3,0,-8)] {stroke(a,b,c,d);}}
+            12|16=>{for (a,b,c,d) in [(0,-8,2,-3),(2,-3,8,-2),(8,-2,4,2),(4,2,5,8),(5,8,0,5),(0,5,-5,8),(-5,8,-4,2),(-4,2,-8,-2),(-8,-2,-2,-3),(-2,-3,0,-8)] {stroke(a,b,c,d);}}
+            14=>{for (a,b,c,d) in [(-6,-7,0,-8),(0,-8,5,-4),(5,-4,5,1),(5,1,0,5),(0,5,-6,4),(-6,4,-9,-1),(-9,-1,-6,-7),(4,4,9,9)] {stroke(a,b,c,d);}}
+            15=>{for (a,b,c,d) in [(-8,-3,3,-3),(3,-3,3,8),(3,8,-8,8),(-8,8,-8,-3),(-5,-6,6,-6),(6,-6,6,5),(-2,-9,9,-9),(9,-9,9,2)] {stroke(a,b,c,d);}}
             13=>{for (a,b,c,d) in [(-3,-6,3,-6),(3,-6,6,-3),(6,-3,6,3),(6,3,3,6),(3,6,-3,6),(-3,6,-6,3),(-6,3,-6,-3),(-6,-3,-3,-6),
                 (0,-9,0,-6),(0,6,0,9),(-9,0,-6,0),(6,0,9,0),(-6,-6,-4,-4),(4,4,6,6),(-6,6,-4,4),(4,-4,6,-6),(-2,-2,2,-2),(2,-2,2,2),(2,2,-2,2),(-2,2,-2,-2)] {stroke(a,b,c,d);}}
             _=>{stroke(-7,0,7,0);stroke(0,-7,0,7);}

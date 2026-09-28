@@ -149,6 +149,7 @@ pub fn diagnostic()->([u8;2048],usize) {unsafe {DIAGNOSTIC}}
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
+    pub welcome_open:bool,pub welcome_focus:usize,pub welcome_scroll:u32,
     pub find_open:bool,pub find_text:[u8;256],pub find_length:usize,pub find_result:u32,pub find_token:u32,
     pub chrome_menu:u8,pub menu_focus:usize,
     pub settings:infinity_browser_core::settings::Settings,pub settings_open:bool,pub settings_notice:u8,pub settings_confirm:bool,
@@ -172,6 +173,7 @@ const EMPTY_FAVORITE:FavoritePresentation=FavoritePresentation{title:[0;96],leng
 pub struct TabPresentation {pub id:u32,pub title:[u8;256],pub length:usize}
 const EMPTY_TAB:TabPresentation=TabPresentation{id:0,title:[0;256],length:0};
 static mut PRESENTATION:Presentation=Presentation{hovered_tab:0,hovered_close:false,frame_revision:0,address:[0;2048],address_length:0,title:[0;256],
+    welcome_open:false,welcome_focus:0,welcome_scroll:0,
     find_open:false,find_text:[0;256],find_length:0,find_result:0,find_token:0,
     chrome_menu:0,menu_focus:0,
     settings:infinity_browser_core::settings::Settings::new(),settings_open:false,settings_notice:0,settings_confirm:false,settings_focus:6,settings_scroll:0,
@@ -211,7 +213,7 @@ impl Presentation {
     pub fn page_key(&self)->infinity_browser_core::damage::PageKey {
         infinity_browser_core::damage::PageKey {frame:self.frame_revision,tab:self.active_tab,
             error:self.error,permission:self.permission,download:self.download_state,
-            download_content:self.download_revision ^ ((self.settings_open as u64)<<63) ^ ((self.settings_notice as u64)<<56)
+            download_content:self.download_revision ^ ((self.welcome_open as u64)<<62) ^ ((self.welcome_focus as u64)<<61) ^ (self.welcome_scroll as u64).rotate_left(17) ^ ((self.settings_open as u64)<<63) ^ ((self.settings_notice as u64)<<56)
                 ^ ((self.settings_confirm as u64)<<55) ^ ((self.settings.search as u64)<<52) ^ ((self.settings.favorites as u64)<<51)
                 ^ ((self.settings_focus as u64)<<48) ^ ((self.settings_scroll as u64)<<32)
                 ^ ((self.chrome_menu as u64)<<30) ^ ((self.menu_focus as u64)<<28)
@@ -226,6 +228,20 @@ impl Presentation {
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+// ------------------------=
+// FUNC: welcome_presentation
+// DESC: Publishes the local start page without starting a network worker or creating fake web history.
+// ------------------=
+pub fn welcome_presentation(open:bool,focus:usize,scroll:u32) {unsafe {
+    let v=&mut *(&raw mut PRESENTATION);
+    if open && !v.welcome_open {
+        v.address_length=0;v.edit_length=0;v.caret=0;v.address_focused=false;
+        v.loading=false;v.error=0;v.permission=0;v.history=0;v.find_open=false;
+    }
+    v.welcome_open=open;v.welcome_focus=focus;v.welcome_scroll=scroll;v.revision=v.revision.wrapping_add(1);
+    INFINITY_BROWSER_WELCOME.store(open as u32 | ((focus as u32)<<1) | (scroll<<8),Ordering::Release);
+}}
+#[no_mangle] pub static INFINITY_BROWSER_WELCOME:AtomicU32=AtomicU32::new(0);
 // ------------------------=
 // FUNC: find_presentation
 // DESC: Updates the native search strip and invalidates stale asynchronous search results.

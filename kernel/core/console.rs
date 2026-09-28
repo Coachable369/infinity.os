@@ -4848,7 +4848,7 @@ impl ConsoleRuntime {
             LauncherAction::WorldShift => self.worldshift_open(),
             LauncherAction::Browser => {
                 #[cfg(feature="native-browser")]
-                browser_controller::request_access(self,b"https://example.com/");
+                browser_controller::open_home(self);
             },
         }
     }

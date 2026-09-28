@@ -205,7 +205,7 @@ def browser_symbols(elf):
             continue
         for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK", "LOAD_REVISION", "LOADING", "PAGE_ERROR", "HISTORY",
                      "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION", "LOCATION_HASH", "DOWNLOAD_STATE",
-                     "FAVORITES_COUNT","FAVORITES_ERROR","FAVORITE_SAVED","FAVORITE_TITLE_HASH","FAVORITES_HASH","FOOTER_STATUS","DISPLAY_ADDRESS_HASH","SETTINGS","MENU","FIND","ACTIVE_TAB"):
+                     "FAVORITES_COUNT","FAVORITES_ERROR","FAVORITE_SAVED","FAVORITE_TITLE_HASH","FAVORITES_HASH","FOOTER_STATUS","DISPLAY_ADDRESS_HASH","SETTINGS","MENU","FIND","ACTIVE_TAB","WELCOME"):
             if fields[3] in ("infinity_kernel::runtime::browser::" + name,
                 "infinity_kernel::runtime::browser::" + name + " (.0)", "INFINITY_BROWSER_" + name):
                 result[name] = (int(fields[0], 16), int(fields[1], 16))
@@ -335,6 +335,7 @@ def main():
     parser.add_argument("--settings",action="store_true",help="Exercise native settings controls, save state, and detached reboot persistence")
     parser.add_argument("--chrome",action="store_true",help="Check File/Settings menus, URL gear and attached AI panel")
     parser.add_argument("--find-view",action="store_true",help="Search real page text and switch open tabs through View")
+    parser.add_argument("--welcome",action="store_true",help="Verify the local welcome, native settings, keyboard actions and real address navigation")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
     if args.accel=="hvf" and args.arch!="aarch64":
@@ -416,7 +417,7 @@ def main():
         counters = browser_symbols(artifacts / "installed-kernel.elf")
         if args.measure or args.lifecycle or args.reopen:
             assert "PEAK" in counters, "This optimized kernel does not expose peak-memory diagnostics"
-        if args.launcher or args.open_url:
+        if args.launcher or args.open_url or args.welcome:
             if args.open_url:
                 guest.launch("command",5)
                 guest.command("open https://example.com/")
@@ -442,6 +443,29 @@ def main():
                 receipt["pointer_during_load_seconds"]=[]
             else:
                 guest.command(command)
+        if args.welcome or args.launcher:
+            # ------------------------=
+            # FUNC: welcome_value
+            # DESC: Observes native UI state transitions rather than matching rendered prose.
+            # ------------------=
+            def welcome_value(name, expected):
+                deadline=time.monotonic()+15
+                while time.monotonic()<deadline:
+                    actual=int.from_bytes(guest.memory(*counters[name]),"little")
+                    if actual==expected:return
+                raise AssertionError(dict(counter=name,actual=actual,expected=expected))
+            welcome_value("WELCOME",1)
+            welcome_value("STATE",0)
+            welcome_value("NETWORK_COMPLETED",0)
+            wait_color(guest,"browser-welcome",110,270,(32,33,36))
+            guest.click(396,441);welcome_value("SETTINGS",0x10100)
+            guest.screenshot("browser-welcome-settings")
+            guest.key("esc");welcome_value("SETTINGS",256)
+            guest.key("tab");welcome_value("WELCOME",1)
+            guest.key("ret")
+            browser_text(guest,"https://example.com/");guest.key("ret")
+            welcome_value("WELCOME",0)
+            receipt["welcome_offline_settings_keyboard_navigation"]=True
         started = time.monotonic()
         deadline = started + 90
         while time.monotonic() < deadline:

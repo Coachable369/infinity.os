@@ -51,6 +51,18 @@ angular crystalline metal. Wide landscape, tight transparent padding.
 Production-pixel review: `tools/browser-tab-artwork-proof.rs` shows inactive,
 hover, active and active-hover left to right, plus crowded/full-width 2× examples.
 
+## Welcome hero and charcoal page
+
+Kit gap: no matching welcome-page illustration existed. `browser-welcome-hero-v1.png`
+is the built-in imagegen extraction of the approved browser mockup's blue/cyan
+glass infinity loop and reflection, with all surrounding UI removed and alpha preserved.
+`tools/build-browser-welcome-artwork.py` derives a bounded 960px-wide 32-bit BMP.
+Both native kernels embed that same BMP; both installed ESPs carry master and derivative.
+Use aspect-fit, never crop the loop or reflection. Charcoal page #202124, cards
+#292B2F, borders #44474D, accent #22D3EE. Reuse authored Inter atlases and native
+button states. `infinity-browser-core/welcome.rs` owns responsive spacing and hit targets.
+The tab-stack and search glyphs extend the existing native browser stroke family.
+
 ## Generation
 
 Created with the built-in image-generation tool, transparent background enabled.

@@ -22,6 +22,6 @@ for arch in args.arch or ("aarch64", "x86_64"):
             assert target.read_bytes() == source.read_bytes(), (arch, source.name)
 for kernel in args.kernel:
     with kernel.open("rb") as stream, mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as binary:
-        for source in kit.glob("*.rgba"):
+        for source in [*kit.glob("*.rgba"), kit / "browser-welcome-hero-v1.bmp"]:
             assert binary.find(source.read_bytes()) >= 0, (kernel, source.name)
 print("Selected installed design-kit payloads and kernel sprites match their source bytes")

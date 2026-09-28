@@ -93,6 +93,7 @@ fn favorites_sync(console:&ConsoleRuntime)->bool {unsafe {
 // DESC: Saves or removes the current destination only after an authenticated durable object commit succeeds.
 // ------------------=
 fn toggle_favorite(console:&ConsoleRuntime) {unsafe {
+    if crate::runtime::browser::presentation().welcome_open {return;}
     if FAVORITES_ERROR==3 {FAVORITES_OWNER=None;}
     if !favorites_sync(console) || matches!(FAVORITES_ERROR,2|3) {return;}
     let view=crate::runtime::browser::presentation();let url=&view.address[..view.address_length];
@@ -113,10 +114,42 @@ fn toggle_favorite(console:&ConsoleRuntime) {unsafe {
 }}
 
 // ------------------------=
+// FUNC: open_home
+// DESC: Opens a local start page for a new session while preserving an existing browser's tabs.
+// ------------------=
+pub(super) fn open_home(console:&mut ConsoleRuntime) {
+    if !favorites_sync(console) {return;}
+    let resume=console.browser_window.visible || unsafe {(&*(&raw const LAUNCH)).as_ref()
+        .is_some_and(|l|l.stage<3 && l.owner==SecurityIdentity(console.current_session.0))};
+    if console.mode!=ConsoleMode::Desktop {console.enter_desktop();}
+    console.store_active_app_window();console.desktop_app=DesktopAppKind::Browser;
+    console.browser_window.visible=true;console.load_active_app_window();
+    console.ai_chat_focus=0;console.shell_menu=0;
+    if !resume {
+        let v=crate::runtime::browser::presentation();
+        crate::runtime::browser::settings_presentation(v.settings,false,0,false);
+        crate::runtime::browser::chrome_menu_presentation(0,0);
+        crate::runtime::browser::welcome_presentation(true,0,0);
+    }
+}
+// ------------------------=
+// FUNC: welcome_action
+// DESC: Dispatches start-page controls to real address editing or persisted browser preferences.
+// ------------------=
+fn welcome_action(index:usize) {
+    let v=crate::runtime::browser::presentation();
+    crate::runtime::browser::welcome_presentation(true,index,v.welcome_scroll);
+    if index==0 {crate::runtime::browser::focus_address(true);}
+    else {crate::runtime::browser::focus_address(false);crate::runtime::browser::settings_position(6,0);
+        crate::runtime::browser::settings_presentation(v.settings,true,v.settings_notice,false);}
+}
+
+// ------------------------=
 // FUNC: request_access
 // DESC: Opens the browser immediately under the signed-in user's Network Settings policy.
 // ------------------=
 pub(super) fn request_access(console:&mut ConsoleRuntime,url:&[u8]) {
+    crate::runtime::browser::welcome_presentation(false,0,0);
     crate::runtime::browser::chrome_menu_presentation(0,0);
     favorites_sync(console);
     let view=crate::runtime::browser::presentation();
@@ -231,6 +264,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
     if url.len()>2048 || !(url.starts_with(b"https://") || url.starts_with(b"http://")) || core::str::from_utf8(url).is_err() {
         console.output.write_line(b"Usage: browser https://example.com/");return true;
     }
+    crate::runtime::browser::welcome_presentation(false,0,0);
     let owner=SecurityIdentity(console.current_session.0);
     let now=crate::ui::performance::monotonic_ns().unwrap_or(0)/1_000_000_000;
     let caps=crate::runtime::with_runtime(|runtime| {
@@ -281,6 +315,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
 // DESC: Retains a close request until the worker mailbox accepts it, superseding pending navigation.
 // ------------------=
 pub(super) fn close() {unsafe {
+    crate::runtime::browser::welcome_presentation(false,0,0);
     crate::runtime::browser::chrome_menu_presentation(0,0);
     NEW_TABS=0;
     CONSENT=None;crate::runtime::browser::permission_presentation(0);
@@ -355,6 +390,13 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
         else if matches!(key,ConsoleKey::Escape|ConsoleKey::Tab(_)) {crate::runtime::browser::focus_address(false);}
         else if let Some(key)=text_edit_key(key) {crate::runtime::browser::edit_address(key);}
         return;
+    }
+    if settings.welcome_open {
+        match key {
+            ConsoleKey::Tab(_)=>crate::runtime::browser::welcome_presentation(true,1-settings.welcome_focus,0),
+            ConsoleKey::Enter|ConsoleKey::Character(b' ')=>welcome_action(settings.welcome_focus),
+            _=>{},
+        }return;
     }
     let mut down=abi::Command::empty();down.kind=abi::KEY;down.flags=abi::KEY_DOWN|abi::KEY_NAMED;
     down.a=match key {
@@ -444,6 +486,7 @@ fn menu_action(console:&mut ConsoleRuntime,menu:u8,index:usize) {
     if menu==3 && index==0 {open_find();}
     else if menu==4 {
         let v=crate::runtime::browser::presentation();
+        if v.welcome_open {crate::runtime::browser::settings_presentation(v.settings,false,0,false);return;}
         if index<v.tab_count {let mut c=abi::Command::empty();c.kind=abi::TAB_SELECT;c.a=v.tabs[index].id;
             if enqueue(console,c) {poll(console);}}
     } else if menu==2 && index==0 {
@@ -489,7 +532,8 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
     let bounds=system.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window;
     let scale=system.scale().max(1).min((bounds.width as usize/760).max(1));
-    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|layout|layout.with_tab_count(crate::runtime::browser::presentation().tab_count).with_favorites(crate::runtime::browser::presentation().settings.favorites)) else{return false;};
+    let current=crate::runtime::browser::presentation();
+    let Some(layout)=Layout::new(bounds.width,bounds.height,scale as u32).map(|layout|layout.with_tab_count(if current.welcome_open {1}else{current.tab_count}).with_favorites(current.settings.favorites)) else{return false;};
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
     let view=crate::runtime::browser::presentation();
@@ -498,7 +542,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
             crate::runtime::browser::chrome_menu_presentation(if view.chrome_menu==menu {0}else{menu},0);return true;}
     }
     if view.chrome_menu!=0 {
-        for index in 0..if view.chrome_menu==4 {view.tab_count}else{3} {if layout.menu_item(view.chrome_menu,index).is_some_and(|r|r.local(x,y).is_some()) {
+        for index in 0..if view.chrome_menu==4 {if view.welcome_open {1}else{view.tab_count}}else{3} {if layout.menu_item(view.chrome_menu,index).is_some_and(|r|r.local(x,y).is_some()) {
             menu_action(console,view.chrome_menu,index);return true;
         }}
         crate::runtime::browser::chrome_menu_presentation(0,0);return true;
@@ -532,6 +576,14 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
             settings_action(console,index);poll(console);break;
         }}return true;
     }
+    if view.welcome_open && layout.content.local(x,y).is_some() {
+        let welcome=infinity_browser_core::welcome::Layout::new(layout.content,scale as u32,view.welcome_scroll);
+        for index in 0..2 {if welcome.button(index).local(x,y).is_some() {welcome_action(index);}}
+        return true;
+    }
+    if view.welcome_open && layout.tab(0,1).is_some_and(|(_,close)|close.local(x,y).is_some()) {
+        console.close_desktop_app();return true;
+    }
     if layout.favorites.local(x,y).is_some() {
         for index in 0..layout.favorite_slots() {
             if layout.favorite_item(index).is_some_and(|r|r.local(x,y).is_some()) {
@@ -544,7 +596,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
             }
         }
     }
-    for index in 0..view.tab_count {
+    for index in 0..if view.welcome_open {0}else{view.tab_count} {
         let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
         if tab.local(x,y).is_some_and(|(x,y)|infinity_browser_core::tab_style::contains(tab.width,tab.height,x,y)) {
             crate::runtime::browser::settings_presentation(view.settings,false,view.settings_notice,false);
@@ -601,6 +653,16 @@ pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
         let next=(view.settings_scroll as i32-vertical as i32*32*scale as i32).clamp(0,limit as i32) as u32;
         crate::runtime::browser::settings_position(view.settings_focus,next);return true;
     }
+    if view.welcome_open {
+        let (height,scale)=settings_dimensions(console);
+        let s=console.browser_window_state();
+        let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
+        let bounds=system.desktop_app_window_geometry(s.x,s.y,s.width,s.height,s.maximized).window;
+        let l=infinity_browser_core::welcome::Layout::new(infinity_browser_core::Viewport{x:0,y:0,width:bounds.width,height},scale,0);
+        let limit=l.height().saturating_sub(height);
+        let next=(view.welcome_scroll as i32-vertical as i32*32*scale as i32).clamp(0,limit as i32) as u32;
+        crate::runtime::browser::welcome_presentation(true,view.welcome_focus,next);return true;
+    }
     if vertical==0 {return false;}
     let state=console.browser_window_state();
     let system=SystemLayout::new(console.system.framebuffer_width,console.system.framebuffer_height);
@@ -625,7 +687,7 @@ pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
 // DESC: Translates desktop pointer packets to web coordinates and preserves captured releases outside the page.
 // ------------------=
 pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->bool {
-    if crate::runtime::browser::presentation().settings_open {return false;}
+    if crate::runtime::browser::presentation().settings_open || crate::runtime::browser::presentation().welcome_open {return false;}
     if crate::runtime::browser::presentation().permission!=0 {return false;}
     let captured=unsafe {(&*(&raw const POINTER)).captured()};
     if capture_only && !captured {return false;}
