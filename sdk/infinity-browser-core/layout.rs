@@ -2,7 +2,7 @@
 use crate::Viewport;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Control { Back, Forward, Reload, Address, Go, Downloads, Menu, Minimize, Maximize, Close, Content, NewTab }
+pub enum Control { Back, Forward, Reload, Address, Go, Downloads, Menu, Minimize, Maximize, Close, Content, NewTab, Favorite, FavoritesPrevious, FavoritesNext }
 
 pub struct Layout {
     pub title: Viewport,
@@ -20,6 +20,10 @@ pub struct Layout {
     pub close: Viewport,
     pub content: Viewport,
     pub status: Viewport,
+    pub favorites: Viewport,
+    pub favorite: Viewport,
+    pub favorites_previous: Viewport,
+    pub favorites_next: Viewport,
     pub download_card: Viewport,
     pub download_save: Viewport,
     pub download_discard: Viewport,
@@ -59,7 +63,8 @@ impl Layout {
         let go_x = downloads_x - gap - go_width;
         let window_control = 32 * scale;
         let close_x = width - gutter - window_control;
-        let content_y = title_height + toolbar_height;
+        let favorites_y = title_height + toolbar_height;
+        let content_y = favorites_y + 36*scale;
         Some(Self {
             title: rect(0, 0, width, title_height),
             tabs: rect(104 * scale, 12 * scale, width - 264 * scale, tab_height),
@@ -76,6 +81,10 @@ impl Layout {
             close: rect(close_x, 8 * scale, window_control, window_control),
             content: rect(0, content_y, width, height - content_y - status_height),
             status: rect(0, height - status_height, width, status_height),
+            favorites: rect(0,favorites_y,width,36*scale),
+            favorite: rect(gutter,favorites_y+4*scale,28*scale,28*scale),
+            favorites_previous: rect(width-gutter-64*scale,favorites_y+4*scale,28*scale,28*scale),
+            favorites_next: rect(width-gutter-28*scale,favorites_y+4*scale,28*scale,28*scale),
             download_card: rect(gutter,height-status_height-80*scale,width-2*gutter,72*scale),
             download_save: rect(width-gutter-212*scale,height-status_height-60*scale,96*scale,36*scale),
             download_discard: rect(width-gutter-108*scale,height-status_height-60*scale,96*scale,36*scale),
@@ -99,10 +108,25 @@ impl Layout {
             (self.minimize, Control::Minimize), (self.maximize, Control::Maximize),
             (self.close, Control::Close),
             (self.new_tab, Control::NewTab),
+            (self.favorite,Control::Favorite),(self.favorites_previous,Control::FavoritesPrevious),
+            (self.favorites_next,Control::FavoritesNext),
         ] {
             if bounds.local(x, y).is_some() { return Some(control); }
         }
         None
+    }
+    // ------------------------=
+    // FUNC: favorite_slots
+    // DESC: Keeps readable favorites targets and reserves fixed overflow controls.
+    // ------------------=
+    pub fn favorite_slots(&self)->usize {let scale=self.tabs.height/36;((self.favorites.width-144*scale)/(144*scale)).max(1) as usize}
+    // ------------------------=
+    // FUNC: favorite_item
+    // DESC: Shares exact favorite row geometry between painting and pointer dispatch.
+    // ------------------=
+    pub fn favorite_item(&self,index:usize)->Option<Viewport> {
+        if index>=self.favorite_slots() {return None;}let scale=self.tabs.height/36;
+        Some(Viewport{x:((52+144*index as u32)*scale) as i32,y:self.favorites.y+(4*scale) as i32,width:136*scale,height:28*scale})
     }
     // ------------------------=
     // FUNC: tab
@@ -124,6 +148,22 @@ impl Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: favorites_stay_between_navigation_and_content
+    // DESC: Verifies readable overflow slots and independent star, page and navigation hits at every scale.
+    // ------------------=
+    #[test] fn favorites_stay_between_navigation_and_content() {
+        for scale in 1..=4 {for width in [760,1024,1920] {
+            let l=Layout::new(width*scale,480*scale,scale).unwrap();
+            assert_eq!(l.favorites.y+l.favorites.height as i32,l.content.y);
+            assert!(l.address.y+l.address.height as i32<=l.favorites.y);
+            assert_eq!(l.hit(l.favorite.x,l.favorite.y),Some(Control::Favorite));
+            let mut right=l.favorite.x+l.favorite.width as i32;
+            for i in 0..l.favorite_slots() {let r=l.favorite_item(i).unwrap();assert!(r.x>right);right=r.x+r.width as i32;
+                assert!(l.favorites.local(r.x,r.y).is_some());assert!(l.content.local(r.x,r.y).is_none());
+            }assert!(right<l.favorites_previous.x);assert!(l.favorite_item(l.favorite_slots()).is_none());
+        }}
+    }
     // ------------------------=
     // FUNC: tab_targets_never_overlap_navigation
     // DESC: Exercises all supported tab counts and scales, including separate close and new-tab targets.

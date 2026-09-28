@@ -149,6 +149,8 @@ pub fn diagnostic()->([u8;2048],usize) {unsafe {DIAGNOSTIC}}
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
+    pub favorites:[FavoritePresentation;32],pub favorite_count:usize,pub favorite_offset:usize,
+    pub favorite_saved:bool,pub favorite_error:u8,pub hovered_favorite:usize,
     pub hovered_tab:u32,pub hovered_close:bool,
     pub frame_revision:u64,
     pub tabs:[TabPresentation;8],pub tab_count:usize,pub active_tab:u32,
@@ -160,9 +162,13 @@ pub struct Presentation {
     pub loading:bool,pub input_busy:bool,pub history:u32,pub error:u32,pub revision:u64,
 }
 #[derive(Clone,Copy)]
+pub struct FavoritePresentation {pub title:[u8;96],pub length:usize}
+const EMPTY_FAVORITE:FavoritePresentation=FavoritePresentation{title:[0;96],length:0};
+#[derive(Clone,Copy)]
 pub struct TabPresentation {pub id:u32,pub title:[u8;256],pub length:usize}
 const EMPTY_TAB:TabPresentation=TabPresentation{id:0,title:[0;256],length:0};
 static mut PRESENTATION:Presentation=Presentation{hovered_tab:0,hovered_close:false,frame_revision:0,address:[0;2048],address_length:0,title:[0;256],
+    favorites:[EMPTY_FAVORITE;32],favorite_count:0,favorite_offset:0,favorite_saved:false,favorite_error:0,hovered_favorite:usize::MAX,
     tabs:[EMPTY_TAB;8],tab_count:0,active_tab:0,
     permission:0,
     download_name:[0;63],download_length:0,download_state:0,download_revision:0,
@@ -184,6 +190,14 @@ pub fn hover_tab(id:u32,close:bool) {unsafe {
 
 impl Presentation {
     // ------------------------=
+    // FUNC: footer_status
+    // DESC: Shares the exact visible status projection with installed behavioral instrumentation.
+    // ------------------=
+    pub fn footer_status(&self)->infinity_browser_core::page_status::Status {
+        infinity_browser_core::page_status::current(self.favorite_error,self.permission,self.input_busy,self.error,self.loading,
+            self.address_length>0&&self.tab_count>0)
+    }
+    // ------------------------=
     // FUNC: page_key
     // DESC: Separates engine/content changes from native address, caret, title and tab-label updates.
     // ------------------=
@@ -191,7 +205,8 @@ impl Presentation {
         infinity_browser_core::damage::PageKey {frame:self.frame_revision,tab:self.active_tab,
             error:self.error,permission:self.permission,download:self.download_state,
             download_content:self.download_revision,
-            loading:self.loading,busy:self.input_busy}
+            loading:self.loading,busy:self.input_busy,status:self.favorite_error as u64 ^
+                self.address[..self.address_length].iter().fold(0u64,|hash,b|hash.wrapping_mul(31).wrapping_add(*b as u64))}
     }
 }
 
@@ -200,6 +215,43 @@ impl Presentation {
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+// ------------------------=
+// FUNC: favorites_presentation
+// DESC: Projects committed native favorites into chrome without exposing storage to the renderer.
+// ------------------=
+pub fn favorites_presentation(favorites:&infinity_browser_core::favorites::Favorites,offset:usize,error:u8) {unsafe {
+    let view=&mut *(&raw mut PRESENTATION);
+    let saved=favorites.find(&view.address[..view.address_length]).is_some();
+    let mut changed=view.favorite_count!=favorites.count() || view.favorite_offset!=offset || view.favorite_error!=error || view.favorite_saved!=saved;
+    for index in 0..favorites.count() {
+        let title=favorites.get(index).unwrap().1;let row=&mut view.favorites[index];
+        if row.length!=title.len() || row.title[..row.length]!=*title {row.title[..title.len()].copy_from_slice(title);row.length=title.len();changed=true;}
+    }
+    view.favorite_count=favorites.count();view.favorite_offset=offset;view.favorite_error=error;view.favorite_saved=saved;
+    INFINITY_BROWSER_FAVORITES_COUNT.store(view.favorite_count as u32,Ordering::Release);
+    INFINITY_BROWSER_FAVORITES_ERROR.store(error as u32,Ordering::Release);
+    INFINITY_BROWSER_FAVORITE_SAVED.store(saved as u32,Ordering::Release);
+    INFINITY_BROWSER_FAVORITE_TITLE_HASH.store(favorites.find(&view.address[..view.address_length])
+        .and_then(|i|favorites.get(i)).map_or(0,|(_,title)|title.iter().fold(0xcbf29ce484222325u64,
+            |h,b|(h^(*b as u64)).wrapping_mul(0x100000001b3))),Ordering::Release);
+    INFINITY_BROWSER_FAVORITES_HASH.store(favorites.bytes().iter().fold(0xcbf29ce484222325u64,|h,b|(h^(*b as u64)).wrapping_mul(0x100000001b3)),Ordering::Release);
+    INFINITY_BROWSER_FOOTER_STATUS.store(view.footer_status() as u32,Ordering::Release);
+    if changed {view.revision=view.revision.wrapping_add(1);}
+}}
+#[no_mangle] pub static INFINITY_BROWSER_FAVORITES_COUNT:AtomicU32=AtomicU32::new(0);
+#[no_mangle] pub static INFINITY_BROWSER_FAVORITES_ERROR:AtomicU32=AtomicU32::new(0);
+#[no_mangle] pub static INFINITY_BROWSER_FAVORITE_SAVED:AtomicU32=AtomicU32::new(0);
+#[no_mangle] pub static INFINITY_BROWSER_FAVORITE_TITLE_HASH:AtomicU64=AtomicU64::new(0);
+#[no_mangle] pub static INFINITY_BROWSER_FAVORITES_HASH:AtomicU64=AtomicU64::new(0);
+#[no_mangle] pub static INFINITY_BROWSER_FOOTER_STATUS:AtomicU32=AtomicU32::new(0);
+#[no_mangle] pub static INFINITY_BROWSER_DISPLAY_ADDRESS_HASH:AtomicU64=AtomicU64::new(0);
+// ------------------------=
+// FUNC: hover_favorite
+// DESC: Highlights only the native favorite target under the pointer.
+// ------------------=
+pub fn hover_favorite(index:usize) {unsafe {let view=&mut *(&raw mut PRESENTATION);
+    if view.hovered_favorite!=index {view.hovered_favorite=index;view.revision=view.revision.wrapping_add(1);}
+}}
 // ------------------------=
 // FUNC: launch_presentation
 // DESC: Retains the requested address and exposes startup failure inside the browser instead of an invisible Console.
@@ -211,6 +263,8 @@ pub fn launch_presentation(url:&[u8],error:Option<infinity_browser_core::startup
     view.error=error.map_or(0,|error|error as u32);
     view.loading=error.is_none();
     view.revision=view.revision.wrapping_add(1);
+    INFINITY_BROWSER_DISPLAY_ADDRESS_HASH.store(view.address[..view.address_length].iter().fold(0xcbf29ce484222325u64,
+        |h,b|(h^(*b as u64)).wrapping_mul(0x100000001b3)),Ordering::Release);
 }}
 // ------------------------=
 // FUNC: frame_generation
@@ -368,6 +422,9 @@ pub fn poll_presentation()->bool {
         INFINITY_BROWSER_LOADING.store(view.loading as u32,Ordering::Release);
         INFINITY_BROWSER_PAGE_ERROR.store(view.error,Ordering::Release);
         INFINITY_BROWSER_HISTORY.store(view.history,Ordering::Release);
+        INFINITY_BROWSER_FOOTER_STATUS.store(view.footer_status() as u32,Ordering::Release);
+        INFINITY_BROWSER_DISPLAY_ADDRESS_HASH.store(view.address[..view.address_length].iter().fold(0xcbf29ce484222325u64,
+            |h,b|(h^(*b as u64)).wrapping_mul(0x100000001b3)),Ordering::Release);
         if changed {view.revision=view.revision.wrapping_add(1);}
         LAST_VIEW_REVISION=view.revision;
         changed
@@ -449,7 +506,8 @@ unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,leng
     if kind==abi::EVENT_TAB_SELECTED {ACTIVE_TAB.store(value,Ordering::Release);}
     if kind==abi::EVENT_MEMORY {INFINITY_BROWSER_PEAK.store(value as u64,Ordering::Release);return;}
     if kind==abi::EVENT_ALLOCATION_FAILURE {INFINITY_BROWSER_FAILED_ALLOCATION.store(value,Ordering::Release);return;}
-    if kind==abi::EVENT_ERROR && value!=3 {FAILURE.store(value+1,Ordering::Release);}
+    // Page/command errors belong to the selected view. Only worker termination
+    // may latch FAILURE; otherwise a later successful navigation cannot recover.
     if length>2048 {return;}
     let mut message=Event{kind,value,length,text:[0;2048]};
     if length>0 {message.text[..length].copy_from_slice(core::slice::from_raw_parts(text,length));}

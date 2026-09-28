@@ -204,7 +204,8 @@ def browser_symbols(elf):
         if len(fields) != 4:
             continue
         for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK", "LOAD_REVISION", "LOADING", "PAGE_ERROR", "HISTORY",
-                     "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION", "LOCATION_HASH", "DOWNLOAD_STATE"):
+                     "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION", "LOCATION_HASH", "DOWNLOAD_STATE",
+                     "FAVORITES_COUNT","FAVORITES_ERROR","FAVORITE_SAVED","FAVORITE_TITLE_HASH","FAVORITES_HASH","FOOTER_STATUS","DISPLAY_ADDRESS_HASH"):
             if fields[3] in ("infinity_kernel::runtime::browser::" + name,
                 "infinity_kernel::runtime::browser::" + name + " (.0)", "INFINITY_BROWSER_" + name):
                 result[name] = (int(fields[0], 16), int(fields[1], 16))
@@ -327,6 +328,10 @@ def main():
     parser.add_argument("--lifecycle", action="store_true", help="Check maximize/restore/minimize/close/reopen after the interaction page")
     parser.add_argument("--measure", action="store_true", help="Measure submission-to-real-page pixels and completion on the cold installed engine")
     parser.add_argument("--address", action="store_true", help="Type a new URL into the native address bar and require its real rendered page")
+    parser.add_argument("--favorites",action="store_true",help="Exercise durable favorites and detached cold reboot persistence")
+    parser.add_argument("--footer",action="store_true",help="Retry only footer loading, failed destination and recovery on an existing saved favorite")
+    parser.add_argument("--favorites-overflow",action="store_true",help="Exercise favorites overflow paging on an installed browser with one saved page")
+    parser.add_argument("--favorites-label",action="store_true",help="Verify same-title navigation preserves the document title when saving another favorite")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
     if args.accel=="hvf" and args.arch!="aarch64":
@@ -510,10 +515,10 @@ def main():
             if args.tabs:
                 # Bounds come from rendered page pixels, not a guessed desktop position.
                 # Kit chrome: 48px shared tab row and 48px navigation row.
-                tab_y=top-66
+                tab_y=top-102
                 guest.click(left+352,tab_y)
                 time.sleep(1)
-                guest.click(left+300,top-30)
+                guest.click(left+300,top-66)
                 guest.key("end")
                 for _ in range(len("about:blank")):
                     guest.key("backspace")
@@ -540,6 +545,127 @@ def main():
             wait_color(guest,"browser-address-navigation",400,400,(238,238,238))
             receipt["native_address_keyboard_navigation"]=True
             receipt["omnibox_shortcut_replaces_previous_address"]=True
+        if args.favorites:
+            # ------------------------=
+            # FUNC: value
+            # DESC: Reads the installed browser's typed state rather than matching visible prose.
+            # ------------------=
+            def value(name): return int.from_bytes(guest.memory(*counters[name]),"little")
+            # ------------------------=
+            # FUNC: expect
+            # DESC: Waits for a specific observable state transition with an unchanged bounded deadline.
+            # ------------------=
+            def expect(name,wanted):
+                deadline=time.monotonic()+30
+                while time.monotonic()<deadline:
+                    actual=value(name)
+                    if actual==wanted:return
+                    time.sleep(.1)
+                raise AssertionError(dict(counter=name,actual=actual,expected=wanted))
+            guest.key("ctrl","l");browser_text(guest,"https://example.com/");guest.key("ret")
+            wait_color(guest,"favorites-initial-page",400,400,(238,238,238));expect("FOOTER_STATUS",2)
+            expect("FAVORITES_COUNT",0)
+            guest.key("ctrl","d");expect("FAVORITES_COUNT",1);expect("FAVORITE_SAVED",1);expect("FAVORITES_ERROR",0)
+            # The browser is at the standard installed geometry; header row hit
+            # targets remain fixed independently of the document's CSS colors.
+            guest.click(132,207);expect("FAVORITES_COUNT",0);expect("FAVORITE_SAVED",0)
+            guest.click(132,207);expect("FAVORITES_COUNT",1)
+            saved_hash=value("FAVORITES_HASH")
+            guest.key("ctrl","l");browser_text(guest,"https://example.com/?other=1");guest.key("ret")
+            expect("FAVORITE_SAVED",0)
+            guest.click(214,207);expect("FAVORITE_SAVED",1);expect("FOOTER_STATUS",2)
+            guest.screenshot("browser-favorites")
+            receipt["favorites_add_remove_and_navigate"]=True
+            guest.stop();guest.boot(False);guest.authenticate();guest.launch("browser",5)
+            expect("FAVORITES_COUNT",1);expect("FAVORITES_HASH",saved_hash);expect("FAVORITES_ERROR",0)
+            guest.click(214,207);expect("FAVORITE_SAVED",1)
+            wait_color(guest,"browser-favorites-cold-reboot",400,400,(238,238,238));expect("FOOTER_STATUS",2)
+            receipt["favorites_detached_cold_reboot"]=True
+            receipt["favorites_payload_hash"]=saved_hash
+        if args.favorites or args.footer:
+            # ------------------------=
+            # FUNC: expect_footer
+            # DESC: Requires precise footer and destination state without depending on rendered wording.
+            # ------------------=
+            def expect_footer(name,wanted):
+                deadline=time.monotonic()+30
+                while time.monotonic()<deadline:
+                    actual=int.from_bytes(guest.memory(*counters[name]),"little")
+                    if actual==wanted:return
+                    time.sleep(.1)
+                raise AssertionError(dict(counter=name,actual=actual,expected=wanted))
+            failed_url="https://expired-isrgrootx1.letsencrypt.org/"
+            target_hash=0xcbf29ce484222325
+            for byte in failed_url.encode():target_hash=((target_hash^byte)*0x100000001b3)&((1<<64)-1)
+            guest.key("ctrl","l");browser_text(guest,failed_url);guest.key("ret")
+            expect_footer("FOOTER_STATUS",1);expect_footer("DISPLAY_ADDRESS_HASH",target_hash)
+            guest.screenshot("browser-footer-loading")
+            expect_footer("FOOTER_STATUS",8);expect_footer("PAGE_ERROR",4);expect_footer("DISPLAY_ADDRESS_HASH",target_hash)
+            guest.screenshot("browser-footer-error")
+            guest.click(214,207);expect_footer("FAVORITE_SAVED",1);expect_footer("FOOTER_STATUS",2);expect_footer("PAGE_ERROR",0)
+            wait_color(guest,"browser-footer-recovered",400,400,(238,238,238))
+            receipt["footer_loading_error_and_recovery"]=True
+            receipt["footer_failed_destination_matches_requested_url"]=True
+        if args.favorites_overflow:
+            # ------------------------=
+            # FUNC: wait_state
+            # DESC: Waits for a specific installed favorites or navigation state before the next gesture.
+            # ------------------=
+            def wait_state(name,wanted):
+                deadline=time.monotonic()+30
+                while time.monotonic()<deadline:
+                    actual=int.from_bytes(guest.memory(*counters[name]),"little")
+                    if actual==wanted:return
+                    time.sleep(.1)
+                raise AssertionError(dict(counter=name,actual=actual,expected=wanted))
+            # ------------------------=
+            # FUNC: url_hash
+            # DESC: Computes the shared observable URL identity for overflow navigation assertions.
+            # ------------------=
+            def url_hash(url):
+                value=0xcbf29ce484222325
+                for byte in url.encode():value=((value^byte)*0x100000001b3)&((1<<64)-1)
+                return value
+            wait_state("FAVORITES_COUNT",1)
+            for index in range(4):
+                url=f"https://example.com/?favorite={index}"
+                guest.key("ctrl","l");browser_text(guest,url);guest.key("ret")
+                wait_state("LOCATION_HASH",url_hash(url));wait_state("LOADING",0)
+                guest.key("ctrl","d");wait_state("FAVORITES_COUNT",index+2);wait_state("FAVORITES_ERROR",0)
+            guest.click(214,207);wait_state("LOCATION_HASH",url_hash("https://example.com/"))
+            guest.click(890,207);guest.click(214,207)
+            wait_state("LOCATION_HASH",url_hash("https://example.com/?favorite=3"))
+            guest.screenshot("browser-favorites-overflow")
+            guest.click(854,207);guest.click(214,207)
+            wait_state("LOCATION_HASH",url_hash("https://example.com/"));wait_state("LOADING",0)
+            guest.screenshot("browser-favorites-full-row")
+            receipt["favorites_overflow_paging_and_navigation"]=True
+        if args.favorites_label:
+            # ------------------------=
+            # FUNC: read_favorite
+            # DESC: Reads installed favorite data identity for a same-title navigation regression.
+            # ------------------=
+            def read_favorite(name):return int.from_bytes(guest.memory(*counters[name]),"little")
+            # ------------------------=
+            # FUNC: await_favorite
+            # DESC: Waits for an actual saved data transition rather than matching screen text.
+            # ------------------=
+            def await_favorite(name,wanted):
+                deadline=time.monotonic()+30
+                while time.monotonic()<deadline:
+                    actual=read_favorite(name)
+                    if actual==wanted:return
+                    time.sleep(.1)
+                raise AssertionError(dict(counter=name,actual=actual,expected=wanted))
+            await_favorite("FAVORITE_SAVED",1);await_favorite("LOADING",0)
+            title_hash=read_favorite("FAVORITE_TITLE_HASH");count=read_favorite("FAVORITES_COUNT")
+            assert title_hash!=0
+            guest.key("ctrl","l");browser_text(guest,"https://example.com/?favorite=label");guest.key("ret")
+            await_favorite("FAVORITE_SAVED",0);await_favorite("FOOTER_STATUS",2)
+            guest.key("ctrl","d");await_favorite("FAVORITES_COUNT",count+1)
+            await_favorite("FAVORITE_TITLE_HASH",title_hash);await_favorite("FAVORITES_ERROR",0)
+            guest.click(890,207);guest.screenshot("browser-favorite-title-preserved")
+            receipt["same_title_navigation_preserves_favorite_title"]=True
         if args.lifecycle:
             wait_color(guest,"browser-lifecycle-page",400,400,(255,0,0))
             guest.click(849,111)
@@ -591,8 +717,8 @@ def main():
             receipt["navigation"] = []
             left,top,right,bottom=page_color_bounds(guest)
             first,second=navigation_urls()
-            for label, x, y in (("link", left+40, top+32), ("back", left+38, top-30),
-                               ("forward", left+90, top-30), ("reload", left+140, top-30)):
+            for label, x, y in (("link", left+40, top+32), ("back", left+38, top-66),
+                               ("forward", left+90, top-66), ("reload", left+140, top-66)):
                 target_url = first if label == "back" else second
                 target_hash = 0xcbf29ce484222325
                 for byte in target_url.encode():

@@ -724,6 +724,47 @@ fn checkpoint_state(path: &[u8], content: &[u8]) -> Result<u32, object::ObjectEr
 }
 
 // ------------------------=
+// FUNC: browser_favorites_save
+// DESC: Commits a validated browser-owned per-profile object through native atomic checkpoint storage.
+// ------------------=
+pub(crate) fn browser_favorites_save(owner:[u8;16],session:[u8;16],content:&[u8])->Result<(),object::ObjectError> {
+    let path=browser_favorites_path(owner,session)?;
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store|match store.resolve(&path) {
+        Ok(id)=>{let mut previous=[0;infinity_browser_core::favorites::BYTES];store.read_browser_favorites(id,&mut previous)?;
+            store.checkpoint(&path,content).map(|_|())},
+        Err(object::ObjectError::NamespaceNotFound)=>store.create_attached(b"@browser-favorites",object::ObjectType::Metadata,
+            object::Space::System,content,&path).map(|_|()),
+        Err(error)=>Err(error),
+    })}
+    #[cfg(target_arch="x86")]
+    {let _=(path,content);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
+// FUNC: browser_favorites_path
+// DESC: Requires the precise live profile/session pair at each private object-store operation.
+// ------------------=
+fn browser_favorites_path(owner:[u8;16],session:[u8;16])->Result<[u8;57],object::ObjectError> {
+    let active=crate::runtime::with_runtime(|runtime|(0..crate::runtime::identity::MAX_SESSIONS)
+        .filter_map(|i|runtime.identity.session_nth(i)).any(|s|s.id.0==session && s.user.0==owner
+        && s.state==crate::runtime::identity::SessionState::Active)).unwrap_or(false);
+    if !active || owner==[0;16] {return Err(object::ObjectError::Unauthorized);}
+    Ok(infinity_browser_core::favorites::owner_path(owner))
+}
+// ------------------------=
+// FUNC: browser_favorites_load
+// DESC: Reads a profile's private Metadata object without granting generic object or file access.
+// ------------------=
+pub(crate) fn browser_favorites_load(owner:[u8;16],session:[u8;16],out:&mut [u8])->Result<usize,object::ObjectError> {
+    let path=browser_favorites_path(owner,session)?;
+    #[cfg(any(target_arch="aarch64",target_arch="x86_64"))]
+    {with_store(|store| {let id=store.resolve(&path)?;store.read_browser_favorites(id,out)})}
+    #[cfg(target_arch="x86")]
+    {let _=(path,out);Err(object::ObjectError::SpaceUnavailable)}
+}
+
+// ------------------------=
 // FUNC: network_state_load
 // DESC: Loads authoritative typed networking state from System Space.
 // ------------------=

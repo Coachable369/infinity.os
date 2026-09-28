@@ -9,12 +9,64 @@ static mut POINTER:infinity_browser_core::pointer::Pointer=infinity_browser_core
 static mut DOWNLOAD:Option<crate::runtime::browser::Download>=None;
 static mut CONSENT:Option<Launch>=None;
 static mut NEW_TABS:u8=0;
+static mut FAVORITES:infinity_browser_core::favorites::Favorites=infinity_browser_core::favorites::Favorites::new();
+static mut FAVORITES_OWNER:Option<[u8;16]>=None;
+static mut FAVORITES_OFFSET:usize=0;
+static mut FAVORITES_ERROR:u8=0;
+
+// ------------------------=
+// FUNC: favorites_sync
+// DESC: Loads only the active profile's durable favorites and preserves corrupt or unavailable objects untouched.
+// ------------------=
+fn favorites_sync(console:&ConsoleRuntime)->bool {unsafe {
+    let active=crate::runtime::with_runtime(|runtime|(0..crate::runtime::identity::MAX_SESSIONS)
+        .filter_map(|i|runtime.identity.session_nth(i)).any(|s|s.id==console.current_session&&s.user==console.current_user
+        &&s.state==crate::runtime::identity::SessionState::Active)).unwrap_or(false);
+    if !active {FAVORITES_OWNER=None;FAVORITES=infinity_browser_core::favorites::Favorites::new();FAVORITES_OFFSET=0;FAVORITES_ERROR=0;}
+    else if FAVORITES_OWNER!=Some(console.current_user.0) {
+        FAVORITES=infinity_browser_core::favorites::Favorites::new();FAVORITES_OFFSET=0;FAVORITES_ERROR=0;
+        let mut bytes=[0u8;infinity_browser_core::favorites::BYTES];
+        match crate::storage::browser_favorites_load(console.current_user.0,console.current_session.0,&mut bytes) {
+            Ok(length)=>match infinity_browser_core::favorites::Favorites::decode(&bytes[..length]) {
+                Ok(value)=>FAVORITES=value,Err(_)=>FAVORITES_ERROR=2,
+            },
+            Err(crate::storage::object::ObjectError::NamespaceNotFound)=>{},
+            Err(_)=>FAVORITES_ERROR=3,
+        }
+        FAVORITES_OWNER=Some(console.current_user.0);
+    }
+    crate::runtime::browser::favorites_presentation(&*(&raw const FAVORITES),FAVORITES_OFFSET,FAVORITES_ERROR);active
+}}
+// ------------------------=
+// FUNC: toggle_favorite
+// DESC: Saves or removes the current destination only after an authenticated durable object commit succeeds.
+// ------------------=
+fn toggle_favorite(console:&ConsoleRuntime) {unsafe {
+    if FAVORITES_ERROR==3 {FAVORITES_OWNER=None;}
+    if !favorites_sync(console) || matches!(FAVORITES_ERROR,2|3) {return;}
+    let view=crate::runtime::browser::presentation();let url=&view.address[..view.address_length];
+    let mut next=FAVORITES;
+    let result=if let Some(index)=next.find(url) {next.remove(index)} else {
+        let title=if view.title_length>0 && !view.loading && view.error==0 {&view.title[..view.title_length]}else{url};
+        let mut end=title.len().min(96);while core::str::from_utf8(&title[..end]).is_err() && end>0 {end-=1;}
+        next.add(url,&title[..end])
+    };
+    match result {
+        Ok(())=>if crate::storage::browser_favorites_save(console.current_user.0,console.current_session.0,next.bytes()).is_ok() {
+            FAVORITES=next;FAVORITES_ERROR=0;FAVORITES_OFFSET=FAVORITES_OFFSET.min(next.count().saturating_sub(1));
+        }else{FAVORITES_ERROR=1;},
+        Err(infinity_browser_core::favorites::Error::Full)=>FAVORITES_ERROR=4,
+        Err(_)=>FAVORITES_ERROR=5,
+    }
+    crate::runtime::browser::favorites_presentation(&*(&raw const FAVORITES),FAVORITES_OFFSET,FAVORITES_ERROR);
+}}
 
 // ------------------------=
 // FUNC: request_access
 // DESC: Opens the browser immediately under the signed-in user's Network Settings policy.
 // ------------------=
 pub(super) fn request_access(console:&mut ConsoleRuntime,url:&[u8]) {
+    favorites_sync(console);
     if url.len()>2048 {return;}
     let mut consent=Launch{owner:SecurityIdentity(console.current_session.0),url:[0;2048],length:url.len(),stage:0,size:(0,0)};
     consent.url[..url.len()].copy_from_slice(url);
@@ -191,6 +243,7 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
     if let ConsoleKey::Shortcut(value)=key {
         let mut command=abi::Command::empty();
         match value {
+            b'd'|b'D'=>{toggle_favorite(console);return;},
             b't'|b'T'=>{new_tab(console);return;},
             b'w'|b'W'=>{
                 let view=crate::runtime::browser::presentation();
@@ -266,6 +319,7 @@ fn navigate_address(console:&mut ConsoleRuntime) {
         } else {false}
     };
     if retained {
+        crate::runtime::browser::launch_presentation(&command.text[..length],None);
         crate::runtime::browser::focus_address(false);poll(console);
     } else {
         request_access(console,&command.text[..length]);
@@ -314,6 +368,18 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     }
     let mut command=abi::Command::empty();
     let view=crate::runtime::browser::presentation();
+    if layout.favorites.local(x,y).is_some() {
+        for index in 0..layout.favorite_slots() {
+            if layout.favorite_item(index).is_some_and(|r|r.local(x,y).is_some()) {
+                if favorites_sync(console) {unsafe {
+                    if let Some((url,_))=(&*(&raw const FAVORITES)).get(FAVORITES_OFFSET+index) {
+                        let mut destination=[0u8;2048];let length=url.len();destination[..length].copy_from_slice(url);
+                        request_access(console,&destination[..length]);
+                    }
+                }}return true;
+            }
+        }
+    }
     for index in 0..view.tab_count {
         let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
         if tab.local(x,y).is_some_and(|(x,y)|infinity_browser_core::tab_style::contains(tab.width,tab.height,x,y)) {
@@ -326,6 +392,13 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     }
     let Some(control)=layout.hit(x,y) else{return false;};
     match control {
+        Control::Favorite=>{toggle_favorite(console);return true;},
+        Control::FavoritesPrevious|Control::FavoritesNext=>{unsafe {
+            let slots=layout.favorite_slots();
+            if control==Control::FavoritesPrevious {FAVORITES_OFFSET=FAVORITES_OFFSET.saturating_sub(slots);}
+            else if FAVORITES_OFFSET+slots<view.favorite_count {FAVORITES_OFFSET+=slots;}
+            favorites_sync(console);
+        }return true;},
         Control::Address=>crate::runtime::browser::focus_address(true),
         Control::Go=>navigate_address(console),
         Control::Back=>{if view.history&1!=0 {command.kind=abi::BACK;}},
@@ -400,6 +473,9 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
         }
     }}
     crate::runtime::browser::hover_tab(hover.0,hover.1);
+    let favorite_hover=if !captured {(0..layout.favorite_slots()).find(|index|
+        view.favorite_offset+index<view.favorite_count && layout.favorite_item(*index).is_some_and(|r|r.local(x,y).is_some()))}else{None};
+    crate::runtime::browser::hover_favorite(favorite_hover.map(|i|view.favorite_offset+i).unwrap_or(usize::MAX));
     if !captured && layout.content.local(x,y).is_none() {return false;}
     if !captured && crate::runtime::browser::presentation().download_state!=0 && layout.download_card.local(x,y).is_some() {return false;}
     unsafe {
@@ -418,6 +494,7 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
 // DESC: Sends bounded ordered launch/resize/close commands, retaining them unchanged under backpressure.
 // ------------------=
 pub(super) fn poll(console:&ConsoleRuntime) {
+    favorites_sync(console);
     unsafe {
         let slot=&mut *(&raw mut LAUNCH);
         let Some(launch)=slot.as_mut() else {return;};

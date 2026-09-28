@@ -126,6 +126,25 @@ impl DisplayDevice {
         }
         let go=offset(layout.go);
         self.browser_glyph(go,1,true,scale);
+        let star=offset(layout.favorite);
+        if view.favorite_saved {self.browser_surface(star,skin::button(true,skin::Interaction::Normal));}
+        self.browser_glyph(star,12,true,scale);
+        if view.favorite_count==0 {
+            self.browser_label(Viewport{x:star.x+36*scale as i32,y:star.y+7*scale as i32,
+                width:layout.favorites.width-160*scale as u32,height:20*scale as u32},b"Save a favorite with the star or Ctrl+D",14*scale,false);
+        }
+        for slot in 0..layout.favorite_slots() {
+            let index=view.favorite_offset+slot;if index>=view.favorite_count {break;}
+            let r=offset(layout.favorite_item(slot).unwrap());let favorite=&view.favorites[index];
+            if view.hovered_favorite==index {self.browser_surface(r,skin::button(false,skin::Interaction::Hovered));}
+            self.browser_label(Viewport{x:r.x+8*scale as i32,y:r.y+7*scale as i32,width:r.width-16*scale as u32,..r},
+                &favorite.title[..favorite.length],14*scale,false);
+        }
+        if view.favorite_count>layout.favorite_slots() || view.favorite_offset>0 {
+            self.browser_glyph(offset(layout.favorites_previous),0,view.favorite_offset>0,scale);
+            self.browser_glyph(offset(layout.favorites_next),1,view.favorite_offset+layout.favorite_slots()<view.favorite_count,scale);
+        }
+        self.fill_rect(left,top+layout.content.y as usize-1,window.width as usize,1,33,58,82);
         let content=offset(layout.content);
         if self.clipped_render_region(content.x.max(0) as usize,content.y.max(0) as usize,
             content.width as usize,(window.bottom()-(content.y)).max(0) as usize).is_none() {return;}
@@ -176,11 +195,18 @@ impl DisplayDevice {
             self.browser_download_button(offset(layout.download_discard),if view.download_state==2 {b"Done"}else{b"Discard"},false,scale);
         }
         let status=offset(layout.status);
-        let message:&[u8]=if view.input_busy {b"Input queue busy. Please retry the last input."}
-            else if view.error!=0 {b"Page could not be loaded. Check permissions and connection."}
-            else if view.loading {b"Loading..."} else {b"Ready"};
-        self.browser_label(Viewport{x:status.x+16*scale as i32,y:status.y+5*scale as i32,
-            width:status.width-32*scale as u32,..status},message,14*scale,false);
+        let mut message=[0u8;2304];
+        let footer=view.footer_status();let prefix=footer.label();
+        message[..prefix.len()].copy_from_slice(prefix);let mut length=prefix.len();
+        if footer==infinity_browser_core::page_status::Status::Loading {
+            message[length..length+view.address_length].copy_from_slice(&view.address[..view.address_length]);length+=view.address_length;
+        }
+        self.fill_rect(status.x as usize,status.y as usize,status.width as usize,status.height as usize,9,20,33);
+        self.fill_rect(status.x as usize,status.y as usize,status.width as usize,1,33,58,82);
+        let color=if view.error!=0 || view.favorite_error!=0 || view.permission!=0 {(245,165,95)}else if view.loading {(34,211,238)}else{(112,162,180)};
+        self.fill_rounded_rect_alpha(status.x as usize+16*scale,status.y as usize+9*scale,6*scale,6*scale,3*scale,color.0,color.1,color.2,255);
+        self.browser_label(Viewport{x:status.x+30*scale as i32,y:status.y+5*scale as i32,
+            width:status.width-46*scale as u32,..status},&message[..length],14*scale,false);
     }
     // ------------------------=
     // FUNC: browser_label
@@ -249,6 +275,7 @@ impl DisplayDevice {
             8=>{stroke(-5,-5,5,-5);stroke(5,-5,5,5);stroke(5,5,-5,5);stroke(-5,5,-5,-5);}
             9=>{stroke(-5,-5,5,5);stroke(5,-5,-5,5);}
             10=>{for (a,b,c,d) in [(-5,-7,2,-7),(2,-7,5,-4),(5,-4,5,7),(5,7,-5,7),(-5,7,-5,-7),(2,-7,2,-3),(2,-3,5,-3),(-2,0,2,0),(-2,3,2,3)] {stroke(a,b,c,d);}}
+            12=>{for (a,b,c,d) in [(0,-8,2,-3),(2,-3,8,-2),(8,-2,4,2),(4,2,5,8),(5,8,0,5),(0,5,-5,8),(-5,8,-4,2),(-4,2,-8,-2),(-8,-2,-2,-3),(-2,-3,0,-8)] {stroke(a,b,c,d);}}
             _=>{stroke(-7,0,7,0);stroke(0,-7,0,7);}
         }
     }

@@ -1,6 +1,8 @@
 mod storage;
 #[path = "../kernel/storage/spatial_path.rs"]
 mod spatial_path;
+#[path="../sdk/infinity-browser-core/favorites.rs"]
+mod favorites;
 
 use std::{
     cell::{Cell, RefCell},
@@ -242,6 +244,7 @@ fn main() {
     let test_sectors = STORE_RELATIVE_LBA as usize + 32_768;
     download_transaction(test_sectors);
     private_spatial_checkpoint(test_sectors);
+    private_browser_favorites(test_sectors);
     legacy_store_mount(test_sectors);
     checkpoint_replacement(test_sectors);
     editor_documents_recovery(test_sectors);
@@ -730,6 +733,36 @@ fn private_spatial_checkpoint(sectors:usize) {
     assert_eq!(mounted.resolve(path),Ok(id));
     assert_eq!(mounted.read_spatial_state(id,&mut bytes),Ok(8192));assert_eq!(bytes,[11;8192]);
     assert_eq!(mounted.read(id,None,&mut bytes),Err(ObjectError::Unauthorized));
+}
+
+// ------------------------=
+// FUNC: private_browser_favorites
+// DESC: Verifies private per-profile native favorites, bounded updates, failed commits and cold object-store remount.
+// ------------------=
+fn private_browser_favorites(sectors:usize) {
+    for fail in [false,true] {
+        let backing=MemoryDisk::new(sectors);let disk=FailingDisk::new(backing.clone());
+        let mut store=ObjectStore::format(disk.clone(),0,sectors as u64,[0x95;16]).unwrap();
+        let path=favorites::owner_path([0x11;16]);let other=favorites::owner_path([0x22;16]);
+        let mut state=favorites::Favorites::new();state.add(b"https://example.com/",b"Example Domain").unwrap();
+        let id=store.create_attached(b"@browser-favorites",ObjectType::Metadata,Space::System,state.bytes(),&path).unwrap();
+        let other_id=store.create_attached(b"@browser-favorites",ObjectType::Metadata,Space::System,favorites::Favorites::new().bytes(),&other).unwrap();
+        let mut bytes=[0;favorites::BYTES];
+        assert_eq!(store.read(id,None,&mut bytes),Err(ObjectError::Unauthorized));
+        assert_eq!(store.write(id,b"replace"),Err(ObjectError::Unauthorized));
+        assert_eq!(store.remove(id),Err(ObjectError::Unauthorized));
+        assert_eq!(store.copy_attached(id,b"/home/default/leaked"),Err(ObjectError::Unauthorized));
+        for _ in 0..70 {store.checkpoint(&path,state.bytes()).unwrap();}assert_eq!(store.history_count(id),1);
+        state.add(b"https://example.org/",b"Second page").unwrap();
+        if fail {disk.arm(0);}
+        let result=store.checkpoint(&path,state.bytes());disk.disarm();assert_eq!(result.is_err(),fail);
+        drop(store);let mut mounted=ObjectStore::mount(backing,0).unwrap();
+        assert_eq!(mounted.resolve(&path),Ok(id));assert_eq!(mounted.resolve(&other),Ok(other_id));
+        let length=mounted.read_browser_favorites(id,&mut bytes).unwrap();
+        assert_eq!(favorites::Favorites::decode(&bytes[..length]).unwrap().count(),if fail {1}else{2});
+        let length=mounted.read_browser_favorites(other_id,&mut bytes).unwrap();
+        assert_eq!(favorites::Favorites::decode(&bytes[..length]).unwrap().count(),0);
+    }
 }
 
 // ------------------------=

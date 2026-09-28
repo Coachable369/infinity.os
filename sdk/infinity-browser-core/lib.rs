@@ -16,6 +16,8 @@ pub mod omnibox;
 pub mod damage;
 pub mod tab_style;
 pub mod startup;
+pub mod favorites;
+pub mod page_status;
 #[cfg(test)]
 #[path = "../servo-std/profiler_window.rs"]
 mod profiler_window;

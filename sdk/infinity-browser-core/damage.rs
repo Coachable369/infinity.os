@@ -9,6 +9,7 @@ pub struct PageKey {
     pub download_content: u64,
     pub loading: bool,
     pub busy: bool,
+    pub status:u64,
 }
 
 // ------------------------=
@@ -33,7 +34,7 @@ mod tests {
         assert!(chrome_only(Some(base),base));
         for changed in [PageKey{frame:1,..base},PageKey{tab:1,..base},
             PageKey{error:1,..base},PageKey{permission:1,..base},
-            PageKey{download:1,..base},PageKey{download_content:1,..base},PageKey{loading:true,..base},PageKey{busy:true,..base}] {
+            PageKey{download:1,..base},PageKey{download_content:1,..base},PageKey{loading:true,..base},PageKey{busy:true,..base},PageKey{status:1,..base}] {
             assert!(!chrome_only(Some(base),changed));
         }
     }
