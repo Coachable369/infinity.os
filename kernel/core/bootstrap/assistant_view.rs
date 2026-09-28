@@ -192,27 +192,13 @@ impl super::DisplayDevice {
             self.app_symbol(g.send, b'^', CYAN, s);
         }
         let t = g.toggle;
-        let accent = self.active_accent_rgb();
-        let accent = (
-            ((accent >> 16) & 0xff) as u8,
-            ((accent >> 8) & 0xff) as u8,
-            (accent & 0xff) as u8,
-        );
-        let primary = self.active_primary_rgb();
-        let surface = (
-            (((primary >> 16) & 0xff) as u8).saturating_add(5),
-            (((primary >> 8) & 0xff) as u8).saturating_add(7),
-            ((primary & 0xff) as u8).saturating_add(11),
-        );
+        let accent = (112, 160, 255);
         let pulse = if panel.hovered {
             assistant::glow_intensity(panel.glow_phase)
         } else {
             48
         };
-        self.assistant_tab_fill(t, surface, if panel.expanded { 248 } else { 232 }, s);
-        self.assistant_tab_outline(t, 3 * s as i32, (accent.0 / 5, accent.1 / 5, accent.2 / 5), s);
-        self.assistant_tab_outline(t, 1 * s as i32, (accent.0 / 2, accent.1 / 2, accent.2 / 2), s);
-        self.assistant_tab_outline(t, 0, accent, s);
+        self.assistant_tab_glass(t, g.tab_left, pulse, s);
         let center = (t.x + t.width as i32 / 2, t.y + t.height as i32 / 2);
         self.glow_color(
             center.0,
@@ -228,66 +214,16 @@ impl super::DisplayDevice {
     }
 
     // ------------------------=
-    // FUNC: assistant_tab_fill
-    // DESC: Paints the reference kit's compact chamfered glass tab outside usable window content.
+    // FUNC: assistant_tab_glass
+    // DESC: Paints the shared UIKIT fin with an attached straight root, rounded shoulders and antialiased luminous rim.
     // ------------------=
-    fn assistant_tab_fill(&mut self, tab: Rect, color: (u8, u8, u8), alpha: u8, s: usize) {
-        let cut = (10 * s).min(tab.height as usize / 3);
-        for row in 0..tab.height as usize {
-            let inset = if row < cut {
-                cut - row
-            } else if row + cut >= tab.height as usize {
-                row + cut + 1 - tab.height as usize
-            } else {
-                0
-            };
-            let width = tab.width as usize - inset.saturating_mul(2);
-            if width > 0 {
-                self.fill_rect_alpha(
-                    (tab.x + inset as i32).max(0) as usize,
-                    (tab.y + row as i32).max(0) as usize,
-                    width,
-                    1,
-                    color.0,
-                    color.1,
-                    color.2,
-                    alpha,
-                );
+    fn assistant_tab_glass(&mut self, tab: Rect, left: bool, pulse: u8, s: usize) {
+        let halo=4*s as i32;
+        for y in -halo..tab.height as i32+halo {
+            for x in -halo..tab.width as i32+halo {
+                let (r,g,b,a)=assistant::tab_style::pixel(tab.width,tab.height,x,y,left,pulse);
+                if a!=0 {self.blend_color(tab.x+x,tab.y+y,r,g,b,a);}
             }
-        }
-    }
-
-    // ------------------------=
-    // FUNC: assistant_tab_outline
-    // DESC: Draws one theme-colored octagonal edge layer so stacked layers read as a restrained electric glow.
-    // ------------------=
-    fn assistant_tab_outline(&mut self, tab: Rect, spread: i32, color: (u8, u8, u8), s: usize) {
-        let left = tab.x - spread;
-        let top = tab.y - spread;
-        let right = tab.right() + spread - 1;
-        let bottom = tab.bottom() + spread - 1;
-        let cut = 10 * s as i32 + spread;
-        let points = [
-            (left, top + cut),
-            (left + cut, top),
-            (right - cut, top),
-            (right, top + cut),
-            (right, bottom - cut),
-            (right - cut, bottom),
-            (left + cut, bottom),
-            (left, bottom - cut),
-        ];
-        for index in 0..points.len() {
-            let next = (index + 1) % points.len();
-            self.line(
-                points[index].0,
-                points[index].1,
-                points[next].0,
-                points[next].1,
-                color.0,
-                color.1,
-                color.2,
-            );
         }
     }
 

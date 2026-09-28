@@ -180,10 +180,14 @@ fn panels() {
     assert_eq!(geometry.panel.bottom(), reference.bottom() - 1);
     assert_eq!(geometry.toggle.x, reference.right() - 1);
     assert_eq!(geometry.toggle.width, ai::TAB_WIDTH as u32);
-    assert_eq!(geometry.toggle.height, 44);
+    assert_eq!(geometry.toggle.height, ai::TAB_HEIGHT as u32);
     assert!(geometry.toggle.right() > reference.right());
     let collapsed_geometry = ai::geometry(reference, 1, false);
     assert_eq!(collapsed_geometry.toggle.height, ai::TAB_HEIGHT as u32);
+    let maximized = ai::geometry_in_viewport(Rect{x:0,y:0,width:1920,height:1080},1920,1,false);
+    assert!(maximized.toggle.x>=0);
+    assert!(maximized.toggle.right()<=1920);
+    assert_eq!(maximized.toggle.height,ai::TAB_HEIGHT as u32);
     for scale in 1..=2 {
         for width in [480, 800, 1200] {
             let window = Rect {

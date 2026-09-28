@@ -1,5 +1,7 @@
 //! Shared app-window assistant contract. No ambient file access or command execution.
 use super::geometry::{Point, Rect};
+#[path = "assistant_tab.rs"]
+pub mod tab_style;
 pub const PANEL_SLOTS: usize = 16;
 pub const TAB_WIDTH: usize = 48;
 pub const TAB_HEIGHT: usize = 104;
@@ -179,14 +181,18 @@ pub fn geometry_in_viewport(
     let tab_width = (TAB_WIDTH * scale.max(1)) as i32;
     let right_space = viewport_width as i32 - window.right();
     let tab_left = right_space < tab_width && window.x >= tab_width;
-    geometry_on_side(window, scale, expanded, tab_left)
+    let mut geometry = geometry_on_side(window, scale, expanded, tab_left);
+    if right_space < tab_width && window.x < tab_width {
+        geometry.toggle.x = (viewport_width as i32-tab_width).max(0);
+    }
+    geometry
 }
 
 // ------------------------=
 // FUNC: geometry_on_side
 // DESC: Builds one assistant panel and attached external tab without reducing collapsed app content geometry.
 // ------------------=
-fn geometry_on_side(window: Rect, scale: usize, expanded: bool, tab_left: bool) -> Geometry {
+fn geometry_on_side(window: Rect, scale: usize, _expanded: bool, tab_left: bool) -> Geometry {
     let s = scale.max(1) as u32;
     let width = (window.width * 336 / 1000)
         .max(320 * s)
@@ -200,7 +206,7 @@ fn geometry_on_side(window: Rect, scale: usize, expanded: bool, tab_left: bool) 
         height: window.height.saturating_sub(49 * s),
     };
     let tab_width = TAB_WIDTH as u32 * s;
-    let tab_height = if expanded { 44 * s } else { TAB_HEIGHT as u32 * s };
+    let tab_height = TAB_HEIGHT as u32 * s;
     let preferred_offset = (window.height / 4).max(48 * s);
     let maximum_offset = window.height.saturating_sub(tab_height + 12 * s).max(8 * s);
     let toggle = Rect {
