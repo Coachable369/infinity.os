@@ -131,10 +131,18 @@ impl DisplayDevice {
             content.width as usize,(window.bottom()-(content.y)).max(0) as usize).is_none() {return;}
         self.fill_rect(content.x as usize,content.y as usize,content.width as usize,content.height as usize,247,248,250);
         if view.error!=0 {
+            use infinity_browser_core::startup::Error;
+            let detail:&[u8]=match view.error {
+                value if value==Error::Entropy as u32=>b"Secure randomness unavailable. Enable firmware RNG or TPM 2.0, then restart InfinityOS.",
+                value if value==Error::Clock as u32=>b"Trusted firmware time unavailable. Check the firmware clock, then retry.",
+                value if value==Error::Viewport as u32=>b"This viewport is unsupported. Restore the browser window, then reload.",
+                value if value==Error::Worker as u32=>b"Browser worker unavailable. Restart InfinityOS, then retry.",
+                _=>b"Check network permission and connection, then reload or enter another address.",
+            };
             self.ui_text_elided_strong(content.x as usize+32*scale,content.y as usize+32*scale,
                 content.width as usize-64*scale,b"This page could not be opened",22,45,66);
             self.ui_text_elided_strong(content.x as usize+32*scale,content.y as usize+68*scale,
-                content.width as usize-64*scale,b"Check network permission and connection, then reload or enter another address.",53,79,101);
+                content.width as usize-64*scale,detail,53,79,101);
         } else { unsafe {
             let generation=crate::runtime::browser::frame_generation();
             let current=&mut *(&raw mut FRAME);

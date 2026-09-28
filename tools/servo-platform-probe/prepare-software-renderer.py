@@ -1,5 +1,6 @@
 """Select matching upstream SWGL for the native software viewport only."""
 import os
+import importlib.util
 from pathlib import Path
 import subprocess
 import tomllib
@@ -61,6 +62,25 @@ pub use native_software_context::SoftwareRenderingContext;
         if package["name"] in ("swgl", "glsl", "glsl-to-cxx"):
             source += "[[package]]" + block.replace(' "nom",', ' "nom 7.1.3",')
     lock.write_text(source)
+    # The fallback clock starts at process initialization, so the first frame
+    # can be less than one second old on native hardware (unlike slow emulation).
+    spec = importlib.util.spec_from_file_location("async_staging", Path(__file__).with_name("prepare-async-net.py"))
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    original = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:Cargo.lock"], text=True)
+    directory, package = helper.stage(root, tomllib.loads(original)["package"], "webrender", "0.70.0")
+    path = directory / "src/profiler.rs"
+    source = path.read_text()
+    marker = "let one_second_ago = now - ONE_SECOND_NS;"
+    if source.count(marker) != 1:
+        raise SystemExit("Pinned profiler history window changed")
+    source = source.replace(marker, "let one_second_ago = profiler_window::recent_start(now, ONE_SECOND_NS);")
+    source += '\n#[path = "profiler_window.rs"]\nmod profiler_window;\n'
+    path.write_text(source)
+    path.with_name("profiler_window.rs").write_bytes((root / "sdk/servo-std/profiler_window.rs").read_bytes())
+    header = 'name = "' + package["name"] + '"\nversion = "' + package["version"] + '"\n'
+    entry = header + 'source = "' + package["source"] + '"\nchecksum = "' + package["checksum"] + '"\n'
+    lock.write_text(lock.read_text().replace(entry, header))
 
 if __name__ == "__main__":
     main()

@@ -124,6 +124,8 @@ def main():
     for name, path in json.loads((root / "build/servo-native-deps/stylo/native-patches.json").read_text()).items():
         command += ["--config", 'patch."https://github.com/servo/stylo".' + name + '.path="' + path + '"']
     command += ["--config", 'patch.crates-io.wr_glyph_rasterizer.path="' + str(root / "build/servo-native-deps/wr_glyph_rasterizer-0.70.0") + '"']
+    if options.package == "servo":
+        command += ["--config", 'patch.crates-io.webrender.path="' + str(root / "build/servo-native-deps/webrender-0.70.0") + '"']
     command += ["--config", 'patch.crates-io.freetype-sys.path="' + str(root / "build/servo-native-deps/freetype-sys-0.23.0") + '"']
     for index, version in enumerate(("0.2.17", "0.3.4", "0.4.1")):
         key = 'patch.crates-io.getrandom_native_' + str(index)

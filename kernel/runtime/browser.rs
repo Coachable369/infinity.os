@@ -39,6 +39,7 @@ static OWNER:[AtomicU64;2]=[AtomicU64::new(0),AtomicU64::new(0)];
 static COMMANDS:Mailbox<abi::Command,32>=Mailbox::new();
 pub static FRAMES:Frames<16384000>=Frames::new();
 static EVENTS:Mailbox<Event,32>=Mailbox::new();
+static mut DIAGNOSTIC:([u8;2048],usize)=([0;2048],0);
 static DOWNLOADS:Mailbox<Download,1>=Mailbox::new();
 #[derive(Clone,Copy)]
 pub struct Download {pub generation:u64,pub name:[u8;63],pub name_length:usize,pub media_type:[u8;127],
@@ -98,25 +99,26 @@ fn owned_by(owner:SecurityIdentity)->bool {
 // DESC: Grants an isolated engine CPU and heap only after native time, entropy and explicit network authority exist.
 // ------------------=
 /// BSP only. BootInfo remains loader-owned; no firmware operation runs on the AP.
-pub unsafe fn start(owner:SecurityIdentity,caps:[CapabilityId;4])->bool {
-    if owner.0==[0;16] {return false;}
+pub unsafe fn start(owner:SecurityIdentity,caps:[CapabilityId;4])->Result<(),infinity_browser_core::startup::Error> {
+    use infinity_browser_core::startup::{self,Error};
+    if owner.0==[0;16] {return Err(Error::Session);}
     if STATE.load(Ordering::Acquire)!=0 {
-        return matches!(STATE.load(Ordering::Acquire),1|2) && owned_by(owner)
-            && crate::drivers::browser_network::renew(owner,caps);
+        if !matches!(STATE.load(Ordering::Acquire),1|2) {return Err(Error::Worker);}
+        return if owned_by(owner) && crate::drivers::browser_network::renew(owner,caps) {Ok(())}else{Err(Error::Network)};
     }
-    let Some(info)=BOOT.load(Ordering::Acquire).as_ref() else{return false;};
-    if info.firmware_entropy_valid!=1 {return false;}
-    let Some(seconds)=crate::console::certificate_time(info.firmware_runtime_services) else{return false;};
-    if !crate::drivers::browser_network::configure(owner,caps) {return false;}
-    let Some(seed)=RANDOM_SEEDS.derive(&info.firmware_entropy,&owner.0) else{return false;};
+    let info=BOOT.load(Ordering::Acquire).as_ref().ok_or(Error::Boot)?;
+    let seconds=startup::prerequisites(info.firmware_entropy_valid==1,
+        crate::console::certificate_time(info.firmware_runtime_services))?;
+    if !crate::drivers::browser_network::configure(owner,caps) {return Err(Error::Network);}
+    let seed=RANDOM_SEEDS.derive(&info.firmware_entropy,&owner.0).ok_or(Error::Seed)?;
     RNG=Some(ChaCha20Rng::from_seed(seed));
     UTC=seconds;EPOCH_NS=super::ai::qwen::workers::clock_ns();
     HOST.heap=core::ptr::addr_of_mut!(HEAP.0).cast();
     OWNER[0].store(u64::from_le_bytes(owner.0[..8].try_into().unwrap()),Ordering::Release);
     OWNER[1].store(u64::from_le_bytes(owner.0[8..].try_into().unwrap()),Ordering::Release);
     STATE.store(1,Ordering::Release);
-    if !super::ai::qwen::workers::background(worker) {STATE.store(0,Ordering::Release);return false;}
-    true
+    if !super::ai::qwen::workers::background(worker) {STATE.store(0,Ordering::Release);return Err(Error::Worker);}
+    Ok(())
 }
 // ------------------------=
 // FUNC: submit
@@ -138,6 +140,12 @@ pub fn take_event()->Option<Event> {EVENTS.try_take().ok().flatten()}
 // ------------------=
 pub fn status()->(u32,u32,u64,u64) {(STATE.load(Ordering::Acquire),FAILURE.load(Ordering::Acquire),
     GENERATION.load(Ordering::Acquire),INFINITY_BROWSER_PEAK.load(Ordering::Acquire))}
+
+// ------------------------=
+// FUNC: diagnostic
+// DESC: Copies bounded engine failure detail retained by the desktop event consumer.
+// ------------------=
+pub fn diagnostic()->([u8;2048],usize) {unsafe {DIAGNOSTIC}}
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
@@ -192,6 +200,18 @@ impl Presentation {
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+// ------------------------=
+// FUNC: launch_presentation
+// DESC: Retains the requested address and exposes startup failure inside the browser instead of an invisible Console.
+// ------------------=
+pub fn launch_presentation(url:&[u8],error:Option<infinity_browser_core::startup::Error>) {unsafe {
+    let view=&mut *(&raw mut PRESENTATION);
+    view.address_length=url.len().min(view.address.len());
+    view.address[..view.address_length].copy_from_slice(&url[..view.address_length]);
+    view.error=error.map_or(0,|error|error as u32);
+    view.loading=error.is_none();
+    view.revision=view.revision.wrapping_add(1);
+}}
 // ------------------------=
 // FUNC: frame_generation
 // DESC: Separates tab surfaces within the existing window lifetime so a switch never displays another tab's pixels.
@@ -305,6 +325,14 @@ pub fn poll_presentation()->bool {
         for _ in 0..32 {
             let Some(event)=take_event() else {break;};
             match event.kind {
+                abi::EVENT_DIAGNOSTIC=>{
+                    let (bytes,length)=&mut *(&raw mut DIAGNOSTIC);
+                    let count=event.length.min(bytes.len().saturating_sub(*length+1));
+                    bytes[*length..*length+count].copy_from_slice(&event.text[..count]);
+                    *length+=count;
+                    if *length<bytes.len() {bytes[*length]=b'\n';*length+=1;}
+                    continue;
+                },
                 abi::EVENT_OPEN=>{view.loading=false;view.error=0;view.history=0;},
                 abi::EVENT_CLOSED=>{view.loading=false;view.history=0;view.tabs=[EMPTY_TAB;8];view.tab_count=0;view.active_tab=0;},
                 abi::EVENT_TAB_CREATED=>{if view.tab_count<8 && !view.tabs.iter().any(|tab|tab.id==event.value) {
@@ -422,7 +450,7 @@ unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,leng
     if kind==abi::EVENT_MEMORY {INFINITY_BROWSER_PEAK.store(value as u64,Ordering::Release);return;}
     if kind==abi::EVENT_ALLOCATION_FAILURE {INFINITY_BROWSER_FAILED_ALLOCATION.store(value,Ordering::Release);return;}
     if kind==abi::EVENT_ERROR && value!=3 {FAILURE.store(value+1,Ordering::Release);}
-    if kind==abi::EVENT_DIAGNOSTIC || length>2048 {return;}
+    if length>2048 {return;}
     let mut message=Event{kind,value,length,text:[0;2048]};
     if length>0 {message.text[..length].copy_from_slice(core::slice::from_raw_parts(text,length));}
     let _=EVENTS.try_send(message);

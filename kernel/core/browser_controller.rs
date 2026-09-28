@@ -103,6 +103,21 @@ fn viewport(console:&ConsoleRuntime)->Option<(u32,u32)> {
 // DESC: Opens a native browser only for an active session already holding the required network capabilities.
 // ------------------=
 pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
+    if command==b"browser status" {
+        let (state,failure,generation,peak)=crate::runtime::browser::status();
+        console.output.write_number(b"Browser worker state: ",state as u64);
+        console.output.write_number(b"Browser failure: ",failure as u64);
+        console.output.write_number(b"Browser generation: ",generation);
+        console.output.write_number(b"Browser peak bytes: ",peak);
+        console.output.write_number(b"Browser failed allocation bytes: ",crate::runtime::browser::INFINITY_BROWSER_FAILED_ALLOCATION.load(core::sync::atomic::Ordering::Acquire) as u64);
+        console.output.write_number(b"Browser network failure: ",crate::drivers::browser_network::INFINITY_BROWSER_NETWORK_FAILURE.load(core::sync::atomic::Ordering::Acquire) as u64);
+        console.output.write_number(b"Browser page error: ",crate::runtime::browser::presentation().error as u64);
+        let (detail,length)=crate::runtime::browser::diagnostic();
+        for line in detail[..length].split(|byte|*byte==b'\n').filter(|line|!line.is_empty()) {
+            for part in line.chunks(LINE_CAPACITY) {console.output.write_line(part);}
+        }
+        return true;
+    }
     if command==b"browser authorize" || command==b"browser authorize confirm=true" {
         geturl::authorize_for(console,command==b"browser authorize confirm=true",true);return true;
     }
@@ -122,10 +137,16 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
         crate::runtime::browser::permission_presentation(2);
         console.output.write_line(b"Browser access unavailable. Check your session and Network Settings.");return true;
     };
-    let Some(size)=viewport(console) else {console.output.write_line(b"Browser window is too small.");return true;};
-    if size.0>2048 || size.1>2048 || !unsafe {crate::runtime::browser::start(owner,caps)} {
-        console.output.write_line(b"Native browser worker is unavailable.");return true;
+    let size=viewport(console);
+    let result=match size {
+        Some((w,h)) if w<=2048 && h<=2048=>unsafe {crate::runtime::browser::start(owner,caps)},
+        _=>Err(infinity_browser_core::startup::Error::Viewport),
+    };
+    crate::runtime::browser::launch_presentation(url,result.err());
+    if let Err(error)=result {
+        console.output.write_number(b"Native browser startup failure: ",error as u64);return true;
     }
+    let size=size.unwrap();
     unsafe { CONSENT=None; }
     crate::runtime::browser::permission_presentation(0);
     let mut launch=Launch{owner,url:[0;2048],length:url.len(),stage:0,size};
@@ -309,7 +330,10 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
         Control::Go=>navigate_address(console),
         Control::Back=>{if view.history&1!=0 {command.kind=abi::BACK;}},
         Control::Forward=>{if view.history&2!=0 {command.kind=abi::FORWARD;}},
-        Control::Reload=>command.kind=abi::RELOAD,
+        Control::Reload=>{
+            if unsafe {LAUNCH.is_none()} {navigate_address(console);return true;}
+            command.kind=abi::RELOAD;
+        },
         Control::NewTab=>{new_tab(console);return true;},
         Control::Minimize=>console.minimize_desktop_app(),
         Control::Maximize=>console.toggle_window_maximized(5),

@@ -267,6 +267,7 @@ class Guest(base.Guest):
         acceleration=getattr(self,"acceleration","tcg")
         command = ["qemu-system-aarch64", "-machine", "virt", "-accel", acceleration, "-cpu", "host" if acceleration=="hvf" else "max",
             "-smp", "4", "-m", "12G", "-bios", self.firmware, "-device", "ramfb",
+            "-device", "virtio-rng-pci",
             "-device", "qemu-xhci", "-device", "usb-kbd", "-device", "usb-mouse",
             "-device", "virtio-scsi-pci", "-drive", f"if=none,id=disk,format=raw,file={self.disk}",
             "-device", "scsi-hd,drive=disk,bootindex=1", "-netdev", "user,id=net",
@@ -318,8 +319,8 @@ def main():
     parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
     parser.add_argument("--navigation", action="store_true", help="Verify real HTTPS link/back/forward/reload through URL state and distinct page pixels")
     parser.add_argument("--download", action="store_true", help="Fetch a real HTTPS attachment, click native Save, and verify the stored object after shutdown")
-    parser.add_argument("--launcher", action="store_true", help="Launch through the installed catalog and approve native network consent without Console authorization")
-    parser.add_argument("--open-url", action="store_true", help="Verify the OS default web association and its explicit network-consent boundary")
+    parser.add_argument("--launcher", action="store_true", help="Launch through the installed catalog under the user's existing Network Settings policy")
+    parser.add_argument("--open-url", action="store_true", help="Verify the OS default web association under the user's existing Network Settings policy")
     parser.add_argument("--interaction", action="store_true", help="Verify real HTTPS image, CSS, JavaScript input and scrolling by framebuffer pixels")
     parser.add_argument("--tabs", action="store_true", help="With interaction, exercise native create/select/close controls and independent page pixels")
     parser.add_argument("--invalid-tls", action="store_true", help="Require a certificate-validation rejection from a real expired HTTPS endpoint")
@@ -413,13 +414,10 @@ def main():
                 guest.command("open https://example.com/")
             else:
                 guest.launch("browser",5)
-            time.sleep(.5)
-            assert int.from_bytes(guest.memory(*counters["STATE"]),"little")==0
-            assert int.from_bytes(guest.memory(*counters["NETWORK_COMPLETED"]),"little")==0
-            guest.screenshot("browser-network-consent")
-            guest.click(740,595)
-            receipt["launcher_with_explicit_consent"]=True
-            if args.open_url: receipt["default_web_association_with_explicit_consent"]=True
+            # Launch now uses the signed-in user's persisted Network Settings;
+            # there is no separate consent card to click or Console grant.
+            receipt["catalog_launch_without_console_grant"]=True
+            if args.open_url: receipt["default_web_association_submitted"]=True
         else:
             guest.launch("command", 5)
             guest.command("browser authorize confirm=true")
@@ -569,7 +567,6 @@ def main():
             receipt["engine_peak_allocated_bytes"]=peak
             guest.screenshot("browser-closed")
             guest.launch("browser",5)
-            guest.click(740,595)
             wait_color(guest,"browser-open-after-close",400,500,(238,238,238))
             receipt["close_reopen_pixels"]=True
         if args.download:

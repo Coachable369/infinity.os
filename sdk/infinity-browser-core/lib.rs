@@ -15,6 +15,10 @@ pub mod time_travel;
 pub mod omnibox;
 pub mod damage;
 pub mod tab_style;
+pub mod startup;
+#[cfg(test)]
+#[path = "../servo-std/profiler_window.rs"]
+mod profiler_window;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Navigation(u64);

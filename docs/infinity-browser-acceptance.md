@@ -3,6 +3,46 @@
 This is an implementation ledger, not an installed-browser completion claim.
 Servo is pinned to `d05154e2b4def11a9fefe412898a0a6c8925a9cd` (0.6).
 
+## ARM browser startup correction — 2026-09-27
+
+Two distinct failures were reproduced. VirtualBox ARM with neither TPM nor
+firmware RNG could not start the engine; its silent failure also hid tabs.
+Startup now retains the entered URL and displays the missing prerequisite.
+Secure entropy and certificate-time checks remain mandatory. Enable TPM 2.0
+before cold booting an existing VirtualBox ARM installation.
+
+With entropy available, the first native frame panicked because WebRender's
+profiler subtracted one second from a clock less than one second old. A pinned,
+checksum-verified WebRender overlay now saturates that history-window boundary.
+It does not change the clock or introduce a startup delay.
+
+Behavioral evidence:
+
+- `20260928T042410237008Z-55019.json`: all 31 browser-core tests pass,
+  including startup prerequisites and first-frame profiler boundaries.
+- `20260928T042513707562Z-55078.json`: detached installed ARM/HVF run
+  passes real HTTPS image/CSS rendering, JavaScript keyboard input, scrolling,
+  tab creation/switch/close, background-tab scroll retention and address-bar
+  navigation. Worker/page/network failures are zero; HTTP status is 200.
+  This run updated a disposable installed disk, so it is not fresh-ISO proof.
+  Receipt and reviewed tab/address screenshots are under
+  `build/browser-installed-1790568382591350000/`.
+- `20260928T043121846484Z-56003.json`: ARM test media and model-inclusive
+  installer build pass, including live/installed resource and payload parity.
+  `builds/InfinityOS-aarch64.iso` is 8,623,892,480 bytes;
+  SHA-256 `f525c69e0a005dd6ea4499d4c8c90afcbdf0e8de03c47dc570e1a0a0277bab9d`.
+- `20260928T044504602763Z-61107.json`: unmodified ARM test ISO freshly
+  installed, all 11 installed kernel references matched the media's 877,226,264
+  bytes, then booted with installer media detached. Catalog launch without
+  Console authorization and real address-bar navigation pass; HTTP 200,
+  rendered frames and zero worker/page/network errors. Receipt and screenshots:
+  `build/browser-installed-1790570704738745000/`. Networking was configured
+  through Settings for the test NAT; this is not automatic-address acceptance.
+
+The original user VM remains unchanged. The separate VirtualBox diagnostic clone
+also lacks an IPv4 address; its networking configuration is not an installed
+browser pass. No x86 runtime or clean-release claim is made by this correction.
+
 ## Installer handoff — 2026-09-27
 
 The user requested updated ISOs followed by manual feature verification, with

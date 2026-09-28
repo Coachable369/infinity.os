@@ -167,6 +167,15 @@ power it off and enable TPM 2.0 before booting the current installer. Without
 either random source, planning stops before disk writes and reports
 `InstallationEntropyUnavailable` rather than the generic `InvalidPlan` error.
 
+Keep the random source enabled after installation too: the native browser needs
+it for its private cryptographic RNG. An existing installed VirtualBox ARM VM
+without TPM can boot the desktop but cannot start the browser engine or its tabs.
+With the VM powered off, enable TPM 2.0 in VirtualBox (or run
+`VBoxManage modifyvm "VM name" --tpm-type 2.0`), then cold boot the installed disk.
+No disk replacement or reinstallation is required. The browser now reports
+missing startup prerequisites in its own window; `browser status` in Command
+Window exposes bounded worker, allocation, network and engine diagnostics.
+
 `make installer-entropy-test` verifies the TPM wire exchange, partial replies,
 malformed/error rejection, bounded requests, failure-output clearing, and the
 actual reprovisioner's TPM configuration using an isolated host fixture.
