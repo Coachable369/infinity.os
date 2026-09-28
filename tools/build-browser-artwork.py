@@ -11,7 +11,7 @@ def main():
     if os.environ.get("INFINITY_BUILD_KIT_ACTIVE") != "1":
         raise SystemExit("Run through build-kit")
     root = Path(__file__).resolve().parents[1] / "assets/apps"
-    for name in ("infinity-browser-icon-v1", "infinity-browser-navigation-v1", "infinity-world-shift-icon-v1"):
+    for name in ("infinity-browser-icon-v1", "infinity-browser-navigation-v1", "infinity-world-shift-icon-v1", "infinity-holographic-desktop-icon-v1"):
         with Image.open(root / (name + "-source.png")) as image:
             rgba = image.convert("RGBA")
             output = root / (name + ".bmp")

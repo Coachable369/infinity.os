@@ -346,11 +346,16 @@ impl super::DisplayDevice {
 
     // ------------------------=
     // FUNC: spatial_identity_icon
-    // DESC: Draws shared spatial identities and the AI-authored World Shift artwork at the requested size.
+    // DESC: Draws the spatial identity and AI-authored Holographic Desktop and World Shift artwork.
     // ------------------=
     fn spatial_identity_icon(&mut self, center_x: usize, center_y: usize, size: usize, kind: usize) {
         let left = center_x.saturating_sub(size / 2);
         let top = center_y.saturating_sub(size / 2);
+        if kind == 1 {
+            self.paint_bitmap_alpha_fit_rect(include_bytes!("../../../assets/apps/infinity-holographic-desktop-icon-v1.bmp"),
+                left,top,size,size);
+            return;
+        }
         if kind == 2 {
             self.paint_bitmap_alpha_fit_rect(include_bytes!("../../../assets/apps/infinity-world-shift-icon-v1.bmp"),
                 left,top,size,size);
@@ -368,11 +373,6 @@ impl super::DisplayDevice {
                     size / 2, stroke.0, stroke.1.saturating_sub((ring * 28) as u8), stroke.2);
             }
             self.fill_rounded_rect_alpha(center_x.saturating_sub(size / 12), center_y.saturating_sub(size / 12), size / 6, size / 6, size / 12, 235, 252, 255, 255);
-        } else if kind == 1 {
-            for offset in [size / 5, size / 2, size * 4 / 5] {
-                self.outline_rounded_rect(left + offset.saturating_sub(size / 7), top + size / 5,
-                    size * 2 / 7, size * 3 / 5, size / 9, stroke.0, stroke.1, stroke.2);
-            }
         }
     }
 
