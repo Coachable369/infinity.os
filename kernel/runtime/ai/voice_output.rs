@@ -27,7 +27,6 @@ static mut RESIDENT: [Resident; 2] = [Resident([0; 48_000 * 2 * 32]), Resident([
 static mut WRITE_SLOT: usize = 0;
 static mut PLAY_SLOT: usize = 0;
 static mut PLAYING: bool = false;
-static mut PLAY_STARTED: u64 = 0;
 static mut RATE: u32 = 0;
 static mut OUTPUT_SAMPLES: usize = 0;
 static mut DISPATCHED: bool = false;
@@ -131,7 +130,8 @@ pub fn echo_reference(owner: SecurityIdentity, output: &mut [i16]) -> bool {
     unsafe {
         if !PLAYING || owner != OWNER || RATE == 0 {return false;}
         output.fill(0);
-        let end=super::qwen::workers::clock_ns().saturating_sub(PLAY_STARTED)*16_000/1_000_000_000;
+        let Some(frames)=crate::drivers::audio::playback_frames(owner) else {return false;};
+        let end=frames as u64*16_000/u64::from(RATE);
         let pcm=&(&*(&raw const RESIDENT))[PLAY_SLOT].0;
         let length=output.len();
         for (i,sample) in output.iter_mut().enumerate() {
@@ -217,7 +217,6 @@ pub fn poll() {
                 &(&*(&raw const RESIDENT))[WRITE_SLOT].0[..RATE as usize * 2 * 32], OUTPUT_SAMPLES, RATE) {
                 // Hardware owns the immutable resident buffer until its stream stops.
                 PLAY_SLOT = WRITE_SLOT; PLAYING = true;
-                PLAY_STARTED = super::qwen::workers::clock_ns();
                 CAPABILITY = 0; (&mut *(&raw mut PCM)).fill(0); (&mut *(&raw mut TEXT)).fill(0);
                 STATE.store(5, Ordering::Release);
             } else { ERROR = 7; STATE.store(4, Ordering::Release); retire(); }

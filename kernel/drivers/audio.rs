@@ -159,6 +159,20 @@ pub fn playback_rate() -> Option<u32> {
     LOCK.store(false, Ordering::Release); rate
 }
 // ------------------------=
+// FUNC: playback_frames
+// DESC: Returns the owning resident stream's real DMA cursor instead of estimating progress from wall time.
+// ------------------=
+pub fn playback_frames(owner: crate::runtime::execution::SecurityIdentity) -> Option<usize> {
+    if LOCK.swap(true, Ordering::Acquire) { return None; }
+    let frames = unsafe {
+        if RESIDENT_BYTES > 0 && LEASE.is_some_and(|lease| lease.owner == owner) {
+            (&*(&raw const DEVICE)).as_ref().filter(|device| device.playing)
+                .and_then(|device| device.position().ok()).map(|bytes| bytes as usize / 4)
+        } else { None }
+    };
+    LOCK.store(false, Ordering::Release); frames
+}
+// ------------------------=
 // FUNC: play_resident_speech
 // DESC: Starts prefilled kernel-owned speech under typed output authority; no per-frame copies or conversions.
 // ------------------=

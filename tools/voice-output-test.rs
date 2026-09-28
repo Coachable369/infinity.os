@@ -54,6 +54,11 @@ mod drivers { pub mod audio {
     // ------------------=
     pub fn playback_rate() -> Option<u32> { Some(48000) }
     // ------------------------=
+    // FUNC: playback_frames
+    // DESC: Models a delayed hardware cursor independently from the synthesis deadline clock.
+    // ------------------=
+    pub fn playback_frames(_: SecurityIdentity) -> Option<usize> { Some(160) }
+    // ------------------------=
     // FUNC: play_resident_speech
     // DESC: Records hardware submission only after validating converted PCM dimensions.
     // ------------------=
@@ -179,6 +184,11 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     submit(owner, 1, b"First sentence.").unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
     poll(); assert!(can_prefetch());
+    let mut reference=[0;9600];
+    NOW.fetch_add(2_000_000_000,Ordering::SeqCst);
+    assert!(echo_reference(owner,&mut reference));
+    assert!(reference.iter().any(|&sample|sample!=0),"DMA speech must remain in the echo reference despite delayed device playback");
+    assert!(!echo_reference(runtime::execution::SecurityIdentity([2;16]),&mut reference));
     let pointer = PLAY_PTR.load(Ordering::SeqCst) as *const i16;
     let before = unsafe { std::slice::from_raw_parts(pointer, 320).to_vec() };
     submit(owner, 1, b"Second sentence.").unwrap();
