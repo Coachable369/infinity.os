@@ -1,5 +1,18 @@
 # InfinityOS Repository Rules
 
+## Reusable design kit first — no exceptions
+
+Before drawing, generating, or implementing any UI element from scratch, inspect
+the reusable Infinity UI Design Kit in `assets/ui-design-kit/`, including the
+default kit's documentation, assets, and component states. This check is mandatory
+for every UI task, without exceptions.
+
+- Reuse suitable existing kit elements rather than recreating them.
+- Only create a new element after confirming the kit has no suitable reusable
+  element; record that gap and add the new reusable element to the kit.
+- Preserve the kit's documented geometry, transparency, styling, and interaction
+  states when integrating its elements.
+
 ## Shared architecture ports
 
 Maintain one shared implementation for each feature across aarch64 and x86_64.
