@@ -12,6 +12,7 @@ static mut THINKING_ANIMATION: crate::ui::thinking::ThinkingAnimation =
     crate::ui::thinking::ThinkingAnimation::new();
 static mut THINKING_HEADER_DIRTY: bool = false;
 static mut LAST_BROWSER_REVISION:u64=0;
+static mut LAST_ASSISTANT_REVISION: u32 = 0;
 static mut LAST_BROWSER_PAGE_KEY:Option<infinity_browser_core::damage::PageKey>=None;
 
 // ------------------------=
@@ -10555,6 +10556,12 @@ pub fn system_ui_present(
                     window_maximized,
                 );
             let content_changed = console.last_system_content != content;
+            let assistant_revision = crate::ui::app_assistant::revision();
+            let assistant_changed = crate::ui::redraw::assistant_requires_owner_damage(
+                screen,
+                core::mem::replace(&mut *(&raw mut LAST_ASSISTANT_REVISION), assistant_revision),
+                assistant_revision,
+            );
             let (browser_revision,browser_page_key)={
                 #[cfg(feature="native-browser")]
                 {let view=crate::runtime::browser::presentation();(view.revision,Some(view.page_key()))}
@@ -10579,6 +10586,7 @@ pub fn system_ui_present(
                 && crate::console::browser_window().visible && matches!(screen,2|4|8|9|10|11);
             let thinking_header_changed = core::mem::replace(&mut *(&raw mut THINKING_HEADER_DIRTY), false);
             let command_input_only = screen == 8 && console.last_system_screen == 8
+                && !assistant_changed
                 && content_changed && static_content == console.last_system_static_content
                 && !structural_change_without_window && !file_navigator_changed && !focus_changed
                 && !window_moved && !window_resized && !app_window_geometry_changed
@@ -10606,9 +10614,10 @@ pub fn system_ui_present(
                 && !settings_geometry_changed
                 && !app_window_geometry_changed;
             let bounded_scene_geometry_change = !structural_change_without_window
-                && (!content_changed || matches!(screen, 8 | 9 | 10 | 11) || (screen == 4 && chat_changed))
+                && (!content_changed || assistant_changed || matches!(screen, 8 | 9 | 10 | 11) || (screen == 4 && chat_changed))
                 && console.last_system_screen == screen
                 && (navigator_surface_changed
+                    || assistant_changed
                     || network_settings_changed
                     || node_settings_changed
                     || pool_settings_changed
@@ -10847,11 +10856,12 @@ pub fn system_ui_present(
                             window_moved && !window_resized,
                         )
                     } else if screen == 2 {
-                        let current = console.display.desktop_window_rect(
+                        let current = layout.home_window_geometry_sized(
                             window_x,
                             window_y,
                             window_width,
                             window_height,
+                            window_maximized,
                         );
                         let rect = crate::ui::geometry::Rect {
                             x: current.0 as i32,
@@ -11095,6 +11105,7 @@ pub fn system_ui_present(
             } else if (matches!(screen,4|8|9|10|11) && thinking_header_changed && !content_changed) || crate::ui::redraw::desktop_chat_content_requires_bounded_redraw(
                 screen,
                 content_changed || thinking_header_changed,
+                assistant_changed,
             ) {
                 let mut widgets = layout.ai_chat_geometry(false).panel;
                 if thinking_header_changed && !content_changed {

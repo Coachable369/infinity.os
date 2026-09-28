@@ -371,6 +371,7 @@ fn panels() {
 // DESC: Runs deterministic editor and universal-assistant acceptance against production typed implementations.
 // ------------------=
 fn main() {
+    attached_assistant_damage();
     caret_damage_is_bounded();
     menus_and_viewport();
     editing();
@@ -381,6 +382,46 @@ fn main() {
     for id in 0..ai::PANEL_SLOTS {
         assert!(ai::read(id) == ai::Panel::new());
     }
+}
+
+// ------------------------=
+// FUNC: attached_assistant_damage
+// DESC: Exercises expansion, editing, and collapse revisions and verifies bounded damage covers the complete rail and halo.
+// ------------------=
+fn attached_assistant_damage() {
+    ai::reset();
+    for scale in [1usize, 2, 3] {
+        let display = Rect { x: 0, y: 0, width: 1920 * scale as u32, height: 1080 * scale as u32 };
+        let window = Rect { x: 120 * scale as i32, y: 140 * scale as i32,
+            width: 1250 * scale as u32, height: 700 * scale as u32 };
+        let mut panel = ai::Panel::new();
+        for stage in 0..3 {
+            let previous = ai::revision();
+            panel.expanded = stage != 2;
+            if stage == 1 { panel.input[0] = b'A'; panel.length = 1; }
+            ai::write(5, panel);
+            let current = ai::revision();
+            for screen in [2, 4, 8, 9, 10, 11] {
+                let owner_damage = ui::redraw::assistant_requires_owner_damage(screen, previous, current);
+                assert!(owner_damage);
+                assert!(!ui::redraw::desktop_chat_content_requires_bounded_redraw(screen, true, owner_damage));
+                assert!(ui::redraw::chat_requires_independent_widget_damage(screen, true));
+            }
+            let geometry = ai::geometry_in_viewport(window, display.width as usize, scale, panel.expanded);
+            let damage = ui::system_layout::window_transition_damage(window, window, display,
+                ((ai::TAB_WIDTH + 12) * scale) as u32);
+            assert_eq!(damage.intersection(geometry.panel), geometry.panel);
+            let halo = Rect { x: geometry.toggle.x - 4 * scale as i32,
+                y: geometry.toggle.y - 4 * scale as i32,
+                width: geometry.toggle.width + 8 * scale as u32,
+                height: geometry.toggle.height + 8 * scale as u32 };
+            assert_eq!(damage.intersection(halo), halo);
+            assert!(damage.width as u64 * (damage.height as u64) < display.width as u64 * display.height as u64);
+            assert!(!ui::redraw::assistant_requires_owner_damage(2, current, current));
+        }
+    }
+    assert!(ui::redraw::desktop_chat_content_requires_bounded_redraw(2, true, false));
+    assert!(!ui::redraw::assistant_requires_owner_damage(5, 0, 1));
 }
 
 // ------------------------=

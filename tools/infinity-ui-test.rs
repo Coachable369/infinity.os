@@ -431,10 +431,10 @@ fn desktop_ai_chat_layout_test() {
         Some(AiChatTarget::Close)
     );
     assert!(ui::redraw::desktop_chat_content_requires_bounded_redraw(
-        2, true
+        2, true, false
     ));
     assert!(!ui::redraw::desktop_chat_content_requires_bounded_redraw(
-        4, true
+        4, true, false
     ));
 }
 

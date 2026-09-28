@@ -46,8 +46,17 @@ pub const fn desktop_app_content_requires_bounded_redraw(
 pub const fn desktop_chat_content_requires_bounded_redraw(
     screen: u8,
     content_changed: bool,
+    assistant_changed: bool,
 ) -> bool {
-    screen == 2 && content_changed
+    screen == 2 && content_changed && !assistant_changed
+}
+
+// ------------------------=
+// FUNC: assistant_requires_owner_damage
+// DESC: Routes attached assistant changes to their app surface, never the separate desktop chat column.
+// ------------------=
+pub const fn assistant_requires_owner_damage(screen: u8, previous: u32, current: u32) -> bool {
+    previous != current && matches!(screen, 2 | 4 | 8 | 9 | 10 | 11)
 }
 
 // ------------------------=
@@ -129,7 +138,7 @@ pub const fn authentication_controls_require_repaint(
 // DESC: Keeps chat updates visible beside active apps without expanding their window damage to the whole screen.
 // ------------------=
 pub const fn chat_requires_independent_widget_damage(screen: u8, changed: bool) -> bool {
-    changed && matches!(screen, 4 | 8 | 9 | 10)
+    changed && matches!(screen, 2 | 4 | 8 | 9 | 10 | 11)
 }
 
 // ------------------------=
