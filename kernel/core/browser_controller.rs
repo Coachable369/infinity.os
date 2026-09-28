@@ -8,6 +8,7 @@ static mut INPUT:infinity_browser_core::input_queue::Queue<64>=infinity_browser_
 static mut POINTER:infinity_browser_core::pointer::Pointer=infinity_browser_core::pointer::Pointer::new();
 static mut DOWNLOAD:Option<crate::runtime::browser::Download>=None;
 static mut CONSENT:Option<Launch>=None;
+static mut NEW_TABS:u8=0;
 
 // ------------------------=
 // FUNC: request_access
@@ -153,6 +154,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
 // DESC: Retains a close request until the worker mailbox accepts it, superseding pending navigation.
 // ------------------=
 pub(super) fn close() {unsafe {
+    NEW_TABS=0;
     CONSENT=None;crate::runtime::browser::permission_presentation(0);
     DOWNLOAD=None;crate::runtime::browser::download_presentation(&[],0);
     (&mut *(&raw mut INPUT)).clear();
@@ -168,7 +170,7 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
     if let ConsoleKey::Shortcut(value)=key {
         let mut command=abi::Command::empty();
         match value {
-            b't'|b'T'=>command.kind=abi::TAB_CREATE,
+            b't'|b'T'=>{new_tab(console);return;},
             b'w'|b'W'=>{
                 let view=crate::runtime::browser::presentation();
                 if view.tab_count<=1 {console.close_desktop_app();return;}
@@ -250,6 +252,22 @@ fn navigate_address(console:&mut ConsoleRuntime) {
 }
 
 // ------------------------=
+// FUNC: new_tab
+// DESC: Retains add-tab gestures across worker startup and mailbox pressure instead of silently discarding clicks.
+// ------------------=
+fn new_tab(console:&mut ConsoleRuntime) {
+    unsafe {
+        if (&*(&raw const LAUNCH)).as_ref().is_some_and(|launch|
+            launch.owner==SecurityIdentity(console.current_session.0) && launch.stage<3) {
+            NEW_TABS=NEW_TABS.saturating_add(1).min(8);
+            poll(console);
+            return;
+        }
+    }
+    request_access(console,b"https://example.com/");
+}
+
+// ------------------------=
 // FUNC: chrome_pointer
 // DESC: Hit-tests native chrome with the exact painter layout and keeps those clicks out of web content.
 // ------------------=
@@ -292,7 +310,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
         Control::Back=>{if view.history&1!=0 {command.kind=abi::BACK;}},
         Control::Forward=>{if view.history&2!=0 {command.kind=abi::FORWARD;}},
         Control::Reload=>command.kind=abi::RELOAD,
-        Control::NewTab=>command.kind=abi::TAB_CREATE,
+        Control::NewTab=>{new_tab(console);return true;},
         Control::Minimize=>console.minimize_desktop_app(),
         Control::Maximize=>console.toggle_window_maximized(5),
         Control::Close=>console.close_desktop_app(),
@@ -385,6 +403,7 @@ pub(super) fn poll(console:&ConsoleRuntime) {
             }
         }
         if launch.owner!=SecurityIdentity(console.current_session.0) {
+            NEW_TABS=0;
             DOWNLOAD=None;crate::runtime::browser::download_presentation(&[],0);launch.stage=3;
         }
         if matches!(launch.stage,1|2) {
@@ -398,6 +417,11 @@ pub(super) fn poll(console:&ConsoleRuntime) {
                 1=>{command.kind=abi::NAVIGATE;command.length=launch.length as u32;
                     command.text[..launch.length].copy_from_slice(&launch.url[..launch.length]);},
                 2=>{
+                    if NEW_TABS>0 {
+                        command.kind=abi::TAB_CREATE;
+                        if crate::runtime::browser::submit(launch.owner,command).is_ok() {NEW_TABS-=1;}
+                        return;
+                    }
                     let Some(size)=viewport(console) else {return;};
                     if size==launch.size || size.0>2048 || size.1>2048 {return;}
                     command.kind=abi::RESIZE;command.a=size.0;command.b=size.1;

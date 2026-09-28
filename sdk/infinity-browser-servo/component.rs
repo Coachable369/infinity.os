@@ -229,6 +229,7 @@ fn run() {
                     event(abi::EVENT_TAB_SELECTED,group.active(),"");
                     last_address=None;last_title=None;last_complete=false;last_history=None;last_failed=false;
                 }
+                if result.is_err() {event(abi::EVENT_ERROR,1,"");}
                 continue;
             }
             if command.kind==abi::RESIZE {

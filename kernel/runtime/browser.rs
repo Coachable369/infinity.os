@@ -308,7 +308,9 @@ pub fn poll_presentation()->bool {
                 abi::EVENT_OPEN=>{view.loading=false;view.error=0;view.history=0;},
                 abi::EVENT_CLOSED=>{view.loading=false;view.history=0;view.tabs=[EMPTY_TAB;8];view.tab_count=0;view.active_tab=0;},
                 abi::EVENT_TAB_CREATED=>{if view.tab_count<8 && !view.tabs.iter().any(|tab|tab.id==event.value) {
-                    view.tabs[view.tab_count]=TabPresentation{id:event.value,..EMPTY_TAB};view.tab_count+=1;
+                    let at=infinity_browser_core::tabs::adjacent_index(view.tabs[..view.tab_count].iter().map(|tab|tab.id),view.active_tab);
+                    view.tabs.copy_within(at..view.tab_count,at+1);
+                    view.tabs[at]=TabPresentation{id:event.value,..EMPTY_TAB};view.tab_count+=1;
                 }},
                 abi::EVENT_TAB_SELECTED=>{view.active_tab=event.value;view.error=0;view.address_length=0;view.title_length=0;
                     view.history=0;view.address_focused=false;},

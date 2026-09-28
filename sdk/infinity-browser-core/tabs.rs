@@ -4,6 +4,9 @@ use crate::Error;
 
 pub const MAX_TABS: usize = 24;
 const CLOSED_LIMIT: usize = 8;
+#[path="tab_order.rs"]
+mod order;
+pub use order::adjacent_index;
 pub const GLANCE_DELAY_MS: u64 = 500;
 pub const RECOVERY_LIMIT: usize = 32 + MAX_TABS * 2312;
 

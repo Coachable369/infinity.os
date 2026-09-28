@@ -150,6 +150,9 @@ mod tests {
                 let fitted=Layout::new(760*scale,240*scale,scale).unwrap().with_tab_count(count);
                 assert_eq!(fitted.new_tab.x,right+(8*scale) as i32);
                 assert_eq!(fitted.hit(fitted.new_tab.x,fitted.new_tab.y),Some(Control::NewTab));
+                for y in 0..fitted.new_tab.height {for x in 0..fitted.new_tab.width {
+                    assert_eq!(fitted.hit(fitted.new_tab.x+x as i32,fitted.new_tab.y+y as i32),Some(Control::NewTab));
+                }}
             }
             assert_eq!(layout.hit(layout.new_tab.x,layout.new_tab.y),Some(Control::NewTab));
             assert!(layout.tab(0,0).is_none());

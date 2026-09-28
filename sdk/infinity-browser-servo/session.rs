@@ -3,6 +3,8 @@
 use std::{cell::{Cell, RefCell}, rc::Rc, string::String};
 use servo::{RenderingContext, Servo, SoftwareRenderingContext, WebView, WebViewBuilder};
 use super::resources::{Provider, Resources};
+#[path="../infinity-browser-core/tab_order.rs"]
+mod tab_order;
 
 const MAX_DIMENSION: u32 = 2048;
 const MAX_PIXELS: u64 = 2560 * 1600;
@@ -254,7 +256,8 @@ impl<P: Provider + 'static> TabSessions<P> {
         session.visible(false);
         let id = self.next;
         self.next = next;
-        self.tabs.push(Tab { id, session });
+        let at=tab_order::adjacent_index(self.tabs.iter().map(|tab|tab.id),self.active);
+        self.tabs.insert(at,Tab { id, session });
         if foreground || self.active == 0 { self.select(id)?; }
         Ok(id)
     }
