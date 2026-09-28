@@ -31,6 +31,8 @@ pub use native_software_context::SoftwareRenderingContext;
     (servo / relative).write_text(source)
     (servo / relative).with_name("native_software_context.rs").write_bytes(
         (root / "sdk/servo-std/software_rendering_context.rs").read_bytes())
+    (servo / relative).with_name("infinity_browser_startup.rs").write_bytes(
+        (root / "sdk/infinity-browser-core/startup.rs").read_bytes())
     relative = "components/paint/painter.rs"
     source = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
     marker = "webrender::WebRenderOptions {"

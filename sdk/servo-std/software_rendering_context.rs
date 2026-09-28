@@ -7,6 +7,8 @@ use dpi::PhysicalSize;
 use gleam::gl::{self, Gl};
 use image::RgbaImage;
 use webrender_api::units::DeviceIntRect;
+#[path = "infinity_browser_startup.rs"]
+mod startup;
 
 pub struct SoftwareRenderingContext {
     context: swgl::Context,
@@ -34,7 +36,7 @@ impl SoftwareRenderingContext {
     // DESC: Bounds viewport backing to sixteen MiB of color pixels before allocation.
     // ------------------=
     fn valid_size(size: PhysicalSize<u32>) -> bool {
-        size.width > 0 && size.height > 0 && size.width <= 2048 && size.height <= 2048
+        startup::valid_viewport(size.width,size.height)
     }
 }
 

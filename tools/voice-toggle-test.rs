@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static BUSY: AtomicBool = AtomicBool::new(false);
 static CAPTURES: AtomicUsize = AtomicUsize::new(0);
+static CAPTURE_STATE: AtomicUsize = AtomicUsize::new(0);
 static ACTIVE: AtomicBool = AtomicBool::new(true);
 static FLOW: AtomicBool = AtomicBool::new(false);
 static READY: AtomicBool = AtomicBool::new(false);
@@ -32,7 +33,7 @@ mod runtime {
         pub struct Session {pub id:super::execution::SecurityIdentity,pub user:super::execution::SecurityIdentity,pub state:SessionState}
         pub struct AiProfile {pub speech_output_enabled:bool}
     }
-    pub mod audio {#[derive(PartialEq)] pub enum CaptureState {Recording}}
+    pub mod audio {#[derive(PartialEq)] pub enum CaptureState {Recording,Overrun,Complete,Denied,DeviceLost}}
     pub struct Identity;
     impl Identity {
         // ------------------------=
@@ -73,12 +74,12 @@ mod drivers {pub mod audio {
     // FUNC: capture
     // DESC: Counts actual controller requests to reopen the microphone.
     // ------------------=
-    pub fn capture(_:SecurityIdentity,_:u64)->bool{crate::CAPTURES.fetch_add(1,crate::Ordering::SeqCst);true}
+    pub fn capture(_:SecurityIdentity,_:u64)->bool{crate::CAPTURES.fetch_add(1,crate::Ordering::SeqCst);crate::CAPTURE_STATE.store(0,crate::Ordering::SeqCst);true}
     // ------------------------=
     // FUNC: capture_status
     // DESC: Supplies a supported native capture format.
     // ------------------=
-    pub fn capture_status()->Option<Status>{Some(Status{sample_rate:16000,state:CaptureState::Recording})}
+    pub fn capture_status()->Option<Status>{Some(Status{sample_rate:16000,state:match crate::CAPTURE_STATE.load(crate::Ordering::SeqCst){1=>CaptureState::Overrun,2=>CaptureState::Complete,3=>CaptureState::Denied,4=>CaptureState::DeviceLost,_=>CaptureState::Recording}})}
     // ------------------------=
     // FUNC: stop_capture
     // DESC: Closes the deterministic capture seam.
@@ -307,6 +308,12 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(PHRASES.lock().unwrap().len(),2);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
+    for terminal in [1,2] {
+        let opened=CAPTURES.load(Ordering::SeqCst);
+        CAPTURE_STATE.store(terminal,Ordering::SeqCst);conversation::poll();
+        assert_eq!(conversation::state().0,State::Listening);
+        assert_eq!(CAPTURES.load(Ordering::SeqCst),opened+1);
+    }
     MICROPHONE.lock().unwrap().extend([0;3200]);
     MICROPHONE.lock().unwrap().extend([1700;1600]);
     MICROPHONE.lock().unwrap().extend([0;12000]);
@@ -365,5 +372,36 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(conversation::state().0,State::Recognizing);
     assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==2300));
     assert_eq!(PHRASES.lock().unwrap().len(),phrases);
+    conversation::stop(owner);conversation::poll();
+    for terminal in [3,4] {
+        assert!(conversation::start(owner));
+        let opened=CAPTURES.load(Ordering::SeqCst);
+        CAPTURE_STATE.store(terminal,Ordering::SeqCst);
+        conversation::poll();conversation::poll();
+        assert_eq!(conversation::state().0,State::Off);
+        assert_eq!(CAPTURES.load(Ordering::SeqCst),opened);
+    }
+    // A slow first inference can outlast an input DMA ring. Recovery must
+    // retain continuous conversation instead of turning the reply into a
+    // one-way typed response whose completion leaves the microphone off.
+    TURNS.store(0,Ordering::SeqCst);assert!(conversation::start(owner));
+    MICROPHONE.lock().unwrap().extend([1800;1600]);MICROPHONE.lock().unwrap().extend([0;12000]);
+    for _ in 0..10 {conversation::poll();if conversation::state().0==State::Thinking {break;}}
+    assert_eq!(conversation::state().0,State::Thinking);
+    STREAMING.store(true,Ordering::SeqCst);VISIBLE.store(0,Ordering::SeqCst);
+    conversation::poll();assert_eq!(conversation::state().0,State::Thinking);
+    let opened=CAPTURES.load(Ordering::SeqCst);
+    CAPTURE_STATE.store(1,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Thinking);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened+1);
+    STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
+    conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    MICROPHONE.lock().unwrap().extend([2400;1600]);MICROPHONE.lock().unwrap().extend([0;12000]);
+    for _ in 0..4 {conversation::poll();if conversation::state().0==State::Recognizing {break;}}
+    assert_eq!(conversation::state().0,State::Recognizing);
+    assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==2400));
     conversation::stop(owner);conversation::poll();
 }

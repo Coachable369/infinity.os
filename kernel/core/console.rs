@@ -11870,11 +11870,15 @@ impl ConsoleRuntime {
                 self.output.write_line(match state {
                     State::Off=>b"Voice: off", State::Listening=>b"Voice: listening (voice stop mutes)",
                     State::Recognizing=>b"Voice: recognizing locally",State::Thinking=>b"Voice: Hermes responding",
-                    State::Speaking=>b"Voice: speaking (microphone paused)",State::Stopping=>b"Voice: stopping",State::Failed=>b"Voice: unavailable",
+                    State::Speaking=>b"Voice: speaking",State::Stopping=>b"Voice: stopping",State::Failed=>b"Voice: unavailable",
                 });
                 let recognition = crate::runtime::ai::voice_input::status();
                 self.output.write_number(b"Conversation state: ", state as u64);
                 self.output.write_number(b"Microphone level: ", level as u64);
+                if let Some(capture)=crate::drivers::audio::capture_status() {
+                    self.output.write_number(b"Microphone capture state: ",capture.state as u64);
+                    self.output.write_number(b"Microphone captured frames: ",capture.frames);
+                }
                 self.output.write_number(b"Recognition milliseconds: ", recognition.elapsed_ns / 1_000_000);
                 self.output.write_number(b"Recognition heap bytes: ", recognition.heap_bytes as u64);
                 self.output.write_number(b"Recognition error: ", recognition.error as u64);

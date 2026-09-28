@@ -30,7 +30,7 @@ static mut ACTIVE_TAB:u32=0;
 static mut TAB_PROOF:u32=0;
 static mut SECOND_REQUEST:u64=0;
 static mut INPUT:input_queue::Queue<16>=input_queue::Queue::new();
-static PIXELS:frames::Frames<81920>=frames::Frames::new();
+static PIXELS:frames::Frames<16384000>=frames::Frames::new();
 static HTML:&[u8]=b"<!doctype html><html style='background:red;min-height:100vh'><script>let down=false,clicked=false;document.documentElement.style.background='rgb(12,34,56)';document.addEventListener('click',e=>{if(e.clientX===40&&e.clientY===40)clicked=true});document.addEventListener('keydown',e=>{if(e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.altKey&&!e.metaKey&&e.repeat)down=true});document.addEventListener('keyup',e=>{if(clicked&&down&&e.key==='K'&&e.shiftKey&&e.ctrlKey&&!e.repeat)document.documentElement.style.background='rgb(34,56,78)'})</script></html>";
 static HEADERS:&[u8]=b"content-type: text/html\r\n";
 static mut HOST:abi::Host=abi::Host {
@@ -126,7 +126,7 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
         let color=if STEP==10 {[34,56,78,255]}else{[12,34,56,255]};
         if frame.bytes().chunks_exact(4).all(|pixel|pixel==color) {
             if STEP==17 && LOCATION==3 {STEP=18;}
-            let next=match (STEP,width,height) {(2,128,128)=>3,(4,160,96)=>5,(8,128,128)=>9,(10,128,128)=>11,_=>STEP};
+            let next=match (STEP,width,height) {(2,128,128)=>3,(4,2560,1440)=>5,(8,128,128)=>9,(10,128,128)=>11,_=>STEP};
             if next!=STEP {STEP=next;FRAMES+=1;record(2,STEP as u64);}
         }
     }
@@ -134,7 +134,7 @@ unsafe extern "C" fn command(_: *mut c_void,out:*mut abi::Command)->u32 {
     match STEP {
         0|6=>{value.kind=abi::OPEN;value.a=128;value.b=128;STEP+=1;},
         1|7=>{value.kind=abi::NAVIGATE;let url:&[u8]=if STEP==1 {b"https://fixture.test/redirect"}else{b"https://fixture.test/"};value.text[..url.len()].copy_from_slice(url);value.length=url.len() as u32;STEP+=1;},
-        3=>{value.kind=abi::RESIZE;value.a=160;value.b=96;STEP=4;},
+        3=>{value.kind=abi::RESIZE;value.a=2560;value.b=1440;STEP=4;},
         5=>{value.kind=abi::CLOSE;STEP=6;},
         9=>{value.kind=abi::KEY;value.flags=abi::KEY_DOWN|abi::KEY_REPEAT;value.a='K' as u32;
             let mut pointer=pointer::Pointer::new();

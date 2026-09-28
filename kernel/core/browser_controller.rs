@@ -279,7 +279,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
     };
     let size=viewport(console);
     let result=match size {
-        Some((w,h)) if w<=2048 && h<=2048=>unsafe {crate::runtime::browser::start(owner,caps)},
+        Some((w,h)) if infinity_browser_core::startup::valid_viewport(w,h)=>unsafe {crate::runtime::browser::start(owner,caps)},
         _=>Err(infinity_browser_core::startup::Error::Viewport),
     };
     crate::runtime::browser::launch_presentation(url,result.err());
@@ -765,7 +765,7 @@ pub(super) fn poll(console:&ConsoleRuntime) {
                         return;
                     }
                     let Some(size)=viewport(console) else {return;};
-                    if size==launch.size || size.0>2048 || size.1>2048 {return;}
+                    if size==launch.size || !infinity_browser_core::startup::valid_viewport(size.0,size.1) {return;}
                     command.kind=abi::RESIZE;command.a=size.0;command.b=size.1;
                 },
                 _=>command.kind=abi::CLOSE,

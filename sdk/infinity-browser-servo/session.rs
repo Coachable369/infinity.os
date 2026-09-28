@@ -6,8 +6,8 @@ use super::resources::{Provider, Resources};
 #[path="../infinity-browser-core/tab_order.rs"]
 mod tab_order;
 
-const MAX_DIMENSION: u32 = 2048;
-const MAX_PIXELS: u64 = 2560 * 1600;
+#[path = "../infinity-browser-core/startup.rs"]
+mod startup;
 
 struct Delegate<P: Provider> {
     resources: Rc<Resources<P>>,
@@ -67,8 +67,7 @@ pub struct Session<P: Provider> {
 // DESC: Bounds viewport allocations before handing dimensions to the engine.
 // ------------------=
 fn valid_size(width: u32, height: u32) -> bool {
-    width > 0 && height > 0 && width <= MAX_DIMENSION && height <= MAX_DIMENSION
-        && u64::from(width) * u64::from(height) <= MAX_PIXELS
+    startup::valid_viewport(width,height)
 }
 
 impl<P: Provider + 'static> Session<P> {

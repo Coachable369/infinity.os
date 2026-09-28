@@ -19,6 +19,26 @@
   11.6-second paragraph: 36.83 to 22.02 seconds. Unsupported CPUs retain the
   baseline implementation; application logic remains shared with x86_64.
 
+## Local-boot follow-up
+
+- Browser startup, resize, and the software renderer now share the same
+  area-bounded viewport validation. The previous 2048-pixel dimension checks
+  rejected wide windows even when they fit the existing frame storage. The
+  native ABI regression now renders and verifies every pixel at 2560 x 1440,
+  then completes close/reopen, input, navigation, and tab lifecycle checks.
+- Continuous voice reacquires authorized microphone capture after a completed
+  capture window or DMA overrun. It discards incomplete input while preserving
+  the conversational response/state. Permission denial and device loss do not
+  auto-reopen. The behavioral regression covers an overrun during the first
+  inference, spoken completion, and successful recognition of a second utterance.
+- These checks establish the corrected failure paths, not the exact cause of
+  the reported VirtualBox startup error. The full local error panel remains
+  needed to distinguish viewport rejection from worker/startup failures.
+- The inspected `infinityos-4` VM boots disk before DVD. Updating its attached
+  ISO does not replace the already-installed System Generation. Do not erase
+  or reprovision that disk just to verify a new ISO; use a separate test disk
+  or the supported system-update workflow.
+
 ## Acceptance still open
 
 - Google search results (`https://www.google.com/search?q=infinityos`) returned

@@ -295,13 +295,27 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
 // DESC: Renews explicit microphone authority and feeds bounded echo-reduced input during listening and spoken replies.
 // ------------------=
 unsafe fn capture_frame(duplex: bool) -> bool {
+    use crate::runtime::audio::CaptureState;
+    let Some(status)=crate::drivers::audio::capture_status() else {return true;};
+    if status.state != CaptureState::Recording {
+        // A bounded DMA overrun or expired capture window is not a user mute.
+        // Discard the incomplete utterance and acquire fresh authority, without
+        // dropping the conversational turn. Permission/device failures stay fatal.
+        if CONTINUOUS && matches!(status.state,CaptureState::Overrun|CaptureState::Complete) {
+            let previous=STATE;
+            retire(INPUT_CAP);INPUT_CAP=0;
+            let reopened=listen();
+            if reopened {STATE=previous;}
+            return reopened;
+        }
+        return false;
+    }
     let now=super::qwen::workers::clock_ns();
     if now>=RENEW_AT {
         let cap=grant(OWNER,CapabilityType::AudioInput,60).unwrap_or(0);
         if cap==0 || !crate::drivers::audio::renew_capture(OWNER,cap) {retire(cap);return false;}
         INPUT_CAP=cap;RENEW_AT=now+1_000_000_000;
     }
-    if !crate::drivers::audio::capture_status().is_some_and(|s|s.state==crate::runtime::audio::CaptureState::Recording) {return false;}
     let count=crate::drivers::audio::read_capture(OWNER,&mut *(&raw mut RAW));
     if count==0 {return true;}
     let (used,n)=(&mut *(&raw mut RESAMPLER)).process(&(&*(&raw const RAW))[..count],&mut *(&raw mut MONO));
