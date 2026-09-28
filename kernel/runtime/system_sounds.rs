@@ -44,8 +44,11 @@ pub fn play_login_resident() -> bool {
     }
     let samples = LOGIN_PCM.samples();
     let length = samples.len().saturating_mul(rate as usize).div_ceil(16_000) * 2;
+    // HDA's DMA position leads audible codec/host output. Drain into resident
+    // silence before stopping the stream, preserving the cue's reverb tail.
+    let drained_length = length.saturating_add(rate as usize / 4 * 2);
     let capacity = rate as usize * 2 * 32;
-    if length == 0 || length > capacity || capacity > 48_000 * 2 * 32 { return false; }
+    if length == 0 || drained_length > capacity || capacity > 48_000 * 2 * 32 { return false; }
     let now = now_ns / 1_000_000_000;
     let capability = crate::runtime::with_runtime(|runtime| runtime.capabilities.grant(
         CapabilityType::AudioOutput, 0, 1, 0, SYSTEM_SOUND_OWNER,
@@ -56,7 +59,7 @@ pub fn play_login_resident() -> bool {
         output.fill(0);
         login_pcm::fill(samples, &mut output[..length], 0, rate)
             && crate::drivers::audio::play_resident_speech(SYSTEM_SOUND_OWNER, capability,
-                &(&*(&raw const LOGIN_RESIDENT.0))[..capacity], length, rate)
+                &(&*(&raw const LOGIN_RESIDENT.0))[..capacity], drained_length, rate)
     };
     if !started {
         crate::runtime::with_runtime(|runtime| {
