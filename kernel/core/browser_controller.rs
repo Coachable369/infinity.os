@@ -11,7 +11,7 @@ static mut CONSENT:Option<Launch>=None;
 
 // ------------------------=
 // FUNC: request_access
-// DESC: Opens native browser consent without starting Servo or granting network authority.
+// DESC: Opens the browser immediately under the signed-in user's Network Settings policy.
 // ------------------=
 pub(super) fn request_access(console:&mut ConsoleRuntime,url:&[u8]) {
     if url.len()>2048 {return;}
@@ -22,20 +22,19 @@ pub(super) fn request_access(console:&mut ConsoleRuntime,url:&[u8]) {
     console.store_active_app_window();console.desktop_app=DesktopAppKind::Browser;
     console.browser_window.visible=true;console.load_active_app_window();
     console.ai_chat_focus=0;console.shell_menu=0;
-    crate::runtime::browser::permission_presentation(1);
+    approve_access(console);
 }
 
 // ------------------------=
 // FUNC: approve_access
-// DESC: Grants only the existing privileged, time-bounded network lease after a native user approval.
+// DESC: Retries normal browser launch without overriding Network Settings restrictions.
 // ------------------=
 fn approve_access(console:&mut ConsoleRuntime) {unsafe {
     let Some(consent)=(&*(&raw const CONSENT)).as_ref() else {return;};
     if consent.owner!=SecurityIdentity(console.current_session.0) {CONSENT=None;crate::runtime::browser::permission_presentation(0);return;}
-    if !geturl::authorize_for(console,true,true) {crate::runtime::browser::permission_presentation(2);return;}
     let mut command=[0u8;2056];command[..8].copy_from_slice(b"browser ");
     command[8..8+consent.length].copy_from_slice(&consent.url[..consent.length]);let length=8+consent.length;
-    CONSENT=None;crate::runtime::browser::permission_presentation(0);
+    crate::runtime::browser::permission_presentation(0);
     execute(console,&command[..length]);
 }}
 
@@ -116,21 +115,18 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
         if !(0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i|runtime.identity.session_nth(i))
             .any(|s|s.id==console.current_session && s.user==console.current_user
                 && s.state==crate::runtime::identity::SessionState::Active) {return None;}
-        let mut ids=[0;4];
-        for (i,kind) in [CapabilityType::NetworkConnect,CapabilityType::NetworkSend,
-            CapabilityType::NetworkReceive,CapabilityType::NetworkResolve].into_iter().enumerate() {
-            ids[i]=(0..runtime.capabilities.count()).filter_map(|i|runtime.capabilities.nth(i))
-                .find(|c|runtime.capabilities.validate(c.id,owner,kind,0,1,0,now).is_ok())?.id;
-        }
-        Some(ids)
+        runtime.network.browser_authority(&mut runtime.capabilities,owner,true,now)
     }).flatten();
     let Some(caps)=caps else {
-        console.output.write_line(b"Browser requires network permission. See https authorize.");return true;
+        crate::runtime::browser::permission_presentation(2);
+        console.output.write_line(b"Browser access unavailable. Check your session and Network Settings.");return true;
     };
     let Some(size)=viewport(console) else {console.output.write_line(b"Browser window is too small.");return true;};
     if size.0>2048 || size.1>2048 || !unsafe {crate::runtime::browser::start(owner,caps)} {
         console.output.write_line(b"Native browser worker is unavailable.");return true;
     }
+    unsafe { CONSENT=None; }
+    crate::runtime::browser::permission_presentation(0);
     let mut launch=Launch{owner,url:[0;2048],length:url.len(),stage:0,size};
     launch.url[..url.len()].copy_from_slice(url);
     unsafe {

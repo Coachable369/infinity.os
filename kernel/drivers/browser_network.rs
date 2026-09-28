@@ -172,7 +172,7 @@ mod tests {
 // ------------------=
 /// BSP only, outside any outstanding Runtime or HTTPS actor borrow.
 pub unsafe fn pump() {
-    let Some((owner,caps))=AUTHORITY else {
+    let Some((owner,mut caps))=AUTHORITY else {
         for slot in &SLOTS {
             let state=slot.state.load(Ordering::Acquire);
             if matches!(state,PENDING|READY|FAILED) {
@@ -181,6 +181,17 @@ pub unsafe fn pump() {
         }
         return;
     };
+    let allowed=crate::runtime::with_runtime(|runtime| {
+        (0..crate::runtime::identity::MAX_SESSIONS).filter_map(|i|runtime.identity.session_nth(i))
+            .any(|s|s.id.0==owner.0 && s.state==crate::runtime::identity::SessionState::Active)
+            && runtime.network.profiles.active().is_some_and(|p|p.interfaces_enabled && p.internet_allowed && p.resolver_enabled)
+    }).unwrap_or(false);
+    if !allowed {
+        if let Some((_,ticket))=CURRENT {let _=https::cancel_browser(owner,ticket);}
+        for slot in &SLOTS {
+            if slot.state.load(Ordering::Acquire)==PENDING {slot.state.store(FAILED,Ordering::Release);}
+        }
+    }
     if let Some((index,ticket))=CURRENT {
         let slot=&SLOTS[index];
         if slot.cancelled.load(Ordering::Acquire) {let _=https::cancel_browser(owner,ticket);}
@@ -205,6 +216,14 @@ pub unsafe fn pump() {
                 }
             }
         }
+    }
+    if !allowed {return;}
+    if SLOTS.iter().any(|slot|slot.state.load(Ordering::Acquire)==PENDING) {
+        let now=crate::runtime::node_client::clock();
+        let refreshed=now.and_then(|now|crate::runtime::with_runtime(|runtime|
+            runtime.network.browser_authority(&mut runtime.capabilities,owner,true,now)).flatten());
+        let Some(refreshed)=refreshed else {return;};
+        caps=refreshed;AUTHORITY=Some((owner,caps));
     }
     for (index,slot) in SLOTS.iter().enumerate() {
         let state=slot.state.load(Ordering::Acquire);

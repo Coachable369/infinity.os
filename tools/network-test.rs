@@ -58,6 +58,7 @@ fn route_behavior() {
 // DESC: Verifies transactional activation, offline local operation, rollback, and binary persistence.
 // ------------------=
 fn profile_behavior() {
+    browser_default_access_behavior();
     let mut network = NetworkRuntime::new(); network.initialize().unwrap();
     let initial = network.status(); assert_eq!(initial.active_profile, 1);
     network.activate_profile(3).unwrap(); assert_eq!(network.status().connectivity, ConnectivityClass::Offline);
@@ -67,6 +68,37 @@ fn profile_behavior() {
     assert_eq!(network.profiles.create(invalid), Err(NetworkError::InvalidProfile));
     assert_eq!(network.status().active_profile, 3);
     assert!(network.activate_profile(1).is_ok());
+}
+
+// ------------------------=
+// FUNC: browser_default_access_behavior
+// DESC: Exercises default web authority, bounded renewal, signed-out denial and persisted opt-out.
+// ------------------=
+fn browser_default_access_behavior() {
+    let mut network = NetworkRuntime::new(); network.initialize().unwrap();
+    let mut caps = CapabilityManager::new();
+    let owner = SecurityIdentity([42;16]);
+    assert!(network.browser_authority(&mut caps,owner,false,0).is_none());
+    let ids = network.browser_authority(&mut caps,owner,true,0).unwrap();
+    assert_eq!(ids,network.browser_authority(&mut caps,owner,true,1).unwrap());
+    for (i,kind) in [CapabilityType::NetworkConnect,CapabilityType::NetworkSend,
+        CapabilityType::NetworkReceive,CapabilityType::NetworkResolve].into_iter().enumerate() {
+        assert!(caps.validate(ids[i],owner,kind,0,1,0,1).is_ok());
+        assert!(caps.validate(ids[i],SecurityIdentity([43;16]),kind,0,1,0,1).is_err());
+    }
+    for now in (600..60_000).step_by(600) {
+        assert!(network.browser_authority(&mut caps,owner,true,now).is_some());
+        assert_eq!(caps.count(),4);
+    }
+    for profile in [2,3] {
+        network.activate_profile(profile).unwrap();
+        assert!(network.browser_authority(&mut caps,owner,true,60_000).is_none());
+        let bytes=network.encode_state();
+        let mut restored=NetworkRuntime::new();restored.initialize().unwrap();restored.restore_state(&bytes).unwrap();
+        assert!(restored.browser_authority(&mut caps,owner,true,60_000).is_none());
+    }
+    network.activate_profile(1).unwrap();
+    assert!(network.browser_authority(&mut caps,owner,true,60_000).is_some());
 }
 
 // ------------------------=
