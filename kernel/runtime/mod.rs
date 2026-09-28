@@ -2592,6 +2592,20 @@ pub fn persist_shell_profile_state() -> bool {
 }
 
 // ------------------------=
+// FUNC: complete_onboarding_durable
+// DESC: Commits completed setup before desktop entry; restores retryable state on a failed durable write.
+// ------------------=
+pub fn complete_onboarding_durable() -> bool {
+    let Some(before) = with_runtime(|r| r.identity.encode()) else { return false; };
+    if !with_runtime(|r| r.identity.complete_onboarding().is_ok()).unwrap_or(false) { return false; }
+    if persist_identity_state() { return true; }
+    if let Ok(state) = identity::IdentitySystem::decode(&before) {
+        with_runtime(|r| r.identity = state);
+    }
+    false
+}
+
+// ------------------------=
 // FUNC: persist_identity_state
 // DESC: Commits authoritative identity state as a versioned native object.
 // ------------------=

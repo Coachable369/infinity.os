@@ -173,6 +173,7 @@ pub enum AiProviderPolicy {
 pub enum VoiceActivation {
     Disabled = 1,
     PushToTalk = 2,
+    Continuous = 3,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -530,7 +531,7 @@ impl IdentitySystem {
         self.voice_profiles[slot] = Some(VoiceProfile {
             user: user_id,
             enabled: true,
-            activation: VoiceActivation::PushToTalk,
+            activation: VoiceActivation::Continuous,
         });
         self.ownership[slot] = Some(PersonalSpaceOwnership {
             owner: user_id,
@@ -1909,10 +1910,10 @@ fn read_user(
     let voice = VoiceProfile {
         user: id,
         enabled: input[at + 158] & 1 != 0,
-        activation: if input[at + 159] == 2 {
-            VoiceActivation::PushToTalk
-        } else {
-            VoiceActivation::Disabled
+        activation: match input[at + 159] {
+            2 => VoiceActivation::PushToTalk,
+            3 => VoiceActivation::Continuous,
+            _ => VoiceActivation::Disabled,
         },
     };
     Ok((user, profile, ai, voice))

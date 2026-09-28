@@ -709,7 +709,18 @@ pub fn identity_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError>
 // DESC: Transactionally commits the next version of authoritative identity state.
 // ------------------=
 pub fn identity_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
-    object_write_path(b"/system/identity/state", content)
+    checkpoint_state(b"/system/identity/state", content)
+}
+
+// ------------------------=
+// FUNC: checkpoint_state
+// DESC: Saves mutable system state with bounded copy-on-write history and durable commit barriers.
+// ------------------=
+fn checkpoint_state(path: &[u8], content: &[u8]) -> Result<u32, object::ObjectError> {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    { with_store(|store| store.checkpoint(path, content)) }
+    #[cfg(target_arch = "x86")]
+    { let _ = (path, content); Err(object::ObjectError::SpaceUnavailable) }
 }
 
 // ------------------------=
@@ -725,7 +736,7 @@ pub fn network_state_load(out: &mut [u8]) -> Result<usize, object::ObjectError> 
 // DESC: Transactionally commits a new native networking-state object version.
 // ------------------=
 pub fn network_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
-    object_write_path(b"/system/network/state", content)
+    checkpoint_state(b"/system/network/state", content)
 }
 
 // ------------------------=
@@ -804,7 +815,7 @@ pub fn shell_profile_state_load(out: &mut [u8]) -> Result<usize, object::ObjectE
 // DESC: Commits declarative Shell Profile state without dotfiles or executable startup code.
 // ------------------=
 pub fn shell_profile_state_commit(content: &[u8]) -> Result<u32, object::ObjectError> {
-    object_write_path(b"/system/settings/shell/profiles", content)
+    checkpoint_state(b"/system/settings/shell/profiles", content)
 }
 // ------------------------=
 // FUNC: namespace_attach

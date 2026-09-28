@@ -469,6 +469,7 @@ struct ConsoleRuntime {
     onboarding_secret_length: usize,
     current_user: crate::runtime::identity::StableId,
     current_session: crate::runtime::identity::StableId,
+    voice_autostart_after_ns: u64,
     authentication_success: crate::ui::authentication_motion::Timeline,
     authentication_tick_ns: Option<u64>,
     authentication_restore_locked_layout: bool,
@@ -626,6 +627,7 @@ impl ConsoleRuntime {
             onboarding_secret_length: 0,
             current_user: crate::runtime::identity::StableId::zero(),
             current_session: crate::runtime::identity::StableId::zero(),
+            voice_autostart_after_ns: 0,
             authentication_success: crate::ui::authentication_motion::Timeline::new(),
             authentication_tick_ns: None,
             authentication_restore_locked_layout: false,
@@ -2485,7 +2487,7 @@ impl ConsoleRuntime {
             );
         }
         let activation = if enabled {
-            crate::runtime::identity::VoiceActivation::PushToTalk
+            crate::runtime::identity::VoiceActivation::Continuous
         } else {
             crate::runtime::identity::VoiceActivation::Disabled
         };
@@ -5315,8 +5317,11 @@ impl ConsoleRuntime {
                     self.restore_onboarding_input();
                     return;
                 }
+                if !crate::runtime::complete_onboarding_durable() {
+                    self.onboarding_validation_error = true;
+                    return;
+                }
                 let session = crate::runtime::with_runtime(|runtime| {
-                    runtime.identity.complete_onboarding()?;
                     runtime.identity.create_session(
                         self.current_user,
                         &self.onboarding_secret[..self.onboarding_secret_length],
@@ -7437,7 +7442,10 @@ impl ConsoleRuntime {
                     let point=crate::ui::geometry::Point{x:self.pointer_x*self.system.framebuffer_width as i32/1000,y:self.pointer_y*self.system.framebuffer_height as i32/1000};
                     if rect.contains(point){
                         let owner=crate::runtime::execution::SecurityIdentity(self.current_session.0);
-                        if self.voice_microphone_allowed(){voice_conversation::toggle(owner);}else{voice_conversation::stop(owner);}
+                        let active = !matches!(voice_conversation::state().0,
+                            voice_conversation::State::Off | voice_conversation::State::Failed);
+                        self.set_voice_microphone_enabled(!active);
+                        if !active { voice_conversation::start(owner); }
                         self.redraw();return;
                     }
                 }
@@ -10550,7 +10558,7 @@ impl ConsoleRuntime {
             OperationId::VoiceProfileUpdate => {
                 let enabled = argument(b"enabled") == Some(b"true");
                 let activation = if enabled {
-                    VoiceActivation::PushToTalk
+                    VoiceActivation::Continuous
                 } else {
                     VoiceActivation::Disabled
                 };
@@ -11788,6 +11796,7 @@ impl ConsoleRuntime {
         }
         #[cfg(target_os = "none")]
         if command == b"voice conversation start" || command == b"voice listen" {
+            self.set_voice_microphone_enabled(true);
             let started = crate::runtime::ai::voice_conversation::start(crate::runtime::execution::SecurityIdentity(self.current_session.0));
             self.output.write_line(if started { b"Local voice enabled. Microphone listens between replies. voice stop mutes." }
                 else { b"Voice unavailable: requires an idle local-model chat, active login, and native microphone." });
@@ -11815,6 +11824,7 @@ impl ConsoleRuntime {
         }
         #[cfg(target_os = "none")]
         if command == b"voice stop" || command == b"voice conversation stop" {
+            self.set_voice_microphone_enabled(false);
             crate::runtime::ai::voice_conversation::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0));
             crate::runtime::ai::voice_output::stop(crate::runtime::execution::SecurityIdentity(self.current_session.0));
             self.output.write_line(b"Voice output cancellation requested.");
@@ -13096,6 +13106,22 @@ pub fn browser_window()->DesktopAppWindowState {unsafe {BROWSER_WINDOW}}
 // DESC: Advances one bounded AI service slice; only new model output invalidates chat rendering.
 // ------------------=
 pub fn poll_native_ai() {
+    #[cfg(target_os = "none")]
+    unsafe { if let Some(runtime) = (&mut *(&raw mut RUNTIME)).as_mut() {
+        let now = crate::runtime::ai::qwen::workers::clock_ns();
+        if runtime.mode == ConsoleMode::Desktop && now >= runtime.voice_autostart_after_ns {
+            runtime.voice_autostart_after_ns = now.saturating_add(5_000_000_000);
+            let auto = crate::runtime::with_runtime(|r| r.identity.voice_profile(runtime.current_user)
+                .is_some_and(|p| p.enabled && p.activation != crate::runtime::identity::VoiceActivation::Disabled))
+                .unwrap_or(false);
+            if auto && crate::runtime::ai::with_ai_runtime(|ai| ai.chat.enabled())
+                && matches!(crate::runtime::ai::voice_conversation::state().0,
+                    crate::runtime::ai::voice_conversation::State::Off | crate::runtime::ai::voice_conversation::State::Failed) {
+                crate::runtime::ai::voice_conversation::start(
+                    crate::runtime::execution::SecurityIdentity(runtime.current_session.0));
+            }
+        }
+    } }
     #[cfg(feature="native-browser")]
     unsafe {if let Some(runtime)=(&mut *(&raw mut RUNTIME)).as_mut() {browser_controller::poll(runtime);}}
     #[cfg(feature="native-browser")]

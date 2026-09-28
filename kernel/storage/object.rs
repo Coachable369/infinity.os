@@ -1280,6 +1280,15 @@ impl<D: BlockDevice> ObjectStore<D> {
     }
 
     // ------------------------=
+    // FUNC: checkpoint
+    // DESC: Atomically replaces a durable system checkpoint without consuming unbounded version slots.
+    // ------------------=
+    pub(crate) fn checkpoint(&mut self, path: &[u8], content: &[u8]) -> Result<u32, ObjectError> {
+        let id = self.resolve(path)?;
+        self.replace_state(id, content)
+    }
+
+    // ------------------------=
     // FUNC: replace_state
     // DESC: Replaces a checkpoint object with bounded history using copy-on-write data and atomic metadata.
     // ------------------=

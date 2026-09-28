@@ -2383,7 +2383,7 @@ impl super::DisplayDevice {
             2 => (b"PROFILE", b"Choose your handle", b"Your handle identifies your Personal Space without exposing your full name.", b"your-handle"),
             3 => (b"PROFILE", b"How should we address you?", b"Use the name you want InfinityOS to show across your local experience.", b"Display name"),
             4 => (b"SECURITY", b"Secure your account", b"Use at least eight characters. Your password remains local to this system.", b"Create a password"),
-            5 => (b"AI, VOICE & APPEARANCE", b"Private by default", b"Local AI is ready. Remote processing and microphone access begin disabled.", b""),
+            5 => (b"AI, VOICE & APPEARANCE", b"Local by default", b"Local voice listens after login. You can turn listening off in the AI widget or Settings. Remote processing stays disabled.", b""),
             6 => (b"NETWORK", b"Connect this Infinity Node", b"Choose wired, Wi-Fi, or continue offline. You can change this later.", b""),
             _ => (b"READY", b"Your Infinity begins here", b"Your identity, Personal Space, privacy policy, and Default Dark appearance are ready.", b""),
         };
@@ -5543,7 +5543,7 @@ impl super::DisplayDevice {
                 (b"Chat Model", chat_model),
                 (b"Remote Processing", b"Off"),
                 (b"Voice", if voice_enabled { b"Granted" } else { b"Restricted" }),
-                (b"Activation", if voice_enabled { b"Push to talk" } else { b"Disabled" }),
+                (b"Activation", if voice_enabled { b"Continuous listening" } else { b"Disabled" }),
                 (b"Spoken Replies", if speech_enabled { b"Enabled" } else { b"Disabled" }),
                 (b"", b""),
             ],

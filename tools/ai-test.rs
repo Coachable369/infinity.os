@@ -701,7 +701,7 @@ fn desktop_chat() {
     assert!(voice.enabled);
     assert_eq!(
         voice.activation,
-        runtime::identity::VoiceActivation::PushToTalk
+        runtime::identity::VoiceActivation::Continuous
     );
     identities
         .update_voice_profile(

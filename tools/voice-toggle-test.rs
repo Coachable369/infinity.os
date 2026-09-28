@@ -27,7 +27,8 @@ mod runtime {
     pub mod identity {
         pub const MAX_SESSIONS:usize=1;
         #[derive(PartialEq)] pub enum SessionState {Active,Locked}
-        pub struct Session {pub id:super::execution::SecurityIdentity,pub state:SessionState}
+        pub struct Session {pub id:super::execution::SecurityIdentity,pub user:super::execution::SecurityIdentity,pub state:SessionState}
+        pub struct AiProfile {pub speech_output_enabled:bool}
     }
     pub mod audio {#[derive(PartialEq)] pub enum CaptureState {Recording}}
     pub struct Identity;
@@ -36,7 +37,12 @@ mod runtime {
         // FUNC: session_nth
         // DESC: Supplies the active owner or a locked session for revocation testing.
         // ------------------=
-        pub fn session_nth(&self,_:usize)->Option<identity::Session>{Some(identity::Session{id:execution::SecurityIdentity([1;16]),state:if crate::ACTIVE.load(crate::Ordering::SeqCst){identity::SessionState::Active}else{identity::SessionState::Locked}})}
+        pub fn session_nth(&self,_:usize)->Option<identity::Session>{Some(identity::Session{id:execution::SecurityIdentity([1;16]),user:execution::SecurityIdentity([1;16]),state:if crate::ACTIVE.load(crate::Ordering::SeqCst){identity::SessionState::Active}else{identity::SessionState::Locked}})}
+        // ------------------------=
+        // FUNC: ai_profile
+        // DESC: Supplies the spoken-reply preference for the production conversation controller.
+        // ------------------=
+        pub fn ai_profile(&self,_:execution::SecurityIdentity)->Option<identity::AiProfile>{Some(identity::AiProfile{speech_output_enabled:true})}
     }
     pub struct Caps;
     impl Caps {
