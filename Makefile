@@ -100,6 +100,10 @@ INSTALLER_DESIGNER_SOURCES := $(shell find tools/installer-designer/Sources -typ
 	tools/installer-designer/Package.swift tools/installer-designer/compile-template.sh
 CRASH_ASSETS := $(shell find assets/crash -type f)
 APPLICATION_ASSETS := $(shell find assets/apps -type f)
+DESIGN_KIT_ASSETS := $(shell find assets/ui-design-kit/default -type f)
+KERNEL_SOURCES += $(DESIGN_KIT_ASSETS)
+
+$(BUILD)/x86_64/installed-esp.img $(BUILD)/aarch64/installed-esp.img: $(DESIGN_KIT_ASSETS)
 NODE_ASSETS := $(shell find assets/mesh -type f)
 # The BIOS payload begins at 0x8000 and must retain 16 KiB below the 0x9c000 bootstrap stack.
 X86_PAYLOAD_MAX_SECTORS := 1152
@@ -385,6 +389,8 @@ $(BUILD)/x86_64/installed-esp.img: $(BUILD)/x86_64/BOOTX64.EFI $(FONT_ASSETS) $(
 	cp $(CRASH_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/Mesh/
 	cp $(APPLICATION_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/Applications/
+	@mkdir -p $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/DesignKit/Default
+	cp $(DESIGN_KIT_ASSETS) $(BUILD)/installed-fat/EFI/InfinityOS/InfinityUI/DesignKit/Default/
 	python3 tools/iso-staging.py allocate $(BUILD)/installed-fat $@
 	mformat -F -i $@ -v INFINITYEFI ::
 	mcopy -i $@ -s $(BUILD)/installed-fat/EFI ::
@@ -733,6 +739,8 @@ $(BUILD)/aarch64/installed-esp.img: $(BUILD)/aarch64/BOOTAA64.EFI $(FONT_ASSETS)
 	cp $(CRASH_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Crash/
 	cp $(NODE_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/Mesh/
 	cp $(APPLICATION_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/Applications/
+	@mkdir -p $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/DesignKit/Default
+	cp $(DESIGN_KIT_ASSETS) $(BUILD)/installed-fat-aarch64/EFI/InfinityOS/InfinityUI/DesignKit/Default/
 	python3 tools/iso-staging.py allocate $(BUILD)/installed-fat-aarch64 $@
 	mformat -F -i $@ -v INFINITYEFI ::
 	mcopy -i $@ -s $(BUILD)/installed-fat-aarch64/EFI ::

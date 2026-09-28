@@ -3,7 +3,7 @@ use super::geometry::{Point, Rect};
 #[path = "assistant_tab.rs"]
 pub mod tab_style;
 pub const PANEL_SLOTS: usize = 16;
-pub const TAB_WIDTH: usize = 48;
+pub const TAB_WIDTH: usize = 28;
 pub const TAB_HEIGHT: usize = 104;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {

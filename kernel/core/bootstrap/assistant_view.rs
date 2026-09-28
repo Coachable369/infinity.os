@@ -192,24 +192,8 @@ impl super::DisplayDevice {
             self.app_symbol(g.send, b'^', CYAN, s);
         }
         let t = g.toggle;
-        let accent = (112, 160, 255);
-        let pulse = if panel.hovered {
-            assistant::glow_intensity(panel.glow_phase)
-        } else {
-            48
-        };
+        let pulse = if panel.hovered { assistant::glow_intensity(panel.glow_phase) } else { 48 };
         self.assistant_tab_glass(t, g.tab_left, pulse, s);
-        let center = (t.x + t.width as i32 / 2, t.y + t.height as i32 / 2);
-        self.glow_color(
-            center.0,
-            center.1,
-            (18 * s) as i32,
-            accent.0,
-            accent.1,
-            accent.2,
-            pulse,
-        );
-        self.assistant_star(center.0, center.1, accent, pulse, s);
         self.render_clip = clip;
     }
 
@@ -227,25 +211,6 @@ impl super::DisplayDevice {
         }
     }
 
-    // ------------------------=
-    // FUNC: assistant_star
-    // DESC: Renders the kit's centered four-point assistant glyph using the current desktop accent.
-    // ------------------=
-    fn assistant_star(&mut self, x: i32, y: i32, accent: (u8, u8, u8), pulse: u8, s: usize) {
-        let radius = 13 * s as i32;
-        for distance in -radius..=radius {
-            let taper = radius - distance.abs();
-            let horizontal = (taper * 4 / radius.max(1)).max(1);
-            let vertical = (taper * 3 / radius.max(1)).max(1);
-            for offset in -horizontal..=horizontal {
-                self.blend_color(x + offset, y + distance, 232, 249, 255, pulse.saturating_add(90));
-            }
-            for offset in -vertical..=vertical {
-                self.blend_color(x + distance, y + offset, accent.0, accent.1, accent.2, pulse.saturating_add(70));
-            }
-        }
-        self.glow_color(x, y, 4 * s as i32, 255, 255, 255, 220);
-    }
     // ------------------------=
     // FUNC: assistant_lines
     // DESC: Measures content-fitting bubbles with the same word wrapping used by the native painter.
