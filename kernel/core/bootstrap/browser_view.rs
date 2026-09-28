@@ -228,16 +228,6 @@ impl DisplayDevice {
             let (red,green,blue,alpha)=infinity_browser_core::tab_style::pixel(r.width,r.height,x,y,active,hover);
             if alpha!=0 {self.blend_color(r.x+x as i32,r.y+y as i32,red,green,blue,alpha);}
         }}
-        if active || hover {
-            let s=(r.height/36).max(1) as i32;
-            let cx=r.x+(r.width*53/100) as i32;let cy=r.y+s;
-            for d in 0..4*s {
-                let alpha=(210*(4*s-d)/(4*s)) as u8;
-                for (x,y) in [(cx-d,cy),(cx+d,cy),(cx,cy-d),(cx,cy+d)] {
-                    self.blend_color(x,y,217,237,255,alpha);
-                }
-            }
-        }
     }
     // ------------------------=
     // FUNC: browser_glyph

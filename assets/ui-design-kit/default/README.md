@@ -18,6 +18,39 @@ Run with `./build-kit run python3 tools/build-assistant-artwork.py`.
 Both installed ESPs carry this kit under `EFI/InfinityOS/InfinityUI/DesignKit/Default`.
 The shared kernel embeds the sprite, so live and installed rendering use identical pixels.
 
+## Horizontal browser tab
+
+Kit gap: the vertical assistant master cannot directly serve as a horizontal,
+text-bearing browser tab. `browser-horizontal-tab-v1.png` is its generated sibling:
+the same smoked navy glass, rounded shoulders and cyan-to-violet illuminated rim,
+without a baked-in sparkle, title, favicon or close button.
+
+- Body: existing variable-width browser tab, 224 × 36 logical px at maximum.
+- Exterior glow: at most 6 logical px, clipped above the content attachment rail.
+- Runtime derivative: 944 × 192 RGBA8, 4× authored footprint including padding.
+- Active uses original pixels; inactive uses 100/256 brightness, hover 208/256,
+  active-hover 272/256 (clamped). Alpha is preserved in every state.
+- Runtime area sampling is alpha weighted; no paint-time decode, allocation or blur.
+- Titles, document glyphs, 24px close targets and new-tab control stay native.
+
+Generate the deterministic runtime derivative with
+`./build-kit run python3 tools/build-browser-tab-artwork.py`.
+`sdk/infinity-browser-core/tab_style.rs` is shared by both CPU targets.
+The existing design-kit package list includes both the PNG and RGBA in installed
+ESPs; the kernel embeds the exact RGBA bytes. The vertical AI sprite is unchanged.
+
+Built-in image-generation prompt (reference: `ai-window-tab-v1.png`): Create one
+production horizontal browser tab background, orthographic, transparent, straight
+bottom attachment baseline, symmetric smoothly curved short diagonal shoulders
+and long flat rounded top. Match the reference's midnight navy smoked glass,
+subtle upper reflection, electric cyan-blue rim transitioning to violet, restrained
+tight halo. Wide quiet center for live text. No text, symbols, sparkle, close/plus
+icon, window, checkerboard, floor or other objects. Smooth polished bevels, not
+angular crystalline metal. Wide landscape, tight transparent padding.
+
+Production-pixel review: `tools/browser-tab-artwork-proof.rs` shows inactive,
+hover, active and active-hover left to right, plus crowded/full-width 2× examples.
+
 ## Generation
 
 Created with the built-in image-generation tool, transparent background enabled.

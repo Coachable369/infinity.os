@@ -5,6 +5,41 @@ horizontal browser tab. Generated reference: `idesign-kit-horizontal-tabs-v1.png
 
 ## Native recipe
 
+### Generated artwork revision — 28 September
+
+The renderer now consumes the reusable kit's `browser-horizontal-tab-v1.rgba`
+rather than approximating the reference with analytic straight slopes. The
+unmodified generated PNG master and derivation recipe live in
+`assets/ui-design-kit/default/`. This uses the actual current AI adornment as
+the material reference: rounded shoulders, smoked glass, reflected upper bevel,
+and cyan-to-violet rim. A second synthetic sparkle is no longer painted.
+Existing dimensions, tab commands, title layout and close targets are retained.
+Inactive/hover/active states share the exact silhouette and vary brightness;
+the image contains no static page title or controls.
+
+Production-pixel state sheet: `generated-tab-states-v1.png` (not a generated
+mockup). Top row: inactive, hover, active, active-hover; bottom: crowded and
+full-width tabs at 2×. Review confirms curved shoulders, quiet title space,
+preserved glass highlights and a bounded glow. Core run
+`20260928T045625154485Z-61668.json` passes all 31 tests, including tab hit targets
+at 1–4× and 1–8 tabs. Pixel proof run: `20260928T045702489098Z-61718.json`.
+
+ARM build and exact design-kit ESP/kernel-byte parity pass in
+`20260928T045810185241Z-61776.json`. Fresh installation from that unmodified test
+ISO, detached-media boot, live HTTPS/CSS/image/JavaScript, scrolling, tab
+create/select/close, per-tab scroll retention and address entry pass in
+`20260928T050751358884Z-68241.json`. Installed kernel bytes: 877,951,144;
+SHA-256 `222d4a30031872566a722e236f04a358c15bfef4d8affe851bab6bef6e12c291`.
+Reviewed actual desktop capture: `installed-generated-tabs-v1.png`. Both active
+and inactive tabs have curved shoulders, aligned native titles and independent
+close controls; the halo does not overlap navigation. This is ARM acceptance,
+not new x86 runtime verification.
+
+Model-inclusive ARM ISO rebuilt successfully by
+`20260928T051428992693Z-68428.json`: `builds/InfinityOS-aarch64.iso`, including
+the same 877,951,144-byte installed kernel and packaged kit. This was a focused
+incremental build, not a clean-release run.
+
 ### Corrected kit geometry (27 September review)
 
 The supplied board is authoritative. The earlier separate application-title row
@@ -34,9 +69,10 @@ surrounding explanatory labels are not browser chrome. This is not a claim of
 pixel identity: Go/download remain real controls instead of the board's
 illustrative bookmark star; site favicon fetching is not added by this pass.
 
-Painter and hit tester share the bevel geometry. Four-sample edge coverage
-avoids nearest-neighbor scaling. The glow is analytic and bounded, not a
-per-frame blur. Hover invalidates chrome only; unchanged hover targets do not
+The earlier procedural painter used four-sample edge coverage and an analytic
+bounded glow. The generated-artwork revision above replaces that painter with
+alpha-weighted sprite sampling and smooth symmetric shoulder hit geometry.
+Hover invalidates chrome only; unchanged hover targets do not
 change revision. Close hover receives a violet backing and title truncation
 never enters its target.
 
