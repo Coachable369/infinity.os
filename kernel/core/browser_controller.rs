@@ -297,7 +297,7 @@ pub(super) fn close() {unsafe {
 pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
     let settings=crate::runtime::browser::presentation();
     if settings.chrome_menu!=0 {
-        let count=if settings.chrome_menu==1 {3}else{1};
+        let count=match settings.chrome_menu {1=>3,4=>settings.tab_count.max(1),_=>1};
         match key {
             ConsoleKey::Escape=>crate::runtime::browser::chrome_menu_presentation(0,0),
             ConsoleKey::Down|ConsoleKey::Tab(false)=>crate::runtime::browser::chrome_menu_presentation(settings.chrome_menu,(settings.menu_focus+1)%count),
@@ -305,6 +305,19 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
             ConsoleKey::Enter|ConsoleKey::Character(b' ')=>menu_action(console,settings.chrome_menu,settings.menu_focus),
             _=>{},
         }return;
+    }
+    if matches!(key,ConsoleKey::Shortcut(b'f'|b'F')) {open_find();return;}
+    if settings.find_open {
+        let mut text=settings.find_text;let mut length=settings.find_length;
+        match key {
+            ConsoleKey::Escape=>{crate::runtime::browser::find_presentation(false,&[],0);find_page(console,0);return;},
+            ConsoleKey::Enter|ConsoleKey::Down=>{find_page(console,1);return;},
+            ConsoleKey::Up=>{find_page(console,-1);return;},
+            ConsoleKey::Backspace=>length=length.saturating_sub(1),
+            ConsoleKey::Character(c) if (32..=126).contains(&c) && length<text.len()=>{text[length]=c;length+=1;},
+            _=>return,
+        }
+        crate::runtime::browser::find_presentation(true,&text[..length],0);find_page(console,0);return;
     }
     if settings.settings_open {
         if matches!(key,ConsoleKey::Escape) {settings_action(console,6);}
@@ -428,13 +441,42 @@ fn new_tab(console:&mut ConsoleRuntime) {
 // ------------------=
 fn menu_action(console:&mut ConsoleRuntime,menu:u8,index:usize) {
     crate::runtime::browser::chrome_menu_presentation(0,0);
-    if menu==2 && index==0 {
+    if menu==3 && index==0 {open_find();}
+    else if menu==4 {
+        let v=crate::runtime::browser::presentation();
+        if index<v.tab_count {let mut c=abi::Command::empty();c.kind=abi::TAB_SELECT;c.a=v.tabs[index].id;
+            if enqueue(console,c) {poll(console);}}
+    } else if menu==2 && index==0 {
         let v=crate::runtime::browser::presentation();crate::runtime::browser::settings_position(6,0);
         crate::runtime::browser::settings_presentation(v.settings,true,v.settings_notice,false);
     } else if menu==1 {
         let v=crate::runtime::browser::presentation();crate::runtime::browser::settings_presentation(v.settings,false,v.settings_notice,false);
         match index {0=>new_tab(console),1=>key(console,ConsoleKey::Shortcut(b'w')),2=>console.close_desktop_app(),_=>{}}
     }
+}
+
+// ------------------------=
+// FUNC: open_find
+// DESC: Focuses the current page's native search strip without sharing input with the document.
+// ------------------=
+fn open_find() {
+    let v=crate::runtime::browser::presentation();
+    crate::runtime::browser::settings_presentation(v.settings,false,v.settings_notice,false);
+    crate::runtime::browser::focus_address(false);
+    crate::runtime::browser::find_presentation(true,&v.find_text[..v.find_length],0);
+}
+
+// ------------------------=
+// FUNC: find_page
+// DESC: Submits a bounded search to the active native engine with wraparound match navigation.
+// ------------------=
+fn find_page(console:&ConsoleRuntime,direction:i32) {
+    let v=crate::runtime::browser::presentation();let count=v.find_result&65535;let current=v.find_result>>16;
+    let index=if count==0 {0}else if direction<0 {(current+count-2)%count}else if direction>0 {current%count}else{0};
+    let token=crate::runtime::browser::find_presentation(v.find_open,&v.find_text[..v.find_length],0);
+    let mut c=abi::Command::empty();c.kind=abi::FIND;c.a=index;c.b=token;c.length=v.find_length as u32;
+    c.text[..v.find_length].copy_from_slice(&v.find_text[..v.find_length]);
+    if enqueue(console,c) {poll(console);}
 }
 
 // ------------------------=
@@ -451,12 +493,12 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
     let view=crate::runtime::browser::presentation();
-    for (r,menu) in [(layout.file_menu,1),(layout.settings_menu,2)] {
+    for (r,menu) in [(layout.file_menu,1),(layout.settings_menu,2),(layout.edit_menu,3),(layout.view_menu,4)] {
         if r.local(x,y).is_some() {crate::runtime::browser::focus_address(false);
             crate::runtime::browser::chrome_menu_presentation(if view.chrome_menu==menu {0}else{menu},0);return true;}
     }
     if view.chrome_menu!=0 {
-        for index in 0..3 {if layout.menu_item(view.chrome_menu,index).is_some_and(|r|r.local(x,y).is_some()) {
+        for index in 0..if view.chrome_menu==4 {view.tab_count}else{3} {if layout.menu_item(view.chrome_menu,index).is_some_and(|r|r.local(x,y).is_some()) {
             menu_action(console,view.chrome_menu,index);return true;
         }}
         crate::runtime::browser::chrome_menu_presentation(0,0);return true;
@@ -464,6 +506,12 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     if layout.menu.local(x,y).is_some() {
         crate::runtime::browser::settings_position(6,0);
         crate::runtime::browser::settings_presentation(view.settings,!view.settings_open,view.settings_notice,false);return true;
+    }
+    if view.find_open {
+        for index in 0..4 {if layout.find_control(index).local(x,y).is_some() {
+            match index {1=>find_page(console,-1),2=>find_page(console,1),3=>{crate::runtime::browser::find_presentation(false,&[],0);find_page(console,0);},_=>{}}
+            return true;
+        }}
     }
     if !view.settings_open && view.permission!=0 {
         if layout.download_save.local(x,y).is_some() {approve_access(console);}
@@ -592,10 +640,11 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
     let view=crate::runtime::browser::presentation();
     let mut hover=(0,false);
     if view.chrome_menu!=0 {
-        for index in 0..3 {if layout.menu_item(view.chrome_menu,index).is_some_and(|r|r.local(x,y).is_some()) {
+        for index in 0..if view.chrome_menu==4 {view.tab_count}else{3} {if layout.menu_item(view.chrome_menu,index).is_some_and(|r|r.local(x,y).is_some()) {
             crate::runtime::browser::chrome_menu_presentation(view.chrome_menu,index);break;
         }}return false;
     }
+    if view.find_open && (0..4).any(|i|layout.find_control(i).local(x,y).is_some()) {return false;}
     if !captured {for index in 0..view.tab_count {
         let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
         if tab.local(x,y).is_some_and(|(x,y)|infinity_browser_core::tab_style::contains(tab.width,tab.height,x,y)) {

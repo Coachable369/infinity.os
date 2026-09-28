@@ -149,6 +149,7 @@ pub fn diagnostic()->([u8;2048],usize) {unsafe {DIAGNOSTIC}}
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
+    pub find_open:bool,pub find_text:[u8;256],pub find_length:usize,pub find_result:u32,pub find_token:u32,
     pub chrome_menu:u8,pub menu_focus:usize,
     pub settings:infinity_browser_core::settings::Settings,pub settings_open:bool,pub settings_notice:u8,pub settings_confirm:bool,
     pub settings_focus:usize,pub settings_scroll:u32,
@@ -171,6 +172,7 @@ const EMPTY_FAVORITE:FavoritePresentation=FavoritePresentation{title:[0;96],leng
 pub struct TabPresentation {pub id:u32,pub title:[u8;256],pub length:usize}
 const EMPTY_TAB:TabPresentation=TabPresentation{id:0,title:[0;256],length:0};
 static mut PRESENTATION:Presentation=Presentation{hovered_tab:0,hovered_close:false,frame_revision:0,address:[0;2048],address_length:0,title:[0;256],
+    find_open:false,find_text:[0;256],find_length:0,find_result:0,find_token:0,
     chrome_menu:0,menu_focus:0,
     settings:infinity_browser_core::settings::Settings::new(),settings_open:false,settings_notice:0,settings_confirm:false,settings_focus:6,settings_scroll:0,
     favorites:[EMPTY_FAVORITE;32],favorite_count:0,favorite_offset:0,favorite_saved:false,favorite_error:0,hovered_favorite:usize::MAX,
@@ -212,7 +214,8 @@ impl Presentation {
             download_content:self.download_revision ^ ((self.settings_open as u64)<<63) ^ ((self.settings_notice as u64)<<56)
                 ^ ((self.settings_confirm as u64)<<55) ^ ((self.settings.search as u64)<<52) ^ ((self.settings.favorites as u64)<<51)
                 ^ ((self.settings_focus as u64)<<48) ^ ((self.settings_scroll as u64)<<32)
-                ^ ((self.chrome_menu as u64)<<30) ^ ((self.menu_focus as u64)<<28),
+                ^ ((self.chrome_menu as u64)<<30) ^ ((self.menu_focus as u64)<<28)
+                ^ (self.find_token as u64).rotate_left(11) ^ (self.find_result as u64).rotate_left(37),
             loading:self.loading,busy:self.input_busy,status:self.favorite_error as u64 ^
                 self.address[..self.address_length].iter().fold(0u64,|hash,b|hash.wrapping_mul(31).wrapping_add(*b as u64))}
     }
@@ -223,6 +226,18 @@ impl Presentation {
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+// ------------------------=
+// FUNC: find_presentation
+// DESC: Updates the native search strip and invalidates stale asynchronous search results.
+// ------------------=
+pub fn find_presentation(open:bool,text:&[u8],result:u32)->u32 {unsafe {
+    INFINITY_BROWSER_FIND.store(result,Ordering::Release);
+    let v=&mut *(&raw mut PRESENTATION);v.find_open=open;v.find_length=text.len().min(256);
+    v.find_text[..v.find_length].copy_from_slice(&text[..v.find_length]);v.find_result=result;
+    v.find_token=v.find_token.wrapping_add(1);v.revision=v.revision.wrapping_add(1);v.find_token
+}}
+#[no_mangle] pub static INFINITY_BROWSER_FIND:AtomicU32=AtomicU32::new(0);
+#[no_mangle] pub static INFINITY_BROWSER_ACTIVE_TAB:AtomicU32=AtomicU32::new(0);
 // ------------------------=
 // FUNC: chrome_menu_presentation
 // DESC: Publishes transient dropdown state without forwarding input to the website.
@@ -433,14 +448,15 @@ pub fn poll_presentation()->bool {
                     view.tabs.copy_within(at..view.tab_count,at+1);
                     view.tabs[at]=TabPresentation{id:event.value,..EMPTY_TAB};view.tab_count+=1;
                 }},
-                abi::EVENT_TAB_SELECTED=>{view.active_tab=event.value;view.error=0;view.address_length=0;view.title_length=0;
+                abi::EVENT_TAB_SELECTED=>{INFINITY_BROWSER_ACTIVE_TAB.store(event.value,Ordering::Release);view.find_open=false;view.find_token=view.find_token.wrapping_add(1);view.active_tab=event.value;view.error=0;view.address_length=0;view.title_length=0;
                     view.history=0;view.address_focused=false;},
                 abi::EVENT_TAB_CLOSED=>{if let Some(at)=view.tabs[..view.tab_count].iter().position(|tab|tab.id==event.value) {
                     view.tabs.copy_within(at+1..view.tab_count,at);view.tab_count-=1;view.tabs[view.tab_count]=EMPTY_TAB;
                 }},
-                abi::EVENT_LOAD=>{view.loading=event.value==0;if view.loading {view.error=0;}
+                abi::EVENT_LOAD=>{view.loading=event.value==0;if view.loading {view.error=0;view.find_open=false;view.find_token=view.find_token.wrapping_add(1);}
                     LOAD_REVISION.fetch_add(1,Ordering::Release);},
                 abi::EVENT_HISTORY=>view.history=event.value&3,
+                abi::EVENT_FIND=>{if core::str::from_utf8(&event.text[..event.length]).ok().and_then(|s|s.parse::<u32>().ok())==Some(view.find_token) {view.find_result=event.value;INFINITY_BROWSER_FIND.store(event.value,Ordering::Release);}},
                 abi::EVENT_ERROR=>{view.error=event.value+1;view.loading=false;},
                 abi::EVENT_ADDRESS=>{view.address_length=event.length.min(view.address.len());
                     view.address[..view.address_length].copy_from_slice(&event.text[..view.address_length]);

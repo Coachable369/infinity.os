@@ -7,6 +7,8 @@ pub enum Control { Back, Forward, Reload, Address, Go, Downloads, Menu, FileMenu
 pub struct Layout {
     pub file_menu:Viewport,
     pub settings_menu:Viewport,
+    pub edit_menu:Viewport,
+    pub view_menu:Viewport,
     pub title: Viewport,
     pub tabs: Viewport,
     pub new_tab: Viewport,
@@ -33,13 +35,24 @@ pub struct Layout {
 
 impl Layout {
     // ------------------------=
+    // FUNC: find_control
+    // DESC: Shares bounded search field and previous, next, close targets with the native painter.
+    // ------------------=
+    pub fn find_control(&self,index:usize)->Viewport {
+        let s=self.tabs.height/36;let c=self.content;
+        if index==0 {Viewport{x:c.x+8*s as i32,y:c.y+4*s as i32,width:c.width-144*s,height:32*s}}
+        else {Viewport{x:c.x+c.width as i32-((4-index) as u32*40*s) as i32,y:c.y+4*s as i32,width:32*s,height:32*s}}
+    }
+    // ------------------------=
     // FUNC: menu_item
     // DESC: Shares dropdown action geometry with pointer dispatch at every scale.
     // ------------------=
     pub fn menu_item(&self,menu:u8,index:usize)->Option<Viewport> {
-        if index>=if menu==1 {3}else if menu==2 {1}else{0} {return None;}
-        let s=self.tabs.height/36;let anchor=if menu==1 {self.file_menu}else{self.settings_menu};
-        Some(Viewport{x:anchor.x,y:anchor.y+anchor.height as i32+(index as u32*32*s) as i32,width:208*s,height:32*s})
+        if index>=match menu {1=>3,2|3=>1,4=>8,_=>0} {return None;}
+        let s=self.tabs.height/36;let anchor=match menu {1=>self.file_menu,2=>self.settings_menu,3=>self.edit_menu,_=>self.view_menu};
+        let top=anchor.y+anchor.height as i32;
+        let height=if menu==4 {(32*s).min((self.status.y-top).max(0) as u32/8)}else{32*s};
+        Some(Viewport{x:anchor.x,y:top+(index as u32*height) as i32,width:208*s,height})
     }
     // ------------------------=
     // FUNC: with_favorites
@@ -89,6 +102,8 @@ impl Layout {
         Some(Self {
             file_menu:rect(gutter,title_height,56*scale,menu_height),
             settings_menu:rect(gutter+64*scale,title_height,88*scale,menu_height),
+            edit_menu:rect(gutter+160*scale,title_height,56*scale,menu_height),
+            view_menu:rect(gutter+224*scale,title_height,64*scale,menu_height),
             title: rect(0, 0, width, title_height),
             tabs: rect(104 * scale, 12 * scale, width - 264 * scale, tab_height),
             new_tab: rect(width - 152 * scale, 12 * scale, 32 * scale, 32 * scale),
@@ -184,6 +199,12 @@ mod tests {
             assert_eq!(l.hit(l.file_menu.x+1,l.file_menu.y+1),Some(Control::FileMenu));
             assert_eq!(l.hit(l.settings_menu.x+1,l.settings_menu.y+1),Some(Control::SettingsMenu));
             assert!(l.menu_item(2,1).is_none());assert!(l.menu_item(0,0).is_none());
+            assert!(l.menu_item(3,0).is_some());assert!(l.menu_item(3,1).is_none());
+            assert!(l.menu_item(4,7).is_some());assert!(l.menu_item(4,8).is_none());
+            assert!(l.edit_menu.x>l.settings_menu.x+l.settings_menu.width as i32);
+            assert!(l.view_menu.x>l.edit_menu.x+l.edit_menu.width as i32);
+            for i in 0..4 {let r=l.find_control(i);assert!(l.content.local(r.x,r.y).is_some());
+                if i<3 {assert!(r.x+r.width as i32<=l.find_control(i+1).x);}}
             for i in 0..3 {let r=l.menu_item(1,i).unwrap();assert_eq!(r.height,32*s);assert!(r.x+(r.width as i32)<900*s as i32);}
         }
     }

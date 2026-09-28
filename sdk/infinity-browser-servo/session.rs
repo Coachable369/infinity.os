@@ -73,6 +73,21 @@ fn valid_size(width: u32, height: u32) -> bool {
 
 impl<P: Provider + 'static> Session<P> {
     // ------------------------=
+    // FUNC: find
+    // DESC: Searches rendered document text, selects a real DOM range and reports an asynchronous bounded match count.
+    // ------------------=
+    pub fn find(&self,text:&str,index:u32,callback:impl FnOnce(u32)+'static) {
+        use std::fmt::Write;
+        let mut encoded=String::from("\"");
+        for unit in text.encode_utf16() {let _=write!(encoded,"\\u{:04x}",unit);}
+        encoded.push('"');
+        let script=std::format!("{}({}, {})",include_str!("find.js"),encoded,index);
+        self.view.evaluate_javascript(script,move |result|callback(match result {
+            Ok(servo::JSValue::Number(n)) if n>=0.0 && n<=u32::MAX as f64=>n as u32,
+            _=>u32::MAX,
+        }));
+    }
+    // ------------------------=
     // FUNC: new
     // DESC: Opens one software-backed context with no ambient network authority.
     // ------------------=

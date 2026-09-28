@@ -16,6 +16,8 @@ pub const RELOAD: u32 = 11;
 pub const TAB_CREATE: u32 = 12;
 pub const TAB_SELECT: u32 = 13;
 pub const TAB_CLOSE: u32 = 14;
+pub const FIND: u32 = 15;
+pub const EVENT_FIND: u32 = 13;
 pub const SHUTDOWN: u32 = 255;
 /// KEY flags: press versus release, named versus Unicode key, autorepeat.
 pub const KEY_DOWN:u32=1;

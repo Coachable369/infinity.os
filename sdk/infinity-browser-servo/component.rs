@@ -294,6 +294,11 @@ fn verify_closed_channel_retirement() {
 fn dispatch(view:&mut session::Session<Network>,command:&abi::Command)->Result<(),()> {
     let point=servo::WebViewPoint::Device((command.x as f32,command.y as f32).into());
     match command.kind {
+        abi::FIND=>{
+            let text=core::str::from_utf8(command.text.get(..command.length as usize).ok_or(())?).map_err(|_|())?;
+            let token=command.b;
+            view.find(text,command.a,move |value|event(abi::EVENT_FIND,value,&token.to_string()));
+        },
         abi::NAVIGATE=>view.navigate(core::str::from_utf8(command.text.get(..command.length as usize).ok_or(())?).map_err(|_|())?)?,
         abi::RESIZE=>view.resize(command.a,command.b)?,
         abi::BACK=>view.history(false), abi::FORWARD=>view.history(true), abi::RELOAD=>view.reload(),

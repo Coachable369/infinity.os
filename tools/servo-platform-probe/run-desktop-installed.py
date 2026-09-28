@@ -205,7 +205,7 @@ def browser_symbols(elf):
             continue
         for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK", "LOAD_REVISION", "LOADING", "PAGE_ERROR", "HISTORY",
                      "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION", "LOCATION_HASH", "DOWNLOAD_STATE",
-                     "FAVORITES_COUNT","FAVORITES_ERROR","FAVORITE_SAVED","FAVORITE_TITLE_HASH","FAVORITES_HASH","FOOTER_STATUS","DISPLAY_ADDRESS_HASH","SETTINGS","MENU"):
+                     "FAVORITES_COUNT","FAVORITES_ERROR","FAVORITE_SAVED","FAVORITE_TITLE_HASH","FAVORITES_HASH","FOOTER_STATUS","DISPLAY_ADDRESS_HASH","SETTINGS","MENU","FIND","ACTIVE_TAB"):
             if fields[3] in ("infinity_kernel::runtime::browser::" + name,
                 "infinity_kernel::runtime::browser::" + name + " (.0)", "INFINITY_BROWSER_" + name):
                 result[name] = (int(fields[0], 16), int(fields[1], 16))
@@ -334,6 +334,7 @@ def main():
     parser.add_argument("--favorites-label",action="store_true",help="Verify same-title navigation preserves the document title when saving another favorite")
     parser.add_argument("--settings",action="store_true",help="Exercise native settings controls, save state, and detached reboot persistence")
     parser.add_argument("--chrome",action="store_true",help="Check File/Settings menus, URL gear and attached AI panel")
+    parser.add_argument("--find-view",action="store_true",help="Search real page text and switch open tabs through View")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
     if args.accel=="hvf" and args.arch!="aarch64":
@@ -668,7 +669,7 @@ def main():
             await_favorite("FAVORITE_TITLE_HASH",title_hash);await_favorite("FAVORITES_ERROR",0)
             guest.click(890,239);guest.screenshot("browser-favorite-title-preserved")
             receipt["same_title_navigation_preserves_favorite_title"]=True
-        if args.chrome:
+        if args.chrome or args.find_view:
             # ------------------------=
             # FUNC: chrome_value
             # DESC: Waits for real native menu and settings state after pointer or keyboard input.
@@ -679,6 +680,26 @@ def main():
                     actual=int.from_bytes(guest.memory(*counters[name]),"little")
                     if actual==wanted:return
                 raise AssertionError(dict(counter=name,actual=actual,wanted=wanted))
+            if args.find_view:
+                guest.click(300,157);chrome_value("MENU",3)
+                guest.key("ret");browser_text(guest,"DOMAIN");chrome_value("FIND",65538)
+                guest.screenshot("browser-find-first")
+                guest.key("ret");chrome_value("FIND",131074)
+                guest.key("up");chrome_value("FIND",65538)
+                guest.key("esc")
+                first=int.from_bytes(guest.memory(*counters["ACTIVE_TAB"]),"little")
+                guest.key("ctrl","t")
+                deadline=time.monotonic()+20
+                while time.monotonic()<deadline:
+                    second=int.from_bytes(guest.memory(*counters["ACTIVE_TAB"]),"little")
+                    if second!=first:break
+                assert second!=first
+                guest.click(365,157);chrome_value("MENU",4)
+                guest.screenshot("browser-view-menu")
+                guest.key("ret");chrome_value("ACTIVE_TAB",first)
+                guest.click(365,157);guest.key("down");guest.key("ret");chrome_value("ACTIVE_TAB",second)
+                guest.key("ctrl","w");chrome_value("ACTIVE_TAB",first)
+                receipt["find_highlights_navigation_and_view_switching"]=True
             guest.click(220,157);chrome_value("MENU",2)
             guest.screenshot("browser-settings-menu")
             guest.key("ret");chrome_value("SETTINGS",0x10100);chrome_value("MENU",0)

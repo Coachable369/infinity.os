@@ -93,7 +93,7 @@ impl DisplayDevice {
         }
         let new_tab=offset(layout.new_tab);
         self.browser_glyph(new_tab,11,true,scale);
-        for (r,name,id) in [(layout.file_menu,b"File" as &[u8],1),(layout.settings_menu,b"Settings" as &[u8],2)] {
+        for (r,name,id) in [(layout.file_menu,b"File" as &[u8],1),(layout.settings_menu,b"Settings" as &[u8],2),(layout.edit_menu,b"Edit" as &[u8],3),(layout.view_menu,b"View" as &[u8],4)] {
             let r=offset(r);
             if view.chrome_menu==id {self.browser_surface(r,skin::button(false,skin::Interaction::Hovered));}
             self.browser_label(Viewport{y:r.y+9*scale as i32,..r},name,14*scale,true);
@@ -240,11 +240,32 @@ impl DisplayDevice {
         self.browser_label(Viewport{x:status.x+30*scale as i32,y:status.y+5*scale as i32,
             width:status.width-46*scale as u32,..status},&message[..length],14*scale,false);
         self.render_clip=chrome_clip;
-        for index in 0..3 {
+        if view.find_open {
+            let r=offset(layout.find_control(0));
+            self.browser_surface(Viewport{x:content.x,y:content.y,width:content.width,height:40*scale as u32},skin::button(false,skin::Interaction::Normal));
+            self.browser_surface(r,skin::button(false,skin::Interaction::Hovered));
+            self.browser_label(Viewport{x:r.x+12*scale as i32,y:r.y+9*scale as i32,width:r.width.saturating_sub(150*scale as u32),..r},
+                if view.find_length==0 {b"Find on page..."}else{&view.find_text[..view.find_length]},14*scale,true);
+            let mut count=[0u8;32];let mut n=0;
+            if view.find_result==u32::MAX {count[..12].copy_from_slice(b"Search error");n=12;}
+            else {for (i,value) in [view.find_result>>16,view.find_result&65535].iter().enumerate() {
+                if i==1 {count[n]=b'/';n+=1;}
+                let mut digits=[0u8;10];let mut used=0;let mut v=*value;
+                loop {digits[used]=b'0'+(v%10) as u8;used+=1;v/=10;if v==0 {break;}}
+                for d in digits[..used].iter().rev() {count[n]=*d;n+=1;}
+            }}
+            self.browser_label(Viewport{x:r.x+r.width as i32-100*scale as i32,y:r.y+9*scale as i32,width:96*scale as u32,..r},&count[..n],14*scale,false);
+            for (i,label) in [(1,b"<" as &[u8]),(2,b">"),(3,b"X")] {let r=offset(layout.find_control(i));
+                self.browser_surface(r,skin::button(false,skin::Interaction::Normal));self.browser_label(Viewport{y:r.y+9*scale as i32,..r},label,14*scale,true);}
+        }
+        for index in 0..if view.chrome_menu==4 {view.tab_count}else{3} {
             let Some(r)=layout.menu_item(view.chrome_menu,index) else {continue;};let r=offset(r);
             self.browser_surface(r,skin::button(false,if index==view.menu_focus {skin::Interaction::Hovered}else{skin::Interaction::Normal}));
-            let name:&[u8]=if view.chrome_menu==2 {b"Browser settings"}else{match index {0=>b"New tab     Ctrl+T",1=>b"Close tab   Ctrl+W",_=>b"Close window"}};
-            self.browser_label(Viewport{x:r.x+12*scale as i32,y:r.y+9*scale as i32,width:r.width-24*scale as u32,..r},name,14*scale,false);
+            let name:&[u8]=match view.chrome_menu {2=>b"Browser settings",3=>b"Find on page    Ctrl+F",4=>{
+                let tab=&view.tabs[index];if tab.length==0 {b"New tab"}else{&tab.title[..tab.length]}
+            },_=>match index {0=>b"New tab     Ctrl+T",1=>b"Close tab   Ctrl+W",_=>b"Close window"}};
+            if view.chrome_menu==4 && view.tabs[index].id==view.active_tab {self.fill_rect(r.x as usize+3*scale,r.y as usize+10*scale,3*scale,12*scale,34,211,238);}
+            self.browser_label(Viewport{x:r.x+12*scale as i32,y:r.y+(r.height.saturating_sub(14*scale as u32)/2) as i32,width:r.width-24*scale as u32,..r},name,14*scale,false);
         }
     }
     // ------------------------=
