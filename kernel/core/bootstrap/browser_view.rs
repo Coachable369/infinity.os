@@ -93,6 +93,11 @@ impl DisplayDevice {
         }
         let new_tab=offset(layout.new_tab);
         self.browser_glyph(new_tab,11,true,scale);
+        for (r,name,id) in [(layout.file_menu,b"File" as &[u8],1),(layout.settings_menu,b"Settings" as &[u8],2)] {
+            let r=offset(r);
+            if view.chrome_menu==id {self.browser_surface(r,skin::button(false,skin::Interaction::Hovered));}
+            self.browser_label(Viewport{y:r.y+9*scale as i32,..r},name,14*scale,true);
+        }
         for (rect,glyph,enabled) in [(layout.back,0,view.history&1!=0),(layout.forward,1,view.history&2!=0),
             (layout.reload,2,true),(layout.downloads,4,true),(layout.menu,13,true)] {
             let r=offset(rect);
@@ -148,6 +153,7 @@ impl DisplayDevice {
         }
         self.fill_rect(left,top+layout.content.y as usize-1,window.width as usize,1,33,58,82);
         let content=offset(layout.content);
+        let chrome_clip=self.render_clip;
         if self.clipped_render_region(content.x.max(0) as usize,content.y.max(0) as usize,
             content.width as usize,(window.bottom()-(content.y)).max(0) as usize).is_none() {return;}
         self.fill_rect(content.x as usize,content.y as usize,content.width as usize,content.height as usize,247,248,250);
@@ -233,6 +239,13 @@ impl DisplayDevice {
         self.fill_rounded_rect_alpha(status.x as usize+16*scale,status.y as usize+9*scale,6*scale,6*scale,3*scale,color.0,color.1,color.2,255);
         self.browser_label(Viewport{x:status.x+30*scale as i32,y:status.y+5*scale as i32,
             width:status.width-46*scale as u32,..status},&message[..length],14*scale,false);
+        self.render_clip=chrome_clip;
+        for index in 0..3 {
+            let Some(r)=layout.menu_item(view.chrome_menu,index) else {continue;};let r=offset(r);
+            self.browser_surface(r,skin::button(false,if index==view.menu_focus {skin::Interaction::Hovered}else{skin::Interaction::Normal}));
+            let name:&[u8]=if view.chrome_menu==2 {b"Browser settings"}else{match index {0=>b"New tab     Ctrl+T",1=>b"Close tab   Ctrl+W",_=>b"Close window"}};
+            self.browser_label(Viewport{x:r.x+12*scale as i32,y:r.y+9*scale as i32,width:r.width-24*scale as u32,..r},name,14*scale,false);
+        }
     }
     // ------------------------=
     // FUNC: browser_label

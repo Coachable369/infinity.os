@@ -4581,7 +4581,7 @@ impl super::DisplayDevice {
                         crate::ui::geometry::Rect{x:x as i32,y:y as i32,width:w as u32,height:h as u32}}
                     else {let state=match id {1=>command_window,2=>editor_window,5=>crate::console::browser_window(),_=>task_manager_window};
                         layout.desktop_app_window_geometry(state.x,state.y,state.width,state.height,state.maximized).window};
-                    if id!=0 && id!=5 && !(id==2 && editor_dialog!=0) {self.window_assistant(id,rect,scale);}
+                    if id!=0 && !(id==2 && editor_dialog!=0) {self.window_assistant(if id==5 {0}else{id},rect,scale);}
                     if id==stack.active {self.outline_rounded_rect(rect.x.max(0) as usize,rect.y.max(0) as usize,
                         rect.width as usize,rect.height as usize,10*scale,105,199,245);}
                 }

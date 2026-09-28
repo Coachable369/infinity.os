@@ -205,7 +205,7 @@ def browser_symbols(elf):
             continue
         for name in ("STATE", "FAILURE", "FRAME_REVISION", "PEAK", "LOAD_REVISION", "LOADING", "PAGE_ERROR", "HISTORY",
                      "NETWORK_FAILURE", "NETWORK_STATUS", "NETWORK_COMPLETED", "FAILED_ALLOCATION", "LOCATION_HASH", "DOWNLOAD_STATE",
-                     "FAVORITES_COUNT","FAVORITES_ERROR","FAVORITE_SAVED","FAVORITE_TITLE_HASH","FAVORITES_HASH","FOOTER_STATUS","DISPLAY_ADDRESS_HASH","SETTINGS"):
+                     "FAVORITES_COUNT","FAVORITES_ERROR","FAVORITE_SAVED","FAVORITE_TITLE_HASH","FAVORITES_HASH","FOOTER_STATUS","DISPLAY_ADDRESS_HASH","SETTINGS","MENU"):
             if fields[3] in ("infinity_kernel::runtime::browser::" + name,
                 "infinity_kernel::runtime::browser::" + name + " (.0)", "INFINITY_BROWSER_" + name):
                 result[name] = (int(fields[0], 16), int(fields[1], 16))
@@ -333,6 +333,7 @@ def main():
     parser.add_argument("--favorites-overflow",action="store_true",help="Exercise favorites overflow paging on an installed browser with one saved page")
     parser.add_argument("--favorites-label",action="store_true",help="Verify same-title navigation preserves the document title when saving another favorite")
     parser.add_argument("--settings",action="store_true",help="Exercise native settings controls, save state, and detached reboot persistence")
+    parser.add_argument("--chrome",action="store_true",help="Check File/Settings menus, URL gear and attached AI panel")
     parser.add_argument("--reopen", action="store_true", help="Retest only close/reopen without repeating passing resize and minimize checks")
     args = parser.parse_args()
     if args.accel=="hvf" and args.arch!="aarch64":
@@ -515,8 +516,8 @@ def main():
             receipt["browser_interactive"]=all(case["passed"] for case in receipt["cases"])
             if args.tabs:
                 # Bounds come from rendered page pixels, not a guessed desktop position.
-                # Kit chrome: 48px shared tab row and 48px navigation row.
-                tab_y=top-102
+                # Kit chrome: 48px tabs, 32px menus, 48px navigation, 36px favorites.
+                tab_y=top-134
                 guest.click(left+352,tab_y)
                 time.sleep(1)
                 guest.click(left+300,top-66)
@@ -569,17 +570,17 @@ def main():
             guest.key("ctrl","d");expect("FAVORITES_COUNT",1);expect("FAVORITE_SAVED",1);expect("FAVORITES_ERROR",0)
             # The browser is at the standard installed geometry; header row hit
             # targets remain fixed independently of the document's CSS colors.
-            guest.click(132,207);expect("FAVORITES_COUNT",0);expect("FAVORITE_SAVED",0)
-            guest.click(132,207);expect("FAVORITES_COUNT",1)
+            guest.click(132,239);expect("FAVORITES_COUNT",0);expect("FAVORITE_SAVED",0)
+            guest.click(132,239);expect("FAVORITES_COUNT",1)
             saved_hash=value("FAVORITES_HASH")
             guest.key("ctrl","l");browser_text(guest,"https://example.com/?other=1");guest.key("ret")
             expect("FAVORITE_SAVED",0)
-            guest.click(214,207);expect("FAVORITE_SAVED",1);expect("FOOTER_STATUS",2)
+            guest.click(214,239);expect("FAVORITE_SAVED",1);expect("FOOTER_STATUS",2)
             guest.screenshot("browser-favorites")
             receipt["favorites_add_remove_and_navigate"]=True
             guest.stop();guest.boot(False);guest.authenticate();guest.launch("browser",5)
             expect("FAVORITES_COUNT",1);expect("FAVORITES_HASH",saved_hash);expect("FAVORITES_ERROR",0)
-            guest.click(214,207);expect("FAVORITE_SAVED",1)
+            guest.click(214,239);expect("FAVORITE_SAVED",1)
             wait_color(guest,"browser-favorites-cold-reboot",400,400,(238,238,238));expect("FOOTER_STATUS",2)
             receipt["favorites_detached_cold_reboot"]=True
             receipt["favorites_payload_hash"]=saved_hash
@@ -603,7 +604,7 @@ def main():
             guest.screenshot("browser-footer-loading")
             expect_footer("FOOTER_STATUS",8);expect_footer("PAGE_ERROR",4);expect_footer("DISPLAY_ADDRESS_HASH",target_hash)
             guest.screenshot("browser-footer-error")
-            guest.click(214,207);expect_footer("FAVORITE_SAVED",1);expect_footer("FOOTER_STATUS",2);expect_footer("PAGE_ERROR",0)
+            guest.click(214,239);expect_footer("FAVORITE_SAVED",1);expect_footer("FOOTER_STATUS",2);expect_footer("PAGE_ERROR",0)
             wait_color(guest,"browser-footer-recovered",400,400,(238,238,238))
             receipt["footer_loading_error_and_recovery"]=True
             receipt["footer_failed_destination_matches_requested_url"]=True
@@ -633,11 +634,11 @@ def main():
                 guest.key("ctrl","l");browser_text(guest,url);guest.key("ret")
                 wait_state("LOCATION_HASH",url_hash(url));wait_state("LOADING",0)
                 guest.key("ctrl","d");wait_state("FAVORITES_COUNT",index+2);wait_state("FAVORITES_ERROR",0)
-            guest.click(214,207);wait_state("LOCATION_HASH",url_hash("https://example.com/"))
-            guest.click(890,207);guest.click(214,207)
+            guest.click(214,239);wait_state("LOCATION_HASH",url_hash("https://example.com/"))
+            guest.click(890,239);guest.click(214,239)
             wait_state("LOCATION_HASH",url_hash("https://example.com/?favorite=3"))
             guest.screenshot("browser-favorites-overflow")
-            guest.click(854,207);guest.click(214,207)
+            guest.click(854,239);guest.click(214,239)
             wait_state("LOCATION_HASH",url_hash("https://example.com/"));wait_state("LOADING",0)
             guest.screenshot("browser-favorites-full-row")
             receipt["favorites_overflow_paging_and_navigation"]=True
@@ -665,8 +666,38 @@ def main():
             await_favorite("FAVORITE_SAVED",0);await_favorite("FOOTER_STATUS",2)
             guest.key("ctrl","d");await_favorite("FAVORITES_COUNT",count+1)
             await_favorite("FAVORITE_TITLE_HASH",title_hash);await_favorite("FAVORITES_ERROR",0)
-            guest.click(890,207);guest.screenshot("browser-favorite-title-preserved")
+            guest.click(890,239);guest.screenshot("browser-favorite-title-preserved")
             receipt["same_title_navigation_preserves_favorite_title"]=True
+        if args.chrome:
+            # ------------------------=
+            # FUNC: chrome_value
+            # DESC: Waits for real native menu and settings state after pointer or keyboard input.
+            # ------------------=
+            def chrome_value(name,wanted):
+                deadline=time.monotonic()+12
+                while time.monotonic()<deadline:
+                    actual=int.from_bytes(guest.memory(*counters[name]),"little")
+                    if actual==wanted:return
+                raise AssertionError(dict(counter=name,actual=actual,wanted=wanted))
+            guest.click(220,157);chrome_value("MENU",2)
+            guest.screenshot("browser-settings-menu")
+            guest.key("ret");chrome_value("SETTINGS",0x10100);chrome_value("MENU",0)
+            guest.key("esc");chrome_value("SETTINGS",256)
+            guest.click(808,197);chrome_value("SETTINGS",0x10100)
+            guest.screenshot("browser-chrome-settings")
+            guest.key("esc");chrome_value("SETTINGS",256)
+            guest.click(140,157);chrome_value("MENU",1)
+            guest.screenshot("browser-file-menu")
+            guest.key("esc");chrome_value("MENU",0)
+            width,height,before=read_pixels(guest.screenshot("browser-ai-collapsed"))
+            guest.click(934,286)
+            width,height,expanded=read_pixels(guest.screenshot("browser-ai-expanded"))
+            at=(350*width+850)*3
+            assert before[at:at+3]!=expanded[at:at+3]
+            guest.click(934,286)
+            width,height,collapsed=read_pixels(guest.screenshot("browser-ai-restored"))
+            assert collapsed[at:at+3]==before[at:at+3]
+            receipt["menus_url_gear_and_ai_toggle"]=True
         if args.settings:
             if int.from_bytes(guest.memory(*counters["FAVORITES_COUNT"]),"little")==0:
                 guest.key("ctrl","d")
@@ -681,29 +712,29 @@ def main():
                     actual=int.from_bytes(guest.memory(*counters["SETTINGS"]),"little")
                     if actual==expected: return
                 raise AssertionError(dict(expected=expected,actual=actual))
-            guest.click(888,165);setting_value(0x10100)
-            guest.click(350,329);setting_value(0x1010101)
-            guest.click(500,385);setting_value(0x1010001)
+            guest.click(808,197);setting_value(0x10100)
+            guest.click(350,361);setting_value(0x1010101)
+            guest.click(500,417);setting_value(0x1010001)
             guest.screenshot("browser-settings-hidden-favorites")
             guest.key("esc");setting_value(1)
             guest.stop();guest.boot(False);guest.authenticate();guest.launch("browser",5)
             setting_value(1)
-            guest.click(888,165);setting_value(0x10001)
-            guest.click(500,349);setting_value(0x1010101)
-            guest.click(150,505);setting_value(0x1010100)
+            guest.click(808,197);setting_value(0x10001)
+            guest.click(500,381);setting_value(0x1010101)
+            guest.click(150,537);setting_value(0x1010100)
             guest.screenshot("browser-settings-defaults")
             guest.key("tab");guest.key("ret");setting_value(0x1010100)
             guest.key("tab");guest.key("ret");setting_value(0x1010101)
             guest.key("tab");guest.key("ret");setting_value(0x1010102)
             before=int.from_bytes(guest.memory(*counters["FAVORITES_COUNT"]),"little")
-            guest.click(500,441);setting_value(0x10102)
+            guest.click(500,473);setting_value(0x10102)
             assert int.from_bytes(guest.memory(*counters["FAVORITES_COUNT"]),"little")==before
             guest.key("esc");setting_value(258)
-            guest.click(888,165);setting_value(0x10102)
-            guest.click(500,441);guest.click(500,441);setting_value(0x1010102)
+            guest.click(808,197);setting_value(0x10102)
+            guest.click(500,473);guest.click(500,473);setting_value(0x1010102)
             assert int.from_bytes(guest.memory(*counters["FAVORITES_COUNT"]),"little")==0
-            guest.click(150,505);setting_value(0x1010100)
-            guest.click(500,505);setting_value(256)
+            guest.click(150,537);setting_value(0x1010100)
+            guest.click(500,537);setting_value(256)
             receipt["settings_controls_and_detached_persistence"]=True
         if args.lifecycle:
             wait_color(guest,"browser-lifecycle-page",400,400,(255,0,0))

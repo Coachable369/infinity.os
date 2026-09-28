@@ -31,6 +31,10 @@ impl ConsoleRuntime {
         if self.mode == ConsoleMode::Settings {
             return Some((4, l.settings_window_geometry(self.settings_window).window));
         }
+        if self.desktop_app==DesktopAppKind::Browser {
+            let s=self.browser_window_state();
+            return Some((0,l.desktop_app_window_geometry(s.x,s.y,s.width,s.height,s.maximized).window));
+        }
         let id = match self.desktop_app {
             DesktopAppKind::TextEditor => 2,
             DesktopAppKind::CommandWindow => 1,
@@ -217,6 +221,7 @@ impl ConsoleRuntime {
             let text = &panel.input[..panel.length];
             if text.eq_ignore_ascii_case(b"help") || text.eq_ignore_ascii_case(b"what can you do") {
                 panel.reply(if id==2 {b"Local editor actions: find TEXT, insert TEXT, undo, redo, select all, save, maximize, restore, minimize. Each action is previewed before Apply. This local assistant does not generate or refactor code."}
+                    else if id==0 {b"Browser assistance: refresh, maximize, restore, or minimize this window with Apply. Other prompts use local dialogue; website contents are not automatically shared."}
                     else if id >= 5 {b"This File Navigator supports open folder /absolute/path, maximize, restore, minimize, and refresh. Actions target this window only and require Apply."}
                     else {b"Local window actions: maximize, restore, minimize, refresh. Every action requires Apply. No files or settings are changed by chat."});
             } else if id == 2 && text.eq_ignore_ascii_case(b"describe document") {
@@ -269,7 +274,7 @@ impl ConsoleRuntime {
                     self.app_window_maximized
                 };
                 if current != value {
-                    self.toggle_window_maximized(if id >= 5 { 0 } else { id });
+                    self.toggle_window_maximized(if id==0 {5}else if id >= 5 { 0 } else { id });
                 }
                 let _ = self.checkpoint_desktop_layout();
             }
@@ -312,6 +317,8 @@ impl ConsoleRuntime {
                     self.editor_document.is_saved() || self.editor_dialog != EditorDialog::None;
             }
             Action::Refresh => {
+                #[cfg(feature="native-browser")]
+                if id==0 {browser_controller::key(self,ConsoleKey::Shortcut(b'r'));}
                 if id == 3 {
                     self.refresh_task_manager_output();
                 } else if id >= 5 {

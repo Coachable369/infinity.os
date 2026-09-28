@@ -67,7 +67,7 @@ mod tests {
             let hidden=crate::layout::Layout::new(900*scale,600*scale,scale).unwrap().with_favorites(false);
             assert_eq!(shown.menu,hidden.menu);
             assert_eq!(hidden.content.height,shown.content.height+36*scale);
-            assert_eq!(hidden.hit(30*scale as i32,105*scale as i32),Some(crate::layout::Control::Content));
+            assert_eq!(hidden.hit(30*scale as i32,137*scale as i32),Some(crate::layout::Control::Content));
             for index in 0..7 {
                 let r=control(shown.content,scale,index);
                 assert!(shown.content.local(r.x,r.y).is_some());

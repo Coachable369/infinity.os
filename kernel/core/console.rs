@@ -1372,7 +1372,7 @@ impl ConsoleRuntime {
         }
         #[cfg(feature="native-browser")]
         if self.mode==ConsoleMode::Desktop && self.desktop_app==DesktopAppKind::Browser
-            && crate::runtime::browser::presentation().address_focused {
+            && crate::runtime::browser::presentation().address_focused && !crate::ui::app_assistant::read(0).focused {
             browser_controller::key(self,key);self.redraw();return;
         }
         if matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings) {
@@ -3334,7 +3334,7 @@ impl ConsoleRuntime {
         if navigator.is_some() {home=crate::ui::geometry::Rect{x:point.x,y:point.y,width:1,height:1};}
         let mut bounds=[home,app_rect(c),app_rect(e),app_rect(t),layout.settings_window_geometry(self.settings_window).window,app_rect(self.browser_window_state())];
         let active_navigator=crate::runtime::with_runtime(|r|r.file_navigators.active_index()).flatten().unwrap_or(0);
-        for (id,panel_id) in [(0,5+active_navigator),(1,1),(2,2),(3,3),(4,4)] {
+        for (id,panel_id) in [(0,5+active_navigator),(1,1),(2,2),(3,3),(4,4),(5,0)] {
             let panel=crate::ui::app_assistant::read(panel_id);
             let toggle=crate::ui::app_assistant::geometry_in_viewport(bounds[id],self.system.framebuffer_width,
                 layout.scale(),panel.expanded).toggle;
@@ -13236,6 +13236,7 @@ pub fn pointer_buttons(delta_x: i16, delta_y: i16, buttons: u8) {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
             runtime.pointer(delta_x, delta_y, buttons);
+            diagnostics::publish_pointer(runtime);
         }
     }
 }
@@ -13271,6 +13272,7 @@ pub fn pointer_absolute_buttons(x: i32, y: i32, buttons: u8) {
         let slot = &raw mut RUNTIME;
         if let Some(runtime) = (*slot).as_mut() {
             runtime.pointer_absolute(x, y, buttons);
+            diagnostics::publish_pointer(runtime);
         }
     }
 }

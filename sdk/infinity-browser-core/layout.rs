@@ -2,9 +2,11 @@
 use crate::Viewport;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Control { Back, Forward, Reload, Address, Go, Downloads, Menu, Minimize, Maximize, Close, Content, NewTab, Favorite, FavoritesPrevious, FavoritesNext }
+pub enum Control { Back, Forward, Reload, Address, Go, Downloads, Menu, FileMenu, SettingsMenu, Minimize, Maximize, Close, Content, NewTab, Favorite, FavoritesPrevious, FavoritesNext }
 
 pub struct Layout {
+    pub file_menu:Viewport,
+    pub settings_menu:Viewport,
     pub title: Viewport,
     pub tabs: Viewport,
     pub new_tab: Viewport,
@@ -31,6 +33,15 @@ pub struct Layout {
 
 impl Layout {
     // ------------------------=
+    // FUNC: menu_item
+    // DESC: Shares dropdown action geometry with pointer dispatch at every scale.
+    // ------------------=
+    pub fn menu_item(&self,menu:u8,index:usize)->Option<Viewport> {
+        if index>=if menu==1 {3}else if menu==2 {1}else{0} {return None;}
+        let s=self.tabs.height/36;let anchor=if menu==1 {self.file_menu}else{self.settings_menu};
+        Some(Viewport{x:anchor.x,y:anchor.y+anchor.height as i32+(index as u32*32*s) as i32,width:208*s,height:32*s})
+    }
+    // ------------------------=
     // FUNC: with_favorites
     // DESC: Reclaims the favorites rail for page content when the user hides it.
     // ------------------=
@@ -55,7 +66,7 @@ impl Layout {
     // ------------------=
     pub fn new(width: u32, height: u32, scale: u32) -> Option<Self> {
         if !(1..=4).contains(&scale) || width > i32::MAX as u32 || height > i32::MAX as u32
-            || width < 760 * scale || height < 240 * scale { return None; }
+            || width < 760 * scale || height < 272 * scale { return None; }
         let gap = crate::skin::GAP * scale;
         let gutter = crate::skin::GUTTER * scale;
         let control = crate::skin::CONTROL_HEIGHT * scale;
@@ -63,25 +74,28 @@ impl Layout {
         let toolbar_height = control + 2 * gap;
         let status_height = 24 * scale;
         let tab_height = 36 * scale;
-        let y = title_height + gap;
+        let menu_height=32*scale;
+        let y = title_height + menu_height + gap;
         let rect = |x: u32, y: u32, width, height| Viewport { x: x as i32, y: y as i32, width, height };
         let address_x = gutter + 3 * (control + gap);
         let go_width = 32 * scale;
-        let menu_x = width - gutter - control;
-        let downloads_x = menu_x - gap - control;
+        let downloads_x = width - gutter - control;
         let go_x = downloads_x - gap - go_width;
+        let menu_x = go_x - gap - control;
         let window_control = 32 * scale;
         let close_x = width - gutter - window_control;
-        let favorites_y = title_height + toolbar_height;
+        let favorites_y = title_height + menu_height + toolbar_height;
         let content_y = favorites_y + 36*scale;
         Some(Self {
+            file_menu:rect(gutter,title_height,56*scale,menu_height),
+            settings_menu:rect(gutter+64*scale,title_height,88*scale,menu_height),
             title: rect(0, 0, width, title_height),
             tabs: rect(104 * scale, 12 * scale, width - 264 * scale, tab_height),
             new_tab: rect(width - 152 * scale, 12 * scale, 32 * scale, 32 * scale),
             back: rect(gutter, y, control, control),
             forward: rect(gutter + control + gap, y, control, control),
             reload: rect(gutter + 2 * (control + gap), y, control, control),
-            address: rect(address_x, y, go_x - gap - address_x, control),
+            address: rect(address_x, y, menu_x - gap - address_x, control),
             go: rect(go_x, y, go_width, control),
             downloads: rect(downloads_x, y, control, control),
             menu: rect(menu_x, y, control, control),
@@ -110,6 +124,7 @@ impl Layout {
             if bounds.local(x,y).is_some() {return Some(control);}
         }
         for (bounds, control) in [
+            (self.file_menu,Control::FileMenu),(self.settings_menu,Control::SettingsMenu),
             (self.back, Control::Back), (self.forward, Control::Forward),
             (self.reload, Control::Reload), (self.address, Control::Address),
             (self.go, Control::Go), (self.content, Control::Content),
@@ -158,6 +173,21 @@ impl Layout {
 mod tests {
     use super::*;
     // ------------------------=
+    // FUNC: menus_and_url_settings_have_distinct_targets
+    // DESC: Checks menu adjacency, URL gear placement and bounded dropdown rows across scales.
+    // ------------------=
+    #[test]
+    fn menus_and_url_settings_have_distinct_targets() {
+        for s in 1..=4 {let l=Layout::new(900*s,600*s,s).unwrap();
+            assert_eq!(l.settings_menu.x,l.file_menu.x+l.file_menu.width as i32+(8*s) as i32);
+            assert_eq!(l.menu.x,l.address.x+l.address.width as i32+(8*s) as i32);
+            assert_eq!(l.hit(l.file_menu.x+1,l.file_menu.y+1),Some(Control::FileMenu));
+            assert_eq!(l.hit(l.settings_menu.x+1,l.settings_menu.y+1),Some(Control::SettingsMenu));
+            assert!(l.menu_item(2,1).is_none());assert!(l.menu_item(0,0).is_none());
+            for i in 0..3 {let r=l.menu_item(1,i).unwrap();assert_eq!(r.height,32*s);assert!(r.x+(r.width as i32)<900*s as i32);}
+        }
+    }
+    // ------------------------=
     // FUNC: favorites_stay_between_navigation_and_content
     // DESC: Verifies readable overflow slots and independent star, page and navigation hits at every scale.
     // ------------------=
@@ -180,7 +210,7 @@ mod tests {
     #[test]
     fn tab_targets_never_overlap_navigation() {
         for scale in 1..=4 {
-            let layout=Layout::new(760*scale,240*scale,scale).unwrap();
+            let layout=Layout::new(760*scale,272*scale,scale).unwrap();
             for count in 1..=8 {
                 let mut right=layout.tabs.x;
                 for index in 0..count {
@@ -196,7 +226,7 @@ mod tests {
                     right=tab.x+tab.width as i32;
                 }
                 assert!(right<layout.new_tab.x);
-                let fitted=Layout::new(760*scale,240*scale,scale).unwrap().with_tab_count(count);
+                let fitted=Layout::new(760*scale,272*scale,scale).unwrap().with_tab_count(count);
                 assert_eq!(fitted.new_tab.x,right+(8*scale) as i32);
                 assert_eq!(fitted.hit(fitted.new_tab.x,fitted.new_tab.y),Some(Control::NewTab));
                 for y in 0..fitted.new_tab.height {for x in 0..fitted.new_tab.width {
@@ -215,7 +245,7 @@ mod tests {
     #[test]
     fn download_consent_stays_inside_viewport_with_separate_actions() {
         for scale in 1..=4 {
-            let layout=Layout::new(760*scale,240*scale,scale).unwrap();
+            let layout=Layout::new(760*scale,272*scale,scale).unwrap();
             for button in [layout.download_save,layout.download_discard] {
                 assert!(layout.download_card.local(button.x,button.y).is_some());
                 assert!(layout.download_card.local(button.x+button.width as i32-1,button.y+button.height as i32-1).is_some());

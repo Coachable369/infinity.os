@@ -2,6 +2,24 @@
 //! There is no command channel, authority grant, or test-only state mutation.
 use super::ConsoleRuntime;
 
+// ------------------------=
+// FUNC: publish_pointer
+// DESC: Keeps cursor-only input observable without repainting or rebuilding service snapshots.
+// ------------------=
+pub(super) fn publish_pointer(console: &ConsoleRuntime) {
+    unsafe {
+        let pointer = (&raw mut INFINITY_DIAGNOSTIC_SNAPSHOT).cast::<u64>();
+        let generation = core::ptr::read_volatile(pointer.add(2)).wrapping_add(2) & !1;
+        core::ptr::write_volatile(pointer.add(2), generation | 1);
+        core::ptr::write_volatile(pointer.add(13), console.pointer_x as u64);
+        core::ptr::write_volatile(pointer.add(14), console.pointer_y as u64);
+        core::ptr::write_volatile(pointer.add(15), console.pointer_buttons as u64);
+        core::ptr::write_volatile(pointer.add(511), generation);
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::Release);
+        core::ptr::write_volatile(pointer.add(2), generation);
+    }
+}
+
 #[used]
 #[no_mangle]
 static mut INFINITY_DIAGNOSTIC_SNAPSHOT: [u64; 512] = [0; 512];

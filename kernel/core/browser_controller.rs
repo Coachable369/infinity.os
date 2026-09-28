@@ -117,6 +117,7 @@ fn toggle_favorite(console:&ConsoleRuntime) {unsafe {
 // DESC: Opens the browser immediately under the signed-in user's Network Settings policy.
 // ------------------=
 pub(super) fn request_access(console:&mut ConsoleRuntime,url:&[u8]) {
+    crate::runtime::browser::chrome_menu_presentation(0,0);
     favorites_sync(console);
     let view=crate::runtime::browser::presentation();
     crate::runtime::browser::settings_presentation(view.settings,false,view.settings_notice,false);
@@ -280,6 +281,7 @@ pub(super) fn execute(console:&mut ConsoleRuntime,command:&[u8])->bool {
 // DESC: Retains a close request until the worker mailbox accepts it, superseding pending navigation.
 // ------------------=
 pub(super) fn close() {unsafe {
+    crate::runtime::browser::chrome_menu_presentation(0,0);
     NEW_TABS=0;
     CONSENT=None;crate::runtime::browser::permission_presentation(0);
     DOWNLOAD=None;crate::runtime::browser::download_presentation(&[],0);
@@ -294,6 +296,16 @@ pub(super) fn close() {unsafe {
 // ------------------=
 pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
     let settings=crate::runtime::browser::presentation();
+    if settings.chrome_menu!=0 {
+        let count=if settings.chrome_menu==1 {3}else{1};
+        match key {
+            ConsoleKey::Escape=>crate::runtime::browser::chrome_menu_presentation(0,0),
+            ConsoleKey::Down|ConsoleKey::Tab(false)=>crate::runtime::browser::chrome_menu_presentation(settings.chrome_menu,(settings.menu_focus+1)%count),
+            ConsoleKey::Up|ConsoleKey::Tab(true)=>crate::runtime::browser::chrome_menu_presentation(settings.chrome_menu,(settings.menu_focus+count-1)%count),
+            ConsoleKey::Enter|ConsoleKey::Character(b' ')=>menu_action(console,settings.chrome_menu,settings.menu_focus),
+            _=>{},
+        }return;
+    }
     if settings.settings_open {
         if matches!(key,ConsoleKey::Escape) {settings_action(console,6);}
         else if matches!(key,ConsoleKey::Enter|ConsoleKey::Character(b' ')) {settings_action(console,settings.settings_focus);}
@@ -308,6 +320,7 @@ pub(super) fn key(console:&mut ConsoleRuntime,key:ConsoleKey) {
     if let ConsoleKey::Shortcut(value)=key {
         let mut command=abi::Command::empty();
         match value {
+            b'r'|b'R'=>{command.kind=abi::RELOAD;},
             b'd'|b'D'=>{toggle_favorite(console);return;},
             b't'|b'T'=>{new_tab(console);return;},
             b'w'|b'W'=>{
@@ -410,6 +423,21 @@ fn new_tab(console:&mut ConsoleRuntime) {
 }
 
 // ------------------------=
+// FUNC: menu_action
+// DESC: Routes visible menu entries to existing browser commands and the same persistent settings page.
+// ------------------=
+fn menu_action(console:&mut ConsoleRuntime,menu:u8,index:usize) {
+    crate::runtime::browser::chrome_menu_presentation(0,0);
+    if menu==2 && index==0 {
+        let v=crate::runtime::browser::presentation();crate::runtime::browser::settings_position(6,0);
+        crate::runtime::browser::settings_presentation(v.settings,true,v.settings_notice,false);
+    } else if menu==1 {
+        let v=crate::runtime::browser::presentation();crate::runtime::browser::settings_presentation(v.settings,false,v.settings_notice,false);
+        match index {0=>new_tab(console),1=>key(console,ConsoleKey::Shortcut(b'w')),2=>console.close_desktop_app(),_=>{}}
+    }
+}
+
+// ------------------------=
 // FUNC: chrome_pointer
 // DESC: Hit-tests native chrome with the exact painter layout and keeps those clicks out of web content.
 // ------------------=
@@ -423,6 +451,16 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
     let x=(console.system.framebuffer_width as i64*i64::from(console.pointer_x)/1000) as i32-bounds.x;
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
     let view=crate::runtime::browser::presentation();
+    for (r,menu) in [(layout.file_menu,1),(layout.settings_menu,2)] {
+        if r.local(x,y).is_some() {crate::runtime::browser::focus_address(false);
+            crate::runtime::browser::chrome_menu_presentation(if view.chrome_menu==menu {0}else{menu},0);return true;}
+    }
+    if view.chrome_menu!=0 {
+        for index in 0..3 {if layout.menu_item(view.chrome_menu,index).is_some_and(|r|r.local(x,y).is_some()) {
+            menu_action(console,view.chrome_menu,index);return true;
+        }}
+        crate::runtime::browser::chrome_menu_presentation(0,0);return true;
+    }
     if layout.menu.local(x,y).is_some() {
         crate::runtime::browser::settings_position(6,0);
         crate::runtime::browser::settings_presentation(view.settings,!view.settings_open,view.settings_notice,false);return true;
@@ -508,6 +546,7 @@ pub(super) fn chrome_pointer(console:&mut ConsoleRuntime)->bool {
 // ------------------=
 pub(super) fn scroll(console:&ConsoleRuntime,vertical:i8)->bool {
     let view=crate::runtime::browser::presentation();
+    if view.chrome_menu!=0 {return true;}
     if view.settings_open {
         let (height,scale)=settings_dimensions(console);
         let limit=(320*scale).saturating_sub(height);
@@ -552,6 +591,11 @@ pub(super) fn pointer(console:&ConsoleRuntime,buttons:u8,capture_only:bool)->boo
     let y=(console.system.framebuffer_height as i64*i64::from(console.pointer_y)/1000) as i32-bounds.y;
     let view=crate::runtime::browser::presentation();
     let mut hover=(0,false);
+    if view.chrome_menu!=0 {
+        for index in 0..3 {if layout.menu_item(view.chrome_menu,index).is_some_and(|r|r.local(x,y).is_some()) {
+            crate::runtime::browser::chrome_menu_presentation(view.chrome_menu,index);break;
+        }}return false;
+    }
     if !captured {for index in 0..view.tab_count {
         let Some((tab,close))=layout.tab(index,view.tab_count) else {continue;};
         if tab.local(x,y).is_some_and(|(x,y)|infinity_browser_core::tab_style::contains(tab.width,tab.height,x,y)) {

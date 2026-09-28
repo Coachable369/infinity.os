@@ -149,6 +149,7 @@ pub fn diagnostic()->([u8;2048],usize) {unsafe {DIAGNOSTIC}}
 
 #[derive(Clone,Copy)]
 pub struct Presentation {
+    pub chrome_menu:u8,pub menu_focus:usize,
     pub settings:infinity_browser_core::settings::Settings,pub settings_open:bool,pub settings_notice:u8,pub settings_confirm:bool,
     pub settings_focus:usize,pub settings_scroll:u32,
     pub favorites:[FavoritePresentation;32],pub favorite_count:usize,pub favorite_offset:usize,
@@ -170,6 +171,7 @@ const EMPTY_FAVORITE:FavoritePresentation=FavoritePresentation{title:[0;96],leng
 pub struct TabPresentation {pub id:u32,pub title:[u8;256],pub length:usize}
 const EMPTY_TAB:TabPresentation=TabPresentation{id:0,title:[0;256],length:0};
 static mut PRESENTATION:Presentation=Presentation{hovered_tab:0,hovered_close:false,frame_revision:0,address:[0;2048],address_length:0,title:[0;256],
+    chrome_menu:0,menu_focus:0,
     settings:infinity_browser_core::settings::Settings::new(),settings_open:false,settings_notice:0,settings_confirm:false,settings_focus:6,settings_scroll:0,
     favorites:[EMPTY_FAVORITE;32],favorite_count:0,favorite_offset:0,favorite_saved:false,favorite_error:0,hovered_favorite:usize::MAX,
     tabs:[EMPTY_TAB;8],tab_count:0,active_tab:0,
@@ -209,7 +211,8 @@ impl Presentation {
             error:self.error,permission:self.permission,download:self.download_state,
             download_content:self.download_revision ^ ((self.settings_open as u64)<<63) ^ ((self.settings_notice as u64)<<56)
                 ^ ((self.settings_confirm as u64)<<55) ^ ((self.settings.search as u64)<<52) ^ ((self.settings.favorites as u64)<<51)
-                ^ ((self.settings_focus as u64)<<48) ^ ((self.settings_scroll as u64)<<32),
+                ^ ((self.settings_focus as u64)<<48) ^ ((self.settings_scroll as u64)<<32)
+                ^ ((self.chrome_menu as u64)<<30) ^ ((self.menu_focus as u64)<<28),
             loading:self.loading,busy:self.input_busy,status:self.favorite_error as u64 ^
                 self.address[..self.address_length].iter().fold(0u64,|hash,b|hash.wrapping_mul(31).wrapping_add(*b as u64))}
     }
@@ -220,6 +223,16 @@ impl Presentation {
 // DESC: Copies BSP-owned engine metadata for the native shell; no engine calls occur during paint.
 // ------------------=
 pub fn presentation()->Presentation {unsafe {PRESENTATION}}
+// ------------------------=
+// FUNC: chrome_menu_presentation
+// DESC: Publishes transient dropdown state without forwarding input to the website.
+// ------------------=
+pub fn chrome_menu_presentation(menu:u8,focus:usize) {unsafe {
+    INFINITY_BROWSER_MENU.store(menu as u32,Ordering::Release);
+    let v=&mut *(&raw mut PRESENTATION);
+    if (v.chrome_menu,v.menu_focus)!=(menu,focus) {v.chrome_menu=menu;v.menu_focus=focus;v.revision=v.revision.wrapping_add(1);}
+}}
+#[no_mangle] pub static INFINITY_BROWSER_MENU:AtomicU32=AtomicU32::new(0);
 // ------------------------=
 // FUNC: settings_presentation
 // DESC: Publishes committed preferences and native-page state, invalidating content as well as chrome.
