@@ -14,6 +14,7 @@ const HEAP_BYTES:usize=512*1024*1024;
 struct Heap([u8;HEAP_BYTES]);
 static mut HEAP:Heap=Heap([0;HEAP_BYTES]);
 static STATE:AtomicU32=AtomicU32::new(0);
+static mut DISPATCH:infinity_browser_core::startup::Dispatch=infinity_browser_core::startup::Dispatch::new();
 static FAILURE:AtomicU32=AtomicU32::new(0);
 static GENERATION:AtomicU64=AtomicU64::new(0);
 // Stable read-only diagnostic identity: do not rely on optimizer-private symbols.
@@ -107,6 +108,7 @@ pub unsafe fn start(owner:SecurityIdentity,caps:[CapabilityId;4])->Result<(),inf
         return if owned_by(owner) && crate::drivers::browser_network::renew(owner,caps) {Ok(())}else{Err(Error::Network)};
     }
     let info=BOOT.load(Ordering::Acquire).as_ref().ok_or(Error::Boot)?;
+    if super::ai::qwen::workers::online()==0 {return Err(Error::Worker);}
     let seconds=startup::prerequisites(info.firmware_entropy_valid==1,
         crate::console::certificate_time(info.firmware_runtime_services))?;
     if !crate::drivers::browser_network::configure(owner,caps) {return Err(Error::Network);}
@@ -117,7 +119,7 @@ pub unsafe fn start(owner:SecurityIdentity,caps:[CapabilityId;4])->Result<(),inf
     OWNER[0].store(u64::from_le_bytes(owner.0[..8].try_into().unwrap()),Ordering::Release);
     OWNER[1].store(u64::from_le_bytes(owner.0[8..].try_into().unwrap()),Ordering::Release);
     STATE.store(1,Ordering::Release);
-    if !super::ai::qwen::workers::background(worker) {STATE.store(0,Ordering::Release);return Err(Error::Worker);}
+    (&mut *(&raw mut DISPATCH)).poll(|| super::ai::qwen::workers::background(worker));
     Ok(())
 }
 // ------------------------=
@@ -439,6 +441,9 @@ pub fn input_pressure(full:bool) {unsafe {
 // ------------------=
 pub fn poll_presentation()->bool {
     unsafe {
+        if STATE.load(Ordering::Acquire)==1 {
+            (&mut *(&raw mut DISPATCH)).poll(|| super::ai::qwen::workers::background(worker));
+        }
         let view=&mut *(&raw mut PRESENTATION);
         let frame=FRAME_REVISION.load(Ordering::Acquire);
         view.frame_revision=frame;

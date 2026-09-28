@@ -159,7 +159,9 @@ pub fn stop(owner: SecurityIdentity) -> bool {
 // DESC: Provides non-private diagnostics, reading worker metrics only after completion publication.
 // ------------------=
 pub fn status() -> OutputStatus {
-    let state = STATE.load(Ordering::Acquire);
+    let mut state = STATE.load(Ordering::Acquire);
+    // A failed lookahead phrase must not truncate the already playing phrase.
+    if unsafe { PLAYING } && matches!(state, 4 | 6) && !CANCEL.load(Ordering::Acquire) { state = 5; }
     OutputStatus { state: match state {1=>OutputState::Queued,2=>OutputState::Synthesizing,3=>OutputState::Ready,4=>OutputState::Failed,5=>OutputState::Speaking,6=>OutputState::Cancelled,7=>OutputState::Complete,_=>OutputState::Idle},
         frames: if state >= 3 { unsafe { FRAMES } } else { 0 }, peak_bytes: if state >= 3 { unsafe { PEAK } } else { 0 },
         synthesis_ns: if state >= 3 { unsafe { ELAPSED } } else { 0 }, error: if state >= 3 { unsafe { ERROR } } else { 0 } }
@@ -187,7 +189,7 @@ pub fn poll() {
     if state == 0 { return; }
     unsafe {
         if PLAYING {
-            if CANCEL.load(Ordering::Acquire) || matches!(state, 4 | 6) { crate::drivers::audio::stop_playback(OWNER); }
+            if CANCEL.load(Ordering::Acquire) { crate::drivers::audio::stop_playback(OWNER); }
             if let Some(playback) = crate::drivers::audio::playback_state() {
                 if playback != PlaybackState::Playing {
                     PLAYING = false;

@@ -218,4 +218,22 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     submit(owner,1,b"Cancel before dispatch.").unwrap();
     stop(owner);poll();assert_eq!(status().state,S::Cancelled);
     assert!(unsafe { (&*(&raw const TASK)).is_none() });
+
+    // A rejected lookahead must not truncate the phrase DMA already owns.
+    WORKER_BUSY.store(false,Ordering::SeqCst);
+    submit(owner,1,b"Finish this phrase.").unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();
+    let played=PLAYED.load(Ordering::SeqCst);
+    INVALID.store(true,Ordering::SeqCst);
+    submit(owner,1,b"Rejected lookahead.").unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();
+    assert!(PLAYING.load(Ordering::SeqCst));
+    assert_eq!(status().state,S::Speaking);
+    assert!(!can_prefetch());
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played);
+    PLAYING.store(false,Ordering::SeqCst);
+    poll();assert_eq!(status().state,S::Failed);
+    INVALID.store(false,Ordering::SeqCst);
 }

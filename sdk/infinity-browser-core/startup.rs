@@ -3,6 +3,24 @@
 #[repr(u32)]
 pub enum Error { Session=0x100, Boot, Entropy, Clock, Network, Seed, Worker, Viewport }
 
+#[derive(Default)]
+pub struct Dispatch { accepted: bool }
+impl Dispatch {
+    // ------------------------=
+    // FUNC: poll
+    // DESC: Retries temporary CPU contention without submitting the engine twice.
+    // ------------------=
+    pub fn poll(&mut self, submit: impl FnOnce() -> bool) -> bool {
+        if !self.accepted { self.accepted = submit(); }
+        self.accepted
+    }
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates an undispatched browser launch.
+    // ------------------=
+    pub const fn new() -> Self { Self { accepted: false } }
+}
+
 // ------------------------=
 // FUNC: valid_viewport
 // DESC: Admits wide desktop windows within the existing four-megapixel frame allocation, including 2560-wide displays.
@@ -24,6 +42,18 @@ pub fn prerequisites(entropy:bool, seconds:Option<u64>)->Result<u64,Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // ------------------------=
+    // FUNC: contention_retries_without_duplicate_engine
+    // DESC: Keeps a busy launch pending and submits exactly once when a worker becomes available.
+    // ------------------=
+    #[test]
+    fn contention_retries_without_duplicate_engine() {
+        let mut dispatch = Dispatch::new();
+        assert!(!dispatch.poll(|| false));
+        assert!(!dispatch.poll(|| false));
+        assert!(dispatch.poll(|| true));
+        assert!(dispatch.poll(|| panic!("duplicate engine")));
+    }
     // ------------------------=
     // FUNC: missing_prerequisites_fail_closed_and_recover
     // DESC: Rejects missing entropy/time and admits a retry only after both real prerequisites exist.
