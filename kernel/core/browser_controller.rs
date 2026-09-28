@@ -223,7 +223,7 @@ fn enqueue(console:&ConsoleRuntime,command:abi::Command)->bool {unsafe {
 // FUNC: navigate_address
 // DESC: Routes the current native address field through the same governed engine navigation queue.
 // ------------------=
-fn navigate_address(console:&ConsoleRuntime) {
+fn navigate_address(console:&mut ConsoleRuntime) {
     let view=crate::runtime::browser::presentation();
     let (bytes,length)=if view.address_focused {(&view.edit,view.edit_length)}else{(&view.address,view.address_length)};
     let mut command=abi::Command::empty();command.kind=abi::NAVIGATE;
@@ -231,7 +231,22 @@ fn navigate_address(console:&ConsoleRuntime) {
     let Ok((_,length))=infinity_browser_core::omnibox::resolve(input,
         "https://www.google.com/search?q=",&mut command.text) else{return;};
     command.length=length as u32;
-    if enqueue(console,command) {crate::runtime::browser::focus_address(false);poll(console);}
+    let retained=unsafe {
+        if let Some(launch)=(&mut *(&raw mut LAUNCH)).as_mut().filter(|launch|
+            launch.owner==SecurityIdentity(console.current_session.0) && launch.stage<3) {
+            launch.url[..length].copy_from_slice(&command.text[..length]);
+            launch.length=length;
+            // Preserve OPEN during startup; otherwise retain NAVIGATE until
+            // the worker accepts it. Older admitted input drains first.
+            launch.stage=if launch.stage==0 {0}else{1};
+            true
+        } else {false}
+    };
+    if retained {
+        crate::runtime::browser::focus_address(false);poll(console);
+    } else {
+        request_access(console,&command.text[..length]);
+    }
 }
 
 // ------------------------=

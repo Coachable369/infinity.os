@@ -1370,6 +1370,11 @@ impl ConsoleRuntime {
             self.redraw();
             return;
         }
+        #[cfg(feature="native-browser")]
+        if self.mode==ConsoleMode::Desktop && self.desktop_app==DesktopAppKind::Browser
+            && crate::runtime::browser::presentation().address_focused {
+            browser_controller::key(self,key);self.redraw();return;
+        }
         if matches!(self.mode, ConsoleMode::Desktop | ConsoleMode::Settings) {
             if self.ai_chat_focus != 0 && self.input_ai_chat(key) {
                 self.redraw();

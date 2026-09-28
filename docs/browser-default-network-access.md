@@ -24,3 +24,12 @@ installed kernels; there is no separate live-only preference or asset.
 - New ISO packaging and cold-installed UI verification are not yet performed.
 
 This change does not claim to resolve the separately reported tab appearance.
+
+## Address-bar submission follow-up
+
+Enter and Go retain the resolved URL in the browser launch/navigation lifecycle
+instead of silently rejecting it while the worker is starting or input is full.
+The focused omnibox receives keyboard input before the desktop/window AI panels.
+Explicit HTTP(S) addresses are preserved, bare domains use HTTPS, and ordinary
+text remains a search query. The 28 browser-core tests and ARM64/x86_64 native
+checks pass. Installed Enter/Go interaction has not yet been verified.

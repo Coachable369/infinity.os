@@ -100,6 +100,9 @@ mod tests {
     fn routes_and_encodes_without_injection() {
         let mut bytes = [0; 2048];
         for (input, kind, expected) in [
+            ("https://example.com/path?q=1#top", Destination::Url, "https://example.com/path?q=1#top"),
+            ("www.wikipedia.org", Destination::Url, "https://www.wikipedia.org"),
+            ("192.168.1.1/settings", Destination::Url, "https://192.168.1.1/settings"),
             (" example.com/docs ", Destination::Url, "https://example.com/docs"),
             ("http://localhost:8000/a", Destination::Url, "http://localhost:8000/a"),
             ("localhost:8000", Destination::Url, "https://localhost:8000"),
