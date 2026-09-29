@@ -1,24 +1,25 @@
 //! Bounded sentence buffering for cumulative, visible assistant text.
 // ------------------------=
 // FUNC: next
-// DESC: Releases a complete sentence or a bounded word-aligned chunk, never an unfinished streaming word.
+// DESC: Releases a complete sentence or a bounded word-aligned chunk, preserving low first-audio latency and longer lookahead prosody.
 // ------------------=
-pub fn next(bytes: &[u8], complete: bool) -> usize {
-    // Match the native graph's single-phrase bound. Larger requests make
-    // Kokoro finish several graphs before publishing the first audible PCM.
-    let limit = bytes.len().min(44);
-    for i in 0..limit {
+pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
+    const INITIAL_LIMIT: usize = 44;
+    const PROVIDER_LIMIT: usize = 160;
+    let phrase_limit = if initial { INITIAL_LIMIT } else { PROVIDER_LIMIT };
+    let scan_limit = bytes.len().min(phrase_limit);
+    for i in 0..scan_limit {
         if matches!(bytes[i], b'.' | b'!' | b'?')
             && (bytes.get(i + 1).is_some_and(u8::is_ascii_whitespace) || (complete && i + 1 == bytes.len())) {
             return i + 1;
         }
     }
-    if complete && bytes.len() <= 44 { return bytes.len(); }
-    if bytes.len() >= 44 {
-        if let Some(i)=bytes[..limit].iter().rposition(u8::is_ascii_whitespace) {return i+1;}
+    if complete && bytes.len() <= phrase_limit { return bytes.len(); }
+    if bytes.len() >= phrase_limit {
+        if let Some(i)=bytes[..phrase_limit].iter().rposition(u8::is_ascii_whitespace) {return i+1;}
         // An indivisible oversized word must reach the provider's explicit
         // rejection rather than leaving the conversation waiting forever.
-        if complete || bytes.len()>=160 {return bytes.len().min(160);}
+        if complete || bytes.len() >= PROVIDER_LIMIT {return bytes.len().min(PROVIDER_LIMIT);}
     }
     0
 }
@@ -35,13 +36,13 @@ mod tests {
         let mut at = 0;
         let mut spoken = Vec::new();
         for end in 1..=text.len() {
-            let n = super::next(&text[at..end], end == text.len());
+            let n = super::next(&text[at..end], end == text.len(), at == 0);
             spoken.extend_from_slice(&text[at..at+n]); at += n;
         }
         assert_eq!(spoken, text);
-        assert_eq!(super::next(b"unfinished", false), 0);
-        assert_eq!(super::next(b"1.25", false), 0);
-        assert_eq!(super::next(&[b'a'; 170], false), 160);
+        assert_eq!(super::next(b"unfinished", false, true), 0);
+        assert_eq!(super::next(b"1.25", false, true), 0);
+        assert_eq!(super::next(&[b'a'; 170], false, false), 160);
     }
 
     // ------------------------=
@@ -53,11 +54,23 @@ mod tests {
         let text=b"This response has enough words to begin speaking before the entire sentence has been generated.";
         let mut at=0;
         while at<text.len() {
-            let count=super::next(&text[at..],true);
-            assert!(count>0 && count<=44);
+            let count=super::next(&text[at..],true,at==0);
+            assert!(count>0 && count<=160);
             assert!(at+count==text.len() || text[at+count-1].is_ascii_whitespace());
             at+=count;
         }
-        assert!(super::next(&text[..45],false)>0);
+        assert!(super::next(&text[..45],false,true)>0);
+    }
+
+    // ------------------------=
+    // FUNC: lookahead_keeps_followup_sentence_together
+    // DESC: Verifies queued followup speech preserves sentence prosody while the first phrase retains its early bound.
+    // ------------------=
+    #[test]
+    fn lookahead_keeps_followup_sentence_together() {
+        let sentence=b"The queued followup phrase stays together, so playback does not stop and restart every few words.";
+        assert_eq!(super::next(sentence,true,false),sentence.len());
+        let first=super::next(sentence,true,true);
+        assert!(first>0 && first<=44 && first<sentence.len());
     }
 }

@@ -241,7 +241,7 @@ unsafe fn speak_next() -> bool {
         return true;
     }
     let remaining = &(&*(&raw const REPLY))[REPLY_AT..REPLY_LENGTH];
-    let count = speech_chunk::next(remaining, REPLY_COMPLETE);
+    let count = speech_chunk::next(remaining, REPLY_COMPLETE, REPLY_AT == 0);
     if count == 0 { STATE = State::Thinking; return true; }
     let Some(cap) = grant(OWNER, CapabilityType::AudioOutput, voice_output::OUTPUT_LEASE_SECONDS) else {
         return false;
@@ -480,7 +480,7 @@ pub fn poll() -> bool {
                 _ => {
                     if voice_output::can_prefetch() {
                         refresh_reply();
-                        if REPLY_AT < REPLY_LENGTH && speech_chunk::next(&(&*(&raw const REPLY))[REPLY_AT..REPLY_LENGTH], REPLY_COMPLETE) > 0 {
+                        if REPLY_AT < REPLY_LENGTH && speech_chunk::next(&(&*(&raw const REPLY))[REPLY_AT..REPLY_LENGTH], REPLY_COMPLETE, REPLY_AT == 0) > 0 {
                             if !speak_next() { stop(OWNER); }
                         }
                     }

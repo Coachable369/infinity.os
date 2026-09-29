@@ -3,6 +3,7 @@ pub const RATE: usize = 16_000;
 pub const FRAME: usize = 320;
 pub const MAX_SAMPLES: usize = RATE * 10;
 const PRE_ROLL: usize = RATE / 5;
+const ONSET_FRAMES: usize = 3;
 const TAIL: usize = RATE / 10;
 const END_SILENCE: usize = RATE * 3 / 5;
 
@@ -65,8 +66,8 @@ impl Detector {
                 if voiced {
                     self.consecutive += 1;
                     self.last_voice = self.samples;
-                    if self.state == VadState::Waiting && self.consecutive >= 3 {
-                        self.segment.start = self.samples.saturating_sub(3 * FRAME + PRE_ROLL);
+                    if self.state == VadState::Waiting && self.consecutive >= ONSET_FRAMES {
+                        self.segment.start = self.samples.saturating_sub(ONSET_FRAMES * FRAME + PRE_ROLL);
                         self.state = VadState::Speech;
                     }
                 } else { self.consecutive = 0; }
@@ -118,7 +119,9 @@ impl Utterance {
         // Waiting time must not consume the speech budget. Preserve onset and
         // partial-frame history, but discard old silence before the next chunk.
         if self.detector.state == VadState::Waiting && self.detector.samples >= RATE {
-            let keep = PRE_ROLL + self.detector.frame_samples;
+            // Onset has not been confirmed yet: preserve the frames contributing
+            // to that decision as well as the complete soft-consonant preroll.
+            let keep = PRE_ROLL + ONSET_FRAMES * FRAME + self.detector.frame_samples;
             let end = self.detector.samples;
             self.pcm.copy_within(end - keep..end, 0);
             self.pcm[keep..end].fill(0);
@@ -156,6 +159,27 @@ impl Utterance {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    // ------------------------=
+    // FUNC: waiting_rollover_preserves_soft_onset
+    // DESC: Compares actual utterance PCM with the unrolled detector when a soft consonant precedes onset across the waiting-buffer boundary.
+    // ------------------=
+    fn waiting_rollover_preserves_soft_onset() {
+        let mut input = std::vec![0; RATE * 76 / 100];
+        input.extend_from_slice(&[120; PRE_ROLL]);
+        input.extend_from_slice(&[1000; FRAME * 5]);
+        input.extend_from_slice(&[0; RATE]);
+        let mut reference = Detector::new(300);
+        reference.push(&input);
+        let bounds = reference.segment().unwrap();
+        let expected = &input[bounds.start..bounds.end];
+        assert_eq!(expected.iter().filter(|&&v| v == 120).count(), PRE_ROLL);
+        for chunk in [1, 17, 319, 320, 701, 4096] {
+            let mut utterance = Utterance::new(300);
+            for samples in input.chunks(chunk) { utterance.push(samples); }
+            assert_eq!(utterance.speech().unwrap(), expected, "chunk size {chunk}");
+        }
+    }
     #[test]
     // ------------------------=
     // FUNC: erases_retained_pcm

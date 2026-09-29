@@ -800,6 +800,14 @@ builds/InfinityOS-aarch64-bootstrap-test.iso: $(BUILD)/infinity-aarch64.img
 	xorriso -as mkisofs -R -V INFINITYOS_ARM64 -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso-aarch64
 	mv $@.partial $@
 
+# Keep the documented VirtualBox/re-provision path bound to the exact artifact
+# emitted by the ARM packaging recipe without storing a second multi-gigabyte copy.
+builds/InfinityOS-aarch64.iso: builds/InfinityOS-aarch64-bootstrap-test.iso
+	@mkdir -p builds
+	rm -f $@.partial
+	ln $< $@.partial
+	mv -f $@.partial $@
+
 $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/kernel-qemu.elf $(FONT_ASSETS) $(UI_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(NODE_ASSETS)
 	rm -rf $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Icons $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Wallpapers $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Crash
 	@mkdir -p $(BUILD)/fat-aarch64-qemu/EFI/BOOT $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONTS $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/FONT-LICENSES $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Wallpapers $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Installer $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Crash $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Mesh
@@ -829,8 +837,8 @@ builds/InfinityOS-aarch64-qemu-test.iso: $(BUILD)/infinity-aarch64-qemu.img
 	mv $@.partial $@
 
 .PHONY: aarch64-bootstrap
-aarch64-bootstrap: check-tools builds/InfinityOS-aarch64-bootstrap-test.iso builds/InfinityOS-aarch64-qemu-test.iso
-	@echo "Built VirtualBox ARM64 image: builds/InfinityOS-aarch64-bootstrap-test.iso"
+aarch64-bootstrap: check-tools builds/InfinityOS-aarch64.iso builds/InfinityOS-aarch64-qemu-test.iso
+	@echo "Built VirtualBox ARM64 image: builds/InfinityOS-aarch64.iso"
 	@echo "Built QEMU ARM64 test image: builds/InfinityOS-aarch64-qemu-test.iso"
 
 aarch64: aarch64-bootstrap

@@ -43,8 +43,18 @@ def main():
                 check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             assert extracted.read_bytes() == bytes(range(256))
+        result = subprocess.run(
+            ["make", "-f", str(root / "Makefile"), "-o", "build/infinity-aarch64.img",
+             "-o", "x86-native-speech-parity", "builds/InfinityOS-aarch64.iso"],
+            cwd=work, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        )
+        assert result.returncode == 0, result.stderr[-4000:]
+        canonical = work / "builds" / "InfinityOS-aarch64.iso"
+        source = work / "builds" / "InfinityOS-aarch64-bootstrap-test.iso"
+        assert canonical.read_bytes() == source.read_bytes()
+        assert canonical.stat().st_ino == source.stat().st_ino
         assert not list((work / "build").rglob("*.iso"))
-        assert len(list((work / "builds").glob("*.iso"))) == len(cases)
+        assert len(list((work / "builds").glob("*.iso"))) == len(cases) + 1
 
 
 if __name__ == "__main__":

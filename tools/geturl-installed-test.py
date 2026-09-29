@@ -34,10 +34,6 @@ def configure_nat(guest):
     guest.wait(lambda s: bool(s[9] & 4), "DNS field editing")
     guest.text("10.0.2.3"); guest.key("ret")
     guest.wait(lambda s: not s[9] & 12, "DNS field committed")
-    # Standard starts with Ask. This explicit test-only Settings action permits
-    # traffic in the isolated guest; the service still requires session caps.
-    guest.key("right"); guest.key("right"); guest.key("right")
-    guest.key("ret")
     guest.key("esc")
 
 # ------------------------=

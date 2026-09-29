@@ -354,9 +354,12 @@ fn authorized(auth: Authority, address: [u8; 4], port: u16, now: u64) -> bool {
                 },
                 now,
             );
+            // Ask is satisfied by the user-initiated, owner-scoped and
+            // short-lived capability lease checked above. A persistent Deny
+            // remains authoritative.
             if !matches!(
                 decision.action,
-                PolicyAction::Allow | PolicyAction::AuditOnly
+                PolicyAction::Allow | PolicyAction::AuditOnly | PolicyAction::Ask
             ) {
                 return false;
             }
