@@ -41,6 +41,7 @@ use event::{EventClass, EventFabric, RoutingDomain};
 #[cfg(not(target_os = "none"))]
 use event::{EventFilter, OverflowPolicy};
 use execution::ExecutionManager;
+use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(not(target_os = "none"))]
 use iop::IopMessage;
 use iop::{IopRouter, OperationId};
@@ -1971,6 +1972,8 @@ impl InfinityRuntime {
     }
 }
 
+#[no_mangle]
+pub static INFINITY_NETWORK_SETTINGS_COMMIT: AtomicU32 = AtomicU32::new(0);
 static mut RUNTIME: InfinityRuntime = InfinityRuntime::new(cfg!(feature = "installer"));
 // ------------------------=
 // FUNC: runtime_mut
@@ -2776,15 +2779,18 @@ pub fn configure_static_ipv4_from_settings(
     metric: u32,
     now: u64,
 ) -> bool {
+    INFINITY_NETWORK_SETTINGS_COMMIT.store(1, Ordering::Release);
     let runtime = runtime_mut();
     let _previous = runtime.network.encode_state();
     let Some(settings) = runtime.service_identity(SERVICE_SETTINGS) else {
+        INFINITY_NETWORK_SETTINGS_COMMIT.store(2, Ordering::Release);
         return false;
     };
     let (Some(address_capability), Some(route_capability)) = (
         runtime.settings_network_address_capability,
         runtime.settings_network_route_capability,
     ) else {
+        INFINITY_NETWORK_SETTINGS_COMMIT.store(3, Ordering::Release);
         return false;
     };
     if runtime
@@ -2812,9 +2818,10 @@ pub fn configure_static_ipv4_from_settings(
             )
             .is_err()
     {
+        INFINITY_NETWORK_SETTINGS_COMMIT.store(4, Ordering::Release);
         return false;
     }
-    if runtime
+    if let Err(error) = runtime
         .network
         .interfaces
         .replace_static_ipv4(
@@ -2824,15 +2831,17 @@ pub fn configure_static_ipv4_from_settings(
             gateway.map(network::types::IpAddress::V4),
             metric,
         )
-        .is_err()
     {
+        INFINITY_NETWORK_SETTINGS_COMMIT.store(0x100 + error as u32, Ordering::Release);
         return false;
     }
     #[cfg(target_os = "none")]
-    if crate::storage::network_state_commit(&runtime.network.encode_state()).is_err() {
+    if let Err(error) = crate::storage::network_state_commit(&runtime.network.encode_state()) {
         let _ = runtime.network.restore_state(&_previous);
+        INFINITY_NETWORK_SETTINGS_COMMIT.store(0x200 + error as u32, Ordering::Release);
         return false;
     }
+    INFINITY_NETWORK_SETTINGS_COMMIT.store(0, Ordering::Release);
     true
 }
 

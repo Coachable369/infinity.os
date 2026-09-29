@@ -144,6 +144,33 @@ fn configurable_state_behavior() {
     let mut configured = NetworkRuntime::new();
     configured.initialize().unwrap();
     configured.interfaces.add_interface(adapter).unwrap();
+    configured.interfaces.add_address(
+        2,
+        IpAddress::V4([10, 20, 30, 40]),
+        24,
+        AddressScope::Global,
+        AddressSource::Dynamic,
+        None,
+        None,
+    ).unwrap();
+    configured.interfaces.add_route(
+        IpAddress::V4([10, 20, 30, 0]),
+        24,
+        None,
+        2,
+        100,
+        RouteSource::Dynamic,
+        None,
+    ).unwrap();
+    configured.interfaces.add_route(
+        IpAddress::V4([0, 0, 0, 0]),
+        0,
+        Some(IpAddress::V4([10, 20, 30, 1])),
+        2,
+        100,
+        RouteSource::Dynamic,
+        None,
+    ).unwrap();
     configured.interfaces.replace_static_ipv4(
         2,
         IpAddress::V4([10, 20, 30, 40]),
@@ -151,6 +178,20 @@ fn configurable_state_behavior() {
         Some(IpAddress::V4([10, 20, 30, 1])),
         75,
     ).unwrap();
+    assert_eq!(
+        (0..configured.interfaces.address_count())
+            .filter_map(|index| configured.interfaces.address_nth(index))
+            .filter(|value| value.interface_id == 2 && value.source == AddressSource::Dynamic)
+            .count(),
+        0,
+    );
+    assert_eq!(
+        (0..configured.interfaces.route_count())
+            .filter_map(|index| configured.interfaces.route_nth(index))
+            .filter(|value| value.interface_id == 2 && value.source == RouteSource::Dynamic)
+            .count(),
+        0,
+    );
     configured.resolver.set_enabled(false);
     configured.resolver.set_server(0, Some(IpAddress::V4([9, 9, 9, 9]))).unwrap();
     configured.resolver.set_server(1, Some(IpAddress::V4([1, 1, 1, 1]))).unwrap();

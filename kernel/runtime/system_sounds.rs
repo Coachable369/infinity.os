@@ -112,7 +112,12 @@ fn play(cue: SystemSoundCue) -> bool {
     let Some(capability) = capability else {
         return false;
     };
-    if crate::drivers::audio::play_speech(SYSTEM_SOUND_OWNER, capability, samples) {
+    let started = crate::drivers::audio::play_resident_system_cue(
+        SYSTEM_SOUND_OWNER,
+        capability,
+        samples,
+    );
+    if started {
         true
     } else {
         crate::runtime::with_runtime(|runtime| {
@@ -126,7 +131,7 @@ fn play(cue: SystemSoundCue) -> bool {
 
 // ------------------------=
 // FUNC: play_boot_once
-// DESC: Plays boot.mp3's runtime PCM once, after native output hardware becomes available.
+// DESC: Plays boot.mp3 once from the completed READY screen through resident hardware PCM on ISO and installed boots.
 // ------------------=
 pub fn play_boot_once() -> bool {
     let available = crate::drivers::audio::available();
@@ -137,7 +142,7 @@ pub fn play_boot_once() -> bool {
             } else {
                 BootOrigin::Installed
             },
-            phase: BootPhase::NativeAudioReady,
+            phase: BootPhase::ReadyScreenAudioAvailable,
             audio_available: available,
         },
         BOOT_PLAYED.load(Ordering::Acquire),
@@ -149,7 +154,24 @@ pub fn play_boot_once() -> bool {
         return false;
     }
     if play(SystemSoundCue::Boot) {
-        true
+        // The READY screen remains presented while the complete resident cue
+        // plays. Pumping the finite hardware stream here guarantees an ISO or
+        // installed boot cannot starve audio before the main service loop.
+        while matches!(
+            crate::drivers::audio::playback_state(),
+            Some(crate::runtime::audio::PlaybackState::Playing)
+        ) {
+            crate::drivers::audio::poll();
+            core::hint::spin_loop();
+        }
+        let completed = matches!(
+            crate::drivers::audio::playback_state(),
+            Some(crate::runtime::audio::PlaybackState::Complete)
+        );
+        if !completed {
+            BOOT_PLAYED.store(false, Ordering::Release);
+        }
+        completed
     } else {
         BOOT_PLAYED.store(false, Ordering::Release);
         false

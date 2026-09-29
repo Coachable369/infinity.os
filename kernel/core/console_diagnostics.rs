@@ -347,6 +347,8 @@ pub(super) fn publish(console: &ConsoleRuntime) {
         for (index, error) in runtime.node_links.errors.iter().enumerate() {
             data[50 + index] = error.map(|value| value as u64 + 1).unwrap_or(0);
         }
+        data[488] = crate::runtime::INFINITY_NETWORK_SETTINGS_COMMIT
+            .load(core::sync::atomic::Ordering::Acquire) as u64;
         for (index, node) in runtime.node_projection.nodes.iter().take(runtime.node_projection.node_count).enumerate() { words(&mut data[128 + index * 16..144 + index * 16], node); }
         for (index, domain) in runtime.node_projection.domains.iter().take(runtime.node_projection.domain_count).enumerate() { words(&mut data[384 + index * 13..397 + index * 13], domain); data[27] += domain[80] as u64; data[28] += (u64::from_le_bytes(domain[72..80].try_into().unwrap()) != 0) as u64; }
     });

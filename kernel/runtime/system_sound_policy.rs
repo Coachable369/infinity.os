@@ -15,7 +15,7 @@ pub enum BootOrigin {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BootPhase {
     FirmwareEntry,
-    NativeAudioReady,
+    ReadyScreenAudioAvailable,
     UserInterfaceReady,
 }
 
@@ -39,7 +39,7 @@ pub const fn cue_for_event(
 ) -> Option<SystemSoundCue> {
     match event {
         SystemSoundEvent::BootTransition {
-            phase: BootPhase::NativeAudioReady,
+            phase: BootPhase::ReadyScreenAudioAvailable,
             audio_available: true,
             ..
         } if !boot_already_played => Some(SystemSoundCue::Boot),
@@ -53,11 +53,11 @@ mod tests {
     use super::{BootOrigin, BootPhase, SystemSoundCue, SystemSoundEvent, cue_for_event};
 
     // ------------------------=
-    // FUNC: emits_boot_once_only_after_audio_is_ready
-    // DESC: Verifies the boot transition cannot emit before hardware readiness or more than once.
+    // FUNC: emits_boot_once_only_on_the_ready_screen
+    // DESC: Verifies both boot origins emit only when the completed progress screen and native audio are ready.
     // ------------------=
     #[test]
-    fn emits_boot_once_only_after_audio_is_ready() {
+    fn emits_boot_once_only_on_the_ready_screen() {
         for origin in [BootOrigin::Iso, BootOrigin::Installed] {
             assert_eq!(
                 cue_for_event(
@@ -74,7 +74,7 @@ mod tests {
                 cue_for_event(
                     SystemSoundEvent::BootTransition {
                         origin,
-                        phase: BootPhase::NativeAudioReady,
+                        phase: BootPhase::ReadyScreenAudioAvailable,
                         audio_available: true,
                     },
                     false,
@@ -96,7 +96,7 @@ mod tests {
                 cue_for_event(
                     SystemSoundEvent::BootTransition {
                         origin,
-                        phase: BootPhase::NativeAudioReady,
+                        phase: BootPhase::ReadyScreenAudioAvailable,
                         audio_available: true,
                     },
                     true,

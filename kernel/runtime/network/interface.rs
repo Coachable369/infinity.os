@@ -467,6 +467,33 @@ impl InterfaceManager {
         let counters = (self.next_address, self.next_route);
         self.remove_static_addresses(interface_id);
         self.remove_static_default_routes(interface_id);
+        // Explicit static configuration supersedes every automatically
+        // discovered IPv4 address and route on this interface. Keeping a DHCP
+        // lease with the same address made this transaction fail as
+        // AlreadyExists and left the Settings UI in its validation state.
+        for candidate in &mut self.addresses {
+            if candidate
+                .map(|value| {
+                    value.interface_id == interface_id
+                        && value.address.family() == AddressFamily::Ipv4
+                })
+                .unwrap_or(false)
+            {
+                *candidate = None;
+            }
+        }
+        for candidate in &mut self.routes {
+            if candidate
+                .map(|value| {
+                    value.interface_id == interface_id
+                        && value.destination.family() == AddressFamily::Ipv4
+                        && value.source == RouteSource::Dynamic
+                })
+                .unwrap_or(false)
+            {
+                *candidate = None;
+            }
+        }
         let configured = self.add_address(
             interface_id,
             address,

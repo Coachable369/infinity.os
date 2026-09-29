@@ -4,6 +4,7 @@
 mod hda;
 static mut DMA: hda::Dma = hda::Dma::new();
 static mut PCM: [i16; hda::SAMPLES] = [0; hda::SAMPLES];
+static mut RESIDENT_PCM: [i16; hda::SAMPLES * 20] = [0; hda::SAMPLES * 20];
 core::arch::global_asm!(".section .text.entry", ".global _start", "_start:", "ldr x0, =0x48000000", "mov sp, x0", "bl probe", "b .");
 // ------------------------=
 // FUNC: ticks
@@ -28,7 +29,7 @@ fn finish(code: u64) -> ! {
 fn panic(_: &core::panic::PanicInfo) -> ! { finish(99) }
 // ------------------------=
 // FUNC: probe
-// DESC: Exercises the actual native driver against QEMU HDA DMA and emits a two-second PCM tone.
+// DESC: Exercises complete resident HDA DMA against QEMU and emits a two-second waveform without scheduler refills.
 // ------------------=
 #[no_mangle]
 pub unsafe extern "C" fn probe() -> ! {
@@ -49,13 +50,17 @@ pub unsafe extern "C" fn probe() -> ! {
         Err(_) => finish(3),
     };
     hda::tone(&mut *(&raw mut PCM));
-    assert!(driver.start(&*(&raw const PCM)).is_ok());
+    for index in 0..20 {
+        (&mut *(&raw mut RESIDENT_PCM))[index * hda::SAMPLES..(index + 1) * hda::SAMPLES]
+            .copy_from_slice(&*(&raw const PCM));
+    }
+    assert!(driver.start_resident(&*(&raw const RESIDENT_PCM)).is_ok());
     let frequency: u64; core::arch::asm!("mrs {}, cntfrq_el0",out(reg)frequency);
     let start = ticks();
     let mut moved = false;
     while ticks() - start < frequency * 2 {
         let position = driver.position().unwrap();
-        assert!(position < (hda::SAMPLES * 2) as u32);
+        assert!(position < (hda::SAMPLES * 20 * 2) as u32);
         moved |= position > 0;
     }
     driver.stop();

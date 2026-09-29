@@ -40,6 +40,8 @@ pub fn initialize(_info: &crate::boot_info::BootInfo) {
 // ------------------=
 pub fn poll() {
     #[cfg(target_os = "none")]
+    crate::runtime::ai::qwen::workers::poll_background();
+    #[cfg(target_os = "none")]
     crate::runtime::ai::voice_output::poll();
     #[cfg(target_os = "none")]
     crate::runtime::ai::voice_input::poll();

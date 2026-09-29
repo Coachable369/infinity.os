@@ -318,6 +318,7 @@ def main():
     parser.add_argument("--resume-onboarding",action="store_true",help="Resume a completed disposable installation, reverify against its original ISO and finish onboarding")
     parser.add_argument("--iso-parity", action="store_true", help="Cold-install the browser QEMU ISO without any offline kernel replacement")
     parser.add_argument("--update-kernel", type=Path, help="Update only this harness's disposable disk from a repository-local kernel")
+    parser.add_argument("--configure-network", action="store_true", help="Retry installed Network Settings configuration on a reused disposable disk")
     parser.add_argument("--navigation", action="store_true", help="Verify real HTTPS link/back/forward/reload through URL state and distinct page pixels")
     parser.add_argument("--download", action="store_true", help="Fetch a real HTTPS attachment, click native Save, and verify the stored object after shutdown")
     parser.add_argument("--launcher", action="store_true", help="Launch through the installed catalog under the user's existing Network Settings policy")
@@ -413,8 +414,9 @@ def main():
             guest.authenticate()
         else:
             guest.onboard()
-        if not reuse or args.resume_onboarding:
+        if not reuse or args.resume_onboarding or args.configure_network:
             network.configure_nat(guest)
+            receipt["network_settings_configured"] = True
         counters = browser_symbols(artifacts / "installed-kernel.elf")
         if args.measure or args.lifecycle or args.reopen:
             assert "PEAK" in counters, "This optimized kernel does not expose peak-memory diagnostics"

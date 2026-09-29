@@ -16,6 +16,11 @@ static mut SPEECH_LENGTH: usize = 0;
 static mut SPEECH_NEXT: usize = 0;
 static mut SPEECH_PLAYED: usize = 0;
 static mut SPEECH_HALF: usize = 0;
+const SYSTEM_CUE_MAX_SAMPLES: usize = 48_000 * 2 * 12;
+#[repr(align(128))]
+struct ResidentSystemCue([i16; SYSTEM_CUE_MAX_SAMPLES]);
+static mut SYSTEM_CUE_PCM: ResidentSystemCue = ResidentSystemCue([0; SYSTEM_CUE_MAX_SAMPLES]);
+static mut SYSTEM_CUE_LENGTH: usize = 0;
 static mut PLAY_LAST_POLL: u64 = 0;
 static mut PLAY_STATE: PlaybackState = PlaybackState::Idle;
 static mut INPUT_LEASE: Option<crate::runtime::audio::AudioStream> = None;
@@ -198,6 +203,76 @@ pub unsafe fn play_resident_speech(owner: crate::runtime::execution::SecurityIde
     LOCK.store(false, Ordering::Release); started
 }
 // ------------------------=
+// FUNC: play_resident_system_cue
+// DESC: Converts a bounded 16-kHz mono system cue once and gives its complete stereo waveform to HDA so boot playback cannot underrun before the service loop starts.
+// ------------------=
+pub fn play_resident_system_cue(
+    owner: crate::runtime::execution::SecurityIdentity,
+    capability: u64,
+    samples: &'static [i16],
+) -> bool {
+    if samples.is_empty() || samples.len() > 16_000 * 12 {
+        return false;
+    }
+    let Some(now) = crate::ui::performance::monotonic_ns() else { return false; };
+    let Ok(request) = crate::runtime::iop::IopMessage::request(
+        crate::runtime::iop::OperationId::AudioPlaybackStart,
+        now,
+        owner,
+        capability,
+        now / 1_000_000_000 + 15,
+        now,
+        &[],
+    ) else { return false; };
+    let lease = crate::runtime::with_runtime(|runtime| {
+        crate::runtime::audio::AudioStream::authorize(
+            &request,
+            owner,
+            &runtime.capabilities,
+            now / 1_000_000_000,
+        )
+        .ok()
+    })
+    .flatten();
+    if lease.is_none() || LOCK.swap(true, Ordering::Acquire) {
+        return false;
+    }
+    let started = unsafe {
+        if let Some(device) = (&mut *(&raw mut DEVICE)).as_mut().filter(|device| !device.playing) {
+            let frames = samples.len().saturating_mul(device.sample_rate as usize) / 16_000;
+            let output_samples = frames.saturating_mul(2);
+            if output_samples == 0 || output_samples > SYSTEM_CUE_MAX_SAMPLES {
+                false
+            } else {
+                let output = &mut (&mut *(&raw mut SYSTEM_CUE_PCM.0))[..output_samples];
+                output.fill(0);
+                let converted = speech_pcm::fill(samples, output, 0, device.sample_rate);
+                // SAFETY: the single audio lock prevents mutation of this aligned static
+                // buffer until finish_playback stops DMA and clears the resident cue.
+                let resident: &'static [i16] = &(&*(&raw const SYSTEM_CUE_PCM.0))[..output_samples];
+                if converted && device.start_resident(resident).is_ok() {
+                    let duration_ns = frames as u64 * 1_000_000_000 / device.sample_rate as u64;
+                    SYSTEM_CUE_LENGTH = output_samples;
+                    RESIDENT_BYTES = output_samples * 2;
+                    SPEECH_LENGTH = 0;
+                    UNTIL = crate::ui::performance::monotonic_ns()
+                        .unwrap_or(now)
+                        .saturating_add(duration_ns);
+                    LEASE = lease;
+                    PLAY_STATE = PlaybackState::Playing;
+                    true
+                } else {
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    };
+    LOCK.store(false, Ordering::Release);
+    started
+}
+// ------------------------=
 // FUNC: playback_state
 // DESC: Exposes the authoritative native output state without exposing speech samples.
 // ------------------=
@@ -238,6 +313,8 @@ pub fn play_speech(owner: crate::runtime::execution::SecurityIdentity, capabilit
 unsafe fn finish_playback(device: &mut hda::Hda, state: PlaybackState) {
     device.stop(); PLAY_STATE = state; SPEECH_LENGTH = 0; RESIDENT_BYTES = 0;
     (&mut *(&raw mut SPEECH_PCM)).fill(0); (&mut *(&raw mut PCM)).fill(0);
+    (&mut *(&raw mut SYSTEM_CUE_PCM.0))[..SYSTEM_CUE_LENGTH].fill(0);
+    SYSTEM_CUE_LENGTH = 0;
     if let Some(lease) = (&mut *(&raw mut LEASE)).take() {
         crate::runtime::with_runtime(|r| { let _ = r.capabilities.retire_leaf(lease.capability, lease.owner); });
     }
@@ -319,7 +396,7 @@ pub fn poll() {
                 if !authorized { finish_playback(device, PlaybackState::Denied); }
                 else if device.position().is_err() { finish_playback(device, PlaybackState::DeviceLost); }
                 else if now.map(|n| n >= UNTIL).unwrap_or(true) {
-                    finish_playback(device, if SPEECH_LENGTH == 0 && RESIDENT_BYTES == 0 { PlaybackState::Complete } else { PlaybackState::Underrun });
+                    finish_playback(device, if SPEECH_LENGTH == 0 { PlaybackState::Complete } else { PlaybackState::Underrun });
                 }
                 else if RESIDENT_BYTES > 0 {
                     if device.position().unwrap_or(0) as usize >= RESIDENT_BYTES { finish_playback(device, PlaybackState::Complete); }

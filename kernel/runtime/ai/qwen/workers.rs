@@ -235,6 +235,14 @@ unsafe fn dispatch_waiting_background() {
 }
 
 // ------------------------=
+// FUNC: poll_background
+// DESC: Advances an accepted background handoff independently of matrix collection.
+// ------------------=
+pub fn poll_background() {
+    unsafe { dispatch_waiting_background(); }
+}
+
+// ------------------------=
 // FUNC: initialize
 // DESC: Starts native workers through the target's versioned bootstrap adapter.
 // ------------------=
@@ -421,11 +429,18 @@ pub unsafe fn rows(
         }
         NEXT_ROW.store(*cursor, Ordering::Relaxed);
         CANCELLED.store(false, Ordering::Release);
+        let idle = SLOTS.iter().enumerate().filter(|(i, slot)| ready & (1 << i) != 0
+            && slot.state.load(Ordering::Acquire) == 0).count();
+        // Keep one AP available for the permanent browser worker and latency-sensitive
+        // speech jobs. A single-AP target still makes forward progress through the
+        // existing matrix-boundary handoff.
+        let mut reserve = idle > 1;
         let mut mask: usize = 0;
         for (i, slot) in SLOTS.iter().enumerate() {
             if ready & (1 << i) == 0 || slot.state.load(Ordering::Acquire) != 0 {
                 continue;
             }
+            if reserve { reserve = false; continue; }
             let job = &mut *slot.job.get();
             job.rows = output.len();
             job.width = input.len();
@@ -566,8 +581,10 @@ mod tests {
             );
             QUEUED_BACKGROUND_RAN.store(false, Ordering::Release);
             assert!(unsafe { background(queued_background) });
-            assert!(!unsafe { background(queued_background) });
-            assert!(!QUEUED_BACKGROUND_RAN.load(Ordering::Acquire));
+            while !QUEUED_BACKGROUND_RAN.load(Ordering::Acquire) {
+                assert!(deadline.elapsed().as_secs() < 5);
+                std::thread::yield_now();
+            }
             discard();
             // New geometry is deliberately smaller than the abandoned job.
             let mut tiny = vec![0.0; 1];
@@ -577,10 +594,6 @@ mod tests {
                 std::thread::yield_now();
             }
             assert!(outputs_match(kind, &expected[..1], &tiny));
-            while !QUEUED_BACKGROUND_RAN.load(Ordering::Acquire) {
-                assert!(deadline.elapsed().as_secs() < 5);
-                std::thread::yield_now();
-            }
             let deadline = std::time::Instant::now();
             while unsafe { rows(kind, &data, &input, &mut actual, &mut cursor) } != Some(true) {
                 assert!(deadline.elapsed().as_secs() < 5);
