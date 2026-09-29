@@ -2,55 +2,104 @@
 //! This is not a replacement for a hardware acoustic echo canceller.
 
 // ------------------------=
+// FUNC: correlation_score
+// DESC: Scores one bounded echo lag with subsampling while keeping full-range PCM arithmetic inside i64.
+// ------------------=
+fn correlation_score(frame: &[i16], reference: &[i16], offset: usize, stride: usize) -> i64 {
+    let mut dot = 0i64;
+    let mut power = 0i64;
+    for (mic, speaker) in frame
+        .iter()
+        .step_by(stride)
+        .zip(reference[offset..].iter().step_by(stride))
+    {
+        let mic = (i64::from(*mic)) >> 4;
+        let speaker = (i64::from(*speaker)) >> 4;
+        dot += mic * speaker;
+        power += speaker * speaker;
+    }
+    dot * dot / power.max(1)
+}
+
+// ------------------------=
+// FUNC: best_offset
+// DESC: Finds an acoustic echo lag with a fixed coarse-to-fine budget instead of scanning every lag at full resolution.
+// ------------------=
+fn best_offset(frame: &[i16], reference: &[i16]) -> (usize, i64) {
+    const COARSE_SAMPLE_STEP: usize = 4;
+    let last = reference.len() - frame.len();
+    let mut best = (0usize, 0i64);
+    for offset in 0..=last {
+        let score = correlation_score(frame, reference, offset, COARSE_SAMPLE_STEP);
+        if score > best.1 { best = (offset, score); }
+    }
+    let coarse = best.0;
+    best.1 = 0;
+    for offset in coarse.saturating_sub(3)..=(coarse + 3).min(last) {
+        let score = correlation_score(frame, reference, offset, 1);
+        if score > best.1 { best = (offset, score); }
+    }
+    best
+}
+
+// ------------------------=
+// FUNC: nearby_offset
+// DESC: Tracks a previously discovered acoustic path across consecutive microphone frames with constant bounded work.
+// ------------------=
+fn nearby_offset(frame: &[i16], reference: &[i16], expected: usize) -> (usize, i64) {
+    let last = reference.len() - frame.len();
+    let mut best = (expected.min(last), 0i64);
+    for offset in expected.saturating_sub(4)..=(expected + 4).min(last) {
+        let score = correlation_score(frame, reference, offset, 1);
+        if score > best.1 { best = (offset, score); }
+    }
+    best
+}
+
+// ------------------------=
 // FUNC: subtract
 // DESC: Removes up to four correlated speaker paths, preserving independent near-end speech for interruption.
 // ------------------=
 pub fn subtract(mic: &mut [i16], reference: &[i16]) {
-    for frame in mic.chunks_mut(320) {
-        if frame.len()<80 || reference.len()<frame.len() {continue;}
-        let original=frame.iter().map(|&v| {let v=(v as i64)>>4;v*v}).sum::<i64>();
-        for _ in 0..4 {
-        // Twelve-bit samples keep even the squared full-frame correlation in
-        // i64. The soft-float kernel must not emulate millions of FP operations
-        // on the desktop thread while the microphone is active.
-        let energy=frame.iter().map(|&v| {let v=(v as i64)>>4;v*v}).sum::<i64>();
-        if energy==0 {break;}
-        let mut best=(0usize,0i64);
-        for offset in 0..=reference.len()-frame.len() {
-            let mut dot=0i64;let mut power=0i64;
-            for (a,b) in frame.iter().step_by(4).zip(reference[offset..].iter().step_by(4)) {
-                let a=(*a as i64)>>4;let b=(*b as i64)>>4;
-                dot+=a*b;power+=b*b;
+    const MAX_FRAMES: usize = 15;
+    let mut original = [0i64; MAX_FRAMES];
+    for (index, frame) in mic.chunks(320).enumerate().take(MAX_FRAMES) {
+        original[index] = frame.iter().map(|&value| { let value = i64::from(value) >> 4; value * value }).sum();
+    }
+    for _ in 0..4 {
+        let mut path: Option<(usize, usize)> = None;
+        for (index, frame) in mic.chunks_mut(320).enumerate().take(MAX_FRAMES) {
+            if frame.len() < 80 || reference.len() < frame.len() { continue; }
+            // Twelve-bit samples keep the scored full-frame correlation in i64.
+            let energy = frame.iter().map(|&value| { let value = i64::from(value) >> 4; value * value }).sum::<i64>();
+            if energy == 0 { continue; }
+            let best = if let Some((first_frame, first_offset)) = path {
+                nearby_offset(frame, reference, first_offset.saturating_add((index - first_frame) * 320))
+            } else {
+                best_offset(frame, reference)
+            };
+            // Do not fit an unrelated human voice to arbitrary playback noise.
+            if best.1 < energy / 8 { continue; }
+            path.get_or_insert((index, best.0));
+            let mut dot = 0i64;
+            let mut power = 0i64;
+            for (sample, echo) in frame.iter().zip(&reference[best.0..]) {
+                dot += i64::from(*sample) * i64::from(*echo);
+                power += i64::from(*echo) * i64::from(*echo);
             }
-            let score=dot*dot/power.max(1);
-            if score>best.1 {best=(offset,score);}
-        }
-        let center=best.0;best.1=0;
-        for offset in center.saturating_sub(3)..=(center+3).min(reference.len()-frame.len()) {
-            let mut dot=0i64;let mut power=0i64;
-            for (a,b) in frame.iter().zip(&reference[offset..]) {
-                let a=(*a as i64)>>4;let b=(*b as i64)>>4;
-                dot+=a*b;power+=b*b;
+            if power == 0 { continue; }
+            let gain = ((dot * (1 << 20)) / power).clamp(-(2 << 20), 2 << 20);
+            for (sample, echo) in frame.iter_mut().zip(&reference[best.0..]) {
+                *sample = (i64::from(*sample) - ((gain * i64::from(*echo)) >> 20))
+                    .clamp(-32768, 32767) as i16;
             }
-            let score=dot*dot/power.max(1);
-            if score>best.1 {best=(offset,score);}
         }
-        // Do not fit an unrelated human voice to arbitrary playback noise.
-        if best.1<energy/8 {break;}
-        let mut dot=0i64;let mut power=0i64;
-        for (a,b) in frame.iter().zip(&reference[best.0..]) {
-            dot+=*a as i64 * *b as i64;power+=(*b as i64)*(*b as i64);
-        }
-        if power==0 {break;}
-        let gain=((dot*(1<<20))/power).clamp(-(2<<20),2<<20);
-        for (sample,echo) in frame.iter_mut().zip(&reference[best.0..]) {
-            *sample=(*sample as i64-((gain*(*echo as i64))>>20)).clamp(-32768,32767) as i16;
-        }
-        let remaining=frame.iter().map(|&v| {let v=(v as i64)>>4;v*v}).sum::<i64>();
-        // Only suppress tiny residuals after the playback has explained at
-        // least 97% of the input. Uncorrelated near-end speech is not muted.
-        if remaining<original/32 {frame.fill(0);break;}
-        }
+    }
+    for (index, frame) in mic.chunks_mut(320).enumerate().take(MAX_FRAMES) {
+        let remaining = frame.iter().map(|&value| { let value = i64::from(value) >> 4; value * value }).sum::<i64>();
+        // Only suppress tiny residuals after playback explained at least 97%
+        // of the input. Uncorrelated near-end speech remains available to VAD.
+        if remaining < original[index] / 32 { frame.fill(0); }
     }
 }
 
@@ -97,5 +146,37 @@ mod tests {
         // correlation or fixed-point subtraction in debug or optimized builds.
         let reference=vec![i16::MIN;9600];let mut full=vec![i16::MIN;4800];
         super::subtract(&mut full,&reference);assert!(full.iter().all(|&v|v==0));
+    }
+
+    // ------------------------=
+    // FUNC: production_batch_tracks_echo_without_erasing_interruption
+    // DESC: Exercises a full 300-ms microphone read, constant echo lag tracking, and near-end speech in a later frame.
+    // ------------------=
+    #[test]
+    fn production_batch_tracks_echo_without_erasing_interruption() {
+        let mut seed=29u32;
+        let reference:Vec<i16>=(0..9600).map(|_| {
+            seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            ((seed>>16) as i16)/4
+        }).collect();
+        let human:Vec<i16>=(0..320).map(|i|if i%19<9 {2200}else{-2200}).collect();
+        let mut mic=Vec::with_capacity(4800);
+        for frame in 0..15 {
+            for index in 0..320 {
+                let echo=reference[2400+frame*320+index]/2;
+                mic.push(if frame==7 {echo+human[index]} else {echo});
+            }
+        }
+        super::subtract(&mut mic,&reference);
+        for (frame,samples) in mic.chunks(320).enumerate() {
+            let energy=samples.iter().map(|&value|i64::from(value).pow(2)).sum::<i64>()/320;
+            if frame==7 {
+                let error=samples.iter().zip(&human).map(|(actual,expected)|
+                    (i64::from(*actual)-i64::from(*expected)).pow(2)).sum::<i64>()/320;
+                assert!(error<2200*2200/5,"near-end interruption was damaged: {error}");
+            } else {
+                assert!(energy<300*300,"tracked echo reached VAD in frame {frame}: {energy}");
+            }
+        }
     }
 }
