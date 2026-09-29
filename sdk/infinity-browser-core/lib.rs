@@ -8,6 +8,7 @@ pub mod skin;
 pub mod worker;
 pub mod mailbox;
 pub mod frames;
+pub mod frame_pacing;
 pub mod input_queue;
 pub mod pointer;
 pub mod tabs;

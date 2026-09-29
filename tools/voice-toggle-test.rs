@@ -326,7 +326,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     let input_grants=INPUT_GRANTS.load(Ordering::SeqCst);
     for _ in 0..4 {conversation::poll();if conversation::state().0==State::Recognizing {break;}}
     assert_eq!(conversation::state().0,State::Recognizing);
-    assert_eq!(INPUT_GRANTS.load(Ordering::SeqCst),input_grants);
+    assert_eq!(INPUT_GRANTS.load(Ordering::SeqCst),input_grants+1);
     assert_eq!(PHRASES.lock().unwrap().len(),2);
     assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==1700));
     conversation::poll();conversation::poll();

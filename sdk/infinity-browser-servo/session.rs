@@ -9,6 +9,11 @@ mod tab_order;
 #[path = "../infinity-browser-core/startup.rs"]
 mod startup;
 
+#[path = "../infinity-browser-core/frame_pacing.rs"]
+mod frame_pacing;
+
+const FRAME_PERIOD_NS: u64 = 50_000_000;
+
 struct Delegate<P: Provider> {
     resources: Rc<Resources<P>>,
     dirty: Rc<Cell<bool>>,
@@ -60,6 +65,8 @@ pub struct Session<P: Provider> {
     size: (u32, u32),
     ready: Rc<Cell<bool>>,
     pending: RefCell<Option<servo::ServoUrl>>,
+    clock: fn() -> u64,
+    frame_pacer: RefCell<frame_pacing::FramePacer>,
 }
 
 // ------------------------=
@@ -113,7 +120,8 @@ impl<P: Provider + 'static> Session<P> {
         })).build();
         view.show();
         Ok(Self { view, context, resources, dirty, complete, crashed, size: (width, height),
-            ready, pending: RefCell::new(None) })
+            ready, pending: RefCell::new(None), clock,
+            frame_pacer: RefCell::new(frame_pacing::FramePacer::new(FRAME_PERIOD_NS)) })
     }
     // ------------------------=
     // FUNC: navigate
@@ -198,7 +206,9 @@ impl<P: Provider + 'static> Session<P> {
         }
         self.resources.pump();
         if self.crashed.get() { return Err(()); }
-        if !visible || !self.dirty.replace(false) { return Ok(false); }
+        if !visible || !self.dirty.get() { return Ok(false); }
+        if !self.frame_pacer.borrow_mut().admit((self.clock)()) { return Ok(false); }
+        self.dirty.set(false);
         self.view.paint();
         let image = self.context.read_to_image(servo::DeviceIntRect::new((0, 0).into(),
             (self.size.0 as i32, self.size.1 as i32).into())).ok_or(())?;
@@ -231,7 +241,11 @@ impl<P: Provider + 'static> Session<P> {
     // ------------------=
     fn visible(&self, visible: bool) {
         self.view.set_focused(visible);
-        if visible { self.view.show(); self.dirty.set(true); } else { self.view.hide(); }
+        if visible {
+            self.view.show();
+            self.frame_pacer.borrow_mut().reset();
+            self.dirty.set(true);
+        } else { self.view.hide(); }
     }
 }
 
