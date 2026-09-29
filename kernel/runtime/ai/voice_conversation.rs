@@ -377,7 +377,12 @@ pub fn poll() -> bool {
                 if !capture_frame(false) {stop(OWNER);return true;}
                 match (&*(&raw const UTTERANCE)).state() {
                     VadState::Complete => {
-                        RECOGNIZE_CAP = grant(OWNER, CapabilityType::AudioInput, 15).unwrap_or(0);
+                        // Recognition continues under the same still-valid input
+                        // authority that admitted capture.  Minting a second
+                        // AudioInput leaf here leaked the capture leaf on every
+                        // utterance and could exhaust a freshly installed
+                        // session on its first submitted phrase.
+                        RECOGNIZE_CAP = INPUT_CAP;
                         let submitted = (&*(&raw const UTTERANCE))
                             .speech()
                             .map(|pcm| voice_input::submit(OWNER, RECOGNIZE_CAP, pcm).is_ok())

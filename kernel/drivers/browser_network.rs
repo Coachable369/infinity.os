@@ -12,7 +12,7 @@ const PENDING:u8=2;
 const ACTIVE:u8=3;
 const READY:u8=4;
 const FAILED:u8=5;
-struct Data {url:[u8;2048],length:usize,status:u32,headers:[u8;8192],head:usize,body:[u8;https::BODY],size:usize}
+struct Data {url:[u8;2048],length:usize,redirects:u8,status:u32,headers:[u8;8192],head:usize,body:[u8;https::BODY],size:usize}
 struct Slot {state:AtomicU8,id:AtomicU64,cancelled:AtomicBool,data:UnsafeCell<Data>}
 // Engine writes only after claiming FREE. BSP writes only after acquiring
 // PENDING; READY release-publishes immutable bytes until engine cancellation.
@@ -23,7 +23,7 @@ impl Slot {
     // DESC: Reserves bounded native response storage in BSS rather than on the desktop stack.
     // ------------------=
     const fn new()->Self {Self {state:AtomicU8::new(FREE),id:AtomicU64::new(0),cancelled:AtomicBool::new(false),
-        data:UnsafeCell::new(Data {url:[0;2048],length:0,status:0,headers:[0;8192],head:0,body:[0;https::BODY],size:0})}}
+        data:UnsafeCell::new(Data {url:[0;2048],length:0,redirects:0,status:0,headers:[0;8192],head:0,body:[0;https::BODY],size:0})}}
 }
 static SLOTS:[Slot;COUNT]=[const {Slot::new()};COUNT];
 static NEXT:AtomicU64=AtomicU64::new(1);
@@ -76,7 +76,7 @@ pub unsafe fn begin(url:&[u8])->u64 {
         let id=match NEXT.fetch_update(Ordering::Relaxed,Ordering::Relaxed,|n|n.checked_add(1)) {
             Ok(id)=>id,Err(_)=>{slot.state.store(FREE,Ordering::Release);return 0;}
         };
-        let data=&mut *slot.data.get();data.url[..url.len()].copy_from_slice(url);data.length=url.len();
+        let data=&mut *slot.data.get();data.url[..url.len()].copy_from_slice(url);data.length=url.len();data.redirects=0;
         slot.id.store(id,Ordering::Relaxed);slot.cancelled.store(false,Ordering::Relaxed);
         slot.state.store(PENDING,Ordering::Release);return id;
     }
@@ -137,6 +137,27 @@ unsafe fn finish(slot:&Slot,response:https::Response)->bool {
     }
     data.body[..response.length].copy_from_slice(&response.bytes[..response.length]);
     data.size=response.length;data.status=response.status as u32;true
+}
+
+// ------------------------=
+// FUNC: redirect_url
+// DESC: Resolves bounded HTTPS redirects before publishing a document response to the browser engine.
+// ------------------=
+pub(crate) fn redirect_url(current:&[u8],status:u16,headers:&[u8],output:&mut[u8;2048])->Option<usize> {
+    if !matches!(status,301|302|303|307|308) {return None;}
+    let parsed=crate::http_transport::response::Headers::parse(headers).ok()?;
+    let location=parsed.values("location").next()?;
+    let length=if location.starts_with(b"https://") {
+        if location.len()>output.len(){return None;}
+        output[..location.len()].copy_from_slice(location);location.len()
+    } else if location.starts_with(b"/") && current.starts_with(b"https://") {
+        let authority_end=current[8..].iter().position(|byte|*byte==b'/').map(|at|at+8).unwrap_or(current.len());
+        let length=authority_end.checked_add(location.len()).filter(|length|*length<=output.len())?;
+        output[..authority_end].copy_from_slice(&current[..authority_end]);
+        output[authority_end..length].copy_from_slice(location);length
+    } else {return None;};
+    core::str::from_utf8(&output[..length]).ok()?;
+    Some(length)
 }
 
 #[cfg(test)]
@@ -224,6 +245,17 @@ pub unsafe fn pump() {
                         Ok(Some(Ok(response)))=>{
                             INFINITY_BROWSER_NETWORK_STATUS.store(response.status as u32,Ordering::Release);
                             INFINITY_BROWSER_NETWORK_COMPLETED.fetch_add(1,Ordering::Release);
+                            let data=&mut *slot.data.get();
+                            let mut next=[0u8;2048];
+                            if data.redirects<8 {
+                                if let Some(length)=redirect_url(&data.url[..data.length],response.status,
+                                    &response.headers[..response.header_length],&mut next) {
+                                    data.url.fill(0);data.url[..length].copy_from_slice(&next[..length]);
+                                    data.length=length;data.redirects+=1;
+                                    slot.state.store(PENDING,Ordering::Release);
+                                    return;
+                                }
+                            }
                             finish(slot,response)
                         },
                         Ok(Some(Err(error)))|Err(error)=>{

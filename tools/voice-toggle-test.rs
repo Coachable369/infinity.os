@@ -13,6 +13,7 @@ static NOW: AtomicUsize = AtomicUsize::new(1);
 static TURNS: AtomicUsize = AtomicUsize::new(0);
 static STREAMING: AtomicBool = AtomicBool::new(false);
 static VISIBLE: AtomicUsize = AtomicUsize::new(usize::MAX);
+static INPUT_GRANTS: AtomicUsize = AtomicUsize::new(0);
 static MICROPHONE: std::sync::Mutex<std::collections::VecDeque<i16>> = std::sync::Mutex::new(std::collections::VecDeque::new());
 static PHRASES: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
 static RECOGNIZED: std::sync::Mutex<Vec<i16>> = std::sync::Mutex::new(Vec::new());
@@ -54,7 +55,10 @@ mod runtime {
         // FUNC: grant
         // DESC: Supplies a deterministic lease to the real controller.
         // ------------------=
-        pub fn grant(&mut self,_:capability::CapabilityType,_:u64,_:u64,_:u64,_:execution::SecurityIdentity,_:execution::SecurityIdentity,_:Option<u64>,_:u64)->Result<u64,()>{Ok(1)}
+        pub fn grant(&mut self,kind:capability::CapabilityType,_:u64,_:u64,_:u64,_:execution::SecurityIdentity,_:execution::SecurityIdentity,_:Option<u64>,_:u64)->Result<u64,()>{
+            if matches!(kind,capability::CapabilityType::AudioInput){crate::INPUT_GRANTS.fetch_add(1,crate::Ordering::SeqCst);}
+            Ok(1)
+        }
         // ------------------------=
         // FUNC: retire_leaf
         // DESC: Accepts retirement of the fixture lease.
@@ -319,8 +323,10 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     MICROPHONE.lock().unwrap().extend([0;3200]);
     MICROPHONE.lock().unwrap().extend([1700;1600]);
     MICROPHONE.lock().unwrap().extend([0;12000]);
+    let input_grants=INPUT_GRANTS.load(Ordering::SeqCst);
     for _ in 0..4 {conversation::poll();if conversation::state().0==State::Recognizing {break;}}
     assert_eq!(conversation::state().0,State::Recognizing);
+    assert_eq!(INPUT_GRANTS.load(Ordering::SeqCst),input_grants);
     assert_eq!(PHRASES.lock().unwrap().len(),2);
     assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==1700));
     conversation::poll();conversation::poll();

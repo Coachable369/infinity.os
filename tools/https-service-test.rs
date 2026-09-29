@@ -194,6 +194,18 @@ fn main() {
     boot.firmware_entropy = [23; 32];
     boot.firmware_entropy_valid = 1;
     https::initialize(&boot);
+    let mut redirected=[0u8;2048];
+    assert_eq!(browser_network::redirect_url(b"https://www.example.test/start",301,
+        b"HTTP/1.1 301 Moved Permanently\r\nLocation: https://example.test/home\r\nContent-Length: 0\r\n\r\n",
+        &mut redirected),Some(25));
+    assert_eq!(&redirected[..25],b"https://example.test/home");
+    assert_eq!(browser_network::redirect_url(b"https://example.test/start",302,
+        b"HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 0\r\n\r\n",
+        &mut redirected),Some(25));
+    assert_eq!(&redirected[..25],b"https://example.test/next");
+    assert_eq!(browser_network::redirect_url(b"https://example.test/",302,
+        b"HTTP/1.1 302 Found\r\nLocation: http://example.test/\r\nContent-Length: 0\r\n\r\n",
+        &mut redirected),None);
     assert_eq!(https::get_browser(owner,caps[0],caps[1],caps[2],caps[3],
         "example.test",0,"/"),Err(https::Failure::Invalid));
     assert_eq!(https::get_browser(owner,0,caps[1],caps[2],caps[3],
