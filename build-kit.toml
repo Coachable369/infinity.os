@@ -27,7 +27,7 @@ command = ["make", "x86_64"]
 clean = false
 
 [profiles.aarch64]
-command = ["make", "aarch64-bootstrap"]
+command = ["make", "aarch64"]
 clean = false
 
 [profiles.x86_64-models]
