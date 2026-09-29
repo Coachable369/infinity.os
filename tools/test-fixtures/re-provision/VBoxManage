@@ -5,6 +5,10 @@ command_name=$1
 shift
 
 case "$command_name" in
+    list)
+        test "${1:-}" = systemproperties || exit 2
+        printf 'Default machine folder: %s\n' "${TEST_VM_DIRECTORY%/*}"
+        ;;
     showvminfo)
         if test -f "$TEST_STATE_PATH/vm-state"; then
             vm_state=$(sed -n '1p' "$TEST_STATE_PATH/vm-state")
@@ -38,8 +42,20 @@ case "$command_name" in
     unregistervm)
         : > "$TEST_STATE_PATH/unregistered"
         rm -f "$TEST_STATE_PATH/vm-state"
+        if test -f "$TEST_STATE_PATH/recovered-registration"; then
+            rm -f "$TEST_VM_DIRECTORY/infinityos-4.vbox" "$TEST_VM_DIRECTORY/infinityos-4.vdi"
+            rmdir "$TEST_VM_DIRECTORY" 2>/dev/null || true
+            rm -f "$TEST_STATE_PATH/recovered-registration"
+        fi
+        ;;
+    registervm)
+        test "$1" = "$TEST_VM_DIRECTORY/infinityos-4.vbox" || exit 3
+        : > "$TEST_STATE_PATH/recovered-registration"
+        printf 'old\n' > "$TEST_STATE_PATH/vm-state"
         ;;
     createvm)
+        mkdir -p "$TEST_VM_DIRECTORY"
+        : > "$TEST_VM_DIRECTORY/infinityos-4.vbox"
         printf 'new\n' > "$TEST_STATE_PATH/vm-state"
         ;;
     showmediuminfo)

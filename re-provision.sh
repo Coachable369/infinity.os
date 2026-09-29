@@ -78,6 +78,50 @@ delete_existing_vm() {
 }
 
 # ------------------------=
+# FUNC: default_machine_folder
+# DESC: Resolve VirtualBox's configured machine root without assuming a user home path.
+# ------------------=
+default_machine_folder() {
+    "$vboxmanage" list systemproperties 2>/dev/null \
+        | sed -n 's/^Default machine folder:[[:space:]]*//p' \
+        | sed -n '1p'
+}
+
+# ------------------------=
+# FUNC: recover_unregistered_vm
+# DESC: Re-register and delete only the exact stale VM directory that blocks idempotent recreation.
+# ------------------=
+recover_unregistered_vm() {
+    machine_root=${INFINITY_VM_BASE_FOLDER:-$(default_machine_folder)}
+    test -n "$machine_root" || die "VirtualBox did not report its default machine folder."
+    case "$machine_root" in
+        /*) ;;
+        *) die "VirtualBox reported a non-absolute machine folder: $machine_root" ;;
+    esac
+
+    stale_directory=$machine_root/$vm_name
+    stale_config=$stale_directory/$vm_name.vbox
+    test -e "$stale_directory" || return 0
+    test ! -L "$stale_directory" || die "Refusing to recover a symbolic-link VM directory: $stale_directory"
+
+    if test ! -e "$stale_config"; then
+        rmdir "$stale_directory" 2>/dev/null || true
+        return 0
+    fi
+    test ! -L "$stale_config" || die "Refusing to recover a symbolic-link VM settings file: $stale_config"
+    test -f "$stale_config" || die "The stale VM settings path is not a regular file: $stale_config"
+
+    printf 'Recovering unregistered stale VM for deletion: %s\n' "$stale_config"
+    if ! register_output=$("$vboxmanage" registervm "$stale_config" 2>&1); then
+        printf '%s\n' "$register_output" >&2
+        die "VirtualBox could not register the stale VM for safe deletion."
+    fi
+    delete_existing_vm
+    if test -d "$stale_directory"; then rmdir "$stale_directory" 2>/dev/null || true; fi
+    test ! -e "$stale_config" || die "VirtualBox retained the stale VM settings file: $stale_config"
+}
+
+# ------------------------=
 # FUNC: remove_stale_disk
 # DESC: Remove only the replacement VM's exact leftover VDI when it is safe to do so.
 # ------------------=
@@ -214,5 +258,6 @@ printf '  VM:  %s\n' "$vm_name"
 printf '  ISO: %s\n' "$iso_path"
 
 delete_existing_vm
+recover_unregistered_vm
 create_arm64_vm
 verify_vm
