@@ -119,8 +119,8 @@ stop animation. The installed kernel includes this code without extra assets.
 Lifecycle tests and actual shaded-font pixel/clip tests cover this path; a guest
 visual check is still required before claiming installed-animation acceptance.
 
-The ARM64 streamed ISO is built by `sh tools/build-qwen.sh`, and is selected
-by `build.sh` for the published ARM64 image. This path needs a 12 GiB VM,
+The ARM64 streamed ISO is published only by `./build.sh --target aarch64`;
+`tools/build-qwen.sh` is a guarded subordinate step. This path needs a 12 GiB VM,
 at least a 16 GiB disk, EFI, xHCI USB input, and a firmware entropy source
 (TPM 2.0 on the tested VirtualBox ARM configuration).
 

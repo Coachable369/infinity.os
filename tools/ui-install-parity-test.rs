@@ -466,7 +466,7 @@ fn main() {
         },
         Container {
             kind: ContainerKind::Iso,
-            image: "builds/InfinityOS-x86.iso",
+            image: "build/test-media/InfinityOS-x86.bootmedia",
             font_root: "/System/Fonts",
             license_root: "/System/FontLicenses",
             skin_root: "/System/InfinityUI",

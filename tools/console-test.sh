@@ -19,7 +19,7 @@ trap cleanup EXIT INT TERM
 
 case "$arch" in
     x86)
-        qemu-system-i386 -machine pc -m 128M -cdrom builds/InfinityOS-x86.iso -boot d \
+        qemu-system-i386 -machine pc -m 128M -cdrom build/test-media/InfinityOS-x86.bootmedia -boot d \
             -serial file:"$log" -display none -no-reboot \
             -monitor unix:"$monitor",server=on,wait=off &
         ;;
@@ -34,7 +34,7 @@ case "$arch" in
         firmware=${AAVMF_CODE:-/opt/homebrew/share/qemu/edk2-aarch64-code.fd}
         qemu-system-aarch64 -machine virt -cpu cortex-a72 -m 512M -bios "$firmware" \
             -device ramfb -device qemu-xhci -device usb-kbd -device usb-tablet -device virtio-scsi-pci \
-            -drive if=none,id=cd,format=raw,media=cdrom,file=builds/InfinityOS-aarch64-qemu-test.iso \
+            -drive if=none,id=cd,format=raw,media=cdrom,file=build/test-media/InfinityOS-aarch64-qemu.bootmedia \
             -device scsi-cd,drive=cd,bootindex=0 -serial file:"$log" -display none -no-reboot \
             -monitor unix:"$monitor",server=on,wait=off &
         ;;

@@ -12,6 +12,106 @@ fi
 test "${INFINITY_PROJECT_ROOT:-}" = "$project_root"
 test "${TMPDIR:-}" = "$temporary_dir"
 
+target=all
+if [ "${1:-}" = "--target" ]; then
+    target=${2:-}
+    [ "$#" -eq 2 ] || { echo "usage: ./build.sh [--target aarch64|x86_64|all]" >&2; exit 2; }
+elif [ "$#" -ne 0 ]; then
+    echo "usage: ./build.sh [--target aarch64|x86_64|all]" >&2
+    exit 2
+fi
+case "$target" in aarch64|x86_64|all) ;; *) echo "unsupported build target: $target" >&2; exit 2 ;; esac
+
+echo "==> FULL COMMAND LIST ($target)"
+if [ "$target" = aarch64 ]; then
+    cat <<'COMMANDS'
+python3 tools/build-kit-test.py
+python3 tools/build-workspace-test.py
+python3 tools/installer-output-test.py
+make install-boot-handoff-test
+make aarch64-bootstrap
+sh tools/build-hermes.sh --target aarch64
+python3 tools/full-bundle-iso-test.py builds/InfinityOS-aarch64.iso
+python3 tools/browser-artwork-parity.py
+tools/guard-virtualbox-arm64-input.sh
+shasum -a 256 builds/InfinityOS-aarch64.iso > builds/SHA256SUMS
+COMMANDS
+elif [ "$target" = x86_64 ]; then
+    cat <<'COMMANDS'
+python3 tools/build-kit-test.py
+python3 tools/build-workspace-test.py
+python3 tools/installer-output-test.py
+make install-boot-handoff-test
+make build/test-media/InfinityOS-x86_64.bootmedia
+sh tools/build-hermes.sh --target x86_64
+python3 tools/full-bundle-iso-test.py builds/InfinityOS-x86_64.iso
+python3 tools/browser-artwork-parity.py
+shasum -a 256 builds/InfinityOS-x86_64.iso > builds/SHA256SUMS
+COMMANDS
+else
+    cat <<'COMMANDS'
+python3 tools/build-kit-test.py
+python3 tools/build-workspace-test.py
+python3 tools/log-retention-test.py
+sh tools/select-install-iso-test.sh
+python3 tools/installer-output-test.py
+python3 tools/iso-staging-test.py
+python3 tools/re-provision-tpm-test.py
+make install-boot-handoff-test
+cargo test --manifest-path sdk/infinity-browser-core/Cargo.toml
+cargo test --manifest-path tools/behavior-harness/Cargo.toml --bin browser-entropy-test
+[optional legacy smoke media] make x86
+make build/test-media/InfinityOS-x86_64.bootmedia
+make aarch64-bootstrap
+make system-sound-test system-sound-install-parity-test authentication-motion-test installer-capacity-test installer-entropy-test editor-window-test active-painter-test video-driver-test
+make build/test-media/InfinityOS-x86_64.bootmedia aarch64-bootstrap
+python3 tools/installed-kernel-parity-test.py
+make crash-screen-test component-manifest-test settings-color-test installer-template-test milestone-7x-test ai-test object-test fabric-test network-test network-wire-test http-transport-test https-service-test native-https-test native-https-arm-test native-https-rsa-test native-tls-test milestone-9-test milestone-9-service-test performance-test resource-policy-test
+tools/ui-install-parity-test.sh build/infinity-x86_64.img build/infinity-aarch64.img build/infinity-aarch64-qemu.img build/x86_64/installed-esp.img build/aarch64/installed-esp.img
+make input-regression-test app-launcher-interaction-test
+sh tools/build-hermes.sh --target x86_64
+sh tools/build-hermes.sh --target aarch64
+python3 tools/full-bundle-iso-test.py builds/InfinityOS-x86_64.iso builds/InfinityOS-aarch64.iso
+python3 tools/browser-artwork-parity.py
+tools/guard-virtualbox-arm64-input.sh
+shasum -a 256 builds/InfinityOS-x86_64.iso builds/InfinityOS-aarch64.iso > builds/SHA256SUMS
+COMMANDS
+fi
+echo "==> END COMMAND LIST"
+
+# Deprecated incomplete ISO names are never retained as release artifacts.
+rm -f "$output_dir/InfinityOS-x86.iso" \
+      "$output_dir/InfinityOS-x86_64-bootstrap-test.iso" \
+      "$output_dir/InfinityOS-aarch64-bootstrap-test.iso" \
+      "$output_dir/InfinityOS-aarch64-qemu-test.iso"
+
+export INFINITY_ISO_BUILD_AUTHORITY=build.sh
+
+if [ "$target" != all ]; then
+    python3 tools/build-kit-test.py
+    python3 tools/build-workspace-test.py
+    python3 tools/installer-output-test.py
+    make install-boot-handoff-test
+    if [ "$target" = aarch64 ]; then
+        make aarch64-bootstrap
+        sh tools/build-hermes.sh --target aarch64
+        python3 tools/full-bundle-iso-test.py "$output_dir/InfinityOS-aarch64.iso"
+        cp tools/configure-virtualbox-arm64.sh "$output_dir/configure-virtualbox-arm64.sh"
+        cp tools/start-virtualbox-arm64.sh "$output_dir/start-virtualbox-arm64.sh"
+        chmod +x "$output_dir/configure-virtualbox-arm64.sh" "$output_dir/start-virtualbox-arm64.sh"
+        tools/guard-virtualbox-arm64-input.sh
+        (cd "$output_dir" && shasum -a 256 InfinityOS-aarch64.iso > SHA256SUMS)
+    else
+        make build/test-media/InfinityOS-x86_64.bootmedia
+        sh tools/build-hermes.sh --target x86_64
+        python3 tools/full-bundle-iso-test.py "$output_dir/InfinityOS-x86_64.iso"
+        (cd "$output_dir" && shasum -a 256 InfinityOS-x86_64.iso > SHA256SUMS)
+    fi
+    python3 tools/browser-artwork-parity.py
+    echo "InfinityOS $target full-bundle ISO is ready in $output_dir"
+    exit 0
+fi
+
 # Catch workspace and provisioning contract failures before expensive builds.
 python3 tools/build-kit-test.py
 python3 tools/build-workspace-test.py
@@ -39,7 +139,7 @@ if [ "${INFINITY_BUILD_LEGACY_X86:-0}" = "1" ]; then
 else
     echo "==> Skipping legacy BIOS x86 (set INFINITY_BUILD_LEGACY_X86=1 to attempt it)"
 fi
-make builds/InfinityOS-x86_64-bootstrap-test.iso
+make build/test-media/InfinityOS-x86_64.bootmedia
 make aarch64-bootstrap
 make system-sound-test
 make system-sound-install-parity-test
@@ -51,7 +151,7 @@ make active-painter-test
 make video-driver-test
 # Native dependency preparation can refresh linked kernels after the first
 # architecture pass. Re-stage the actual media before comparing its payloads.
-make builds/InfinityOS-x86_64-bootstrap-test.iso aarch64-bootstrap
+make build/test-media/InfinityOS-x86_64.bootmedia aarch64-bootstrap
 python3 tools/installed-kernel-parity-test.py
 make crash-screen-test
 make component-manifest-test
@@ -94,6 +194,7 @@ verification_dir=$(mktemp -d "$temporary_dir/release-verification.XXXXXX")
 trap 'rm -rf "$verification_dir"' EXIT HUP INT TERM
 for image in "$output_dir"/*.iso; do
     test -s "$image" || { echo "ERROR: missing image: $image" >&2; exit 1; }
+    python3 tools/full-bundle-iso-test.py "$image"
     case "$image" in
         *aarch64*) boot_payload=/EFI/BOOT/BOOTAA64.EFI ;;
         *x86_64*) boot_payload=/EFI/BOOT/BOOTX64.EFI ;;
@@ -123,5 +224,5 @@ echo "Apple Silicon VirtualBox image: builds/InfinityOS-aarch64.iso"
 echo "Start an ARM64 VM safely: builds/start-virtualbox-arm64.sh '<VM name>'"
 echo "Intel/AMD UEFI image: builds/InfinityOS-x86_64.iso"
 if [ "$legacy_x86_built" = true ]; then
-    echo "Legacy Intel/AMD BIOS image: builds/InfinityOS-x86.iso"
+    echo "Legacy Intel/AMD BIOS smoke media: build/test-media/InfinityOS-x86.bootmedia"
 fi

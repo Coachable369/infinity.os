@@ -419,18 +419,18 @@ $(BUILD)/infinity-x86_64.img: $(BUILD)/x86_64/BOOTX64.EFI $(BUILD)/x86_64/kernel
 x86-native-speech-parity: $(BUILD)/x86_64/installed-kernel.elf $(BUILD)/x86_64/kernel.elf $(if $(filter 1,$(NATIVE_BROWSER)),$(BUILD)/infinity-x86_64.img)
 	python3 tools/voice-kokoro/install-parity.py $(if $(filter 1,$(NATIVE_BROWSER)),--installer-media $(BUILD)/infinity-x86_64.img,--embedded-install) $(BUILD)/x86_64/installed-kernel.elf $(BUILD)/x86_64/kernel.elf
 
-builds/InfinityOS-x86_64-bootstrap-test.iso: $(BUILD)/infinity-x86_64.img x86-native-speech-parity
-	@mkdir -p builds
+$(BUILD)/test-media/InfinityOS-x86_64.bootmedia: $(BUILD)/infinity-x86_64.img x86-native-speech-parity
+	@mkdir -p $(BUILD)/test-media
 	@mkdir -p $(BUILD)/iso/EFI
 	cp $< $(BUILD)/iso/efi.img
 	rm -rf $(BUILD)/iso/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat/EFI/BOOT $(BUILD)/fat/EFI/INFINITY $(BUILD)/iso/EFI/
+	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
 	xorriso -as mkisofs -R -V INFINITYOS -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso
 	mv $@.partial $@
 
-x86_64: check-tools builds/InfinityOS-x86_64-bootstrap-test.iso
-	sh tools/build-hermes.sh --target x86_64
-	@echo "Built VMware/QEMU boot image: builds/InfinityOS-x86_64.iso"
+x86_64: check-tools $(BUILD)/test-media/InfinityOS-x86_64.bootmedia
+	@echo "Built x86_64 internal boot media; use ./build.sh --target x86_64 to publish an ISO"
 
 run-x86_64: x86_64
 	$(QEMU_X64) -machine q35 -smp 4 -m 16384M -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
@@ -688,8 +688,8 @@ $(BUILD)/infinity-x86.img: $(BUILD)/x86/boot-sector.bin $(BUILD)/x86/bootstrap.b
 	dd if=$(BUILD)/x86/boot-sector.bin of=$@ conv=notrunc status=none
 	dd if=$(BUILD)/x86/bootstrap.bin of=$@ bs=512 seek=1 conv=notrunc status=none
 
-builds/InfinityOS-x86.iso: $(BUILD)/infinity-x86.img $(UI_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS)
-	@mkdir -p builds
+$(BUILD)/test-media/InfinityOS-x86.bootmedia: $(BUILD)/infinity-x86.img $(UI_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(APPLICATION_ASSETS)
+	@mkdir -p $(BUILD)/test-media
 	rm -rf $(BUILD)/iso-x86/System/InfinityUI/Icons $(BUILD)/iso-x86/System/InfinityUI/Wallpapers $(BUILD)/iso-x86/System/InfinityUI/Crash
 	@mkdir -p $(BUILD)/iso-x86/System/Fonts $(BUILD)/iso-x86/System/FontLicenses $(BUILD)/iso-x86/System/Applications $(BUILD)/iso-x86/System/InfinityUI/Wallpapers $(BUILD)/iso-x86/System/InfinityUI/Installer $(BUILD)/iso-x86/System/InfinityUI/Crash
 	cp $< $(BUILD)/iso-x86/x86-boot.img
@@ -701,11 +701,12 @@ builds/InfinityOS-x86.iso: $(BUILD)/infinity-x86.img $(UI_ASSETS) $(INSTALLER_UI
 	cp -R $(INSTALLER_IMAGE_ASSET_DIR) $(BUILD)/iso-x86/System/InfinityUI/Installer/
 	cp $(CRASH_ASSETS) $(BUILD)/iso-x86/System/InfinityUI/Crash/
 	cp $(APPLICATION_ASSETS) $(BUILD)/iso-x86/System/Applications/
+	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
 	xorriso -as mkisofs -R -V INFINITYOS_X86 -b x86-boot.img -c boot.cat -o $@.partial $(BUILD)/iso-x86
 	mv $@.partial $@
 
-x86: check-tools builds/InfinityOS-x86.iso
-	@echo "Built BIOS x86 boot image: builds/InfinityOS-x86.iso"
+x86: check-tools $(BUILD)/test-media/InfinityOS-x86.bootmedia
+	@echo "Built BIOS x86 internal boot media: build/test-media/InfinityOS-x86.bootmedia"
 
 test-x86: x86
 	@tools/smoke-test.sh x86
@@ -791,22 +792,15 @@ $(BUILD)/infinity-aarch64.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/ke
 	mformat -F -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat-aarch64/EFI ::
 
-builds/InfinityOS-aarch64-bootstrap-test.iso: $(BUILD)/infinity-aarch64.img
-	@mkdir -p builds
+$(BUILD)/test-media/InfinityOS-aarch64.bootmedia: $(BUILD)/infinity-aarch64.img
+	@mkdir -p $(BUILD)/test-media
 	@mkdir -p $(BUILD)/iso-aarch64/EFI
 	cp $< $(BUILD)/iso-aarch64/efi.img
 	rm -rf $(BUILD)/iso-aarch64/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat-aarch64/EFI/BOOT $(BUILD)/fat-aarch64/EFI/INFINITY $(BUILD)/iso-aarch64/EFI/
+	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
 	xorriso -as mkisofs -R -V INFINITYOS_ARM64 -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso-aarch64
 	mv $@.partial $@
-
-# Keep the documented VirtualBox/re-provision path bound to the exact artifact
-# emitted by the ARM packaging recipe without storing a second multi-gigabyte copy.
-builds/InfinityOS-aarch64.iso: builds/InfinityOS-aarch64-bootstrap-test.iso
-	@mkdir -p builds
-	rm -f $@.partial
-	ln $< $@.partial
-	mv -f $@.partial $@
 
 $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch64/kernel-qemu.elf $(FONT_ASSETS) $(UI_ASSETS) $(INSTALLER_UI_ASSETS) $(INSTALLER_IMAGE_ASSETS) $(CRASH_ASSETS) $(NODE_ASSETS)
 	rm -rf $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Icons $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Wallpapers $(BUILD)/fat-aarch64-qemu/EFI/INFINITY/INFINITYUI/Crash
@@ -827,29 +821,29 @@ $(BUILD)/infinity-aarch64-qemu.img: $(BUILD)/aarch64/BOOTAA64.EFI $(BUILD)/aarch
 	mformat -F -i $@ ::
 	mcopy -i $@ -s $(BUILD)/fat-aarch64-qemu/EFI ::
 
-builds/InfinityOS-aarch64-qemu-test.iso: $(BUILD)/infinity-aarch64-qemu.img
-	@mkdir -p builds
+$(BUILD)/test-media/InfinityOS-aarch64-qemu.bootmedia: $(BUILD)/infinity-aarch64-qemu.img
+	@mkdir -p $(BUILD)/test-media
 	@mkdir -p $(BUILD)/iso-aarch64-qemu/EFI
 	cp $< $(BUILD)/iso-aarch64-qemu/efi.img
 	rm -rf $(BUILD)/iso-aarch64-qemu/EFI/INFINITY/PAYLOAD
 	cp -R $(BUILD)/fat-aarch64-qemu/EFI/BOOT $(BUILD)/fat-aarch64-qemu/EFI/INFINITY $(BUILD)/iso-aarch64-qemu/EFI/
+	@test "$(INFINITY_ISO_BUILD_AUTHORITY)" = build.sh || { echo "ERROR: boot media creation is restricted to ./build.sh" >&2; exit 2; }
 	xorriso -as mkisofs -R -V INFINITYOS_ARM64 -e efi.img -no-emul-boot -o $@.partial $(BUILD)/iso-aarch64-qemu
 	mv $@.partial $@
 
 .PHONY: aarch64-bootstrap
-aarch64-bootstrap: check-tools builds/InfinityOS-aarch64.iso builds/InfinityOS-aarch64-qemu-test.iso
-	@echo "Built VirtualBox ARM64 image: builds/InfinityOS-aarch64.iso"
-	@echo "Built QEMU ARM64 test image: builds/InfinityOS-aarch64-qemu-test.iso"
+aarch64-bootstrap: check-tools $(BUILD)/test-media/InfinityOS-aarch64.bootmedia $(BUILD)/test-media/InfinityOS-aarch64-qemu.bootmedia
+	@echo "Built ARM64 internal boot media under build/test-media"
 
 aarch64: aarch64-bootstrap
-	sh tools/build-hermes.sh
+	@echo "Built AArch64 internal boot media; use ./build.sh --target aarch64 to publish an ISO"
 
 run-x86: x86
-	qemu-system-i386 -machine pc -m 128M -cdrom builds/InfinityOS-x86.iso \
+	qemu-system-i386 -machine pc -m 128M -cdrom $(BUILD)/test-media/InfinityOS-x86.bootmedia \
 		-boot d -serial stdio -display none -no-reboot
 run-aarch64: aarch64
 	$(QEMU_AARCH64) -machine virt -cpu cortex-a72 -m 4096M -bios $(AAVMF_CODE) \
-		-device ramfb -device virtio-scsi-pci -drive if=none,id=cd,format=raw,media=cdrom,file=builds/InfinityOS-aarch64-qemu-test.iso \
+		-device ramfb -device virtio-scsi-pci -drive if=none,id=cd,format=raw,media=cdrom,file=$(BUILD)/test-media/InfinityOS-aarch64-qemu.bootmedia \
 		-device scsi-cd,drive=cd,bootindex=0 -serial stdio -display none -no-reboot
 
 clean:

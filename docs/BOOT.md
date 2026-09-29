@@ -76,10 +76,10 @@ Build with `make x86`; test with `make test-x86`.
 Build with `make aarch64`; boot-test with `make test-aarch64`. The resulting
 `builds/InfinityOS-aarch64.iso` is the model-enabled release installer. All
 installer output and provisioning input is restricted to `builds/`; `build/`
-contains only intermediate artifacts. The `-bootstrap-test` and `-qemu-test`
-images are test-only variants, never release fallbacks.
+contains only intermediate artifacts. Internal bootstrap and QEMU boot media use
+the `.bootmedia` suffix so they cannot be mistaken for complete installers.
 
-`builds/InfinityOS-aarch64-bootstrap-test.iso` is the native boot-test medium for
+`build/test-media/InfinityOS-aarch64.bootmedia` is the native boot-test medium for
 Apple Silicon. AArch64 UEFI loads `EFI/BOOT/BOOTAA64.EFI`; the common bounded loader
 then validates and places the AArch64 ELF kernel at `0x10000000`, within
 VirtualBox's ARMv8 RAM window. The automated QEMU profile packages the same

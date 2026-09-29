@@ -57,6 +57,7 @@ def main():
                 assert struct.unpack(">II", expected[16:24]) == dimensions
                 assert expected[24:26] == bytes((8, 6)), "Expected 8-bit RGBA source"
                 output = Path(temporary) / name
+                output.unlink(missing_ok=True)
                 subprocess.run(["mcopy", "-o", "-i", str(image),
                     "::/EFI/InfinityOS/Applications/" + name, str(output)], check=True)
                 assert output.read_bytes() == expected, f"Stale or altered asset: {architecture}/{name}"
@@ -66,6 +67,7 @@ def main():
                          "infinity-world-shift-icon-v1.bmp", "infinity-holographic-desktop-icon-v1.bmp", "app.infinity.browser.manifest"):
                 expected=(root/"assets/apps"/name).read_bytes()
                 output=Path(temporary)/name
+                output.unlink(missing_ok=True)
                 subprocess.run(["mcopy","-o","-i",str(image),
                     "::/EFI/InfinityOS/Applications/"+name,str(output)],check=True)
                 assert output.read_bytes()==expected,(architecture,name)

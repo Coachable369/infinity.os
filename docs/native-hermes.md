@@ -26,13 +26,14 @@ Owner changes clear all three conversation states.
 
 ## Packaging
 
-`sh build.sh` builds the Hermes/Ministral installer through `tools/build-hermes.sh`.
+`./build.sh --target aarch64` builds the Hermes/Ministral ARM installer. `build.sh`
+is the only ISO authority and prints the complete command plan before execution.
 `re-provision.sh` defaults to `builds/InfinityOS-aarch64.iso`
 and 20,480 MiB RAM. Builds publish directly to this single canonical location,
 after payload parity checks; there is no second release copy under `build/`.
 Explicit ISO arguments must also reside in `builds/` (external paths and symlinks
-are rejected). `tools/build-qwen.sh` is a compatibility entrypoint for the same
-Hermes/Ministral installer, not a separate Qwen release.
+are rejected). Direct `tools/build-qwen.sh` and `tools/build-hermes.sh` ISO
+publication is rejected; they are subordinate implementation steps of `build.sh`.
 P4 shards carry Hermes in the installed EFI payload; its hash is checked before
 native initialization. License and attribution files are packaged and verified.
 The upstream card labels its license `llama3` while naming Llama 3.2 as its base;

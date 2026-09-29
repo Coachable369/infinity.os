@@ -3,6 +3,10 @@
 set -eu
 cd "$(dirname "$0")/.."
 . tools/require-build-kit.sh
+if test "${INFINITY_ISO_BUILD_AUTHORITY:-}" != build.sh; then
+    echo 'ERROR: ISO publication is restricted to ./build.sh' >&2
+    exit 2
+fi
 arch=aarch64
 if test "$#" -eq 2 && test "$1" = --target; then arch=$2; elif test "$#" -ne 0; then exit 2; fi
 case "$arch" in
@@ -99,5 +103,6 @@ rm -r -- "${payload_build}/live"
 # image out of the canonical filename used by provisioning.
 python3 tools/iso-staging.py check builds "$((iso_size + 1073741824))"
 xorriso -as mkisofs -iso-level 3 -R -V INFINITY_LOCAL -e efi.img -no-emul-boot -o "$installer_output.partial" ${payload_build}/iso
+python3 tools/full-bundle-iso-test.py "$installer_output.partial"
 python3 tools/audio-install-parity.py "$installer_output.partial" "$arch"
 mv "$installer_output.partial" "$installer_output"

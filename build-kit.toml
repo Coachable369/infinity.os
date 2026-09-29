@@ -23,15 +23,15 @@ command = ["sh", "build.sh"]
 clean = false
 
 [profiles.x86_64]
-command = ["make", "x86_64"]
+command = ["sh", "build.sh", "--target", "x86_64"]
 clean = false
 
 [profiles.aarch64]
-command = ["make", "aarch64"]
+command = ["sh", "build.sh", "--target", "aarch64"]
 clean = false
 
 [profiles.x86_64-models]
-command = ["sh", "tools/build-hermes.sh", "--target", "x86_64"]
+command = ["sh", "build.sh", "--target", "x86_64"]
 clean = false
 
 [profiles.tests]
@@ -39,7 +39,7 @@ command = ["make", "test"]
 clean = false
 
 [profiles.browser-aarch64]
-command = ["make", "NATIVE_BROWSER=1", "builds/InfinityOS-aarch64-qemu-test.iso"]
+command = ["sh", "build.sh", "--target", "aarch64"]
 clean = false
 
 [profiles.browser-core-tests]

@@ -8,7 +8,7 @@ case "$arch" in
     trap 'rm -f "$log"' EXIT INT TERM
     set +e
     timeout 12 qemu-system-i386 -machine pc -m 128M \
-      -cdrom builds/InfinityOS-x86.iso -boot d -serial stdio -display none -no-reboot >"$log" 2>&1
+      -cdrom build/test-media/InfinityOS-x86.bootmedia -boot d -serial stdio -display none -no-reboot >"$log" 2>&1
     status=$?
     set -e
     if grep -Fq 'Kernel online.' "$log" && grep -Fq 'keyboard0 ready' "$log" &&
@@ -28,7 +28,7 @@ case "$arch" in
     set +e
     timeout 25 qemu-system-x86_64 -machine q35 -m 4096M \
       -drive if=pflash,format=raw,readonly=on,file="$firmware" \
-      -cdrom builds/InfinityOS-x86_64-bootstrap-test.iso \
+      -cdrom build/test-media/InfinityOS-x86_64.bootmedia \
       -serial stdio -display none -no-reboot >"$log" 2>&1
     status=$?
     set -e
@@ -50,7 +50,7 @@ case "$arch" in
     set +e
     timeout 30 qemu-system-aarch64 -machine virt -cpu cortex-a72 -m 512M \
       -bios "$firmware" -device ramfb -device virtio-scsi-pci \
-      -drive if=none,id=cd,format=raw,media=cdrom,file=builds/InfinityOS-aarch64-qemu-test.iso \
+      -drive if=none,id=cd,format=raw,media=cdrom,file=build/test-media/InfinityOS-aarch64-qemu.bootmedia \
       -device scsi-cd,drive=cd,bootindex=0 -serial stdio -display none -no-reboot >"$log" 2>&1
     status=$?
     set -e

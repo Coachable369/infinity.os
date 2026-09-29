@@ -174,6 +174,28 @@ class BuildKitTests(unittest.TestCase):
                 check=False)
             self.assertEqual(result.returncode, 64, relative)
 
+    # ------------------------=
+    # FUNC: test_iso_publisher_requires_build_sh_authority
+    # DESC: Verifies managed subordinate execution still cannot publish an ISO outside build.sh.
+    # ------------------=
+    def test_iso_publisher_requires_build_sh_authority(self):
+        environment = os.environ.copy()
+        environment.update({
+            "INFINITY_BUILD_KIT_ACTIVE": "1",
+            "INFINITY_PROJECT_ROOT": str(build_kit.PROJECT_ROOT),
+            "TMPDIR": str(build_kit.PROJECT_ROOT / "build/tmp"),
+        })
+        environment.pop("INFINITY_ISO_BUILD_AUTHORITY", None)
+        result = subprocess.run(
+            ["sh", str(build_kit.PROJECT_ROOT / "tools/build-qwen.sh")],
+            cwd=build_kit.PROJECT_ROOT,
+            env=environment,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

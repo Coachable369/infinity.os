@@ -30,7 +30,7 @@ case "$arch" in
         firmware=${AAVMF_CODE:-/opt/homebrew/share/qemu/edk2-aarch64-code.fd}
         qemu-system-aarch64 -machine virt -cpu cortex-a72 -m 1024M -bios "$firmware" \
             -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -device virtio-scsi-pci \
-            -drive if=none,id=cd,format=raw,media=cdrom,file=builds/InfinityOS-aarch64-qemu-test.iso \
+            -drive if=none,id=cd,format=raw,media=cdrom,file=build/test-media/InfinityOS-aarch64-qemu.bootmedia \
             -device scsi-cd,drive=cd,bootindex=0 -serial file:"$log" -display vnc=127.0.0.1:97 -no-reboot \
             -monitor unix:"$monitor",server=on,wait=off -qmp unix:"$qmp",server=on,wait=off &
         ;;

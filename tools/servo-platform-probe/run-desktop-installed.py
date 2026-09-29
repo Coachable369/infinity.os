@@ -374,7 +374,7 @@ def main():
     if not reuse:
         artifacts.mkdir(parents=True)
     for source, name in ([] if reuse else [
-        ("builds/InfinityOS-x86_64-bootstrap-test.iso" if args.arch=="x86_64" else "builds/InfinityOS-aarch64-qemu-test.iso", "installer.iso"),
+        ("build/test-media/InfinityOS-x86_64.bootmedia" if args.arch=="x86_64" else "build/test-media/InfinityOS-aarch64-qemu.bootmedia", "installer.iso"),
         ("build/x86_64/kernel.elf" if args.arch=="x86_64" else "build/aarch64/kernel-qemu.elf", "kernel.elf"),
         ("build/x86_64/installed-kernel.elf" if args.arch=="x86_64" else "build/aarch64/installed-kernel-qemu.elf" if args.iso_parity else "build/servo-platform-probe/kernel-aarch64/qemu-kernel.elf", "installed-kernel.elf")]):
         shutil.copyfile(ROOT / source, artifacts / name)

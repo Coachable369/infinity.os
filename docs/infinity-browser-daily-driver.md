@@ -236,6 +236,6 @@ Tab Glance, Time Travel thumbnails, pinned/audio/muted/private states, omnibox
 suggestions, bookmark folder, download, permission and focus recipes. Keep the
 existing icon family; clear production UI rather than conceptual decoration.
 
-An updated AArch64 **test** ISO exists at
-`builds/InfinityOS-aarch64-qemu-test.iso`. No daily-driver release or fresh full
-release build is claimed. The remaining checklist above is still required.
+Updated internal AArch64 boot media exists at
+`build/test-media/InfinityOS-aarch64-qemu.bootmedia`. It is not an ISO installer
+or a release claim. The remaining checklist above is still required.

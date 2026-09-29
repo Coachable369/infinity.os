@@ -259,7 +259,7 @@ so that broad invocation is not cited as passing evidence.
 
 The reproducible component wrapper and matching QEMU installed-kernel packaging
 build pass in `20260927T123409619320Z-18143.json`. The generated media is
-`builds/InfinityOS-aarch64-qemu-test.iso`; this was incremental, not a clean
+`build/test-media/InfinityOS-aarch64-qemu.bootmedia`; this was incremental, not a clean
 release. The new `--iso-parity` run uses a new disk, disables offline kernel
 replacement, verifies the installed bytes and boots with media detached.
 Cold-install run `20260927T124526053815Z-24464.json` passes. The new disk's
@@ -321,7 +321,7 @@ cannot be used to prove this larger payload.
 The opt-in `./build-kit browser-aarch64` profile now builds the shared browser
 component into live and installed kernels. Its incremental build passed
 (`20260927T061739267337Z-79995.json`) and atomically replaced
-`builds/InfinityOS-aarch64-qemu-test.iso`. This is experimental QEMU test media,
+`build/test-media/InfinityOS-aarch64-qemu.bootmedia`. This is experimental QEMU boot media,
 not an updated default/reprovision ISO or a clean-release claim. The installed
 kernel is approximately 830 MiB. The configuration stamp invalidates kernel
 builds when browser inclusion changes. Installed GUI testing is in progress;

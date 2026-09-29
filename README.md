@@ -14,13 +14,17 @@ brew install rust llvm lld nasm mtools xorriso qemu
 make test
 ```
 
-`build.sh` cleans the intermediate build, compiles every supported architecture,
-validates each ISO boot catalog, and writes release artifacts and checksums to
-`builds/`:
+`build.sh` is the only ISO publication authority. Every full or focused invocation
+prints its complete command list before execution, verifies the complete native
+model bundle from the emitted artifact, and writes release artifacts and checksums
+to `builds/`:
 
-- `InfinityOS-x86.iso` — 32-bit BIOS boot for Intel/AMD hosts;
+- `build/test-media/InfinityOS-x86.bootmedia` — internal 32-bit BIOS smoke-test media;
 - `InfinityOS-x86_64.iso` — x86_64 UEFI for Intel/AMD hosts;
 - `InfinityOS-aarch64.iso` — ARM64 UEFI for VirtualBox on Apple Silicon.
+
+Use `./build.sh --target aarch64` or `./build.sh --target x86_64` for a focused
+release. Make targets emit internal `.bootmedia` only and cannot publish an ISO.
 
 ### VirtualBox on this Mac
 
