@@ -53,6 +53,8 @@ def main():
             cwd=work,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env={key: value for key, value in os.environ.items()
+                 if key != "INFINITY_ISO_BUILD_AUTHORITY"},
         )
         assert denied.returncode != 0 and not guarded.exists()
         invalid = work / "builds" / "Invalid.iso"
