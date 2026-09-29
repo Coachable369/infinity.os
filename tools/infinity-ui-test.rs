@@ -563,6 +563,27 @@ fn app_launcher_behavior_test() {
     );
 
     let app_window = layout.desktop_app_window_geometry(190, 160, 600, 620, false);
+    let browser = ui::system_layout::default_browser_window(2048, 1152);
+    let browser_geometry = SystemLayout::new(2048, 1152).desktop_app_window_geometry(
+        browser.x,
+        browser.y,
+        browser.width,
+        browser.height,
+        browser.maximized,
+    );
+    assert!(browser_geometry.window.width >= 1500);
+    assert!(browser_geometry.window.height >= 850);
+    assert!(browser_geometry.window.x > 0 && browser_geometry.window.y > 0);
+    let compact_browser = ui::system_layout::default_browser_window(1024, 768);
+    let compact_geometry = SystemLayout::new(1024, 768).desktop_app_window_geometry(
+        compact_browser.x,
+        compact_browser.y,
+        compact_browser.width,
+        compact_browser.height,
+        compact_browser.maximized,
+    );
+    assert!(compact_geometry.window.width >= 760 && compact_geometry.window.width <= 1024);
+    assert!(compact_geometry.window.height >= 560 && compact_geometry.window.height <= 768);
     let editor_state = ui::system_layout::DesktopAppWindowState::new(190, 160, 600, 620);
     let command_state = ui::system_layout::DesktopAppWindowState::new(260, 230, 520, 500);
     assert_ne!(

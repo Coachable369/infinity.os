@@ -75,6 +75,33 @@ pub struct NetworkRuntime {
 
 impl NetworkRuntime {
     // ------------------------=
+    // FUNC: browser_transport_ready
+    // DESC: Reports whether native browser transport has a preferred IPv4 source, active default route, and enabled IPv4 resolver.
+    // ------------------=
+    pub fn browser_transport_ready(&self) -> bool {
+        let address = (0..self.interfaces.address_count())
+            .filter_map(|index| self.interfaces.address_nth(index))
+            .any(|value| {
+                value.interface_id == 2
+                    && value.state == AddressState::Preferred
+                    && matches!(value.address, IpAddress::V4(address) if address != [0; 4])
+            });
+        let route = (0..self.interfaces.route_count())
+            .filter_map(|index| self.interfaces.route_nth(index))
+            .any(|value| {
+                value.interface_id == 2
+                    && value.prefix_length == 0
+                    && value.destination == IpAddress::V4([0; 4])
+                    && value.state == RouteState::Active
+                    && matches!(value.next_hop, Some(IpAddress::V4(address)) if address != [0; 4])
+            });
+        address
+            && route
+            && self.resolver.enabled()
+            && matches!(self.resolver.server(0), Some(IpAddress::V4(address)) if address != [0; 4])
+    }
+
+    // ------------------------=
     // FUNC: browser_authority
     // DESC: Issues renewable web-only session leases under the current Network profile; site privileges remain separate.
     // ------------------=

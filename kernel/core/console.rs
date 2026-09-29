@@ -739,7 +739,10 @@ impl ConsoleRuntime {
             editor_window: crate::ui::editor_chrome::default_window(system.framebuffer_width,system.framebuffer_height),
             command_window: DesktopAppWindowState::new(240, 210, 600, 620),
             task_manager_window: DesktopAppWindowState::new(160, 140, 760, 650),
-            browser_window: DesktopAppWindowState::new(100, 120, 800, 740),
+            browser_window: crate::ui::system_layout::default_browser_window(
+                system.framebuffer_width,
+                system.framebuffer_height,
+            ),
             task_manager_selected: 0,
             task_manager_scroll: 0,
             session_idle: SessionIdleState::new(),

@@ -104,6 +104,20 @@ fn main() {
     assert_eq!(restored.onboarding_state(),OnboardingState::Complete);
     assert!(!restored.voice_profile(user.id).unwrap().enabled);
     assert_eq!(restored.voice_profile(user.id).unwrap().activation,VoiceActivation::Disabled);
+    let mut legacy = bytes;
+    let user_offset = 160;
+    legacy[user_offset + 158] &= !1;
+    legacy[user_offset + 159] = 0;
+    let mut checksum = 0x811c9dc5u32;
+    for byte in &legacy[..legacy.len() - 4] {
+        checksum ^= u32::from(*byte);
+        checksum = checksum.wrapping_mul(0x01000193);
+    }
+    let checksum_at = legacy.len() - 4;
+    legacy[checksum_at..].copy_from_slice(&checksum.to_le_bytes());
+    let migrated = IdentitySystem::decode(&legacy).unwrap();
+    assert!(migrated.voice_profile(user.id).unwrap().enabled);
+    assert_eq!(migrated.voice_profile(user.id).unwrap().activation,VoiceActivation::Continuous);
     drop(store);
     std::fs::remove_file(path).unwrap();
     println!("200 durable checkpoints and two independent media remounts passed");

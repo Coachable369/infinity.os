@@ -193,6 +193,23 @@ impl DesktopAppWindowState {
     }
 }
 
+// ------------------------=
+// FUNC: default_browser_window
+// DESC: Sizes the first browser window from the active framebuffer while preserving the design-kit landscape proportions and desktop margins.
+// ------------------=
+pub fn default_browser_window(width: usize, height: usize) -> DesktopAppWindowState {
+    let target_width = (width.saturating_mul(4) / 5).clamp(760, 1600);
+    let target_height = (height.saturating_mul(4) / 5).clamp(560, 960);
+    let normalized_width = target_width.saturating_mul(1000) / width.max(1);
+    let normalized_height = target_height.saturating_mul(1000) / height.max(1);
+    DesktopAppWindowState::new(
+        ((1000usize.saturating_sub(normalized_width)) / 2) as i32,
+        ((1000usize.saturating_sub(normalized_height)) / 2) as i32,
+        normalized_width.min(1000) as i32,
+        normalized_height.min(1000) as i32,
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AppLauncherGeometry {
     pub panel: Rect,

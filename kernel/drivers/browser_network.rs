@@ -38,6 +38,15 @@ static mut AUTHORITY:Option<(SecurityIdentity,[CapabilityId;4])>=None;
 static mut CURRENT:Option<(usize,https::Ticket)>=None;
 
 // ------------------------=
+// FUNC: transport_ready
+// DESC: Requires DHCP or static configuration to have published a usable IPv4 source, resolver and default route before consuming a queued navigation.
+// ------------------=
+fn transport_ready()->bool {
+    crate::runtime::with_runtime(|runtime| runtime.network.browser_transport_ready())
+        .unwrap_or(false)
+}
+
+// ------------------------=
 // FUNC: configure
 // DESC: Installs only caller-supplied authority between sessions; never mints or broadens capabilities.
 // ------------------=
@@ -236,6 +245,7 @@ pub unsafe fn pump() {
         }
     }
     if !allowed {return;}
+    if !transport_ready() {return;}
     if SLOTS.iter().any(|slot|slot.state.load(Ordering::Acquire)==PENDING) {
         let now=crate::runtime::node_client::clock();
         let refreshed=now.and_then(|now|crate::runtime::with_runtime(|runtime|

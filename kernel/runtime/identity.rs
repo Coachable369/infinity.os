@@ -1907,10 +1907,13 @@ fn read_user(
             3
         },
     };
+    let voice_was_uninitialized = input[at + 159] == 0;
     let voice = VoiceProfile {
         user: id,
-        enabled: input[at + 158] & 1 != 0,
+        enabled: voice_was_uninitialized || input[at + 158] & 1 != 0,
         activation: match input[at + 159] {
+            0 => VoiceActivation::Continuous,
+            1 => VoiceActivation::Disabled,
             2 => VoiceActivation::PushToTalk,
             3 => VoiceActivation::Continuous,
             _ => VoiceActivation::Disabled,

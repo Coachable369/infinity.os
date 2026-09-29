@@ -116,6 +116,61 @@ fn browser_default_access_behavior() {
 }
 
 // ------------------------=
+// FUNC: browser_transport_readiness_behavior
+// DESC: Verifies queued web navigation becomes eligible only after address, route, and resolver state are all published.
+// ------------------=
+fn browser_transport_readiness_behavior() {
+    let mut network = NetworkRuntime::new();
+    network.initialize().unwrap();
+    assert!(!network.browser_transport_ready());
+    network.interfaces.add_interface(NetworkInterface {
+        id: 2,
+        device: NetworkDevice {
+            device_id: 22,
+            driver_id: 7,
+            link_type: LinkType::Virtual,
+            hardware_address: None,
+            link_state: LinkState::Up,
+            maximum_frame_size: 1500,
+            can_receive: true,
+            can_transmit: true,
+            offload_capabilities: 0,
+            operational_state: OperationalState::Ready,
+            error_code: 0,
+        },
+        enabled: true,
+        rx_packets: 0,
+        tx_packets: 0,
+        rx_drops: 0,
+        tx_drops: 0,
+    }).unwrap();
+    network.interfaces.add_address(
+        2,
+        IpAddress::V4([10, 0, 2, 15]),
+        24,
+        AddressScope::Private,
+        AddressSource::Dynamic,
+        None,
+        None,
+    ).unwrap();
+    assert!(!network.browser_transport_ready());
+    network.interfaces.add_route(
+        IpAddress::V4([0, 0, 0, 0]),
+        0,
+        Some(IpAddress::V4([10, 0, 2, 2])),
+        2,
+        100,
+        RouteSource::Dynamic,
+        None,
+    ).unwrap();
+    assert!(!network.browser_transport_ready());
+    network.resolver.set_server(0, Some(IpAddress::V4([10, 0, 2, 3]))).unwrap();
+    assert!(network.browser_transport_ready());
+    network.resolver.set_enabled(false);
+    assert!(!network.browser_transport_ready());
+}
+
+// ------------------------=
 // FUNC: configurable_state_behavior
 // DESC: Verifies static addressing, routes, resolver configuration, interface state, and policy survive binary persistence.
 // ------------------=
@@ -606,4 +661,4 @@ fn service_recovery_behavior() {
 // FUNC: main
 // DESC: Runs Milestone 8 behavior-only host acceptance tests.
 // ------------------=
-fn main() { route_behavior(); profile_behavior(); configurable_state_behavior(); onboarding_network_behavior(); firmware_network_discovery_behavior(); settings_dashboard_behavior(); policy_and_transport_behavior(); resolver_and_discovery_behavior(); management_capability_behavior(); iop_and_console_behavior(); network_event_behavior(); service_recovery_behavior(); }
+fn main() { route_behavior(); profile_behavior(); browser_transport_readiness_behavior(); configurable_state_behavior(); onboarding_network_behavior(); firmware_network_discovery_behavior(); settings_dashboard_behavior(); policy_and_transport_behavior(); resolver_and_discovery_behavior(); management_capability_behavior(); iop_and_console_behavior(); network_event_behavior(); service_recovery_behavior(); }
