@@ -210,6 +210,48 @@ fn default_gateway(network: &crate::runtime::network::NetworkRuntime) -> Option<
 }
 
 // ------------------------=
+// FUNC: private_ipv4
+// DESC: Identifies RFC1918 resolver and gateway addresses without consulting host services.
+// ------------------=
+fn private_ipv4(address: [u8; 4]) -> bool {
+    address[0] == 10
+        || (address[0] == 172 && (16..=31).contains(&address[1]))
+        || (address[0] == 192 && address[1] == 168)
+}
+
+// ------------------------=
+// FUNC: preferred_dns
+// DESC: Prefers a DHCP-provided private resolver behind a private gateway before an externally advertised resolver that may be unreachable from the guest.
+// ------------------=
+pub(crate) fn preferred_dns(
+    primary: Option<IpAddress>,
+    secondary: Option<IpAddress>,
+    gateway: Option<[u8; 4]>,
+) -> Option<[u8; 4]> {
+    let primary = match primary { Some(IpAddress::V4(value)) if value != [0; 4] => Some(value), _ => None };
+    let secondary = match secondary { Some(IpAddress::V4(value)) if value != [0; 4] => Some(value), _ => None };
+    if gateway.is_some_and(private_ipv4) {
+        secondary.filter(|address| private_ipv4(*address))
+            .or_else(|| primary.filter(|address| private_ipv4(*address)))
+            .or(primary)
+            .or(secondary)
+    } else {
+        primary.or(secondary)
+    }
+}
+
+// ------------------------=
+// FUNC: resolver_authorized
+// DESC: Confirms that the selected DNS endpoint remains one of the two live configured resolver addresses.
+// ------------------=
+fn resolver_authorized(
+    network: &crate::runtime::network::NetworkRuntime,
+    address: [u8; 4],
+) -> bool {
+    (0..2).any(|index| network.resolver.server(index) == Some(IpAddress::V4(address)))
+}
+
+// ------------------------=
 // FUNC: initialize
 // DESC: Seeds a dedicated cryptographic request generator from genuine boot entropy, failing closed when unavailable.
 // ------------------=
@@ -246,7 +288,7 @@ fn authorized(auth: Authority, address: [u8; 4], port: u16, now: u64) -> bool {
             return false;
         }
         let network = &mut runtime.network;
-        if network.resolver.server(0) != Some(IpAddress::V4(auth.dns)) {
+        if !resolver_authorized(network, auth.dns) {
             return false;
         }
         if default_gateway(network) != auth.gateway {
@@ -501,10 +543,8 @@ fn get_bounded(
             let IpAddress::V4(address) = source.address else {
                 return None;
             };
-            let IpAddress::V4(dns) = n.resolver.server(0)? else {
-                return None;
-            };
             let gateway = default_gateway(n);
+            let dns = preferred_dns(n.resolver.server(0), n.resolver.server(1), gateway)?;
             Some((
                 Configuration {
                     mac: interface.device.hardware_address?,

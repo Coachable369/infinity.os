@@ -80,6 +80,22 @@ fn main() {
     };
     runtime::initialize(false);
     runtime::poll_node_transport(0);
+    assert_eq!(
+        https::preferred_dns(
+            Some(IpAddress::V4([40, 192, 249, 101])),
+            Some(IpAddress::V4([192, 168, 1, 254])),
+            Some([10, 0, 2, 2]),
+        ),
+        Some([192, 168, 1, 254]),
+    );
+    assert_eq!(
+        https::preferred_dns(
+            Some(IpAddress::V4([1, 1, 1, 1])),
+            Some(IpAddress::V4([8, 8, 8, 8])),
+            Some([203, 0, 113, 1]),
+        ),
+        Some([1, 1, 1, 1]),
+    );
     let (owner, mut caps) = runtime::with_runtime(|r| {
         r.identity.create_machine(b"test", 3, 1, 0).unwrap();
         let user = r.identity.create_user(b"tester", b"Tester", 0).unwrap();
