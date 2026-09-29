@@ -9,6 +9,7 @@ memory_mb=${INFINITY_VM_MEMORY_MB:-20480}
 cpu_count=${INFINITY_VM_CPU_COUNT:-6}
 disk_size_mb=${INFINITY_VM_DISK_SIZE_MB:-16384}
 vboxmanage=${INFINITY_VBOXMANAGE:-VBoxManage}
+trace_root=${INFINITY_VM_TRACE_ROOT:-$project_root/build/vm-logs}
 
 # ------------------------=
 # FUNC: die
@@ -17,6 +18,25 @@ vboxmanage=${INFINITY_VBOXMANAGE:-VBoxManage}
 die() {
     printf 'ERROR: %s\n' "$1" >&2
     exit 1
+}
+
+# ------------------------=
+# FUNC: prepare_trace_log
+# DESC: Preserves the prior VM serial trace and prepares a repository-local sink for the replacement VM.
+# ------------------=
+prepare_trace_log() {
+    case "$trace_root" in
+        "$project_root"/build/*) ;;
+        *) die "The VM trace root must remain under $project_root/build: $trace_root" ;;
+    esac
+    trace_directory=$trace_root/$vm_name
+    trace_log=$trace_directory/serial.log
+    mkdir -p "$trace_directory"
+    if test -s "$trace_log"; then
+        trace_archive=$trace_directory/serial-$(date -u +%Y%m%dT%H%M%SZ)-$$.log
+        mv "$trace_log" "$trace_archive"
+        printf 'Archived prior VM trace: %s\n' "$trace_archive"
+    fi
 }
 
 # ------------------------=
@@ -176,6 +196,8 @@ create_arm64_vm() {
         --keyboard usb \
         --audio-driver default \
         --audio-controller hda \
+        --uart1 0x3F8 4 \
+        --uart-mode1 file "$trace_log" \
         --audio-enabled on
 
     "$vboxmanage" setextradata "$vm_name" VBoxInternal2/EfiGraphicsResolution 2560x1440
@@ -227,6 +249,8 @@ verify_vm() {
     printf '%s\n' "$final_info" | grep -Fq "$iso_path" || die "The ARM64 ISO is not mounted."
     printf '%s\n' "$final_info" | grep -Fq 'usb="off"' || die "OHCI must remain disabled while USB keyboard input is routed through xHCI."
     printf '%s\n' "$final_info" | grep -Fq 'xhci="on"' || die "The xHCI controller is not enabled."
+    printf '%s\n' "$final_info" | grep -Fq 'uart1="0x03f8,4"' || die "The VM serial trace UART is not enabled."
+    printf '%s\n' "$final_info" | grep -Fq "uartmode1=\"file,$trace_log\"" || die "The VM serial trace file is not configured."
     printf '%s\n' "$final_human_info" | grep -Fq 'Pointing Device:             USB Mouse' || die "Generic USB HID mouse input is not configured."
     printf '%s\n' "$final_human_info" | grep -Fq 'Keyboard Device:             USB Keyboard' || die "USB keyboard input is not configured."
     printf '%s\n' "$final_human_info" | grep -Fq 'xHCI USB:                    enabled' || die "The xHCI controller is not enabled."
@@ -237,6 +261,7 @@ verify_vm() {
     printf '  Memory:    %s MB\n' "$memory_mb"
     printf '  Disk:      %s MB, blank VDI\n' "$disk_size_mb"
     printf '  ISO:       %s\n' "$iso_path"
+    printf '  Trace:     %s\n' "$trace_log"
     printf '  State:     powered off\n'
 }
 
@@ -257,6 +282,7 @@ printf 'InfinityOS ARM64 VirtualBox reprovisioning\n'
 printf '  VM:  %s\n' "$vm_name"
 printf '  ISO: %s\n' "$iso_path"
 
+prepare_trace_log
 delete_existing_vm
 recover_unregistered_vm
 create_arm64_vm

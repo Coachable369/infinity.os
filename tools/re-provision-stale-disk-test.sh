@@ -45,6 +45,9 @@ run_orphan_replacement_case() {
     disk_path=$vm_directory/infinityos-4.vdi
     state_path=$case_root/state
     mkdir -p "$vm_directory" "$state_path"
+    trace_directory=$test_root/build/vm-logs/infinityos-4
+    mkdir -p "$trace_directory"
+    printf 'previous crash\n' > "$trace_directory/serial.log"
     printf 'stale\n' > "$disk_path"
     printf 'test-media\n' > "$iso_path"
     printf 'old\n' > "$state_path/vm-state"
@@ -64,6 +67,11 @@ run_orphan_replacement_case() {
     test "$(sed -n '1p' "$state_path/memory")" = 22480 || fail "The configured memory default was not applied."
     test "$(sed -n '1p' "$state_path/graphics")" = vmsvga || fail "VMSVGA graphics were not applied."
     test "$(sed -n '1p' "$state_path/mouse")" = usb || fail "Generic USB HID mouse input was not applied."
+    test "$(sed -n '1p' "$state_path/uart")" = 0x03f8,4 || fail "The serial trace UART was not configured."
+    test "$(sed -n '1p' "$state_path/uart-log")" = "$trace_directory/serial.log" || fail "The serial trace path was not configured."
+    archived_trace=$(find "$trace_directory" -type f -name 'serial-*.log' -print -quit)
+    test -n "$archived_trace" || fail "The prior serial trace was not archived."
+    test "$(sed -n '1p' "$archived_trace")" = 'previous crash' || fail "The archived serial trace was not preserved."
 }
 
 # ------------------------=

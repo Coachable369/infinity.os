@@ -26,6 +26,8 @@ case "$command_name" in
                 printf 'graphicscontroller="%s"\n' "$(sed -n '1p' "$TEST_STATE_PATH/graphics")"
                 printf 'usb="off"\n'
                 printf 'xhci="on"\n'
+                printf 'uart1="%s"\n' "$(sed -n '1p' "$TEST_STATE_PATH/uart")"
+                printf 'uartmode1="file,%s"\n' "$(sed -n '1p' "$TEST_STATE_PATH/uart-log")"
                 printf 'dvd="%s"\n' "$TEST_ISO_PATH"
             fi
         else
@@ -106,6 +108,18 @@ case "$command_name" in
                 --mouse)
                     shift
                     printf '%s\n' "$1" > "$TEST_STATE_PATH/mouse"
+                    ;;
+                --uart1)
+                    shift
+                    uart_base=$1
+                    shift
+                    printf '0x%04x,%s\n' "$uart_base" "$1" > "$TEST_STATE_PATH/uart"
+                    ;;
+                --uart-mode1)
+                    shift
+                    test "$1" = file || exit 3
+                    shift
+                    printf '%s\n' "$1" > "$TEST_STATE_PATH/uart-log"
                     ;;
             esac
             shift
