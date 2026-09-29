@@ -48,6 +48,26 @@ static mut CHAT_TURN: u64 = 0;
 static mut CONTINUOUS: bool = false;
 static mut REPLY_COMPLETE: bool = false;
 
+#[cfg(not(test))]
+// ------------------------=
+// FUNC: trace
+// DESC: Emits privacy-safe conversation state checkpoints to the VM serial trace.
+// ------------------=
+fn trace(event: &[u8]) {
+    unsafe {
+        crate::output::write(b"[VOICE] ");
+        crate::output::write(event);
+        crate::output::write(b"\n");
+    }
+}
+
+#[cfg(test)]
+// ------------------------=
+// FUNC: trace
+// DESC: Keeps host conversation harnesses independent of the native serial device.
+// ------------------=
+fn trace(_: &[u8]) {}
+
 // ------------------------=
 // FUNC: active_owner
 // DESC: Stops voice authority at logout or lock rather than relying only on capability expiration.
@@ -181,8 +201,10 @@ pub fn start(owner: SecurityIdentity) -> bool {
         RESTART_LISTENING = false;
         if !listen() {
             STATE = State::Failed;
+            trace(b"initial capture failed");
             return false;
         }
+        trace(b"conversation listening");
         super::with_ai_runtime(|ai| {
             ai.bind_chat_owner(owner.0);
             ai.chat.set_enabled(true);
@@ -253,7 +275,7 @@ unsafe fn speak_next() -> bool {
             .find(|s| s.id.0 == OWNER.0 && s.state == SessionState::Active)
             .and_then(|s| r.identity.ai_profile(s.user)).map(|p| p.speech_output_enabled).unwrap_or(false)
     }).unwrap_or(false);
-    if !enabled { REPLY_AT = REPLY_LENGTH; }
+    if !enabled { trace(b"speech output disabled by profile"); REPLY_AT = REPLY_LENGTH; }
     while REPLY_AT < REPLY_LENGTH && REPLY[REPLY_AT] == b' ' { REPLY_AT += 1; }
     if REPLY_AT >= REPLY_LENGTH {
         if !REPLY_COMPLETE { STATE = State::Thinking; return true; }
@@ -411,6 +433,7 @@ pub fn poll() -> bool {
                         (&mut *(&raw mut UTTERANCE)).clear(300);
                         LEVEL = 0;
                         if submitted {
+                            trace(b"recognition queued");
                             STATE = State::Recognizing;
                         } else {
                             stop(OWNER);
@@ -446,7 +469,9 @@ pub fn poll() -> bool {
                         .unwrap_or(false);
                     (&mut *(&raw mut TRANSCRIPT)).fill(0);
                     if queued {
+                        trace(b"transcript ready");
                         STATE = if submit_pending_transcript() {
+                            trace(b"transcript submitted");
                             State::Thinking
                         } else {
                             State::Submitting
@@ -504,6 +529,7 @@ pub fn poll() -> bool {
                     }
                 }
                 voice_output::OutputState::Failed | voice_output::OutputState::Cancelled => {
+                    trace(b"speech output failed or cancelled");
                     stop(OWNER);
                 }
                 _ => {

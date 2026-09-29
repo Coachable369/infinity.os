@@ -38,6 +38,27 @@ pub enum OutputState { Idle, Queued, Synthesizing, Ready, Failed, Speaking, Canc
 #[derive(Clone, Copy)]
 pub struct OutputStatus { pub state: OutputState, pub frames: usize, pub peak_bytes: usize, pub synthesis_ns: u64, pub error: i32 }
 struct NativeSpeech;
+
+#[cfg(not(test))]
+// ------------------------=
+// FUNC: trace
+// DESC: Emits bounded speech-worker lifecycle checkpoints to the VM serial trace without exposing prompt content.
+// ------------------=
+fn trace(event: &[u8]) {
+    unsafe {
+        crate::output::write(b"[VOICE OUT] ");
+        crate::output::write(event);
+        crate::output::write(b"\n");
+    }
+}
+
+#[cfg(test)]
+// ------------------------=
+// FUNC: trace
+// DESC: Keeps host behavior harnesses independent of the native serial device.
+// ------------------=
+fn trace(_: &[u8]) {}
+
 unsafe extern "C" {
     fn infinity_kokoro_native_synthesize(text: *const u8, length: usize, pcm: *mut i16,
         capacity: usize, frames: *mut usize,
@@ -80,6 +101,7 @@ extern "C" fn cancelled() -> i32 {
 // ------------------=
 unsafe fn worker() {
     STATE.store(2, Ordering::Release);
+    trace(b"synthesis started");
     let start = super::qwen::workers::clock_ns();
     let result = NativeSpeech.synthesize(&(&*(&raw const TEXT))[..LENGTH], &mut *(&raw mut PCM));
     FRAMES = result.unwrap_or(0);
@@ -89,6 +111,7 @@ unsafe fn worker() {
         speech_pcm::fill_rate(&(&*(&raw const PCM))[..FRAMES], &mut (&mut *(&raw mut RESIDENT))[WRITE_SLOT].0[..OUTPUT_SAMPLES], 0, SOURCE_RATE, RATE);
     }
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
+    trace(if result.is_ok() { b"synthesis completed" } else { b"synthesis failed" });
     STATE.store(if ERROR == 2 || cancelled() != 0 { 6 } else if result.is_ok() { 3 } else { 4 }, Ordering::Release);
 }
 // ------------------------=
@@ -220,8 +243,9 @@ pub fn poll() {
                 // Hardware owns the immutable resident buffer until its stream stops.
                 PLAY_SLOT = WRITE_SLOT; PLAYING = true;
                 CAPABILITY = 0; (&mut *(&raw mut PCM)).fill(0); (&mut *(&raw mut TEXT)).fill(0);
+                trace(b"playback started");
                 STATE.store(5, Ordering::Release);
-            } else { ERROR = 7; STATE.store(4, Ordering::Release); retire(); }
+            } else { trace(b"playback rejected"); ERROR = 7; STATE.store(4, Ordering::Release); retire(); }
         } else if matches!(state, 4 | 6 | 7) && CAPABILITY != 0 { retire(); }
     }
 }
