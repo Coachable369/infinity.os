@@ -55,6 +55,17 @@ pub struct AiRuntime {
 
 impl AiRuntime {
     // ------------------------=
+    // FUNC: refresh_native_readiness
+    // DESC: Derives chat availability from the owned native services so boot and owner changes cannot leave stale model flags.
+    // ------------------=
+    fn refresh_native_readiness(&mut self) {
+        let ministral_ready = self.native_ready(chat::MINISTRAL_MODEL_ID);
+        let hermes_ready = self.native_ready(chat::HERMES_MODEL_ID);
+        self.chat.set_ministral_ready(ministral_ready);
+        self.chat.set_hermes_ready(hermes_ready);
+    }
+
+    // ------------------------=
     // FUNC: native_profile
     // DESC: Exposes active native measurements without exposing model memory or bypassing inference authority.
     // ------------------=
@@ -597,6 +608,7 @@ static mut AI_RUNTIME: AiRuntime = AiRuntime::new();
 // ------------------=
 pub fn with_ai_runtime<T>(f: impl FnOnce(&mut AiRuntime) -> T) -> T {
     let runtime = unsafe { &mut *(&raw mut AI_RUNTIME) };
+    runtime.refresh_native_readiness();
     f(runtime)
 }
 

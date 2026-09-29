@@ -7,6 +7,7 @@ static CAPTURE_STATE: AtomicUsize = AtomicUsize::new(0);
 static ACTIVE: AtomicBool = AtomicBool::new(true);
 static FLOW: AtomicBool = AtomicBool::new(false);
 static MODEL_READY: AtomicBool = AtomicBool::new(false);
+static CHAT_READY: AtomicBool = AtomicBool::new(false);
 static READY: AtomicBool = AtomicBool::new(false);
 static OUTPUT: AtomicUsize = AtomicUsize::new(0);
 static NOW: AtomicUsize = AtomicUsize::new(1);
@@ -142,7 +143,7 @@ mod chat {
         // FUNC: selected_model_ready
         // DESC: Exposes the deterministic local-model load boundary.
         // ------------------=
-        pub fn selected_model_ready(&self)->bool{crate::MODEL_READY.load(crate::Ordering::SeqCst)}
+        pub fn selected_model_ready(&self)->bool{crate::CHAT_READY.load(crate::Ordering::SeqCst)}
         // ------------------------=
         // FUNC: turn_id
         // DESC: Supplies a stable owned chat turn.
@@ -315,6 +316,9 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(conversation::state().0,State::Submitting);
     assert_eq!(INPUT_LENGTH.load(Ordering::SeqCst),4);
     assert_eq!(TURNS.load(Ordering::SeqCst),0);
+    // Native service readiness is authoritative even if the presentation cache
+    // has not yet observed the boot transition.
+    CHAT_READY.store(false,Ordering::SeqCst);
     MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Thinking);
     assert_eq!(INPUT_LENGTH.load(Ordering::SeqCst),0);

@@ -96,7 +96,6 @@ fn retire(cap: u64) {
 unsafe fn submit_pending_transcript() -> bool {
     super::with_ai_runtime(|ai| {
         if ai.chat.input().is_empty()
-            || !ai.chat.selected_model_ready()
             || ai.chat.generation_state == GenerationState::Running
         {
             return false;

@@ -687,6 +687,11 @@ fn desktop_chat() {
     chat.set_enabled(true);
     assert!(chat.enabled());
     assert!(!chat.minimized());
+
+    // The global runtime owns model availability. A stale UI-ready flag must
+    // be corrected before any caller can use it to admit a prompt.
+    runtime::ai::with_ai_runtime(|ai| ai.chat.set_hermes_ready(true));
+    assert!(!runtime::ai::with_ai_runtime(|ai| ai.chat.selected_model_ready()));
     let mut identities = runtime::identity::IdentitySystem::new();
     let user = identities
         .create_user(b"chat-user", b"Chat User", 1)
