@@ -11872,7 +11872,8 @@ impl ConsoleRuntime {
                 use crate::runtime::ai::voice_conversation::State;
                 self.output.write_line(match state {
                     State::Off=>b"Voice: off", State::Listening=>b"Voice: listening (voice stop mutes)",
-                    State::Recognizing=>b"Voice: recognizing locally",State::Thinking=>b"Voice: Hermes responding",
+                    State::Recognizing=>b"Voice: recognizing locally",State::Submitting=>b"Voice: waiting for local model",
+                    State::Thinking=>b"Voice: Hermes responding",
                     State::Speaking=>b"Voice: speaking",State::Stopping=>b"Voice: stopping",State::Failed=>b"Voice: unavailable",
                 });
                 let recognition = crate::runtime::ai::voice_input::status();

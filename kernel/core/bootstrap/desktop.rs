@@ -9763,7 +9763,8 @@ impl super::DisplayDevice {
             } else { match state().0 {
                 State::Off if chat.generation_state==crate::runtime::ai::chat::GenerationState::Running=>b"Thinking...".as_slice(),
                 State::Off=>b"VOICE OFF".as_slice(),State::Listening=>b"LISTEN".as_slice(),
-                State::Recognizing=>b"HEARING".as_slice(),State::Thinking=>b"THINKING".as_slice(),
+                State::Recognizing=>b"HEARING".as_slice(),State::Submitting=>b"QUEUED".as_slice(),
+                State::Thinking=>b"THINKING".as_slice(),
                 State::Speaking=>b"SPEAKING".as_slice(),State::Stopping=>b"STOPPING".as_slice(),
                 State::Failed=>b"UNAVAILABLE".as_slice(),
             }}

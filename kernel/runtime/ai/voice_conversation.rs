@@ -21,6 +21,7 @@ pub enum State {
     Off,
     Listening,
     Recognizing,
+    Submitting,
     Thinking,
     Speaking,
     Stopping,
@@ -87,6 +88,26 @@ fn retire(cap: u64) {
             });
         }
     }
+}
+// ------------------------=
+// FUNC: submit_pending_transcript
+// DESC: Submits a recognized composer only after its selected local model becomes ready.
+// ------------------=
+unsafe fn submit_pending_transcript() -> bool {
+    super::with_ai_runtime(|ai| {
+        if ai.chat.input().is_empty()
+            || !ai.chat.selected_model_ready()
+            || ai.chat.generation_state == GenerationState::Running
+        {
+            return false;
+        }
+        if !ai.submit_chat() { return false; }
+        CHAT_TURN = ai.chat.turn_id();
+        REPLY_AT = 0;
+        REPLY_LENGTH = 0;
+        REPLY_COMPLETE = false;
+        true
+    })
 }
 // ------------------------=
 // FUNC: state
@@ -407,7 +428,7 @@ pub fn poll() -> bool {
                     let result = voice_input::take(OWNER, &mut *(&raw mut TRANSCRIPT));
                     retire(RECOGNIZE_CAP);
                     RECOGNIZE_CAP = 0;
-                    let submitted = result
+                    let queued = result
                         .ok()
                         .map(|n| {
                             super::with_ai_runtime(|ai| {
@@ -416,21 +437,21 @@ pub fn poll() -> bool {
                                 {
                                     return false;
                                 }
+                                let mut inserted = n != 0;
                                 for &byte in &(&*(&raw const TRANSCRIPT))[..n] {
-                                    ai.chat.push_input(byte);
+                                    inserted &= ai.chat.push_input(byte);
                                 }
-                                let accepted = ai.submit_chat();
-                                if accepted {
-                                    CHAT_TURN = ai.chat.turn_id();
-                                    REPLY_AT = 0; REPLY_LENGTH = 0; REPLY_COMPLETE = false;
-                                }
-                                accepted
+                                inserted
                             })
                         })
                         .unwrap_or(false);
                     (&mut *(&raw mut TRANSCRIPT)).fill(0);
-                    if submitted {
-                        STATE = State::Thinking;
+                    if queued {
+                        STATE = if submit_pending_transcript() {
+                            State::Thinking
+                        } else {
+                            State::Submitting
+                        };
                     } else {
                         stop(OWNER);
                     }
@@ -453,6 +474,9 @@ pub fn poll() -> bool {
                 }
                 _ => {}
             },
+            State::Submitting => {
+                if submit_pending_transcript() { STATE = State::Thinking; }
+            }
             State::Thinking => {
                 if super::with_ai_runtime(|ai| ai.chat.turn_id() != CHAT_TURN) {
                     stop(OWNER);

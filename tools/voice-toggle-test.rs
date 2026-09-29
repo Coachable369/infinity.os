@@ -14,6 +14,7 @@ static TURNS: AtomicUsize = AtomicUsize::new(0);
 static STREAMING: AtomicBool = AtomicBool::new(false);
 static VISIBLE: AtomicUsize = AtomicUsize::new(usize::MAX);
 static INPUT_GRANTS: AtomicUsize = AtomicUsize::new(0);
+static INPUT_LENGTH: AtomicUsize = AtomicUsize::new(0);
 static MICROPHONE: std::sync::Mutex<std::collections::VecDeque<i16>> = std::sync::Mutex::new(std::collections::VecDeque::new());
 static PHRASES: std::sync::Mutex<Vec<Vec<u8>>> = std::sync::Mutex::new(Vec::new());
 static RECOGNIZED: std::sync::Mutex<Vec<i16>> = std::sync::Mutex::new(Vec::new());
@@ -134,9 +135,14 @@ mod chat {
         pub fn selected_model(&self)->usize{0}
         // ------------------------=
         // FUNC: input
-        // DESC: Leaves the composer empty for explicit voice activation.
+        // DESC: Exposes whether recognized text remains queued in the composer.
         // ------------------=
-        pub fn input(&self)->&[u8]{b""}
+        pub fn input(&self)->&[u8]{if crate::INPUT_LENGTH.load(crate::Ordering::SeqCst)==0 {b""} else {b"test"}}
+        // ------------------------=
+        // FUNC: selected_model_ready
+        // DESC: Exposes the deterministic local-model load boundary.
+        // ------------------=
+        pub fn selected_model_ready(&self)->bool{crate::MODEL_READY.load(crate::Ordering::SeqCst)}
         // ------------------------=
         // FUNC: turn_id
         // DESC: Supplies a stable owned chat turn.
@@ -154,9 +160,9 @@ mod chat {
         pub fn set_minimized(&mut self,_:bool){}
         // ------------------------=
         // FUNC: push_input
-        // DESC: Provides the unused recognition submission seam.
+        // DESC: Records recognized characters in the bounded composer fixture.
         // ------------------=
-        pub fn push_input(&mut self,_:u8){}
+        pub fn push_input(&mut self,_:u8)->bool{crate::INPUT_LENGTH.fetch_add(1,crate::Ordering::SeqCst);true}
         // ------------------------=
         // FUNC: message_count
         // DESC: Reports no completed messages during lifecycle tests.
@@ -190,7 +196,10 @@ impl Ai {
     // FUNC: submit_chat
     // DESC: Rejects unused generation in lifecycle-only tests.
     // ------------------=
-    fn submit_chat(&mut self)->bool{TURNS.fetch_add(1,Ordering::SeqCst); FLOW.load(Ordering::SeqCst)}
+    fn submit_chat(&mut self)->bool{
+        if !MODEL_READY.load(Ordering::SeqCst) {return false;}
+        TURNS.fetch_add(1,Ordering::SeqCst);INPUT_LENGTH.store(0,Ordering::SeqCst);true
+    }
 }
 // ------------------------=
 // FUNC: with_ai_runtime
@@ -302,7 +311,14 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert!(conversation::start(owner));
     MICROPHONE.lock().unwrap().extend([1000;1600]);
     MICROPHONE.lock().unwrap().extend([0;12000]);
-    for _ in 0..10 {conversation::poll();}
+    for _ in 0..10 {conversation::poll();if conversation::state().0==State::Submitting {break;}}
+    assert_eq!(conversation::state().0,State::Submitting);
+    assert_eq!(INPUT_LENGTH.load(Ordering::SeqCst),4);
+    assert_eq!(TURNS.load(Ordering::SeqCst),0);
+    MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Thinking);
+    assert_eq!(INPUT_LENGTH.load(Ordering::SeqCst),0);
+    conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(*PHRASES.lock().unwrap(),vec![b"Hi.".to_vec()]);
     // Duplex capture stays open while playback remains in progress.
