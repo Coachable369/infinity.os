@@ -6,6 +6,7 @@ static CAPTURES: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_STATE: AtomicUsize = AtomicUsize::new(0);
 static ACTIVE: AtomicBool = AtomicBool::new(true);
 static FLOW: AtomicBool = AtomicBool::new(false);
+static MODEL_READY: AtomicBool = AtomicBool::new(false);
 static READY: AtomicBool = AtomicBool::new(false);
 static OUTPUT: AtomicUsize = AtomicUsize::new(0);
 static NOW: AtomicUsize = AtomicUsize::new(1);
@@ -168,9 +169,9 @@ struct Ai {chat:chat::Chat}
 impl Ai {
     // ------------------------=
     // FUNC: native_ready
-    // DESC: Supplies a ready local model.
+    // DESC: Supplies a selectable model-loading state without affecting microphone activation.
     // ------------------=
-    fn native_ready(&self,_:usize)->bool{true}
+    fn native_ready(&self,_:usize)->bool{MODEL_READY.load(Ordering::SeqCst)}
     // ------------------------=
     // FUNC: bind_chat_owner
     // DESC: Accepts the fixture owner binding.
@@ -277,6 +278,7 @@ mod voice_output {
 fn toggles_restart_after_drain_without_reopening_after_revocation(){
     use conversation::State;
     let owner=runtime::execution::SecurityIdentity([1;16]);
+    MODEL_READY.store(false,Ordering::SeqCst);
     assert!(conversation::toggle(owner));assert_eq!(conversation::state().0,State::Listening);
     BUSY.store(true,Ordering::SeqCst);
     assert!(conversation::toggle(owner));assert_eq!(conversation::state().0,State::Stopping);

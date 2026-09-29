@@ -146,9 +146,11 @@ pub fn start(owner: SecurityIdentity) -> bool {
             RESTART_LISTENING = true;
             return true;
         }
+        // Microphone availability is independent of model loading.  Fresh
+        // installs must begin listening while the selected model is still
+        // being prepared, rather than presenting a misleading VOICE OFF state.
         let ready = super::with_ai_runtime(|ai| {
-            ai.native_ready(ai.chat.selected_model())
-                && ai.chat.input().is_empty()
+            ai.chat.input().is_empty()
                 && ai.chat.generation_state != GenerationState::Running
         });
         if !ready || !crate::drivers::audio::capture_available() {
