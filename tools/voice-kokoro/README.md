@@ -5,8 +5,9 @@ linked into InfinityOS, not a host service used by the OS, and not installed
 acceptance. ARM64 and x86-64 live and installed kernels link the private native
 Kokoro backend, including architecture-selected streamed installer builds.
 The x86-64 integration and its still-open installed acceptance gates are tracked
-in `docs/x86-native-speech-status.md`. Recognition remains PocketSphinx; Kokoro does not implement speech
-recognition. Installed playback and perceptual quality remain separate gates.
+in `docs/x86-native-speech-status.md`. Recognition uses the privately linked,
+CPU-only Whisper engine and pinned English model; Kokoro remains the synthesis
+engine. Installed playback and perceptual quality remain separate gates.
 
 The production worker uses 24 kHz PCM, band-limited device-rate conversion,
 single-owner cancellation, a bounded 90-second asynchronous synthesis deadline,

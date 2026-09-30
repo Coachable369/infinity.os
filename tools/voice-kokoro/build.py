@@ -42,12 +42,15 @@ def main():
     build_only = args.build_only
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(stage, "reference", "tools/voice-kokoro/reference.py", *(["--build-only"] if build_only else [])),
-                pool.submit(stage, "newlib", "tools/voice-pocketsphinx/build.py")]
+                pool.submit(stage, "newlib", "tools/voice-native-runtime/newlib.py")]
         for job in jobs:
             job.result()
-    for name, script in [("cxx", "prepare-native.py"), ("engine", "native-build.py"),
-                         ("link", "link-native.py")]:
-        stage(name, "tools/voice-kokoro/" + script)
+    for name, script in [("cxx", "tools/voice-kokoro/prepare-native.py"),
+                         ("whisper-prepare", "tools/voice-whisper/prepare.py"),
+                         ("whisper-engine", "tools/voice-whisper/native-build.py"),
+                         ("engine", "tools/voice-kokoro/native-build.py"),
+                         ("link", "tools/voice-kokoro/link-native.py")]:
+        stage(name, script)
     if not build_only:
         if args.target == "x86_64":
             stage("guest-x86", "tools/voice-kokoro/probe/run-x86.py",

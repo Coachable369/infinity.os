@@ -93,13 +93,16 @@ def main():
         run(LLVM / "clang", *flags, "-Os", "-DPREFER_SIZE_OVER_SPEED", "-c", string_source / (name + ".c"), "-o", obj)
         objects.append(obj)
     native = output / "native.o"
-    run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_synthesize", "--undefined=native_diagnostics",
+    whisper = ROOT / "build/voice-whisper" / ARCH / "private-engine.o"
+    if not whisper.is_file():
+        raise RuntimeError("Missing native Whisper engine")
+    run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_synthesize", "--undefined=native_recognize", "--undefined=native_diagnostics",
         "--undefined=native_profile_read",
         "-T", ROOT / "tools/voice-kokoro/private.ld",
         *syscall_aliases("close", "fstat", "getpid", "gettimeofday", "isatty", "kill",
                          "lseek", "open", "read", "sbrk", "stat", "unlink", "write"),
         "--wrap=_malloc_r", "--wrap=_calloc_r", "--wrap=_realloc_r", "--wrap=_free_r",
-        "-o", native, *objects, "--start-group", output / "libkokoro-engine.a",
+        "-o", native, *objects, whisper, "--start-group", output / "libkokoro-engine.a",
         WORK / ("cxx-" + ARCH) / "lib/libc++.a", WORK / ("cxx-" + ARCH) / "lib/libc++abi.a",
         newlib / "libm.a", newlib / "libc.a", "--end-group")
     run(LLVM / "llvm-nm", "--undefined-only", native)

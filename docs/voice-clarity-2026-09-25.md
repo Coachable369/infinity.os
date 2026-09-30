@@ -33,9 +33,9 @@ Listen to `build/voice-flite/host/native-voice.wav` for the new reference voice.
 It remains a small diphone synthesizer, not a natural neural voice. Raising its
 bandwidth does not establish that all users will find it intelligible.
 
-PocketSphinx's acoustic/language models are unchanged. Word substitutions remain
-an open limitation; these segmentation fixes do not establish a reduced word
-error rate. The previously observed VirtualBox capture stall remains unresolved.
+The recognizer used by this historical test has since been removed. Word
+substitutions remained an open limitation at the time; these segmentation fixes
+did not establish a reduced word error rate. The previously observed VirtualBox capture stall remained unresolved.
 Do not present this change as complete end-to-end voice acceptance.
 
 ## Packaging status

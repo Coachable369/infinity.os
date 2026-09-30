@@ -2,7 +2,7 @@
 
 ## Speech input
 
-The native PocketSphinx provider now treats VAD-completed PCM as a complete
+The superseded native recognizer treated VAD-completed PCM as a complete
 utterance rather than restarting streaming channel normalization for each
 recording. There are no forced word substitutions or transcript corrections.
 Digital silence returns no transcript without invoking the decoder.
@@ -13,7 +13,7 @@ digital silence, and immediate cancellation. The recorded fixture now returns
 `go forward ten meters`, rather than the previous `go forward ten years`.
 Repeat runs retained 1,316 bytes, with 108,306,560 committed heap bytes. Transcript
 bytes, result codes, memory state, and erasure counters are asserted directly.
-Evidence: `build/voice-pocketsphinx-arm/verified-tcg.json`.
+This historical evidence was superseded by the native Whisper behavioral probe.
 
 Recognition remains background work. Cancellation is checked before and after
 the bounded, at-most-ten-second recording decode, before publication; it cannot
@@ -23,7 +23,8 @@ these are not installed-desktop latency measurements.
 
 This does **not** establish that the user's microphone recording of “Hello” is
 correct. A real recording and installed microphone round-trip remain required.
-The existing small English acoustic model still has accuracy limitations.
+The historical small English acoustic model had accuracy limitations and has
+been removed from the runtime and build.
 
 ## Three desktop UX enhancements
 

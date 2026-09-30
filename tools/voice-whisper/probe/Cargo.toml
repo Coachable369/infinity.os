@@ -1,10 +1,12 @@
 [package]
-name = "infinity-stt-probe"
+name = "infinity-whisper-probe"
 version = "0.1.0"
 edition = "2021"
+
 [lib]
 path = "probe.rs"
 crate-type = ["staticlib"]
+
 [profile.release]
 opt-level = 3
 panic = "abort"

@@ -10,8 +10,8 @@ fi
 arch=aarch64
 if test "$#" -eq 2 && test "$1" = --target; then arch=$2; elif test "$#" -ne 0; then exit 2; fi
 case "$arch" in
-    aarch64) triple=aarch64-unknown-none-softfloat; boot=BOOTAA64.EFI; installed_fat=build/installed-fat-aarch64; stt=arm ;;
-    x86_64) triple=x86_64-unknown-none; boot=BOOTX64.EFI; installed_fat=build/installed-fat; stt=x86_64 ;;
+    aarch64) triple=aarch64-unknown-none-softfloat; boot=BOOTAA64.EFI; installed_fat=build/installed-fat-aarch64 ;;
+    x86_64) triple=x86_64-unknown-none; boot=BOOTX64.EFI; installed_fat=build/installed-fat ;;
     *) echo 'Unsupported native model target' >&2; exit 2 ;;
 esac
 ministral=model-cache/Ministral-3-3B-Instruct-2512-Q4_K_M.gguf
@@ -85,7 +85,7 @@ if test "$(cat build/browser-mode)" = 1; then
     set -- --strip-debug --undefined=infinity_browser_private_infinity_browser_run "build/servo-platform-probe/browser-private-$arch.o"
 fi
 RUSTC_BOOTSTRAP=1 CARGO_TARGET_DIR=${payload_build}/cargo cargo build --release -Z build-std=core --target "$triple" --features "$payload_features"
-/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/$arch.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/$triple/release/libinfinity_kernel.a build/$arch/qwen-math.o build/voice-kokoro/$arch/private-native.o build/voice-pocketsphinx-$stt/private-native.o "$@"
+/opt/homebrew/opt/lld/bin/ld.lld -nostdlib -static -T linker/$arch.ld -o ${payload_build}/live/EFI/INFINITY/KERNEL.ELF ${payload_build}/cargo/$triple/release/libinfinity_kernel.a build/$arch/qwen-math.o build/voice-kokoro/$arch/private-native.o "$@"
 rustc --edition=2021 -O tools/cursor-install-parity.rs -o build/tools/cursor-install-parity
 python3 tools/voice-kokoro/install-parity.py build/$arch/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF
 build/tools/cursor-install-parity build/$arch/installed-kernel.elf ${payload_build}/live/EFI/INFINITY/KERNEL.ELF

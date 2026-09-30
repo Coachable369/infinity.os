@@ -47,7 +47,7 @@ def main():
         run("git", "-C", source, "apply", patch)
     newlib = ROOT / "build" / ("voice-newlib-" + ARCH) / TRIPLE / "newlib"
     if not (newlib / "libc.a").exists():
-        raise RuntimeError("Build pinned newlib first with tools/voice-pocketsphinx/build.py")
+        raise RuntimeError("Build pinned newlib first with tools/voice-native-runtime/newlib.py")
     flags = " ".join(["-O2 -ffunction-sections -fdata-sections", *FLAGS,
         "-include " + str(ROOT / "sdk/compiler/target.h"),
         "-I" + str(ROOT / "sdk/compiler/include"),

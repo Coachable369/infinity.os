@@ -5,8 +5,8 @@ provide AP startup and a calibrated TSC clock. Firmware enumerates CPUs and
 reserves memory before ExitBootServices; APIC INIT/SIPI starts workers afterward.
 Inference does not execute on the desktop thread or use a host speech service.
 
-Both x86 kernels link Kokoro, its immutable model/phonemizer resources, private
-C/C++ runtimes and PocketSphinx. The shared controller handles phrase boundaries,
+Both x86 kernels link Kokoro and Whisper, their immutable model/phonemizer resources,
+and private C/C++ runtimes. The shared controller handles phrase boundaries,
 microphone interruption, cancellation and off/on state. At least two CPUs and
 sufficient memory for the kernel plus the bounded 1 GiB synthesis arena are needed.
 Use at least 16 GiB RAM for the model-inclusive installer test VM. Before firmware

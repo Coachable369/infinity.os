@@ -29,11 +29,9 @@ test-only changes.
 ## Reproduce against a real recording
 
 ```sh
-python3 tools/voice-pocketsphinx/probe/run.py \
-  --pcm /absolute/path/hello-16k-mono.raw --expected hello
+./build-kit run python3 tools/voice-whisper/probe/run.py --accel hvf
 ```
 
-Next required evidence is the failing microphone recording, preferably the
-guest's actual post-capture PCM. Compare listening quality, duration, clipping,
-and word boundaries, then replay identical bytes through the host and native
-decoders. Do not infer a hardware or model fix from the synthetic tests.
+Current recognition validation uses a pinned recorded speech fixture and direct
+native Whisper API results. Installed microphone word-error-rate acceptance
+still requires representative user recordings.

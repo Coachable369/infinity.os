@@ -33,18 +33,19 @@ pub struct InputStatus {
     pub heap_bytes: usize,
 }
 unsafe extern "C" {
-    fn infinity_stt_native_recognize(
+    fn infinity_kokoro_native_recognize(
         pcm: *const i16,
         samples: usize,
         text: *mut u8,
         capacity: usize,
         length: *mut usize,
         memory: *mut usize,
-        cancel: extern "C" fn() -> i32,
+        cancel: extern "C" fn(*mut core::ffi::c_void) -> i32,
+        context: *mut core::ffi::c_void,
     ) -> i32;
 }
-struct PocketSphinx;
-impl SpeechRecognitionProvider for PocketSphinx {
+struct Whisper;
+impl SpeechRecognitionProvider for Whisper {
     // ------------------------=
     // FUNC: recognize_pcm
     // DESC: Executes real native English recognition through the existing provider-neutral interface.
@@ -56,7 +57,7 @@ impl SpeechRecognitionProvider for PocketSphinx {
         unsafe {
             let mut length = 0;
             let mut memory = 0;
-            ERROR = infinity_stt_native_recognize(
+            ERROR = infinity_kokoro_native_recognize(
                 pcm.as_ptr(),
                 pcm.len(),
                 out.as_mut_ptr(),
@@ -64,6 +65,7 @@ impl SpeechRecognitionProvider for PocketSphinx {
                 &mut length,
                 &mut memory,
                 cancelled,
+                core::ptr::null_mut(),
             );
             MEMORY = memory;
             if ERROR == 0 {
@@ -78,7 +80,7 @@ impl SpeechRecognitionProvider for PocketSphinx {
 // FUNC: cancelled
 // DESC: Checks cancellation and a monotonic deadline without acquiring UI or runtime locks on an AP.
 // ------------------=
-extern "C" fn cancelled() -> i32 {
+extern "C" fn cancelled(_: *mut core::ffi::c_void) -> i32 {
     (CANCEL.load(Ordering::Acquire) || super::qwen::workers::clock_ns() >= unsafe { DEADLINE })
         as i32
 }
@@ -89,7 +91,7 @@ extern "C" fn cancelled() -> i32 {
 unsafe fn worker() {
     STATE.store(2, Ordering::Release);
     let start = super::qwen::workers::clock_ns();
-    LENGTH = PocketSphinx
+    LENGTH = Whisper
         .recognize_pcm(
             &(&*(&raw const PCM))[..SAMPLES],
             16000,
@@ -98,7 +100,7 @@ unsafe fn worker() {
         .unwrap_or(0);
     (&mut *(&raw mut PCM)).fill(0);
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
-    let state = if cancelled() != 0 || ERROR == 2 {
+    let state = if cancelled(core::ptr::null_mut()) != 0 || ERROR == 2 {
         5
     } else if ERROR == 0 {
         3
@@ -128,7 +130,7 @@ pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(
         now,
         owner,
         capability,
-        now / 1_000_000_000 + 10,
+        now / 1_000_000_000 + 45,
         now,
         &[],
     )
@@ -150,7 +152,7 @@ pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(
     unsafe {
         OWNER = owner;
         CAPABILITY = capability;
-        DEADLINE = now.saturating_add(10_000_000_000);
+        DEADLINE = now.saturating_add(45_000_000_000);
         (&mut *(&raw mut PCM))[..pcm.len()].copy_from_slice(pcm);
         SAMPLES = pcm.len();
         (&mut *(&raw mut TEXT)).fill(0);
@@ -270,7 +272,7 @@ pub fn poll() {
                 .is_ok()
         })
         .unwrap_or(false);
-        if !valid || cancelled() != 0 {
+        if !valid || cancelled(core::ptr::null_mut()) != 0 {
             stop(OWNER);
         }
     }

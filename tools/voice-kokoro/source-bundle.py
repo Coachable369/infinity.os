@@ -31,7 +31,8 @@ def main():
         raise SystemExit("Use ./build-kit run python3 tools/voice-kokoro/source-bundle.py")
     paths = ["build/kokopop-port-audit", "build/voice-kokoro/llvm-src",
              "build/newlib-4.6.0.20260123", "sdk/compiler", "tools/voice-kokoro",
-             "tools/voice-pocketsphinx", "third_party/patches/voice-kokoro"]
+             "build/voice-whisper-src", "tools/voice-whisper", "tools/voice-native-runtime",
+             "third_party/patches/voice-kokoro"]
     paths += ["build/voice-kokoro/reference/_deps/" + name + "-src"
               for name in ("espeak", "ggml", "yyjson", "sonic-git", "doctest")]
     for path in paths:

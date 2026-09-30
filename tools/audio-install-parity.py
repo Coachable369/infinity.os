@@ -15,13 +15,9 @@ def main():
     boot = "BOOTAA64.EFI" if arch == "aarch64" else "BOOTX64.EFI"
     installed = (root / f"build/{arch}/installed-kernel.elf").read_bytes()
     assert installed[:6] == b"\x7fELF\x02\x01" and int.from_bytes(installed[18:20], "little") == (183 if arch == "aarch64" else 62)
-    # Check actual immutable binary speech models, not source/log text or symbols.
-    speech_root = root / "build/voice-pocketsphinx-src/model/en-us"
-    model_bytes = 0
-    for relative in ("en-us.lm.bin", "en-us/mdef", "en-us/means", "en-us/variances", "en-us/sendump", "en-us/transition_matrices"):
-        data = (speech_root / relative).read_bytes()
-        assert len(data) > 0 and installed.find(data) >= 0
-        model_bytes += len(data)
+    # Check the complete immutable Whisper model bytes, not source/log text or symbols.
+    model = (root / "model-cache/whisper-tiny.en.bin").read_bytes()
+    assert len(model) > 0 and installed.find(model) >= 0
     iso = Path(sys.argv[1]) if len(sys.argv) >= 2 else root / f"builds/InfinityOS-{arch}.iso"
     # Decode the ISO's El Torito catalog, then address its FAT image directly.
     with iso.open("rb") as file:
@@ -42,7 +38,7 @@ def main():
     for image in (str(root / f"build/{arch}/installed-esp.img"), media):
         actual = subprocess.check_output(["mtype", "-i", image, f"::/EFI/BOOT/{boot}"])
         assert actual == loader
-    print({"installed_kernel_bytes": len(installed), "loader_bytes": len(loader), "speech_model_bytes": model_bytes, "audio_kernel_loader_parity": True})
+    print({"installed_kernel_bytes": len(installed), "loader_bytes": len(loader), "speech_model_bytes": len(model), "audio_kernel_loader_parity": True})
 
 if __name__ == "__main__":
     main()

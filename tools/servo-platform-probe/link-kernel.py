@@ -75,8 +75,6 @@ def main():
     sources = [work / "cargo" / target / "release/libinfinity_kernel.a",
                root / "build" / arch / "qwen-math.o",
                root / "build/voice-kokoro" / arch / "private-native.o",
-               root / ("build/voice-pocketsphinx-arm/private-native.o" if arch == "aarch64"
-                       else "build/voice-pocketsphinx-x86_64/private-native.o"),
                Path(component["object"])]
     if not all(path.is_file() for path in sources):
         raise SystemExit("Production native dependencies must be built through the build kit first")

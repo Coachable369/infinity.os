@@ -15,6 +15,14 @@ extern "C" void (*native_init_start[])(void);
 extern "C" void (*native_init_end[])(void);
 
 // ------------------------=
+// FUNC: native_release_synthesis_model
+// DESC: Releases persistent synthesis state before recognition reuses the bounded shared native heap.
+// ------------------=
+extern "C" void native_release_synthesis_model(void) {
+    model.reset();
+}
+
+// ------------------------=
 // FUNC: native_initialize
 // DESC: Initializes the private C++ image once on the single owning speech worker, never the kernel global constructor list.
 // ------------------=

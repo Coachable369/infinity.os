@@ -19,12 +19,12 @@ were not refreshed by this build.
 
 Implemented for AArch64:
 
-- PocketSphinx 5.1.1 at `511126b492dcb267cf30d49d631946d7b61a9530`, with its
-  bundled English acoustic model, dictionary, and language model linked as
-  immutable native resources. Newlib supplies a private, symbol-prefixed C
-  runtime; there is no Linux, Python, cloud, or host recognizer at runtime.
+- whisper.cpp v1.8.2 at `4979e04f5dcaccb36057e059bbaed8a2f5288315`, with the
+  pinned `tiny.en` model linked as one immutable native resource. Newlib and
+  libc++ supply a private, symbol-prefixed runtime; there is no Linux, Python,
+  cloud, or host recognizer at runtime.
 - One cancellable AP recognition job, 16 kHz mono PCM, maximum ten-second
-  utterance, bounded 192 MiB decoder heap and 512-byte transcript. Private
+  utterance, bounded shared 1 GiB native heap and 512-byte transcript. Private
   allocations and PCM are erased on release; a caught decoder fatal error
   quarantines that provider until reboot rather than reusing corrupted state.
 - `SpeechRecognize` typed IOP validation, caller/capability checks, deadline,
@@ -97,9 +97,11 @@ Remaining acceptance / limitations:
 6. Native STT/controller integration is AArch64-only; do not advertise the
    x86_64 ISO as having the same voice-conversation capability.
 
-Reproduction: `make voice-recognition-test`, `make voice-indicator-test`,
-`make audio-test voice-vad-test voice-pcm-test`, `sh tools/ai-test.sh`.
-Native binary-result reports live under `build/voice-pocketsphinx-arm/`.
+Reproduction: `./build-kit run make voice-recognition-test`,
+`./build-kit run make voice-indicator-test`,
+`./build-kit run make audio-test voice-vad-test voice-pcm-test`, and
+`./build-kit run sh tools/ai-test.sh`.
+Native binary-result reports live under `build/voice-whisper/aarch64/`.
 `tools/audio-install-parity.py` checks actual packaged kernel/model/loader bytes,
 not source strings or human-readable diagnostics. Packaging parity alone does
 not establish installed conversation acceptance.

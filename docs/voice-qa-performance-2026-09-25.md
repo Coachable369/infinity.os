@@ -99,7 +99,7 @@ Structured receipts retained in:
 
 - `build/hermes-audio-qa-rows32/result.json`
 - `build/hermes-audio-qa-multiturn-isolated/results.json`
-- `build/voice-pocketsphinx-arm/verified-tcg.json`
+- `build/voice-whisper/aarch64/verified-hvf.json`
 
 Installed follow-up must measure the same prompt, full completion/presentation,
 CPU utilization and UI responsiveness. Do not extrapolate the native-host

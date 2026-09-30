@@ -22,8 +22,8 @@ QEMU_KERNEL_LIBRARY = $(BUILD)/aarch64/libkernel-browser-qemu.a
 
 # One shared installed library, linked at the selected machine's native RAM
 # address. QEMU media installs this exact variant without an offline patch.
-$(BUILD)/aarch64/installed-kernel-qemu.elf: $(BUILD)/aarch64/installed-kernel.stamp linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o $(BROWSER_ARM)
-	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BUILD)/voice-pocketsphinx-arm/private-native.o $(BROWSER_ARM)
+$(BUILD)/aarch64/installed-kernel-qemu.elf: $(BUILD)/aarch64/installed-kernel.stamp linker/aarch64-qemu.ld $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BROWSER_ARM)
+	$(LD_LLD) -nostdlib -static $(BROWSER_LINK) -T linker/aarch64-qemu.ld -o $@ $(BUILD)/aarch64/libinstalled-kernel.a $(BUILD)/aarch64/qwen-math.o $(BUILD)/voice-kokoro/aarch64/private-native.o $(BROWSER_ARM)
 
 $(BUILD)/browser-payload/aarch64-qemu/manifest.rs: $(BUILD)/aarch64/installed-kernel-qemu.elf $(BUILD)/aarch64/installed-esp.img tools/qwen-pack.rs tools/browser-build.mk
 	rm -rf $(BUILD)/browser-payload/aarch64-qemu/PAYLOAD

@@ -153,7 +153,7 @@ int _kill(int p,int s){(void)p;(void)s;errno=ENOSYS;return -1;}
 // FUNC: _exit
 // DESC: Quarantines fatal library errors inside the native C boundary.
 // ------------------=
-__attribute__((noreturn)) void _exit(int code){(void)code;fatal_address=(uintptr_t)__builtin_return_address(0);if(active)longjmp(failure,1);__builtin_trap();}
+__attribute__((noreturn)) void _exit(int code){(void)code;if(!fatal_address)fatal_address=(uintptr_t)__builtin_return_address(0);if(active)longjmp(failure,1);__builtin_trap();}
 void *__dso_handle;
 // ------------------------=
 // FUNC: __cxa_allocate_exception
@@ -306,6 +306,8 @@ void *__emutls_get_address(struct emulated_tls*t){
     t->address=p;tls_slots[tls_count++]=t;return p;
 }
 extern int native_run(const char*,size_t,int16_t*,size_t,size_t*);
+extern int whisper_private_native_transcribe(const int16_t*,size_t,char*,size_t,size_t*);
+extern void native_release_synthesis_model(void);
 // ------------------------=
 // FUNC: native_synthesize
 // DESC: Contains one bounded synthesis job and quarantines fatal engine state without crossing the Rust ABI.
@@ -324,4 +326,26 @@ int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,
     active=0;cancel_callback=NULL;cancel_context=NULL;
     if(result){memset(pcm,0,capacity*sizeof(*pcm));*frames=0;}
     return result;
+}
+
+// ------------------------=
+// FUNC: native_recognize
+// DESC: Contains one bounded native Whisper request and prevents fatal engine state from crossing the Rust ABI.
+// ------------------=
+int native_recognize(const int16_t*pcm,size_t samples,char*text,size_t capacity,size_t*length,size_t*memory,int(*cancel)(void*),void*context){
+    if(!length||!memory)return 1;*length=0;*memory=heap_used;
+    if(!pcm||!samples||samples>160000||!text||capacity<2||active||poisoned)return 1;
+    size_t nonzero=0;for(size_t i=0;i<samples;i++)nonzero|=(uint16_t)pcm[i];
+    if(!nonzero){text[0]=0;return 5;}
+    memset(text,0,capacity);cancel_callback=cancel;cancel_context=context;active=1;
+    int result;
+    if(setjmp(failure)){poisoned=1;result=7;}
+    else{
+        native_release_synthesis_model();
+        result=native_cancelled()?2:whisper_private_native_transcribe(pcm,samples,text,capacity,length);
+        infinity_thread_cleanup();
+        while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}
+    }
+    if(result){memset(text,0,capacity);*length=0;}
+    cancel_callback=NULL;cancel_context=NULL;active=0;*memory=heap_used;return result;
 }
