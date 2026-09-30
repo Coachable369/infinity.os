@@ -4,7 +4,9 @@
 mod hda;
 static mut DMA: hda::Dma = hda::Dma::new();
 static mut PCM: [i16; hda::SAMPLES] = [0; hda::SAMPLES];
-static mut RESIDENT_PCM: [i16; hda::SAMPLES * 20] = [0; hda::SAMPLES * 20];
+#[repr(align(128))]
+struct ResidentPcm([i16; hda::SAMPLES * 20]);
+static mut RESIDENT_PCM: ResidentPcm = ResidentPcm([0; hda::SAMPLES * 20]);
 core::arch::global_asm!(".section .text.entry", ".global _start", "_start:", "ldr x0, =0x48000000", "mov sp, x0", "bl probe", "b .");
 // ------------------------=
 // FUNC: ticks
@@ -51,16 +53,17 @@ pub unsafe extern "C" fn probe() -> ! {
     };
     hda::tone(&mut *(&raw mut PCM));
     for index in 0..20 {
-        (&mut *(&raw mut RESIDENT_PCM))[index * hda::SAMPLES..(index + 1) * hda::SAMPLES]
+        (&mut *(&raw mut RESIDENT_PCM)).0[index * hda::SAMPLES..(index + 1) * hda::SAMPLES]
             .copy_from_slice(&*(&raw const PCM));
     }
-    assert!(driver.start_resident(&*(&raw const RESIDENT_PCM)).is_ok());
+    let resident = &(&*(&raw const RESIDENT_PCM)).0[..hda::SAMPLES * 20 - 2];
+    assert!(driver.start_resident(resident).is_ok());
     let frequency: u64; core::arch::asm!("mrs {}, cntfrq_el0",out(reg)frequency);
     let start = ticks();
     let mut moved = false;
     while ticks() - start < frequency * 2 {
         let position = driver.position().unwrap();
-        assert!(position < (hda::SAMPLES * 20 * 2) as u32);
+        assert!(position < (resident.len() * 2) as u32);
         moved |= position > 0;
     }
     driver.stop();

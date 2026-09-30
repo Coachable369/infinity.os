@@ -14,6 +14,14 @@ fn output_text(_: &[u8]) {}
 fn main() {
     route_tests();
     use runtime::{audio::*, capability::*, execution::SecurityIdentity, iop::*};
+    assert_eq!(std::mem::align_of::<InfinityAudio<16, 4>>(), 128);
+    let split = hda::resident_descriptor_lengths(0x1000, 15_004).unwrap();
+    assert_eq!(split[0] + split[1], 15_004);
+    assert_eq!(split[0] % 128, 0);
+    assert_eq!((0x1000 + split[0]) % 128, 0);
+    assert_eq!(split[1] % 4, 0);
+    assert!(hda::resident_descriptor_lengths(0x1004, 15_004).is_none());
+    assert!(hda::resident_descriptor_lengths(0x1000, 6).is_none());
     let mut buffer = AudioBuffer::<3>::new();
     buffer.push_stereo(&[100, 300, -32768, 32767]).unwrap();
     assert!(buffer.push_stereo(&[1, 1, 2, 2]).is_err());

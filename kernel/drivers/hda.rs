@@ -17,6 +17,16 @@ pub struct CaptureRoute {
     pub length: usize,
 }
 // ------------------------=
+// FUNC: resident_descriptor_lengths
+// DESC: Splits word-sized resident PCM into two buffers whose starting addresses meet the HDA 128-byte BDLE alignment contract.
+// ------------------=
+pub const fn resident_descriptor_lengths(address: u64, bytes: u64) -> Option<[u64; 2]> {
+    if address & 127 != 0 || bytes & 3 != 0 || bytes > u32::MAX as u64 { return None; }
+    let first = (bytes / 2) & !127;
+    let second = bytes.saturating_sub(first);
+    if first == 0 || second == 0 || second & 3 != 0 { None } else { Some([first, second]) }
+}
+// ------------------------=
 // FUNC: capture_route
 // DESC: Searches a bounded codec graph without enabling any microphone or mutating codec state.
 // ------------------=
@@ -418,10 +428,11 @@ impl Hda {
         self.w8(r, 0); self.wait(r, 1, 0)?;
         let address = samples.as_ptr() as u64;
         let bytes = samples.len() as u64 * 2;
+        let [first, second] = resident_descriptor_lengths(address, bytes).ok_or(Error::Invalid)?;
         let bdl = core::ptr::addr_of_mut!((*self.dma).descriptors) as u64;
         // VirtualBox requires nonzero LVI; use two resident extents, neither needs refilling.
-        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[0]), [address, bytes / 2]);
-        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[1]), [address + bytes / 2, bytes / 2]);
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[0]), [address, first]);
+        write_volatile(core::ptr::addr_of_mut!((*self.dma).descriptors[1]), [address + first, second]);
         fence(Ordering::SeqCst);
         #[cfg(target_arch = "aarch64")]
         core::arch::asm!("dsb sy", options(nostack));

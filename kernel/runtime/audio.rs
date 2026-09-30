@@ -43,6 +43,7 @@ pub struct AudioBuffer<const N: usize> {
     read: usize,
     length: usize,
 }
+#[repr(C, align(128))]
 pub struct InfinityAudio<const N: usize, const S: usize> {
     samples: [i16; N],
     read: usize,
