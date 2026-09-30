@@ -195,13 +195,13 @@ mod tests {
         assert_eq!(&data.headers[..data.head],b"Content-Type: image/png\r\n");
         let malformed=https::Response{status:200,length:https::BODY+1,bytes:https::ResponseBody::claim().unwrap(),header_length:0,headers:[0;8192]};
         assert!(!unsafe {finish(&slot,malformed)});
-        let mut large=https::Response{status:200,length:512*1024,bytes:https::ResponseBody::claim().unwrap(),header_length:0,headers:[0;8192]};
+        let mut large=https::Response{status:200,length:2_600_000,bytes:https::ResponseBody::claim().unwrap(),header_length:0,headers:[0;8192]};
         assert!(https::ResponseBody::claim().is_none());
         for (i,b) in large.bytes[..large.length].iter_mut().enumerate(){*b=(i%251) as u8;}
         large.headers[..head.len()].copy_from_slice(head);large.header_length=head.len();
         assert!(unsafe {finish(slot,large)});
         let data=unsafe {&*slot.data.get()};
-        assert_eq!(data.size,512*1024);
+        assert_eq!(data.size,2_600_000);
         assert!(data.body[..data.size].iter().enumerate().all(|(i,b)|*b==(i%251) as u8));
         let released=https::ResponseBody::claim().unwrap();assert!(released.iter().all(|b|*b==0));
     }

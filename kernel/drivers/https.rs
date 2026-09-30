@@ -17,7 +17,7 @@ use core::{
     task::{Context, Poll, Waker},
 };
 
-pub const BODY: usize = 1024 * 1024;
+pub const BODY: usize = crate::http_transport::https::MAX_RESPONSE_BODY;
 const HEAD: usize = 8192;
 static BODY_LOANED: AtomicBool = AtomicBool::new(false);
 static mut BODY_STORAGE: [u8; BODY] = [0; BODY];

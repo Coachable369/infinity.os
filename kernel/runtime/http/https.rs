@@ -7,6 +7,8 @@ use embedded_io_async::{Read, Write};
 use embedded_tls::{Aes128GcmSha256, TlsConfig, TlsConnection, TlsContext, TlsError};
 use rustls_pki_types::TrustAnchor;
 
+pub const MAX_RESPONSE_BODY: usize = 4 * 1024 * 1024;
+
 #[derive(Debug)]
 pub enum Error {
     Tls(TlsError),
@@ -89,7 +91,7 @@ pub async fn get_with_headers<S: Read + Write, R: rand_core::CryptoRngCore>(
 ) -> Result<Response, Error> {
     if buffers.read_record.len() < 16640
         || buffers.write_record.len() < 2048
-        || buffers.response.len() > 1024 * 1024
+        || buffers.response.len() > MAX_RESPONSE_BODY
     {
         return Err(Error::Capacity);
     }

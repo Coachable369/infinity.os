@@ -5,9 +5,9 @@ use servo::{WebResourceLoad, WebResourceResponse};
 #[path = "../infinity-browser-core/download.rs"]
 pub mod download;
 
-pub const MAX_BODY: usize = 1024 * 1024;
-const MAX_REQUESTS: usize = 16;
-const TIMEOUT_NS: u64 = 30_000_000_000;
+pub const MAX_BODY: usize = 4 * 1024 * 1024;
+const MAX_REQUESTS: usize = 256;
+const TIMEOUT_NS: u64 = 120_000_000_000;
 
 pub struct Response {
     pub status: u16,
@@ -91,22 +91,17 @@ impl<P: Provider> Resources<P> {
         if state.closed {reject(load);return;}
         let request = load.request();
         let url = &request.url;
+        // Dropping without interception invokes Servo's own local scheme handler.
+        // These schemes cannot open an ambient socket; retain Servo's origin/CSP checks.
+        if matches!(url.scheme(), "data" | "blob" | "about") { return; }
         if state.pending.len() == MAX_REQUESTS || request.method.as_str() != "GET"
             || !matches!(url.scheme(), "http" | "https") || url.as_str().len() > 2048
             || !url.username().is_empty() || url.password().is_some() {
             fail_load(&mut state, load); return;
         }
-        // Fragments identify document locations, never HTTP request targets.
-        // Retain the original URL on `load` for Servo history and anchor handling.
-        let mut network_url=url.clone();
-        network_url.set_fragment(None);
-        let Ok(id) = state.provider.begin(network_url.as_str()) else {
-            fail_load(&mut state, load); return;
-        };
-        if id == 0 || state.pending.iter().any(|pending| pending.id == id) {
-            state.provider.cancel(id); fail_load(&mut state, load); return;
-        }
-        state.pending.push(Pending { id, deadline: (self.clock)().saturating_add(TIMEOUT_NS), load });
+        // Queue metadata, not response buffers. Start the transfer deadline only
+        // when this resource reaches the head of the serialized native transport.
+        state.pending.push(Pending { id: 0, deadline: 0, load });
     }
     // ------------------------=
     // FUNC: pump
@@ -115,12 +110,27 @@ impl<P: Provider> Resources<P> {
     pub fn pump(&self) {
         let mut state = self.state.borrow_mut();
         let now = (self.clock)();
-        let mut at = 0;
+        let at = 0;
         while at < state.pending.len() {
+            if state.pending[at].id == 0 {
+                let mut url=state.pending[at].load.request().url.clone();
+                url.set_fragment(None);
+                match state.provider.begin(url.as_str()) {
+                    Ok(id) if id != 0 => {
+                        state.pending[at].id=id;
+                        state.pending[at].deadline=now.saturating_add(TIMEOUT_NS);
+                    },
+                    _ => {
+                        let pending=state.pending.remove(at);
+                        fail_load(&mut state,pending.load);
+                        continue;
+                    }
+                }
+            }
             let id = state.pending[at].id;
             let result = if now >= state.pending[at].deadline { Err(()) } else { state.provider.poll(id) };
-            if matches!(result, Ok(None)) { at += 1; continue; }
-            let pending = state.pending.swap_remove(at);
+            if matches!(result, Ok(None)) { break; }
+            let pending = state.pending.remove(at);
             state.provider.cancel(id);
             let Ok(Some(result)) = result else {
                 fail_load(&mut state, pending.load); continue;
@@ -177,7 +187,8 @@ impl<P: Provider> Resources<P> {
         let mut state = self.state.borrow_mut();
         state.failed_document=false;
         while let Some(pending) = state.pending.pop() {
-            state.provider.cancel(pending.id); reject(pending.load);
+            if pending.id != 0 { state.provider.cancel(pending.id); }
+            reject(pending.load);
         }
     }
     // ------------------------=

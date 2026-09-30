@@ -53,15 +53,15 @@ impl native_https::Factory for Factory {
     // DESC: Records actual authenticated HTTP completion independently of Servo's error-page load events.
     // ------------------=
     fn completed(status:u16,body_bytes:usize) {
-        HTTP_STATUS.store(status as usize,Ordering::Relaxed);
-        BODY_BYTES.store(body_bytes,Ordering::Relaxed);
+        if status==200 { HTTP_STATUS.store(200,Ordering::Relaxed); }
+        BODY_BYTES.fetch_add(body_bytes,Ordering::Relaxed);
     }
     // ------------------------=
     // FUNC: authorize
     // DESC: Grants only the fixture's named public test origin with genuine entropy and RTC time.
     // ------------------=
     fn authorize(&mut self, host: &str, port: u16) -> Result<(Connection, Configuration, u64, [u8;32]), ()> {
-        if host != "example.com" || port != 443 { return Err(()); }
+        if host != "www.google.com" || port != 443 { return Err(()); }
         let mut seed=[0;32];
         if !super::super::entropy_probe::fill(&mut seed) { return Err(()); }
         self.port=self.port.checked_add(1).ok_or(())?;
@@ -95,16 +95,19 @@ pub fn verify(engine: &servo::Servo) -> bool {
     let Ok(context)=servo::SoftwareRenderingContext::new((800,600).into()) else { return false; };
     let view=servo::WebViewBuilder::new(engine,Rc::new(context))
         .delegate(Rc::new(ResourceDelegate {resources:resources.clone(),repaint:repaint.clone(),loaded:loaded.clone()}))
-        .url("https://example.com/".parse().unwrap()).build();
+        .url("https://www.google.com/".parse().unwrap()).build();
     view.show();let deadline=Instant::now()+Duration::from_secs(35);
     while loaded.get()==0 && Instant::now()<deadline {
         engine.spin_event_loop();resources.pump();
         if repaint.replace(false) {view.paint();}
         std::thread::sleep(Duration::from_millis(1));
     }
+    super::super::record(2,30,HTTP_STATUS.load(Ordering::Relaxed) as u64);
+    super::super::record(2,31,BODY_BYTES.load(Ordering::Relaxed) as u64);
+    super::super::record(2,32,loaded.get() as u64);
     let mut passed=HTTP_STATUS.load(Ordering::Relaxed)==200 && BODY_BYTES.load(Ordering::Relaxed)>0
         && loaded.get()==1 && super::javascript_true(engine,&view,&repaint,
-        "location.protocol==='https:' && location.hostname==='example.com' && document.querySelectorAll('h1').length>0 && document.querySelectorAll('a[href]').length>0");
+        "location.protocol==='https:' && location.hostname==='www.google.com' && Array.from(document.images).some(i=>i.complete && i.naturalWidth>100)");
     if passed {
         let pixels=Rc::new(Cell::new(0));let result=pixels.clone();
         view.take_screenshot(None,move |image| {

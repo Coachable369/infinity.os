@@ -175,8 +175,11 @@ fn authenticated_exchange(header_capacity: Option<usize>) {
         .set_write_timeout(Some(Duration::from_secs(5)))
         .unwrap();
     let roots = [webpki::anchor_from_trusted_cert(root.der()).unwrap()];
-    let (mut read, mut write, mut request, mut response) =
-        ([0; 16640], [0; 4096], [0; 512], [0; 4096]);
+    let (mut read, mut write, mut request) =
+        ([0; 16640], [0; 4096], [0; 512]);
+    // Exercise the actual browser buffer contract, including the HTTPS layer's
+    // capacity guard, against independent authenticated TLS records.
+    let mut response = vec![0; https::MAX_RESPONSE_BODY];
     let mut headers = [0; 8192];
     let result = {
         let mut future = std::pin::pin!(https::get_with_headers(

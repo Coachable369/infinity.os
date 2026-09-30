@@ -49,10 +49,12 @@ impl resources::Provider for FixtureProvider {
             "https://adapter.test/" => 1,
             "https://adapter.test/style.css" => 2,
             "https://adapter.test/script.js" => 3,
-            _ => { self.starts.set(self.starts.get() | 8); return Err(()); }
+            "https://adapter.test/logo.png" => 4,
+            _ => { self.starts.set(self.starts.get() | 16); return Err(()); }
         };
         self.starts.set(self.starts.get() | (1 << (kind - 1)));
         self.serial += 1;
+        super::record(2,24,kind);
         Ok((self.serial << 8) | kind)
     }
     // ------------------------=
@@ -60,14 +62,20 @@ impl resources::Provider for FixtureProvider {
     // DESC: Supplies fixture bytes to real Servo parsing, stylesheet loading and JavaScript execution.
     // ------------------=
     fn poll(&mut self, id: u64) -> Result<Option<resources::Response>, ()> {
+        if id & 255 == 4 {
+            return Ok(Some(resources::Response {status:200, headers:std::vec![("content-type".into(),"image/png".into())],
+                body:include_bytes!("../test-fixtures/browser/google-logo.png").to_vec()}));
+        }
         let (media, body) = match id & 255 {
-            1 => ("text/html", "<!doctype html><link rel=stylesheet href=/style.css><script src=/script.js></script><body><img src=https://denied.test/no.png onerror=\"document.body.dataset.denied='yes'\"></body>"),
+            1 => ("text/html", "<!doctype html><link rel=stylesheet href=/style.css><script src=/script.js></script><body><img id=logo src=/logo.png><img id=embedded onload=\"let b=new Blob([Uint8Array.from(atob(this.src.split(',')[1]),c=>c.charCodeAt(0))],{type:'image/png'});let i=document.createElement('img');i.id='blobimage';i.src=URL.createObjectURL(b);document.body.appendChild(i)\" src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='><img src=https://denied.test/no.png onerror=\"document.body.dataset.denied='yes'\"></body>"),
             2 => ("text/css", "html{background:rgb(12,34,56)}body{margin:0}img{display:none}"),
             3 => ("application/javascript", "window.adapterResult=6*7;"),
             _ => return Err(()),
         };
+        let mut bytes=body.as_bytes().to_vec();
+        if id & 255 == 2 {bytes.extend_from_slice(b"/*");bytes.resize(2_600_000,b' ');bytes.extend_from_slice(b"*/");}
         Ok(Some(resources::Response { status: 200,
-            headers: std::vec![("content-type".into(), media.into())], body: body.as_bytes().to_vec() }))
+            headers: std::vec![("content-type".into(), media.into())], body: bytes }))
     }
     // ------------------------=
     // FUNC: cancel
@@ -100,9 +108,22 @@ fn verify_resources(engine: &Servo) -> bool {
         if repaint.replace(false) { view.paint(); }
         std::thread::sleep(Duration::from_millis(1));
     }
-    let passed = loaded.get() == 1 && starts.get() == 15 && cancels.get() == 3
+    let blob_created=javascript_true(engine,&view,&repaint,"let b=new Blob([Uint8Array.from(atob(document.getElementById('embedded').src.split(',')[1]),c=>c.charCodeAt(0))],{type:'image/png'});let i=document.createElement('img');i.id='blobimage';i.src=URL.createObjectURL(b);document.body.appendChild(i);true");
+    // Image decode and dynamically inserted blob images can complete after the
+    // document load event. Wait for actual decoder output, not just that event.
+    let deadline=Instant::now()+Duration::from_secs(5);
+    let mut decoded=false;
+    while !decoded && Instant::now()<deadline {
+        engine.spin_event_loop();resources.pump();
+        decoded=javascript_true(engine,&view,&repaint,"document.getElementById('logo')?.naturalWidth===272 && document.getElementById('embedded')?.naturalWidth===1 && document.getElementById('blobimage')?.naturalWidth===1");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let passed = loaded.get() == 1 && starts.get() == 31 && cancels.get() >= 4
+        && blob_created && decoded
         && javascript_true(engine, &view, &repaint, "window.adapterResult===42 && document.body.dataset.denied==='yes'")
-        && pixels_match(engine, &view, &repaint, [12,34,56,255]);
+        && pixels_match(engine, &view, &repaint, [12,34,56,255])
+        && javascript_true(engine,&view,&repaint,"document.getElementById('logo').style.display='block'; true")
+        && image_pixels_match(engine,&view,&repaint);
     resources.close();
     drop(view);
     drain_close(engine);
@@ -131,7 +152,7 @@ fn verify_session(engine: &Servo) -> bool {
         std::thread::sleep(Duration::from_millis(1));
     }
     super::record(2, 21, (u64::from(painted) << 32) | u64::from(starts.get()));
-    if !painted || starts.get() != 15 || session.resize(160, 96).is_err() { return false; }
+    if !painted || starts.get() != 31 || session.resize(160, 96).is_err() { return false; }
     painted = false;
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline && !painted {
@@ -155,7 +176,7 @@ fn verify_session(engine: &Servo) -> bool {
     drop(session);
     drain_close(engine);
     super::record(2, 22, (u64::from(painted) << 32) | u64::from(cancels.get()));
-    painted && cancels.get() == 3 && idle_frames == 0 && location_matches
+    painted && cancels.get() >= 4 && idle_frames == 0 && location_matches
 }
 
 // ------------------------=
@@ -246,6 +267,21 @@ fn pixels_match(engine: &Servo, view: &WebView, repaint: &Cell<bool>, expected: 
             image.pixels().all(|pixel| pixel.0 == expected)) { 1 } else { 2 });
     });
     spin_until(engine, view, repaint, &done)
+}
+
+// ------------------------=
+// FUNC: image_pixels_match
+// DESC: Proves decoded network PNG pixels reach the real software-rendered surface.
+// ------------------=
+fn image_pixels_match(engine:&Servo,view:&WebView,repaint:&Cell<bool>)->bool {
+    let done=Rc::new(Cell::new(0));
+    let result=done.clone();
+    view.take_screenshot(None,move |image| {
+        result.set(if image.is_ok_and(|image| image.pixels().filter(|p| {
+            let [r,g,b,a]=p.0; a==255 && b>180 && b>r.saturating_add(30) && g>60
+        }).count()>50) {1}else{2});
+    });
+    spin_until(engine,view,repaint,&done)
 }
 
 // ------------------------=
