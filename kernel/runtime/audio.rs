@@ -15,6 +15,23 @@ pub enum CaptureState { Idle, Recording, Complete, Cancelled, Denied, DeviceLost
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlaybackState { Idle, Playing, Complete, Cancelled, Denied, DeviceLost, Underrun }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AudioSpan {
+    pub start_frame: u64,
+    pub end_frame: u64,
+    pub content_start: usize,
+    pub content_end: usize,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InfinityAudioStatus {
+    pub generation: u64,
+    pub queued_frames: u64,
+    pub played_frames: u64,
+    pub content_position: usize,
+    pub content_boundary: bool,
+    pub sealed: bool,
+    pub underruns: u64,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CaptureStatus {
     pub state: CaptureState,
     pub sample_rate: u32,
@@ -25,6 +42,135 @@ pub struct AudioBuffer<const N: usize> {
     samples: [i16; N],
     read: usize,
     length: usize,
+}
+pub struct InfinityAudio<const N: usize, const S: usize> {
+    samples: [i16; N],
+    read: usize,
+    length: usize,
+    generation: u64,
+    total_frames: u64,
+    spans: [AudioSpan; S],
+    span_count: usize,
+    sealed: bool,
+    underruns: u64,
+}
+impl<const N: usize, const S: usize> InfinityAudio<N, S> {
+    // ------------------------=
+    // FUNC: new
+    // DESC: Creates a fixed-capacity stereo stream queue and content timeline without heap allocation.
+    // ------------------=
+    pub const fn new() -> Self {
+        Self {
+            samples: [0; N], read: 0, length: 0, generation: 0, total_frames: 0,
+            spans: [AudioSpan { start_frame: 0, end_frame: 0, content_start: 0, content_end: 0 }; S],
+            span_count: 0, sealed: false, underruns: 0,
+        }
+    }
+    // ------------------------=
+    // FUNC: reset
+    // DESC: Erases queued PCM and starts a new generation so stale producers cannot publish into a replacement stream.
+    // ------------------=
+    pub fn reset(&mut self, generation: u64) {
+        self.samples.fill(0); self.read = 0; self.length = 0; self.generation = generation;
+        self.total_frames = 0; self.spans.fill(AudioSpan { start_frame: 0, end_frame: 0, content_start: 0, content_end: 0 });
+        self.span_count = 0; self.sealed = false; self.underruns = 0;
+    }
+    // ------------------------=
+    // FUNC: append
+    // DESC: Queues complete stereo frames and records their optional content range on one monotonic stream timeline.
+    // ------------------=
+    pub fn append(&mut self, generation: u64, samples: &[i16], content_start: usize, content_end: usize) -> Result<AudioSpan, AudioError> {
+        if generation != self.generation || self.sealed || samples.is_empty() || samples.len() % 2 != 0
+            || samples.len() > N.saturating_sub(self.length) || self.span_count == S || content_end < content_start {
+            return Err(AudioError::Invalid);
+        }
+        for &sample in samples {
+            self.samples[(self.read + self.length) % N] = sample;
+            self.length += 1;
+        }
+        let frames = (samples.len() / 2) as u64;
+        let span = AudioSpan { start_frame: self.total_frames, end_frame: self.total_frames + frames, content_start, content_end };
+        self.spans[self.span_count] = span; self.span_count += 1; self.total_frames += frames;
+        Ok(span)
+    }
+    // ------------------------=
+    // FUNC: seal
+    // DESC: Marks the current generation complete so the consumer can distinguish completion from an underrun.
+    // ------------------=
+    pub fn seal(&mut self, generation: u64) -> Result<(), AudioError> {
+        if generation != self.generation || self.total_frames == 0 { return Err(AudioError::Invalid); }
+        self.sealed = true; Ok(())
+    }
+    // ------------------------=
+    // FUNC: read
+    // DESC: Drains queued stereo samples in order and pads only the final sealed hardware period with silence.
+    // ------------------=
+    pub fn read(&mut self, generation: u64, output: &mut [i16]) -> Result<usize, AudioError> {
+        if generation != self.generation || output.len() % 2 != 0 { return Err(AudioError::Invalid); }
+        let count = output.len().min(self.length) & !1;
+        for sample in &mut output[..count] {
+            *sample = self.samples[self.read];
+            self.read = (self.read + 1) % N;
+        }
+        self.length -= count;
+        output[count..].fill(0);
+        if count < output.len() && !self.sealed { self.underruns = self.underruns.saturating_add(1); }
+        Ok(count)
+    }
+    // ------------------------=
+    // FUNC: status
+    // DESC: Maps an authoritative hardware frame cursor onto queued content without exposing PCM storage.
+    // ------------------=
+    pub fn status(&self, played_frames: u64) -> InfinityAudioStatus {
+        let played = played_frames.min(self.total_frames);
+        let mut content = 0;
+        let mut boundary = false;
+        for span in &self.spans[..self.span_count] {
+            if played >= span.end_frame { content = content.max(span.content_end); boundary = played == span.end_frame; continue; }
+            if played <= span.start_frame { break; }
+            let frames = span.end_frame - span.start_frame;
+            let units = span.content_end.saturating_sub(span.content_start);
+            content = span.content_start.saturating_add(units.saturating_mul((played - span.start_frame) as usize) / frames.max(1) as usize);
+            break;
+        }
+        InfinityAudioStatus { generation: self.generation, queued_frames: self.total_frames, played_frames: played,
+            content_position: content, content_boundary: boundary, sealed: self.sealed, underruns: self.underruns }
+    }
+    // ------------------------=
+    // FUNC: generation
+    // DESC: Returns the active stream generation for stale-producer rejection.
+    // ------------------=
+    pub fn generation(&self) -> u64 { self.generation }
+    // ------------------------=
+    // FUNC: remaining_samples
+    // DESC: Reports prepared PCM still waiting to enter hardware periods.
+    // ------------------=
+    pub fn remaining_samples(&self) -> usize { self.length }
+    // ------------------------=
+    // FUNC: erase_pcm
+    // DESC: Erases private queued sound after completion or cancellation while retaining non-audio timeline diagnostics.
+    // ------------------=
+    pub fn erase_pcm(&mut self) { self.samples.fill(0); self.read = 0; self.length = 0; }
+    // ------------------------=
+    // FUNC: reference_mono
+    // DESC: Produces a bounded mono echo reference from samples the hardware timeline has actually reached.
+    // ------------------=
+    pub fn reference_mono(&self, played_frames: u64, stream_rate: u32, output_rate: u32, output: &mut [i16]) -> bool {
+        if stream_rate == 0 || output_rate == 0 || self.total_frames == 0 { output.fill(0); return false; }
+        output.fill(0);
+        let end = played_frames.min(self.total_frames) as usize;
+        let available = end.saturating_mul(output_rate as usize) / stream_rate as usize;
+        let count = available.min(output.len());
+        for offset in 0..count {
+            let output_at = output.len() - count + offset;
+            let source_frame = end.saturating_sub(count.saturating_sub(offset).saturating_mul(stream_rate as usize) / output_rate as usize);
+            let at = source_frame.saturating_mul(2);
+            if at + 1 < N {
+                output[output_at] = ((self.samples[at] as i32 + self.samples[at + 1] as i32) / 2) as i16;
+            }
+        }
+        count != 0
+    }
 }
 impl<const N: usize> AudioBuffer<N> {
     // ------------------------=

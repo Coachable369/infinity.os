@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 
@@ -63,6 +64,35 @@ static int synthesize_phrase(const char *text, size_t length, int16_t *pcm, size
 }
 
 // ------------------------=
+// FUNC: join_phrase
+// DESC: Crossfades independently inferred Kokoro segments so internal text bounds cannot create clicks or discontinuities.
+// ------------------=
+static size_t join_phrase(int16_t *pcm, size_t written, size_t produced) {
+    if (!written || !produced) return written + produced;
+    const size_t overlap = std::min(size_t(120), std::min(written, produced));
+    for (size_t i = 0; i < overlap; ++i) {
+        const int32_t left = pcm[written - overlap + i];
+        const int32_t right = pcm[written + i];
+        const int32_t mixed = left * int32_t(overlap - i) + right * int32_t(i + 1);
+        pcm[written - overlap + i] = static_cast<int16_t>(mixed / int32_t(overlap + 1));
+    }
+    std::memmove(pcm + written, pcm + written + overlap, (produced - overlap) * sizeof(int16_t));
+    return written + produced - overlap;
+}
+
+// ------------------------=
+// FUNC: fade_edges
+// DESC: Applies a short equal-gain ramp to a complete utterance to prevent device-start and cancellation clicks.
+// ------------------=
+static void fade_edges(int16_t *pcm, size_t frames) {
+    const size_t ramp = std::min(size_t(96), frames / 2);
+    for (size_t i = 0; i < ramp; ++i) {
+        pcm[i] = static_cast<int16_t>(int32_t(pcm[i]) * int32_t(i + 1) / int32_t(ramp + 1));
+        pcm[frames - 1 - i] = static_cast<int16_t>(int32_t(pcm[frames - 1 - i]) * int32_t(i + 1) / int32_t(ramp + 1));
+    }
+}
+
+// ------------------------=
 // FUNC: native_run
 // DESC: Keeps paragraph inference inside the fixed arena by synthesizing word-boundary phrases into bounded PCM.
 // ------------------=
@@ -82,9 +112,10 @@ extern "C" int native_run(const char *text, size_t length, int16_t *pcm, size_t 
         size_t produced = 0;
         int result = synthesize_phrase(text + position, count, pcm + written, capacity - written, &produced);
         if (result) return result;
-        written += produced;
+        written = join_phrase(pcm, written, produced);
         position += count;
     }
+    fade_edges(pcm, written);
     *frames = written;
     return 0;
 }

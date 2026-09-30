@@ -43,11 +43,6 @@ static mut REPLY: [u8; 16384] = [0; 16384];
 static mut REPLY_LENGTH: usize = 0;
 static mut REPLY_AT: usize = 0;
 static mut SYNC_VISIBLE_AT: usize = 0;
-static mut SYNC_ACTIVE_START: usize = 0;
-static mut SYNC_ACTIVE_END: usize = 0;
-static mut SYNC_PENDING_START: usize = 0;
-static mut SYNC_PENDING_END: usize = 0;
-static mut SYNC_PLAYBACK_SEQUENCE: usize = 0;
 static mut LEVEL: u16 = 0;
 static mut RESTART_LISTENING: bool = false;
 static mut CHAT_TURN: u64 = 0;
@@ -136,11 +131,6 @@ unsafe fn submit_pending_transcript() -> bool {
         REPLY_AT = 0;
         REPLY_LENGTH = 0;
         SYNC_VISIBLE_AT = 0;
-        SYNC_ACTIVE_START = 0;
-        SYNC_ACTIVE_END = 0;
-        SYNC_PENDING_START = 0;
-        SYNC_PENDING_END = 0;
-        SYNC_PLAYBACK_SEQUENCE = 0;
         REPLY_COMPLETE = false;
         trace(b"model turn accepted");
         true
@@ -292,11 +282,6 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         REPLY_LENGTH = 0;
         REPLY_AT = 0;
         SYNC_VISIBLE_AT = 0;
-        SYNC_ACTIVE_START = 0;
-        SYNC_ACTIVE_END = 0;
-        SYNC_PENDING_START = 0;
-        SYNC_PENDING_END = 0;
-        SYNC_PLAYBACK_SEQUENCE = 0;
         LEVEL = 0;
         STATE = State::Stopping;
         true
@@ -323,6 +308,15 @@ unsafe fn speak_next() -> bool {
             STATE = State::Thinking;
             return true;
         }
+        if voice_output::status().state == voice_output::OutputState::Buffered {
+            return voice_output::seal_buffered(OWNER);
+        }
+        if matches!(voice_output::status().state, voice_output::OutputState::Queued
+            | voice_output::OutputState::Synthesizing | voice_output::OutputState::Ready
+            | voice_output::OutputState::Speaking) {
+            STATE = State::Speaking;
+            return true;
+        }
         trace(b"reply drained");
         SYNC_VISIBLE_AT = REPLY_LENGTH;
         if CONTINUOUS { return listen(); }
@@ -339,18 +333,11 @@ unsafe fn speak_next() -> bool {
     };
     let start = REPLY_AT;
     let end = REPLY_AT + count;
-    if voice_output::submit(OWNER, cap, &remaining[..count]).is_err() {
+    let final_chunk = REPLY_COMPLETE && end >= REPLY_LENGTH;
+    if voice_output::submit_span(OWNER, cap, &remaining[..count], start, end, final_chunk).is_err() {
         trace(b"speech submission rejected");
         retire(cap);
         return false;
-    }
-    if voice_output::playback_progress(OWNER).is_some() {
-        SYNC_PENDING_START = start;
-        SYNC_PENDING_END = end;
-    } else {
-        SYNC_ACTIVE_START = start;
-        SYNC_ACTIVE_END = end;
-        SYNC_PLAYBACK_SEQUENCE = 0;
     }
     trace(b"speech queued");
     REPLY_AT += count;
@@ -388,8 +375,7 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         OWNER = owner;
         CONTINUOUS = continuous;
         REPLY_AT = 0; REPLY_LENGTH = 0; REPLY_COMPLETE = false;
-        SYNC_VISIBLE_AT = 0; SYNC_ACTIVE_START = 0; SYNC_ACTIVE_END = 0;
-        SYNC_PENDING_START = 0; SYNC_PENDING_END = 0; SYNC_PLAYBACK_SEQUENCE = 0;
+        SYNC_VISIBLE_AT = 0;
         RESTART_LISTENING = false;
         CHAT_TURN = turn;
         STATE = State::Thinking;
@@ -402,30 +388,13 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
 unsafe fn synchronize_visible_reply() -> bool {
     let before = SYNC_VISIBLE_AT;
     if let Some(progress) = voice_output::playback_progress(OWNER) {
-        if progress.sequence != SYNC_PLAYBACK_SEQUENCE {
-            if SYNC_PLAYBACK_SEQUENCE != 0 && SYNC_PENDING_END > SYNC_PENDING_START {
-                SYNC_VISIBLE_AT = SYNC_ACTIVE_END;
-                SYNC_ACTIVE_START = SYNC_PENDING_START;
-                SYNC_ACTIVE_END = SYNC_PENDING_END;
-                SYNC_PENDING_START = 0;
-                SYNC_PENDING_END = 0;
-            }
-            SYNC_PLAYBACK_SEQUENCE = progress.sequence;
+        let mut target = progress.content_position.min(REPLY_LENGTH);
+        if target < REPLY_LENGTH && !progress.content_boundary {
+            while target > SYNC_VISIBLE_AT && !REPLY[target - 1].is_ascii_whitespace() { target -= 1; }
         }
-        let length = SYNC_ACTIVE_END.saturating_sub(SYNC_ACTIVE_START);
-        if length != 0 && progress.total_frames != 0 {
-            let mut target = SYNC_ACTIVE_START.saturating_add(
-                length.saturating_mul(progress.frames) / progress.total_frames);
-            target = target.min(SYNC_ACTIVE_END).min(REPLY_LENGTH);
-            if target < SYNC_ACTIVE_END {
-                while target > SYNC_ACTIVE_START && !REPLY[target - 1].is_ascii_whitespace() {
-                    target -= 1;
-                }
-            }
-            SYNC_VISIBLE_AT = SYNC_VISIBLE_AT.max(target);
-        }
+        SYNC_VISIBLE_AT = SYNC_VISIBLE_AT.max(target);
     } else if voice_output::status().state == voice_output::OutputState::Complete {
-        SYNC_VISIBLE_AT = SYNC_VISIBLE_AT.max(SYNC_ACTIVE_END);
+        SYNC_VISIBLE_AT = REPLY_LENGTH;
     }
     before != SYNC_VISIBLE_AT
 }
@@ -636,18 +605,15 @@ pub fn poll() -> bool {
                         stop(OWNER);
                     }
                 }
+                voice_output::OutputState::Buffered => {
+                    refresh_reply();
+                    if !speak_next() { stop(OWNER); }
+                }
                 voice_output::OutputState::Failed | voice_output::OutputState::Cancelled => {
                     trace(b"speech output failed or cancelled");
                     stop(OWNER);
                 }
-                _ => {
-                    if voice_output::can_prefetch() {
-                        refresh_reply();
-                        if REPLY_AT < REPLY_LENGTH && speech_chunk::next(&(&*(&raw const REPLY))[REPLY_AT..REPLY_LENGTH], REPLY_COMPLETE, REPLY_AT == 0) > 0 {
-                            if !speak_next() { stop(OWNER); }
-                        }
-                    }
-                }
+                _ => {}
             },
             State::Stopping => {
                 if !matches!(
@@ -659,6 +625,7 @@ pub fn poll() -> bool {
                         | voice_output::OutputState::Synthesizing
                         | voice_output::OutputState::Ready
                         | voice_output::OutputState::Speaking
+                        | voice_output::OutputState::Buffered
                 ) {
                     STATE = State::Off;
                     if RESTART_LISTENING {

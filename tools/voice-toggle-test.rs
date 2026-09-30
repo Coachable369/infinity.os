@@ -261,23 +261,24 @@ mod voice_output {
     pub const OUTPUT_LEASE_SECONDS: u64 = 130;
     use crate::runtime::execution::SecurityIdentity;
     #[derive(PartialEq)]
-    pub enum OutputState {Queued,Synthesizing,Ready,Speaking,Complete,Failed,Cancelled}
+    pub enum OutputState {Queued,Synthesizing,Ready,Speaking,Complete,Failed,Cancelled,Buffered}
     pub struct Status {pub state:OutputState}
-    pub struct PlaybackProgress {pub sequence:usize,pub frames:usize,pub total_frames:usize}
+    pub struct PlaybackProgress {pub sequence:usize,pub frames:usize,pub total_frames:usize,pub content_position:usize,pub content_boundary:bool}
     // ------------------------=
     // FUNC: playback_progress
     // DESC: Exposes deterministic DMA progress for text and speech synchronization assertions.
     // ------------------=
     pub fn playback_progress(_:SecurityIdentity)->Option<PlaybackProgress>{
         if crate::OUTPUT.load(crate::Ordering::SeqCst)==1 {
-            Some(PlaybackProgress{sequence:crate::PLAYBACK_SEQUENCE.load(crate::Ordering::SeqCst),frames:crate::PLAYBACK_FRAMES.load(crate::Ordering::SeqCst),total_frames:100})
+            let frames=crate::PLAYBACK_FRAMES.load(crate::Ordering::SeqCst);
+            Some(PlaybackProgress{sequence:crate::PLAYBACK_SEQUENCE.load(crate::Ordering::SeqCst),frames,total_frames:100,content_position:frames*3/100,content_boundary:frames==100})
         } else {None}
     }
     // ------------------------=
     // FUNC: status
     // DESC: Models an acknowledged playback stop.
     // ------------------=
-    pub fn status()->Status{Status{state:match crate::OUTPUT.load(crate::Ordering::SeqCst){1=>OutputState::Speaking,2=>OutputState::Complete,3=>OutputState::Synthesizing,_=>OutputState::Cancelled}}}
+    pub fn status()->Status{Status{state:match crate::OUTPUT.load(crate::Ordering::SeqCst){1=>OutputState::Speaking,2=>OutputState::Complete,3=>OutputState::Synthesizing,4=>OutputState::Buffered,_=>OutputState::Cancelled}}}
     // ------------------------=
     // FUNC: stop
     // DESC: Supplies the audio-output cancellation seam.
@@ -293,6 +294,16 @@ mod voice_output {
         crate::PHRASES.lock().unwrap().push(text.to_vec());
         crate::OUTPUT.store(3,crate::Ordering::SeqCst);Ok(())
     }
+    // ------------------------=
+    // FUNC: submit_span
+    // DESC: Records a generation-safe content span through the conversation fixture.
+    // ------------------=
+    pub fn submit_span(owner:SecurityIdentity,cap:u64,text:&[u8],_:usize,_:usize,_:bool)->Result<(),()>{submit(owner,cap,text)}
+    // ------------------------=
+    // FUNC: seal_buffered
+    // DESC: Starts deterministic playback after every response span is prepared.
+    // ------------------=
+    pub fn seal_buffered(_:SecurityIdentity)->bool{crate::OUTPUT.store(1,crate::Ordering::SeqCst);true}
 }
 #[path = "../kernel/runtime/ai/voice_pcm.rs"] mod voice_pcm;
 #[path = "../kernel/runtime/ai/voice_vad.rs"] mod voice_vad;

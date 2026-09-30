@@ -49,6 +49,7 @@ mod runtime {
 }
 mod drivers { pub mod audio {
     use crate::{runtime::{execution::SecurityIdentity, audio::PlaybackState}, PLAYED, Ordering};
+    pub struct InfinityAudioStatus { pub generation:u64,pub queued_frames:u64,pub played_frames:u64,pub content_position:usize,pub content_boundary:bool }
     // ------------------------=
     // FUNC: playback_rate
     // DESC: Supplies a real supported PCM conversion rate.
@@ -59,6 +60,40 @@ mod drivers { pub mod audio {
     // DESC: Models a delayed hardware cursor independently from the synthesis deadline clock.
     // ------------------=
     pub fn playback_frames(_: SecurityIdentity) -> Option<usize> { Some(crate::DMA_FRAMES.load(Ordering::SeqCst)) }
+    // ------------------------=
+    // FUNC: infinity_audio_open
+    // DESC: Opens the deterministic reusable queue fixture.
+    // ------------------=
+    pub fn infinity_audio_open(_:SecurityIdentity,_:u64,_:u64)->bool {true}
+    // ------------------------=
+    // FUNC: infinity_audio_append
+    // DESC: Records converted PCM before one continuous playback session.
+    // ------------------=
+    pub fn infinity_audio_append(_:SecurityIdentity,_:u64,_:u64,pcm:&[i16],_:usize,_:usize)->bool {
+        assert_eq!(pcm.len(),320);assert!(pcm.iter().any(|v|*v!=0));
+        crate::PLAY_PTR.store(pcm.as_ptr() as usize,Ordering::SeqCst);true
+    }
+    // ------------------------=
+    // FUNC: infinity_audio_seal
+    // DESC: Starts the deterministic continuous stream after its queue is complete.
+    // ------------------=
+    pub fn infinity_audio_seal(_:SecurityIdentity,_:u64)->bool {
+        crate::PLAYING.store(crate::HOLD.load(Ordering::SeqCst),Ordering::SeqCst);
+        PLAYED.fetch_add(1,Ordering::SeqCst);true
+    }
+    // ------------------------=
+    // FUNC: infinity_audio_progress
+    // DESC: Maps the deterministic DMA cursor to a content cursor.
+    // ------------------=
+    pub fn infinity_audio_progress(_:SecurityIdentity,generation:u64)->Option<InfinityAudioStatus>{
+        let frames=crate::DMA_FRAMES.load(Ordering::SeqCst).min(160);
+        Some(InfinityAudioStatus{generation,queued_frames:160,played_frames:frames as u64,content_position:frames*4/160,content_boundary:frames==160})
+    }
+    // ------------------------=
+    // FUNC: infinity_audio_echo_reference
+    // DESC: Supplies already-played deterministic PCM to the duplex fixture.
+    // ------------------=
+    pub fn infinity_audio_echo_reference(_:SecurityIdentity,_:u64,output:&mut[i16])->bool {output.fill(100);true}
     // ------------------------=
     // FUNC: play_resident_speech
     // DESC: Records hardware submission only after validating converted PCM dimensions.
@@ -180,11 +215,19 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     poll(); assert_eq!(status().state, S::Cancelled);
     assert_eq!(PLAYED.load(Ordering::SeqCst), 1);
     REVOKED.store(false, Ordering::SeqCst);
-    // Synthesize ahead while DMA retains the first buffer unchanged.
+    // Buffer every content span before starting exactly one continuous stream.
     HOLD.store(true, Ordering::SeqCst);
-    submit(owner, 1, b"First sentence.").unwrap();
+    submit_span(owner,1,b"First sentence.",0,15,false).unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
     poll(); assert!(can_prefetch());
+    assert_eq!(status().state,S::Buffered);
+    let played=PLAYED.load(Ordering::SeqCst);
+    submit_span(owner,1,b"Second sentence.",15,31,true).unwrap();
+    assert!(!can_prefetch());
+    assert!(submit(owner, 1, b"Third sentence.").is_err());
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();assert_eq!(status().state,S::Speaking);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1,"all spans share one hardware start");
     DMA_FRAMES.store(80,Ordering::SeqCst);
     let progress=playback_progress(owner).unwrap();
     assert_eq!((progress.frames,progress.total_frames),(80,160));
@@ -193,19 +236,6 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     assert!(echo_reference(owner,&mut reference));
     assert!(reference.iter().any(|&sample|sample!=0),"DMA speech must remain in the echo reference despite delayed device playback");
     assert!(!echo_reference(runtime::execution::SecurityIdentity([2;16]),&mut reference));
-    let pointer = PLAY_PTR.load(Ordering::SeqCst) as *const i16;
-    let before = unsafe { std::slice::from_raw_parts(pointer, 320).to_vec() };
-    submit(owner, 1, b"Second sentence.").unwrap();
-    assert!(!can_prefetch());
-    assert!(submit(owner, 1, b"Third sentence.").is_err());
-    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
-    poll(); assert_eq!(status().state, S::Ready);
-    assert_eq!(unsafe { std::slice::from_raw_parts(pointer, 320) }, before);
-    let played = PLAYED.load(Ordering::SeqCst);
-    PLAYING.store(false, Ordering::SeqCst);
-    poll(); assert_eq!(status().state, S::Speaking);
-    assert_eq!(PLAYED.load(Ordering::SeqCst), played + 1);
-    assert_ne!(PLAY_PTR.load(Ordering::SeqCst), pointer as usize);
     stop(owner);
     assert!(!PLAYING.load(Ordering::SeqCst), "Barge-in stops DMA without waiting for another service poll");
     poll();
@@ -223,21 +253,19 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     stop(owner);poll();assert_eq!(status().state,S::Cancelled);
     assert!(unsafe { (&*(&raw const TASK)).is_none() });
 
-    // A rejected lookahead must not truncate the phrase DMA already owns.
+    // A rejected later span must not publish a partial response stream.
     WORKER_BUSY.store(false,Ordering::SeqCst);
-    submit(owner,1,b"Finish this phrase.").unwrap();
+    submit_span(owner,1,b"Prepare this phrase.",0,20,false).unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
-    poll();
+    poll();assert_eq!(status().state,S::Buffered);
     let played=PLAYED.load(Ordering::SeqCst);
     INVALID.store(true,Ordering::SeqCst);
-    submit(owner,1,b"Rejected lookahead.").unwrap();
+    submit_span(owner,1,b"Rejected followup.",20,38,true).unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
     poll();
-    assert!(PLAYING.load(Ordering::SeqCst));
-    assert_eq!(status().state,S::Speaking);
+    assert!(!PLAYING.load(Ordering::SeqCst));
+    assert_eq!(status().state,S::Failed);
     assert!(!can_prefetch());
     assert_eq!(PLAYED.load(Ordering::SeqCst),played);
-    PLAYING.store(false,Ordering::SeqCst);
-    poll();assert_eq!(status().state,S::Failed);
     INVALID.store(false,Ordering::SeqCst);
 }

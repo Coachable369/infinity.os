@@ -23,24 +23,25 @@ static mut ELAPSED: u64 = 0;
 static mut ERROR: i32 = 0;
 #[repr(C, align(128))]
 struct Resident([i16; 48_000 * 2 * 32]);
-static mut RESIDENT: [Resident; 2] = [Resident([0; 48_000 * 2 * 32]), Resident([0; 48_000 * 2 * 32])];
-static mut WRITE_SLOT: usize = 0;
-static mut PLAY_SLOT: usize = 0;
+static mut RESIDENT: Resident = Resident([0; 48_000 * 2 * 32]);
 static mut PLAYING: bool = false;
 static mut RATE: u32 = 0;
 static mut OUTPUT_SAMPLES: usize = 0;
-static mut SLOT_SAMPLES: [usize; 2] = [0; 2];
 static mut DISPATCHED: bool = false;
-static PLAYBACK_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+static STREAM_GENERATION: AtomicUsize = AtomicUsize::new(0);
+static mut STREAM_OPEN: bool = false;
+static mut CONTENT_START: usize = 0;
+static mut CONTENT_END: usize = 0;
+static mut FINAL_CHUNK: bool = false;
 #[path = "../../drivers/speech_pcm.rs"]
 mod speech_pcm;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum OutputState { Idle, Queued, Synthesizing, Ready, Failed, Speaking, Cancelled, Complete }
+pub enum OutputState { Idle, Queued, Synthesizing, Ready, Failed, Speaking, Cancelled, Complete, Buffered }
 #[derive(Clone, Copy)]
 pub struct OutputStatus { pub state: OutputState, pub frames: usize, pub peak_bytes: usize, pub synthesis_ns: u64, pub error: i32 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PlaybackProgress { pub sequence: usize, pub frames: usize, pub total_frames: usize }
+pub struct PlaybackProgress { pub sequence: usize, pub frames: usize, pub total_frames: usize, pub content_position: usize, pub content_boundary: bool }
 struct NativeSpeech;
 
 #[cfg(not(test))]
@@ -116,9 +117,8 @@ unsafe fn worker() {
     FRAMES = result.unwrap_or(0);
     if result.is_ok() && cancelled() == 0 {
         OUTPUT_SAMPLES = ((FRAMES * RATE as usize + SOURCE_RATE as usize - 1) / SOURCE_RATE as usize) * 2;
-        (&mut *(&raw mut RESIDENT))[WRITE_SLOT].0.fill(0);
-        speech_pcm::fill_rate(&(&*(&raw const PCM))[..FRAMES], &mut (&mut *(&raw mut RESIDENT))[WRITE_SLOT].0[..OUTPUT_SAMPLES], 0, SOURCE_RATE, RATE);
-        SLOT_SAMPLES[WRITE_SLOT] = OUTPUT_SAMPLES;
+        (&mut *(&raw mut RESIDENT)).0.fill(0);
+        speech_pcm::fill_rate(&(&*(&raw const PCM))[..FRAMES], &mut (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES], 0, SOURCE_RATE, RATE);
     }
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
     trace(if result.is_ok() { b"synthesis completed" } else { match ERROR {
@@ -134,13 +134,15 @@ unsafe fn worker() {
     STATE.store(if ERROR == 2 || cancelled() != 0 { 6 } else if result.is_ok() { 3 } else { 4 }, Ordering::Release);
 }
 // ------------------------=
-// FUNC: submit
-// DESC: Queues one bounded native phrase, optionally ahead of playback; busy APs never force UI-thread synthesis.
+// FUNC: submit_span
+// DESC: Synthesizes one bounded content span into the reusable InfinityAudio queue under generation-safe authority.
 // ------------------=
-pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(), AiError> {
+pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], content_start: usize,
+    content_end: usize, final_chunk: bool) -> Result<(), AiError> {
     if text.is_empty() || text.len() > 160 || text.iter().any(|v| !(32..=126).contains(v)) { return Err(AiError::InvalidRequest); }
-    if !matches!(STATE.load(Ordering::Acquire), 0 | 4 | 5 | 6 | 7) { return Err(AiError::QueueFull); }
-    if unsafe { PLAYING && OWNER != owner } { return Err(AiError::QueueFull); }
+    let state = STATE.load(Ordering::Acquire);
+    if !matches!(state, 0 | 4 | 6 | 7 | 8) || content_end < content_start { return Err(AiError::QueueFull); }
+    if unsafe { (PLAYING || STREAM_OPEN) && OWNER != owner } { return Err(AiError::QueueFull); }
     let now = super::qwen::workers::clock_ns();
     let valid = crate::runtime::with_runtime(|r| r.capabilities.validate(capability, owner,
         CapabilityType::AudioOutput, 0, 1, 0, now / 1_000_000_000).is_ok()).unwrap_or(false);
@@ -148,8 +150,14 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
     let rate = crate::drivers::audio::playback_rate().ok_or(AiError::ProviderUnavailable)?;
     if !matches!(rate, 44100 | 48000) { return Err(AiError::ProviderUnavailable); }
     unsafe {
-        retire(); WRITE_SLOT = if PLAYING { 1 - PLAY_SLOT } else { 0 };
+        retire();
+        if state != 8 {
+            STREAM_OPEN = false; PLAYING = false;
+            let next = STREAM_GENERATION.load(Ordering::Acquire).wrapping_add(1).max(1);
+            STREAM_GENERATION.store(next, Ordering::Release);
+        }
         RATE = rate; OWNER = owner; CAPABILITY = capability; DEADLINE = now.saturating_add(SYNTHESIS_SECONDS * 1_000_000_000);
+        CONTENT_START = content_start; CONTENT_END = content_end; FINAL_CHUNK = final_chunk;
         (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut TEXT))[..text.len()].copy_from_slice(text); LENGTH = text.len();
         FRAMES = 0; PEAK = 0; ERROR = 0; ELAPSED = 0; CANCEL.store(false, Ordering::Release);
         STATE.store(1, Ordering::Release);
@@ -161,10 +169,31 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
     Ok(())
 }
 // ------------------------=
-// FUNC: can_prefetch
-// DESC: Allows exactly one synthesis job ahead of the immutable playing DMA buffer.
+// FUNC: submit
+// DESC: Preserves the one-shot speech API by queuing and sealing one complete content span.
 // ------------------=
-pub fn can_prefetch() -> bool { STATE.load(Ordering::Acquire) == 5 && !CANCEL.load(Ordering::Acquire) }
+pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(), AiError> {
+    submit_span(owner, capability, text, 0, text.len(), true)
+}
+// ------------------------=
+// FUNC: can_prefetch
+// DESC: Reports that the previous span is safely resident and the queue can accept the next synthesis job.
+// ------------------=
+pub fn can_prefetch() -> bool { STATE.load(Ordering::Acquire) == 8 && !CANCEL.load(Ordering::Acquire) }
+// ------------------------=
+// FUNC: seal_buffered
+// DESC: Starts one continuous playback session after every prepared response span is resident.
+// ------------------=
+pub fn seal_buffered(owner: SecurityIdentity) -> bool {
+    unsafe {
+        if owner != OWNER || !STREAM_OPEN || STATE.load(Ordering::Acquire) != 8 { return false; }
+        if crate::drivers::audio::infinity_audio_seal(owner, STREAM_GENERATION.load(Ordering::Acquire) as u64) {
+            PLAYING = true; STATE.store(5, Ordering::Release); trace(b"continuous playback started"); true
+        } else {
+            crate::drivers::audio::stop_playback(owner); STREAM_OPEN = false; ERROR = 7; STATE.store(4, Ordering::Release); false
+        }
+    }
+}
 // ------------------------=
 // FUNC: playback_progress
 // DESC: Returns the actual DMA cursor and resident phrase duration used to synchronize visible response text with speech.
@@ -172,12 +201,13 @@ pub fn can_prefetch() -> bool { STATE.load(Ordering::Acquire) == 5 && !CANCEL.lo
 pub fn playback_progress(owner: SecurityIdentity) -> Option<PlaybackProgress> {
     unsafe {
         if !PLAYING || OWNER != owner { return None; }
-        let total_frames = SLOT_SAMPLES[PLAY_SLOT] / 2;
-        if total_frames == 0 { return None; }
-        crate::drivers::audio::playback_frames(owner).map(|frames| PlaybackProgress {
-            sequence: PLAYBACK_SEQUENCE.load(Ordering::Acquire),
-            frames: frames.min(total_frames),
-            total_frames,
+        let generation = STREAM_GENERATION.load(Ordering::Acquire);
+        crate::drivers::audio::infinity_audio_progress(owner, generation as u64).map(|progress| PlaybackProgress {
+            sequence: progress.generation as usize,
+            frames: progress.played_frames as usize,
+            total_frames: progress.queued_frames as usize,
+            content_position: progress.content_position,
+            content_boundary: progress.content_boundary,
         })
     }
 }
@@ -186,22 +216,8 @@ pub fn playback_progress(owner: SecurityIdentity) -> Option<PlaybackProgress> {
 // DESC: Copies recent own-session DMA audio at the microphone rate; only the desktop owner reads immutable playing storage.
 // ------------------=
 pub fn echo_reference(owner: SecurityIdentity, output: &mut [i16]) -> bool {
-    unsafe {
-        if !PLAYING || owner != OWNER || RATE == 0 {return false;}
-        output.fill(0);
-        let Some(frames)=crate::drivers::audio::playback_frames(owner) else {return false;};
-        let end=frames as u64*16_000/u64::from(RATE);
-        let pcm=&(&*(&raw const RESIDENT))[PLAY_SLOT].0;
-        let length=output.len();
-        for (i,sample) in output.iter_mut().enumerate() {
-            let position=end as i64-length as i64+i as i64;
-            if position>=0 {
-                let at=position as usize*RATE as usize/16_000*2;
-                *sample=pcm.get(at).copied().unwrap_or(0);
-            }
-        }
-        true
-    }
+    unsafe { PLAYING && owner == OWNER && crate::drivers::audio::infinity_audio_echo_reference(
+        owner, STREAM_GENERATION.load(Ordering::Acquire) as u64, output) }
 }
 // ------------------------=
 // FUNC: stop
@@ -210,7 +226,10 @@ pub fn echo_reference(owner: SecurityIdentity, output: &mut [i16]) -> bool {
 pub fn stop(owner: SecurityIdentity) -> bool {
     if STATE.load(Ordering::Acquire) == 0 || unsafe { OWNER != owner } { return false; }
     CANCEL.store(true, Ordering::Release);
-    if unsafe {PLAYING} {crate::drivers::audio::stop_playback(owner);}
+    unsafe {
+        if PLAYING || STREAM_OPEN { crate::drivers::audio::stop_playback(owner); }
+        if STATE.load(Ordering::Acquire) == 8 { STATE.store(6, Ordering::Release); retire(); }
+    }
     true
 }
 // ------------------------=
@@ -218,10 +237,8 @@ pub fn stop(owner: SecurityIdentity) -> bool {
 // DESC: Provides non-private diagnostics, reading worker metrics only after completion publication.
 // ------------------=
 pub fn status() -> OutputStatus {
-    let mut state = STATE.load(Ordering::Acquire);
-    // A failed lookahead phrase must not truncate the already playing phrase.
-    if unsafe { PLAYING } && matches!(state, 4 | 6) && !CANCEL.load(Ordering::Acquire) { state = 5; }
-    OutputStatus { state: match state {1=>OutputState::Queued,2=>OutputState::Synthesizing,3=>OutputState::Ready,4=>OutputState::Failed,5=>OutputState::Speaking,6=>OutputState::Cancelled,7=>OutputState::Complete,_=>OutputState::Idle},
+    let state = STATE.load(Ordering::Acquire);
+    OutputStatus { state: match state {1=>OutputState::Queued,2=>OutputState::Synthesizing,3=>OutputState::Ready,4=>OutputState::Failed,5=>OutputState::Speaking,6=>OutputState::Cancelled,7=>OutputState::Complete,8=>OutputState::Buffered,_=>OutputState::Idle},
         frames: if state >= 3 { unsafe { FRAMES } } else { 0 }, peak_bytes: if state >= 3 { unsafe { PEAK } } else { 0 },
         synthesis_ns: if state >= 3 { unsafe { ELAPSED } } else { 0 }, error: if state >= 3 { unsafe { ERROR } } else { 0 } }
 }
@@ -235,12 +252,7 @@ unsafe fn retire() {
         crate::runtime::with_runtime(|r| { let _ = r.capabilities.retire_leaf(cap, owner); }); CAPABILITY = 0;
     }
     (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut PCM)).fill(0);
-    for slot in 0..2 {
-        if !PLAYING || slot != PLAY_SLOT {
-            (&mut *(&raw mut RESIDENT))[slot].0.fill(0);
-            SLOT_SAMPLES[slot] = 0;
-        }
-    }
+    (&mut *(&raw mut RESIDENT)).0.fill(0);
 }
 // ------------------------=
 // FUNC: poll
@@ -276,16 +288,28 @@ pub fn poll() {
         }
         if state == 3 {
             if CANCEL.load(Ordering::Acquire) { STATE.store(6, Ordering::Release); retire(); }
-            else if PLAYING { return; }
-            else if crate::drivers::audio::play_resident_speech(OWNER, CAPABILITY,
-                &(&*(&raw const RESIDENT))[WRITE_SLOT].0[..RATE as usize * 2 * 32], OUTPUT_SAMPLES, RATE) {
-                // Hardware owns the immutable resident buffer until its stream stops.
-                PLAY_SLOT = WRITE_SLOT; PLAYING = true;
-                PLAYBACK_SEQUENCE.fetch_add(1, Ordering::AcqRel);
-                CAPABILITY = 0; (&mut *(&raw mut PCM)).fill(0); (&mut *(&raw mut TEXT)).fill(0);
-                trace(b"playback started");
-                STATE.store(5, Ordering::Release);
-            } else { trace(b"playback rejected"); ERROR = 7; STATE.store(4, Ordering::Release); retire(); }
+            else {
+                let generation = STREAM_GENERATION.load(Ordering::Acquire) as u64;
+                let opened = STREAM_OPEN || crate::drivers::audio::infinity_audio_open(OWNER, CAPABILITY, generation);
+                if opened && crate::drivers::audio::infinity_audio_append(OWNER, CAPABILITY, generation,
+                    &(&*(&raw const RESIDENT)).0[..OUTPUT_SAMPLES], CONTENT_START, CONTENT_END) {
+                    STREAM_OPEN = true; CAPABILITY = 0;
+                    (&mut *(&raw mut PCM)).fill(0); (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut RESIDENT)).0.fill(0);
+                    if FINAL_CHUNK {
+                        if crate::drivers::audio::infinity_audio_seal(OWNER, generation) {
+                            PLAYING = true; trace(b"continuous playback started"); STATE.store(5, Ordering::Release);
+                        } else {
+                            crate::drivers::audio::stop_playback(OWNER); STREAM_OPEN = false;
+                            trace(b"stream seal rejected"); ERROR = 7; STATE.store(4, Ordering::Release);
+                        }
+                    } else {
+                        trace(b"span buffered"); STATE.store(8, Ordering::Release);
+                    }
+                } else {
+                    if STREAM_OPEN { crate::drivers::audio::stop_playback(OWNER); STREAM_OPEN = false; }
+                    trace(b"stream append rejected"); ERROR = 7; STATE.store(4, Ordering::Release); retire();
+                }
+            }
         } else if matches!(state, 4 | 6 | 7) && CAPABILITY != 0 { retire(); }
     }
 }
