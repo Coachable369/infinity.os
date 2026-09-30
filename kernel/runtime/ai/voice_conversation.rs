@@ -42,6 +42,12 @@ static mut TRANSCRIPT: [u8; 512] = [0; 512];
 static mut REPLY: [u8; 16384] = [0; 16384];
 static mut REPLY_LENGTH: usize = 0;
 static mut REPLY_AT: usize = 0;
+static mut SYNC_VISIBLE_AT: usize = 0;
+static mut SYNC_ACTIVE_START: usize = 0;
+static mut SYNC_ACTIVE_END: usize = 0;
+static mut SYNC_PENDING_START: usize = 0;
+static mut SYNC_PENDING_END: usize = 0;
+static mut SYNC_PLAYBACK_SEQUENCE: usize = 0;
 static mut LEVEL: u16 = 0;
 static mut RESTART_LISTENING: bool = false;
 static mut CHAT_TURN: u64 = 0;
@@ -129,6 +135,12 @@ unsafe fn submit_pending_transcript() -> bool {
         CHAT_TURN = ai.chat.turn_id();
         REPLY_AT = 0;
         REPLY_LENGTH = 0;
+        SYNC_VISIBLE_AT = 0;
+        SYNC_ACTIVE_START = 0;
+        SYNC_ACTIVE_END = 0;
+        SYNC_PENDING_START = 0;
+        SYNC_PENDING_END = 0;
+        SYNC_PLAYBACK_SEQUENCE = 0;
         REPLY_COMPLETE = false;
         trace(b"model turn accepted");
         true
@@ -140,6 +152,19 @@ unsafe fn submit_pending_transcript() -> bool {
 // ------------------=
 pub fn state() -> (State, u16) {
     unsafe { (STATE, LEVEL) }
+}
+// ------------------------=
+// FUNC: synchronized_reply_length
+// DESC: Limits the active assistant response to the word boundary reached by the real speech DMA cursor.
+// ------------------=
+pub fn synchronized_reply_length(turn: u64, full_length: usize) -> usize {
+    unsafe {
+        if turn != CHAT_TURN || !matches!(STATE, State::Thinking | State::Speaking) {
+            full_length
+        } else {
+            SYNC_VISIBLE_AT.min(full_length)
+        }
+    }
 }
 // ------------------------=
 // FUNC: listen
@@ -266,6 +291,12 @@ pub fn stop(owner: SecurityIdentity) -> bool {
         (&mut *(&raw mut REPLY)).fill(0);
         REPLY_LENGTH = 0;
         REPLY_AT = 0;
+        SYNC_VISIBLE_AT = 0;
+        SYNC_ACTIVE_START = 0;
+        SYNC_ACTIVE_END = 0;
+        SYNC_PENDING_START = 0;
+        SYNC_PENDING_END = 0;
+        SYNC_PLAYBACK_SEQUENCE = 0;
         LEVEL = 0;
         STATE = State::Stopping;
         true
@@ -284,6 +315,7 @@ unsafe fn speak_next() -> bool {
     if !enabled {
         trace(b"speech output disabled by profile");
         REPLY_AT = REPLY_LENGTH;
+        SYNC_VISIBLE_AT = REPLY_LENGTH;
     }
     while REPLY_AT < REPLY_LENGTH && REPLY[REPLY_AT] == b' ' { REPLY_AT += 1; }
     if REPLY_AT >= REPLY_LENGTH {
@@ -292,6 +324,7 @@ unsafe fn speak_next() -> bool {
             return true;
         }
         trace(b"reply drained");
+        SYNC_VISIBLE_AT = REPLY_LENGTH;
         if CONTINUOUS { return listen(); }
         STATE = State::Off;
         (&mut *(&raw mut REPLY)).fill(0);
@@ -304,10 +337,20 @@ unsafe fn speak_next() -> bool {
         trace(b"speech output lease denied");
         return false;
     };
+    let start = REPLY_AT;
+    let end = REPLY_AT + count;
     if voice_output::submit(OWNER, cap, &remaining[..count]).is_err() {
         trace(b"speech submission rejected");
         retire(cap);
         return false;
+    }
+    if voice_output::playback_progress(OWNER).is_some() {
+        SYNC_PENDING_START = start;
+        SYNC_PENDING_END = end;
+    } else {
+        SYNC_ACTIVE_START = start;
+        SYNC_ACTIVE_END = end;
+        SYNC_PLAYBACK_SEQUENCE = 0;
     }
     trace(b"speech queued");
     REPLY_AT += count;
@@ -345,10 +388,46 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         OWNER = owner;
         CONTINUOUS = continuous;
         REPLY_AT = 0; REPLY_LENGTH = 0; REPLY_COMPLETE = false;
+        SYNC_VISIBLE_AT = 0; SYNC_ACTIVE_START = 0; SYNC_ACTIVE_END = 0;
+        SYNC_PENDING_START = 0; SYNC_PENDING_END = 0; SYNC_PLAYBACK_SEQUENCE = 0;
         RESTART_LISTENING = false;
         CHAT_TURN = turn;
         STATE = State::Thinking;
     }
+}
+// ------------------------=
+// FUNC: synchronize_visible_reply
+// DESC: Advances presentation at completed word boundaries from the resident playback cursor and promotes prefetched phrases only when hardware begins them.
+// ------------------=
+unsafe fn synchronize_visible_reply() -> bool {
+    let before = SYNC_VISIBLE_AT;
+    if let Some(progress) = voice_output::playback_progress(OWNER) {
+        if progress.sequence != SYNC_PLAYBACK_SEQUENCE {
+            if SYNC_PLAYBACK_SEQUENCE != 0 && SYNC_PENDING_END > SYNC_PENDING_START {
+                SYNC_VISIBLE_AT = SYNC_ACTIVE_END;
+                SYNC_ACTIVE_START = SYNC_PENDING_START;
+                SYNC_ACTIVE_END = SYNC_PENDING_END;
+                SYNC_PENDING_START = 0;
+                SYNC_PENDING_END = 0;
+            }
+            SYNC_PLAYBACK_SEQUENCE = progress.sequence;
+        }
+        let length = SYNC_ACTIVE_END.saturating_sub(SYNC_ACTIVE_START);
+        if length != 0 && progress.total_frames != 0 {
+            let mut target = SYNC_ACTIVE_START.saturating_add(
+                length.saturating_mul(progress.frames) / progress.total_frames);
+            target = target.min(SYNC_ACTIVE_END).min(REPLY_LENGTH);
+            if target < SYNC_ACTIVE_END {
+                while target > SYNC_ACTIVE_START && !REPLY[target - 1].is_ascii_whitespace() {
+                    target -= 1;
+                }
+            }
+            SYNC_VISIBLE_AT = SYNC_VISIBLE_AT.max(target);
+        }
+    } else if voice_output::status().state == voice_output::OutputState::Complete {
+        SYNC_VISIBLE_AT = SYNC_VISIBLE_AT.max(SYNC_ACTIVE_END);
+    }
+    before != SYNC_VISIBLE_AT
 }
 // ------------------------=
 // FUNC: capture_frame
@@ -403,6 +482,7 @@ unsafe fn capture_frame(duplex: bool) -> bool {
 pub fn poll() -> bool {
     unsafe {
         let previous = STATE;
+        let mut presentation_changed = synchronize_visible_reply();
         if matches!(STATE, State::Off | State::Failed) {
             return false;
         }
@@ -550,6 +630,7 @@ pub fn poll() -> bool {
             }
             State::Speaking => match voice_output::status().state {
                 voice_output::OutputState::Complete => {
+                    presentation_changed |= synchronize_visible_reply();
                     refresh_reply();
                     if !speak_next() {
                         stop(OWNER);
@@ -590,6 +671,7 @@ pub fn poll() -> bool {
             }
             _ => {}
         }
-        STATE != previous
+        presentation_changed |= synchronize_visible_reply();
+        STATE != previous || presentation_changed
     }
 }

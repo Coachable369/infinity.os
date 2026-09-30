@@ -4,11 +4,11 @@
 // DESC: Releases a complete sentence or a bounded word-aligned chunk, preserving low first-audio latency and longer lookahead prosody.
 // ------------------=
 pub fn next(bytes: &[u8], complete: bool, initial: bool) -> usize {
-    // Kokoro's native graph operates on at most 44 text bytes at a time.  A
-    // larger outer chunk only makes several graphs finish before any PCM can
-    // be published, which creates audible gaps between resident buffers.
-    const INITIAL_LIMIT: usize = 28;
-    const PROVIDER_LIMIT: usize = 44;
+    // The native bridge safely divides this outer phrase into 44-byte model
+    // segments and concatenates their PCM before one DMA submission. Keep the
+    // whole sentence resident so segment boundaries cannot stop the device.
+    const INITIAL_LIMIT: usize = 160;
+    const PROVIDER_LIMIT: usize = 160;
     let phrase_limit = if initial { INITIAL_LIMIT } else { PROVIDER_LIMIT };
     let scan_limit = bytes.len().min(phrase_limit);
     for i in 0..scan_limit {
@@ -45,7 +45,7 @@ mod tests {
         assert_eq!(spoken, text);
         assert_eq!(super::next(b"unfinished", false, true), 0);
         assert_eq!(super::next(b"1.25", false, true), 0);
-        assert_eq!(super::next(&[b'a'; 170], false, false), 44);
+        assert_eq!(super::next(&[b'a'; 170], false, false), 160);
     }
 
     // ------------------------=
@@ -58,11 +58,11 @@ mod tests {
         let mut at=0;
         while at<text.len() {
             let count=super::next(&text[at..],true,at==0);
-            assert!(count>0 && count<=44);
+            assert!(count>0 && count<=160);
             assert!(at+count==text.len() || text[at+count-1].is_ascii_whitespace());
             at+=count;
         }
-        assert!(super::next(&text[..29],false,true)>0);
+        assert_eq!(super::next(&text[..29],false,true),0);
     }
 
     // ------------------------=
@@ -73,9 +73,9 @@ mod tests {
     fn lookahead_stays_within_one_native_graph() {
         let sentence=b"The queued followup phrase stays together, so playback does not stop and restart every few words.";
         let followup=super::next(sentence,true,false);
-        assert!(followup>0 && followup<=44 && followup<sentence.len());
+        assert_eq!(followup,sentence.len());
         let first=super::next(sentence,true,true);
-        assert!(first>0 && first<=28 && first<sentence.len());
+        assert_eq!(first,sentence.len());
     }
 
     // ------------------------=
@@ -85,10 +85,8 @@ mod tests {
     #[test]
     fn streaming_chunks_match_native_graph_boundaries() {
         let text=b"One two three four five six seven eight nine ten eleven twelve thirteen fourteen.";
-        let first=super::next(text,false,true);
-        assert_eq!(&text[..first],b"One two three four five six ");
-        let second=super::next(&text[first..],false,false);
-        assert!(second>0 && second<=44);
-        assert_eq!(text[first+second-1],b' ');
+        assert_eq!(super::next(text,false,true),0);
+        let complete=super::next(text,true,true);
+        assert_eq!(complete,text.len());
     }
 }

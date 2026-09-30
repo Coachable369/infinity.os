@@ -10,6 +10,8 @@ static MODEL_READY: AtomicBool = AtomicBool::new(false);
 static CHAT_READY: AtomicBool = AtomicBool::new(false);
 static READY: AtomicBool = AtomicBool::new(false);
 static OUTPUT: AtomicUsize = AtomicUsize::new(0);
+static PLAYBACK_FRAMES: AtomicUsize = AtomicUsize::new(0);
+static PLAYBACK_SEQUENCE: AtomicUsize = AtomicUsize::new(1);
 static NOW: AtomicUsize = AtomicUsize::new(1);
 static TURNS: AtomicUsize = AtomicUsize::new(0);
 static STREAMING: AtomicBool = AtomicBool::new(false);
@@ -261,6 +263,16 @@ mod voice_output {
     #[derive(PartialEq)]
     pub enum OutputState {Queued,Synthesizing,Ready,Speaking,Complete,Failed,Cancelled}
     pub struct Status {pub state:OutputState}
+    pub struct PlaybackProgress {pub sequence:usize,pub frames:usize,pub total_frames:usize}
+    // ------------------------=
+    // FUNC: playback_progress
+    // DESC: Exposes deterministic DMA progress for text and speech synchronization assertions.
+    // ------------------=
+    pub fn playback_progress(_:SecurityIdentity)->Option<PlaybackProgress>{
+        if crate::OUTPUT.load(crate::Ordering::SeqCst)==1 {
+            Some(PlaybackProgress{sequence:crate::PLAYBACK_SEQUENCE.load(crate::Ordering::SeqCst),frames:crate::PLAYBACK_FRAMES.load(crate::Ordering::SeqCst),total_frames:100})
+        } else {None}
+    }
     // ------------------------=
     // FUNC: status
     // DESC: Models an acknowledged playback stop.
@@ -332,7 +344,10 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     // it publishes PCM. Duplex capture starts only with actual playback.
     conversation::poll();
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before_reply);
-    OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
+    OUTPUT.store(1,Ordering::SeqCst);PLAYBACK_FRAMES.store(50,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::synchronized_reply_length(1,42),0);
+    PLAYBACK_FRAMES.store(100,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::synchronized_reply_length(1,42),3);
     let captures=CAPTURES.load(Ordering::SeqCst);
     assert_eq!(captures,captures_before_reply+1);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();

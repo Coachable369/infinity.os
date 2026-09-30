@@ -10,6 +10,7 @@ static PLAYING: AtomicBool = AtomicBool::new(false);
 static HOLD: AtomicBool = AtomicBool::new(false);
 static WORKER_BUSY: AtomicBool = AtomicBool::new(false);
 static PLAY_PTR: AtomicUsize = AtomicUsize::new(0);
+static DMA_FRAMES: AtomicUsize = AtomicUsize::new(160);
 static mut TASK: Option<unsafe fn()> = None;
 mod runtime {
     pub mod execution {
@@ -57,7 +58,7 @@ mod drivers { pub mod audio {
     // FUNC: playback_frames
     // DESC: Models a delayed hardware cursor independently from the synthesis deadline clock.
     // ------------------=
-    pub fn playback_frames(_: SecurityIdentity) -> Option<usize> { Some(160) }
+    pub fn playback_frames(_: SecurityIdentity) -> Option<usize> { Some(crate::DMA_FRAMES.load(Ordering::SeqCst)) }
     // ------------------------=
     // FUNC: play_resident_speech
     // DESC: Records hardware submission only after validating converted PCM dimensions.
@@ -184,6 +185,9 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     submit(owner, 1, b"First sentence.").unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
     poll(); assert!(can_prefetch());
+    DMA_FRAMES.store(80,Ordering::SeqCst);
+    let progress=playback_progress(owner).unwrap();
+    assert_eq!((progress.frames,progress.total_frames),(80,160));
     let mut reference=[0;9600];
     NOW.fetch_add(2_000_000_000,Ordering::SeqCst);
     assert!(echo_reference(owner,&mut reference));

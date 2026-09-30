@@ -9932,11 +9932,20 @@ impl super::DisplayDevice {
             let vertical_padding = 12 * scale;
             let message_gap = 7 * scale;
             let viewport_padding = 7 * scale;
+            let message_count = chat.message_count();
+            let speech_turn = chat.turn_id();
             let mut content_height = viewport_padding * 2;
-            for index in 0..chat.message_count() {
+            for index in 0..message_count {
                 let Some(message) = chat.message(index) else { continue; };
+                let full_text = message.text();
+                let visible_length = if index + 1 == message_count
+                    && message.role == crate::runtime::ai::chat::ChatRole::Assistant {
+                    crate::runtime::ai::voice_conversation::synchronized_reply_length(
+                        speech_turn, full_text.len())
+                } else { full_text.len() };
+                let visible_text = &full_text[..visible_length];
                 let lines = self
-                    .ui_text_wrapped_line_count(text_width, message.text(), usize::MAX)
+                    .ui_text_wrapped_line_count(text_width, visible_text, usize::MAX)
                     .max(1);
                 content_height = content_height
                     .saturating_add(lines * line_height + vertical_padding + message_gap);
@@ -9956,14 +9965,21 @@ impl super::DisplayDevice {
                 timeline_width,
                 timeline_height,
             );
-            for index in 0..chat.message_count() {
+            for index in 0..message_count {
                 let Some(message) = chat.message(index) else {
                     continue;
                 };
+                let full_text = message.text();
+                let visible_length = if index + 1 == message_count
+                    && message.role == crate::runtime::ai::chat::ChatRole::Assistant {
+                    crate::runtime::ai::voice_conversation::synchronized_reply_length(
+                        speech_turn, full_text.len())
+                } else { full_text.len() };
+                let visible_text = &full_text[..visible_length];
                 let user = message.role == crate::runtime::ai::chat::ChatRole::User;
                 let inset = if user { 28 * scale } else { 7 * scale };
                 let lines = self
-                    .ui_text_wrapped_line_count(text_width, message.text(), usize::MAX)
+                    .ui_text_wrapped_line_count(text_width, visible_text, usize::MAX)
                     .max(1);
                 let bubble_height = lines * line_height + vertical_padding;
                 let row_bottom = row_top.saturating_add(bubble_height as i32);
@@ -9985,7 +10001,7 @@ impl super::DisplayDevice {
                         timeline_left + inset + 10 * scale,
                         row_top + 6 * scale as i32,
                         text_width,
-                        message.text(),
+                        visible_text,
                         218,
                         231,
                         240,

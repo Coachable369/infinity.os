@@ -29,7 +29,9 @@ static mut PLAY_SLOT: usize = 0;
 static mut PLAYING: bool = false;
 static mut RATE: u32 = 0;
 static mut OUTPUT_SAMPLES: usize = 0;
+static mut SLOT_SAMPLES: [usize; 2] = [0; 2];
 static mut DISPATCHED: bool = false;
+static PLAYBACK_SEQUENCE: AtomicUsize = AtomicUsize::new(0);
 #[path = "../../drivers/speech_pcm.rs"]
 mod speech_pcm;
 
@@ -37,6 +39,8 @@ mod speech_pcm;
 pub enum OutputState { Idle, Queued, Synthesizing, Ready, Failed, Speaking, Cancelled, Complete }
 #[derive(Clone, Copy)]
 pub struct OutputStatus { pub state: OutputState, pub frames: usize, pub peak_bytes: usize, pub synthesis_ns: u64, pub error: i32 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlaybackProgress { pub sequence: usize, pub frames: usize, pub total_frames: usize }
 struct NativeSpeech;
 
 #[cfg(not(test))]
@@ -114,6 +118,7 @@ unsafe fn worker() {
         OUTPUT_SAMPLES = ((FRAMES * RATE as usize + SOURCE_RATE as usize - 1) / SOURCE_RATE as usize) * 2;
         (&mut *(&raw mut RESIDENT))[WRITE_SLOT].0.fill(0);
         speech_pcm::fill_rate(&(&*(&raw const PCM))[..FRAMES], &mut (&mut *(&raw mut RESIDENT))[WRITE_SLOT].0[..OUTPUT_SAMPLES], 0, SOURCE_RATE, RATE);
+        SLOT_SAMPLES[WRITE_SLOT] = OUTPUT_SAMPLES;
     }
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
     trace(if result.is_ok() { b"synthesis completed" } else { match ERROR {
@@ -160,6 +165,22 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
 // DESC: Allows exactly one synthesis job ahead of the immutable playing DMA buffer.
 // ------------------=
 pub fn can_prefetch() -> bool { STATE.load(Ordering::Acquire) == 5 && !CANCEL.load(Ordering::Acquire) }
+// ------------------------=
+// FUNC: playback_progress
+// DESC: Returns the actual DMA cursor and resident phrase duration used to synchronize visible response text with speech.
+// ------------------=
+pub fn playback_progress(owner: SecurityIdentity) -> Option<PlaybackProgress> {
+    unsafe {
+        if !PLAYING || OWNER != owner { return None; }
+        let total_frames = SLOT_SAMPLES[PLAY_SLOT] / 2;
+        if total_frames == 0 { return None; }
+        crate::drivers::audio::playback_frames(owner).map(|frames| PlaybackProgress {
+            sequence: PLAYBACK_SEQUENCE.load(Ordering::Acquire),
+            frames: frames.min(total_frames),
+            total_frames,
+        })
+    }
+}
 // ------------------------=
 // FUNC: echo_reference
 // DESC: Copies recent own-session DMA audio at the microphone rate; only the desktop owner reads immutable playing storage.
@@ -215,7 +236,10 @@ unsafe fn retire() {
     }
     (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut PCM)).fill(0);
     for slot in 0..2 {
-        if !PLAYING || slot != PLAY_SLOT { (&mut *(&raw mut RESIDENT))[slot].0.fill(0); }
+        if !PLAYING || slot != PLAY_SLOT {
+            (&mut *(&raw mut RESIDENT))[slot].0.fill(0);
+            SLOT_SAMPLES[slot] = 0;
+        }
     }
 }
 // ------------------------=
@@ -257,6 +281,7 @@ pub fn poll() {
                 &(&*(&raw const RESIDENT))[WRITE_SLOT].0[..RATE as usize * 2 * 32], OUTPUT_SAMPLES, RATE) {
                 // Hardware owns the immutable resident buffer until its stream stops.
                 PLAY_SLOT = WRITE_SLOT; PLAYING = true;
+                PLAYBACK_SEQUENCE.fetch_add(1, Ordering::AcqRel);
                 CAPABILITY = 0; (&mut *(&raw mut PCM)).fill(0); (&mut *(&raw mut TEXT)).fill(0);
                 trace(b"playback started");
                 STATE.store(5, Ordering::Release);
