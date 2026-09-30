@@ -232,6 +232,19 @@ pub fn infinity_audio_append(owner: crate::runtime::execution::SecurityIdentity,
     LOCK.store(false, Ordering::Release); appended
 }
 // ------------------------=
+// FUNC: infinity_audio_can_append
+// DESC: Checks whether an active generation can accept a complete processed span without partially publishing it.
+// ------------------=
+pub fn infinity_audio_can_append(owner: crate::runtime::execution::SecurityIdentity, generation: u64,
+    sample_count: usize, content_start: usize, content_end: usize) -> Option<bool> {
+    if LOCK.swap(true, Ordering::Acquire) { return None; }
+    let accepted = unsafe {
+        INFINITY_ACTIVE && INFINITY_OWNER == owner && INFINITY_GENERATION == generation
+            && (&*(&raw const INFINITY_AUDIO)).can_append(generation, sample_count, content_start, content_end)
+    };
+    LOCK.store(false, Ordering::Release); Some(accepted)
+}
+// ------------------------=
 // FUNC: infinity_audio_seal
 // DESC: Seals a prepared stream and starts one continuous HDA session that is refilled without phrase restarts.
 // ------------------=

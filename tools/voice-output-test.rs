@@ -9,6 +9,7 @@ static PLAYED: AtomicUsize = AtomicUsize::new(0);
 static PLAYING: AtomicBool = AtomicBool::new(false);
 static HOLD: AtomicBool = AtomicBool::new(false);
 static WORKER_BUSY: AtomicBool = AtomicBool::new(false);
+static QUEUE_ROOM: AtomicBool = AtomicBool::new(true);
 static PLAY_PTR: AtomicUsize = AtomicUsize::new(0);
 static DMA_FRAMES: AtomicUsize = AtomicUsize::new(160);
 static mut TASK: Option<unsafe fn()> = None;
@@ -72,6 +73,13 @@ mod drivers { pub mod audio {
     pub fn infinity_audio_append(_:SecurityIdentity,_:u64,_:u64,pcm:&[i16],_:usize,_:usize)->bool {
         assert_eq!(pcm.len(),320);assert!(pcm.iter().any(|v|*v!=0));
         crate::PLAY_PTR.store(pcm.as_ptr() as usize,Ordering::SeqCst);true
+    }
+    // ------------------------=
+    // FUNC: infinity_audio_can_append
+    // DESC: Allows the fixture to force a bounded queue rollover without accepting a partial span.
+    // ------------------=
+    pub fn infinity_audio_can_append(_:SecurityIdentity,_:u64,_:usize,_:usize,_:usize)->Option<bool> {
+        Some(crate::QUEUE_ROOM.load(Ordering::SeqCst))
     }
     // ------------------------=
     // FUNC: infinity_audio_seal
@@ -239,6 +247,22 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     stop(owner);
     assert!(!PLAYING.load(Ordering::SeqCst), "Barge-in stops DMA without waiting for another service poll");
     poll();
+    // A full prepared queue drains and resumes the retained span under a new
+    // generation instead of dropping the entire long response.
+    QUEUE_ROOM.store(true,Ordering::SeqCst);
+    submit_span(owner,1,b"Prepared batch.",0,15,false).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    poll();assert_eq!(status().state,S::Buffered);
+    let rollover_starts=PLAYED.load(Ordering::SeqCst);
+    submit_span(owner,1,b"Retained followup.",15,33,true).unwrap();
+    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
+    QUEUE_ROOM.store(false,Ordering::SeqCst);poll();
+    assert_eq!(status().state,S::Speaking);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),rollover_starts+1);
+    PLAYING.store(false,Ordering::SeqCst);QUEUE_ROOM.store(true,Ordering::SeqCst);poll();
+    assert_eq!(status().state,S::Speaking);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),rollover_starts+2);
+    stop(owner);poll();
     // Busy inference workers delay, rather than discard, queued synthesis.
     WORKER_BUSY.store(true,Ordering::SeqCst);
     submit(owner,1,b"Waiting for an AP.").unwrap();

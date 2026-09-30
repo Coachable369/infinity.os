@@ -76,18 +76,31 @@ impl<const N: usize, const S: usize> InfinityAudio<N, S> {
         self.span_count = 0; self.sealed = false; self.underruns = 0;
     }
     // ------------------------=
+    // FUNC: can_append
+    // DESC: Checks generation, stereo capacity and monotonic content metadata without mutating queued audio.
+    // ------------------=
+    pub fn can_append(&self, generation: u64, sample_count: usize, content_start: usize, content_end: usize) -> bool {
+        if generation != self.generation || self.sealed || N % 2 != 0 || sample_count == 0 || sample_count % 2 != 0
+            || sample_count > N.saturating_sub(self.length) || self.span_count == S || content_end < content_start {
+            return false;
+        }
+        if self.span_count != 0 && content_end != 0 {
+            let previous = self.spans[self.span_count - 1];
+            if previous.content_end != 0 && content_start < previous.content_end { return false; }
+        }
+        true
+    }
+    // ------------------------=
     // FUNC: append
     // DESC: Queues complete stereo frames and records their optional content range on one monotonic stream timeline.
     // ------------------=
     pub fn append(&mut self, generation: u64, samples: &[i16], content_start: usize, content_end: usize) -> Result<AudioSpan, AudioError> {
-        if generation != self.generation || self.sealed || samples.is_empty() || samples.len() % 2 != 0
-            || samples.len() > N.saturating_sub(self.length) || self.span_count == S || content_end < content_start {
-            return Err(AudioError::Invalid);
-        }
-        for &sample in samples {
-            self.samples[(self.read + self.length) % N] = sample;
-            self.length += 1;
-        }
+        if !self.can_append(generation, samples.len(), content_start, content_end) { return Err(AudioError::Invalid); }
+        let write = (self.read + self.length) % N;
+        let first = samples.len().min(N - write);
+        self.samples[write..write + first].copy_from_slice(&samples[..first]);
+        self.samples[..samples.len() - first].copy_from_slice(&samples[first..]);
+        self.length += samples.len();
         let frames = (samples.len() / 2) as u64;
         let span = AudioSpan { start_frame: self.total_frames, end_frame: self.total_frames + frames, content_start, content_end };
         self.spans[self.span_count] = span; self.span_count += 1; self.total_frames += frames;
@@ -108,9 +121,11 @@ impl<const N: usize, const S: usize> InfinityAudio<N, S> {
     pub fn read(&mut self, generation: u64, output: &mut [i16]) -> Result<usize, AudioError> {
         if generation != self.generation || output.len() % 2 != 0 { return Err(AudioError::Invalid); }
         let count = output.len().min(self.length) & !1;
-        for sample in &mut output[..count] {
-            *sample = self.samples[self.read];
-            self.read = (self.read + 1) % N;
+        if count != 0 {
+            let first = count.min(N - self.read);
+            output[..first].copy_from_slice(&self.samples[self.read..self.read + first]);
+            output[first..count].copy_from_slice(&self.samples[..count - first]);
+            self.read = (self.read + count) % N;
         }
         self.length -= count;
         output[count..].fill(0);
@@ -156,20 +171,25 @@ impl<const N: usize, const S: usize> InfinityAudio<N, S> {
     // DESC: Produces a bounded mono echo reference from samples the hardware timeline has actually reached.
     // ------------------=
     pub fn reference_mono(&self, played_frames: u64, stream_rate: u32, output_rate: u32, output: &mut [i16]) -> bool {
-        if stream_rate == 0 || output_rate == 0 || self.total_frames == 0 { output.fill(0); return false; }
+        if stream_rate == 0 || output_rate == 0 || self.total_frames == 0 || N < 2 || N % 2 != 0 {
+            output.fill(0); return false;
+        }
         output.fill(0);
         let end = played_frames.min(self.total_frames) as usize;
+        let retained_start = self.total_frames.saturating_sub((N / 2) as u64) as usize;
         let available = end.saturating_mul(output_rate as usize) / stream_rate as usize;
         let count = available.min(output.len());
+        let mut copied = false;
         for offset in 0..count {
             let output_at = output.len() - count + offset;
             let source_frame = end.saturating_sub(count.saturating_sub(offset).saturating_mul(stream_rate as usize) / output_rate as usize);
-            let at = source_frame.saturating_mul(2);
-            if at + 1 < N {
+            if source_frame >= retained_start && source_frame < self.total_frames as usize {
+                let at = source_frame.saturating_mul(2) % N;
                 output[output_at] = ((self.samples[at] as i32 + self.samples[at + 1] as i32) / 2) as i16;
+                copied = true;
             }
         }
-        count != 0
+        copied
     }
 }
 impl<const N: usize> AudioBuffer<N> {
