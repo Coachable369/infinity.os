@@ -116,7 +116,16 @@ unsafe fn worker() {
         speech_pcm::fill_rate(&(&*(&raw const PCM))[..FRAMES], &mut (&mut *(&raw mut RESIDENT))[WRITE_SLOT].0[..OUTPUT_SAMPLES], 0, SOURCE_RATE, RATE);
     }
     ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
-    trace(if result.is_ok() { b"synthesis completed" } else { b"synthesis failed" });
+    trace(if result.is_ok() { b"synthesis completed" } else { match ERROR {
+        1 => b"synthesis failed: invalid request",
+        2 => b"synthesis cancelled",
+        3 => b"synthesis failed: model",
+        4 => b"synthesis failed: phonemizer",
+        5 => b"synthesis failed: inference",
+        6 => b"synthesis failed: pcm",
+        7 => b"synthesis failed: native fault",
+        _ => b"synthesis failed: unknown",
+    }});
     STATE.store(if ERROR == 2 || cancelled() != 0 { 6 } else if result.is_ok() { 3 } else { 4 }, Ordering::Release);
 }
 // ------------------------=

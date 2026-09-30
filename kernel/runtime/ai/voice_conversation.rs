@@ -417,9 +417,12 @@ pub fn poll() -> bool {
         // Do not reopen the microphone while the model is still producing its
         // first audible response. A follow-up utterance at this point used to
         // cancel the accepted turn before any speech job reached synthesis.
-        // Duplex capture begins once speech is actually queued, preserving
-        // barge-in during playback and between spoken chunks.
-        if CONTINUOUS && STATE == State::Speaking {
+        // Conversation state becomes Speaking when synthesis is queued, before
+        // any PCM exists. Reopen duplex capture only after the output service
+        // confirms hardware playback, otherwise microphone activity can cancel
+        // Kokoro while it is still synthesizing the first phrase.
+        if CONTINUOUS && STATE == State::Speaking
+            && voice_output::status().state == voice_output::OutputState::Speaking {
             if INPUT_CAP == 0 {
                 let previous=STATE;
                 if !listen() {stop(OWNER);return true;}

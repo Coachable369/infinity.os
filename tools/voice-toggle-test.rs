@@ -258,13 +258,14 @@ mod voice_output {
     pub fn can_prefetch()->bool{false}
     pub const OUTPUT_LEASE_SECONDS: u64 = 130;
     use crate::runtime::execution::SecurityIdentity;
+    #[derive(PartialEq)]
     pub enum OutputState {Queued,Synthesizing,Ready,Speaking,Complete,Failed,Cancelled}
     pub struct Status {pub state:OutputState}
     // ------------------------=
     // FUNC: status
     // DESC: Models an acknowledged playback stop.
     // ------------------=
-    pub fn status()->Status{Status{state:match crate::OUTPUT.load(crate::Ordering::SeqCst){1=>OutputState::Speaking,2=>OutputState::Complete,_=>OutputState::Cancelled}}}
+    pub fn status()->Status{Status{state:match crate::OUTPUT.load(crate::Ordering::SeqCst){1=>OutputState::Speaking,2=>OutputState::Complete,3=>OutputState::Synthesizing,_=>OutputState::Cancelled}}}
     // ------------------------=
     // FUNC: stop
     // DESC: Supplies the audio-output cancellation seam.
@@ -278,7 +279,7 @@ mod voice_output {
         if !crate::FLOW.load(crate::Ordering::SeqCst){return Err(());}
         assert!(text.len()<=160);
         crate::PHRASES.lock().unwrap().push(text.to_vec());
-        crate::OUTPUT.store(1,crate::Ordering::SeqCst);Ok(())
+        crate::OUTPUT.store(3,crate::Ordering::SeqCst);Ok(())
     }
 }
 #[path = "../kernel/runtime/ai/voice_pcm.rs"] mod voice_pcm;
@@ -327,9 +328,11 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before_reply);
     assert_eq!(*PHRASES.lock().unwrap(),vec![b"Hi.".to_vec()]);
-    // Duplex capture starts after speech is queued, then stays open while
-    // playback remains in progress.
+    // Queued synthesis must not reopen the microphone and cancel Kokoro before
+    // it publishes PCM. Duplex capture starts only with actual playback.
     conversation::poll();
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before_reply);
+    OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
     let captures=CAPTURES.load(Ordering::SeqCst);
     assert_eq!(captures,captures_before_reply+1);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
@@ -395,6 +398,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::speak_visible_reply(owner,1);conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);
     let phrases=PHRASES.lock().unwrap().len();
+    OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
     // A brief residual must not cut off playback; sustained near-end speech
     // remains an immediate barge-in without waiting for terminal silence.
     MICROPHONE.lock().unwrap().extend([2300;1600]);
@@ -434,8 +438,10 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(CAPTURES.load(Ordering::SeqCst),opened);
     STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
     conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
-    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
     assert_eq!(CAPTURES.load(Ordering::SeqCst),opened+1);
+    OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Speaking);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
     MICROPHONE.lock().unwrap().extend([2400;1600]);MICROPHONE.lock().unwrap().extend([0;12000]);
