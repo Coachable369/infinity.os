@@ -15,6 +15,10 @@ name = "voice-toggle-test"
 path = "../voice-toggle-test.rs"
 
 [[bin]]
+name = "aarch64-output-test"
+path = "../aarch64-output-test.rs"
+
+[[bin]]
 name = "voice-pcm-test"
 path = "../voice-pcm-test.rs"
 

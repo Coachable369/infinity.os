@@ -1124,6 +1124,35 @@ static uint8_t starts_with_edk(const CHAR16 *vendor) {
 
 #if defined(INFINITY_AARCH64)
 // ------------------------=
+// FUNC: acpi_serial_base
+// DESC: Reads the firmware-described serial MMIO base without relying on the host operating system.
+// ------------------=
+static uint64_t acpi_serial_base(EFI_SYSTEM_TABLE *system) {
+    if (!system || !system->configuration_table) return 0;
+    const uint8_t rsdp_signature[8] = {'R','S','D',' ','P','T','R',' '};
+    const uint8_t spcr_signature[4] = {'S','P','C','R'};
+    for (size_t table_index = 0; table_index < system->number_of_table_entries; ++table_index) {
+        EFI_CONFIGURATION_TABLE *entry = &system->configuration_table[table_index];
+        if (!equal_bytes((const uint8_t *)&entry->vendor_guid,
+                (const uint8_t *)&acpi20_table_guid, sizeof(EFI_GUID)) || !entry->vendor_table) continue;
+        const uint8_t *rsdp = entry->vendor_table;
+        if (!equal_bytes(rsdp, rsdp_signature, sizeof(rsdp_signature)) || rsdp[15] < 2) continue;
+        const uint8_t *xsdt = (const uint8_t *)(uintptr_t)read_u64(rsdp + 24);
+        if (!xsdt || read_u32(xsdt + 4) < 36u) continue;
+        size_t count = (read_u32(xsdt + 4) - 36u) / 8u;
+        for (size_t index = 0; index < count; ++index) {
+            const uint8_t *table = (const uint8_t *)(uintptr_t)read_u64(xsdt + 36u + index * 8u);
+            if (!table || !equal_bytes(table, spcr_signature, sizeof(spcr_signature)) ||
+                    read_u32(table + 4) < 52u || table[40] != 0u) continue;
+            return read_u64(table + 44u);
+        }
+    }
+    return 0;
+}
+#endif
+
+#if defined(INFINITY_AARCH64)
+// ------------------------=
 // FUNC: usb_mouse_report
 // DESC: Copies the latest asynchronous boot-mouse report into the kernel handoff buffer.
 // ------------------=
@@ -1516,6 +1545,9 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system) {
     info->memory_map_address = 0;
     info->firmware_revision = system->header.revision;
     info->boot_flags = starts_with_edk(system->firmware_vendor) ? 1 : 0;
+#if defined(INFINITY_AARCH64)
+    if (acpi_serial_base(system) == UINT64_C(0xffddf000)) info->boot_flags |= UINT64_C(1) << 6;
+#endif
     if (booted_installed_generation) info->boot_flags |= 32;
     info->framebuffer_address = 0;
     info->framebuffer_size = 0;

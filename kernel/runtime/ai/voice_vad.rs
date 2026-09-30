@@ -136,6 +136,15 @@ impl Utterance {
     // ------------------=
     pub const fn state(&self) -> VadState { self.detector.state() }
     // ------------------------=
+    // FUNC: active_speech_samples
+    // DESC: Reports confirmed near-end speech duration so duplex playback ignores brief echo residuals before barge-in.
+    // ------------------=
+    pub const fn active_speech_samples(&self) -> usize {
+        if matches!(self.detector.state(), VadState::Speech | VadState::Complete) {
+            self.detector.samples().saturating_sub(self.detector.segment.start)
+        } else { 0 }
+    }
+    // ------------------------=
     // FUNC: speech
     // DESC: Borrows a trimmed completed utterance; partial speech and failure never reach STT.
     // ------------------=
@@ -193,5 +202,19 @@ mod tests {
         value.clear(300); value.push(&[5678; FRAME]);
         value.clear(300); assert!(value.pcm.iter().all(|s| *s == 0));
         assert_eq!(value.detector.samples(), 0);
+    }
+    #[test]
+    // ------------------------=
+    // FUNC: reports_only_confirmed_speech_duration
+    // DESC: Distinguishes short onset residuals from sustained near-end speech used for duplex interruption.
+    // ------------------=
+    fn reports_only_confirmed_speech_duration() {
+        let mut value=Utterance::new(300);
+        value.push(&[1000;FRAME*2]);
+        assert_eq!(value.active_speech_samples(),0);
+        value.push(&[1000;FRAME*8]);
+        assert!(value.active_speech_samples()>=RATE/5);
+        value.clear(300);
+        assert_eq!(value.active_speech_samples(),0);
     }
 }

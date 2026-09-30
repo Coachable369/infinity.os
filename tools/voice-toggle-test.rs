@@ -322,12 +322,16 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Thinking);
     assert_eq!(INPUT_LENGTH.load(Ordering::SeqCst),0);
+    let captures_before_reply=CAPTURES.load(Ordering::SeqCst);
     conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before_reply);
     assert_eq!(*PHRASES.lock().unwrap(),vec![b"Hi.".to_vec()]);
-    // Duplex capture stays open while playback remains in progress.
+    // Duplex capture starts after speech is queued, then stays open while
+    // playback remains in progress.
+    conversation::poll();
     let captures=CAPTURES.load(Ordering::SeqCst);
-    conversation::poll();assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    assert_eq!(captures,captures_before_reply+1);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
@@ -391,7 +395,13 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::speak_visible_reply(owner,1);conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);
     let phrases=PHRASES.lock().unwrap().len();
+    // A brief residual must not cut off playback; sustained near-end speech
+    // remains an immediate barge-in without waiting for terminal silence.
     MICROPHONE.lock().unwrap().extend([2300;1600]);
+    conversation::poll();
+    assert_eq!(OUTPUT.load(Ordering::SeqCst),1);
+    assert_eq!(conversation::state().0,State::Speaking);
+    MICROPHONE.lock().unwrap().extend([2300;3200]);
     conversation::poll();
     assert_eq!(OUTPUT.load(Ordering::SeqCst),0);
     assert_eq!(conversation::state().0,State::Listening);
@@ -421,10 +431,11 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     let opened=CAPTURES.load(Ordering::SeqCst);
     CAPTURE_STATE.store(1,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Thinking);
-    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened+1);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened);
     STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
     conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened+1);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
     MICROPHONE.lock().unwrap().extend([2400;1600]);MICROPHONE.lock().unwrap().extend([0;12000]);

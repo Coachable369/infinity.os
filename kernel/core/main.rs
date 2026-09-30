@@ -108,7 +108,7 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
 
     if !valid {
         unsafe {
-            output::initialize(false);
+            output::initialize(0);
         }
         crash::fatal(
             crash::CrashReason::InvalidBootInformation,
@@ -119,7 +119,7 @@ pub extern "C" fn infinity_kernel_entry(info: *const BootInfo) -> ! {
     let info = unsafe { &*info };
     storage::payload::initialize(info.payload_bridge);
     unsafe {
-        output::initialize(info.boot_flags & 1 != 0);
+        output::initialize(info.boot_flags);
     }
     unsafe {
         output::write(b"InfinityOS\nKernel online.\n");

@@ -2281,6 +2281,7 @@ impl ConsoleRuntime {
     // DESC: Enters the minimal authenticated graphical shell.
     // ------------------=
     fn enter_desktop(&mut self) {
+        crate::output_text(b"[desktop] enter begin\n");
         self.reset_app_assistant_session();
         self.cancel_node_pairing_input();
         self.mode = ConsoleMode::Desktop;
@@ -2302,15 +2303,24 @@ impl ConsoleRuntime {
         self.app_window_dragging = false;
         self.app_window_resizing = None;
         self.home_dragging_item = None;
+        crate::output_text(b"[desktop] state reset\n");
         self.spatial_preserve_world_appearance();
+        crate::output_text(b"[desktop] world appearance preserved\n");
         self.sync_icon_theme();
         self.sync_accent();
         self.sync_primary();
         self.sync_background_effects();
+        crate::output_text(b"[desktop] appearance synchronized\n");
         self.spatial_apply_world_appearance();
+        crate::output_text(b"[desktop] world appearance applied\n");
         self.sync_ai_chat_preferences();
+        crate::output_text(b"[desktop] AI preferences synchronized\n");
         self.refresh_desktop_items();
+        crate::output_text(b"[desktop] objects refreshed\n");
         self.reset_input();
+        self.voice_autostart_after_ns = crate::runtime::ai::qwen::workers::clock_ns()
+            .saturating_add(1_000_000_000);
+        crate::output_text(b"[desktop] voice autostart scheduled\n");
         crate::output_text(b"[shell] top bar ready\n[shell] Infinity menu ready\n[settings] graphical settings ready\n");
     }
 
@@ -13130,8 +13140,14 @@ pub fn poll_native_ai() {
             if auto && crate::runtime::ai::with_ai_runtime(|ai| ai.chat.enabled())
                 && matches!(crate::runtime::ai::voice_conversation::state().0,
                     crate::runtime::ai::voice_conversation::State::Off | crate::runtime::ai::voice_conversation::State::Failed) {
-                crate::runtime::ai::voice_conversation::start(
+                crate::output_text(b"[voice] desktop autostart begin\n");
+                let started = crate::runtime::ai::voice_conversation::start(
                     crate::runtime::execution::SecurityIdentity(runtime.current_session.0));
+                crate::output_text(if started {
+                    b"[voice] desktop autostart listening\n"
+                } else {
+                    b"[voice] desktop autostart deferred\n"
+                });
             }
         }
     } }

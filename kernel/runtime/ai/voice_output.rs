@@ -46,9 +46,14 @@ struct NativeSpeech;
 // ------------------=
 fn trace(event: &[u8]) {
     unsafe {
-        crate::output::write(b"[VOICE OUT] ");
-        crate::output::write(event);
-        crate::output::write(b"\n");
+        let mut record = [0u8; 96];
+        let prefix = b"[VOICE OUT] ";
+        let event_length = event.len().min(record.len() - prefix.len() - 1);
+        record[..prefix.len()].copy_from_slice(prefix);
+        record[prefix.len()..prefix.len() + event_length]
+            .copy_from_slice(&event[..event_length]);
+        record[prefix.len() + event_length] = b'\n';
+        crate::output::write(&record[..prefix.len() + event_length + 1]);
     }
 }
 
@@ -137,6 +142,7 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
         // Inference can temporarily occupy every AP. Keep one bounded job
         // queued and retry on poll rather than dropping a streaming reply.
         DISPATCHED = super::qwen::workers::background(worker);
+        trace(if DISPATCHED { b"job dispatched" } else { b"job waiting for worker" });
     }
     Ok(())
 }

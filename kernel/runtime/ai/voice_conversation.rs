@@ -55,9 +55,14 @@ static mut REPLY_COMPLETE: bool = false;
 // ------------------=
 fn trace(event: &[u8]) {
     unsafe {
-        crate::output::write(b"[VOICE] ");
-        crate::output::write(event);
-        crate::output::write(b"\n");
+        let mut record = [0u8; 96];
+        let prefix = b"[VOICE] ";
+        let event_length = event.len().min(record.len() - prefix.len() - 1);
+        record[..prefix.len()].copy_from_slice(prefix);
+        record[prefix.len()..prefix.len() + event_length]
+            .copy_from_slice(&event[..event_length]);
+        record[prefix.len() + event_length] = b'\n';
+        crate::output::write(&record[..prefix.len() + event_length + 1]);
     }
 }
 
@@ -125,6 +130,7 @@ unsafe fn submit_pending_transcript() -> bool {
         REPLY_AT = 0;
         REPLY_LENGTH = 0;
         REPLY_COMPLETE = false;
+        trace(b"model turn accepted");
         true
     })
 }
@@ -275,10 +281,17 @@ unsafe fn speak_next() -> bool {
             .find(|s| s.id.0 == OWNER.0 && s.state == SessionState::Active)
             .and_then(|s| r.identity.ai_profile(s.user)).map(|p| p.speech_output_enabled).unwrap_or(false)
     }).unwrap_or(false);
-    if !enabled { trace(b"speech output disabled by profile"); REPLY_AT = REPLY_LENGTH; }
+    if !enabled {
+        trace(b"speech output disabled by profile");
+        REPLY_AT = REPLY_LENGTH;
+    }
     while REPLY_AT < REPLY_LENGTH && REPLY[REPLY_AT] == b' ' { REPLY_AT += 1; }
     if REPLY_AT >= REPLY_LENGTH {
-        if !REPLY_COMPLETE { STATE = State::Thinking; return true; }
+        if !REPLY_COMPLETE {
+            STATE = State::Thinking;
+            return true;
+        }
+        trace(b"reply drained");
         if CONTINUOUS { return listen(); }
         STATE = State::Off;
         (&mut *(&raw mut REPLY)).fill(0);
@@ -288,12 +301,15 @@ unsafe fn speak_next() -> bool {
     let count = speech_chunk::next(remaining, REPLY_COMPLETE, REPLY_AT == 0);
     if count == 0 { STATE = State::Thinking; return true; }
     let Some(cap) = grant(OWNER, CapabilityType::AudioOutput, voice_output::OUTPUT_LEASE_SECONDS) else {
+        trace(b"speech output lease denied");
         return false;
     };
     if voice_output::submit(OWNER, cap, &remaining[..count]).is_err() {
+        trace(b"speech submission rejected");
         retire(cap);
         return false;
     }
+    trace(b"speech queued");
     REPLY_AT += count;
     STATE = State::Speaking;
     true
@@ -398,14 +414,22 @@ pub fn poll() -> bool {
                 GenerationState::Failed | GenerationState::Cancelled | GenerationState::ContextFull)) {
             stop(OWNER);
         }
-        if CONTINUOUS && matches!(STATE, State::Thinking | State::Speaking) {
+        // Do not reopen the microphone while the model is still producing its
+        // first audible response. A follow-up utterance at this point used to
+        // cancel the accepted turn before any speech job reached synthesis.
+        // Duplex capture begins once speech is actually queued, preserving
+        // barge-in during playback and between spoken chunks.
+        if CONTINUOUS && STATE == State::Speaking {
             if INPUT_CAP == 0 {
                 let previous=STATE;
                 if !listen() {stop(OWNER);return true;}
                 STATE=previous;
             }
             if !capture_frame(true) {stop(OWNER);return true;}
-            if matches!((&*(&raw const UTTERANCE)).state(),VadState::Speech|VadState::Complete) {
+            let utterance=&*(&raw const UTTERANCE);
+            if utterance.state()==VadState::Complete
+                || (utterance.state()==VadState::Speech
+                    && utterance.active_speech_samples()>=super::voice_vad::RATE/4) {
                 // Keep the onset and preroll already captured. Do not use stop(),
                 // which deliberately erases microphone storage on user disable.
                 voice_output::stop(OWNER);

@@ -1,5 +1,8 @@
 use core::arch::asm;
 
+#[path = "../output_lock.rs"]
+mod output_lock;
+
 const COM1: u16 = 0x3f8;
 
 // ------------------------=
@@ -24,7 +27,7 @@ unsafe fn inb(port: u16) -> u8 {
 // FUNC: initialize
 // DESC: Initializes initialize state.
 // ------------------=
-pub unsafe fn initialize(_serial_enabled: bool) {
+pub unsafe fn initialize(_boot_flags: u64) {
     outb(COM1 + 1, 0x00);
     outb(COM1 + 3, 0x80);
     outb(COM1, 0x01);
@@ -39,10 +42,12 @@ pub unsafe fn initialize(_serial_enabled: bool) {
 // DESC: Implements the write operation.
 // ------------------=
 pub unsafe fn write(bytes: &[u8]) {
-    for &byte in bytes {
-        while inb(COM1 + 5) & 0x20 == 0 {}
-        outb(COM1, byte);
-    }
+    output_lock::serialized(|| unsafe {
+        for &byte in bytes {
+            while inb(COM1 + 5) & 0x20 == 0 {}
+            outb(COM1, byte);
+        }
+    });
 }
 
 // ------------------------=
