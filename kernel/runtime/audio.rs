@@ -162,6 +162,17 @@ impl<const N: usize, const S: usize> InfinityAudio<N, S> {
     // ------------------=
     pub fn remaining_samples(&self) -> usize { self.length }
     // ------------------------=
+    // FUNC: sealed_resident
+    // DESC: Borrows one complete contiguous stereo generation for scheduling-independent resident DMA playback.
+    // ------------------=
+    pub fn sealed_resident(&self, generation: u64) -> Option<&[i16]> {
+        if generation != self.generation || !self.sealed || self.read != 0 || self.length == 0
+            || self.length != self.total_frames as usize * 2 {
+            return None;
+        }
+        Some(&self.samples[..self.length])
+    }
+    // ------------------------=
     // FUNC: erase_pcm
     // DESC: Erases private queued sound after completion or cancellation while retaining non-audio timeline diagnostics.
     // ------------------=

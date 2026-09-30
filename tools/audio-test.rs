@@ -33,6 +33,7 @@ fn main() {
     assert_eq!(stream.status(3).content_position, 6);
     assert!(stream.append(8, &[1, 1], 8, 9).is_err());
     stream.seal(9).unwrap();
+    assert!(stream.sealed_resident(9).is_some());
     let mut period = [7i16; 10];
     assert_eq!(stream.read(9, &mut period).unwrap(), 8);
     assert_eq!(&period[..8], &[10, 30, 20, 40, 30, 50, 40, 60]);
@@ -41,7 +42,9 @@ fn main() {
     assert!(stream.reference_mono(4, 4, 4, &mut reference));
     assert_eq!(reference, [20, 30, 40, 50]);
     assert_eq!(stream.status(99).content_position, 8);
+    assert!(stream.sealed_resident(9).is_none());
     stream.reset(10);
+    assert!(stream.sealed_resident(10).is_none());
     assert!(stream.read(9, &mut period).is_err());
     let mut wrapped = InfinityAudio::<8, 4>::new();
     wrapped.reset(11);

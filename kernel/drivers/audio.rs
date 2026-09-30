@@ -17,16 +17,12 @@ static mut INFINITY_OWNER: crate::runtime::execution::SecurityIdentity = crate::
 static mut INFINITY_GENERATION: u64 = 0;
 static mut INFINITY_ACTIVE: bool = false;
 static mut INFINITY_STARTED: bool = false;
-static mut INFINITY_LAST_POSITION: usize = 0;
-static mut INFINITY_WRAPPED_FRAMES: u64 = 0;
 static mut INFINITY_PLAYED_FRAMES: u64 = 0;
-static mut INFINITY_HALF: usize = 0;
 const SYSTEM_CUE_MAX_SAMPLES: usize = 48_000 * 2 * 12;
 #[repr(align(128))]
 struct ResidentSystemCue([i16; SYSTEM_CUE_MAX_SAMPLES]);
 static mut SYSTEM_CUE_PCM: ResidentSystemCue = ResidentSystemCue([0; SYSTEM_CUE_MAX_SAMPLES]);
 static mut SYSTEM_CUE_LENGTH: usize = 0;
-static mut PLAY_LAST_POLL: u64 = 0;
 static mut PLAY_STATE: PlaybackState = PlaybackState::Idle;
 static mut INPUT_LEASE: Option<crate::runtime::audio::AudioStream> = None;
 static mut INPUT_UNTIL: u64 = 0;
@@ -199,7 +195,7 @@ pub fn infinity_audio_open(owner: crate::runtime::execution::SecurityIdentity, c
         if idle {
             (&mut *(&raw mut INFINITY_AUDIO)).reset(generation);
             INFINITY_OWNER = owner; INFINITY_GENERATION = generation; INFINITY_ACTIVE = true; INFINITY_STARTED = false;
-            INFINITY_LAST_POSITION = 0; INFINITY_WRAPPED_FRAMES = 0; INFINITY_PLAYED_FRAMES = 0; INFINITY_HALF = 0;
+            INFINITY_PLAYED_FRAMES = 0;
             LEASE = lease; PLAY_STATE = PlaybackState::Idle; true
         } else { false }
     };
@@ -246,7 +242,7 @@ pub fn infinity_audio_can_append(owner: crate::runtime::execution::SecurityIdent
 }
 // ------------------------=
 // FUNC: infinity_audio_seal
-// DESC: Seals a prepared stream and starts one continuous HDA session that is refilled without phrase restarts.
+// DESC: Seals a prepared stream and starts one continuous resident HDA DMA session without scheduler-timed refills.
 // ------------------=
 pub fn infinity_audio_seal(owner: crate::runtime::execution::SecurityIdentity, generation: u64) -> bool {
     if LOCK.swap(true, Ordering::Acquire) { return false; }
@@ -254,14 +250,14 @@ pub fn infinity_audio_seal(owner: crate::runtime::execution::SecurityIdentity, g
         if !INFINITY_ACTIVE || INFINITY_STARTED || INFINITY_OWNER != owner || INFINITY_GENERATION != generation { false }
         else if (&mut *(&raw mut INFINITY_AUDIO)).seal(generation).is_err() { false }
         else if let Some(device) = (&mut *(&raw mut DEVICE)).as_mut().filter(|device| !device.playing) {
-            let count = device.sample_rate as usize / 10 * 2;
-            let period = &mut (&mut *(&raw mut PCM))[..count];
-            if (&mut *(&raw mut INFINITY_AUDIO)).read(generation, period).is_err() || device.start(period).is_err() { false }
-            else {
-                INFINITY_STARTED = true; INFINITY_LAST_POSITION = 0; INFINITY_WRAPPED_FRAMES = 0; INFINITY_PLAYED_FRAMES = 0; INFINITY_HALF = 0;
-                PLAY_LAST_POLL = crate::ui::performance::monotonic_ns().unwrap_or(0);
-                UNTIL = PLAY_LAST_POLL.saturating_add(35_000_000_000); PLAY_STATE = PlaybackState::Playing; true
-            }
+            let resident = (&*(&raw const INFINITY_AUDIO)).sealed_resident(generation);
+            if let Some(samples) = resident {
+                if device.start_resident(samples).is_ok() {
+                    RESIDENT_BYTES = samples.len() * 2; INFINITY_STARTED = true; INFINITY_PLAYED_FRAMES = 0;
+                    UNTIL = crate::ui::performance::monotonic_ns().unwrap_or(0).saturating_add(35_000_000_000);
+                    PLAY_STATE = PlaybackState::Playing; true
+                } else { false }
+            } else { false }
         } else { false }
     };
     LOCK.store(false, Ordering::Release); started
@@ -276,7 +272,7 @@ pub fn infinity_audio_progress(owner: crate::runtime::execution::SecurityIdentit
         if !INFINITY_ACTIVE || INFINITY_OWNER != owner || INFINITY_GENERATION != generation { None }
         else {
             let played = if INFINITY_STARTED { (&*(&raw const DEVICE)).as_ref().and_then(|device| device.position().ok())
-                .map(|bytes| INFINITY_WRAPPED_FRAMES.saturating_add((bytes as u64) / 4)).unwrap_or(INFINITY_PLAYED_FRAMES) }
+                .map(|bytes| (bytes as u64) / 4).unwrap_or(INFINITY_PLAYED_FRAMES) }
                 else { INFINITY_PLAYED_FRAMES };
             Some((&*(&raw const INFINITY_AUDIO)).status(played))
         }
@@ -291,8 +287,9 @@ pub fn infinity_audio_echo_reference(owner: crate::runtime::execution::SecurityI
     if LOCK.swap(true, Ordering::Acquire) { return false; }
     let copied = unsafe {
         if !INFINITY_ACTIVE || INFINITY_OWNER != owner || INFINITY_GENERATION != generation { false }
-        else if let Some(rate) = (&*(&raw const DEVICE)).as_ref().map(|device| device.sample_rate) {
-            (&*(&raw const INFINITY_AUDIO)).reference_mono(INFINITY_PLAYED_FRAMES, rate, 16_000, output)
+        else if let Some(device) = (&*(&raw const DEVICE)).as_ref() {
+            let played = device.position().ok().map(|bytes| (bytes as u64) / 4).unwrap_or(INFINITY_PLAYED_FRAMES);
+            (&*(&raw const INFINITY_AUDIO)).reference_mono(played, device.sample_rate, 16_000, output)
         } else { false }
     };
     LOCK.store(false, Ordering::Release); copied
@@ -521,36 +518,9 @@ pub fn poll() {
                     finish_playback(device, if INFINITY_ACTIVE { PlaybackState::Underrun } else { PlaybackState::Complete });
                 }
                 else if RESIDENT_BYTES > 0 {
-                    if device.position().unwrap_or(0) as usize >= RESIDENT_BYTES { finish_playback(device, PlaybackState::Complete); }
-                }
-                else if INFINITY_ACTIVE && INFINITY_STARTED {
-                    let n = now.unwrap();
-                    if n.saturating_sub(PLAY_LAST_POLL) >= 50_000_000 { finish_playback(device, PlaybackState::Underrun); }
-                    else {
-                        PLAY_LAST_POLL = n;
-                        let count = device.sample_rate as usize / 10;
-                        let position = device.position().unwrap_or(u32::MAX) as usize / 4;
-                        if position < INFINITY_LAST_POSITION {
-                            INFINITY_WRAPPED_FRAMES = INFINITY_WRAPPED_FRAMES.saturating_add(count as u64);
-                        }
-                        INFINITY_LAST_POSITION = position;
-                        let status = (&*(&raw const INFINITY_AUDIO)).status(
-                            INFINITY_WRAPPED_FRAMES.saturating_add(position as u64));
-                        INFINITY_PLAYED_FRAMES = status.played_frames;
-                        if status.played_frames >= status.queued_frames {
-                            finish_playback(device, PlaybackState::Complete);
-                        } else {
-                            let half = position / (count / 2);
-                            if half > 1 { finish_playback(device, PlaybackState::DeviceLost); }
-                            else if half != INFINITY_HALF {
-                                let output = &mut (&mut *(&raw mut PCM))[..count];
-                                if (&mut *(&raw mut INFINITY_AUDIO)).read(INFINITY_GENERATION, output).is_err()
-                                    || device.refill_playback_half(INFINITY_HALF, output).is_err() {
-                                    finish_playback(device, PlaybackState::Underrun);
-                                } else { INFINITY_HALF = half; }
-                            }
-                        }
-                    }
+                    let position = device.position().unwrap_or(0) as usize;
+                    if INFINITY_ACTIVE { INFINITY_PLAYED_FRAMES = (position / 4) as u64; }
+                    if position >= RESIDENT_BYTES { finish_playback(device, PlaybackState::Complete); }
                 }
             }
         }
