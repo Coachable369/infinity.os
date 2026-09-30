@@ -372,6 +372,18 @@ pub fn speak_visible_reply(owner: SecurityIdentity, turn: u64) {
         if !matches!(STATE, State::Off | State::Failed | State::Listening) || !active_owner(owner) { return; }
         if STATE == State::Listening && OWNER != owner { return; }
         let continuous = STATE == State::Listening;
+        if continuous && INPUT_CAP != 0 {
+            crate::drivers::audio::stop_capture(owner);
+            retire(INPUT_CAP);
+            INPUT_CAP = 0;
+            (&mut *(&raw mut UTTERANCE)).clear(300);
+            (&mut *(&raw mut RESAMPLER)).clear();
+            (&mut *(&raw mut RAW)).fill(0);
+            (&mut *(&raw mut MONO)).fill(0);
+            (&mut *(&raw mut ECHO)).fill(0);
+            ECHO_VALID_UNTIL = 0;
+            LEVEL = 0;
+        }
         OWNER = owner;
         CONTINUOUS = continuous;
         REPLY_AT = 0; REPLY_LENGTH = 0; REPLY_COMPLETE = false;
@@ -463,33 +475,9 @@ pub fn poll() -> bool {
                 GenerationState::Failed | GenerationState::Cancelled | GenerationState::ContextFull)) {
             stop(OWNER);
         }
-        // Do not reopen the microphone while the model is still producing its
-        // first audible response. A follow-up utterance at this point used to
-        // cancel the accepted turn before any speech job reached synthesis.
-        // Conversation state becomes Speaking when synthesis is queued, before
-        // any PCM exists. Reopen duplex capture only after the output service
-        // confirms hardware playback, otherwise microphone activity can cancel
-        // Kokoro while it is still synthesizing the first phrase.
-        if CONTINUOUS && STATE == State::Speaking
-            && voice_output::status().state == voice_output::OutputState::Speaking {
-            if INPUT_CAP == 0 {
-                let previous=STATE;
-                if !listen() {stop(OWNER);return true;}
-                STATE=previous;
-            }
-            if !capture_frame(true) {stop(OWNER);return true;}
-            let utterance=&*(&raw const UTTERANCE);
-            if utterance.state()==VadState::Complete
-                || (utterance.state()==VadState::Speech
-                    && utterance.active_speech_samples()>=super::voice_vad::RATE/4) {
-                // Keep the onset and preroll already captured. Do not use stop(),
-                // which deliberately erases microphone storage on user disable.
-                voice_output::stop(OWNER);
-                super::with_ai_runtime(|ai| {if ai.chat.turn_id()==CHAT_TURN {ai.cancel_chat();}});
-                (&mut *(&raw mut REPLY)).fill(0);REPLY_AT=0;REPLY_LENGTH=0;
-                REPLY_COMPLETE=false;STATE=State::Listening;
-            }
-        }
+        // Playback owns the conversational audio interval. The microphone is
+        // reopened only after the complete response drains, so acoustic input
+        // can never cancel or truncate an accepted assistant response.
         match STATE {
             State::Listening => {
                 if !capture_frame(false) {stop(OWNER);return true;}

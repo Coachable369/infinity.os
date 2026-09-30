@@ -351,8 +351,8 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before_reply);
     assert_eq!(*PHRASES.lock().unwrap(),vec![b"Hi.".to_vec()]);
-    // Queued synthesis must not reopen the microphone and cancel Kokoro before
-    // it publishes PCM. Duplex capture starts only with actual playback.
+    // Queued synthesis and active playback retain exclusive conversation audio
+    // ownership until every response phrase has completed.
     conversation::poll();
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures_before_reply);
     OUTPUT.store(1,Ordering::SeqCst);PLAYBACK_FRAMES.store(50,Ordering::SeqCst);conversation::poll();
@@ -360,13 +360,14 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     PLAYBACK_FRAMES.store(100,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::synchronized_reply_length(1,42),3);
     let captures=CAPTURES.load(Ordering::SeqCst);
-    assert_eq!(captures,captures_before_reply+1);
+    assert_eq!(captures,captures_before_reply);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     assert_eq!(PHRASES.lock().unwrap().len(),2);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+1);
     for terminal in [1,2] {
         let opened=CAPTURES.load(Ordering::SeqCst);
         CAPTURE_STATE.store(terminal,Ordering::SeqCst);conversation::poll();
@@ -424,21 +425,19 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     conversation::speak_visible_reply(owner,1);conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);
     let phrases=PHRASES.lock().unwrap().len();
+    let opened=CAPTURES.load(Ordering::SeqCst);
     OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
-    // A brief residual must not cut off playback; sustained near-end speech
-    // remains an immediate barge-in without waiting for terminal silence.
+    // Microphone energy during output must never cancel or truncate playback.
+    // Listening resumes only after the complete response drains.
     MICROPHONE.lock().unwrap().extend([2300;1600]);
     conversation::poll();
     assert_eq!(OUTPUT.load(Ordering::SeqCst),1);
     assert_eq!(conversation::state().0,State::Speaking);
     MICROPHONE.lock().unwrap().extend([2300;3200]);
     conversation::poll();
-    assert_eq!(OUTPUT.load(Ordering::SeqCst),0);
-    assert_eq!(conversation::state().0,State::Listening);
-    MICROPHONE.lock().unwrap().extend([0;12000]);
-    for _ in 0..4 {conversation::poll();if conversation::state().0==State::Recognizing {break;}}
-    assert_eq!(conversation::state().0,State::Recognizing);
-    assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==2300));
+    assert_eq!(OUTPUT.load(Ordering::SeqCst),1);
+    assert_eq!(conversation::state().0,State::Speaking);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened);
     assert_eq!(PHRASES.lock().unwrap().len(),phrases);
     conversation::stop(owner);conversation::poll();
     for terminal in [3,4] {
@@ -465,7 +464,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     STREAMING.store(false,Ordering::SeqCst);VISIBLE.store(usize::MAX,Ordering::SeqCst);
     conversation::poll();assert_eq!(conversation::state().0,State::Speaking);
     OUTPUT.store(1,Ordering::SeqCst);conversation::poll();
-    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened+1);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Speaking);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
