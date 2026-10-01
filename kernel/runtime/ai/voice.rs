@@ -5,6 +5,8 @@ use crate::runtime::{
     execution::SecurityIdentity,
 };
 
+pub const RECOGNITION_DEADLINE_SECONDS: u64 = 45;
+
 // ------------------------=
 // FUNC: authorize_recognition
 // DESC: Validates the typed speech operation and its bounded PCM contract before a provider receives audio.
@@ -23,7 +25,8 @@ pub fn authorize_recognition(
         || h.operation_type_id != OperationId::SpeechRecognize as u32
         || h.caller_identity != owner || h.payload_length != 0
         || samples == 0 || samples > 160000
-        || h.deadline <= now || h.deadline.saturating_sub(now) > 10
+        || h.deadline <= now
+        || h.deadline.saturating_sub(now) > RECOGNITION_DEADLINE_SECONDS
     {
         return Err(AiError::InvalidRequest);
     }

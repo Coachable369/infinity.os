@@ -1,5 +1,5 @@
 //! One bounded native recognizer job. The UI never runs the decoder itself.
-use super::{types::AiError, voice::SpeechRecognitionProvider};
+use super::{types::AiError, voice::{SpeechRecognitionProvider, RECOGNITION_DEADLINE_SECONDS}};
 use crate::runtime::{capability::CapabilityType, execution::SecurityIdentity};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -170,12 +170,12 @@ pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(
         now,
         owner,
         capability,
-        now / 1_000_000_000 + 45,
+        now / 1_000_000_000 + RECOGNITION_DEADLINE_SECONDS,
         now,
         &[],
     )
     .map_err(|_| AiError::InvalidRequest)?;
-    let valid = crate::runtime::with_runtime(|r| {
+    let authorization = crate::runtime::with_runtime(|r| {
         super::voice::authorize_recognition(
             &request,
             owner,
@@ -183,17 +183,22 @@ pub fn submit(owner: SecurityIdentity, capability: u64, pcm: &[i16]) -> Result<(
             &r.capabilities,
             now / 1_000_000_000,
         )
-        .is_ok()
     })
-    .unwrap_or(false);
-    if !valid {
-        trace(b"submit rejected recognition authority");
-        return Err(AiError::AccessDenied);
+    .unwrap_or(Err(AiError::ProviderUnavailable));
+    if let Err(error) = authorization {
+        trace(match error {
+            AiError::InvalidRequest => b"submit rejected recognition contract",
+            AiError::AccessDenied => b"submit rejected recognition authority",
+            _ => b"submit rejected recognition runtime",
+        });
+        return Err(error);
     }
     unsafe {
         OWNER = owner;
         CAPABILITY = capability;
-        DEADLINE = now.saturating_add(45_000_000_000);
+        DEADLINE = now.saturating_add(
+            RECOGNITION_DEADLINE_SECONDS.saturating_mul(1_000_000_000),
+        );
         (&mut *(&raw mut PCM))[..pcm.len()].copy_from_slice(pcm);
         SAMPLES = pcm.len();
         (&mut *(&raw mut TEXT)).fill(0);

@@ -328,18 +328,21 @@ fn voice_and_agents() {
             0,
             issuer,
             owner,
-            Some(20),
+            Some(60),
             0,
         )
         .unwrap();
     let mut voice = VoiceService::new();
     let mut recognition = runtime::iop::IopMessage::request(OperationId::SpeechRecognize,
-        1, owner, microphone, 11, 1, &[]).unwrap();
+        1, owner, microphone, 46, 1, &[]).unwrap();
     assert_eq!(authorize_recognition(&recognition, owner, 16000, &capabilities, 1), Ok(()));
     assert_eq!(authorize_recognition(&recognition, issuer, 16000, &capabilities, 1), Err(AiError::InvalidRequest));
     assert_eq!(authorize_recognition(&recognition, owner, 160001, &capabilities, 1), Err(AiError::InvalidRequest));
     assert_eq!(authorize_recognition(&recognition, owner, 0, &capabilities, 1), Err(AiError::InvalidRequest));
-    assert_eq!(authorize_recognition(&recognition, owner, 16000, &capabilities, 11), Err(AiError::InvalidRequest));
+    assert_eq!(authorize_recognition(&recognition, owner, 16000, &capabilities, 46), Err(AiError::InvalidRequest));
+    recognition.header.deadline = 47;
+    assert_eq!(authorize_recognition(&recognition, owner, 16000, &capabilities, 1), Err(AiError::InvalidRequest));
+    recognition.header.deadline = 46;
     recognition.header.operation_type_id = OperationId::SpeechSynthesize as u32;
     assert_eq!(authorize_recognition(&recognition, owner, 16000, &capabilities, 1), Err(AiError::InvalidRequest));
     recognition.header.operation_type_id = OperationId::SpeechRecognize as u32;
