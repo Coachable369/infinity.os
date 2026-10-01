@@ -22,6 +22,11 @@ unsafe extern "C" {
         cancel: usize,
         context: usize,
     ) -> i32;
+    fn infinity_kokoro_native_prepare_recognition(
+        memory: *mut usize,
+        cancel: usize,
+        context: usize,
+    ) -> i32;
     fn infinity_kokoro_native_diagnostics(output: *mut usize);
     fn infinity_kokoro_native_synthesize(
         text: *const u8,
@@ -149,6 +154,12 @@ unsafe extern "C" fn recognition_cases(_: *mut u8) {
     for (index, pair) in INPUT.chunks_exact(2).enumerate() {
         PCM[index] = i16::from_le_bytes([pair[0], pair[1]]);
     }
+    let mut prepared_memory = 0usize;
+    assert_eq!(
+        infinity_kokoro_native_prepare_recognition(&mut prepared_memory, 0, 0),
+        0,
+    );
+    assert!(prepared_memory > 0);
     for case in 0..5usize {
         let mut text = [0u8; 512];
         let mut length = 0usize;

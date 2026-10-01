@@ -14,6 +14,21 @@ extern "C" void native_initialize(void);
 static whisper_context *context;
 
 // ------------------------=
+// FUNC: prepare_context
+// DESC: Builds the resident offline recognizer before microphone admission so user speech never pays model startup latency.
+// ------------------=
+static bool prepare_context() {
+    native_initialize();
+    if (context) return true;
+    whisper_context_params model = whisper_context_default_params();
+    model.use_gpu = false;
+    model.flash_attn = false;
+    context = whisper_init_from_buffer_with_params(
+        const_cast<unsigned char *>(whisper_model), whisper_model_length, model);
+    return context != nullptr;
+}
+
+// ------------------------=
 // FUNC: ggml_backend_reg_count
 // DESC: Exposes the single statically linked CPU backend without dynamic discovery.
 // ------------------=
@@ -68,6 +83,23 @@ static void release_context() {
 }
 
 // ------------------------=
+// FUNC: native_prepare
+// DESC: Warms the complete embedded Whisper context without accepting or retaining microphone content.
+// ------------------=
+extern "C" int native_prepare() {
+    if (native_cancelled()) return 2;
+    return prepare_context() ? 0 : 3;
+}
+
+// ------------------------=
+// FUNC: native_release_context
+// DESC: Releases resident recognition state before the mutually exclusive synthesis model enters the bounded heap.
+// ------------------=
+extern "C" void native_release_context() {
+    release_context();
+}
+
+// ------------------------=
 // FUNC: should_continue
 // DESC: Aborts encoder or graph work as soon as the owning native request is cancelled.
 // ------------------=
@@ -112,15 +144,7 @@ extern "C" int native_transcribe(const int16_t *pcm, size_t samples, char *outpu
     *length = 0;
     output[0] = 0;
     if (native_cancelled()) return 2;
-    native_initialize();
-    if (!context) {
-        whisper_context_params model = whisper_context_default_params();
-        model.use_gpu = false;
-        model.flash_attn = false;
-        context = whisper_init_from_buffer_with_params(
-            const_cast<unsigned char *>(whisper_model), whisper_model_length, model);
-        if (!context) return 3;
-    }
+    if (!prepare_context()) return 3;
     std::vector<float> input(samples);
     for (size_t index = 0; index < samples; ++index) input[index] = pcm[index] / 32768.0f;
     whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
@@ -143,7 +167,6 @@ extern "C" int native_transcribe(const int16_t *pcm, size_t samples, char *outpu
     params.abort_callback = should_abort;
     if (whisper_full(context, params, input.data(), static_cast<int>(input.size())) != 0) {
         int result = native_cancelled() ? 2 : 4;
-        release_context();
         return result;
     }
     size_t written = 0;
@@ -151,11 +174,9 @@ extern "C" int native_transcribe(const int16_t *pcm, size_t samples, char *outpu
     for (int index = 0; index < count; ++index) {
         if (!append_segment(output, capacity, written, whisper_full_get_segment_text(context, index))) {
             output[0] = 0;
-            release_context();
             return 6;
         }
     }
-    release_context();
     if (!written) return 5;
     *length = written;
     return 0;

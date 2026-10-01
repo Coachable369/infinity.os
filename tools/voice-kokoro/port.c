@@ -307,6 +307,8 @@ void *__emutls_get_address(struct emulated_tls*t){
 }
 extern int native_run(const char*,size_t,int16_t*,size_t,size_t*);
 extern int whisper_private_native_transcribe(const int16_t*,size_t,char*,size_t,size_t*);
+extern int whisper_private_native_prepare(void);
+extern void whisper_private_native_release_context(void);
 extern void native_release_synthesis_model(void);
 // ------------------------=
 // FUNC: native_synthesize
@@ -319,6 +321,7 @@ int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,
     int result;
     if(setjmp(failure)){poisoned=1;result=7;}
     else{
+        whisper_private_native_release_context();
         result=native_cancelled()?2:native_run(text,length,pcm,capacity,frames);
         infinity_thread_cleanup();
         while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}
@@ -326,6 +329,24 @@ int native_synthesize(const char*text,size_t length,int16_t*pcm,size_t capacity,
     active=0;cancel_callback=NULL;cancel_context=NULL;
     if(result){memset(pcm,0,capacity*sizeof(*pcm));*frames=0;}
     return result;
+}
+
+// ------------------------=
+// FUNC: native_prepare_recognition
+// DESC: Warms the embedded recognizer on the speech worker before the UI advertises conversational input readiness.
+// ------------------=
+int native_prepare_recognition(size_t*memory,int(*cancel)(void*),void*context){
+    if(!memory||active||poisoned)return 1;*memory=heap_used;
+    cancel_callback=cancel;cancel_context=context;active=1;
+    int result;
+    if(setjmp(failure)){poisoned=1;result=7;}
+    else{
+        native_release_synthesis_model();
+        result=native_cancelled()?2:whisper_private_native_prepare();
+        infinity_thread_cleanup();
+        while(tls_count){struct emulated_tls*t=tls_slots[--tls_count];free(t->address);t->address=NULL;tls_slots[tls_count]=NULL;}
+    }
+    cancel_callback=NULL;cancel_context=NULL;active=0;*memory=heap_used;return result;
 }
 
 // ------------------------=

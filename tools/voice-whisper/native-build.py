@@ -133,6 +133,7 @@ def main():
         objects.append(obj)
     engine = output / "engine.o"
     run("/opt/homebrew/opt/lld/bin/ld.lld", "-r", "--gc-sections", "--undefined=native_transcribe",
+        "--undefined=native_prepare", "--undefined=native_release_context",
         "-o", engine, *objects)
     defined = set()
     undefined = set()

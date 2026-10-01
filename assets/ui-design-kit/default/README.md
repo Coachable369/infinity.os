@@ -63,6 +63,22 @@ Use aspect-fit, never crop the loop or reflection. Charcoal page #202124, cards
 button states. `infinity-browser-core/welcome.rs` owns responsive spacing and hit targets.
 The tab-stack and search glyphs extend the existing native browser stroke family.
 
+## AI readiness veil
+
+Kit gap: the assistant previously had only a small header status, which did not
+prevent users from speaking while native models were still loading. The reusable
+readiness veil occupies the assistant timeline and composer as one smoked-navy
+glass surface, retains the model card above it, and uses a large eight-segment
+cyan orbit with a two-line wait message. The orbit advances through the existing
+desktop animation frame; no timer, bitmap, blur, or paint-time allocation is added.
+
+- State: visible until the language model, microphone route, output route, and
+  resident speech recognizer all report usable.
+- Primary copy: `PREPARING CONVERSATION`.
+- Secondary copy explains that local language and speech models are loading.
+- Input and send controls are fully covered; voice capture remains closed while visible.
+- Surface, border, typography, cyan focus, and 8px rhythm reuse the assistant kit.
+
 ## Generation
 
 Created with the built-in image-generation tool, transparent background enabled.

@@ -11,6 +11,7 @@ static HOLD: AtomicBool = AtomicBool::new(false);
 static WORKER_BUSY: AtomicBool = AtomicBool::new(false);
 static QUEUE_ROOM: AtomicBool = AtomicBool::new(true);
 static PLAY_PTR: AtomicUsize = AtomicUsize::new(0);
+static APPENDS: AtomicUsize = AtomicUsize::new(0);
 static DMA_FRAMES: AtomicUsize = AtomicUsize::new(160);
 static mut TASK: Option<unsafe fn()> = None;
 mod runtime {
@@ -72,7 +73,8 @@ mod drivers { pub mod audio {
     // ------------------=
     pub fn infinity_audio_append(_:SecurityIdentity,_:u64,_:u64,pcm:&[i16],_:usize,_:usize)->bool {
         assert_eq!(pcm.len(),320);assert!(pcm.iter().any(|v|*v!=0));
-        crate::PLAY_PTR.store(pcm.as_ptr() as usize,Ordering::SeqCst);true
+        crate::PLAY_PTR.store(pcm.as_ptr() as usize,Ordering::SeqCst);
+        crate::APPENDS.fetch_add(1,Ordering::SeqCst);true
     }
     // ------------------------=
     // FUNC: infinity_audio_can_append
@@ -133,6 +135,18 @@ mod voice {
         // ------------------=
         fn synthesize(&mut self, text: &[u8], output: &mut [i16]) -> Result<usize, super::types::AiError>;
     }
+}
+mod voice_input {
+    // ------------------------=
+    // FUNC: invalidate
+    // DESC: Records no recognizer state in the isolated output harness.
+    // ------------------=
+    pub fn invalidate() {}
+    // ------------------------=
+    // FUNC: prepare
+    // DESC: Accepts post-synthesis recognizer warmup in the isolated output harness.
+    // ------------------=
+    pub fn prepare() -> bool { true }
 }
 mod qwen { pub mod workers {
     // ------------------------=
@@ -223,21 +237,23 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     poll(); assert_eq!(status().state, S::Cancelled);
     assert_eq!(PLAYED.load(Ordering::SeqCst), 1);
     REVOKED.store(false, Ordering::SeqCst);
-    // Start the first prepared phrase immediately and prepare one followup
-    // while resident DMA owns the current phrase.
+    // Buffer every span into one generation and start hardware only after the
+    // final span is resident, eliminating phrase-boundary silence.
     HOLD.store(true, Ordering::SeqCst);
     let played=PLAYED.load(Ordering::SeqCst);
+    let appended=APPENDS.load(Ordering::SeqCst);
     submit_span(owner,1,b"First sentence.",0,15,false).unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
     poll(); assert!(can_prefetch());
-    assert_eq!(status().state,S::Speaking);
-    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1,"first phrase must start before reply completion");
+    assert_eq!(status().state,S::Buffered);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played,"incomplete speech must not start a choppy partial stream");
     submit_span(owner,1,b"Second sentence.",15,31,true).unwrap();
     assert!(!can_prefetch());
     assert!(submit(owner, 1, b"Third sentence.").is_err());
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
     poll();assert_eq!(status().state,S::Speaking);
-    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1,"prefetch must not interrupt active DMA");
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1,"one sealed response must start exactly once");
+    assert_eq!(APPENDS.load(Ordering::SeqCst),appended+2,"both spans must occupy the same response stream");
     DMA_FRAMES.store(80,Ordering::SeqCst);
     let progress=playback_progress(owner).unwrap();
     assert_eq!((progress.frames,progress.total_frames),(80,160));
@@ -247,26 +263,8 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     assert!(reference.iter().any(|&sample|sample!=0),"DMA speech must remain in the echo reference despite delayed device playback");
     assert!(!echo_reference(runtime::execution::SecurityIdentity([2;16]),&mut reference));
     PLAYING.store(false,Ordering::SeqCst);poll();
-    assert_eq!(status().state,S::Speaking);
-    assert_eq!(PLAYED.load(Ordering::SeqCst),played+2,"prefetched phrase must start after the prior phrase completes");
-    stop(owner);
-    assert!(!PLAYING.load(Ordering::SeqCst), "Barge-in stops DMA without waiting for another service poll");
-    poll();
-    // If playback drains before synthesis finishes, the completed followup
-    // starts under a new generation rather than being dropped.
-    QUEUE_ROOM.store(true,Ordering::SeqCst);
-    submit_span(owner,1,b"Prepared batch.",0,15,false).unwrap();
-    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
-    poll();assert_eq!(status().state,S::Speaking);
-    let rollover_starts=PLAYED.load(Ordering::SeqCst);
-    submit_span(owner,1,b"Retained followup.",15,33,true).unwrap();
-    PLAYING.store(false,Ordering::SeqCst);poll();
-    assert_eq!(status().state,S::Queued);
-    unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
-    poll();
-    assert_eq!(status().state,S::Speaking);
-    assert_eq!(PLAYED.load(Ordering::SeqCst),rollover_starts+1);
-    stop(owner);poll();
+    assert_eq!(status().state,S::Complete);
+    assert_eq!(PLAYED.load(Ordering::SeqCst),played+1,"response playback must not restart between spans");
     // Busy inference workers delay, rather than discard, queued synthesis.
     WORKER_BUSY.store(true,Ordering::SeqCst);
     submit(owner,1,b"Waiting for an AP.").unwrap();
@@ -281,17 +279,17 @@ fn deadline_and_cancellation_do_not_publish_stale_pcm() {
     stop(owner);poll();assert_eq!(status().state,S::Cancelled);
     assert!(unsafe { (&*(&raw const TASK)).is_none() });
 
-    // A rejected prefetch must not cancel the phrase already owned by DMA.
+    // A rejected final span must fail closed before any partial response reaches DMA.
     WORKER_BUSY.store(false,Ordering::SeqCst);
     submit_span(owner,1,b"Prepare this phrase.",0,20,false).unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
-    poll();assert_eq!(status().state,S::Speaking);
+    poll();assert_eq!(status().state,S::Buffered);
     let played=PLAYED.load(Ordering::SeqCst);
     INVALID.store(true,Ordering::SeqCst);
     submit_span(owner,1,b"Rejected followup.",20,38,true).unwrap();
     unsafe { (&mut *(&raw mut TASK)).take().unwrap()(); }
     poll();
-    assert!(PLAYING.load(Ordering::SeqCst));
+    assert!(!PLAYING.load(Ordering::SeqCst));
     assert_eq!(status().state,S::Failed);
     assert!(!can_prefetch());
     assert_eq!(PLAYED.load(Ordering::SeqCst),played);

@@ -11881,7 +11881,8 @@ impl ConsoleRuntime {
                 let (state, level) = crate::runtime::ai::voice_conversation::state();
                 use crate::runtime::ai::voice_conversation::State;
                 self.output.write_line(match state {
-                    State::Off=>b"Voice: off", State::Listening=>b"Voice: listening (voice stop mutes)",
+                    State::Off=>b"Voice: off", State::Starting=>b"Voice: preparing local models",
+                    State::Listening=>b"Voice: listening (voice stop mutes)",
                     State::Recognizing=>b"Voice: recognizing locally",State::Submitting=>b"Voice: waiting for local model",
                     State::Thinking=>b"Voice: Hermes responding",
                     State::Speaking=>b"Voice: speaking",State::Stopping=>b"Voice: stopping",State::Failed=>b"Voice: unavailable",

@@ -19,6 +19,7 @@ mod voice_echo;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum State {
     Off,
+    Starting,
     Listening,
     Recognizing,
     Submitting,
@@ -158,6 +159,7 @@ pub fn ready() -> bool {
     super::with_ai_runtime(|ai| ai.chat.selected_model_ready())
         && crate::drivers::audio::capture_available()
         && crate::drivers::audio::playback_rate().is_some()
+        && voice_input::prepared()
 }
 // ------------------------=
 // FUNC: synchronized_reply_length
@@ -272,23 +274,31 @@ pub fn start(owner: SecurityIdentity) -> bool {
             ai.chat.input().is_empty()
                 && ai.chat.generation_state != GenerationState::Running
         });
-        if !idle || !ready() {
+        let route_ready = super::with_ai_runtime(|ai| ai.chat.selected_model_ready())
+            && crate::drivers::audio::capture_available()
+            && crate::drivers::audio::playback_rate().is_some();
+        if !idle || !route_ready {
             return false;
         }
         OWNER = owner;
         CONTINUOUS = true;
         RESTART_LISTENING = false;
+        super::with_ai_runtime(|ai| {
+            ai.bind_chat_owner(owner.0);
+            ai.chat.set_enabled(true);
+            ai.chat.set_minimized(false);
+        });
+        if !voice_input::prepare() {
+            STATE = State::Starting;
+            trace(b"conversation waiting for recognizer warmup");
+            return true;
+        }
         if !listen() {
             STATE = State::Failed;
             trace(b"initial capture failed");
             return false;
         }
         trace(b"conversation listening");
-        super::with_ai_runtime(|ai| {
-            ai.bind_chat_owner(owner.0);
-            ai.chat.set_enabled(true);
-            ai.chat.set_minimized(false);
-        });
         true
     }
 }
@@ -377,7 +387,15 @@ unsafe fn speak_next() -> bool {
         }
         trace(b"reply drained");
         SYNC_VISIBLE_AT = REPLY_LENGTH;
-        if CONTINUOUS { return listen(); }
+        if CONTINUOUS {
+            if voice_input::prepared() {
+                return listen();
+            }
+            let _ = voice_input::prepare();
+            STATE = State::Starting;
+            trace(b"conversation waiting for recognizer rewarm");
+            return true;
+        }
         STATE = State::Off;
         (&mut *(&raw mut REPLY)).fill(0);
         return true;
@@ -606,6 +624,14 @@ pub fn poll() -> bool {
         // reopened only after the complete response drains, so acoustic input
         // can never cancel or truncate an accepted assistant response.
         match STATE {
+            State::Starting => {
+                if voice_input::prepared() {
+                    if listen() { trace(b"conversation listening after warmup"); }
+                    else { STATE = State::Failed; trace(b"capture failed after warmup"); }
+                } else {
+                    let _ = voice_input::prepare();
+                }
+            }
             State::Listening => {
                 if !capture_frame(false) {
                     trace(b"conversation stopped capture frame");

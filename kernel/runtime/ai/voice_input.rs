@@ -4,6 +4,7 @@ use crate::runtime::{capability::CapabilityType, execution::SecurityIdentity};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 static STATE: AtomicUsize = AtomicUsize::new(0);
+static ENGINE: AtomicUsize = AtomicUsize::new(0);
 static CANCEL: AtomicBool = AtomicBool::new(false);
 static mut OWNER: SecurityIdentity = SecurityIdentity([0; 16]);
 static mut CAPABILITY: u64 = 0;
@@ -68,7 +69,63 @@ unsafe extern "C" {
         cancel: extern "C" fn(*mut core::ffi::c_void) -> i32,
         context: *mut core::ffi::c_void,
     ) -> i32;
+    fn infinity_kokoro_native_prepare_recognition(
+        memory: *mut usize,
+        cancel: extern "C" fn(*mut core::ffi::c_void) -> i32,
+        context: *mut core::ffi::c_void,
+    ) -> i32;
 }
+
+// ------------------------=
+// FUNC: prepare_worker
+// DESC: Builds the complete resident Whisper context before conversational microphone admission.
+// ------------------=
+unsafe fn prepare_worker() {
+    trace(b"recognizer warmup started");
+    let start = super::qwen::workers::clock_ns();
+    let mut memory = 0usize;
+    ERROR = infinity_kokoro_native_prepare_recognition(
+        &mut memory,
+        cancelled,
+        core::ptr::null_mut(),
+    );
+    MEMORY = memory;
+    ELAPSED = super::qwen::workers::clock_ns().saturating_sub(start);
+    ENGINE.store(if ERROR == 0 { 2 } else { 3 }, Ordering::Release);
+    trace(if ERROR == 0 { b"recognizer warmup ready" } else { b"recognizer warmup failed" });
+}
+
+// ------------------------=
+// FUNC: prepare
+// DESC: Schedules recognition warmup once and reports whether speech can be accepted without cold-start latency.
+// ------------------=
+pub fn prepare() -> bool {
+    match ENGINE.load(Ordering::Acquire) {
+        2 => true,
+        1 => false,
+        _ => unsafe {
+            CANCEL.store(false, Ordering::Release);
+            DEADLINE = super::qwen::workers::clock_ns().saturating_add(90_000_000_000);
+            ENGINE.store(1, Ordering::Release);
+            if !super::qwen::workers::background(prepare_worker) {
+                ENGINE.store(0, Ordering::Release);
+            }
+            false
+        },
+    }
+}
+
+// ------------------------=
+// FUNC: prepared
+// DESC: Reports only completed native recognizer warmup, never model bytes merely being present.
+// ------------------=
+pub fn prepared() -> bool { ENGINE.load(Ordering::Acquire) == 2 }
+
+// ------------------------=
+// FUNC: invalidate
+// DESC: Marks recognition cold when synthesis takes ownership of the mutually exclusive native model heap.
+// ------------------=
+pub fn invalidate() { ENGINE.store(0, Ordering::Release); }
 struct Whisper;
 impl SpeechRecognitionProvider for Whisper {
     // ------------------------=

@@ -143,8 +143,7 @@ pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], conten
     content_end: usize, final_chunk: bool) -> Result<(), AiError> {
     if text.is_empty() || text.len() > 160 || text.iter().any(|v| !(32..=126).contains(v)) { return Err(AiError::InvalidRequest); }
     let state = STATE.load(Ordering::Acquire);
-    let prefetch = unsafe { state == 5 && PLAYING && !PENDING_AFTER_DRAIN };
-    if (!matches!(state, 0 | 4 | 6 | 7 | 8) && !prefetch) || content_end < content_start { return Err(AiError::QueueFull); }
+    if !matches!(state, 0 | 4 | 6 | 7 | 8) || content_end < content_start { return Err(AiError::QueueFull); }
     if unsafe { (PLAYING || STREAM_OPEN) && OWNER != owner } { return Err(AiError::QueueFull); }
     let now = super::qwen::workers::clock_ns();
     let valid = crate::runtime::with_runtime(|r| r.capabilities.validate(capability, owner,
@@ -154,7 +153,7 @@ pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], conten
     if !matches!(rate, 44100 | 48000) { return Err(AiError::ProviderUnavailable); }
     unsafe {
         retire();
-        if state != 8 && !prefetch {
+        if state != 8 {
             STREAM_OPEN = false; PLAYING = false; PENDING_AFTER_DRAIN = false; PLAYBACK_DRAINED = false;
             let next = STREAM_GENERATION.load(Ordering::Acquire).wrapping_add(1).max(1);
             STREAM_GENERATION.store(next, Ordering::Release);
@@ -163,6 +162,7 @@ pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], conten
         CONTENT_START = content_start; CONTENT_END = content_end; FINAL_CHUNK = final_chunk;
         (&mut *(&raw mut TEXT)).fill(0); (&mut *(&raw mut TEXT))[..text.len()].copy_from_slice(text); LENGTH = text.len();
         FRAMES = 0; PEAK = 0; ERROR = 0; ELAPSED = 0; CANCEL.store(false, Ordering::Release);
+        super::voice_input::invalidate();
         STATE.store(1, Ordering::Release);
         // Inference can temporarily occupy every AP. Keep one bounded job
         // queued and retry on poll rather than dropping a streaming reply.
@@ -184,9 +184,7 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
 // ------------------=
 pub fn can_prefetch() -> bool {
     let state = STATE.load(Ordering::Acquire);
-    !CANCEL.load(Ordering::Acquire) && unsafe {
-        state == 8 || (state == 5 && PLAYING && !PENDING_AFTER_DRAIN)
-    }
+    !CANCEL.load(Ordering::Acquire) && state == 8
 }
 // ------------------------=
 // FUNC: seal_buffered
@@ -196,7 +194,9 @@ pub fn seal_buffered(owner: SecurityIdentity) -> bool {
     unsafe {
         if owner != OWNER || !STREAM_OPEN || STATE.load(Ordering::Acquire) != 8 { return false; }
         if crate::drivers::audio::infinity_audio_seal(owner, STREAM_GENERATION.load(Ordering::Acquire) as u64) {
-            PLAYING = true; STATE.store(5, Ordering::Release); trace(b"continuous playback started"); true
+            PLAYING = true; STATE.store(5, Ordering::Release); trace(b"continuous playback started");
+            let _ = super::voice_input::prepare();
+            true
         } else {
             crate::drivers::audio::stop_playback(owner); STREAM_OPEN = false; ERROR = 7; STATE.store(4, Ordering::Release); false
         }
@@ -266,16 +266,16 @@ unsafe fn retire() {
 }
 
 // ------------------------=
-// FUNC: start_resident_span
-// DESC: Publishes one synthesized phrase as a sealed InfinityAudio generation and starts deterministic resident DMA playback.
+// FUNC: publish_resident_span
+// DESC: Appends each synthesized span to one resident InfinityAudio generation and starts hardware only after the final span is sealed.
 // ------------------=
-unsafe fn start_resident_span(advance_generation: bool) -> bool {
-    if advance_generation {
+unsafe fn publish_resident_span() -> bool {
+    if !STREAM_OPEN {
         let next = STREAM_GENERATION.load(Ordering::Acquire).wrapping_add(1).max(1);
         STREAM_GENERATION.store(next, Ordering::Release);
     }
     let generation = STREAM_GENERATION.load(Ordering::Acquire) as u64;
-    let opened = crate::drivers::audio::infinity_audio_open(OWNER, CAPABILITY, generation);
+    let opened = STREAM_OPEN || crate::drivers::audio::infinity_audio_open(OWNER, CAPABILITY, generation);
     if opened && crate::drivers::audio::infinity_audio_append(
         OWNER, CAPABILITY, generation, &(&*(&raw const RESIDENT)).0[..OUTPUT_SAMPLES],
         CONTENT_START, CONTENT_END,
@@ -285,12 +285,17 @@ unsafe fn start_resident_span(advance_generation: bool) -> bool {
         (&mut *(&raw mut PCM))[..FRAMES.min(CAPACITY)].fill(0);
         (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES.min(RESIDENT_CAPACITY)].fill(0);
         (&mut *(&raw mut TEXT)).fill(0);
-        if crate::drivers::audio::infinity_audio_seal(OWNER, generation) {
+        if !FINAL_CHUNK {
+            STATE.store(8, Ordering::Release);
+            trace(b"phrase buffered");
+            true
+        } else if crate::drivers::audio::infinity_audio_seal(OWNER, generation) {
             PLAYING = true;
             PLAYBACK_DRAINED = false;
             PENDING_AFTER_DRAIN = false;
             STATE.store(5, Ordering::Release);
-            trace(b"phrase playback started");
+            trace(b"continuous response playback started");
+            let _ = super::voice_input::prepare();
             true
         } else {
             crate::drivers::audio::stop_playback(OWNER);
@@ -322,10 +327,6 @@ pub fn poll() {
             if let Some(playback) = crate::drivers::audio::playback_state() {
                 if playback != PlaybackState::Playing {
                     PLAYING = false; STREAM_OPEN = false;
-                    if playback == PlaybackState::Complete && PENDING_AFTER_DRAIN && !CANCEL.load(Ordering::Acquire) {
-                        let _ = start_resident_span(true);
-                        return;
-                    }
                     if playback != PlaybackState::Complete {
                         CANCEL.store(true, Ordering::Release);
                         PENDING_AFTER_DRAIN = false;
@@ -353,15 +354,7 @@ pub fn poll() {
         }
         if state == 3 {
             if CANCEL.load(Ordering::Acquire) { STATE.store(6, Ordering::Release); retire(); }
-            else if PLAYING {
-                PENDING_AFTER_DRAIN = true;
-                STATE.store(5, Ordering::Release);
-                trace(b"followup phrase prefetched");
-            }
-            else {
-                let advance = PLAYBACK_DRAINED;
-                let _ = start_resident_span(advance);
-            }
+            else { let _ = publish_resident_span(); }
         } else if matches!(state, 4 | 6 | 7) && CAPABILITY != 0 { retire(); }
     }
 }

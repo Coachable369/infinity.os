@@ -9741,7 +9741,11 @@ impl super::DisplayDevice {
             n + 8
         });
         #[cfg(target_os="none")]
-        let voice_starting = voice_enabled && !crate::runtime::ai::voice_conversation::ready();
+        let voice_starting = {
+            use crate::runtime::ai::voice_conversation::{state,State};
+            voice_enabled && !crate::runtime::ai::voice_conversation::ready()
+                && matches!(state().0, State::Off | State::Starting)
+        };
         #[cfg(not(target_os="none"))]
         let voice_starting = false;
         let state = if chat.minimized() {
@@ -9768,10 +9772,13 @@ impl super::DisplayDevice {
                 b"STARTING...".as_slice()
             } else { match state().0 {
                 State::Off if chat.generation_state==crate::runtime::ai::chat::GenerationState::Running=>b"Thinking...".as_slice(),
-                State::Off=>b"VOICE OFF".as_slice(),State::Listening=>b"LISTEN".as_slice(),
+                State::Off=>b"VOICE OFF".as_slice(),State::Starting=>b"STARTING...".as_slice(),State::Listening=>b"LISTEN".as_slice(),
                 State::Recognizing=>b"HEARING".as_slice(),State::Submitting=>b"QUEUED".as_slice(),
                 State::Thinking=>b"THINKING".as_slice(),
-                State::Speaking=>b"SPEAKING".as_slice(),State::Stopping=>b"STOPPING".as_slice(),
+                State::Speaking=>match crate::runtime::ai::voice_output::status().state {
+                    crate::runtime::ai::voice_output::OutputState::Speaking=>b"SPEAKING".as_slice(),
+                    _=>b"PREPARING SPEECH".as_slice(),
+                },State::Stopping=>b"STOPPING".as_slice(),
                 State::Failed=>b"UNAVAILABLE".as_slice(),
             }}
         };
@@ -9882,6 +9889,55 @@ impl super::DisplayDevice {
             accent_b,
             1,
         );
+        if voice_starting {
+            let loading_left = geometry.timeline.x.max(0) as usize;
+            let loading_top = geometry.timeline.y.max(0) as usize;
+            let loading_width = geometry.timeline.width as usize;
+            let loading_bottom = geometry.composer.y
+                .saturating_add(geometry.composer.height as i32)
+                .max(0) as usize;
+            let loading_height = loading_bottom.saturating_sub(loading_top);
+            self.fill_rounded_rect_alpha(
+                loading_left, loading_top, loading_width, loading_height, 10 * scale,
+                2, 12, 22, 244,
+            );
+            self.outline_rounded_rect(
+                loading_left, loading_top, loading_width, loading_height, 10 * scale,
+                accent_r / 2, accent_g / 2, accent_b / 2,
+            );
+            let center_x = loading_left + loading_width / 2;
+            let center_y = loading_top + loading_height / 2 - 30 * scale;
+            let points = [
+                (-22, 0), (-16, -16), (0, -22), (16, -16),
+                (22, 0), (16, 16), (0, 22), (-16, 16),
+            ];
+            for index in 0..8 {
+                let next = (index + 1) % 8;
+                let active = index == (frame / 2) % 8 || next == (frame / 2) % 8;
+                self.line(
+                    center_x as i32 + points[index].0 * scale as i32,
+                    center_y as i32 + points[index].1 * scale as i32,
+                    center_x as i32 + points[next].0 * scale as i32,
+                    center_y as i32 + points[next].1 * scale as i32,
+                    if active { 116 } else { 28 },
+                    if active { 224 } else { 94 },
+                    if active { 255 } else { 126 },
+                );
+            }
+            self.ui_text_centered_strong(
+                loading_left, loading_width, center_y + 42 * scale,
+                b"PREPARING CONVERSATION", 218, 238, 248, 1,
+            );
+            self.ui_text_centered(
+                loading_left, loading_width, center_y + 66 * scale,
+                b"Loading local language and speech models", 137, 178, 198, 1,
+            );
+            self.ui_text_centered(
+                loading_left, loading_width, center_y + 86 * scale,
+                b"Please wait before speaking", accent_r, accent_g, accent_b, 1,
+            );
+            return;
+        }
         let timeline_left = geometry.timeline.x.max(0) as usize;
         let timeline_top = geometry.timeline.y.max(0) as usize;
         let timeline_width = geometry.timeline.width as usize;

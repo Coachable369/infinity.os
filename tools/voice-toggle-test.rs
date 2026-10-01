@@ -236,6 +236,21 @@ mod voice_input {
     #[derive(PartialEq)] pub enum InputState {Queued,Recognizing,Ready,Failed,Cancelled}
     pub struct Status {pub state:InputState,pub error:i32}
     // ------------------------=
+    // FUNC: prepare
+    // DESC: Mirrors deterministic completion of the native recognizer warmup gate.
+    // ------------------=
+    pub fn prepare()->bool{crate::MODEL_READY.load(crate::Ordering::SeqCst)}
+    // ------------------------=
+    // FUNC: prepared
+    // DESC: Exposes the fixture's explicit recognizer readiness state.
+    // ------------------=
+    pub fn prepared()->bool{crate::MODEL_READY.load(crate::Ordering::SeqCst)}
+    // ------------------------=
+    // FUNC: invalidate
+    // DESC: Leaves recognition lifecycle control with the fixture's test transitions.
+    // ------------------=
+    pub fn invalidate(){}
+    // ------------------------=
     // FUNC: status
     // DESC: Models asynchronous cancellation drain without running a recognizer.
     // ------------------=
@@ -378,7 +393,11 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(conversation::state().0,State::Speaking);
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     assert_eq!(PHRASES.lock().unwrap().len(),2);
+    MODEL_READY.store(false,Ordering::SeqCst);
     OUTPUT.store(2,Ordering::SeqCst);conversation::poll();
+    assert_eq!(conversation::state().0,State::Starting);
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
+    MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+1);
     for terminal in [1,2] {
