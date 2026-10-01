@@ -432,9 +432,12 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     }
     let now=super::qwen::workers::clock_ns();
     if now>=RENEW_AT {
-        let cap=grant(OWNER,CapabilityType::AudioInput,60).unwrap_or(0);
-        if cap==0 || !crate::drivers::audio::renew_capture(OWNER,cap) {retire(cap);return false;}
-        INPUT_CAP=cap;RENEW_AT=now+1_000_000_000;
+        // Extend the short IOP stream deadline with the existing 60-second
+        // microphone authority. Allocating a second capability before retiring
+        // the first fails when the bounded global table is otherwise full and
+        // made continuous listening drop after its first renewal.
+        if INPUT_CAP==0 || !crate::drivers::audio::renew_capture(OWNER,INPUT_CAP) {return false;}
+        RENEW_AT=now+1_000_000_000;
     }
     let count=crate::drivers::audio::read_capture(OWNER,&mut *(&raw mut RAW));
     if count==0 {return true;}
@@ -486,7 +489,7 @@ pub fn poll() -> bool {
                         // Capture shutdown retires its lease. Recognition is
                         // asynchronous, so it needs independent authority that
                         // remains valid until the transcript is taken.
-                        RECOGNIZE_CAP = grant(OWNER,CapabilityType::AudioInput,15)
+                        RECOGNIZE_CAP = grant(OWNER,CapabilityType::AudioInput,60)
                             .unwrap_or(0);
                         let submitted = (&*(&raw const UTTERANCE))
                             .speech()

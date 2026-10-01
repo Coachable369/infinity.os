@@ -17,6 +17,7 @@ static EFI_BOOT_SERVICES *worker_boot;
 static void *worker_events[64];
 static uint8_t worker_started;
 extern void EFIAPI infinity_ap_callback(void *context);
+#define INFINITY_WORKER_STACK_PAGES 2048u
 
 // ------------------------=
 // FUNC: infinity_start_workers
@@ -68,12 +69,14 @@ static uint64_t infinity_worker_bridge(EFI_SYSTEM_TABLE *system) {
     size_t count = psci_count, total = 0, enabled = 0;
     if (worker_mp && !worker_mp->count(worker_mp, &total, &enabled) && enabled > 1 && enabled - 1 > count)
         count = enabled - 1;
-    // Reserve before the boot memory map is captured. Both startup adapters
-    // share the same private 1 MiB worker-stack contract as x86_64.
+    // Reserve before the boot memory map is captured. Native Whisper and
+    // Kokoro execute only on these isolated stacks; keep the installed
+    // contract identical to the behavioral speech probes.
     for (size_t i = 0; i < count && i < 64; ++i) {
         uint64_t stack = UINT64_C(0xffffffff);
-        if (worker_boot->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA, 256, &stack)) break;
-        psci_contexts[i].stack = stack + 256 * PAGE_SIZE;
+        if (worker_boot->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA,
+                                        INFINITY_WORKER_STACK_PAGES, &stack)) break;
+        psci_contexts[i].stack = stack + INFINITY_WORKER_STACK_PAGES * PAGE_SIZE;
     }
     return (uint64_t)(uintptr_t)&bridge;
 }

@@ -11,6 +11,7 @@ typedef struct { uint64_t version; uint64_t (EFIAPI *start)(X86ApProc, uint64_t)
 extern const uint8_t infinity_ap_page[4096];
 static uint64_t x86_ap_page, x86_ap_stacks, x86_ap_cr3, x86_tsc_hz;
 static uint32_t x86_ap_ids[8], x86_ap_count, x86_ap_started;
+#define INFINITY_X86_WORKER_STACK_PAGES 2048u
 
 // ------------------------=
 // FUNC: x86_ticks
@@ -72,7 +73,7 @@ static uint64_t EFIAPI x86_start_workers(X86ApProc entry, uint64_t requested) {
     uint64_t launched = 0;
     for (uint32_t i = 0; i < x86_ap_count && launched < requested; ++i) {
         data[0] = x86_ap_cr3;
-        data[1] = x86_ap_stacks + (i + 1) * 1024 * 1024;
+        data[1] = x86_ap_stacks + (i + 1) * INFINITY_X86_WORKER_STACK_PAGES * 4096;
         data[2] = (uint64_t)(uintptr_t)entry;
         data[3] = launched + 1;
         data[4] = 0;
@@ -117,7 +118,9 @@ static uint64_t x86_worker_bridge(EFI_SYSTEM_TABLE *system, uint64_t cr3) {
     x86_ap_page = 0x9ffff;
     if (boot->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA, 1, &x86_ap_page)) return 0;
     x86_ap_stacks = UINT32_MAX;
-    if (boot->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA, x86_ap_count * 256, &x86_ap_stacks)) return 0;
+    if (boot->allocate_pages(EFI_ALLOCATE_MAX_ADDRESS, EFI_LOADER_DATA,
+                             x86_ap_count * INFINITY_X86_WORKER_STACK_PAGES,
+                             &x86_ap_stacks)) return 0;
     uint8_t *page = (uint8_t *)(uintptr_t)x86_ap_page;
     for (size_t i = 0; i < 4096; ++i) page[i] = infinity_ap_page[i];
     *(uint32_t *)(page + 0x82a) = (uint32_t)x86_ap_page + 0x850;

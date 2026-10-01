@@ -83,6 +83,9 @@ fn main() {
     capture.header.capability_ref = input;
     assert_eq!(AudioStream::authorize(&capture, owner, &caps, 10).unwrap().route, AudioRoute::Capture);
     let capture_lease = AudioStream::authorize(&capture, owner, &caps, 10).unwrap();
+    let same_authority = IopMessage::request(OperationId::AudioCaptureStart, 3, owner, input, 17, 3, &[]).unwrap();
+    let same_renewed = capture_lease.renew(&same_authority, &caps, 12).unwrap();
+    assert_eq!(same_renewed.capability, input); assert_eq!(same_renewed.deadline, 17);
     let replacement = caps.grant(CapabilityType::AudioInput, 0, 1, 0, owner, owner, Some(30), 0).unwrap();
     let mut renewal = IopMessage::request(OperationId::AudioCaptureStart, 4, owner, replacement, 17, 4, &[]).unwrap();
     let renewed = capture_lease.renew(&renewal, &caps, 12).unwrap();
