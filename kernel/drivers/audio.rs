@@ -7,6 +7,7 @@ static CAPTURE_OPEN_FAILURE: AtomicUsize = AtomicUsize::new(0);
 static mut DMA: hda::Dma = hda::Dma::new();
 static mut DEVICE: Option<hda::Hda> = None;
 static mut UNTIL: u64 = 0;
+static mut PLAYBACK_COMPLETE_AT: u64 = 0;
 static mut RESIDENT_BYTES: usize = 0;
 static mut LEASE: Option<crate::runtime::audio::AudioStream> = None;
 static mut PCM: [i16; hda::SAMPLES] = [0; hda::SAMPLES];
@@ -308,7 +309,11 @@ pub fn infinity_audio_seal(owner: crate::runtime::execution::SecurityIdentity, g
             if let Some(samples) = resident {
                 if device.start_resident(samples).is_ok() {
                     RESIDENT_BYTES = samples.len() * 2; INFINITY_STARTED = true; INFINITY_PLAYED_FRAMES = 0;
-                    UNTIL = crate::ui::performance::monotonic_ns().unwrap_or(0).saturating_add(35_000_000_000);
+                    let started = crate::ui::performance::monotonic_ns().unwrap_or(0);
+                    PLAYBACK_COMPLETE_AT = started.saturating_add(
+                        hda::resident_duration_ns(samples.len(), device.sample_rate).unwrap_or(0)
+                    ).saturating_add(20_000_000);
+                    UNTIL = started.saturating_add(35_000_000_000);
                     PLAY_STATE = PlaybackState::Playing; true
                 } else { false }
             } else { false }
@@ -482,7 +487,16 @@ pub fn play_speech(owner: crate::runtime::execution::SecurityIdentity, capabilit
 // DESC: Stops DMA and erases private speech PCM before retiring output authority; audio lock must be held.
 // ------------------=
 unsafe fn finish_playback(device: &mut hda::Hda, state: PlaybackState) {
-    device.stop(); PLAY_STATE = state; RESIDENT_BYTES = 0; INFINITY_STARTED = false;
+    device.stop(); PLAY_STATE = state; RESIDENT_BYTES = 0; INFINITY_STARTED = false; PLAYBACK_COMPLETE_AT = 0;
+    crate::output::write(match state {
+        PlaybackState::Idle => b"[AUDIO] playback finished idle\n",
+        PlaybackState::Playing => b"[AUDIO] playback finished playing\n",
+        PlaybackState::Complete => b"[AUDIO] playback finished complete\n",
+        PlaybackState::Cancelled => b"[AUDIO] playback finished cancelled\n",
+        PlaybackState::Denied => b"[AUDIO] playback finished denied\n",
+        PlaybackState::DeviceLost => b"[AUDIO] playback finished device-lost\n",
+        PlaybackState::Underrun => b"[AUDIO] playback finished underrun\n",
+    });
     if INFINITY_ACTIVE { (&mut *(&raw mut INFINITY_AUDIO)).erase_pcm(); }
     (&mut *(&raw mut PCM)).fill(0);
     (&mut *(&raw mut SYSTEM_CUE_PCM.0))[..SYSTEM_CUE_LENGTH].fill(0);
@@ -571,6 +585,9 @@ pub fn poll() {
                 let authorized = LEASE.and_then(|lease| now.map(|n| (lease, n)))
                     .and_then(|(lease, n)| crate::runtime::with_runtime(|runtime| lease.valid(&runtime.capabilities, n / 1_000_000_000))).unwrap_or(false);
                 if !authorized { finish_playback(device, PlaybackState::Denied); }
+                else if INFINITY_STARTED && now.is_some_and(|n| PLAYBACK_COMPLETE_AT != 0 && n >= PLAYBACK_COMPLETE_AT) {
+                    finish_playback(device, PlaybackState::Complete);
+                }
                 else if device.position().is_err() { finish_playback(device, PlaybackState::DeviceLost); }
                 else if now.map(|n| n >= UNTIL).unwrap_or(true) {
                     finish_playback(device, if INFINITY_ACTIVE { PlaybackState::Underrun } else { PlaybackState::Complete });

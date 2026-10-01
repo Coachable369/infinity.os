@@ -22,6 +22,10 @@ fn main() {
     assert_eq!(split[1] % 4, 0);
     assert!(hda::resident_descriptor_lengths(0x1004, 15_004).is_none());
     assert!(hda::resident_descriptor_lengths(0x1000, 6).is_none());
+    assert_eq!(hda::resident_duration_ns(96_000, 48_000), Some(1_000_000_000));
+    assert_eq!(hda::resident_duration_ns(88_200, 44_100), Some(1_000_000_000));
+    assert_eq!(hda::resident_duration_ns(0, 48_000), None);
+    assert_eq!(hda::resident_duration_ns(3, 48_000), None);
     assert!(hda::capture_fault_is_recoverable(hda::Error::Dma));
     assert!(!hda::capture_fault_is_recoverable(hda::Error::Invalid));
     assert!(!hda::capture_fault_is_recoverable(hda::Error::Timeout));

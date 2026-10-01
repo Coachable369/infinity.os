@@ -32,6 +32,15 @@ pub const fn resident_descriptor_lengths(address: u64, bytes: u64) -> Option<[u6
     let second = bytes.saturating_sub(first);
     if first == 0 || second == 0 || second & 3 != 0 { None } else { Some([first, second]) }
 }
+
+// ------------------------=
+// FUNC: resident_duration_ns
+// DESC: Converts an interleaved stereo resident sample count into its exact finite playback duration.
+// ------------------=
+pub const fn resident_duration_ns(sample_count: usize, sample_rate: u32) -> Option<u64> {
+    if sample_count == 0 || sample_count % 2 != 0 || sample_rate == 0 { return None; }
+    Some((sample_count as u64 / 2).saturating_mul(1_000_000_000) / sample_rate as u64)
+}
 // ------------------------=
 // FUNC: capture_route
 // DESC: Searches a bounded codec graph without enabling any microphone or mutating codec state.

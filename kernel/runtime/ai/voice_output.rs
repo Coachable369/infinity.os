@@ -32,6 +32,7 @@ static mut DISPATCHED: bool = false;
 static STREAM_GENERATION: AtomicUsize = AtomicUsize::new(0);
 static mut STREAM_OPEN: bool = false;
 static mut PENDING_AFTER_DRAIN: bool = false;
+static mut PLAYBACK_DRAINED: bool = false;
 static mut CONTENT_START: usize = 0;
 static mut CONTENT_END: usize = 0;
 static mut FINAL_CHUNK: bool = false;
@@ -142,7 +143,8 @@ pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], conten
     content_end: usize, final_chunk: bool) -> Result<(), AiError> {
     if text.is_empty() || text.len() > 160 || text.iter().any(|v| !(32..=126).contains(v)) { return Err(AiError::InvalidRequest); }
     let state = STATE.load(Ordering::Acquire);
-    if !matches!(state, 0 | 4 | 6 | 7 | 8) || content_end < content_start { return Err(AiError::QueueFull); }
+    let prefetch = unsafe { state == 5 && PLAYING && !PENDING_AFTER_DRAIN };
+    if (!matches!(state, 0 | 4 | 6 | 7 | 8) && !prefetch) || content_end < content_start { return Err(AiError::QueueFull); }
     if unsafe { (PLAYING || STREAM_OPEN) && OWNER != owner } { return Err(AiError::QueueFull); }
     let now = super::qwen::workers::clock_ns();
     let valid = crate::runtime::with_runtime(|r| r.capabilities.validate(capability, owner,
@@ -152,8 +154,8 @@ pub fn submit_span(owner: SecurityIdentity, capability: u64, text: &[u8], conten
     if !matches!(rate, 44100 | 48000) { return Err(AiError::ProviderUnavailable); }
     unsafe {
         retire();
-        if state != 8 {
-            STREAM_OPEN = false; PLAYING = false; PENDING_AFTER_DRAIN = false;
+        if state != 8 && !prefetch {
+            STREAM_OPEN = false; PLAYING = false; PENDING_AFTER_DRAIN = false; PLAYBACK_DRAINED = false;
             let next = STREAM_GENERATION.load(Ordering::Acquire).wrapping_add(1).max(1);
             STREAM_GENERATION.store(next, Ordering::Release);
         }
@@ -178,9 +180,14 @@ pub fn submit(owner: SecurityIdentity, capability: u64, text: &[u8]) -> Result<(
 }
 // ------------------------=
 // FUNC: can_prefetch
-// DESC: Reports that the previous span is safely resident and the queue can accept the next synthesis job.
+// DESC: Reports that DMA owns the current phrase and the worker can prepare exactly one following phrase.
 // ------------------=
-pub fn can_prefetch() -> bool { STATE.load(Ordering::Acquire) == 8 && !CANCEL.load(Ordering::Acquire) }
+pub fn can_prefetch() -> bool {
+    let state = STATE.load(Ordering::Acquire);
+    !CANCEL.load(Ordering::Acquire) && unsafe {
+        state == 8 || (state == 5 && PLAYING && !PENDING_AFTER_DRAIN)
+    }
+}
 // ------------------------=
 // FUNC: seal_buffered
 // DESC: Starts one continuous playback session after every prepared response span is resident.
@@ -257,6 +264,51 @@ unsafe fn retire() {
     (&mut *(&raw mut PCM))[..pcm_used].fill(0);
     (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES.min(RESIDENT_CAPACITY)].fill(0);
 }
+
+// ------------------------=
+// FUNC: start_resident_span
+// DESC: Publishes one synthesized phrase as a sealed InfinityAudio generation and starts deterministic resident DMA playback.
+// ------------------=
+unsafe fn start_resident_span(advance_generation: bool) -> bool {
+    if advance_generation {
+        let next = STREAM_GENERATION.load(Ordering::Acquire).wrapping_add(1).max(1);
+        STREAM_GENERATION.store(next, Ordering::Release);
+    }
+    let generation = STREAM_GENERATION.load(Ordering::Acquire) as u64;
+    let opened = crate::drivers::audio::infinity_audio_open(OWNER, CAPABILITY, generation);
+    if opened && crate::drivers::audio::infinity_audio_append(
+        OWNER, CAPABILITY, generation, &(&*(&raw const RESIDENT)).0[..OUTPUT_SAMPLES],
+        CONTENT_START, CONTENT_END,
+    ) {
+        STREAM_OPEN = true;
+        CAPABILITY = 0;
+        (&mut *(&raw mut PCM))[..FRAMES.min(CAPACITY)].fill(0);
+        (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES.min(RESIDENT_CAPACITY)].fill(0);
+        (&mut *(&raw mut TEXT)).fill(0);
+        if crate::drivers::audio::infinity_audio_seal(OWNER, generation) {
+            PLAYING = true;
+            PLAYBACK_DRAINED = false;
+            PENDING_AFTER_DRAIN = false;
+            STATE.store(5, Ordering::Release);
+            trace(b"phrase playback started");
+            true
+        } else {
+            crate::drivers::audio::stop_playback(OWNER);
+            STREAM_OPEN = false;
+            ERROR = 7;
+            STATE.store(4, Ordering::Release);
+            retire();
+            false
+        }
+    } else {
+        if opened { crate::drivers::audio::stop_playback(OWNER); }
+        STREAM_OPEN = false;
+        ERROR = 7;
+        STATE.store(4, Ordering::Release);
+        retire();
+        false
+    }
+}
 // ------------------------=
 // FUNC: poll
 // DESC: Revalidates authority, hands completed PCM to native DMA, and tracks cancellation without blocking the UI.
@@ -269,41 +321,25 @@ pub fn poll() {
             if CANCEL.load(Ordering::Acquire) { crate::drivers::audio::stop_playback(OWNER); }
             if let Some(playback) = crate::drivers::audio::playback_state() {
                 if playback != PlaybackState::Playing {
-                    PLAYING = false;
+                    PLAYING = false; STREAM_OPEN = false;
                     if playback == PlaybackState::Complete && PENDING_AFTER_DRAIN && !CANCEL.load(Ordering::Acquire) {
-                        STREAM_OPEN = false; PENDING_AFTER_DRAIN = false;
-                        let generation = STREAM_GENERATION.load(Ordering::Acquire).wrapping_add(1).max(1);
-                        STREAM_GENERATION.store(generation, Ordering::Release);
-                        let opened = crate::drivers::audio::infinity_audio_open(OWNER, CAPABILITY, generation as u64);
-                        if opened && crate::drivers::audio::infinity_audio_append(OWNER, CAPABILITY, generation as u64,
-                            &(&*(&raw const RESIDENT)).0[..OUTPUT_SAMPLES], CONTENT_START, CONTENT_END) {
-                            STREAM_OPEN = true; CAPABILITY = 0;
-                            (&mut *(&raw mut PCM))[..FRAMES.min(CAPACITY)].fill(0);
-                            (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES.min(RESIDENT_CAPACITY)].fill(0);
-                            (&mut *(&raw mut TEXT)).fill(0);
-                            if FINAL_CHUNK {
-                                if crate::drivers::audio::infinity_audio_seal(OWNER, generation as u64) {
-                                    PLAYING = true; STATE.store(5, Ordering::Release);
-                                } else {
-                                    crate::drivers::audio::stop_playback(OWNER); STREAM_OPEN = false; ERROR = 7;
-                                    STATE.store(4, Ordering::Release); retire();
-                                }
-                            } else { STATE.store(8, Ordering::Release); }
-                        } else {
-                            if opened { crate::drivers::audio::stop_playback(OWNER); }
-                            STREAM_OPEN = false; ERROR = 7; STATE.store(4, Ordering::Release); retire();
-                        }
+                        let _ = start_resident_span(true);
                         return;
                     }
-                    if playback != PlaybackState::Complete { CANCEL.store(true, Ordering::Release); }
-                    PENDING_AFTER_DRAIN = false;
-                    if state == 5 {
+                    if playback != PlaybackState::Complete {
+                        CANCEL.store(true, Ordering::Release);
+                        PENDING_AFTER_DRAIN = false;
+                    } else if matches!(state, 1 | 2 | 3) {
+                        PLAYBACK_DRAINED = true;
+                    }
+                    if state == 5 && !PENDING_AFTER_DRAIN {
                         state = if playback == PlaybackState::Complete { 7 } else { 6 };
                         STATE.store(state, Ordering::Release); retire();
                     }
                 }
             }
         }
+        state = STATE.load(Ordering::Acquire);
         if state <= 3 {
             let now = super::qwen::workers::clock_ns() / 1_000_000_000;
             let valid = crate::runtime::with_runtime(|r| r.capabilities.validate(CAPABILITY, OWNER,
@@ -317,42 +353,14 @@ pub fn poll() {
         }
         if state == 3 {
             if CANCEL.load(Ordering::Acquire) { STATE.store(6, Ordering::Release); retire(); }
+            else if PLAYING {
+                PENDING_AFTER_DRAIN = true;
+                STATE.store(5, Ordering::Release);
+                trace(b"followup phrase prefetched");
+            }
             else {
-                let generation = STREAM_GENERATION.load(Ordering::Acquire) as u64;
-                let opened = STREAM_OPEN || crate::drivers::audio::infinity_audio_open(OWNER, CAPABILITY, generation);
-                let capacity = if opened && STREAM_OPEN {
-                    crate::drivers::audio::infinity_audio_can_append(OWNER, generation,
-                        OUTPUT_SAMPLES, CONTENT_START, CONTENT_END)
-                } else { Some(true) };
-                if capacity.is_none() { return; }
-                if opened && STREAM_OPEN && capacity == Some(false) {
-                    if crate::drivers::audio::infinity_audio_seal(OWNER, generation) {
-                        PENDING_AFTER_DRAIN = true; PLAYING = true; STATE.store(5, Ordering::Release);
-                        trace(b"queue rollover playback started");
-                    } else {
-                        crate::drivers::audio::stop_playback(OWNER); STREAM_OPEN = false;
-                        trace(b"queue rollover rejected"); ERROR = 7; STATE.store(4, Ordering::Release); retire();
-                    }
-                } else if opened && crate::drivers::audio::infinity_audio_append(OWNER, CAPABILITY, generation,
-                    &(&*(&raw const RESIDENT)).0[..OUTPUT_SAMPLES], CONTENT_START, CONTENT_END) {
-                    STREAM_OPEN = true; CAPABILITY = 0;
-                    (&mut *(&raw mut PCM))[..FRAMES.min(CAPACITY)].fill(0);
-                    (&mut *(&raw mut RESIDENT)).0[..OUTPUT_SAMPLES.min(RESIDENT_CAPACITY)].fill(0);
-                    (&mut *(&raw mut TEXT)).fill(0);
-                    if FINAL_CHUNK {
-                        if crate::drivers::audio::infinity_audio_seal(OWNER, generation) {
-                            PLAYING = true; trace(b"continuous playback started"); STATE.store(5, Ordering::Release);
-                        } else {
-                            crate::drivers::audio::stop_playback(OWNER); STREAM_OPEN = false;
-                            trace(b"stream seal rejected"); ERROR = 7; STATE.store(4, Ordering::Release);
-                        }
-                    } else {
-                        trace(b"span buffered"); STATE.store(8, Ordering::Release);
-                    }
-                } else {
-                    if STREAM_OPEN { crate::drivers::audio::stop_playback(OWNER); STREAM_OPEN = false; }
-                    trace(b"stream append rejected"); ERROR = 7; STATE.store(4, Ordering::Release); retire();
-                }
+                let advance = PLAYBACK_DRAINED;
+                let _ = start_resident_span(advance);
             }
         } else if matches!(state, 4 | 6 | 7) && CAPABILITY != 0 { retire(); }
     }

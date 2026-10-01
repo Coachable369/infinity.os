@@ -739,6 +739,10 @@ pub fn poll() -> bool {
                     refresh_reply();
                     if !speak_next() { stop(OWNER); }
                 }
+                voice_output::OutputState::Speaking if voice_output::can_prefetch() => {
+                    refresh_reply();
+                    if !speak_next() { stop(OWNER); }
+                }
                 voice_output::OutputState::Failed | voice_output::OutputState::Cancelled => {
                     trace(b"speech output failed or cancelled");
                     stop(OWNER);
