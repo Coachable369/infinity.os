@@ -1,8 +1,9 @@
 //! Single-owner hardware adapter. Never grants authority and never starts audio at boot.
 use super::hda;
 #[path = "speech_pcm.rs"] mod speech_pcm;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static LOCK: AtomicBool = AtomicBool::new(false);
+static CAPTURE_OPEN_FAILURE: AtomicUsize = AtomicUsize::new(0);
 static mut DMA: hda::Dma = hda::Dma::new();
 static mut DEVICE: Option<hda::Hda> = None;
 static mut UNTIL: u64 = 0;
@@ -32,6 +33,21 @@ static mut INPUT_PCM: [i16; hda::CAPTURE_SAMPLES] = [0; hda::CAPTURE_SAMPLES];
 static mut INPUT_STATUS: CaptureStatus = CaptureStatus { state: CaptureState::Idle, sample_rate: 0, frames: 0, peak: 0 };
 
 // ------------------------=
+// FUNC: record_capture_open_failure
+// DESC: Emits one privacy-safe record when the capture-open failure class changes.
+// ------------------=
+fn record_capture_open_failure(code: usize, event: &[u8]) {
+    if CAPTURE_OPEN_FAILURE.swap(code, Ordering::AcqRel) == code { return; }
+    unsafe { crate::output::write(event); }
+}
+
+// ------------------------=
+// FUNC: clear_capture_open_failure
+// DESC: Arms capture-open telemetry for the next distinct failed transition.
+// ------------------=
+fn clear_capture_open_failure() { CAPTURE_OPEN_FAILURE.store(0, Ordering::Release); }
+
+// ------------------------=
 // FUNC: capture_available
 // DESC: Reports a real discovered hardware input route without opening the microphone.
 // ------------------=
@@ -45,28 +61,57 @@ pub fn capture_available() -> bool {
 // DESC: Starts a three-second explicit microphone sample using a validated AudioInput lease.
 // ------------------=
 pub fn capture(owner: crate::runtime::execution::SecurityIdentity, capability: u64) -> bool {
-    let Some(now) = crate::ui::performance::monotonic_ns() else { return false; };
+    let Some(now) = crate::ui::performance::monotonic_ns() else {
+        record_capture_open_failure(1, b"[AUDIO] capture open failed clock\n");
+        return false;
+    };
     let Ok(request) = crate::runtime::iop::IopMessage::request(crate::runtime::iop::OperationId::AudioCaptureStart,
-        now, owner, capability, now / 1_000_000_000 + 5, now, &[]) else { return false; };
+        now, owner, capability, now / 1_000_000_000 + 5, now, &[]) else {
+            record_capture_open_failure(2, b"[AUDIO] capture open failed request\n");
+            return false;
+        };
     let lease = crate::runtime::with_runtime(|runtime| crate::runtime::audio::AudioStream::authorize(
         &request, owner, &runtime.capabilities, now / 1_000_000_000).ok()).flatten();
-    if lease.is_none() || LOCK.swap(true, Ordering::Acquire) { return false; }
+    if lease.is_none() {
+        record_capture_open_failure(3, b"[AUDIO] capture open failed authority\n");
+        return false;
+    }
+    if LOCK.swap(true, Ordering::Acquire) {
+        record_capture_open_failure(4, b"[AUDIO] capture open failed adapter busy\n");
+        return false;
+    }
     let started = unsafe {
         if let Some(device) = (&mut *(&raw mut DEVICE)).as_mut() {
-            if device.start_capture().is_ok() {
-                let Some(started) = crate::ui::performance::monotonic_ns() else {
-                    device.stop_capture(); LOCK.store(false, Ordering::Release); return false;
-                };
-                (&mut *(&raw mut INPUT)).clear();
-                INPUT_STATUS = CaptureStatus { state: CaptureState::Recording, sample_rate: device.sample_rate, frames: 0, peak: 0 };
-                INPUT_LAST_POLL = started; INPUT_UNTIL = started.saturating_add(3_000_000_000); INPUT_LEASE = lease; true
-            } else {
-                if !device.capturing { device.stop_capture(); }
-                false
+            match device.start_capture() {
+                Ok(()) => {
+                    let Some(started) = crate::ui::performance::monotonic_ns() else {
+                        record_capture_open_failure(5, b"[AUDIO] capture open failed post-start clock\n");
+                        device.stop_capture(); LOCK.store(false, Ordering::Release); return false;
+                    };
+                    (&mut *(&raw mut INPUT)).clear();
+                    INPUT_STATUS = CaptureStatus { state: CaptureState::Recording, sample_rate: device.sample_rate, frames: 0, peak: 0 };
+                    INPUT_LAST_POLL = started; INPUT_UNTIL = started.saturating_add(3_000_000_000); INPUT_LEASE = lease; true
+                }
+                Err(error) => {
+                    match error {
+                        hda::Error::Timeout => record_capture_open_failure(6, b"[AUDIO] capture open failed hda timeout\n"),
+                        hda::Error::Unsupported => record_capture_open_failure(7, b"[AUDIO] capture open failed hda unsupported\n"),
+                        hda::Error::Busy => record_capture_open_failure(8, b"[AUDIO] capture open failed hda busy\n"),
+                        hda::Error::Invalid => record_capture_open_failure(9, b"[AUDIO] capture open failed hda invalid\n"),
+                        hda::Error::Dma => record_capture_open_failure(10, b"[AUDIO] capture open failed hda dma\n"),
+                    }
+                    if !device.capturing { device.stop_capture(); }
+                    false
+                }
             }
-        } else { false }
+        } else {
+            record_capture_open_failure(11, b"[AUDIO] capture open failed device missing\n");
+            false
+        }
     };
-    LOCK.store(false, Ordering::Release); started
+    LOCK.store(false, Ordering::Release);
+    if started { clear_capture_open_failure(); }
+    started
 }
 // ------------------------=
 // FUNC: capture_status
@@ -116,6 +161,15 @@ pub fn read_capture(owner: crate::runtime::execution::SecurityIdentity, output: 
 // DESC: Stops hardware and erases private audio before retiring the one-shot microphone lease; lock must be held.
 // ------------------=
 unsafe fn finish_capture(device: &mut hda::Hda, state: CaptureState) {
+    crate::output::write(match state {
+        CaptureState::Idle => b"[AUDIO] capture finished idle\n",
+        CaptureState::Recording => b"[AUDIO] capture finished recording\n",
+        CaptureState::Complete => b"[AUDIO] capture finished complete\n",
+        CaptureState::Cancelled => b"[AUDIO] capture finished cancelled\n",
+        CaptureState::Denied => b"[AUDIO] capture finished denied\n",
+        CaptureState::DeviceLost => b"[AUDIO] capture finished device-lost\n",
+        CaptureState::Overrun => b"[AUDIO] capture finished overrun\n",
+    });
     device.stop_capture(); (&mut *(&raw mut INPUT)).clear();
     (&mut *(&raw mut INPUT_PCM)).fill(0); INPUT_STATUS.state = state;
     if let Some(lease) = (&mut *(&raw mut INPUT_LEASE)).take() {

@@ -42,7 +42,7 @@ mod runtime {
         pub struct Session {pub id:super::execution::SecurityIdentity,pub user:super::execution::SecurityIdentity,pub state:SessionState}
         pub struct AiProfile {pub speech_output_enabled:bool}
     }
-    pub mod audio {#[derive(PartialEq)] pub enum CaptureState {Recording,Overrun,Complete,Denied,DeviceLost}}
+    pub mod audio {#[derive(PartialEq)] pub enum CaptureState {Idle,Recording,Overrun,Complete,Cancelled,Denied,DeviceLost}}
     pub struct Identity;
     impl Identity {
         // ------------------------=

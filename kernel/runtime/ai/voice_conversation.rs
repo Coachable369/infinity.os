@@ -50,6 +50,7 @@ static mut RESTART_LISTENING: bool = false;
 static mut CHAT_TURN: u64 = 0;
 static mut CONTINUOUS: bool = false;
 static mut REPLY_COMPLETE: bool = false;
+static mut REOPEN_FAILURE: u8 = 0;
 
 #[cfg(not(test))]
 // ------------------------=
@@ -168,9 +169,11 @@ unsafe fn listen() -> bool {
         return true;
     }
     let Some(cap) = grant(OWNER, CapabilityType::AudioInput, 60) else {
+        trace(b"listen failed grant");
         return false;
     };
     if !crate::drivers::audio::capture(OWNER, cap) {
+        trace(b"listen failed capture open");
         retire(cap);
         return false;
     }
@@ -179,6 +182,7 @@ unsafe fn listen() -> bool {
         .map(|s| s.sample_rate)
         .unwrap_or(0);
     if !(&mut *(&raw mut RESAMPLER)).configure(rate) {
+        trace(b"listen failed sample rate");
         crate::drivers::audio::stop_capture(OWNER);
         INPUT_CAP = 0;
         return false;
@@ -188,6 +192,7 @@ unsafe fn listen() -> bool {
     RENEW_AT = super::qwen::workers::clock_ns() + 1_000_000_000;
     REOPEN_AT = 0;
     REOPEN_DEADLINE = 0;
+    REOPEN_FAILURE = 0;
     STATE = State::Listening;
     true
 }
@@ -197,14 +202,19 @@ unsafe fn listen() -> bool {
 // DESC: Recovers a completed or overrun DMA stream without discarding speech already accepted by VAD.
 // ------------------=
 unsafe fn reopen_capture() -> bool {
-    let Some(cap) = grant(OWNER, CapabilityType::AudioInput, 60) else { return false; };
+    let Some(cap) = grant(OWNER, CapabilityType::AudioInput, 60) else {
+        REOPEN_FAILURE = 1;
+        return false;
+    };
     if !crate::drivers::audio::capture(OWNER, cap) {
+        REOPEN_FAILURE = 2;
         retire(cap);
         return false;
     }
     INPUT_CAP = cap;
     let rate = crate::drivers::audio::capture_status().map(|s| s.sample_rate).unwrap_or(0);
     if !(&mut *(&raw mut RESAMPLER)).configure(rate) {
+        REOPEN_FAILURE = 3;
         crate::drivers::audio::stop_capture(OWNER);
         INPUT_CAP = 0;
         return false;
@@ -212,6 +222,7 @@ unsafe fn reopen_capture() -> bool {
     RENEW_AT = super::qwen::workers::clock_ns() + 1_000_000_000;
     REOPEN_AT = 0;
     REOPEN_DEADLINE = 0;
+    REOPEN_FAILURE = 0;
     true
 }
 // ------------------------=
@@ -446,7 +457,12 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     let now=super::qwen::workers::clock_ns();
     if INPUT_CAP==0 && CONTINUOUS {
         if REOPEN_DEADLINE!=0 && now>=REOPEN_DEADLINE {
-            trace(b"capture recovery expired");
+            trace(match REOPEN_FAILURE {
+                1 => b"capture recovery expired grant",
+                2 => b"capture recovery expired open",
+                3 => b"capture recovery expired sample rate",
+                _ => b"capture recovery expired unknown",
+            });
             return false;
         }
         if now<REOPEN_AT {return true;}
@@ -470,7 +486,13 @@ unsafe fn capture_frame(duplex: bool) -> bool {
             trace(if status.state==CaptureState::Overrun {b"capture overrun recovery"} else {b"capture window recovery"});
             return true;
         }
-        trace(b"capture terminal failure");
+        trace(match status.state {
+            CaptureState::Idle => b"capture terminal idle",
+            CaptureState::Cancelled => b"capture terminal cancelled",
+            CaptureState::Denied => b"capture terminal denied",
+            CaptureState::DeviceLost => b"capture terminal device-lost",
+            _ => b"capture terminal unknown",
+        });
         return false;
     }
     if now>=RENEW_AT {
@@ -493,7 +515,10 @@ unsafe fn capture_frame(duplex: bool) -> bool {
     let count=crate::drivers::audio::read_capture(OWNER,&mut *(&raw mut RAW));
     if count==0 {return true;}
     let (used,n)=(&mut *(&raw mut RESAMPLER)).process(&(&*(&raw const RAW))[..count],&mut *(&raw mut MONO));
-    if used!=count {return false;}
+    if used!=count {
+        trace(b"capture resampler backpressure");
+        return false;
+    }
     if duplex && voice_output::echo_reference(OWNER,&mut *(&raw mut ECHO)) {
         ECHO_VALID_UNTIL=now+200_000_000;
     }
@@ -522,11 +547,13 @@ pub fn poll() -> bool {
             return false;
         }
         if STATE != State::Stopping && !active_owner(OWNER) {
+            trace(b"conversation stopped inactive owner");
             stop(OWNER);
         }
         if matches!(STATE, State::Thinking | State::Speaking)
             && super::with_ai_runtime(|ai| ai.chat.turn_id() != CHAT_TURN || matches!(ai.chat.generation_state,
                 GenerationState::Failed | GenerationState::Cancelled | GenerationState::ContextFull)) {
+            trace(b"conversation stopped model state");
             stop(OWNER);
         }
         // Playback owns the conversational audio interval. The microphone is
@@ -534,7 +561,11 @@ pub fn poll() -> bool {
         // can never cancel or truncate an accepted assistant response.
         match STATE {
             State::Listening => {
-                if !capture_frame(false) {stop(OWNER);return true;}
+                if !capture_frame(false) {
+                    trace(b"conversation stopped capture frame");
+                    stop(OWNER);
+                    return true;
+                }
                 match (&*(&raw const UTTERANCE)).state() {
                     VadState::Complete => {
                         // Capture shutdown retires its lease. Recognition is
@@ -554,6 +585,7 @@ pub fn poll() -> bool {
                             trace(b"recognition queued");
                             STATE = State::Recognizing;
                         } else {
+                            trace(b"conversation stopped recognition submit");
                             stop(OWNER);
                         }
                     }
