@@ -22,6 +22,11 @@ pub trait Provider {
     // ------------------=
     fn begin(&mut self, url: &str) -> Result<u64, ()>;
     // ------------------------=
+    // FUNC: begin_with_headers
+    // DESC: Carries engine-selected request metadata; fixture providers may use the URL-only default.
+    // ------------------=
+    fn begin_with_headers(&mut self, url: &str, _headers: &[u8]) -> Result<u64, ()> { self.begin(url) }
+    // ------------------------=
     // FUNC: poll
     // DESC: Returns a bounded complete native-service response or a pending state.
     // ------------------=
@@ -115,7 +120,16 @@ impl<P: Provider> Resources<P> {
             if state.pending[at].id == 0 {
                 let mut url=state.pending[at].load.request().url.clone();
                 url.set_fragment(None);
-                match state.provider.begin(url.as_str()) {
+                let mut headers=Vec::new();
+                let mut oversized=false;
+                for (name,value) in &state.pending[at].load.request().headers {
+                    if matches!(name.as_str(), "host"|"connection"|"transfer-encoding"|"content-length"|"accept-encoding"|"proxy-authorization"|"proxy-connection"|"upgrade"|"te"|"trailer") { continue; }
+                    if headers.len().saturating_add(name.as_str().len()).saturating_add(value.as_bytes().len()).saturating_add(4)>8192 {oversized=true;break;}
+                    headers.extend_from_slice(name.as_str().as_bytes());
+                    headers.extend_from_slice(b": ");headers.extend_from_slice(value.as_bytes());headers.extend_from_slice(b"\r\n");
+                }
+                if oversized {let pending=state.pending.remove(at);fail_load(&mut state,pending.load);continue;}
+                match state.provider.begin_with_headers(url.as_str(), &headers) {
                     Ok(id) if id != 0 => {
                         state.pending[at].id=id;
                         state.pending[at].deadline=now.saturating_add(TIMEOUT_NS);

@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::rc::Rc;
+use std::vec::Vec;
 use std::time::{Duration, Instant};
 use servo::{RenderingContext, Servo, SoftwareRenderingContext, WebView, WebViewBuilder};
 #[path = "../../sdk/infinity-browser-servo/resources.rs"]
@@ -39,6 +40,93 @@ impl<P: resources::Provider> servo::WebViewDelegate for ResourceDelegate<P> {
 }
 
 struct FixtureProvider { starts: Rc<Cell<u32>>, cancels: Rc<Cell<u32>>, serial: u64 }
+
+struct CookieProvider { observed: Rc<Cell<u32>> }
+impl resources::Provider for CookieProvider {
+    // ------------------------=
+    // FUNC: begin
+    // DESC: Rejects any request that bypasses metadata delivery in this fixture.
+    // ------------------=
+    fn begin(&mut self, _: &str) -> Result<u64, ()> { Err(()) }
+    // ------------------------=
+    // FUNC: begin_with_headers
+    // DESC: Observes actual cookie fields selected by Servo for redirected documents and credential modes.
+    // ------------------=
+    fn begin_with_headers(&mut self, url: &str, headers: &[u8]) -> Result<u64, ()> {
+        let raw=std::str::from_utf8(headers).map_err(|_|())?;
+        let cookies:Vec<_>=raw.split("\r\n").filter_map(|line|line.split_once(':'))
+            .filter(|(name,_)|name.eq_ignore_ascii_case("cookie"))
+            .flat_map(|(_,value)|value.trim().split(';').map(str::trim)).collect();
+        let (id,valid)=match url {
+            "https://cookies.test/start" => (6,cookies.is_empty()),
+            "https://cookies.test/" => (1,cookies.contains(&"server=1")),
+            "https://cookies.test/next" => (2,cookies.contains(&"server=1") && cookies.contains(&"script=2")),
+            "https://cookies.test/omit" => (3,cookies.is_empty()),
+            "https://cookies.test/include" => (4,cookies.contains(&"server=1") && cookies.contains(&"script=2")),
+            "https://other.test/cross" => (5,cookies.is_empty()),
+            "https://cookies.test/redirect.css" => (7,cookies.contains(&"server=1")),
+            "https://cookies.test/final.css" => (8,cookies.contains(&"server=1")),
+            "https://other.test/denied" => (9,cookies.is_empty()),
+            "https://cookies.test/done" => (10,cookies.is_empty()),
+            _ => return Err(()),
+        };
+        if !valid { self.observed.set(self.observed.get()|0x8000);return Err(()); }
+        self.observed.set(self.observed.get()|(1<<(id-1)));Ok(id)
+    }
+    // ------------------------=
+    // FUNC: poll
+    // DESC: Drives real script cookie assignment, navigation and credentialed fetches through the shared resource adapter.
+    // ------------------=
+    fn poll(&mut self, id:u64)->Result<Option<resources::Response>,()> {
+        let body=match id {
+            1=>"<script>document.cookie='script=2; Secure; Path=/';location.href='/next';</script>",
+            2=>"<link rel=stylesheet href='/redirect.css'><body><h3>Results</h3><script>Promise.all([fetch('/omit',{credentials:'omit'}),fetch('/include',{credentials:'same-origin'}),fetch('https://other.test/cross',{credentials:'same-origin'}),fetch('https://other.test/denied').then(()=>window.crossBlocked=false,()=>window.crossBlocked=true)]).then(()=>fetch('/done',{credentials:'omit'}))</script>",
+            8=>"body{background:rgb(12,34,56)}",
+            _=>"ok",
+        };
+        let mut headers=std::vec![("content-type".into(),"text/html".into()),("cache-control".into(),"no-store".into()),("access-control-allow-origin".into(),"https://cookies.test".into())];
+        if id==6 {
+            headers.push(("set-cookie".into(),"server=1; Secure; HttpOnly; Path=/".into()));
+            headers.push(("location".into(),"/".into()));
+        }
+        if id==7 {headers.push(("location".into(),"/final.css".into()));}
+        if id==8 {headers[0].1="text/css".into();}
+        if id==9 {headers.pop();}
+        Ok(Some(resources::Response{status:if id==6 || id==7 {302} else {200},headers,body:body.as_bytes().to_vec()}))
+    }
+    // ------------------------=
+    // FUNC: cancel
+    // DESC: Releases a fixture transaction with no external resources.
+    // ------------------=
+    fn cancel(&mut self,_:u64) {}
+}
+
+// ------------------------=
+// FUNC: verify_cookies
+// DESC: Verifies cookie-dependent navigation completes and omitted or cross-origin credentials do not leak.
+// ------------------=
+fn verify_cookies(engine:&Servo)->bool {
+    let observed=Rc::new(Cell::new(0));
+    let resources=Rc::new(resources::Resources::new(CookieProvider{observed:observed.clone()},super::monotonic));
+    engine.set_delegate(resources.clone());
+    let repaint=Rc::new(Cell::new(false));let loaded=Rc::new(Cell::new(0));
+    let Ok(context)=SoftwareRenderingContext::new((128,128).into()) else{return false;};
+    let view=WebViewBuilder::new(engine,Rc::new(context))
+        .delegate(Rc::new(ResourceDelegate{resources:resources.clone(),repaint:repaint.clone(),loaded}))
+        .url("https://cookies.test/start".parse().unwrap()).build();
+    view.show();
+    let deadline=Instant::now()+Duration::from_secs(10);
+    while observed.get()!=1023 && observed.get()&0x8000==0 && Instant::now()<deadline {
+        engine.spin_event_loop();resources.pump();
+        if repaint.replace(false){view.paint();}
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let passed=observed.get()==1023 && javascript_true(engine,&view,&repaint,
+        "window.crossBlocked===true && document.querySelectorAll('h3').length===1 && document.cookie==='script=2' && getComputedStyle(document.body).backgroundColor==='rgb(12, 34, 56)'");
+    super::record(2,33,observed.get() as u64);
+    super::record(2,38,passed as u64);
+    resources.close();drop(view);drain_close(engine);passed
+}
 impl resources::Provider for FixtureProvider {
     // ------------------------=
     // FUNC: begin
@@ -63,7 +151,7 @@ impl resources::Provider for FixtureProvider {
     // ------------------=
     fn poll(&mut self, id: u64) -> Result<Option<resources::Response>, ()> {
         if id & 255 == 4 {
-            return Ok(Some(resources::Response {status:200, headers:std::vec![("content-type".into(),"image/png".into())],
+            return Ok(Some(resources::Response {status:200, headers:std::vec![("content-type".into(),"image/png".into()),("cache-control".into(),"no-store".into())],
                 body:include_bytes!("../test-fixtures/browser/google-logo.png").to_vec()}));
         }
         let (media, body) = match id & 255 {
@@ -75,7 +163,7 @@ impl resources::Provider for FixtureProvider {
         let mut bytes=body.as_bytes().to_vec();
         if id & 255 == 2 {bytes.extend_from_slice(b"/*");bytes.resize(2_600_000,b' ');bytes.extend_from_slice(b"*/");}
         Ok(Some(resources::Response { status: 200,
-            headers: std::vec![("content-type".into(), media.into())], body: bytes }))
+            headers: std::vec![("content-type".into(), media.into()),("cache-control".into(),"no-store".into())], body: bytes }))
     }
     // ------------------------=
     // FUNC: cancel
@@ -289,6 +377,13 @@ fn image_pixels_match(engine:&Servo,view:&WebView,repaint:&Cell<bool>)->bool {
 // DESC: Loads real HTML/CSS, verifies its pixels, mutates the DOM through SpiderMonkey and verifies repaint.
 // ------------------=
 pub fn verify(engine: &Servo) -> u64 {
+    if option_env!("INFINITY_BROWSER_COOKIE_ONLY")==Some("1") {
+        return if verify_cookies(engine) {0} else {22};
+    }
+    #[cfg(infinity_network_probe)]
+    if option_env!("INFINITY_BROWSER_NETWORK_ONLY")==Some("1") {
+        return if network::verify(engine) {0} else {20};
+    }
     let context = match SoftwareRenderingContext::new((128, 128).into()) {
         Ok(context) => Rc::new(context),
         Err(_) => return 1,
@@ -363,6 +458,7 @@ pub fn verify(engine: &Servo) -> u64 {
     drain_close(engine);
     if !verify_resources(engine) { return 19; }
     if !verify_session(engine) { return 21; }
+    if !verify_cookies(engine) { return 22; }
     super::record(2, 11, 9);
     #[cfg(infinity_network_probe)]
     if !network::verify(engine) { return 20; }

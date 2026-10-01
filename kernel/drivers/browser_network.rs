@@ -12,7 +12,7 @@ const PENDING:u8=2;
 const ACTIVE:u8=3;
 const READY:u8=4;
 const FAILED:u8=5;
-struct Data {url:[u8;2048],length:usize,redirects:u8,status:u32,headers:[u8;8192],head:usize,body:[u8;https::BODY],size:usize}
+struct Data {url:[u8;2048],length:usize,request_headers:[u8;8192],request_head:usize,status:u32,headers:[u8;8192],head:usize,body:[u8;https::BODY],size:usize}
 struct Slot {state:AtomicU8,id:AtomicU64,cancelled:AtomicBool,data:UnsafeCell<Data>}
 // Engine writes only after claiming FREE. BSP writes only after acquiring
 // PENDING; READY release-publishes immutable bytes until engine cancellation.
@@ -23,7 +23,7 @@ impl Slot {
     // DESC: Reserves bounded native response storage in BSS rather than on the desktop stack.
     // ------------------=
     const fn new()->Self {Self {state:AtomicU8::new(FREE),id:AtomicU64::new(0),cancelled:AtomicBool::new(false),
-        data:UnsafeCell::new(Data {url:[0;2048],length:0,redirects:0,status:0,headers:[0;8192],head:0,body:[0;https::BODY],size:0})}}
+        data:UnsafeCell::new(Data {url:[0;2048],length:0,request_headers:[0;8192],request_head:0,status:0,headers:[0;8192],head:0,body:[0;https::BODY],size:0})}}
 }
 static SLOTS:[Slot;COUNT]=[const {Slot::new()};COUNT];
 static NEXT:AtomicU64=AtomicU64::new(1);
@@ -69,14 +69,15 @@ pub unsafe fn renew(owner:SecurityIdentity,capabilities:[CapabilityId;4])->bool 
 // DESC: Queues a bounded URL without touching BSP services, sockets or runtime locks.
 // ------------------=
 /// Called only from the single native engine owner CPU.
-pub unsafe fn begin(url:&[u8])->u64 {
-    if url.is_empty() || url.len()>2048 {return 0;}
+pub unsafe fn begin(url:&[u8],headers:&[u8])->u64 {
+    if url.is_empty() || url.len()>2048 || crate::http_transport::request::validate_headers(headers).is_err() {return 0;}
     for slot in &SLOTS {
         if slot.state.compare_exchange(FREE,WRITING,Ordering::Acquire,Ordering::Relaxed).is_err() {continue;}
         let id=match NEXT.fetch_update(Ordering::Relaxed,Ordering::Relaxed,|n|n.checked_add(1)) {
             Ok(id)=>id,Err(_)=>{slot.state.store(FREE,Ordering::Release);return 0;}
         };
-        let data=&mut *slot.data.get();data.url[..url.len()].copy_from_slice(url);data.length=url.len();data.redirects=0;
+        let data=&mut *slot.data.get();data.url[..url.len()].copy_from_slice(url);data.length=url.len();
+        data.request_headers.fill(0);data.request_headers[..headers.len()].copy_from_slice(headers);data.request_head=headers.len();
         slot.id.store(id,Ordering::Relaxed);slot.cancelled.store(false,Ordering::Relaxed);
         slot.state.store(PENDING,Ordering::Release);return id;
     }
@@ -139,27 +140,6 @@ unsafe fn finish(slot:&Slot,response:https::Response)->bool {
     data.size=response.length;data.status=response.status as u32;true
 }
 
-// ------------------------=
-// FUNC: redirect_url
-// DESC: Resolves bounded HTTPS redirects before publishing a document response to the browser engine.
-// ------------------=
-pub(crate) fn redirect_url(current:&[u8],status:u16,headers:&[u8],output:&mut[u8;2048])->Option<usize> {
-    if !matches!(status,301|302|303|307|308) {return None;}
-    let parsed=crate::http_transport::response::Headers::parse(headers).ok()?;
-    let location=parsed.values("location").next()?;
-    let length=if location.starts_with(b"https://") {
-        if location.len()>output.len(){return None;}
-        output[..location.len()].copy_from_slice(location);location.len()
-    } else if location.starts_with(b"/") && current.starts_with(b"https://") {
-        let authority_end=current[8..].iter().position(|byte|*byte==b'/').map(|at|at+8).unwrap_or(current.len());
-        let length=authority_end.checked_add(location.len()).filter(|length|*length<=output.len())?;
-        output[..authority_end].copy_from_slice(&current[..authority_end]);
-        output[authority_end..length].copy_from_slice(location);length
-    } else {return None;};
-    core::str::from_utf8(&output[..length]).ok()?;
-    Some(length)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,6 +184,14 @@ mod tests {
         assert_eq!(data.size,2_600_000);
         assert!(data.body[..data.size].iter().enumerate().all(|(i,b)|*b==(i%251) as u8));
         let released=https::ResponseBody::claim().unwrap();assert!(released.iter().all(|b|*b==0));
+        drop(released);
+        let head=b"HTTP/1.1 302 Found\r\nLocation: /next\r\nSet-Cookie: session=123; Secure\r\nContent-Length: 0\r\n\r\n";
+        let mut response=https::Response{status:302,length:0,bytes:https::ResponseBody::claim().unwrap(),header_length:head.len(),headers:[0;8192]};
+        response.headers[..head.len()].copy_from_slice(head);
+        assert!(unsafe {finish(slot,response)});
+        let data=unsafe {&*slot.data.get()};
+        assert_eq!(data.status,302);assert_eq!(data.size,0);
+        assert_eq!(&data.headers[..data.head],b"Location: /next\r\nSet-Cookie: session=123; Secure\r\nContent-Length: 0\r\n");
     }
 }
 // ------------------------=
@@ -245,17 +233,7 @@ pub unsafe fn pump() {
                         Ok(Some(Ok(response)))=>{
                             INFINITY_BROWSER_NETWORK_STATUS.store(response.status as u32,Ordering::Release);
                             INFINITY_BROWSER_NETWORK_COMPLETED.fetch_add(1,Ordering::Release);
-                            let data=&mut *slot.data.get();
-                            let mut next=[0u8;2048];
-                            if data.redirects<8 {
-                                if let Some(length)=redirect_url(&data.url[..data.length],response.status,
-                                    &response.headers[..response.header_length],&mut next) {
-                                    data.url.fill(0);data.url[..length].copy_from_slice(&next[..length]);
-                                    data.length=length;data.redirects+=1;
-                                    slot.state.store(PENDING,Ordering::Release);
-                                    return;
-                                }
-                            }
+                            // Servo owns redirect URLs and destination-specific cookies.
                             finish(slot,response)
                         },
                         Ok(Some(Err(error)))|Err(error)=>{
@@ -297,7 +275,8 @@ pub unsafe fn pump() {
         let Some(crate::http_transport::geturl::Command::Get(options))=parsed else {
             slot.state.store(FAILED,Ordering::Release);continue;
         };
-        match https::get_browser(owner,caps[0],caps[1],caps[2],caps[3],options.host,443,options.target) {
+        match https::get_browser_with_headers(owner,caps[0],caps[1],caps[2],caps[3],options.host,443,options.target,
+            &data.request_headers[..data.request_head]) {
             Ok(ticket)=>{INFINITY_BROWSER_NETWORK_FAILURE.store(0,Ordering::Release);
                 slot.state.store(ACTIVE,Ordering::Release);CURRENT=Some((index,ticket));},
             Err(https::Failure::Busy)=>{},

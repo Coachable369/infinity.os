@@ -1,15 +1,39 @@
 #include <pthread.h>
 #include <time.h>
 #include <errno.h>
+#include "../../sdk/servo-std/include/infinity-limits.h"
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t condition;
 static int ready;
 static int consumed;
 // ------------------------=
+// FUNC: mutex_capacity
+// DESC: Exercises script-scale live locks, bounded exhaustion, stale handles and complete pool reuse.
+// ------------------=
+static int mutex_capacity(void) {
+    static pthread_mutex_t locks[INFINITY_NATIVE_MUTEXES];
+    unsigned count=0;
+    int status=0;
+    while (count<INFINITY_NATIVE_MUTEXES && !(status=pthread_mutex_init(&locks[count],0))) ++count;
+    pthread_mutex_t extra;
+    if (count<1024 || (count<INFINITY_NATIVE_MUTEXES && status!=EAGAIN) || pthread_mutex_init(&extra,0)!=EAGAIN) return 1;
+    for (unsigned i=0;i<count;++i)
+        if (pthread_mutex_lock(&locks[i]) || pthread_mutex_unlock(&locks[i])) return 2;
+    pthread_mutex_t stale=locks[count/2];
+    if (pthread_mutex_destroy(&locks[count/2]) || pthread_mutex_init(&extra,0)) return 3;
+    if (pthread_mutex_trylock(&stale)!=EINVAL || pthread_mutex_destroy(&extra)) return 4;
+    for (unsigned i=0;i<count;++i)
+        if (i!=count/2 && pthread_mutex_destroy(&locks[i])) return 5;
+    for (unsigned i=0;i<count;++i) if (pthread_mutex_init(&locks[i],0)) return 6;
+    for (unsigned i=0;i<count;++i) if (pthread_mutex_destroy(&locks[i])) return 7;
+    return 0;
+}
+// ------------------------=
 // FUNC: infinity_c_sync_begin
 // DESC: Creates a monotonic condition and tests recursive ownership and locked destruction.
 // ------------------=
 int infinity_c_sync_begin(void) {
+    if (mutex_capacity()) return 6;
     pthread_condattr_t a;
     if (pthread_condattr_init(&a) || pthread_condattr_setclock(&a,CLOCK_MONOTONIC) || pthread_cond_init(&condition,&a) || pthread_condattr_destroy(&a)) return 1;
     pthread_mutexattr_t ma; pthread_mutex_t recursive;

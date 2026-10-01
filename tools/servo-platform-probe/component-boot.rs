@@ -217,7 +217,7 @@ unsafe extern "C" fn event(_: *mut c_void,kind:u32,value:u32,text:*const u8,leng
 // FUNC: begin
 // DESC: Grants only the injected fixture URL; this test makes no network-proof claim.
 // ------------------=
-unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize)->u64 {
+unsafe extern "C" fn begin(_: *mut c_void,url:*const u8,length:usize,_headers:*const u8,_head:usize)->u64 {
     record(8,((STEP as u64)<<32)|length as u64);
     if core::slice::from_raw_parts(url,length)==b"https://fixture.test/second-tab" {
         NEXT_ID+=1;SECOND_REQUEST=NEXT_ID;return NEXT_ID;

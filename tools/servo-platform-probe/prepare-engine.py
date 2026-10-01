@@ -23,13 +23,47 @@ def main():
     text = helper.native_body(text, 'pub fn from_file_path<P:', 'let _ = path; Err(UrlError::FromFilePath)')
     (servo / relative).write_text(text)
 
-    # Native intercepted navigation responses bypass http_fetch's redirect
-    # metadata assignment. Preserve Servo's own manual-navigation redirect
-    # controller, URL list, origin checks and redirect limit instead of fetching
-    # a replacement body behind the engine's back.
+    # Intercept HTTP at the transport boundary, after request policy and cookie
+    # selection. Upper fetch layers retain redirects, CORS and cache semantics.
+    relative = "components/net/fetch/methods.rs"
+    text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
+    text = text.replace('''    // Intercept the request and maybe override the response.
+    context
+        .request_interceptor
+        .lock()
+        .await
+        .intercept_request(request, &mut response, context)
+        .await;''', '''    #[cfg(infinity_native)]
+    let intercept_here = !matches!(current_scheme, "http" | "https");
+    #[cfg(not(infinity_native))]
+    let intercept_here = true;
+    if intercept_here {
+        context.request_interceptor.lock().await
+            .intercept_request(request, &mut response, context).await;
+    }''')
+    (servo / relative).write_text(text)
     relative = "components/net/http_loader.rs"
     text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
-    text = text.replace("fn location_url_for_response(", "pub(crate) fn location_url_for_response(")
+    text = text.replace('''    let mut response_end_timer = ResponseEndTimer(Some(context.timing.clone()));''', '''    #[cfg(infinity_native)]
+    {
+        let request = &mut fetch_params.request;
+        let mut response = None;
+        context.request_interceptor.lock().await
+            .intercept_request(request, &mut response, context).await;
+        let Some(mut response) = response else {
+            return Response::network_error(NetworkError::ConnectionFailure);
+        };
+        response.referrer = request.referrer.to_url().cloned();
+        response.referrer_policy = request.referrer_policy;
+        if credentials_flag {
+            set_cookies_from_headers(&request.current_url(), &response.headers, &context.state.cookie_jar);
+        }
+        context.state.hsts_list.write().update_hsts_list_from_response(
+            &request.current_url(), &response.headers);
+        context.timing.set_attribute(ResourceAttribute::ResponseEnd);
+        return response;
+    }
+    let mut response_end_timer = ResponseEndTimer(Some(context.timing.clone()));''')
     (servo / relative).write_text(text)
     relative = "components/net/request_interceptor.rs"
     text = subprocess.check_output(["git", "-C", str(servo), "show", "HEAD:" + relative], text=True)
@@ -39,15 +73,6 @@ def main():
                 #[cfg(not(infinity_native))]
                 { request.url().into_url() }
             },''')
-    text = text.replace("*response = Some(response_override);", '''#[cfg(infinity_native)]
-                    context.state.hsts_list.write().update_hsts_list_from_response(
-                        &request.current_url(), &response_override.headers);
-                    #[cfg(infinity_native)]
-                    if response_override.status.try_code().is_some_and(|code| matches!(code.as_u16(), 301 | 302 | 303 | 307 | 308)) {
-                        response_override.location_url = crate::http_loader::location_url_for_response(
-                            &response_override, request.current_url().fragment());
-                    }
-                    *response = Some(response_override);''')
     text = text.replace("WebResourceResponseMsg::CancelLoad => {", '''WebResourceResponseMsg::FailLoad => {
                     *response = Some(Response::network_error(NetworkError::ConnectionFailure));
                     break;

@@ -162,8 +162,17 @@ fn authenticated_exchange(header_capacity: Option<usize>) {
             socket,
         );
         let mut request = [0; 512];
-        let count = stream.read(&mut request).unwrap();
-        assert!(count > 0);
+        let mut count=0;
+        loop {
+            let received=stream.read(&mut request[count..]).unwrap();
+            assert!(received>0);count+=received;
+            let mut fields=[httparse::EMPTY_HEADER;16];
+            let mut parsed=httparse::Request::new(&mut fields);
+            if parsed.parse(&request[..count]).unwrap().is_complete() {
+                assert_eq!(parsed.headers.iter().find(|h|h.name.eq_ignore_ascii_case("cookie")).unwrap().value,b"sid=123");
+                break;
+            }
+        }
         stream.write_all(b"HTTP/1.1 103 Early Hints\r\nLink: </ignored>\r\n\r\nHTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n").unwrap();
         stream.flush().unwrap();
     });
@@ -182,13 +191,14 @@ fn authenticated_exchange(header_capacity: Option<usize>) {
     let mut response = vec![0; https::MAX_RESPONSE_BODY];
     let mut headers = [0; 8192];
     let result = {
-        let mut future = std::pin::pin!(https::get_with_headers(
+        let mut future = std::pin::pin!(https::get_with_request_headers(
             TestStream(stream),
             rand_chacha::ChaCha20Rng::from_seed([7; 32]),
             &roots,
             1_800_000_000,
             "localhost",
             "/",
+            b"Cookie: sid=123\r\n",
             Buffers {
                 read_record: &mut read,
                 write_record: &mut write,

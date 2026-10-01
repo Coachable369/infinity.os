@@ -469,7 +469,7 @@ pub(crate) fn get(
     host: &str,
     path: &str,
 ) -> Result<(), Failure> {
-    get_bounded(owner,connect,send,receive,resolve,host,443,path,8192).map(|_|())
+    get_bounded(owner,connect,send,receive,resolve,host,443,path,8192,&[]).map(|_|())
 }
 
 // ------------------------=
@@ -486,7 +486,19 @@ pub(crate) fn get_browser(
     port: u16,
     path: &str,
 ) -> Result<Ticket, Failure> {
-    get_bounded(owner,connect,send,receive,resolve,host,port,path,BODY)
+    get_browser_with_headers(owner,connect,send,receive,resolve,host,port,path,&[])
+}
+
+// ------------------------=
+// FUNC: get_browser_with_headers
+// DESC: Preserves bounded browser request metadata under the same revocable transport authority.
+// ------------------=
+pub(crate) fn get_browser_with_headers(
+    owner: SecurityIdentity, connect: CapabilityId, send: CapabilityId,
+    receive: CapabilityId, resolve: CapabilityId, host: &str, port: u16,
+    path: &str, headers: &[u8],
+) -> Result<Ticket, Failure> {
+    get_bounded(owner,connect,send,receive,resolve,host,port,path,BODY,headers)
 }
 
 // ------------------------=
@@ -503,6 +515,7 @@ fn get_bounded(
     remote_port: u16,
     path: &str,
     body_limit: usize,
+    request_headers: &[u8],
 ) -> Result<Ticket, Failure> {
     let Some(_guard) = lock() else {
         return Err(Failure::Busy);
@@ -514,6 +527,7 @@ fn get_bounded(
     }
     let mut check = [0; 1536];
     http::request::get(host, path, &mut check).map_err(|_| Failure::Invalid)?;
+    http::request::validate_headers(request_headers).map_err(|_| Failure::Invalid)?;
     unsafe {
         if OWNER.is_some() {
             return Err(Failure::Busy);
@@ -584,13 +598,16 @@ fn get_bounded(
         let mut target = [0; 1024];
         target[..path.len()].copy_from_slice(path.as_bytes());
         let target_length = path.len();
+        let mut outgoing=[0;http::request::HEADER_LIMIT];
+        outgoing[..request_headers.len()].copy_from_slice(request_headers);
+        let outgoing_length=request_headers.len();
         let mut body=ResponseBody::claim().ok_or(Failure::Busy)?;
         let future = async move {
             let mut read = [0; 16640];
             let mut write = [0; 4096];
-            let mut request = [0; 1536];
+            let mut request = [0; 12288];
             let mut headers = [0; HEAD];
-            let result = http::client::get_with_headers(
+            let result = http::client::get_with_request_headers(
                 ServiceLink(auth),
                 config,
                 Destination::Resolve,
@@ -600,6 +617,7 @@ fn get_bounded(
                 core::str::from_utf8(&name[..name_length]).unwrap(),
                 remote_port,
                 core::str::from_utf8(&target[..target_length]).unwrap(),
+                &outgoing[..outgoing_length],
                 http::https::Buffers {
                     read_record: &mut read,
                     write_record: &mut write,

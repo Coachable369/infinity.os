@@ -194,18 +194,6 @@ fn main() {
     boot.firmware_entropy = [23; 32];
     boot.firmware_entropy_valid = 1;
     https::initialize(&boot);
-    let mut redirected=[0u8;2048];
-    assert_eq!(browser_network::redirect_url(b"https://www.example.test/start",301,
-        b"HTTP/1.1 301 Moved Permanently\r\nLocation: https://example.test/home\r\nContent-Length: 0\r\n\r\n",
-        &mut redirected),Some(25));
-    assert_eq!(&redirected[..25],b"https://example.test/home");
-    assert_eq!(browser_network::redirect_url(b"https://example.test/start",302,
-        b"HTTP/1.1 302 Found\r\nLocation: /next\r\nContent-Length: 0\r\n\r\n",
-        &mut redirected),Some(25));
-    assert_eq!(&redirected[..25],b"https://example.test/next");
-    assert_eq!(browser_network::redirect_url(b"https://example.test/",302,
-        b"HTTP/1.1 302 Found\r\nLocation: http://example.test/\r\nContent-Length: 0\r\n\r\n",
-        &mut redirected),None);
     assert_eq!(https::get_browser(owner,caps[0],caps[1],caps[2],caps[3],
         "example.test",0,"/"),Err(https::Failure::Invalid));
     assert_eq!(https::get_browser(owner,0,caps[1],caps[2],caps[3],
@@ -241,26 +229,27 @@ fn main() {
             let staged=r.network.profiles.stage(id).unwrap();
             r.network.profiles.commit(staged).unwrap();prior
         }).unwrap();
-        let denied=bridge::begin(b"https://example.test/");assert_ne!(denied,0);
+        assert_eq!(bridge::begin(b"https://example.test/",b"Host: other.test\r\n"),0);
+        let denied=bridge::begin(b"https://example.test/",&[]);assert_ne!(denied,0);
         bridge::pump();assert_eq!(bridge::poll(denied,&mut reply),2);
         bridge::cancel(denied);bridge::pump();
         runtime::with_runtime(|r|r.network.profiles.commit(prior).unwrap());
         assert!(bridge::configure(owner,caps));
         let mut ids=[0;16];
-        for id in &mut ids {*id=bridge::begin(b"file:///private");assert_ne!(*id,0);}
-        assert_eq!(bridge::begin(b"https://example.test/"),0);
+        for id in &mut ids {*id=bridge::begin(b"file:///private",&[]);assert_ne!(*id,0);}
+        assert_eq!(bridge::begin(b"https://example.test/",&[]),0);
         assert!(!bridge::configure(owner,caps));
         bridge::pump();
         for id in ids {assert_eq!(bridge::poll(id,&mut reply),2);bridge::cancel(id);}
         bridge::pump();
-        let old=bridge::begin(b"https://example.test/");bridge::pump();
+        let old=bridge::begin(b"https://example.test/",b"Cookie: session=123\r\n");bridge::pump();
         assert_eq!(bridge::poll(old,&mut reply),0);
         bridge::cancel(old);bridge::pump();assert_eq!(bridge::poll(old,&mut reply),2);
-        let current=bridge::begin(b"https://example.test/");assert_ne!(old,current);
+        let current=bridge::begin(b"https://example.test/",&[]);assert_ne!(old,current);
         bridge::cancel(old);bridge::pump();assert_eq!(bridge::poll(current,&mut reply),0);
         bridge::cancel(current);bridge::pump();assert_eq!(bridge::poll(current,&mut reply),2);
-        let active=bridge::begin(b"https://example.test/");bridge::pump();
-        let pending=bridge::begin(b"https://example.test/next");
+        let active=bridge::begin(b"https://example.test/",&[]);bridge::pump();
+        let pending=bridge::begin(b"https://example.test/next",&[]);
         bridge::cancel_all();
         assert_eq!(bridge::poll(active,&mut reply),2);
         assert_eq!(bridge::poll(pending,&mut reply),2);

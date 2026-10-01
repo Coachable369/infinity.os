@@ -87,6 +87,18 @@ pub async fn get_with_headers<S: Read + Write, R: rand_core::CryptoRngCore>(
     host: &str,
     path: &str,
     buffers: Buffers<'_>,
+    headers: Option<&mut [u8]>,
+) -> Result<Response, Error> {
+    get_with_request_headers(stream, rng, roots, unix_seconds, host, path, &[], buffers, headers).await
+}
+
+// ------------------------=
+// FUNC: get_with_request_headers
+// DESC: Sends validated browser fields over the authenticated native TLS connection.
+// ------------------=
+pub async fn get_with_request_headers<S: Read + Write, R: rand_core::CryptoRngCore>(
+    stream: S, rng: R, roots: &[TrustAnchor<'_>], unix_seconds: u64,
+    host: &str, path: &str, request_headers: &[u8], buffers: Buffers<'_>,
     mut headers: Option<&mut [u8]>,
 ) -> Result<Response, Error> {
     if buffers.read_record.len() < 16640
@@ -95,7 +107,7 @@ pub async fn get_with_headers<S: Read + Write, R: rand_core::CryptoRngCore>(
     {
         return Err(Error::Capacity);
     }
-    let length = request::get(host, path, buffers.request).map_err(Error::Request)?;
+    let length = request::get_with_headers(host, path, request_headers, buffers.request).map_err(Error::Request)?;
     let verifier = CertificateVerifier::new(roots, host, unix_seconds).map_err(Error::Tls)?;
     let config = TlsConfig::new()
         .enable_rsa_signatures()

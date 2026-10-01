@@ -1,7 +1,7 @@
 //! Versioned integer/pointer-only ABI between the native engine component and
 //! the OS worker. Callbacks must be nonblocking mailbox operations. All pointers
 //! remain owned by their issuer; frame/event bytes are borrowed for one call.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 pub const OPEN: u32 = 1;
 pub const CLOSE: u32 = 2;
 pub const NAVIGATE: u32 = 3;
@@ -92,7 +92,7 @@ pub struct Host {
     pub command: unsafe extern "C" fn(*mut core::ffi::c_void, *mut Command) -> u32,
     pub frame: unsafe extern "C" fn(*mut core::ffi::c_void, u32, u32, *const u8, usize),
     pub event: unsafe extern "C" fn(*mut core::ffi::c_void, u32, u32, *const u8, usize),
-    pub begin: unsafe extern "C" fn(*mut core::ffi::c_void, *const u8, usize) -> u64,
+    pub begin: unsafe extern "C" fn(*mut core::ffi::c_void, *const u8, usize, *const u8, usize) -> u64,
     /// 0 pending; 1 complete; any other result failed.
     pub poll: unsafe extern "C" fn(*mut core::ffi::c_void, u64, *mut Response) -> u32,
     pub cancel: unsafe extern "C" fn(*mut core::ffi::c_void, u64),

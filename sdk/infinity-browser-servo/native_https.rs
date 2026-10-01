@@ -37,6 +37,14 @@ impl<F: Factory> Provider for Https<F> {
     // DESC: Authorizes an HTTPS GET and creates a cancellable transaction with bounded buffers.
     // ------------------=
     fn begin(&mut self, url: &str) -> Result<u64, ()> {
+        self.begin_with_headers(url, &[])
+    }
+    // ------------------------=
+    // FUNC: begin_with_headers
+    // DESC: Preserves bounded engine metadata throughout native TLS processing.
+    // ------------------=
+    fn begin_with_headers(&mut self, url: &str, headers: &[u8]) -> Result<u64, ()> {
+        let request_headers=headers.to_vec();
         if self.requests.len() == 16 { return Err(()); }
         let url = servo::ServoUrl::parse(url).map_err(|_| ())?.into_url();
         if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() { return Err(()); }
@@ -49,12 +57,12 @@ impl<F: Factory> Provider for Https<F> {
         let future = Box::pin(async move {
             let mut read = std::vec![0;16640];
             let mut write = std::vec![0;4096];
-            let mut request = std::vec![0;4096];
+            let mut request = std::vec![0;12288];
             let mut body = std::vec![0;super::resources::MAX_BODY];
             let mut head = std::vec![0;8192];
-            let result = net::client::get_with_headers(link, config, Destination::Resolve,
+            let result = net::client::get_with_request_headers(link, config, Destination::Resolve,
                 net::rand_chacha::ChaCha20Rng::from_seed(seed), net::TLS_SERVER_ROOTS, utc,
-                &host, port, &path, net::https::Buffers { read_record: &mut read,
+                &host, port, &path, &request_headers, net::https::Buffers { read_record: &mut read,
                     write_record: &mut write, request: &mut request, response: &mut body }, Some(&mut head))
                 .await.map_err(|error| { F::failed(&error); })?;
             let parsed = net::response::Headers::parse(&head[..result.header_bytes]).map_err(|_| ())?;

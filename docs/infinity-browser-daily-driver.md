@@ -102,6 +102,44 @@ Status: **in progress; not accepted, not a daily-driver release.**
 
 ## Evidence and limits
 
+### Complex-page transport correction (1 October)
+
+Google search reproduced a native JavaScript mutex-allocation abort. The shared
+mutex pool now has 4096 slots instead of 128, with exhaustion, stale-handle and
+reuse checks on both native architecture probes. Browser GET requests now carry
+bounded engine-selected headers, including cookies, through the native ABI and
+capability-governed HTTPS service. Transport authority and framing fields remain
+owned by the native client. HTTP interception occurs after Servo request policy
+and cookie selection, leaving redirects, CORS and caching in Servo's fetch
+pipeline. Browser connections use keep-alive to avoid premature close/reset on
+large responses; this does not implement a persistent connection pool.
+
+The previous Google crash no longer reproduced, but the live search request
+reached Google's unusual-traffic challenge. Search results are **not verified**.
+Wikipedia's HTTP article transferred 604171 bytes and passed DOM structure
+checks, but its captured 800x600 surface was entirely white. The broader native
+page fixture also fails the production-session pixel assertion after its earlier
+DOM, input, navigation and image checks. These remain acceptance failures, not
+successful rendering. Non-GET requests and request bodies still need
+implementation. Correction work stopped at the repository's loop limit.
+
+Verification receipts (under `builds/manifests/`):
+
+- HTTP/TLS: 34 tests passed, `20261001T105647162543Z-3529.json`.
+- Browser response handoff: two tests passed, `20261001T110047685571Z-4697.json`.
+- Native cookie/redirect/CSS/CORS fixture passed,
+  `20261001T105426270073Z-3179.json`.
+- Native mutex capacity/reuse passed on ARM and x86 respectively,
+  `20261001T102130298422Z-86770.json`, `20261001T102822577036Z-92128.json`.
+- Concurrent ARM image build passed, `20261001T103252504000Z-92739.json`.
+  This includes shared live/installed code, but is not cold-install acceptance.
+- Full native page fixture failed, `20261001T105706457897Z-3916.json`.
+- Wikipedia frame check failed, `20261001T105759183095Z-4253.json`.
+
+Neither target has fresh-install runtime proof for this correction. The x86
+engine integration has not been rebuilt in this increment. Do not treat this
+change as a completed Google-search or general modern-web compatibility fix.
+
 Latest x86 reused-install batch (`20260927T174428672056Z-62250.json`): real
 HTTPS image/CSS and JavaScript input passed; scrolling failed its pixel check,
 and the subsequent second-tab page remained blank. This batch did **not** pass.

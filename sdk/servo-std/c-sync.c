@@ -13,7 +13,7 @@ extern int infinity_std_wake(const uint32_t *, bool);
 #define CAPACITY 128
 typedef struct { uint32_t generation, sequence, depth, waiters; uint64_t owner; int active, recursive; } Mutex;
 typedef struct { uint32_t generation, sequence, waiters; int active; clockid_t clock; } Condition;
-static Mutex mutexes[CAPACITY];
+static Mutex mutexes[INFINITY_NATIVE_MUTEXES];
 static Condition conditions[CAPACITY];
 typedef struct { uint64_t id; uint32_t depth; } Reader;
 typedef struct { uint32_t generation, sequence, waiters, writers; int active; uint64_t writer; Reader readers[INFINITY_NATIVE_READERS]; } Rwlock;
@@ -140,12 +140,12 @@ int pthread_mutexattr_settype(pthread_mutexattr_t *a, int type) {
 // ------------------=
 int pthread_mutex_init(pthread_mutex_t *out, const pthread_mutexattr_t *a) {
     if (!out || !infinity_std_thread_id() || (a && !a->is_initialized)) return EINVAL;
-    for (uint32_t i = 0; i < CAPACITY; ++i) {
+    for (uint32_t i = 0; i < INFINITY_NATIVE_MUTEXES; ++i) {
         Mutex *m = &mutexes[i];
-        if (m->active || m->generation >= (UINT32_MAX / CAPACITY) - 1) continue;
+        if (m->active || m->generation >= (UINT32_MAX / INFINITY_NATIVE_MUTEXES) - 1) continue;
         uint32_t generation = m->generation + 1;
         *m = (Mutex){.generation = generation, .active = 1, .recursive = a && a->recursive};
-        *out = generation * CAPACITY + i; return 0;
+        *out = generation * INFINITY_NATIVE_MUTEXES + i; return 0;
     }
     return EAGAIN;
 }
@@ -156,8 +156,8 @@ int pthread_mutex_init(pthread_mutex_t *out, const pthread_mutexattr_t *a) {
 static Mutex *mutex_lookup(pthread_mutex_t *handle) {
     if (!handle || !infinity_std_thread_id()) return 0;
     if (*handle == PTHREAD_MUTEX_INITIALIZER && pthread_mutex_init(handle, 0)) return 0;
-    Mutex *m = &mutexes[*handle % CAPACITY];
-    return m->active && m->generation == *handle / CAPACITY ? m : 0;
+    Mutex *m = &mutexes[*handle % INFINITY_NATIVE_MUTEXES];
+    return m->active && m->generation == *handle / INFINITY_NATIVE_MUTEXES ? m : 0;
 }
 // ------------------------=
 // FUNC: pthread_mutex_trylock

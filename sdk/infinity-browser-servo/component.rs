@@ -126,7 +126,14 @@ impl resources::Provider for Network {
     // DESC: Requests authority through the host mailbox instead of opening sockets.
     // ------------------=
     fn begin(&mut self,url:&str)->Result<u64,()> {
-        let h=host(); let id=unsafe { (h.begin)(h.context,url.as_ptr(),url.len()) };
+        self.begin_with_headers(url, &[])
+    }
+    // ------------------------=
+    // FUNC: begin_with_headers
+    // DESC: Copies bounded engine-selected fields into the versioned native network mailbox.
+    // ------------------=
+    fn begin_with_headers(&mut self,url:&str,headers:&[u8])->Result<u64,()> {
+        let h=host(); let id=unsafe { (h.begin)(h.context,url.as_ptr(),url.len(),headers.as_ptr(),headers.len()) };
         if id==0 { Err(()) } else { Ok(id) }
     }
     // ------------------------=

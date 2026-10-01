@@ -3,6 +3,7 @@ use super::{native_https, resources, ResourceDelegate};
 use std::{cell::{Cell, RefCell}, rc::Rc, time::{Duration, Instant}};
 use infinity_browser_native_network::{client::{Configuration, Link}, smoltcp::time::Instant as NetworkTime};
 use core::sync::atomic::{AtomicUsize, Ordering};
+use servo::RenderingContext;
 static HTTP_STATUS: AtomicUsize=AtomicUsize::new(0);
 static BODY_BYTES: AtomicUsize=AtomicUsize::new(0);
 #[path = "../../kernel/drivers/e1000.rs"]
@@ -61,7 +62,7 @@ impl native_https::Factory for Factory {
     // DESC: Grants only the fixture's named public test origin with genuine entropy and RTC time.
     // ------------------=
     fn authorize(&mut self, host: &str, port: u16) -> Result<(Connection, Configuration, u64, [u8;32]), ()> {
-        if host != "www.google.com" || port != 443 { return Err(()); }
+        if !matches!(host, "www.google.com" | "www.gstatic.com" | "www.googleusercontent.com" | "en.wikipedia.org" | "upload.wikimedia.org" | "example.com") || port != 443 { return Err(()); }
         let mut seed=[0;32];
         if !super::super::entropy_probe::fill(&mut seed) { return Err(()); }
         self.port=self.port.checked_add(1).ok_or(())?;
@@ -71,6 +72,21 @@ impl native_https::Factory for Factory {
             deadline:link.now()+infinity_browser_native_network::smoltcp::time::Duration::from_secs(30) };
         Ok((link,config,super::super::utc().ok_or(())?.0,seed))
     }
+}
+
+// ------------------------=
+// FUNC: wait_for_callback
+// DESC: Keeps native subresource requests moving while awaiting DOM or screenshot callbacks.
+// ------------------=
+fn wait_for_callback(engine:&servo::Servo, view:&servo::WebView, repaint:&Cell<bool>,
+    resources:&resources::Resources<native_https::Https<Factory>>, done:&Cell<u8>)->bool {
+    let deadline=Instant::now()+Duration::from_secs(10);
+    while done.get()==0 && Instant::now()<deadline {
+        engine.spin_event_loop();resources.pump();
+        if repaint.replace(false) {view.paint();}
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    done.get()==1
 }
 
 // ------------------------=
@@ -93,10 +109,11 @@ pub fn verify(engine: &servo::Servo) -> bool {
     engine.set_delegate(resources.clone());
     let repaint=Rc::new(Cell::new(false));let loaded=Rc::new(Cell::new(0));
     let Ok(context)=servo::SoftwareRenderingContext::new((800,600).into()) else { return false; };
-    let view=servo::WebViewBuilder::new(engine,Rc::new(context))
+    let context=Rc::new(context);
+    let view=servo::WebViewBuilder::new(engine,context.clone())
         .delegate(Rc::new(ResourceDelegate {resources:resources.clone(),repaint:repaint.clone(),loaded:loaded.clone()}))
-        .url("https://www.google.com/".parse().unwrap()).build();
-    view.show();let deadline=Instant::now()+Duration::from_secs(35);
+        .url(option_env!("INFINITY_BROWSER_PROBE_URL").unwrap_or("https://www.google.com/").parse().unwrap()).build();
+    view.show();let deadline=Instant::now()+Duration::from_secs(60);
     while loaded.get()==0 && Instant::now()<deadline {
         engine.spin_event_loop();resources.pump();
         if repaint.replace(false) {view.paint();}
@@ -105,16 +122,32 @@ pub fn verify(engine: &servo::Servo) -> bool {
     super::super::record(2,30,HTTP_STATUS.load(Ordering::Relaxed) as u64);
     super::super::record(2,31,BODY_BYTES.load(Ordering::Relaxed) as u64);
     super::super::record(2,32,loaded.get() as u64);
+    let dom_matches=super::javascript_true(engine,&view,&repaint,
+        option_env!("INFINITY_BROWSER_PROBE_ASSERT").unwrap_or("location.protocol==='https:' && location.hostname==='www.google.com' && Array.from(document.images).some(i=>i.complete && i.naturalWidth>100)"));
+    super::super::record(2,34,dom_matches as u64);
+    if !dom_matches {
+    let inspected=Rc::new(Cell::new(0));let inspection=inspected.clone();
+    view.evaluate_javascript("JSON.stringify({headings:document.querySelectorAll('h3').length,roles:document.querySelectorAll('[role=heading]').length,search:!!document.getElementById('search'),links:Array.from(document.links).slice(0,30).map(a=>({host:a.hostname,path:a.pathname})),ready:document.readyState})",move |value| {
+        if let Ok(servo::JSValue::String(value))=value {super::super::diagnostic(7,&value);}
+        inspection.set(1);
+    });
+    wait_for_callback(engine,&view,&repaint,&resources,&inspected);
+    }
     let mut passed=HTTP_STATUS.load(Ordering::Relaxed)==200 && BODY_BYTES.load(Ordering::Relaxed)>0
-        && loaded.get()==1 && super::javascript_true(engine,&view,&repaint,
-        "location.protocol==='https:' && location.hostname==='www.google.com' && Array.from(document.images).some(i=>i.complete && i.naturalWidth>100)");
-    if passed {
-        let pixels=Rc::new(Cell::new(0));let result=pixels.clone();
-        view.take_screenshot(None,move |image| {
-            result.set(if image.is_ok_and(|image| image.width()==800 && image.height()==600
-                && image.pixels().any(|pixel| pixel.0!=image.get_pixel(0,0).0)) {1} else {2});
-        });
-        passed=super::spin_until(engine,&view,&repaint,&pixels);
+        && dom_matches;
+    {
+        view.paint();
+        let image=context.read_to_image(servo::DeviceIntRect::new((0,0).into(),(800,600).into()));
+        let pixels=image.is_some_and(|image| {
+                super::super::record(2,36,((image.width() as u64)<<32)|image.height() as u64);
+                for (index,chunk) in image.as_raw().chunks(8).enumerate() {
+                    let mut bytes=[0;8];bytes[..chunk.len()].copy_from_slice(chunk);
+                    super::super::record(5,index as u64,u64::from_le_bytes(bytes));
+                }
+                image.width()==800 && image.height()==600
+                    && image.pixels().any(|pixel| pixel.0!=image.get_pixel(0,0).0)
+            });
+        passed=pixels && passed;
     }
     resources.close();
     let (rx,tx,drops)=nic.borrow_mut().statistics();
