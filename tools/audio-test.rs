@@ -22,6 +22,9 @@ fn main() {
     assert_eq!(split[1] % 4, 0);
     assert!(hda::resident_descriptor_lengths(0x1004, 15_004).is_none());
     assert!(hda::resident_descriptor_lengths(0x1000, 6).is_none());
+    assert!(hda::capture_fault_is_recoverable(hda::Error::Dma));
+    assert!(!hda::capture_fault_is_recoverable(hda::Error::Invalid));
+    assert!(!hda::capture_fault_is_recoverable(hda::Error::Timeout));
     let mut buffer = AudioBuffer::<3>::new();
     buffer.push_stereo(&[100, 300, -32768, 32767]).unwrap();
     assert!(buffer.push_stereo(&[1, 1, 2, 2]).is_err());

@@ -10,6 +10,12 @@ pub const CAPTURE_FRAMES: usize = 96000;
 pub const CAPTURE_SAMPLES: usize = CAPTURE_FRAMES * 2;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error { Timeout, Unsupported, Busy, Invalid, Dma }
+
+// ------------------------=
+// FUNC: capture_fault_is_recoverable
+// DESC: Distinguishes a replaceable capture-ring fault from codec loss or an invalid controller state.
+// ------------------=
+pub const fn capture_fault_is_recoverable(error: Error) -> bool { matches!(error, Error::Dma) }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CaptureRoute {
     pub nodes: [u32; 8],

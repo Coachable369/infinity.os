@@ -505,7 +505,11 @@ pub fn poll() {
                             if (&mut *(&raw mut INPUT)).push_stereo(samples).is_err() { finish_capture(device, CaptureState::Overrun); }
                             else if n >= INPUT_UNTIL { finish_capture(device, CaptureState::Complete); }
                         }
-                        Err(_) => finish_capture(device, CaptureState::DeviceLost),
+                        Err(error) => finish_capture(device, if hda::capture_fault_is_recoverable(error) {
+                            CaptureState::Overrun
+                        } else {
+                            CaptureState::DeviceLost
+                        }),
                     }
                 }
             }

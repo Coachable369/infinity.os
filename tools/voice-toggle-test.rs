@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 static BUSY: AtomicBool = AtomicBool::new(false);
 static CAPTURES: AtomicUsize = AtomicUsize::new(0);
 static CAPTURE_STATE: AtomicUsize = AtomicUsize::new(0);
+static CAPTURE_FAILURES: AtomicUsize = AtomicUsize::new(0);
 static ACTIVE: AtomicBool = AtomicBool::new(true);
 static FLOW: AtomicBool = AtomicBool::new(false);
 static MODEL_READY: AtomicBool = AtomicBool::new(false);
@@ -83,7 +84,11 @@ mod drivers {pub mod audio {
     // FUNC: capture
     // DESC: Counts actual controller requests to reopen the microphone.
     // ------------------=
-    pub fn capture(_:SecurityIdentity,_:u64)->bool{crate::CAPTURES.fetch_add(1,crate::Ordering::SeqCst);crate::CAPTURE_STATE.store(0,crate::Ordering::SeqCst);true}
+    pub fn capture(_:SecurityIdentity,_:u64)->bool{
+        crate::CAPTURES.fetch_add(1,crate::Ordering::SeqCst);
+        if crate::CAPTURE_FAILURES.fetch_update(crate::Ordering::SeqCst,crate::Ordering::SeqCst,|n|if n==0{None}else{Some(n-1)}).is_ok(){return false;}
+        crate::CAPTURE_STATE.store(0,crate::Ordering::SeqCst);true
+    }
     // ------------------------=
     // FUNC: capture_status
     // DESC: Supplies a supported native capture format.
@@ -370,10 +375,34 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+1);
     for terminal in [1,2] {
         let opened=CAPTURES.load(Ordering::SeqCst);
-        CAPTURE_STATE.store(terminal,Ordering::SeqCst);conversation::poll();
+        CAPTURE_STATE.store(terminal,Ordering::SeqCst);conversation::poll();conversation::poll();
         assert_eq!(conversation::state().0,State::Listening);
         assert_eq!(CAPTURES.load(Ordering::SeqCst),opened+1);
     }
+    // A codec may need one service interval after a finite DMA window stops.
+    // Recovery must retain already accepted speech instead of cycling voice
+    // autostart and clearing the utterance before Whisper can receive it.
+    MICROPHONE.lock().unwrap().extend([1900;1600]);
+    conversation::poll();
+    let opened=CAPTURES.load(Ordering::SeqCst);
+    CAPTURE_FAILURES.store(1,Ordering::SeqCst);
+    CAPTURE_STATE.store(1,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(conversation::state().0,State::Listening);
+    conversation::poll();
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened+1);
+    assert_eq!(conversation::state().0,State::Listening);
+    NOW.store(100_000_002,Ordering::SeqCst);
+    conversation::poll();
+    assert_eq!(CAPTURES.load(Ordering::SeqCst),opened+2);
+    MICROPHONE.lock().unwrap().extend([0;12000]);
+    for _ in 0..4 {conversation::poll();if conversation::state().0==State::Recognizing {break;}}
+    assert_eq!(conversation::state().0,State::Recognizing);
+    assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==1900));
+    conversation::poll();conversation::poll();
+    conversation::stop(owner);conversation::poll();
+    assert!(conversation::start(owner));
+    let phrase_baseline=PHRASES.lock().unwrap().len();
     MICROPHONE.lock().unwrap().extend([0;3200]);
     MICROPHONE.lock().unwrap().extend([1700;1600]);
     MICROPHONE.lock().unwrap().extend([0;12000]);
@@ -381,10 +410,10 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     for _ in 0..4 {conversation::poll();if conversation::state().0==State::Recognizing {break;}}
     assert_eq!(conversation::state().0,State::Recognizing);
     assert_eq!(INPUT_GRANTS.load(Ordering::SeqCst),input_grants+1);
-    assert_eq!(PHRASES.lock().unwrap().len(),2);
+    assert_eq!(PHRASES.lock().unwrap().len(),phrase_baseline);
     assert!(RECOGNIZED.lock().unwrap().iter().any(|&v|v==1700));
     conversation::poll();conversation::poll();
-    assert_eq!(PHRASES.lock().unwrap()[2],b"New response.");
+    assert_eq!(PHRASES.lock().unwrap()[phrase_baseline],b"New response.");
     // A second reply advances without waiting for microphone input or a gap timer.
     conversation::stop(owner);conversation::poll();TURNS.store(0,Ordering::SeqCst);
     assert!(conversation::start(owner));

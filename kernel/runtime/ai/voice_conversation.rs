@@ -32,6 +32,8 @@ static mut OWNER: SecurityIdentity = SecurityIdentity([0; 16]);
 static mut INPUT_CAP: u64 = 0;
 static mut RECOGNIZE_CAP: u64 = 0;
 static mut RENEW_AT: u64 = 0;
+static mut REOPEN_AT: u64 = 0;
+static mut REOPEN_DEADLINE: u64 = 0;
 static mut RESAMPLER: Resampler = Resampler::empty();
 static mut UTTERANCE: Utterance = Utterance::new(300);
 static mut RAW: [i16; 4800] = [0; 4800];
@@ -184,7 +186,32 @@ unsafe fn listen() -> bool {
     (&mut *(&raw mut UTTERANCE)).clear(300);
     LEVEL = 0;
     RENEW_AT = super::qwen::workers::clock_ns() + 1_000_000_000;
+    REOPEN_AT = 0;
+    REOPEN_DEADLINE = 0;
     STATE = State::Listening;
+    true
+}
+
+// ------------------------=
+// FUNC: reopen_capture
+// DESC: Recovers a completed or overrun DMA stream without discarding speech already accepted by VAD.
+// ------------------=
+unsafe fn reopen_capture() -> bool {
+    let Some(cap) = grant(OWNER, CapabilityType::AudioInput, 60) else { return false; };
+    if !crate::drivers::audio::capture(OWNER, cap) {
+        retire(cap);
+        return false;
+    }
+    INPUT_CAP = cap;
+    let rate = crate::drivers::audio::capture_status().map(|s| s.sample_rate).unwrap_or(0);
+    if !(&mut *(&raw mut RESAMPLER)).configure(rate) {
+        crate::drivers::audio::stop_capture(OWNER);
+        INPUT_CAP = 0;
+        return false;
+    }
+    RENEW_AT = super::qwen::workers::clock_ns() + 1_000_000_000;
+    REOPEN_AT = 0;
+    REOPEN_DEADLINE = 0;
     true
 }
 // ------------------------=
@@ -416,21 +443,36 @@ unsafe fn synchronize_visible_reply() -> bool {
 // ------------------=
 unsafe fn capture_frame(duplex: bool) -> bool {
     use crate::runtime::audio::CaptureState;
+    let now=super::qwen::workers::clock_ns();
+    if INPUT_CAP==0 && CONTINUOUS {
+        if REOPEN_DEADLINE!=0 && now>=REOPEN_DEADLINE {
+            trace(b"capture recovery expired");
+            return false;
+        }
+        if now<REOPEN_AT {return true;}
+        if reopen_capture() {
+            trace(b"capture recovered");
+        } else {
+            if REOPEN_DEADLINE==0 {REOPEN_DEADLINE=now.saturating_add(2_000_000_000);}
+            REOPEN_AT=now.saturating_add(100_000_000);
+        }
+        return true;
+    }
     let Some(status)=crate::drivers::audio::capture_status() else {return true;};
     if status.state != CaptureState::Recording {
         // A bounded DMA overrun or expired capture window is not a user mute.
-        // Discard the incomplete utterance and acquire fresh authority, without
-        // dropping the conversational turn. Permission/device failures stay fatal.
+        // Preserve the accepted utterance and retry hardware re-open across the
+        // codec reset boundary. Permission/device failures stay fatal.
         if CONTINUOUS && matches!(status.state,CaptureState::Overrun|CaptureState::Complete) {
-            let previous=STATE;
             retire(INPUT_CAP);INPUT_CAP=0;
-            let reopened=listen();
-            if reopened {STATE=previous;}
-            return reopened;
+            REOPEN_AT=now;
+            REOPEN_DEADLINE=now.saturating_add(2_000_000_000);
+            trace(if status.state==CaptureState::Overrun {b"capture overrun recovery"} else {b"capture window recovery"});
+            return true;
         }
+        trace(b"capture terminal failure");
         return false;
     }
-    let now=super::qwen::workers::clock_ns();
     if now>=RENEW_AT {
         // Extend the short IOP stream deadline with the existing 60-second
         // microphone authority. Allocating a second capability before retiring
