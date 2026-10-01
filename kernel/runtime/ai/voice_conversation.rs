@@ -61,6 +61,7 @@ static mut CAPTURE_EMPTY_REPORTED: bool = false;
 static mut LAST_VAD_STATE: VadState = VadState::Waiting;
 static mut WAKE_ARMED: bool = false;
 static mut WAKE_ARMED_UNTIL: u64 = 0;
+const FOLLOW_UP_WINDOW_NS: u64 = 10_000_000_000;
 
 #[cfg(not(test))]
 // ------------------------=
@@ -421,6 +422,10 @@ unsafe fn speak_next() -> bool {
         trace(b"reply drained");
         SYNC_VISIBLE_AT = REPLY_LENGTH;
         if CONTINUOUS {
+            WAKE_ARMED = true;
+            WAKE_ARMED_UNTIL = super::qwen::workers::clock_ns()
+                .saturating_add(FOLLOW_UP_WINDOW_NS);
+            trace(b"follow-up command window armed");
             if voice_input::prepared() {
                 return listen();
             }
@@ -765,7 +770,7 @@ pub fn poll() -> bool {
                     } else if wake_only {
                         WAKE_ARMED = true;
                         WAKE_ARMED_UNTIL = super::qwen::workers::clock_ns()
-                            .saturating_add(8_000_000_000);
+                            .saturating_add(FOLLOW_UP_WINDOW_NS);
                         trace(b"wake phrase armed command capture");
                         if !listen() {
                             stop(OWNER);

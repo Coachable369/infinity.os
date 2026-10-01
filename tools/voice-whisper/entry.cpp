@@ -151,6 +151,8 @@ extern "C" int native_transcribe(const int16_t *pcm, size_t samples, char *outpu
     params.n_threads = 1;
     params.language = "en";
     params.translate = false;
+    params.initial_prompt = "Infinity. Computer.";
+    params.carry_initial_prompt = false;
     params.no_context = true;
     params.no_timestamps = true;
     params.single_segment = true;

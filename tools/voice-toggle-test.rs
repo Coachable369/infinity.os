@@ -416,6 +416,7 @@ fn toggles_restart_after_drain_without_reopening_after_revocation(){
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures);
     MODEL_READY.store(true,Ordering::SeqCst);conversation::poll();
     assert_eq!(conversation::state().0,State::Listening);
+    assert!(conversation::wake_armed());
     assert_eq!(CAPTURES.load(Ordering::SeqCst),captures+1);
     for terminal in [1,2] {
         let opened=CAPTURES.load(Ordering::SeqCst);

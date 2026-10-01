@@ -27,14 +27,20 @@ def normalized_words(value):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--accel", choices=("tcg", "hvf"), default="hvf")
+    parser.add_argument("--fixture", type=Path)
+    parser.add_argument("--expected")
     args = parser.parse_args()
     output = ROOT / "build/voice-whisper/aarch64"
-    fixture = output / "jfk-10s.raw"
+    source = args.fixture or ROOT / "build/voice-whisper-src/samples/jfk.wav"
+    expected_words = normalized_words(args.expected) if args.expected else EXPECTED_WORDS
+    if args.fixture and not args.expected:
+        raise SystemExit("--fixture requires --expected")
+    fixture = output / ("wake-word.raw" if args.fixture else "jfk-10s.raw")
     output.mkdir(parents=True, exist_ok=True)
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i",
-                    str(ROOT / "build/voice-whisper-src/samples/jfk.wav"), "-t", "10",
+                    str(source), "-t", "10",
                     "-ar", "16000", "-ac", "1", "-f", "s16le", str(fixture)], check=True)
-    assert fixture.stat().st_size == 320000
+    assert 0 < fixture.stat().st_size <= 320000
     target = ROOT / "build/voice-whisper-probe-target"
     env = dict(os.environ, RUSTC_BOOTSTRAP="1", CARGO_TARGET_DIR=str(target),
                INFINITY_STT_FIXTURE=str(fixture))
@@ -67,7 +73,7 @@ def main():
         transcript = data[offset:offset + length].decode("utf-8")
         offset += length
         if case < 2:
-            assert normalized_words(transcript) == EXPECTED_WORDS
+            assert normalized_words(transcript) == expected_words
         else:
             assert transcript == ""
         rows.append(dict(case=case, result=code, transcript=transcript,
@@ -75,7 +81,7 @@ def main():
                          diagnostics=diagnostics))
     assert offset == len(data)
     evidence = dict(engine="whisper.cpp tiny.en", execution="freestanding ARM64 QEMU " + args.accel,
-                    fixture="official JFK recorded speech, first ten seconds", cases=rows)
+                    fixture=str(source), cases=rows)
     (output / ("verified-" + args.accel + ".json")).write_text(json.dumps(evidence, indent=2) + "\n")
     print(json.dumps(evidence, indent=2))
 
